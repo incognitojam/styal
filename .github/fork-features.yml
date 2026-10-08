@@ -1419,7 +1419,6 @@ features:
       - apps/server/scripts/seed-tool-presentation-fixture.ts
       - apps/server/src/mcp/AcpMcpOverAcpBridge.ts
       - apps/server/src/mcp/McpHttpServer.ts
-      - apps/server/src/mcp/McpProviderSession.ts
       - apps/server/src/mcp/toolkits/testing/toolPresentationFixtures.ts
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
@@ -1432,9 +1431,10 @@ features:
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/server/src/provider/RuntimeInstructions.ts
-      - apps/server/src/provider/T3OrchestrationInstructions.ts
       - apps/server/src/provider/acp/AcpRuntimeModel.ts
       - packages/client-runtime/src/work-log/presentation.ts
+      - packages/provider-core/src/server/mcpSession.ts
+      - packages/provider-core/src/server/orchestrationInstructions.ts
       - packages/shared/src/styalToolWording.ts
       - packages/shared/src/t3McpToolPresentation.ts
       - packages/shared/src/toolActivity.ts
@@ -1442,7 +1442,6 @@ features:
     upstream_paths:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/mcp/McpHttpServer.ts
-      - apps/server/src/mcp/McpProviderSession.ts
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
@@ -1451,23 +1450,24 @@ features:
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
-      - apps/server/src/provider/McpToolPresentation.ts
       - apps/server/src/provider/RuntimeInstructions.ts
-      - apps/server/src/provider/T3OrchestrationInstructions.ts
+      - packages/provider-core/src/server/mcpSession.ts
+      - packages/provider-core/src/server/mcpToolPresentation.ts
+      - packages/provider-core/src/server/orchestrationInstructions.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/mcp/AcpMcpOverAcpBridge.test.ts
-      - apps/server/src/mcp/McpProviderSession.test.ts
       - apps/server/src/mcp/toolkits/core.test.ts
       - apps/server/src/mcp/toolkits/toolPresentation.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
-      - apps/server/src/provider/McpToolPresentation.test.ts
-      - apps/server/src/provider/T3OrchestrationInstructions.test.ts
       - apps/server/src/provider/acp/AcpRuntimeModel.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
+      - packages/provider-core/src/server/mcpSession.test.ts
+      - packages/provider-core/src/server/mcpToolPresentation.test.ts
+      - packages/provider-core/src/server/orchestrationInstructions.test.ts
       - packages/shared/src/t3McpToolPresentation.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
@@ -2921,12 +2921,12 @@ features:
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
-      - apps/server/src/orchestration-v2/ProviderAdapter.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/contracts/src/orchestrationV2.ts
+      - packages/provider-core/src/server/ProviderAdapter.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
@@ -2937,11 +2937,11 @@ features:
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/PiAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
-      - apps/server/src/orchestration-v2/ProviderAdapter.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/contracts/src/orchestrationV2.ts
+      - packages/provider-core/src/server/ProviderAdapter.ts
     tests:
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
@@ -3149,15 +3149,15 @@ features:
       - Provider processes still receive per-session workspace ports, the provider instance's configured environment, and the Codex launch args override.
       - Terminals and provider processes use the same rule for which inherited variables are removed.
     implementation_paths:
-      - apps/server/src/provider/ProviderInstanceEnvironment.ts
       - apps/server/src/serverOwnedEnvironment.ts
       - apps/server/src/terminal/Manager.ts
+      - packages/provider-core/src/server/instanceEnvironment.ts
     upstream_paths:
-      - apps/server/src/provider/ProviderInstanceEnvironment.ts
       - apps/server/src/terminal/Manager.ts
+      - packages/provider-core/src/server/instanceEnvironment.ts
     tests:
-      - apps/server/src/provider/ProviderInstanceEnvironment.test.ts
       - apps/server/src/terminal/Manager.test.ts
+      - packages/provider-core/src/server/instanceEnvironment.test.ts
     upstream:
       status: unassessed
       tracking: []
@@ -3197,13 +3197,13 @@ features:
     upstream_paths:
       - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/provider/providerStatusCache.ts
-      - apps/server/src/provider/providerUsageLimits.ts
       - packages/contracts/src/providerUsageLimits.ts
+      - packages/provider-core/src/server/usageLimits.ts
       - packages/shared/src/usageLimits.ts
     tests:
       - apps/server/src/provider/ProviderRegistry.test.ts
       - apps/server/src/provider/providerStatusCache.test.ts
-      - apps/server/src/provider/providerUsageLimits.test.ts
+      - packages/provider-core/src/server/usageLimits.test.ts
     upstream:
       status: partial
       tracking:
@@ -4447,10 +4447,10 @@ features:
       - apps/server/src/orchestration-v2/ThreadTitleRegenerationService.ts
       - apps/server/src/textGeneration/CursorTextGeneration.ts
       - apps/server/src/textGeneration/TextGeneration.ts
-      - apps/server/src/textGeneration/TextGenerationUtils.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/modelSelection.ts
       - packages/contracts/src/settings.ts
+      - packages/provider-core/src/server/textGenerationUtils.ts
       - packages/shared/src/serverSettings.ts
     upstream_paths:
       - apps/server/src/git/GitManager.ts
@@ -4462,8 +4462,8 @@ features:
       - apps/server/src/textGeneration/CodexTextGeneration.test.ts
       - apps/server/src/textGeneration/CursorTextGeneration.test.ts
       - apps/server/src/textGeneration/TextGeneration.test.ts
-      - apps/server/src/textGeneration/TextGenerationPrompts.test.ts
       - apps/web/src/modelSelection.test.ts
+      - packages/provider-core/src/server/textGenerationPrompts.test.ts
       - packages/shared/src/serverSettings.test.ts
     upstream:
       status: partial

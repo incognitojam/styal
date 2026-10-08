@@ -12,7 +12,7 @@ import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/h
 
 import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 
-import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubQuota from "./githubQuota.ts";
 import * as SourceControlRateLimit from "./SourceControlRateLimit.ts";

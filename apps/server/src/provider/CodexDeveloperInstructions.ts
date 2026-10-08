@@ -7,7 +7,7 @@ import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
   renderProviderToolInstructions,
-} from "./T3OrchestrationInstructions.ts";
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 
 const browserToolInstructionBlock = (mcpServerName: McpServerName): string =>
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim()
