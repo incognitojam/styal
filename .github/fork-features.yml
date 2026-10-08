@@ -1467,6 +1467,7 @@ features:
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
       - Folded completed turns summarize the categories of tools used with recognizable icons.
+      - Folded turn rows show no hover timestamp of their own, since the user message that starts the turn already reveals the same time.
       - Claude project memory writes and index updates form a distinct work-log category on web and mobile; similarly named repository files remain ordinary edits.
       - Page fetches read as "Fetched page" with their URL for Claude and ACP providers, and ACP workspace searches read and count as code searches rather than web lookups, including in historical threads.
     implementation_paths:
