@@ -1,5 +1,9 @@
-import { useAuth } from "@clerk/react";
-import { ManagedRelay, setManagedRelaySession } from "@t3tools/client-runtime/relay";
+import { ClerkFailed, useAuth } from "@clerk/react";
+import {
+  ManagedRelay,
+  managedRelayAuthLoadAtom,
+  setManagedRelaySession,
+} from "@t3tools/client-runtime/relay";
 import {
   reportAtomCommandResult,
   settleAsyncResult,
@@ -23,6 +27,18 @@ export async function readManagedRelayClerkToken(): Promise<string | null> {
 export function deactivateManagedRelayAuthentication(): void {
   relayTokenProvider = null;
   setManagedRelaySession(appAtomRegistry, null);
+}
+
+function markManagedRelayAuthLoaded(): void {
+  appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
+}
+
+/** Mounted by Clerk only after its runtime failed to load, which it does not retry. */
+function ManagedRelayAuthLoadFailed() {
+  useEffect(() => {
+    appAtomRegistry.set(managedRelayAuthLoadAtom, "failed");
+  }, []);
+  return null;
 }
 
 export function activateManagedRelayAuthentication(
@@ -79,6 +95,7 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
 
     if (!isSignedIn || !userId) {
       deactivateManagedRelayAuthentication();
+      markManagedRelayAuthLoaded();
       if (previousAccount !== null) {
         void queueAccountCleanup();
       }
@@ -87,6 +104,7 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
       const activateSession = () => {
         if (!cancelled) {
           activateManagedRelayAuthentication(userId, tokenProvider);
+          markManagedRelayAuthLoaded();
         }
       };
       const activateAfterTransition = (transition: Promise<void>) => {
@@ -95,6 +113,8 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
             await transition;
             activateSession();
           });
+          // A failed activation leaves no session; stop reporting that the sign-in is loading.
+          if (result._tag !== "Success" && !cancelled) markManagedRelayAuthLoaded();
           reportAtomCommandResult(result, { label: "cloud account activation" });
         })();
       };
@@ -112,5 +132,12 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
 
   useEffect(() => () => deactivateManagedRelayAuthentication(), []);
 
-  return children;
+  return (
+    <>
+      <ClerkFailed>
+        <ManagedRelayAuthLoadFailed />
+      </ClerkFailed>
+      {children}
+    </>
+  );
 }

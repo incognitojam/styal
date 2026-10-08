@@ -102,6 +102,21 @@ describe("retryFailedClerkLoads", () => {
     expect(clerk.loadAttempts).toBe(1);
   });
 
+  it("reports each failed load, including one that failed before it subscribed", () => {
+    const clerk = fakeClerk(["error", "ready"]);
+    clerk.emit("error");
+    const onLoadFailed = vi.fn();
+    retryFailedClerkLoads(clerk, appActiveSource().subscribe, onLoadFailed);
+    expect(onLoadFailed).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(CLERK_LOAD_RETRY_INITIAL_DELAY_MS);
+    expect(onLoadFailed).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(CLERK_LOAD_RETRY_MAX_DELAY_MS);
+    expect(clerk.loaded).toBe(true);
+    expect(onLoadFailed).toHaveBeenCalledTimes(2);
+  });
+
   it("stops retrying after cleanup", () => {
     const clerk = fakeClerk([]);
     const appActive = appActiveSource();

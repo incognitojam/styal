@@ -1292,6 +1292,9 @@ describe("EnvironmentSupervisor", () => {
             Layer.succeed(ClientCapabilities.CloudSession, {
               identity: Effect.succeed(Option.some({ accountId: "test-account" })),
               clerkToken: Effect.succeed("clerk-token"),
+              missingSession: Effect.fail(
+                new ConnectionBlockedError({ reason: "authentication", detail: "Signed out." }),
+              ),
             }),
             Layer.succeed(ClientCapabilities.RelayDeviceIdentity, {
               deviceId: Effect.succeed(Option.none()),

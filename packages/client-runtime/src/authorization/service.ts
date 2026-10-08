@@ -231,7 +231,10 @@ export const make = Effect.gen(function* () {
     identity: ClientCapabilities.CloudSessionIdentity,
   ) {
     const current = yield* cloudSession.identity;
-    if (Option.isNone(current) || current.value !== identity) {
+    if (Option.isNone(current)) {
+      return yield* cloudSession.missingSession;
+    }
+    if (current.value !== identity) {
       return yield* sessionChanged();
     }
   });
@@ -339,7 +342,7 @@ export const make = Effect.gen(function* () {
   ) {
     const session = yield* cloudSession.identity;
     if (Option.isNone(session)) {
-      return yield* sessionChanged();
+      return yield* cloudSession.missingSession;
     }
     const identity = session.value;
     const thumbprint = yield* signer.thumbprint.pipe(
