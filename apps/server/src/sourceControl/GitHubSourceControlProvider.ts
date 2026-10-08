@@ -71,7 +71,7 @@ function toChangeRequest(summary: GitHubRepositoryApi.GitHubPullRequestSummary):
   };
 }
 
-function toIssueSummary(issue: GitHubCli.GitHubIssueSummary): SourceControlIssueSummary {
+function toIssueSummary(issue: GitHubRepositoryApi.GitHubIssueSummary): SourceControlIssueSummary {
   return {
     provider: "github",
     number: issue.number,
@@ -83,7 +83,7 @@ function toIssueSummary(issue: GitHubCli.GitHubIssueSummary): SourceControlIssue
   };
 }
 
-function toIssue(issue: GitHubCli.GitHubIssue): SourceControlIssue {
+function toIssue(issue: GitHubRepositoryApi.GitHubIssue): SourceControlIssue {
   return {
     provider: "github",
     repository: issue.repository,
@@ -451,7 +451,6 @@ export const make = Effect.gen(function* () {
               new SourceControlProviderError({
                 provider: "github",
                 operation: "listIssues",
-                command: error.command,
                 cwd: input.cwd,
                 detail: error.message,
                 cause: error,
@@ -466,7 +465,6 @@ export const make = Effect.gen(function* () {
             new SourceControlProviderError({
               provider: "github",
               operation: "getIssue",
-              command: error.command,
               cwd: input.cwd,
               reference: String(input.number),
               detail: error.message,
@@ -487,7 +485,6 @@ export const make = Effect.gen(function* () {
               new SourceControlProviderError({
                 provider: "github",
                 operation: "resolveReferences",
-                command: error.command,
                 cwd: input.cwd,
                 detail: error.message,
                 cause: error,

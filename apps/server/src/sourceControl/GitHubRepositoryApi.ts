@@ -154,7 +154,7 @@ export class GitHubRepositoryDecodeError extends Schema.TaggedError<GitHubReposi
 
 export class GitHubIssueListDecodeError extends Schema.TaggedError<GitHubIssueListDecodeError>()(
   "GitHubIssueListDecodeError",
-  gitHubCliDecodeFields,
+  gitHubDecodeFields,
 ) {
   override get message(): string {
     return "GitHub returned an invalid issue list.";
@@ -163,7 +163,7 @@ export class GitHubIssueListDecodeError extends Schema.TaggedError<GitHubIssueLi
 
 export class GitHubIssueDecodeError extends Schema.TaggedError<GitHubIssueDecodeError>()(
   "GitHubIssueDecodeError",
-  gitHubCliDecodeFields,
+  gitHubDecodeFields,
 ) {
   override get message(): string {
     return "GitHub returned an invalid issue.";
@@ -172,7 +172,7 @@ export class GitHubIssueDecodeError extends Schema.TaggedError<GitHubIssueDecode
 
 export class GitHubReferenceDecodeError extends Schema.TaggedError<GitHubReferenceDecodeError>()(
   "GitHubReferenceDecodeError",
-  gitHubCliDecodeFields,
+  gitHubDecodeFields,
 ) {
   override get message(): string {
     return "GitHub returned invalid reference data.";
@@ -297,19 +297,19 @@ export class GitHubRepositoryApi extends Context.Service<
     readonly listIssues: (input: {
       readonly cwd: string;
       readonly limit?: number;
-    }) => Effect.Effect<ReadonlyArray<GitHubIssueSummary>, GitHubCliError>;
+    }) => Effect.Effect<ReadonlyArray<GitHubIssueSummary>, GitHubRepositoryApiError>;
 
     readonly getIssue: (input: {
       readonly cwd: string;
       readonly reference: string;
-    }) => Effect.Effect<GitHubIssue, GitHubCliError>;
+    }) => Effect.Effect<GitHubIssue, GitHubRepositoryApiError>;
 
     /** What each `owner/repo#number` turns out to be, asked at once. */
     readonly resolveReferences: (input: {
       readonly cwd: string;
       readonly host: string;
       readonly references: ReadonlyArray<GitHubReferenceRequest>;
-    }) => Effect.Effect<ReadonlyArray<GitHubResolvedReference>, GitHubCliError>;
+    }) => Effect.Effect<ReadonlyArray<GitHubResolvedReference>, GitHubRepositoryApiError>;
 
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
@@ -1100,7 +1100,7 @@ export const make = Effect.gen(function* () {
             },
           },
           decodeGitHubIssueListJson,
-          (cause) => new GitHubIssueListDecodeError({ command: "gh", cwd: input.cwd, cause }),
+          (cause) => new GitHubIssueListDecodeError({ cwd: input.cwd, cause }),
         );
       }),
     getIssue: (input) =>
@@ -1127,7 +1127,7 @@ export const make = Effect.gen(function* () {
               variables: { owner: locator.owner, name: locator.name, number, after },
             },
             decodeGitHubIssuePageJson,
-            (cause) => new GitHubIssueDecodeError({ command: "gh", cwd: input.cwd, cause }),
+            (cause) => new GitHubIssueDecodeError({ cwd: input.cwd, cause }),
           ).pipe(
             Effect.catchTags({ GitHubPullRequestNotFoundError: () => Effect.fail(missing()) }),
           );
@@ -1158,7 +1158,7 @@ export const make = Effect.gen(function* () {
           acceptPartialData: true,
         },
         (raw) => decodeGitHubReferenceResponseJson(raw, built.aliases),
-        (cause) => new GitHubReferenceDecodeError({ command: "gh", cwd: input.cwd, cause }),
+        (cause) => new GitHubReferenceDecodeError({ cwd: input.cwd, cause }),
       );
     },
     getRepositoryCloneUrls: (input) =>

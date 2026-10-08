@@ -633,7 +633,7 @@ describe("core detail author avatars", () => {
       expect(detail.author?.login ?? null).toBe(author?.login ?? null);
     }).pipe(
       Effect.provide(
-        Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+        Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
           getPullRequestDetail: () =>
             Effect.succeed({ ...openDetail, author, isCrossRepository: false }),
           getRequiredChecks: () => Effect.succeed([]),

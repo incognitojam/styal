@@ -643,8 +643,7 @@ function createGitHubRepositoryApiWithFakeGh(scenario: FakeGhScenario = {}): {
       resolveReferences: () => Effect.succeed([]),
       getIssue: (input) =>
         Effect.fail(
-          new GitHubCli.GitHubIssueDecodeError({
-            command: "gh",
+          new GitHubRepositoryApi.GitHubIssueDecodeError({
             cwd: input.cwd,
             cause: new Error(`Unexpected issue view: ${input.reference}`),
           }),

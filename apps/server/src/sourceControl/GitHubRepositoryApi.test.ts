@@ -688,7 +688,7 @@ describe("GitHubCli issues, references and fork parents", () => {
       },
     });
     return Effect.gen(function* () {
-      const gh = yield* GitHubCli.GitHubCli;
+      const gh = yield* GitHubRepositoryApi.GitHubRepositoryApi;
       const result = yield* gh.listIssues({ cwd: "/repo" });
 
       assert.deepStrictEqual(
@@ -753,7 +753,7 @@ describe("GitHubCli issues, references and fork parents", () => {
       },
     });
     return Effect.gen(function* () {
-      const gh = yield* GitHubCli.GitHubCli;
+      const gh = yield* GitHubRepositoryApi.GitHubRepositoryApi;
       const result = yield* gh.getIssue({ cwd: "/repo", reference: "123" });
 
       assert.deepStrictEqual(result, {
@@ -786,9 +786,9 @@ describe("GitHubCli issues, references and fork parents", () => {
       },
     });
     return Effect.gen(function* () {
-      const gh = yield* GitHubCli.GitHubCli;
+      const gh = yield* GitHubRepositoryApi.GitHubRepositoryApi;
       const missing = yield* gh.getIssue({ cwd: "/repo", reference: "404" }).pipe(Effect.flip);
-      assert.strictEqual(missing._tag, "GitHubCliCommandError");
+      assert.strictEqual(missing._tag, "GitHubRepositoryCommandError");
       assert.include(missing.message, "Issue #404 was not found");
       const malformed = yield* gh.getIssue({ cwd: "/repo", reference: "123" }).pipe(Effect.flip);
       assert.strictEqual(malformed._tag, "GitHubIssueDecodeError");
@@ -812,7 +812,7 @@ describe("GitHubCli issues, references and fork parents", () => {
       },
     });
     return Effect.gen(function* () {
-      const gh = yield* GitHubCli.GitHubCli;
+      const gh = yield* GitHubRepositoryApi.GitHubRepositoryApi;
       const result = yield* gh.getRepositoryCloneUrls({
         cwd: "/repo",
         repository: "octocat/codething-mvp",
@@ -839,7 +839,7 @@ describe("GitHubCli issues, references and fork parents", () => {
       },
     });
     return Effect.gen(function* () {
-      const github = yield* GitHubCli.GitHubCli;
+      const github = yield* GitHubRepositoryApi.GitHubRepositoryApi;
       const resolved = yield* github.resolveReferences({
         cwd: "/repo",
         host: "github.com",
@@ -871,7 +871,7 @@ describe("GitHubCli issues, references and fork parents", () => {
       },
     });
     return Effect.gen(function* () {
-      const github = yield* GitHubCli.GitHubCli;
+      const github = yield* GitHubRepositoryApi.GitHubRepositoryApi;
       const failure = yield* github
         .resolveReferences({
           cwd: "/repo",
@@ -879,7 +879,7 @@ describe("GitHubCli issues, references and fork parents", () => {
           references: [{ repository: "owner/repo", number: 1 }],
         })
         .pipe(Effect.flip);
-      assert.strictEqual(failure._tag, "GitHubCliAuthenticationError");
+      assert.strictEqual(failure._tag, "GitHubRepositoryAuthenticationError");
     }).pipe(Effect.provide(layer));
   });
 
@@ -896,7 +896,7 @@ describe("GitHubCli issues, references and fork parents", () => {
       },
     });
     return Effect.gen(function* () {
-      const github = yield* GitHubCli.GitHubCli;
+      const github = yield* GitHubRepositoryApi.GitHubRepositoryApi;
       const resolved = yield* github.resolveReferences({
         cwd: "/repo",
         host: "github.com",
