@@ -2065,15 +2065,15 @@ features:
       - Opening and refreshing a pull request cannot exhaust the GitHub GraphQL quota through unbounded nested review-thread connections.
       - Large review conversations remain pageable up to the maintained safety ceiling instead of being silently truncated to the cheap initial query.
     implementation_paths:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
     upstream_paths:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
     tests:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.test.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.test.ts
     upstream:
       status: partial
@@ -3338,7 +3338,7 @@ features:
       - Deployment reads are bounded within the existing detail query, report potentially missing environments, and refresh with PR detail. If GitHub refuses the extended query, one retry without deployment fields preserves access to the PR; authentication and quota errors propagate without retry.
       - Explicit Open, Logs and Show all actions report bounded usage through the owning environment; older reporting servers and telemetry failures never block those actions.
     implementation_paths:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/PullRequestProvider.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
@@ -3351,7 +3351,7 @@ features:
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
       - packages/contracts/src/pullRequest.ts
     tests:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/pullRequest/PullRequestDeployments.test.tsx
@@ -3374,7 +3374,7 @@ features:
     implementation_paths:
       - apps/server/src/assets/AssetAccess.ts
       - apps/server/src/http.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
@@ -3383,7 +3383,7 @@ features:
     upstream_paths:
       - apps/server/src/assets/AssetAccess.ts
       - apps/server/src/http.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
@@ -3391,7 +3391,7 @@ features:
       - packages/contracts/src/assets.ts
     tests:
       - apps/server/src/assets/AssetAccess.test.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts
     upstream:
@@ -3543,7 +3543,7 @@ features:
       - Hosts that do not report a head commit, older clients, and older servers merge as before.
     rationale: Upstream single pull request merges run plain `gh pr merge`, which merges whatever the head is when the command runs. Upstream pins a head only when it removes agent credits from the merge message, and then pins the head it reads at merge time.
     implementation_paths:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
@@ -3551,7 +3551,7 @@ features:
       - packages/client-runtime/src/state/pullRequests.ts
       - packages/contracts/src/pullRequest.ts
     upstream_paths:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
@@ -3559,7 +3559,7 @@ features:
       - packages/client-runtime/src/state/pullRequests.ts
       - packages/contracts/src/pullRequest.ts
     tests:
-      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - packages/client-runtime/src/state/pullRequests.test.ts
     upstream:
@@ -3584,7 +3584,7 @@ features:
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/state/thread-pr-presentation.ts
       - apps/server/src/orchestration-v2/PullRequestSyncReactor.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
       - apps/web/src/components/ThreadStatusIndicators.tsx
@@ -3661,7 +3661,7 @@ features:
       - Turning on auto-merge is offered to any viewer who may merge, and afterwards the server reads the pull request back as it does after a merge, because GitHub merges an already mergeable pull request at once; a resulting merge is published so linked threads settle.
     implementation_paths:
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
@@ -3670,7 +3670,7 @@ features:
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
@@ -3681,7 +3681,7 @@ features:
       - packages/contracts/src/pullRequest.ts
     tests:
       - apps/server/src/orchestration-v2/pullRequestWatch.test.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.test.ts
       - apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.test.ts
@@ -4232,7 +4232,7 @@ features:
       - apps/mobile/src/features/threads/git/GitDefaultRepositorySheet.tsx
       - apps/server/src/project/ProjectCloneTracker.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
-      - apps/server/src/sourceControl/GitHubCli.ts
+      - apps/server/src/sourceControl/GitHubRepositoryApi.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/CommandPalette.tsx
@@ -4245,7 +4245,7 @@ features:
       - apps/mobile/src/features/projects/AddProjectScreen.tsx
       - apps/server/src/project/ProjectCloneTracker.ts
       - apps/server/src/project/RepositoryIdentityResolver.ts
-      - apps/server/src/sourceControl/GitHubCli.ts
+      - apps/server/src/sourceControl/GitHubRepositoryApi.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/CommandPalette.tsx
@@ -4257,7 +4257,7 @@ features:
     tests:
       - apps/server/src/project/ProjectCloneTracker.test.ts
       - apps/server/src/project/RepositoryIdentityResolver.test.ts
-      - apps/server/src/sourceControl/GitHubCli.test.ts
+      - apps/server/src/sourceControl/GitHubRepositoryApi.test.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
       - packages/client-runtime/src/operations/projects.test.ts
       - packages/shared/src/git.test.ts
@@ -4747,7 +4747,7 @@ features:
       - apps/server/src/orchestration-v2/WorkflowRunWatchReactor.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.ts
       - apps/server/src/provider/RuntimeInstructions.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
       - packages/client-runtime/src/operations/commands.ts
@@ -4758,7 +4758,7 @@ features:
       - apps/server/src/mcp/toolkits/pullRequests/tools.ts
       - apps/server/src/orchestration-v2/Orchestrator.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
-      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/GitHubPullRequestApi.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/telemetry/AnalyticsService.ts
       - packages/client-runtime/src/operations/commands.ts

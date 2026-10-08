@@ -42,7 +42,7 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as GitHubApi from "../sourceControl/GitHubApi.ts";
-import * as GitHubCli from "../sourceControl/GitHubCli.ts";
+import * as GitHubRepositoryApi from "../sourceControl/GitHubRepositoryApi.ts";
 import { decodeGitHubPullRequestListJson } from "../sourceControl/gitHubPullRequests.ts";
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -92,7 +92,7 @@ interface FakeGhScenario {
     headRepositoryOwnerLogin?: string | null;
   };
   repositoryCloneUrls?: Record<string, { url: string; sshUrl: string }>;
-  failWith?: GitHubCli.GitHubCliError;
+  failWith?: GitHubRepositoryApi.GitHubRepositoryApiError;
   /** Let this many gh calls succeed before failWith kicks in (default 0 = fail immediately). */
   failAfterCalls?: number;
 }
@@ -111,7 +111,9 @@ type FakeGitTextGeneration = TextGeneration.TextGeneration["Service"];
 
 type FakePullRequest = NonNullable<FakeGhScenario["pullRequest"]>;
 
-function normalizeFakePullRequestSummary(raw: unknown): GitHubCli.GitHubPullRequestSummary | null {
+function normalizeFakePullRequestSummary(
+  raw: unknown,
+): GitHubRepositoryApi.GitHubPullRequestSummary | null {
   if (!raw || typeof raw !== "object") {
     return null;
   }
@@ -381,8 +383,8 @@ function createTextGeneration(
   };
 }
 
-function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
-  service: GitHubCli.GitHubCli["Service"];
+function createGitHubRepositoryApiWithFakeGh(scenario: FakeGhScenario = {}): {
+  service: GitHubRepositoryApi.GitHubRepositoryApi["Service"];
   ghCalls: string[];
 } {
   const prListQueue = [...(scenario.prListSequence ?? [])];
@@ -398,7 +400,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
   const execute = (input: {
     readonly cwd: string;
     readonly args: ReadonlyArray<string>;
-  }): Effect.Effect<VcsProcess.VcsProcessOutput, GitHubCli.GitHubCliError> => {
+  }): Effect.Effect<VcsProcess.VcsProcessOutput, GitHubRepositoryApi.GitHubRepositoryApiError> => {
     const args = [...input.args];
     ghCalls.push(args.join(" "));
 
@@ -486,10 +488,9 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
           return fakeGhOutput("");
         },
         catch: (error) =>
-          GitHubCli.isGitHubCliError(error)
+          GitHubRepositoryApi.isGitHubRepositoryApiError(error)
             ? error
-            : new GitHubCli.GitHubCliCommandError({
-                command: "gh",
+            : new GitHubRepositoryApi.GitHubRepositoryCommandError({
                 cwd: input.cwd,
                 cause: error,
               }),
@@ -502,8 +503,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
         const cloneUrls = scenario.repositoryCloneUrls?.[repository];
         if (!cloneUrls) {
           return Effect.fail(
-            new GitHubCli.GitHubCliCommandError({
-              command: "gh",
+            new GitHubRepositoryApi.GitHubRepositoryCommandError({
               cwd: input.cwd,
               cause: new Error(`Unexpected repository lookup: ${repository}`),
             }),
@@ -523,8 +523,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
     }
 
     return Effect.fail(
-      new GitHubCli.GitHubCliCommandError({
-        command: "gh",
+      new GitHubRepositoryApi.GitHubRepositoryCommandError({
         cwd: input.cwd,
         cause: new Error(`Unexpected gh command: ${args.join(" ")}`),
       }),
@@ -577,7 +576,9 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
           Effect.map((raw) =>
             raw
               .map((entry) => normalizeFakePullRequestSummary(entry))
-              .filter((entry): entry is GitHubCli.GitHubPullRequestSummary => entry !== null),
+              .filter(
+                (entry): entry is GitHubRepositoryApi.GitHubPullRequestSummary => entry !== null,
+              ),
           ),
         ),
       createPullRequest: (input) =>
@@ -617,7 +618,9 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
-          Effect.map((result) => JSON.parse(result.stdout) as GitHubCli.GitHubPullRequestSummary),
+          Effect.map(
+            (result) => JSON.parse(result.stdout) as GitHubRepositoryApi.GitHubPullRequestSummary,
+          ),
         ),
       getRepositoryCloneUrls: (input) =>
         execute({
@@ -626,8 +629,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
         }).pipe(Effect.map((result) => JSON.parse(result.stdout))),
       createRepository: (input) =>
         Effect.fail(
-          new GitHubCli.GitHubCliCommandError({
-            command: "gh",
+          new GitHubRepositoryApi.GitHubRepositoryCommandError({
             cwd: input.cwd,
             cause: new Error(`Unexpected repository create: ${input.repository}`),
           }),
@@ -701,7 +703,9 @@ function makeManager(input?: {
     ProjectionStore.ProjectionStoreV2 | ProjectStore.ProjectStoreV2
   >;
 }) {
-  const { service: gitHubCli, ghCalls } = createGitHubCliWithFakeGh(input?.ghScenario);
+  const { service: gitHubRepositoryApi, ghCalls } = createGitHubRepositoryApiWithFakeGh(
+    input?.ghScenario,
+  );
   const textGeneration = createTextGeneration(input?.textGeneration);
   const layerServerConfig = ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-git-manager-test-",
@@ -750,7 +754,7 @@ function makeManager(input?: {
       ),
       Effect.provide(
         Layer.merge(
-          Layer.succeed(GitHubCli.GitHubCli, gitHubCli),
+          Layer.succeed(GitHubRepositoryApi.GitHubRepositoryApi, gitHubRepositoryApi),
           Layer.mock(GitHubApi.GitHubApi)({}),
         ),
       ),
@@ -1308,8 +1312,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["push", "-u", "origin", "feature/rate-limited"]);
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("rate limited"),
           }),
@@ -1791,8 +1794,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("gh is not available on PATH"),
           }),
@@ -2779,8 +2781,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               },
             ]),
           },
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("rate limited"),
           }),
@@ -2856,8 +2857,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         ghScenario: {
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("gh is not available on PATH"),
           }),
@@ -2921,8 +2921,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const upstreamCause = "GraphQL rate limit for user ID 51714798 and token secret-value";
       const { manager } = yield* makeManager({
         ghScenario: {
-          failWith: new GitHubCli.GitHubCliRateLimitError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryRateLimitError({
             cwd: repoDir,
             cause: new Error(upstreamCause),
           }),
@@ -2948,7 +2947,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         errorTag: "SourceControlProviderError",
         provider: "github",
         providerOperation: "listChangeRequests",
-        providerCommand: "gh",
         errorDetail: "GitHub API rate limit exceeded. Requests resume when the limit resets.",
       });
       const loggedText = [
@@ -2979,8 +2977,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [JSON.stringify([existingPr])],
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("rate limited"),
           }),
@@ -3022,8 +3019,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager } = yield* makeManager({
           ghScenario: {
             prListSequence: [JSON.stringify([existingPr])],
-            failWith: new GitHubCli.GitHubCliUnavailableError({
-              command: "gh",
+            failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
               cwd: repoDir,
               cause: new Error("rate limited"),
             }),
@@ -3070,8 +3066,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [JSON.stringify([existingPr])],
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("rate limited"),
           }),
@@ -3109,8 +3104,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [JSON.stringify([existingPr])],
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("rate limited"),
           }),
@@ -3151,8 +3145,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         ghScenario: {
           prListSequence: [JSON.stringify([existingPr])],
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("rate limited"),
           }),
@@ -4798,8 +4791,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         ghScenario: {
-          failWith: new GitHubCli.GitHubCliUnavailableError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryUnavailableError({
             cwd: repoDir,
             cause: new Error("gh is not available on PATH"),
           }),
@@ -4828,8 +4820,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         ghScenario: {
-          failWith: new GitHubCli.GitHubCliAuthenticationError({
-            command: "gh",
+          failWith: new GitHubRepositoryApi.GitHubRepositoryAuthenticationError({
             cwd: repoDir,
             cause: new Error("gh is not authenticated"),
           }),
