@@ -242,6 +242,8 @@ it.effect(
               const store = yield* ProjectionStore.ProjectionStoreV2;
               return Layer.mock(ThreadManagement.ThreadManagementService)({
                 getShellSnapshot: (options) => store.getShellSnapshot(options).pipe(Effect.orDie),
+                readShellSnapshot: (options) =>
+                  store.readShellSnapshot(options).pipe(Effect.map(Effect.orDie), Effect.orDie),
                 getThreadSnapshot: (id) => store.getThreadSnapshot(id).pipe(Effect.orDie),
                 dispatch: (command) =>
                   Effect.sync(() => {
