@@ -2,6 +2,7 @@ import { UserButton, useAuth } from "@clerk/react";
 import { LogInIcon, ServerIcon, SmartphoneIcon } from "lucide-react";
 
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
+import { Button } from "../ui/button";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { MobileClientsUserProfilePage } from "./MobileClientsUserProfilePage";
 import { T3ConnectUserProfilePage } from "./T3ConnectUserProfilePage";
@@ -17,6 +18,29 @@ export function T3ConnectSidebarAvatar() {
   if (!hasCloudPublicConfig()) return null;
 
   return <ConfiguredT3ConnectSidebarAvatar />;
+}
+
+/** Compact sign-in action for notices about a styal Link environment that needs a cloud session. */
+export function T3ConnectSignInButton() {
+  if (!hasCloudPublicConfig()) return null;
+
+  return <ConfiguredT3ConnectSignInButton />;
+}
+
+function ConfiguredT3ConnectSignInButton() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const { authPrompt, openAuthPrompt } = useT3ConnectAuthPrompt();
+
+  if (!isLoaded || isSignedIn) return null;
+
+  return (
+    <>
+      <Button size="xs" variant="ghost" onClick={openAuthPrompt}>
+        Sign in
+      </Button>
+      {authPrompt}
+    </>
+  );
 }
 
 function ConfiguredT3ConnectSidebarAvatar() {

@@ -701,6 +701,26 @@ describe("RemoteEnvironmentAuthorization", () => {
     }),
   );
 
+  it.effect("asks a signed-out client to sign in instead of reporting a changed session", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ responses: [] });
+      yield* Ref.set(harness.session, Option.none());
+      const error = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization.pipe(
+        Effect.flatMap((remote) =>
+          remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID }),
+        ),
+        Effect.flip,
+        Effect.provide(harness.layer),
+      );
+      expect(error).toMatchObject({
+        _tag: "ConnectionBlockedError",
+        reason: "authentication",
+        detail: "Sign in to styal Link to connect this environment.",
+      });
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+    }),
+  );
+
   it.effect("does not return or persist credentials after logout during renewal", () =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();

@@ -47,6 +47,7 @@ import {
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import {
   isOrchestrationDispatchCommandError,
   wasBootstrapThreadDeleted,
@@ -243,6 +244,7 @@ import {
   ChevronDownIcon,
   DownloadIcon,
   GitBranchIcon,
+  LogInIcon,
   Minimize2Icon,
   PaperclipIcon,
   WifiOffIcon,
@@ -635,6 +637,11 @@ const PreviewPanel = lazy(() =>
   import("./preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
+const T3ConnectSignInButton = lazy(() =>
+  import("./clerk/T3ConnectSidebarSignIn").then((module) => ({
+    default: module.T3ConnectSignInButton,
+  })),
+);
 const selectAutoShowFloatingPreview = (settings: { browserAutoShowFloatingPreview: boolean }) =>
   settings.browserAutoShowFloatingPreview;
 const DevicePanel = lazy(() =>
@@ -680,6 +687,8 @@ type EnvironmentUnavailableState = {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly connection: EnvironmentConnectionPresentation;
+  /** A styal Link environment that cannot connect because there is no cloud session. */
+  readonly needsCloudSignIn: boolean;
 };
 
 function eventPathContainsSelector(event: Event, selector: string): boolean {
@@ -2387,6 +2396,7 @@ export default function ChatView(props: ChatViewProps) {
     );
   }, [activeReconnectingEnvironmentId]);
   const activeEnvironmentUnavailableLabel = activeEnvironment?.label ?? null;
+  const managedRelaySession = useAtomValue(managedRelaySessionAtom);
   const activeEnvironmentUnavailableState = useMemo<EnvironmentUnavailableState | null>(() => {
     if (!activeEnvironmentUnavailable || !activeEnvironmentUnavailableLabel || !activeEnvironment) {
       return null;
@@ -2396,8 +2406,14 @@ export default function ChatView(props: ChatViewProps) {
       environmentId: activeEnvironment.environmentId,
       label: activeEnvironmentUnavailableLabel,
       connection: activeEnvironment.connection,
+      needsCloudSignIn: activeEnvironment.relayManaged && managedRelaySession === null,
     };
-  }, [activeEnvironment, activeEnvironmentUnavailable, activeEnvironmentUnavailableLabel]);
+  }, [
+    activeEnvironment,
+    activeEnvironmentUnavailable,
+    activeEnvironmentUnavailableLabel,
+    managedRelaySession,
+  ]);
   const handleReconnectActiveEnvironment = useCallback(
     async (environmentId: EnvironmentId) => {
       const result = await retryEnvironment(environmentId);
@@ -2734,12 +2750,38 @@ export default function ChatView(props: ChatViewProps) {
           description: "Finishing an update",
           actions: disconnectAction,
         });
-      } else {
+      } else if (
+        activeEnvironmentUnavailableState.needsCloudSignIn &&
+        unavailableConnection.phase === "error"
+      ) {
+        // Reconnect cannot help without a cloud session; signing in retries the
+        // connection on its own.
         items.push({
           id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
-          variant: unavailableConnection.phase === "error" ? "error" : "warning",
+          variant: "warning",
+          icon: <LogInIcon />,
+          title: `Sign in to styal Link to reach ${activeEnvironmentUnavailableState.label}`,
+          actions: (
+            <>
+              <Suspense fallback={null}>
+                <T3ConnectSignInButton />
+              </Suspense>
+              {disconnectAction}
+            </>
+          ),
+        });
+      } else {
+        const connectionFailed = unavailableConnection.phase === "error";
+        items.push({
+          id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
+          variant: connectionFailed ? "error" : "warning",
           icon: <WifiOffIcon />,
-          title: `${activeEnvironmentUnavailableState.label} is ${environmentReconnecting ? "reconnecting" : "offline"}`,
+          title: `${activeEnvironmentUnavailableState.label} is ${
+            environmentReconnecting ? "reconnecting" : connectionFailed ? "unavailable" : "offline"
+          }`,
+          ...(connectionFailed && unavailableConnection.error
+            ? { description: unavailableConnection.error }
+            : {}),
           actions: (
             <>
               {!environmentReconnecting ? (

@@ -227,11 +227,20 @@ export const make = Effect.gen(function* () {
       detail: "Your cloud sign-in changed. Sign in again to authorize the environment.",
     });
 
+  const signedOut = () =>
+    new ConnectionBlockedError({
+      reason: "authentication",
+      detail: "Sign in to styal Link to connect this environment.",
+    });
+
   const assertSession = Effect.fnUntraced(function* (
     identity: ClientCapabilities.CloudSessionIdentity,
   ) {
     const current = yield* cloudSession.identity;
-    if (Option.isNone(current) || current.value !== identity) {
+    if (Option.isNone(current)) {
+      return yield* signedOut();
+    }
+    if (current.value !== identity) {
       return yield* sessionChanged();
     }
   });
@@ -339,7 +348,7 @@ export const make = Effect.gen(function* () {
   ) {
     const session = yield* cloudSession.identity;
     if (Option.isNone(session)) {
-      return yield* sessionChanged();
+      return yield* signedOut();
     }
     const identity = session.value;
     const thumbprint = yield* signer.thumbprint.pipe(
