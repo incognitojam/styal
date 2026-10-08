@@ -1099,6 +1099,7 @@ features:
       - Fork release intermediate artifacts expire after three days; manual desktop deliverables remain downloadable for 90 days, and published GitHub release assets keep their own lifetimes.
       - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
       - The web and desktop setup wizard and sidebar share the outlined Zilla Slab styal wordmark.
+      - Android agent activity cards and status bar chips use the styal cotton reel, and shared client errors, accessibility labels, clipboard labels, and terminal previews identify styal.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
@@ -1131,6 +1132,10 @@ features:
       - apps/desktop/src/wsl/DesktopWslEnvironment.ts
       - apps/mobile/app.config.ts
       - apps/mobile/eas.json
+      - apps/mobile/modules/t3-agent-notifications/android/src/main/res/drawable/agent_activity_mark.xml
+      - apps/mobile/modules/t3-composer-editor/android/src/main/java/expo/modules/t3composereditor/T3ComposerEditorModule.kt
+      - apps/mobile/src/features/connection/GitHubRoutingSettings.tsx
+      - apps/mobile/src/features/settings/appearance/components/AppearancePreviews.tsx
       - apps/server/package.json
       - apps/server/src/bin.ts
       - apps/server/src/cli/triage.ts
@@ -1144,10 +1149,14 @@ features:
       - apps/web/src/branding.ts
       - apps/web/src/components/SidebarStageBackdrop.tsx
       - apps/web/src/components/StyalWordmark.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/settings/SettingsFontPreviews.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/sidebar/SidebarChrome.tsx
       - apps/web/src/fork-theme.css
+      - packages/client-runtime/src/connection/compatibility.ts
+      - packages/client-runtime/src/state/pullRequestDiffHttp.ts
       - packages/shared/src/brandAssets.ts
       - packages/shared/src/cliRelease.ts
       - packages/ssh/src/tunnel.ts
@@ -1185,6 +1194,8 @@ features:
       - apps/server/src/cloud/bootService.test.ts
       - apps/server/src/device/sshDeviceScript.test.ts
       - apps/web/src/branding.test.ts
+      - packages/client-runtime/src/connection/compatibility.test.ts
+      - packages/client-runtime/src/state/pullRequestDiffHttp.test.ts
       - apps/web/src/components/SidebarStageBackdrop.test.tsx
       - packages/ssh/src/runnerProcess.test.ts
       - scripts/build-desktop-artifact.test.ts
