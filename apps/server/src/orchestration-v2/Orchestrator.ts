@@ -2907,6 +2907,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             snoozedUntil: null,
             snoozedAt: null,
+            lastSnoozeWakeAt: alreadyAwake ? thread.lastSnoozeWakeAt : now,
             updatedAt: alreadyAwake ? thread.updatedAt : now,
           };
         }
@@ -2937,6 +2938,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
             snoozedUntil: null,
             snoozedAt: null,
+            lastSnoozeWakeAt: thread.snoozedUntil == null ? thread.lastSnoozeWakeAt : now,
             updatedAt: alreadyPinned && !promotes ? thread.updatedAt : now,
           };
         }
@@ -3008,7 +3010,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   thread.snoozedUntil != null &&
                   DateTime.toEpochMillis(thread.snoozedUntil) ===
                     Date.parse(thread.limitRecovery.resetAt)
-                ? { snoozedUntil: null, snoozedAt: null }
+                ? { snoozedUntil: null, snoozedAt: null, lastSnoozeWakeAt: now }
                 : {}),
             ...(command.branch === undefined ? {} : { branch: command.branch }),
             ...(command.worktreePath === undefined ? {} : { worktreePath: command.worktreePath }),
