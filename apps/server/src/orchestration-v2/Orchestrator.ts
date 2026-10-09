@@ -123,7 +123,7 @@ import {
   subagentResultForRun,
   delegatedTaskProgress,
   subagentThreadTitle,
-} from "./SubagentProjection.ts";
+} from "@t3tools/provider-core/server/subagentProjection";
 import {
   forkableSourceRunStatusError,
   isForkableSourceRunStatus,

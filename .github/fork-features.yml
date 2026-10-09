@@ -1424,8 +1424,6 @@ features:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeToolItems.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/project/AgentSessionImporter.ts
@@ -1435,6 +1433,8 @@ features:
       - packages/provider-core/src/server/mcpSession.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
       - packages/provider-core/src/server/runtimeInstructions.ts
+      - packages/provider-opencode/src/server/adapter.ts
+      - packages/provider-opencode/src/server/toolItems.ts
       - packages/shared/src/styalToolWording.ts
       - packages/shared/src/t3McpToolPresentation.ts
       - packages/shared/src/toolActivity.ts
@@ -1446,7 +1446,6 @@ features:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
@@ -1454,6 +1453,7 @@ features:
       - packages/provider-core/src/server/mcpToolPresentation.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
       - packages/provider-core/src/server/runtimeInstructions.ts
+      - packages/provider-opencode/src/server/adapter.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/mcp/AcpMcpOverAcpBridge.test.ts
@@ -1461,13 +1461,13 @@ features:
       - apps/server/src/mcp/toolkits/toolPresentation.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
       - apps/server/src/provider/acp/AcpRuntimeModel.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
       - packages/provider-core/src/server/mcpSession.test.ts
       - packages/provider-core/src/server/mcpToolPresentation.test.ts
       - packages/provider-core/src/server/orchestrationInstructions.test.ts
+      - packages/provider-opencode/src/server/adapter.test.ts
       - packages/shared/src/t3McpToolPresentation.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
     upstream:
@@ -2917,8 +2917,6 @@ features:
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.ts
@@ -2926,6 +2924,8 @@ features:
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
+      - packages/provider-opencode/src/server/adapter.ts
+      - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
@@ -2933,14 +2933,14 @@ features:
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
+      - packages/provider-opencode/src/server/adapter.ts
+      - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
     tests:
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts
@@ -2949,10 +2949,10 @@ features:
       - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProjectStore.test.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.test.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.test.ts
+      - packages/provider-opencode/src/server/adapter.test.ts
       - packages/provider-pi/src/server/adapter.test.ts
     upstream:
       status: tracking
@@ -4342,13 +4342,13 @@ features:
       - apps/server/src/orchestration-v2/Adapters/CursorAgentSdk.ts
       - apps/server/src/orchestration-v2/Adapters/CursorSdkWorker.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/002_WorkspacePortAllocations.ts
       - apps/server/src/server.ts
       - apps/server/src/terminal/Manager.ts
       - apps/server/src/workspace/WorkspacePortAllocator.ts
+      - packages/provider-opencode/src/server/adapter.ts
+      - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
       - scripts/dev-runner.ts
       - t3.json
@@ -4359,10 +4359,10 @@ features:
       - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CursorAgentSdk.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/terminal/Manager.ts
+      - packages/provider-opencode/src/server/adapter.ts
+      - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
       - scripts/dev-runner.ts
       - t3.json
@@ -4375,11 +4375,11 @@ features:
       - apps/server/src/orchestration-v2/Adapters/CursorSdkWorker.test.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.test.ts
       - apps/server/src/persistence/ForkMigrations.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/server/src/workspace/WorkspacePortAllocator.test.ts
+      - packages/provider-opencode/src/server/adapter.test.ts
       - packages/provider-pi/src/server/adapter.test.ts
       - scripts/dev-runner.test.ts
     upstream:
@@ -4631,7 +4631,6 @@ features:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/usage/UsageService.ts
@@ -4647,14 +4646,15 @@ features:
       - apps/web/src/session-logic.ts
       - packages/contracts/src/providerRuntime.ts
       - packages/contracts/src/settings.ts
+      - packages/provider-opencode/src/server/adapter.ts
     tests:
       - apps/server/src/dataImport/LegacyHistoryWriter.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
-      - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProjectionStore.test.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
       - apps/server/src/usage/UsageService.test.ts
+      - packages/provider-opencode/src/server/adapter.test.ts
       - packages/shared/src/turnUsage.test.ts
     upstream:
       status: partial
