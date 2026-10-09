@@ -4,18 +4,20 @@ import {
   ThreadId,
   type ScopedThreadRef,
   type PullRequestDetailView,
+  type PullRequestSummary,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { act, type ReactNode, type ReactElement, type ComponentProps } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 
-const { newThread, prepareThread, refresh, Wrapper, Trigger } = vi.hoisted(() => ({
+const { newThread, prepareThread, refresh, sharedSummary, Wrapper, Trigger } = vi.hoisted(() => ({
   newThread: vi.fn(),
   prepareThread: vi.fn(),
   refresh: vi.fn(),
+  sharedSummary: vi.fn<() => PullRequestSummary | null>(),
   Wrapper: ({ children }: { children?: ReactNode }) => children,
   Trigger: ({ children, render }: { children?: ReactNode; render?: ReactElement }) => (
     <>
@@ -45,12 +47,13 @@ vi.mock("~/state/pullRequests", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/state/pullRequests")>()),
   pullRequestEnvironment: { detail: () => "detail", activity: () => "activity" },
   usePullRequestTurnRefresh: () => 0,
-  useSharedPullRequestSummary: () => null,
+  useSharedPullRequestSummary: sharedSummary,
 }));
 vi.mock("~/state/vcs", () => ({ vcsEnvironment: { listRefs: () => null } }));
 vi.mock("~/state/query", () => ({
   useEnvironmentQuery: (query: string) => ({
-    data: query === "detail" ? detail : null,
+    data: query === "detail" ? liveDetail : null,
+    dataUpdatedAt: query === "detail" ? liveDetail.observedAt : null,
     isPending: false,
     isSuccess: true,
     error: null,
@@ -202,9 +205,13 @@ const threadRef: ScopedThreadRef = {
 };
 const draftId = DraftId.make("draft-1");
 const newDraftId = DraftId.make("new-draft");
+let liveDetail = detail;
 let renderer: ReactTestRenderer;
 
 beforeEach(() => {
+  liveDetail = detail;
+  refresh.mockReset();
+  sharedSummary.mockReset().mockReturnValue(null);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
   useComposerDraftStore.setState({ draftsByThreadKey: {} });
@@ -216,6 +223,7 @@ beforeEach(() => {
     value: { branch: "feature", worktreePath: "/workspace/pr" },
   });
 });
+
 afterEach(() => {
   act(() => renderer?.unmount());
   vi.unstubAllGlobals();
@@ -336,4 +344,114 @@ describe.each([
       expect(newThread).toHaveBeenCalled();
     }
   });
+});
+
+describe("checks contradicted by a newer cached summary", () => {
+  function text(root: ReactTestInstance = renderer.root) {
+    return root
+      .findAll((node) => typeof node.type === "string")
+      .flatMap((node) => node.children.filter((child) => typeof child === "string"))
+      .join(" ");
+  }
+
+  it.each([
+    ["success", "failing", "Some checks were not successful", "failure"],
+    ["failure", "passing", "All checks have passed", "success"],
+    ["success", "pending", "Some checks are still pending", "pending"],
+    ["success", null, "No checks reported", null],
+  ] as const)(
+    "%s runs are hidden while the cached summary reports %s, until refresh",
+    async (oldStatus, checksState, label, refreshedStatus) => {
+      liveDetail = {
+        ...detail,
+        observedAt: 100,
+        mergeReadiness: "ready",
+        checks: [{ name: "Cached unit tests", status: oldStatus, description: null, url: null }],
+      };
+      // The list's newer read time wins even when the host's updatedAt has not changed.
+      const cachedEntry = {
+        ...detail,
+        environmentId: threadRef.environmentId,
+        host: "github.com",
+        observedAt: 200,
+        viewerReviewRequested: false,
+        ...(checksState === null ? {} : { checksState }),
+      };
+      // A shared summary can explicitly clear a rollup; list entries only report non-null ones.
+      if (checksState === null) {
+        sharedSummary.mockReturnValue({ ...detail, observedAt: 200, checksState: null });
+      }
+      const panel = (
+        <PullRequestDetailPanel
+          environmentId={threadRef.environmentId}
+          reference={detail}
+          listEntry={checksState === null ? null : cachedEntry}
+          shortcutsEnabled={false}
+          getShortcutContext={() => ({
+            terminalFocus: false,
+            terminalOpen: false,
+            rightPanelFocus: false,
+            previewFocus: false,
+            previewOpen: false,
+            isWeb: true,
+            isDesktop: false,
+          })}
+        />
+      );
+      await act(async () => {
+        renderer = create(panel);
+      });
+      const navButton = renderer.root
+        .findAllByType("button")
+        .find((node) => node.props["aria-label"] === `Open checks: ${label}`)!;
+      // A stale rollup has a label, but cannot support counts or the old merge verdict.
+      expect(text(navButton)).toBe(label);
+      await click(`Open checks: ${label}`);
+      expect(text()).toContain("Check details are out of date.");
+      expect(text()).not.toContain("Cached unit tests");
+      expect(text()).not.toContain("Ready to merge");
+      expect(
+        renderer.root.findAllByType("button").some((node) => node.children.includes("Fix")),
+      ).toBe(false);
+
+      refresh.mockImplementation(() => {
+        liveDetail = {
+          ...liveDetail,
+          observedAt: 300,
+          checks:
+            refreshedStatus === null
+              ? []
+              : [
+                  {
+                    name: "Refreshed unit tests",
+                    status: refreshedStatus,
+                    description: null,
+                    url: null,
+                  },
+                ],
+        };
+        sharedSummary.mockReturnValue(null);
+        renderer.update(<PullRequestDetailPanel {...panel.props} />);
+      });
+      await click("Refresh");
+      expect(text()).not.toContain("Check details are out of date.");
+      if (refreshedStatus === null) expect(text()).toContain("No checks reported");
+      else {
+        expect(text()).toContain("Refreshed unit tests");
+        expect(text()).toContain(
+          refreshedStatus === "failure"
+            ? "1 of 1 failing"
+            : refreshedStatus === "pending"
+              ? "1 of 1 running"
+              : "All checks passed",
+        );
+      }
+      await click("Summary");
+      const refreshedNavButton = renderer.root
+        .findAllByType("button")
+        .find((node) => node.props["aria-label"]?.startsWith("Open checks:"))!;
+      expect(text(refreshedNavButton)).toContain("Ready to merge");
+      expect(text(refreshedNavButton)).not.toBe(label);
+    },
+  );
 });
