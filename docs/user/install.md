@@ -99,8 +99,12 @@ On Android 7.0 or newer, open the newest **styal for Android** release on the
 [releases page](https://github.com/incognitojam/styal/releases) and download its
 APK on your phone. Chrome may warn that the file might be harmful; choose
 **Download anyway**. Android asks you to allow installs from your browser the
-first time. Install a newer release the same way to update; your saved
-environments are kept. To have an app such as Obtainium track releases for you,
+first time. When styal offers an update, download it from **Settings → About styal**.
+You can cancel the download or retry if it fails. Once downloaded, styal opens
+Android's installer; allow installs from styal if asked, then confirm the update.
+If you dismiss the installer, return to About styal to install the downloaded APK.
+Your saved environments are kept. You can still install a newer release from
+the releases page. To have an app such as Obtainium track releases for you,
 filter release titles by `Android`.
 
 If the app crashes during launch, open Settings → Diagnostics on the next launch

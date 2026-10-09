@@ -9,6 +9,14 @@ styal is in active development. The hosted web app at [app.styal.build](https://
 live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences
 works. This overview focuses on desktop and web; the mobile app is a work in progress.
 
+## Mobile
+
+- **Android updates inside the app.** styal offers APK updates in **Settings → About styal**,
+  downloads them with progress and cancellation, then opens Android's installer. T3 Code has
+  over-the-air updates but no in-app APK installer as of
+  [revision 454b94a](https://github.com/pingdotgg/t3code/tree/454b94a13aea918f27bb060d8d054d4cfb791bc2).
+  [Install and update the mobile app](./install.md#mobile-app).
+
 ## Command line
 
 - **Explicit startup and styal Link naming.** Running `styal` without a subcommand shows command
