@@ -73,7 +73,10 @@ rsvg-convert -w 96 -h 96 \
 
 Both foregrounds must remain transparent and keep every part of the reel, including the curl of
 the loose end, inside Android's 66dp adaptive-icon safe circle. The notification SVG uses the same
-white silhouette with padding on a transparent canvas.
+white silhouette with padding on a transparent canvas. The native activity card uses the unpadded
+flat mark in
+`apps/mobile/modules/t3-agent-notifications/android/src/main/res/drawable/agent_activity_mark.xml`;
+update that vector alongside the notification SVG when the mark changes.
 Variant backgrounds in `apps/mobile/app.config.ts` follow the palette in `docs/brand.md`.
 
 `apps/mobile/assets/widget/StyalMark.svg` is the same flat mark with a fixed black fill for
