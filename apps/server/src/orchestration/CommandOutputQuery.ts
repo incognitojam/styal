@@ -154,7 +154,7 @@ export function normalizeCommandOutput(
   );
 }
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const getCommandActivityRow = SqlSchema.findOneOption({
     Request: OrchestrationGetCommandOutputInput,

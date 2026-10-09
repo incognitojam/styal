@@ -46,7 +46,6 @@ vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("~/state/pullRequests", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/state/pullRequests")>()),
   pullRequestEnvironment: { detail: () => "detail", activity: () => "activity" },
-  usePullRequestTurnRefresh: () => 0,
   useSharedPullRequestSummary: sharedSummary,
 }));
 vi.mock("~/state/vcs", () => ({ vcsEnvironment: { listRefs: () => null } }));

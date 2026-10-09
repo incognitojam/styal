@@ -568,7 +568,7 @@ export const makeLegacyImportPreviewService = Effect.fn(
   });
 });
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   return yield* makeLegacyImportPreviewService({
     sourceDatabasePath: NodePath.join(NodeOS.homedir(), ".t3", "userdata", "state.sqlite"),

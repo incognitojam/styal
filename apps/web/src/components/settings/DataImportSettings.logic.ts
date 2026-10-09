@@ -102,9 +102,7 @@ function activityComparisonValue(
 }
 
 /** The exact effective values an "Import preferences" run would write. */
-export function buildPreferenceRows(
-  values: LegacyImportPreferencesValue,
-): readonly PreferenceRow[] {
+function buildPreferenceRows(values: LegacyImportPreferencesValue): readonly PreferenceRow[] {
   const resolved = resolveServerBackgroundActivitySettings({
     ...DEFAULT_SERVER_SETTINGS,
     ...values,

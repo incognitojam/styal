@@ -44,7 +44,7 @@ export class DesktopShutdownGuard extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopShutdownGuard") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const http = yield* HttpClient.HttpClient;
   const dialog = yield* DesktopShutdownConfirmation.DesktopShutdownConfirmation;

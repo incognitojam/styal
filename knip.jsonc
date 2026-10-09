@@ -14,7 +14,13 @@
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification runs directly.
-      "entry": ["knip-schemas.ts", "mobile-native-client.ts"],
+      // CI passes the reporter to Vitest by path and mounts the CLI package check into Docker.
+      "entry": [
+        "knip-schemas.ts",
+        "mobile-native-client.ts",
+        "verify-cli-package.mjs",
+        "vitest-ci-exit-reporter.ts",
+      ],
     },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
@@ -25,6 +31,8 @@
         "scripts/cli.ts",
         "scripts/evaluate-thread-titles.ts",
         "scripts/measure-pr-preview.ts",
+        // Installed as the Codex binary by its test and the T3 import fixture generator.
+        "scripts/fake-codex.ts",
         "src/provider/testFixtures/*.mjs",
       ],
       // Keep the transitive Effect runtime pinned for standalone npm installs.
@@ -79,6 +87,13 @@
     },
     "infra/relay": {
       "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!"],
+    },
+    "infra/web": {
+      // Alchemy loads the stack, and the stack names its worker by path.
+      "entry": ["alchemy.run.ts!", "src/worker.ts!"],
+      // The deploy job installs only this workspace's dependencies, so `vp run`
+      // resolves Vite+ from here rather than from the root.
+      "ignoreDependencies": ["vite-plus"],
     },
     "packages/*": {
       // These workspace packages are private to this monorepo.

@@ -26,10 +26,6 @@ import * as Statement from "effect/unstable/sql/Statement";
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name";
 
-export const TypeId: TypeId = "~local/sqlite-node/SqliteClient";
-
-export type TypeId = "~local/sqlite-node/SqliteClient";
-
 export interface SqliteClientConfig {
   readonly filename: string;
   readonly readonly?: boolean | undefined;

@@ -9,7 +9,7 @@ import {
   SHUTDOWN_CONFIRMATION_EXPIRED_CHANNEL,
 } from "../ipc/channels.ts";
 
-export const PRESENTATION_TIMEOUT = "5 seconds";
+const PRESENTATION_TIMEOUT = "5 seconds";
 
 export class DesktopShutdownConfirmation extends Context.Service<
   DesktopShutdownConfirmation,
@@ -23,7 +23,7 @@ export class DesktopShutdownConfirmation extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopShutdownConfirmation") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   let nextId = 0;
   let quitOverride = false;

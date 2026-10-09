@@ -78,7 +78,7 @@ function normalizeGitHubIssueState(state: string | null | undefined): "open" | "
  * it (`https://github.com/owner/repo/issues/123`). Reading it back here keeps
  * the issue context block self-describing without a second `gh` call.
  */
-export function parseRepositoryNameFromIssueUrl(url: string): string | null {
+function parseRepositoryNameFromIssueUrl(url: string): string | null {
   try {
     const segments = new URL(url).pathname.split("/").filter(Boolean);
     const owner = segments[0];

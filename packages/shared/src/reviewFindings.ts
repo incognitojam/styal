@@ -7,7 +7,7 @@
  * it as markdown that each client's own renderer turns into file links.
  */
 
-export const REPORT_FINDINGS_TOOL_NAME = "ReportFindings";
+const REPORT_FINDINGS_TOOL_NAME = "ReportFindings";
 
 export type ReviewFindingVerdict = "confirmed" | "plausible";
 export type ReviewFindingOutcome = "fixed" | "skipped" | "no_change_needed";

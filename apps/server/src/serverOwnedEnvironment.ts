@@ -17,7 +17,7 @@ const SERVER_OWNED_ENV_KEYS = new Set([
  * from a child process that inherits them would use this server's port, state
  * directory, and Tailscale Serve mapping.
  */
-export function isServerOwnedEnvKey(key: string): boolean {
+function isServerOwnedEnvKey(key: string): boolean {
   const normalizedKey = key.toUpperCase();
   return (
     normalizedKey.startsWith("T3CODE_") ||

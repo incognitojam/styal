@@ -22,7 +22,7 @@ export const forkMigrationEntries = [
 
 export const forkMigrationManifest = forkMigrationEntries.map(([id, name]) => [id, name] as const);
 
-export const makeForkMigrationLoader = (throughId?: number) =>
+const makeForkMigrationLoader = (throughId?: number) =>
   Migrator.fromRecord(
     Object.fromEntries(
       forkMigrationEntries
@@ -59,30 +59,30 @@ const MISPLACED_LATEST_MESSAGE_MIGRATION_NAME = "ProjectionThreadLatestMessageAt
  * migration 51, which would make the migrator skip upstream's own migration 51. Dropping that
  * record lets upstream 51 run; fork migration 4 then finds the column in place and only records it.
  */
-export const releaseMisplacedLatestMessageMigration = Effect.fn(
-  "releaseMisplacedLatestMessageMigration",
-)(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  const upstreamMigrationTables = yield* sql<{ readonly name: string }>`
+const releaseMisplacedLatestMessageMigration = Effect.fn("releaseMisplacedLatestMessageMigration")(
+  function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const upstreamMigrationTables = yield* sql<{ readonly name: string }>`
     SELECT name
     FROM sqlite_master
     WHERE type = 'table' AND name = 'effect_sql_migrations'
   `;
-  if (upstreamMigrationTables.length === 0) return false;
-  const misplaced = yield* sql<{ readonly migration_id: number }>`
+    if (upstreamMigrationTables.length === 0) return false;
+    const misplaced = yield* sql<{ readonly migration_id: number }>`
     SELECT migration_id
     FROM effect_sql_migrations
     WHERE migration_id = ${MISPLACED_LATEST_MESSAGE_MIGRATION_ID}
       AND name = ${MISPLACED_LATEST_MESSAGE_MIGRATION_NAME}
   `;
-  if (misplaced.length === 0) return false;
-  yield* sql`
+    if (misplaced.length === 0) return false;
+    yield* sql`
     DELETE FROM effect_sql_migrations
     WHERE migration_id = ${MISPLACED_LATEST_MESSAGE_MIGRATION_ID}
       AND name = ${MISPLACED_LATEST_MESSAGE_MIGRATION_NAME}
   `;
-  return true;
-});
+    return true;
+  },
+);
 
 export const runAllMigrations = Effect.fn("runAllMigrations")(function* () {
   if (yield* releaseMisplacedLatestMessageMigration()) {

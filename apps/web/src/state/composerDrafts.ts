@@ -26,7 +26,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { serverEnvironment } from "./server";
 import { randomUUID } from "../lib/utils";
 
-export const composerDraftEnvironment = createComposerDraftEnvironmentAtoms(connectionAtomRuntime);
+const composerDraftEnvironment = createComposerDraftEnvironmentAtoms(connectionAtomRuntime);
 
 const EMPTY_SYNC_ATOM = Atom.make<null>(null).pipe(Atom.withLabel("composer-draft-sync:disabled"));
 const revisions = new Map<string, number>();
