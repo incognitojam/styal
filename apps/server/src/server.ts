@@ -59,7 +59,6 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as BitbucketApi from "./sourceControl/BitbucketApi.ts";
 import * as GitHubApi from "./sourceControl/GitHubApi.ts";
-import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as ForgejoCli from "@t3tools/source-control-forgejo/server/ForgejoCli";
 import * as SourceControlBuiltInDrivers from "./sourceControl/builtInDrivers.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
@@ -325,7 +324,6 @@ const layerSourceControlProviderRegistry = SourceControlProviderRegistry.layer.p
     Layer.mergeAll(
       BitbucketApi.layer,
       GitHubApi.layerWithDependencies,
-      GitLabCli.layer,
       SourceControlBuiltInDrivers.layer,
     ),
   ),
