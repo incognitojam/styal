@@ -85,8 +85,6 @@ cat > "$work/notes.md" << EOF
 styal for Android ${version} (build ${code}). Requires Android 7.0 or newer.
 
 Open \`${apk_name}\` on your device to install it, or to update an existing installation. Smaller updates arrive inside the app between releases.
-
-Signing certificate SHA-256: \`${ANDROID_SIGNING_CERT_SHA256}\`
 EOF
 
 if [[ "${DRY_RUN:-}" == "1" ]]; then
