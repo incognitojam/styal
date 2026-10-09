@@ -271,6 +271,7 @@ import {
   PreviewListResult,
   PreviewClearProfileError,
   PreviewClearProfileInput,
+  PreviewReportProfilesInput,
   PreviewNavigateInput,
   PreviewOpenInput,
   PreviewRefreshInput,
@@ -485,6 +486,7 @@ export const WS_METHODS = {
   previewClose: "preview.close",
   previewList: "preview.list",
   previewClearProfile: "preview.clearProfile",
+  previewReportProfiles: "preview.reportProfiles",
   previewReportStatus: "preview.reportStatus",
 
   // Device methods
@@ -1618,6 +1620,11 @@ const WsPreviewClearProfileRpc = Rpc.make(WS_METHODS.previewClearProfile, {
   error: Schema.Union([PreviewClearProfileError, EnvironmentAuthorizationError]),
 });
 
+const WsPreviewReportProfilesRpc = Rpc.make(WS_METHODS.previewReportProfiles, {
+  payload: PreviewReportProfilesInput,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsPreviewReportStatusRpc = Rpc.make(WS_METHODS.previewReportStatus, {
   payload: PreviewReportStatusInput,
   error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
@@ -2137,6 +2144,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewCloseRpc,
   WsPreviewListRpc,
   WsPreviewClearProfileRpc,
+  WsPreviewReportProfilesRpc,
   WsPreviewReportStatusRpc,
   WsSubscribePreviewEventsRpc,
   WsSubscribeDiscoveredLocalServersRpc,

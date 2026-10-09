@@ -1,6 +1,7 @@
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { RouterProvider } from "@tanstack/react-router";
 
+import { BrowserProfileReporter } from "./browser/BrowserProfileReporter";
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { ThreadVisitBaselineObserver } from "./components/ThreadVisitBaselineObserver";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
@@ -22,6 +23,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
         <RouterProvider router={router} />
         <ThreadVisitBaselineObserver />
         <ElectronBrowserHost />
+        <BrowserProfileReporter />
         <QuitHoldOverlay />
         <ConfirmDialogHost />
       </WebBuildUpdateProvider>
