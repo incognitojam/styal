@@ -80,7 +80,6 @@ import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/source
 
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import { parseUnifiedDiffPaths } from "../checkpointing/Diffs.ts";
-import { AllowGitHubReserve } from "@t3tools/source-control-github/server/GitHubApi";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";
@@ -571,7 +570,7 @@ function withRateLimitBackoff(
       ),
       Effect.flatMap((lease) =>
         effect.pipe(
-          Effect.provideService(AllowGitHubReserve, allowPaused),
+          Effect.provideService(SourceControlRateLimit.Interactive, allowPaused),
           Effect.tap(() => limits.recordSuccess({ ...key, lease })),
           Effect.tapError((error) =>
             error.reason === "rate-limited"
@@ -601,6 +600,9 @@ function withRateLimitBackoff(
   const wrapped = {
     kind: api.kind,
     capabilities: api.capabilities,
+    ...(api.mergeMessageRewrite === undefined
+      ? {}
+      : { mergeMessageRewrite: api.mergeMessageRewrite }),
     // Refused during a pause like any other read, except for the caller that asks for the
     // bypass: a lookup that failed is not held, so letting every background read through would
     // spawn this host's CLI on each of them and re-extend the pause it was already in.
@@ -1579,8 +1581,10 @@ export const make = Effect.gen(function* () {
   )(function* (input) {
     const host = input.host.toLowerCase();
     const { supported } = yield* listWorkspaceProjects({ host });
-    const project = supported.find((candidate) => candidate.api.kind === "github");
-    const api = registry.get("github");
+    const project = supported.find(
+      (candidate) => registry.get(candidate.api.kind)?.getRoutingIdentity !== undefined,
+    );
+    const api = project === undefined ? null : registry.get(project.api.kind);
     if (project === undefined || api?.getRoutingIdentity === undefined) {
       return yield* new PullRequestUnavailableError({ reason: "provider-unsupported" });
     }
@@ -1590,6 +1594,7 @@ export const make = Effect.gen(function* () {
         host,
       })
       .pipe(Effect.mapError(toPullRequestError("routeIdentity")));
+    // Only GitHub reports a routing identity, and the contract names it.
     return { ...identity, host, provider: "github" as const };
   });
 
@@ -1605,7 +1610,7 @@ export const make = Effect.gen(function* () {
           detail: "The GitHub account could not be verified before starting the operation.",
         });
       const project = yield* requireProject(input).pipe(Effect.mapError(rejected));
-      const api = project.api.kind === "github" ? registry.get("github") : null;
+      const api = registry.get(project.api.kind);
       if (
         api?.withVerifiedCredential === undefined ||
         input.host?.toLowerCase() !== project.host.toLowerCase()
@@ -1626,7 +1631,7 @@ export const make = Effect.gen(function* () {
 
   const routing = Effect.fn("PullRequestService.routing")(function* (input: PullRequestRef) {
     const project = yield* requireProject(input);
-    const api = project.api.kind === "github" ? registry.get("github") : null;
+    const api = registry.get(project.api.kind);
     if (api?.getRoutingIdentity === undefined) {
       return yield* new PullRequestUnavailableError({ reason: "provider-unsupported" });
     }
@@ -2157,7 +2162,7 @@ export const make = Effect.gen(function* () {
               );
             }
             const mergeSettings =
-              project.api.kind === "github" &&
+              project.api.mergeMessageRewrite !== undefined &&
               input.stackNumber === undefined &&
               (input.action === "merge" || input.action === "enable-auto-merge")
                 ? serverSettings.getSettings.pipe(
