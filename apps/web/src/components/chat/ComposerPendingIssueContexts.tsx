@@ -64,7 +64,7 @@ export function ComposerPendingIssueContextChip({
           </span>
         }
       />
-      <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap leading-tight">
+      <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap">
         {buildTooltipContent(context)}
       </TooltipPopup>
     </Tooltip>

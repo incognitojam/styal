@@ -1876,10 +1876,7 @@ function PullRequestDetailPanelBody({
                   <TooltipPopup side="top">{detail.title}</TooltipPopup>
                 </Tooltip>
                 {conflicting ? (
-                  <Badge
-                    variant="error"
-                    className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px] text-destructive"
-                  >
+                  <Badge variant="error" size="sm" className="shrink-0">
                     <TriangleAlertIcon className="size-3" />
                     Conflicts
                   </Badge>

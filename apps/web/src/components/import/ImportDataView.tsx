@@ -693,7 +693,9 @@ export function ImportDataView({
       <ScrollArea
         scrollFade
         scrollbarGutter
-        className="min-h-0 flex-1 rounded-none [&_[data-slot=scroll-area-scrollbar]]:opacity-100"
+        alwaysShowScrollbars
+        radius="none"
+        className="min-h-0 flex-1"
       >
         <div className="flex min-w-0 flex-col gap-4 pb-1">
           {importing ? (

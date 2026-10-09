@@ -282,7 +282,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       >
         {sendButton}
       </TooltipTrigger>
-      <TooltipPopup side="top" className="max-w-72 whitespace-normal leading-tight">
+      <TooltipPopup side="top" className="max-w-72 whitespace-normal">
         {sendDisabledReason}
       </TooltipPopup>
     </Tooltip>

@@ -35,6 +35,7 @@ function PopoverPopup({
   sideOffset = 4,
   alignOffset = 0,
   tooltipStyle = false,
+  padding = "default",
   keepMounted = false,
   anchor,
   ...props
@@ -45,6 +46,8 @@ function PopoverPopup({
   sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
   alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
   tooltipStyle?: boolean;
+  /** `none` leaves the inset to content that pads its own sections. */
+  padding?: "default" | "none";
   keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
   width?: keyof typeof popoverPopupWidthClassName;
@@ -82,6 +85,7 @@ function PopoverPopup({
               tooltipStyle
                 ? "py-1 [--viewport-inline-padding:--spacing(2)]"
                 : "not-data-transitioning:overflow-y-auto",
+              padding === "none" && "p-0 [--viewport-inline-padding:0px]",
               viewportClassName,
             )}
             data-slot="popover-viewport"
@@ -108,10 +112,21 @@ function PopoverTitle({ className, ...props }: PopoverPrimitive.Title.Props) {
   );
 }
 
-function PopoverDescription({ className, ...props }: PopoverPrimitive.Description.Props) {
+function PopoverDescription({
+  className,
+  size = "default",
+  ...props
+}: PopoverPrimitive.Description.Props & {
+  /** `sm` sets longer explanatory copy at the caption size. */
+  size?: "default" | "sm";
+}) {
   return (
     <PopoverPrimitive.Description
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn(
+        "text-muted-foreground",
+        size === "sm" ? "text-xs leading-relaxed" : "text-sm",
+        className,
+      )}
       data-slot="popover-description"
       {...props}
     />

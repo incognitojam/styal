@@ -35,7 +35,12 @@ export function TurnUsageLabel({ view }: { view: TurnUsageView }) {
         delay={150}
         closeDelay={0}
         aria-label={`Turn usage: ${view.headline}`}
-        className="shrink-0 cursor-default rounded-sm text-muted-foreground/70 text-xs tabular-nums outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        render={
+          <button
+            type="button"
+            className="shrink-0 cursor-default rounded-sm text-muted-foreground/70 text-xs tabular-nums outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        }
       >
         {view.headline}
       </PopoverTrigger>
@@ -43,7 +48,7 @@ export function TurnUsageLabel({ view }: { view: TurnUsageView }) {
         tooltipStyle
         side="top"
         align="start"
-        viewportClassName="p-0"
+        padding="none"
         className="w-max min-w-56 max-w-none text-left whitespace-normal"
       >
         <div className="flex flex-col gap-2 p-[var(--floating-content-inset)]">
