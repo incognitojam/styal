@@ -202,7 +202,42 @@ jobs:
         uses: ./.github/actions/setup-deps
 
       - name: Test server
+        env:
+          T3CODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/styal-transfer-budget.md
+          T3CODE_TRANSFER_BUDGET_RESULT_PATH: ${{ runner.temp }}/thread-transfer-result.json
         run: vp run --filter ./apps/server test --fileParallelism --maxWorkers=3 --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+
+      # src/server.test.ts writes the budget report, so exactly one shard
+      # produces these files. Gating the upload on their presence keeps a
+      # single `thread-transfer-results` artifact per run, which is the name
+      # thread-transfer-report.yml resolves.
+      - name: Detect transfer budget report
+        id: transfer_budget
+        if: always()
+        run: |
+          if test -f "${{ runner.temp }}/thread-transfer-result.json"; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish transfer budget report
+        if: always() && steps.transfer_budget.outputs.present == 'true'
+        run: |
+          if test -f "${{ runner.temp }}/styal-transfer-budget.md"; then
+            tee -a "$GITHUB_STEP_SUMMARY" < "${{ runner.temp }}/styal-transfer-budget.md"
+          else
+            echo "Transfer budget report was not produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload thread transfer result
+        if: always() && steps.transfer_budget.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: thread-transfer-results
+          path: ${{ runner.temp }}/thread-transfer-result.json
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Fetch previous fork nightly
         if: matrix.shard == 1

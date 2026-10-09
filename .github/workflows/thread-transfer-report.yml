@@ -2,7 +2,8 @@ name: Thread Transfer Report
 
 on:
   workflow_run:
-    workflows: [CI]
+    # The fork runs its checks in Fork CI; the inherited CI workflow is disabled.
+    workflows: [Fork CI]
     types: [completed]
 
 permissions:
@@ -56,8 +57,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ steps.resolve.outputs.baseline_run_id }}
 
+      # Fork CI skips its test jobs for documentation-only changes, so a run
+      # without a result posts nothing rather than a missing-result warning.
       - name: Update thread transfer comment
-        if: steps.resolve.outputs.publish == 'true'
+        if: steps.resolve.outputs.publish == 'true' && steps.resolve.outputs.pr_artifact == 'true'
         uses: actions/github-script@v9
         env:
           PR_NUMBER: ${{ steps.resolve.outputs.pull_number }}
