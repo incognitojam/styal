@@ -1676,6 +1676,79 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("completes a CLI-local command as the first turn of a resumed session", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const resumeSessionId = "550e8400-e29b-41d4-a716-446655440000";
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        resumeCursor: { threadId: THREAD_ID, resume: resumeSessionId, turnCount: 1 },
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "/autocompact",
+        attachments: [],
+      });
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        session_id: resumeSessionId,
+        uuid: "local-command-init",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "assistant",
+        session_id: resumeSessionId,
+        uuid: "local-command-output",
+        parent_tool_use_id: null,
+        message: {
+          id: "local-command-output-message",
+          role: "assistant",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "Auto-compact window: 1m tokens" }],
+          usage: { input_tokens: 0, output_tokens: 0 },
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        num_turns: 0,
+        result: "Auto-compact window: 1m tokens",
+        usage: { input_tokens: 0, output_tokens: 0 },
+        session_id: resumeSessionId,
+        uuid: "local-command-result",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "status",
+        status: null,
+        session_id: resumeSessionId,
+        uuid: "after-local-command-result",
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const events = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const completions = events.filter((event) => event.type === "turn.completed");
+      assert.equal(completions.length, 1);
+      assert.equal(String(completions[0]?.turnId), String(turn.turnId));
+      assert.equal(completions[0]?.payload.state, "completed");
+      const states = events.filter((event) => event.type === "session.state.changed");
+      assert.equal(states.at(-1)?.payload.state, "ready");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("places overage-included rate-limit events on the bucket the probe named", () => {
     const scopedLimitNames = Ref.makeUnsafe<ClaudeScopedLimitNames>({ overageIncluded: undefined });
     const harness = makeHarness({ scopedLimitNames });

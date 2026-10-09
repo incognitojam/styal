@@ -3496,6 +3496,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
+    // The resume handshake produces no assistant output, so a zero-turn result
+    // after this message settles a turn: a CLI-local command such as
+    // /autocompact replies with a synthetic assistant message and no model turn.
+    context.resumeHandshakePending = false;
+
     // Auto-start a synthetic turn for assistant messages that arrive without
     // an active turn (e.g., background agent/subagent responses between user prompts).
     if (!context.turnState) {
