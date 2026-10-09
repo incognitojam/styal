@@ -36,7 +36,7 @@ import {
   xAiPromptCompleteFromSessionUpdate,
   xAiSubagentFinishedNotice,
   XAiAskUserQuestionRequest,
-} from "./XAiAcpExtension.ts";
+} from "./xaiAcpExtension.ts";
 import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import {
   type AcpToolCallState,
@@ -2055,7 +2055,10 @@ describe("Grok exit_plan_mode capture (#8358)", () => {
   });
 });
 
-const mockAgentPath = NodePath.resolve(import.meta.dirname, "../../../scripts/acp-mock-agent.ts");
+const mockAgentPath = NodePath.resolve(
+  import.meta.dirname,
+  "../../../../apps/server/scripts/acp-mock-agent.ts",
+);
 const makePromptCompletionRuntime = (env: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
     const runtime = yield* AcpSessionRuntime.make({

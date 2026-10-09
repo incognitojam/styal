@@ -2135,14 +2135,14 @@ features:
       - Reply output that prevents settlement for two seconds produces a visible incomplete-reply error; output after a completed quiet window remains outside the settled turn.
     rationale: A queue barrier covers events already received, while Grok can send reply chunks after its private completion. A bounded quiet window supports hung RPCs without claiming the private signal is an end-of-stream marker.
     implementation_paths:
-      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
-      - apps/server/src/provider/acp/XAiAcpExtension.ts
+      - packages/provider-grok/src/server/adapter.ts
+      - packages/provider-grok/src/server/xaiAcpExtension.ts
     upstream_paths:
-      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
-      - apps/server/src/provider/acp/XAiAcpExtension.ts
+      - packages/provider-grok/src/server/adapter.ts
+      - packages/provider-grok/src/server/xaiAcpExtension.ts
     tests:
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.test.ts
-      - apps/server/src/provider/acp/XAiAcpExtension.test.ts
+      - packages/provider-grok/src/server/xaiAcpExtension.test.ts
     upstream:
       status: tracking
       tracking:
@@ -2914,7 +2914,6 @@ features:
     implementation_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/003_ProjectAdditionalInstructions.ts
@@ -2924,13 +2923,13 @@ features:
       - packages/provider-acp/src/server/adapter.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
       - packages/provider-cursor/src/server/adapter.ts
+      - packages/provider-grok/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
       - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectStore.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
@@ -2939,6 +2938,7 @@ features:
       - packages/provider-acp/src/server/adapter.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
       - packages/provider-cursor/src/server/adapter.ts
+      - packages/provider-grok/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
       - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
@@ -4337,7 +4337,6 @@ features:
     implementation_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/persistence/ForkMigrations/002_WorkspacePortAllocations.ts
       - apps/server/src/server.ts
@@ -4347,6 +4346,7 @@ features:
       - packages/provider-cursor/src/server/CursorAgentSdk.ts
       - packages/provider-cursor/src/server/CursorSdkWorker.ts
       - packages/provider-cursor/src/server/adapter.ts
+      - packages/provider-grok/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
       - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
@@ -4355,12 +4355,12 @@ features:
     upstream_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
-      - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/terminal/Manager.ts
       - packages/provider-acp/src/server/adapter.ts
       - packages/provider-cursor/src/server/CursorAgentSdk.ts
       - packages/provider-cursor/src/server/adapter.ts
+      - packages/provider-grok/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
       - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
