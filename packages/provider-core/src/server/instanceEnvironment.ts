@@ -1,4 +1,6 @@
 import type { ProviderInstanceEnvironment } from "@t3tools/contracts";
+import { HostProcessHomeDirectory } from "@t3tools/shared/hostProcess";
+import * as Effect from "effect/Effect";
 
 import { expandHomePath } from "./pathExpansion.ts";
 import { stripServerOwnedEnvironment } from "@t3tools/shared/serverOwnedEnvironment";
@@ -21,21 +23,22 @@ export function inheritedProviderEnvironment(
  * Applies a provider instance's configured variables on top of `baseEnv`. An
  * explicit `baseEnv` is used as given; only the default is filtered.
  */
-export function mergeProviderInstanceEnvironment(
+export const mergeProviderInstanceEnvironment = Effect.fn(function* (
   environment: ProviderInstanceEnvironment | undefined,
   baseEnv: NodeJS.ProcessEnv = inheritedProviderEnvironment(),
-): NodeJS.ProcessEnv {
+) {
   if (!environment || environment.length === 0) {
     return baseEnv;
   }
 
+  const home = yield* HostProcessHomeDirectory;
   const next: NodeJS.ProcessEnv = { ...baseEnv };
   for (const variable of environment) {
     // Child processes do not apply shell expansion to environment values.
     next[variable.name] =
       variable.name === "CODEX_HOME" || variable.name === "CLAUDE_CONFIG_DIR"
-        ? expandHomePath(variable.value)
+        ? expandHomePath(variable.value, home)
         : variable.value;
   }
   return next;
-}
+});

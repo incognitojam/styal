@@ -2649,7 +2649,7 @@ export const CursorAdapterV2Driver: ProviderAdapterDriver<
           ...input.config,
           enabled: input.enabled,
         },
-        environment: mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
+        environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
       });
     },
     (effect, input) =>

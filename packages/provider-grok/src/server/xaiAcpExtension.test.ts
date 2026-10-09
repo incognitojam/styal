@@ -1,7 +1,6 @@
-// @effect-diagnostics nodeBuiltinImport:off -- plan-path tests resolve the OS home dir.
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- the mock agent path resolves from this file.
 import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeOS from "node:os";
 import { it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -1919,13 +1918,14 @@ describe("Grok exit_plan_mode capture (#8358)", () => {
     expect(extractXAiExitPlanMarkdown(wrapped)).toBe(XAI_EMPTY_PLAN_MARKDOWN);
   });
   it("identifies Grok plan.md paths and extracts markdown from tool call data", () => {
-    const linuxHost = { platform: "linux" as const, environment: {} };
-    const windowsHost = { platform: "win32" as const, environment: {} };
+    const home = "/home/ada";
+    const linuxHost = { platform: "linux" as const, environment: {}, homeDirectory: home };
+    const windowsHost = { platform: "win32" as const, environment: {}, homeDirectory: home };
     const grokHomeHost = {
       platform: "linux" as const,
       environment: { GROK_HOME: "/opt/grok-data" },
+      homeDirectory: home,
     };
-    const home = NodeOS.homedir().replace(/\\/g, "/");
     const sessionPlan = `${home}/.grok/sessions/abc/plan.md`;
     const nestedSessionPlan = `${home}/.grok/sessions/%2Fhome%2Fproj/019fd20e-c563-70a0-b801-a6bc51815a9b/plan.md`;
     expect(isGrokPlanMarkdownPath(sessionPlan, linuxHost)).toBe(true);
@@ -1952,6 +1952,7 @@ describe("Grok exit_plan_mode capture (#8358)", () => {
       isGrokPlanMarkdownPath("/OPT/GROK-DATA/sessions/sess/plan.md", {
         platform: "win32",
         environment: { GROK_HOME: "/opt/grok-data" },
+        homeDirectory: home,
       }),
     ).toBe(true);
     expect(isGrokPlanMarkdownPath("/OPT/GROK-DATA/sessions/sess/plan.md", grokHomeHost)).toBe(
