@@ -3179,32 +3179,41 @@ features:
     status: maintained
     prs: [199, 271]
     invariants:
-      - New threads default to isolated worktrees unless a user explicitly chooses another workspace mode or the repository has no commit to branch from.
-      - In a repository without a commit, web and mobile run new threads in the current checkout while retaining the worktree default for after the first commit; the server rejects an unresolvable worktree base with an actionable error.
-    rationale: Choosing New worktree means the agent works apart from the user's checkout. Falling back to the project checkout when the base cannot be resolved would let the agent edit the user's current branch without being asked, so the server refuses instead. Upstream now takes the workspace mode from `t3.json` and project settings and otherwise uses the current checkout. When that change is taken in, worktree (or the current checkout when the repository has no commit) becomes styal's built-in last step of that order, so `t3.json` and project settings still take precedence.
+      - New-thread workspace mode resolves the project override, environment setting, and repository t3.json before the built-in worktree default in PROJECT_FILE_BACKED_SETTINGS.defaultThreadEnvMode.builtIn.
+      - Web and mobile use the built-in worktree default only when the project is a Git repository with a commit; non-repository projects and repositories without a commit run in the current checkout while retaining the worktree default for after the first commit.
+      - An explicit workspace selection takes precedence over the default; the server rejects an unresolvable requested worktree base with an actionable error instead of silently running in the current checkout.
+    rationale: The decision recorded on 7 October 2026 makes worktree, when the project is a Git repository with a commit, and local otherwise the built-in last step of the settings order. Upstream still uses local at this tier as of a6ec88f7a716fc421bd22c2484881c44110f9375. Choosing New worktree means the agent works apart from the user's checkout, so the server refuses an unresolvable requested base rather than letting the agent edit the user's current branch unexpectedly.
     implementation_paths:
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatView.logic.ts
+      - apps/web/src/hooks/useHandleNewThread.ts
       - packages/client-runtime/src/state/vcs.ts
       - packages/contracts/src/git.ts
       - packages/contracts/src/settings.ts
+      - packages/contracts/src/t3ProjectFile.ts
+      - packages/shared/src/projectSettings.ts
     upstream_paths:
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatView.logic.ts
+      - apps/web/src/hooks/useHandleNewThread.ts
       - packages/client-runtime/src/state/vcs.ts
       - packages/contracts/src/git.ts
       - packages/contracts/src/settings.ts
+      - packages/contracts/src/t3ProjectFile.ts
+      - packages/shared/src/projectSettings.ts
     tests:
       - apps/server/src/server.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - packages/client-runtime/src/state/vcsStatus.test.ts
       - packages/contracts/src/settings.test.ts
+      - packages/shared/src/projectSettings.test.ts
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/commit/a6ec88f7a716fc421bd22c2484881c44110f9375
         - https://github.com/pingdotgg/t3code/pull/12954
         - https://github.com/pingdotgg/t3code/pull/15580
         - https://github.com/pingdotgg/t3code/pull/5944
-      retire_when: Upstream defaults new threads to isolated worktrees and runs first threads in the current checkout when the repository has no commit, while refusing unresolvable worktree bases with an actionable error.
+      retire_when: Upstream uses worktree for Git projects with a commit and local otherwise as the built-in last step after project, environment, and t3.json settings on every client, while refusing unresolvable requested worktree bases with an actionable error.

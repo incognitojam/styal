@@ -419,8 +419,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const prompt = selectedProjectDraft.text;
   const attachments = selectedProjectDraft.attachments;
   // Default mode until the user picks one explicitly — same resolution web
-  // uses for new draft threads: per-project setting, then the repo's
-  // checked-in t3.json, then the server's configured default.
+  // uses for new draft threads: project override, environment setting,
+  // checked-in t3.json, then the built-in worktree default.
   const t3ProjectFileQuery = useEnvironmentQuery(
     selectedProject !== null && selectedProject.workspaceRoot !== ""
       ? projectEnvironment.readFile({
@@ -676,12 +676,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   );
   const currentCheckoutBranchName = projectGitStatus.data?.refName ?? null;
   const worktreeUnavailable = worktreeNeedsFirstCommit(projectGitStatus.data);
-  // A repository with no commits has nothing a worktree could branch from, so
-  // the draft runs in the checkout — where the agent can make that first
-  // commit itself. The stored selection is untouched; the moment a commit
-  // exists, worktree mode means something again and takes effect.
+  // A non-repository or a repository with no commits cannot supply a worktree
+  // base, so the draft runs in the checkout. Keep the stored selection so
+  // the worktree default takes effect once a first commit exists.
   const workspaceMode: WorkspaceMode =
-    requestedWorkspaceMode === "worktree" && worktreeUnavailable ? "local" : requestedWorkspaceMode;
+    projectGitStatus.data?.isRepo === false ||
+    (requestedWorkspaceMode === "worktree" && worktreeUnavailable)
+      ? "local"
+      : requestedWorkspaceMode;
 
   const filteredBranches = useMemo(() => {
     const query = branchQuery.trim().toLowerCase();

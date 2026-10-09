@@ -138,6 +138,18 @@ describe("resolveProjectSettings", () => {
 });
 
 describe("resolveProjectSettings with a t3.json", () => {
+  it("uses worktree only as the last workspace default", () => {
+    expect(
+      resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, null).settings
+        .defaultThreadEnvMode,
+    ).toBe("worktree");
+    expect(
+      resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, {
+        defaultThreadEnvMode: "local",
+      }).settings.defaultThreadEnvMode,
+    ).toBe("local");
+  });
+
   it("walks project override, environment value, file, then built-in for file-backed keys", () => {
     const file = { defaultThreadEnvMode: "worktree" as const };
     const fromOverride = resolveProjectSettings(
