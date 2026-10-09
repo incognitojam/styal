@@ -70,6 +70,7 @@ import {
   stagePendingTerminalLaunch,
 } from "../terminal/terminalLaunchContext";
 import { terminalDebugLog } from "../terminal/terminalDebugLog";
+import { SettledShelfAutoCollapse } from "./SettledShelfAutoCollapse";
 import { ThreadDetailScreen, type ThreadDetailScreenProps } from "./ThreadDetailScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -1054,6 +1055,7 @@ function ThreadRouteContent(
   return (
     <>
       {activeInspectorRenderer ? <InspectorPaneRoleActivation /> : null}
+      <SettledShelfAutoCollapse thread={selectedThread} />
       <ThreadHeader
         title={selectedThread.title}
         subtitle={headerSubtitle}

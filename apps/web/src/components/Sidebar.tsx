@@ -20,9 +20,11 @@ import { SortableContext, useSortable } from "@dnd-kit/sortable";
 import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  advanceSettledShelfFocus,
   canSnooze,
   effectiveSnoozed,
   threadWokeAt,
+  type SettledShelfFocus,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import { resolveThreadDisplayTimestamp } from "@t3tools/client-runtime/state/thread-timestamp";
@@ -3003,6 +3005,29 @@ export default function Sidebar() {
   );
   const settledThreadKeysRef = useRef(settledThreadKeys);
   settledThreadKeysRef.current = settledThreadKeys;
+  const routeThreadSettled = routeThreadKey !== null && settledThreadKeys.has(routeThreadKey);
+  const routeThreadLatestUserMessageAt =
+    routeThreadKey === null ? undefined : threadByKey.get(routeThreadKey)?.latestUserMessageAt;
+  const settledShelfFocusRef = useRef<SettledShelfFocus>({
+    threadKey: routeThreadKey,
+    settled: routeThreadSettled,
+    latestUserMessageAt: routeThreadLatestUserMessageAt,
+  });
+  useEffect(() => {
+    const { focus, collapse } = advanceSettledShelfFocus(settledShelfFocusRef.current, {
+      threadKey: routeThreadKey,
+      settled: routeThreadSettled,
+      latestUserMessageAt: routeThreadLatestUserMessageAt,
+    });
+    settledShelfFocusRef.current = focus;
+    if (collapse && settledShelfExpanded) setSettledShelfExpanded(false);
+  }, [
+    routeThreadKey,
+    routeThreadLatestUserMessageAt,
+    routeThreadSettled,
+    setSettledShelfExpanded,
+    settledShelfExpanded,
+  ]);
   const snoozedThreadKeys = useMemo(
     () =>
       new Set(
