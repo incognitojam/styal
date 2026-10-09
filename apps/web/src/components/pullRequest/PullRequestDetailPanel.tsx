@@ -1701,10 +1701,10 @@ function PullRequestDetailPanelBody({
         actions={
           handoffSummary ? (
             <TooltipProvider delay={150} closeDelay={150} timeout={400}>
-              {checkoutControl}
               {handoffSummary.state === "open" && handoffSummary.mergeability === "conflicting"
                 ? resolveConflictsControl
                 : null}
+              {checkoutControl}
             </TooltipProvider>
           ) : undefined
         }
@@ -1941,7 +1941,6 @@ function PullRequestDetailPanelBody({
                   threadRef={null}
                 />
               ) : null}
-              {checkoutControl}
               {/* Said where the Merge button is, because it is the answer to why nobody has
                   pressed it: the merge is already asked for, and the host is holding it. */}
               {autoMergeArmed && primaryAction !== "auto-merge-armed" ? (
@@ -2074,6 +2073,9 @@ function PullRequestDetailPanelBody({
                   </span>
                 </Badge>
               ) : null}
+              {/* Keep checkout beside the menu so host actions arriving on its left cannot
+                  move a different action under the reader's pointer. */}
+              {checkoutControl}
               <Menu>
                 <Tooltip>
                   <TooltipTrigger
