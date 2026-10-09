@@ -1,4 +1,5 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import * as Application from "expo-application";
 import Constants from "expo-constants";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
@@ -45,12 +46,15 @@ function AppSettingsSection() {
   const hiddenUpdateTapCount = useRef(0);
   const nativeUpdate = useAvailableNativeAppUpdate();
 
-  const version = Constants.expoConfig?.version ?? "0.0.0";
+  const version = Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "0.0.0";
+  // EAS assigns build numbers remotely; read the installed binary rather than app.config.
+  const build = Application.nativeBuildVersion;
+  const versionWithBuild = build ? `${version} (${build})` : version;
   // Fall back to "production" to match resolveAppVariant in app.config.ts, so a
   // missing variant never mislabels a production build as development.
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";
   const variantLabel = variant === "production" ? "" : capitalize(variant);
-  const versionLabel = variantLabel ? `${version} · ${variantLabel}` : version;
+  const versionLabel = variantLabel ? `${versionWithBuild} · ${variantLabel}` : versionWithBuild;
   const updateCheckAvailable = isAppUpdateCheckAvailable();
   const busy =
     updateState === "checking" || updateState === "downloading" || updateState === "restarting";
@@ -126,14 +130,6 @@ function AppSettingsSection() {
 
   return (
     <SettingsSection title="App">
-      {nativeUpdate ? (
-        <SettingsRow
-          icon="square.and.arrow.down"
-          label={`Update to styal ${nativeUpdate.version}`}
-          value={`${formatApkSize(nativeUpdate.apkSizeBytes)} download`}
-          onPress={() => void openNativeAppUpdateDownload(nativeUpdate)}
-        />
-      ) : null}
       <SettingsRow icon="internaldrive" label="Client Storage" target="SettingsClientStorage" />
       <SettingsRow icon="stethoscope" label="Diagnostics" target="SettingsDiagnostics" />
       <SettingsRow
@@ -142,6 +138,14 @@ function AppSettingsSection() {
         target="SettingsOpenSourceLicenses"
       />
       <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
+      {nativeUpdate ? (
+        <SettingsRow
+          icon="square.and.arrow.down"
+          label={`Update to styal ${nativeUpdate.version}`}
+          value={`${formatApkSize(nativeUpdate.apkSizeBytes)} download`}
+          onPress={() => void openNativeAppUpdateDownload(nativeUpdate)}
+        />
+      ) : null}
       {updateCheckAvailable ? (
         <Pressable
           accessibilityLabel={`Version ${versionLabel}`}
