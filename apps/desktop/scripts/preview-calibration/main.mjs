@@ -14,6 +14,7 @@ import * as ElectronDialog from "../../src/electron/ElectronDialog.ts";
 import * as BrowserSession from "../../src/preview/BrowserSession.ts";
 import * as DesktopBrowserHost from "../../src/preview/DesktopBrowserHost.ts";
 import * as PreviewManager from "../../src/preview/Manager.ts";
+import * as PreviewPasskeys from "../../src/preview/Passkeys.ts";
 import * as DesktopRendererHistory from "../../src/telemetry/DesktopRendererHistory.ts";
 import { resolveBrowserViewportLayout } from "../../../web/src/browser/browserViewportLayout.ts";
 import calibrationHtml from "./calibration.html?raw";
@@ -80,6 +81,7 @@ async function run() {
     const runtime = PreviewManager.layer.pipe(
       Layer.provide(DesktopBrowserHost.layer),
       Layer.provide(BrowserSession.layer.pipe(Layer.provide(ElectronDialog.layer))),
+      Layer.provide(PreviewPasskeys.layer),
       // Calibration measures captures; renderer telemetry would only add files to its artifacts.
       Layer.provide(
         Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {

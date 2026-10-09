@@ -34,6 +34,7 @@ import * as BrowserSession from "./BrowserSession.ts";
 import { ELEMENT_PICKED_CHANNEL } from "./GuestProtocol.ts";
 import * as DesktopBrowserHost from "./DesktopBrowserHost.ts";
 import * as PreviewManager from "./Manager.ts";
+import * as PreviewPasskeys from "./Passkeys.ts";
 
 describe("fitPictureInPictureContentSize", () => {
   it("preserves the PiP content area across aspect-ratio changes", () => {
@@ -321,6 +322,13 @@ const managerLayer = (platform: NodeJS.Platform = "darwin") =>
     ),
     Layer.provideMerge(DesktopBrowserHost.layer),
     Layer.provideMerge(layerBrowserSession),
+    Layer.provideMerge(
+      Layer.mock(PreviewPasskeys.PreviewPasskeys)({
+        bridgeEnabled: false,
+        installSessionHandlers: () => {},
+        attachGuest: () => () => {},
+      }),
+    ),
     Layer.provideMerge(layerEnvironment),
     Layer.provideMerge(layerFileSystem),
     Layer.provideMerge(Path.layer),

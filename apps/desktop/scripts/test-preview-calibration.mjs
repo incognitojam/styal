@@ -7,6 +7,7 @@ import * as NodeURL from "node:url";
 import * as Effect from "effect/Effect";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { build } from "vite-plus";
+import { isDesktopRuntimeExternalDependency } from "../../../scripts/lib/desktop-external-packages.ts";
 import { resolveElectronBinaryPath } from "./electron-launcher.mjs";
 
 const desktopDir = NodeURL.fileURLToPath(new URL("..", import.meta.url));
@@ -38,7 +39,11 @@ await build({
       formats: ["cjs"],
       fileName: () => "main.cjs",
     },
-    rollupOptions: { external: (id) => id === "electron" || id.startsWith("node:") },
+    // The same externals as the desktop main process build, such as native passkey support.
+    rollupOptions: {
+      external: (id) =>
+        id === "electron" || id.startsWith("node:") || isDesktopRuntimeExternalDependency(id),
+    },
   },
 });
 // Use the unbranded runtime: calibration must not register the app's URL schemes.
