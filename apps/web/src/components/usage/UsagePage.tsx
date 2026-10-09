@@ -1249,7 +1249,7 @@ function EmissionsMethodology() {
           <button
             type="button"
             aria-label="How estimated CO₂ is calculated"
-            className="-m-1 flex cursor-pointer items-center rounded-sm p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-popup-open:text-foreground"
+            className="-m-1 flex cursor-pointer items-center rounded-sm p-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:text-foreground"
           />
         }
       >

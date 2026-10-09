@@ -256,7 +256,7 @@ export function StatusPageNotice({
             type="button"
             aria-label={ariaLabel}
             className={cn(
-              "flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-sidebar",
+              "flex h-7 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               notice.tone === "error"
                 ? "bg-destructive/12 text-destructive-foreground hover:bg-destructive/18"
                 : "bg-warning/12 text-warning-foreground hover:bg-warning/18",

@@ -25,7 +25,7 @@ export function SidebarWebUpdatePill() {
               type="button"
               ref={trigger}
               aria-label="New build available — Refresh"
-              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full bg-update-surface text-update-foreground outline-hidden ring-ring transition-colors hover:bg-update-surface-hover focus-visible:ring-2"
+              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full bg-update-surface text-update-foreground outline-hidden ring-ring transition-colors hover:bg-update-surface-hover focus-visible:ring-2 focus-visible:ring-inset"
               onClick={refresh}
             />
           }

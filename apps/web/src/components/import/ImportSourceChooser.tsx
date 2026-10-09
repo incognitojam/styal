@@ -33,7 +33,7 @@ function SourceChoice({
       onClick={onClick}
       className={cn(
         "flex min-h-14 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-background px-3 py-3 text-left outline-none transition-colors",
-        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+        "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         "hover:border-border hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-64 motion-reduce:transition-none",
       )}
     >

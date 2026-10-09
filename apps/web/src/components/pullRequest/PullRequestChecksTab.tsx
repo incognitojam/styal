@@ -145,7 +145,7 @@ export function PullRequestChecksNavButton({
         type="button"
         onClick={onSelect}
         aria-label={`Open checks: ${label}`}
-        className="ml-auto inline-flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="ml-auto inline-flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <StaleIcon
           aria-hidden
@@ -168,7 +168,7 @@ export function PullRequestChecksNavButton({
       type="button"
       onClick={onSelect}
       aria-label={`Open checks: ${speech}`}
-      className="ml-auto inline-flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="ml-auto inline-flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <Icon aria-hidden className={cn("size-3.5 shrink-0", toneClassName)} />
       <span className={cn("min-w-0 truncate", verdict.policy !== null && "font-medium")}>
@@ -391,7 +391,7 @@ export function PullRequestChecksTab({
                           onClick={() => openCheck(check.url ?? "")}
                           className={cn(
                             rowClassName,
-                            "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                           )}
                         />
                       }

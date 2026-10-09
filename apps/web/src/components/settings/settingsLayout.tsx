@@ -380,7 +380,7 @@ export function SettingsRow({
           // Focusable so keyboard users can still reach the explanation.
           <span
             tabIndex={0}
-            className="flex w-full items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[32rem]/settings-row:w-auto"
+            className="flex w-full items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[32rem]/settings-row:w-auto"
           />
         }
       >
@@ -520,7 +520,7 @@ function ForkFeatureBadge() {
           <span
             tabIndex={0}
             aria-label="styal feature"
-            className="inline-flex h-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           />
         }
       >
