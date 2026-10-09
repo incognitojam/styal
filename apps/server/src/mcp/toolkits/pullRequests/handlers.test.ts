@@ -25,7 +25,7 @@ import {
   v2PullRequestThread,
 } from "../../../orchestration-v2/testkit/pullRequestFixtures.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
-import type { ProviderWorkflowRun } from "../../../pullRequest/PullRequestProvider.ts";
+import type { ProviderWorkflowRun } from "@t3tools/source-control-core/server/PullRequestProvider";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 import * as AnalyticsService from "../../../telemetry/AnalyticsService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";

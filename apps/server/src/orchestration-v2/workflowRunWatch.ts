@@ -1,6 +1,6 @@
 import type { OrchestrationV2Notification, ThreadWorkflowRunWatch } from "@t3tools/contracts";
 
-import type { ProviderWorkflowRun } from "../pullRequest/PullRequestProvider.ts";
+import type { ProviderWorkflowRun } from "@t3tools/source-control-core/server/PullRequestProvider";
 
 const LISTED_JOBS = 10;
 

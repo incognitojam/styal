@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import type { ProviderWorkflowRun } from "../pullRequest/PullRequestProvider.ts";
+import type { ProviderWorkflowRun } from "@t3tools/source-control-core/server/PullRequestProvider";
 import { workflowRunCompletedMessage } from "./workflowRunWatch.ts";
 
 const watch = { name: "CI #812", url: "https://github.com/acme/app/actions/runs/1" };

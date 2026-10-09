@@ -70,7 +70,7 @@ import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import {
   PullRequestProviderError,
   type ProviderWorkflowRun,
-} from "../pullRequest/PullRequestProvider.ts";
+} from "@t3tools/source-control-core/server/PullRequestProvider";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";

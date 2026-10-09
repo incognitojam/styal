@@ -162,7 +162,7 @@ export class SourceControlProvider extends Context.Service<
       readonly force?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
   }
->()("@styal/cli/sourceControl/SourceControlProvider") {}
+>()("@t3tools/source-control-core/server/SourceControlProvider") {}
 
 /**
  * Issue browsing only ships for GitHub today. Every other provider reuses this

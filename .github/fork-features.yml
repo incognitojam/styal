@@ -3462,7 +3462,6 @@ features:
       - Explicit Open, Logs and Show all actions report bounded usage through the owning environment; older reporting servers and telemetry failures never block those actions.
     implementation_paths:
       - apps/server/src/pullRequest/GitHubPullRequestApi.ts
-      - apps/server/src/pullRequest/PullRequestProvider.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/pullRequest/gitHubPullRequestJson.ts
       - apps/web/src/components/pullRequest/PullRequestDeployments.tsx
@@ -3470,6 +3469,7 @@ features:
       - apps/web/src/components/pullRequest/pullRequestDeployments.logic.ts
       - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/pullRequest.ts
+      - packages/source-control-core/src/server/PullRequestProvider.ts
     upstream_paths:
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
       - packages/contracts/src/pullRequest.ts
