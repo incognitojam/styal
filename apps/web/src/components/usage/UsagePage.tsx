@@ -711,10 +711,8 @@ function EmissionsMethodology() {
       </PopoverTrigger>
       <PopoverPopup align="start" className="w-72 max-w-full" side="top">
         <div className="flex flex-col gap-2">
-          <PopoverTitle className="text-sm font-medium leading-none">
-            How this is estimated
-          </PopoverTitle>
-          <PopoverDescription className="text-xs leading-relaxed">
+          <PopoverTitle>How this is estimated</PopoverTitle>
+          <PopoverDescription size="sm">
             Rough estimate based on generated tokens. Uses{" "}
             {USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS.toFixed(2)} g CO₂ per 1,000 output tokens.
             Actual emissions vary by model, hardware, data center, utilization, and energy source.

@@ -28,6 +28,7 @@ function ScrollArea({
   scrollFadePadding = true,
   scrollbarGutter = false,
   hideScrollbars = false,
+  alwaysShowScrollbars = false,
   chainVerticalScroll = false,
   radius = "inherit",
   ...props
@@ -38,6 +39,8 @@ function ScrollArea({
   scrollFadePadding?: boolean;
   scrollbarGutter?: boolean;
   hideScrollbars?: boolean;
+  /** Keep scrollbars visible instead of revealing them on hover or scroll. */
+  alwaysShowScrollbars?: boolean;
   chainVerticalScroll?: boolean;
   /** The viewport clips to the parent's radius; "none" for a region flush to an edge. */
   radius?: "inherit" | "none";
@@ -68,8 +71,8 @@ function ScrollArea({
       </ScrollAreaPrimitive.Viewport>
       {!hideScrollbars && (
         <>
-          <ScrollBar orientation="vertical" />
-          <ScrollBar orientation="horizontal" />
+          <ScrollBar orientation="vertical" alwaysVisible={alwaysShowScrollbars} />
+          <ScrollBar orientation="horizontal" alwaysVisible={alwaysShowScrollbars} />
           <ScrollAreaPrimitive.Corner data-slot="scroll-area-corner" />
         </>
       )}
@@ -80,12 +83,14 @@ function ScrollArea({
 function ScrollBar({
   className,
   orientation = "vertical",
+  alwaysVisible = false,
   ...props
-}: ScrollAreaPrimitive.Scrollbar.Props) {
+}: ScrollAreaPrimitive.Scrollbar.Props & { alwaysVisible?: boolean }) {
   return (
     <ScrollAreaPrimitive.Scrollbar
       className={cn(
         "flex opacity-0 transition-opacity delay-300 data-[orientation=horizontal]:mx-1 data-[orientation=horizontal]:mb-px data-[orientation=horizontal]:h-1.5 data-[orientation=vertical]:my-1 data-[orientation=vertical]:mr-px data-[orientation=vertical]:w-1.5 data-[orientation=horizontal]:flex-col data-hovering:opacity-100 data-scrolling:opacity-100 data-hovering:delay-0 data-scrolling:delay-0 data-hovering:duration-100 data-scrolling:duration-100",
+        alwaysVisible && "opacity-100",
         className,
       )}
       data-slot="scroll-area-scrollbar"

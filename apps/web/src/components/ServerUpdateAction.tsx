@@ -321,14 +321,14 @@ export function ServerUpdateAction({
               : "This server does not support in-app updates. How you update it depends on how it was started."}
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="space-y-5 text-sm">
-          <p className="text-muted-foreground">
+        <DialogPanel>
+          <p className="text-muted-foreground text-sm">
             Let active work finish, then use a separate terminal or SSH session on {serverLabel}.
             Keep the same data directory and connection settings, including any custom port or
             Tailscale configuration.
           </p>
           <section className="space-y-2">
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               {serviceMigration ? (
                 <>
                   This updates and restarts the background service, enabling future in-app updates.
@@ -362,7 +362,7 @@ export function ServerUpdateAction({
             </div>
           </section>
           {!serviceMigration && (
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               If styal runs as a service or in a container, update it through your existing
               deployment method.
             </p>
@@ -380,8 +380,8 @@ export function ServerUpdateAction({
                   render={
                     <Button
                       size="icon-xs"
-                      variant="ghost"
-                      className={className ?? "text-muted-foreground hover:text-foreground"}
+                      variant="ghost-muted"
+                      className={className}
                       aria-label={`Update instructions for ${serverLabel}`}
                     />
                   }

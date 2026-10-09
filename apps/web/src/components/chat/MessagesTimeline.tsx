@@ -3755,7 +3755,7 @@ const UserMessageIssueContextChip = memo(function UserMessageIssueContextChip(pr
           </span>
         }
       />
-      <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap leading-tight">
+      <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap">
         {tooltipText}
       </TooltipPopup>
     </Tooltip>

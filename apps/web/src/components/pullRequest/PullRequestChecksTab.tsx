@@ -358,7 +358,7 @@ export function PullRequestChecksTab({
                 <PullRequestCheckStatusIcon status={check.status} />
                 <span className="min-w-0 flex-1 truncate">{check.name}</span>
                 {check.required === true ? (
-                  <Badge size="sm" variant="warning" className="font-normal">
+                  <Badge size="sm" variant="warning">
                     Required
                   </Badge>
                 ) : null}

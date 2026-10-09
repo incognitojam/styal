@@ -261,11 +261,7 @@ export function StatusPageNotice({
           </button>
         }
       />
-      <TooltipPopup
-        align="start"
-        side="top"
-        className="max-w-none [&_[data-slot=tooltip-viewport]]:p-0"
-      >
+      <TooltipPopup align="start" side="top" padding="none" className="max-w-none">
         <StatusPageTooltip icon={Icon} notice={notice} pageName={pageName} />
       </TooltipPopup>
     </Tooltip>

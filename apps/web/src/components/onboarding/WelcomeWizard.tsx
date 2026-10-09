@@ -237,8 +237,8 @@ export function WelcomeWizard({
       >
         <DialogTitle className="sr-only">Set up styal</DialogTitle>
         <div className="flex min-h-0 flex-col">
-          <DialogHeader className="shrink-0 gap-4">
-            <StyalWordmark className="h-7 self-start text-muted-foreground" />
+          <DialogHeader className="shrink-0">
+            <StyalWordmark className="mb-2 h-7 self-start text-muted-foreground" />
             <WizardSteps
               steps={stages}
               currentStep={stageIndex}
