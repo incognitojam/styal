@@ -468,12 +468,6 @@ type PullRequestDetailPanelProps = {
    */
   context?: "page" | "thread";
   /**
-   * How the metadata above the content behaves: `full` keeps every row pinned; `collapse`
-   * folds the whole of it into the top row once the active tab scrolls, and unfolds at the
-   * top — the chrome spends its height on what is being read.
-   */
-  chromeVariant?: "full" | "collapse";
-  /**
    * The open thread's composer. A thread target also keeps PR links in tabs beside that thread,
    * regardless of which PR is shown.
    */
@@ -514,7 +508,6 @@ function PullRequestDetailPanelBody({
   onActed,
   onClose,
   context = "page",
-  chromeVariant = "full",
   composerDraftTarget,
   onBack,
   onSelectPullRequest,
@@ -593,7 +586,7 @@ function PullRequestDetailPanelBody({
   useEffect(() => {
     setChromeCondensed(chromeStateByTab.current[tab] ?? false);
   }, [tab]);
-  const condensed = chromeVariant === "collapse" && chromeCondensed;
+  const condensed = chromeCondensed;
   const scrollerRef = useRef<HTMLElement | null>(null);
   const foldRef = useRef<HTMLDivElement | null>(null);
   const condensedRowRef = useRef<HTMLDivElement | null>(null);
@@ -2771,7 +2764,6 @@ function PullRequestDetailPanelBody({
       <div
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
         onScrollCapture={(event) => {
-          if (chromeVariant !== "collapse") return;
           const scroller = event.target as HTMLElement;
           scrollerRef.current = scroller;
           const top = scroller.scrollTop;
