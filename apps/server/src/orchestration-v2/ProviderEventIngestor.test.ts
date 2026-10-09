@@ -17,7 +17,6 @@ import {
   type OrchestrationV2TurnItem,
   ProviderDriverKind,
   ProviderInstanceId,
-  ProviderTurnId,
   PlanId,
   type ProviderThreadId,
   ProviderTurnId,
@@ -40,6 +39,7 @@ import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
@@ -64,6 +64,7 @@ const layerTest = Layer.mergeAll(
   layerTestEventSink,
   IdAllocator.layer,
   ThreadCommandExecutor.layer,
+  McpProviderSessions.layer,
   ProviderEventIngestor.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -71,6 +72,7 @@ const layerTest = Layer.mergeAll(
         layerTestEventSink,
         IdAllocator.layer,
         ThreadCommandExecutor.layer,
+        McpProviderSessions.layer,
       ),
     ),
   ),

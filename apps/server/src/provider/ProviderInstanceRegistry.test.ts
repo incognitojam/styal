@@ -1,5 +1,5 @@
 import { ProviderSessionManagerV2 } from "../orchestration-v2/ProviderSessionManager.ts";
-import type { ProviderDriver, ProviderInstance } from "./ProviderDriver.ts";
+import type { ProviderDriver, ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as CodexInstallation from "./CodexInstallation.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -39,6 +39,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import type { GrokSettings } from "@t3tools/provider-grok/settings";
 import type { CursorSettings } from "@t3tools/provider-cursor/settings";
 import { HostProcessPlatform, isHostWindows } from "@t3tools/shared/hostProcess";
@@ -236,6 +237,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       ),
     ),
     Layer.provideMerge(ProviderLatestVersions.layer),
+    Layer.provideMerge(McpProviderSessions.layer),
     Layer.provideMerge(ModelManifest.layerTest),
     Layer.provideMerge(ResetCreditCoordinator.layerTest),
   );
@@ -618,6 +620,7 @@ describe("ProviderInstanceRegistry — all drivers slice", () => {
       ),
     ),
     Layer.provideMerge(ProviderLatestVersions.layer),
+    Layer.provideMerge(McpProviderSessions.layer),
     Layer.provideMerge(ModelManifest.layerTest),
     Layer.provideMerge(ResetCreditCoordinator.layerTest),
   );

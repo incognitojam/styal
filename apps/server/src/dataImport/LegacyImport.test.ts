@@ -613,7 +613,7 @@ it.layer(importLayer)("LegacyImport V2 destination", (it) => {
         const settingsAfter = yield* (yield* ServerSettingsService).getSettings;
         assert.equal(settingsAfter.defaultThreadEnvMode, "local");
         assert.isFalse(settingsAfter.newWorktreesStartFromOrigin);
-        assert.notEqual(settingsAfter.providers.codex.binaryPath, "/synthetic/provider");
+        assert.notInclude(JSON.stringify(settingsAfter.providerInstances), "/synthetic/provider");
         const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
         yield* maintenance.compactEventStore;
         yield* maintenance.rebuild;

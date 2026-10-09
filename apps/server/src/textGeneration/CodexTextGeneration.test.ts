@@ -15,7 +15,7 @@ import { CodexSettings, ProviderInstanceId, TextGenerationError } from "@t3tools
 
 import * as ServerConfig from "../config.ts";
 import * as TextGeneration from "./TextGeneration.ts";
-import { isTextGenerationRateLimitError } from "./TextGenerationUtils.ts";
+import { isTextGenerationRateLimitError } from "@t3tools/provider-core/server/textGenerationUtils";
 import { makeCodexTextGeneration } from "./CodexTextGeneration.ts";
 import { writeFakeCli } from "@t3tools/provider-testing/fakeCli";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);

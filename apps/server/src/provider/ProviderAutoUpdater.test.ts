@@ -14,7 +14,7 @@ import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettingsService from "../serverSettings.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { decideProviderAutoUpdate, make } from "./ProviderAutoUpdater.ts";
-import type { ProviderMaintenanceCapabilities } from "./providerMaintenance.ts";
+import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenance";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 

@@ -41,6 +41,7 @@ import {
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as EventSink from "./EventSink.ts";
@@ -331,6 +332,7 @@ export const layerWithOptions = (
   | EventSink.EventSinkV2
   | FileSystem.FileSystem
   | IdAllocator.IdAllocatorV2
+  | McpProviderSessions.McpProviderSessions
   | McpSessionRegistry.McpSessionRegistry
   | ProjectionStore.ProjectionStoreV2
   | ProviderEventIngestor.ProviderEventIngestorV2
@@ -342,6 +344,7 @@ export const layerWithOptions = (
       const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
+      const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
       /**
        * Optional so the many focused tests that assemble this layer by hand do
        * not each need a settings stub; the production composition always
@@ -356,23 +359,24 @@ export const layerWithOptions = (
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const withMcpIdentity = (
-        providerThread: OrchestrationV2ProviderThread,
-      ): OrchestrationV2ProviderThread => {
-        const session =
-          providerThread.appThreadId === null
-            ? undefined
-            : McpProviderSession.readMcpProviderSession(providerThread.appThreadId);
-        return session === undefined
-          ? providerThread
-          : {
-              ...providerThread,
-              nativeMetadata: {
-                ...providerThread.nativeMetadata,
-                mcpServerName: session.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME,
-              },
-            };
-      };
+      const withMcpIdentity = (providerThread: OrchestrationV2ProviderThread) =>
+        (providerThread.appThreadId === null
+          ? Effect.succeed(undefined)
+          : mcpSessions.read(providerThread.appThreadId)
+        ).pipe(
+          Effect.map((session): OrchestrationV2ProviderThread =>
+            session === undefined
+              ? providerThread
+              : {
+                  ...providerThread,
+                  nativeMetadata: {
+                    ...providerThread.nativeMetadata,
+                    mcpServerName:
+                      session.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME,
+                  },
+                },
+          ),
+        );
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
         function* (threadId: ThreadId) {
           if (Option.isNone(serverSettings)) return { browser: true, device: false };
@@ -489,10 +493,9 @@ export const layerWithOptions = (
         providerInstanceId: ProviderInstanceId,
       ): Effect.Effect<PreparedMcpCredential> =>
         options.configureMcp === false
-          ? Effect.sync((): PreparedMcpCredential => {
-              McpProviderSession.clearMcpProviderSession(threadId);
-              return { mcpCredentialId: undefined, issued: false };
-            })
+          ? mcpSessions
+              .clear(threadId)
+              .pipe(Effect.as<PreparedMcpCredential>({ mcpCredentialId: undefined, issued: false }))
           : mcpPrepareLock.withLock(
               threadId,
               Effect.gen(function* () {
@@ -509,7 +512,7 @@ export const layerWithOptions = (
                 >(["orchestration", "worktree", "pull-requests"]);
                 if (browserToolsAvailable) capabilities.add("preview");
                 if (deviceToolsAvailable) capabilities.add("device");
-                const existing = McpProviderSession.readMcpProviderSession(threadId);
+                const existing = yield* mcpSessions.read(threadId);
                 if (existing !== undefined) {
                   // Reserve before the async resolve so a release cannot
                   // revoke the credential between validation and reservation.
@@ -556,7 +559,7 @@ export const layerWithOptions = (
                   browserToolsAvailable,
                   capabilities,
                 });
-                McpProviderSession.setMcpProviderSession({
+                yield* mcpSessions.set({
                   ...credential.config,
                   mcpServerName: McpProviderSession.serverNameForResumeCursor(
                     activeProviderThread?.nativeMetadata,
@@ -577,19 +580,12 @@ export const layerWithOptions = (
         mcpCredentialId === undefined
           ? mcpSessionRegistry
               .revokeThread(threadId)
-              .pipe(
-                Effect.tap(() =>
-                  Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
-                ),
-              )
+              .pipe(Effect.tap(() => mcpSessions.clear(threadId)))
           : mcpSessionRegistry.revokeProviderSession(mcpCredentialId).pipe(
               Effect.tap(() =>
-                Effect.sync(() => {
-                  if (
-                    McpProviderSession.readMcpProviderSession(threadId)?.providerSessionId ===
-                    mcpCredentialId
-                  ) {
-                    McpProviderSession.clearMcpProviderSession(threadId);
+                Effect.gen(function* () {
+                  if ((yield* mcpSessions.read(threadId))?.providerSessionId === mcpCredentialId) {
+                    yield* mcpSessions.clear(threadId);
                   }
                 }),
               ),
@@ -1737,7 +1733,7 @@ export const layerWithOptions = (
               }),
             ).pipe(
               Effect.andThen(runtime.ensureThread(input)),
-              Effect.map(withMcpIdentity),
+              Effect.flatMap(withMcpIdentity),
               Effect.tap((providerThread) =>
                 markProviderThreadLoaded({
                   providerSessionId,
@@ -1783,7 +1779,7 @@ export const layerWithOptions = (
               Effect.flatMap((loaded) =>
                 loaded ? Effect.succeed(input.providerThread) : runtime.resumeThread(input),
               ),
-              Effect.map(withMcpIdentity),
+              Effect.flatMap(withMcpIdentity),
               Effect.tap((providerThread) =>
                 markProviderThreadLoaded({
                   providerSessionId,
@@ -1811,7 +1807,7 @@ export const layerWithOptions = (
               }),
             ).pipe(
               Effect.andThen(runtime.forkThread(input)),
-              Effect.map(withMcpIdentity),
+              Effect.flatMap(withMcpIdentity),
               Effect.tap((providerThread) =>
                 markProviderThreadLoaded({
                   providerSessionId,

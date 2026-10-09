@@ -305,8 +305,7 @@ for (const fixture of fixtures) {
               key,
             );
           assert.isNotEmpty(sourceCodexBinaryPath);
-          assert.notEqual(settings.providers.codex.binaryPath, sourceCodexBinaryPath);
-          assert.deepEqual(settings.providers, destinationSettingsBefore.providers);
+          assert.notInclude(JSON.stringify(settings.providerInstances), sourceCodexBinaryPath!);
           assert.deepEqual(settings.providerInstances, destinationSettingsBefore.providerInstances);
           const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
           yield* maintenance.compactEventStore;

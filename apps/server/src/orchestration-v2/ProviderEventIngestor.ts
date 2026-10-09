@@ -31,7 +31,8 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { addThreadTokenUsage, sumThreadTokenUsage } from "@t3tools/shared/turnUsage";
 import { UsageService } from "../usage/UsageService.ts";
-import * as McpProviderSession from "../mcp/McpProviderSession.ts";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -313,9 +314,11 @@ export const layer: Layer.Layer<
   | IdAllocator.IdAllocatorV2
   | ProjectionStore.ProjectionStoreV2
   | ThreadCommandExecutor.ThreadCommandExecutor
+  | McpProviderSessions.McpProviderSessions
 > = Layer.effect(
   ProviderEventIngestorV2,
   Effect.gen(function* () {
+    const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
     const eventSink = yield* EventSink.EventSinkV2;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -641,7 +644,7 @@ export const layer: Layer.Layer<
             ];
           case "provider_thread.updated": {
             const threadId = input.event.providerThread.appThreadId ?? input.threadId;
-            const mcpSession = McpProviderSession.readMcpProviderSession(threadId);
+            const mcpSession = yield* mcpSessions.read(threadId);
             const updated = yield* makeDomainEvent(input, {
               type: "provider-thread.updated",
               threadId,

@@ -1,6 +1,9 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
-import { ACTIVE_MCP_SERVER_NAME, type McpServerName } from "../mcp/McpProviderSession.ts";
+import {
+  ACTIVE_MCP_SERVER_NAME,
+  type McpServerName,
+} from "@t3tools/provider-core/server/mcpSession";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 
 import {

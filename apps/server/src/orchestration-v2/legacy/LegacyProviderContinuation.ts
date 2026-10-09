@@ -5,7 +5,7 @@ import {
   type ProviderDriverKind,
   type ProviderInstanceId,
 } from "@t3tools/contracts";
-import { serverNameForResumeCursor } from "../../mcp/McpProviderSession.ts";
+import { serverNameForResumeCursor } from "@t3tools/provider-core/server/mcpSession";
 
 /** Translate durable V1 conversation identifiers without reviving a live session. */
 export function legacyProviderContinuation(input: {

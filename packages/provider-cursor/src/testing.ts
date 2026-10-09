@@ -9,5 +9,6 @@ export {
   CURSOR_DRIVER_KIND,
   CursorProviderCapabilitiesV2,
   cursorSdkModelSelection,
+  cursorToolName,
   makeCursorAgentOptions,
 } from "./server/adapter.ts";

@@ -6,7 +6,10 @@ import * as Stream from "effect/Stream";
 import type * as AcpSchema from "effect-acp/compat";
 
 import { responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
-import { ACTIVE_MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME } from "./McpProviderSession.ts";
+import {
+  ACTIVE_MCP_SERVER_NAME,
+  LEGACY_MCP_SERVER_NAME,
+} from "@t3tools/provider-core/server/mcpSession";
 
 const MAX_CONNECTIONS = 16;
 const MAX_MESSAGE_BYTES = 8 * 1024 * 1024;

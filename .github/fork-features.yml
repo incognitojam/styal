@@ -1431,6 +1431,7 @@ features:
       - packages/provider-acp/src/server/adapter.ts
       - packages/provider-acp/src/server/mcpOverAcpBridge.ts
       - packages/provider-acp/src/server/runtimeModel.ts
+      - packages/provider-core/src/server/McpProviderSessions.ts
       - packages/provider-core/src/server/mcpSession.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
       - packages/provider-core/src/server/runtimeInstructions.ts

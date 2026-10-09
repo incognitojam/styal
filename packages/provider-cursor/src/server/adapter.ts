@@ -44,6 +44,7 @@ import * as Stream from "effect/Stream";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { CursorTransportFailure } from "./transportFailure.ts";
 import { cursorSdkModelSelection } from "./sdkModel.ts";
@@ -201,8 +202,9 @@ export function cursorRuntimeAgentPolicy(
   };
 }
 
-export function cursorMcpServers(threadId: ThreadId): Record<string, McpServerConfig> | undefined {
-  const session = McpProviderSession.readMcpProviderSession(threadId);
+export function cursorMcpServers(
+  session: McpProviderSession.McpProviderSessionConfig | undefined,
+): Record<string, McpServerConfig> | undefined {
   if (session === undefined) {
     return undefined;
   }
@@ -306,9 +308,10 @@ export function makeCursorAgentOptions(input: {
   readonly modelSelection: ModelSelection;
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
   readonly threadId: ThreadId;
+  readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
 }): AgentOptions {
   const policy = cursorRuntimeAgentPolicy(input.runtimePolicy);
-  const mcpServers = cursorMcpServers(input.threadId);
+  const mcpServers = cursorMcpServers(input.mcpSession);
   return {
     model: cursorSdkModelSelection(input.modelSelection),
     name: `styal ${input.threadId}`,
@@ -856,6 +859,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const runner = yield* CursorAgentSdk.CursorAgentSdkRunner;
   const host = yield* ProviderHost.ProviderHost;
+  const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const adapterOptions = options;
   const apiKey = adapterOptions.environment.CURSOR_API_KEY?.trim() || undefined;
 
@@ -2097,6 +2101,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               modelSelection: openInput.modelSelection,
               runtimePolicy: openInput.runtimePolicy,
               threadId: openInput.threadId,
+              mcpSession: yield* mcpSessions.read(openInput.threadId),
             }),
             threadId: openInput.threadId,
             providerSessionId: input.providerSessionId,
@@ -2117,7 +2122,9 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
         let cursorSkillNames: ReadonlySet<string> | undefined;
         const resolveUserMessage = Effect.fnUntraced(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
+          mcpSession: McpProviderSession.McpProviderSessionConfig | undefined,
         ) {
+          const mcpServers = cursorMcpServers(mcpSession);
           const rawText = turnInput.message.text;
           if (rawText.trim() === "/compress" && turnInput.message.attachments.length === 0) {
             return "/compress";
@@ -2150,10 +2157,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               resolveAttachmentPath: host.resolveAttachmentPath,
             }),
             runOrdinal: agentForInstructions?.instructionsPending ? 1 : 2,
-            hasT3Mcp: cursorMcpServers(turnInput.threadId) !== undefined,
-            mcpServerName:
-              McpProviderSession.readMcpProviderSession(turnInput.threadId)?.mcpServerName ??
-              McpProviderSession.ACTIVE_MCP_SERVER_NAME,
+            hasT3Mcp: mcpServers !== undefined,
+            mcpServerName: mcpSession?.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME,
           });
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),
@@ -2219,8 +2224,9 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               modelSelection: turnInput.modelSelection,
               runtimePolicy: turnInput.runtimePolicy,
             });
-            const message = yield* resolveUserMessage(turnInput);
-            const mcpServers = cursorMcpServers(turnInput.threadId);
+            const mcpSession = yield* mcpSessions.read(turnInput.threadId);
+            const mcpServers = cursorMcpServers(mcpSession);
+            const message = yield* resolveUserMessage(turnInput, mcpSession);
             const pendingUpdates: Array<InteractionUpdate> = [];
             let context: ActiveCursorTurn | null = null;
             const sdkRun = yield* agent.session.send({
@@ -2625,6 +2631,7 @@ export type CursorAdapterV2DriverEnv =
   | FileSystem.FileSystem
   | Path.Path
   | IdAllocator.IdAllocatorV2
+  | McpProviderSessions.McpProviderSessions
   | ProviderHost.ProviderHost;
 
 export const CursorAdapterV2Driver: ProviderAdapterDriver<
@@ -2668,6 +2675,7 @@ const layer: Layer.Layer<
   | FileSystem.FileSystem
   | Path.Path
   | IdAllocator.IdAllocatorV2
+  | McpProviderSessions.McpProviderSessions
   | ProviderHost.ProviderHost
 > = Layer.effect(
   ProviderAdapter.ProviderAdapterV2,

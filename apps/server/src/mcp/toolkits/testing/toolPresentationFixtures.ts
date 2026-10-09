@@ -1,17 +1,21 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Effect from "effect/Effect";
 import * as NodeModule from "node:module";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- The Pi extension runs in a VM sandbox that needs the Node modules it imports.
+import * as NodeFSP from "node:fs/promises";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- The Pi extension runs in a VM sandbox that needs the Node modules it imports.
+import * as NodePath from "node:path";
 import * as NodeVM from "node:vm";
 import { EnvironmentId, ProviderInstanceId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { acpMcpToolTurnItem } from "../../../orchestration-v2/Adapters/AcpAdapterV2.ts";
+import { acpMcpToolTurnItem } from "@t3tools/provider-acp/server/adapter";
 import { claudeMcpQueryOverrides } from "../../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { projectCodexDynamicToolItem } from "../../../orchestration-v2/Adapters/CodexAdapterV2.ts";
-import { cursorToolName } from "../../../orchestration-v2/Adapters/CursorAdapterV2.ts";
-import { openCodeToolTurnItem } from "../../../orchestration-v2/Adapters/OpenCodeToolItems.ts";
-import { PI_T3_MCP_EXTENSION_SOURCE } from "../../../orchestration-v2/Adapters/piT3McpExtensionSource.ts";
-import { extractMcpToolCallIdentity } from "../../../provider/acp/AcpRuntimeModel.ts";
-import * as McpProviderSession from "../../McpProviderSession.ts";
+import { cursorToolName } from "@t3tools/provider-cursor/testing";
+import { openCodeToolTurnItem } from "@t3tools/provider-opencode/testing";
+import { PI_T3_MCP_EXTENSION_SOURCE } from "@t3tools/provider-pi/server";
+import { extractMcpToolCallIdentity } from "@t3tools/provider-acp/server/runtimeModel";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { OrchestratorToolkit } from "../orchestrator/tools.ts";
 import { PreviewToolkit } from "../preview/tools.ts";
 import { PreviewControlsToolkit } from "../previewControls/tools.ts";
@@ -51,8 +55,9 @@ export interface ProviderToolFixture {
 /** Run the shipped Pi extension against a synthetic MCP catalog, without a subprocess or network. */
 async function piRegisteredToolNames(): Promise<string[]> {
   const names: string[] = [];
+  // The sandbox supplies the extension's imports itself.
   const source = NodeModule.stripTypeScriptTypes(
-    PI_T3_MCP_EXTENSION_SOURCE.replace('import { Type } from "typebox";', "").replace(
+    PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gmu, "").replace(
       "export default async function",
       "async function",
     ),
@@ -61,6 +66,9 @@ async function piRegisteredToolNames(): Promise<string[]> {
     process: { env: { T3_MCP_URL: "https://example.com/mcp", T3_MCP_BEARER_TOKEN: "synthetic" } },
     AbortSignal,
     Type: { Unsafe: (schema: unknown) => schema },
+    NodeFSP,
+    NodePath,
+    stripFrontmatter: (text: string) => text,
     pi: { on: () => undefined, registerTool: (tool: { name: string }) => names.push(tool.name) },
     fetch: async (_url: string, options: { body: string }) => {
       const request = JSON.parse(options.body) as { id?: number; method: string };
@@ -85,7 +93,7 @@ export async function providerToolFixtures(): Promise<ProviderToolFixture[]> {
     McpProviderSession.ACTIVE_MCP_SERVER_NAME,
     McpProviderSession.LEGACY_MCP_SERVER_NAME,
   ] as const) {
-    McpProviderSession.setMcpProviderSession({
+    const mcpSession = {
       environmentId: EnvironmentId.make("tool-wording-fixture"),
       threadId,
       providerInstanceId: ProviderInstanceId.make("claudeAgent"),
@@ -94,10 +102,10 @@ export async function providerToolFixtures(): Promise<ProviderToolFixture[]> {
       authorizationHeader: "Bearer synthetic",
       mcpServerName: server,
       browserToolsAvailable: true,
-    });
-    try {
+    };
+    {
       const wildcard = claudeMcpQueryOverrides({
-        threadId,
+        mcpSession,
         readOnlySandbox: false,
       }).allowedTools?.find((name) => name.endsWith("*"));
       if (!wildcard) throw new Error("Claude did not allow the injected MCP server");
@@ -166,8 +174,6 @@ export async function providerToolFixtures(): Promise<ProviderToolFixture[]> {
         add("Saved Codex", `${server}.${tool.name}`);
         add("Imported V1", `${server} · ${tool.name}`);
       }
-    } finally {
-      McpProviderSession.clearMcpProviderSession(threadId);
     }
   }
   return fixtures;

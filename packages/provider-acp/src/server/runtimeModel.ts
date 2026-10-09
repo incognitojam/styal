@@ -11,7 +11,7 @@ import {
   mergeToolActivityData,
 } from "@t3tools/shared/toolActivity";
 import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
-import { ACTIVE_MCP_SERVER_NAME } from "../../mcp/McpProviderSession.ts";
+import { ACTIVE_MCP_SERVER_NAME } from "@t3tools/provider-core/server/mcpSession";
 import type {
   OrchestrationV2ProviderThreadNativeMetadata,
   ThreadTokenUsageSnapshot,
