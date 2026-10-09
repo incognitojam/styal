@@ -36,10 +36,13 @@ function makeEnvironment(
   const environment: NativeAppUpdateEnvironment = {
     isSupported: () => true,
     installedRuntimeVersion: () => INSTALLED_RUNTIME,
+    isForeground: async () => true,
     fetch: vi.fn(async (input: RequestInfo | URL) =>
-      String(input).endsWith("/android-update.json")
+      // Clone so repeated checks each read a fresh body.
+      (String(input).endsWith("/android-update.json")
         ? (responses.manifest ?? jsonResponse({}, 404))
-        : responses.refs,
+        : responses.refs
+      ).clone(),
     ) as typeof fetch,
     loadPromptedTag: async () => promptedTag,
     savePromptedTag: async (tag) => {
@@ -125,6 +128,7 @@ describe("runNativeAppUpdateCheck", () => {
     expect(environment.openDownload).toHaveBeenCalledWith(store.current);
 
     await runNativeAppUpdateCheck(environment, store);
+    expect(environment.fetch).toHaveBeenCalledTimes(4);
     expect(environment.confirmDownload).toHaveBeenCalledTimes(1);
     // The About screen still offers the download after the prompt.
     expect(store.current?.tag).toBe("android-1.3.1-16");
@@ -137,6 +141,23 @@ describe("runNativeAppUpdateCheck", () => {
     );
     await runNativeAppUpdateCheck(environment, createNativeAppUpdateStore());
     expect(environment.openDownload).not.toHaveBeenCalled();
+  });
+
+  it("waits for the foreground before prompting", async () => {
+    let foreground = false;
+    const environment = makeEnvironment(
+      { refs: jsonResponse(refs), manifest: jsonResponse(manifest(NEWER_RUNTIME)) },
+      { isForeground: async () => foreground },
+    );
+    const store = createNativeAppUpdateStore();
+
+    await runNativeAppUpdateCheck(environment, store);
+    expect(store.current?.tag).toBe("android-1.3.1-16");
+    expect(environment.confirmDownload).not.toHaveBeenCalled();
+
+    foreground = true;
+    await runNativeAppUpdateCheck(environment, store);
+    expect(environment.confirmDownload).toHaveBeenCalledTimes(1);
   });
 
   it("stays quiet when the newest release matches or has no manifest", async () => {

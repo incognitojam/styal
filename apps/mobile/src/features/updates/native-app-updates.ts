@@ -107,6 +107,8 @@ export interface NativeAppUpdateEnvironment {
   readonly isSupported: () => boolean;
   readonly installedRuntimeVersion: () => string | null;
   readonly fetch: typeof fetch;
+  /** Android drops an alert raised while the app is backgrounded. */
+  readonly isForeground: () => Promise<boolean>;
   /** The release tag the user was last prompted about, so each release prompts once. */
   readonly loadPromptedTag: () => Promise<string | undefined>;
   readonly savePromptedTag: (tag: string) => Promise<void>;
@@ -161,7 +163,8 @@ export async function runNativeAppUpdateCheck(
   if (!update) return;
 
   const promptedTag = await environment.loadPromptedTag().catch(() => undefined);
-  if (promptedTag === update.tag) return;
+  // Leaving the tag unrecorded lets the next foreground check ask instead.
+  if (promptedTag === update.tag || !(await environment.isForeground())) return;
   // Record the prompt before showing it, so a failed save cannot turn every
   // launch into another prompt. The About screen keeps the download reachable.
   await environment.savePromptedTag(update.tag).catch((error: unknown) => {
@@ -240,6 +243,10 @@ const defaultNativeAppUpdateEnvironment: NativeAppUpdateEnvironment = {
     (Constants.expoConfig?.extra?.appVariant ?? "production") === "production",
   installedRuntimeVersion: () => Updates.runtimeVersion,
   fetch: (input, init) => fetch(input, init),
+  isForeground: async () => {
+    const { AppState } = await import("react-native");
+    return AppState.currentState === "active";
+  },
   loadPromptedTag: async () => {
     const { loadPreferences } = await import("../../persistence/imperative");
     return (await loadPreferences()).nativeUpdatePromptedTag;
