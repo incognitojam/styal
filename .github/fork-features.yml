@@ -580,7 +580,7 @@ features:
     prs: [23, 39, 44, 69, 195, 473, 657]
     invariants:
       - Mobile pending messages stay visible through upload and acknowledgment; editing persists their text and attachments into the existing draft before removing the queued copy.
-      - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned and are not synchronized across devices.
+      - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned, and a draft holding attachments or context records stays on its device.
       - The latest issued draft autosave cannot restore sent text through its own subscription echo, including after transport failure, or block another device's changes to a clean composer; delayed responses cannot roll back newer revisions.
       - Returning to a thread after sending cannot restore that message from a pending autosave; the client keeps its send marker until a newer cleared revision arrives.
       - Autosave timers and draft acknowledgments read live composer state on web, desktop, and mobile, so a send clear or newer edit takes effect before React renders it.
@@ -597,6 +597,7 @@ features:
       - apps/mobile/src/features/threads/thread-list-items.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/features/threads/unsent-draft-icon.tsx
+      - apps/mobile/src/lib/composerDraftSyncCommon.ts
       - apps/mobile/src/state/composer-draft-sync.ts
       - apps/mobile/src/state/edit-pending-thread-message.ts
       - apps/mobile/src/state/use-composer-drafts.ts
@@ -620,6 +621,7 @@ features:
       - packages/client-runtime/src/rpc/client.ts
       - packages/contracts/src/rpc.ts
     tests:
+      - apps/mobile/src/lib/composerDraftSyncCommon.test.ts
       - apps/mobile/src/state/edit-pending-thread-message.test.ts
       - apps/mobile/src/state/use-composer-drafts.test.ts
       - apps/server/src/persistence/ComposerDrafts.test.ts
