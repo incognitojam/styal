@@ -577,7 +577,7 @@ features:
   - id: composer-draft-sync
     title: Cross-device composer draft synchronization
     status: maintained
-    prs: [23, 39, 44, 69, 195, 657]
+    prs: [23, 39, 44, 69, 195, 473, 657]
     invariants:
       - Mobile pending messages stay visible through upload and acknowledgment; editing persists their text and attachments into the existing draft before removing the queued copy.
       - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned and are not synchronized across devices.
@@ -587,11 +587,16 @@ features:
       - Web file drafts persist environment-scoped upload references; legacy local file bytes remain until a replacement reference is durable. Mobile drafts and queued messages retain owned file copies until delivery or removal.
       - The web and mobile source implementations use the same server-backed draft contract and fork-owned migration history; desktop inherits the web implementation. Pre-split databases require an intermediate fixed release before an in-place upgrade.
       - Web sidebar and mobile thread list rows indicate unsent prompts, attachments, or context without treating model, provider, runtime, or interaction choices alone as a user draft.
+      - Mobile Home and tablet sidebar rows in both thread list layouts mark existing threads holding non-blank composer text or attachments with an amber pen and an unsent draft accessibility label; the currently open sidebar thread is not marked, and new-task drafts remain separate rows.
+      - Typing more text into an already marked mobile draft does not notify thread list subscribers unless the set of threads with unsent content changes; clearing the content removes the marker.
       - Discarding a closed thread's draft from the web sidebar also clears its synchronized copy, so the text does not return on the next visit or on another client.
       - A web new-thread draft reserves a fresh thread id only after the server rejects its bootstrap. When the connection drops before the reply, the draft keeps its id and prompt, follows the thread once its turn appears after reconnecting, and clears the restored prompt if it was not edited.
     implementation_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
       - apps/mobile/src/features/threads/thread-list-items.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/mobile/src/features/threads/unsent-draft-icon.tsx
       - apps/mobile/src/state/composer-draft-sync.ts
       - apps/mobile/src/state/edit-pending-thread-message.ts
       - apps/mobile/src/state/use-composer-drafts.ts
@@ -603,6 +608,10 @@ features:
       - packages/client-runtime/src/state/composerDrafts.ts
       - packages/contracts/src/composerDraft.ts
     upstream_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/server.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatView.tsx
@@ -622,7 +631,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/9658
-      retire_when: Upstream synchronizes equivalent composer draft state across clients and safely migrates installations carrying the fork schema.
+      retire_when: Upstream synchronizes equivalent composer draft state across clients, marks existing mobile threads with unsent content without notifying thread lists on every keystroke, and safely migrates installations carrying the fork schema.
 
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
@@ -2789,13 +2798,15 @@ features:
   - id: sidebar-project-thread-groups
     title: Group active sidebar threads under project headers
     status: maintained
-    prs: [533, 585]
+    prs: [533, 546, 585]
     invariants:
       - Settings → General → Organization → Group threads by project is off by default; when off, active threads stay one flat list.
       - With grouping on, active threads sit under one header per logical project, so matching repositories across environments share a header. Cards under a header omit the project icon and name, while pinned, snoozed, and settled threads keep their existing layout.
+      - On web and desktop, a project group whose active threads all lack branches uses 36px one-line rows; if any active thread has a branch, every row in that group keeps the two-line layout. Turning grouping off restores the flat list layout.
+      - One-line grouped rows retain the title, pull request badge or terminal status, status/time and hover actions, and trailing machine/provider icons, using existing thread branch data without additional WebSocket payloads or git status lookups.
       - A dragged thread reorders only within its own project and never moves a project, including the first reorder that assigns manual thread keys and the optimistic placement while those writes arrive. Dragging a project header moves the whole project, and that order persists in the client's manual project order.
       - Projects without a saved position follow their newest created or reopened active thread independently of manual thread keys.
-    rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork keeps full thread cards under the headers and leaves grouping opt-in, whereas upstream's closed proposal collapsed groups into title-only lists.
+    rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork retains thread details under opt-in project headers, omitting the empty branch line when an entire group is branchless, whereas upstream's closed proposal collapsed groups into title-only lists.
     implementation_paths:
       - apps/web/src/components/Sidebar.drag.ts
       - apps/web/src/components/Sidebar.logic.ts
@@ -2817,7 +2828,7 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/pull/13815
-      retire_when: Upstream groups active sidebar threads under project headers while keeping full thread cards, limits thread drags to their own project, and reorders projects by dragging their headers.
+      retire_when: Upstream groups active sidebar threads under project headers, keeps two-line cards in groups with branches and one-line rows with equivalent details and actions in branchless groups, limits thread drags to their own project, and reorders projects by dragging their headers.
 
   - id: source-control-fork-remotes
     title: Configure fork remotes and default repositories
