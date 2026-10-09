@@ -99,6 +99,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Confirm unpinning on mobile.** Mobile asks before removing a thread from the pinned
+  section, with a device-local opt-out in **Settings → Thread behavior**. T3 Code mobile
+  unpins immediately and has no Undo as of
+  [revision a6ec88f](https://github.com/pingdotgg/t3code/tree/a6ec88f7a716fc421bd22c2484881c44110f9375),
+  checked October 8, 2026. Web and desktop follow T3 Code's opt-in confirmation and Undo.
+  [Pin and reorder threads](./thread-sidebar.md#pin-and-reorder-threads).
 - **Choose what thread times mean.** The sidebar defaults to when you last prompted the agent;
   Settings can instead show the latest message, including agent replies. This changes the time
   shown without rearranging threads. Compared with
