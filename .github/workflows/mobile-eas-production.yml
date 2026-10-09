@@ -296,6 +296,7 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/apps/mobile/.eas/.env/T3CODE_ANDROID_GOOGLE_SERVICES_FILE
         run: |
           eas update \
             --channel production \
@@ -338,11 +339,17 @@ jobs:
           done
           exit "$failed"
 
+      # EAS builders give app.config.ts the Google services file variable, and
+      # the file is part of the Android fingerprint. The pull step writes it to
+      # apps/mobile/.eas/.env/, but loadRepoEnv only reads the repository
+      # root's env files, so pass the path explicitly. Without it the Android
+      # hash never matches a build and Android OTAs are always skipped.
       - name: Publish fingerprint-gated OTA
         if: steps.expo-token.outputs.present == 'true' && github.event_name == 'push'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/apps/mobile/.eas/.env/T3CODE_ANDROID_GOOGLE_SERVICES_FILE
         run: |
           message="$(git log -1 --pretty=%s | head -c 120) ($(git rev-parse --short=9 HEAD))"
           for platform in ios android; do
