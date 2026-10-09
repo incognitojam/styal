@@ -276,7 +276,7 @@ describe("CursorAdapterV2", () => {
                   }),
               }),
           }),
-          Effect.provide(layerTestProviderHost({ cwd: workspace })),
+          Effect.provide(TestProviderHost.layer({ cwd: workspace })),
         );
         const runtime = yield* adapter.openSession({
           threadId,
