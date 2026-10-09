@@ -1150,8 +1150,8 @@ features:
       - apps/web/src/components/SidebarStageBackdrop.tsx
       - apps/web/src/components/StyalWordmark.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
-      - apps/web/src/components/settings/SettingsFontPreviews.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/settings/SettingsFontPreviews.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/sidebar/SidebarChrome.tsx
       - apps/web/src/fork-theme.css
@@ -1194,9 +1194,9 @@ features:
       - apps/server/src/cloud/bootService.test.ts
       - apps/server/src/device/sshDeviceScript.test.ts
       - apps/web/src/branding.test.ts
+      - apps/web/src/components/SidebarStageBackdrop.test.tsx
       - packages/client-runtime/src/connection/compatibility.test.ts
       - packages/client-runtime/src/state/pullRequestDiffHttp.test.ts
-      - apps/web/src/components/SidebarStageBackdrop.test.tsx
       - packages/ssh/src/runnerProcess.test.ts
       - scripts/build-desktop-artifact.test.ts
       - scripts/check-cli-release-freshness.test.ts
