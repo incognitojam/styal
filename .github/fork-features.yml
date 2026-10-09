@@ -839,6 +839,33 @@ features:
         - https://github.com/pingdotgg/t3code/pull/6562
       retire_when: Upstream performs the same ordered, bounded, and observable graceful shutdown before destroying windows and terminating the backend.
 
+  - id: device-tool-thread-awareness
+    title: Agents see devices other threads have open
+    status: maintained
+    prs: [681]
+    invariants:
+      - device_list reports devices that other threads have open, separately from the calling thread's own devices.
+      - device_open without a device id opens a booted device no other thread has open; when every booted device is open elsewhere it returns an error naming them instead of taking one over.
+      - Opening another thread's device by id still works, and its quick start warns that another agent may be driving it.
+    rationale: Several agents share one machine's simulators and emulators. Upstream returns only the calling thread's devices, so an agent could load its own build onto an app another agent was testing.
+    implementation_paths:
+      - .agents/skills/test-styal-mobile/SKILL.md
+      - apps/server/src/mcp/toolkits/device/handlers.ts
+      - apps/server/src/mcp/toolkits/device/tools.ts
+      - packages/contracts/src/device.ts
+    upstream_paths:
+      - apps/server/src/mcp/toolkits/device/handlers.ts
+      - apps/server/src/mcp/toolkits/device/tools.ts
+      - packages/contracts/src/device.ts
+    tests:
+      - apps/server/src/mcp/McpDeviceToolkit.test.ts
+      - apps/server/src/mcp/toolkits/device/handlers.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/17470
+      retire_when: Upstream reports devices held by other threads from device_list and avoids opening them implicitly.
+
   - id: diff-file-review-order
     title: Order diff files by review relevance
     status: maintained

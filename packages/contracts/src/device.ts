@@ -476,6 +476,8 @@ export const DeviceToolListResult = Schema.Struct({
   devices: Schema.Array(DeviceSummary),
   /** Devices already open in this thread's Device panel. */
   open: Schema.Array(Schema.Struct({ hostId: DeviceHostId, deviceId: DeviceId })),
+  /** Devices another thread has open; its agent may be driving them. */
+  openInOtherThreads: Schema.Array(Schema.Struct({ hostId: DeviceHostId, deviceId: DeviceId })),
 });
 export type DeviceToolListResult = typeof DeviceToolListResult.Type;
 
@@ -483,7 +485,7 @@ export const DeviceToolOpenInput = Schema.Struct({
   deviceId: Schema.optional(
     DeviceId.annotate({
       description:
-        "Simulator udid or emulator serial from device_list. Omit to use the booted device for the platform, or the most recently used one.",
+        "Simulator udid or emulator serial from device_list. Omit to use a booted device for the platform that no other thread has open.",
     }),
   ),
   platform: Schema.optional(

@@ -75,8 +75,30 @@ const requireDeviceAccess = McpInvocationContext.requireMcpCapability("device").
   ),
 );
 
-const pickDevice = (
+type DeviceRef = { readonly hostId: DeviceHostId; readonly deviceId: DeviceId };
+
+/** Devices another thread has open. Its agent may be driving them right now. */
+export function devicesOpenInOtherThreads(
+  sessions: ReadonlyArray<DeviceRef & { readonly threadId: string }>,
+  threadId: string,
+): ReadonlyArray<DeviceRef> {
+  const refs = new Map<string, DeviceRef>();
+  for (const session of sessions) {
+    if (session.threadId === threadId) continue;
+    refs.set(`${session.hostId}\u0000${session.deviceId}`, {
+      hostId: session.hostId,
+      deviceId: session.deviceId,
+    });
+  }
+  return [...refs.values()];
+}
+
+const isListed = (refs: ReadonlyArray<DeviceRef>, device: DeviceSummary) =>
+  refs.some((ref) => ref.hostId === device.hostId && ref.deviceId === device.id);
+
+export const pickDevice = (
   devices: ReadonlyArray<DeviceSummary>,
+  openInOtherThreads: ReadonlyArray<DeviceRef>,
   input: {
     readonly deviceId?: DeviceId | undefined;
     readonly platform?: DevicePlatform | undefined;
@@ -113,7 +135,16 @@ const pickDevice = (
         reason: "Both iOS and Android devices are available; pass platform or deviceId.",
       });
     }
-    return candidates.find((device) => device.booted) ?? candidates[0]!;
+    const booted = candidates.filter((device) => device.booted);
+    const free = booted.find((device) => !isListed(openInOtherThreads, device));
+    if (free) return free;
+    if (booted.length > 0) {
+      // Never take over another thread's device implicitly; its agent may be mid-run.
+      return yield* new DeviceToolUnavailableError({
+        reason: `Another thread has ${booted.map((device) => `${device.name} (${device.id})`).join(", ")} open. Pass deviceId: a stopped device from device_list to start it, or one of these to share it.`,
+      });
+    }
+    return candidates[0]!;
   });
 
 const toolError = (error: DeviceError | DeviceToolUnavailableError) => error;
@@ -143,6 +174,7 @@ const handlers = {
           ? state.devices.filter((device) => device.hostId === hostId)
           : state.devices,
         open,
+        openInOtherThreads: devicesOpenInOtherThreads(state.sessions, scope.threadId),
       };
     }).pipe(Effect.mapError(toolError)),
   device_open: (input) =>
@@ -156,7 +188,8 @@ const handlers = {
             "Device support is off. Ask the user to enable it in the Device panel before installing or starting device tools.",
         });
       }
-      const target = yield* pickDevice(state.devices, input);
+      const openInOtherThreads = devicesOpenInOtherThreads(state.sessions, scope.threadId);
+      const target = yield* pickDevice(state.devices, openInOtherThreads, input);
       // Resolve consent and agent connectivity before booting or registering a session.
       const agentArgs = yield* devices.agentTarget({
         threadId: scope.threadId,
@@ -200,7 +233,14 @@ const handlers = {
       return {
         device,
         agentDevice: { command, targetArgs },
-        quickStart: agentDeviceQuickStart(device, targetArgs, command),
+        quickStart: [
+          ...(isListed(openInOtherThreads, target)
+            ? [
+                "Another thread also has this device open, and its agent may be driving it. Coordinate with the user before changing apps or state.",
+              ]
+            : []),
+          agentDeviceQuickStart(device, targetArgs, command),
+        ].join("\n"),
       };
     }).pipe(Effect.mapError(toolError)),
   device_screenshot: (input) =>
