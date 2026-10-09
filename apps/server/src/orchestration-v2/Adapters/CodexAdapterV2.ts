@@ -13,7 +13,7 @@ import {
   currentCodexTurnTokenUsage,
   type CodexTurnTokenUsageState,
 } from "../../provider/CodexTurnTokenUsage.ts";
-import type { ServerProviderShape } from "@t3tools/provider-core/server/snapshot";
+import type { ManagedServerProvider } from "@t3tools/provider-core/server/snapshot";
 import type { CodexEffectiveRuntime } from "../../provider/CodexManagedRuntime.ts";
 import { buildCodexInitializeParams } from "../../provider/CodexProvider.ts";
 import {
@@ -1656,7 +1656,7 @@ export interface CodexAdapterV2Options {
   readonly settings: CodexSettings;
   readonly environment: NodeJS.ProcessEnv;
   readonly clientFactory: CodexAppServerClientFactoryShape;
-  readonly onUsageLimits?: ServerProviderShape["applyUsageLimits"];
+  readonly onUsageLimits?: ManagedServerProvider["applyUsageLimits"];
   readonly defaultReasoningEffort?: (model: string) => Effect.Effect<string | undefined>;
   /**
    * Resolves launch settings when each session opens, replacing `settings` and

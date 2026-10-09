@@ -42,7 +42,7 @@ import {
 } from "@t3tools/shared/git";
 
 import * as ServerConfig from "../config.ts";
-import { expandHomePathWith } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
   parseGitCloneProgressLine,
   type GitCloneProgressLine,
@@ -380,7 +380,7 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      return path.resolve(expandHomePathWith(trimmed, path));
+      return path.resolve(expandHomePath(trimmed));
     },
   );
 

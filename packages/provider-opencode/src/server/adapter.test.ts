@@ -32,7 +32,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { layerTestProviderHost } from "@t3tools/provider-testing/host";
+import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
 import type * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -166,7 +166,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
     Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, {
       connectToOpenCodeServer: () => Effect.succeed({ url: "http://test.invalid", external: true }),
       createOpenCodeSdkClient: () => client,
-    } as unknown as OpenCodeRuntime.OpenCodeRuntimeShape),
+    } as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"]),
     Effect.provideService(ProviderHost.ProviderHost, {
       paths: { cwd: "/workspace" },
       resolveAttachmentPath: () => null,
@@ -1552,7 +1552,7 @@ describe("OpenCodeAdapterV2", () => {
           connectToOpenCodeServer: () =>
             Effect.succeed({ url: "http://test.invalid", external: true }),
           createOpenCodeSdkClient: () => client,
-        } as unknown as OpenCodeRuntime.OpenCodeRuntimeShape),
+        } as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"]),
         Effect.provideService(ProviderHost.ProviderHost, {
           paths: { cwd: "/workspace" },
           resolveAttachmentPath: () => null,
@@ -1849,7 +1849,7 @@ describe("OpenCodeAdapterV2", () => {
           connectToOpenCodeServer: () =>
             Effect.succeed({ url: "http://test.invalid", external: true }),
           createOpenCodeSdkClient: () => client,
-        } as unknown as OpenCodeRuntime.OpenCodeRuntimeShape),
+        } as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"]),
         Effect.provideService(ProviderHost.ProviderHost, {
           paths: { cwd: "/workspace" },
           resolveAttachmentPath: () => null,
@@ -2521,7 +2521,7 @@ describe("OpenCodeAdapterV2", () => {
         },
       } as unknown as OpencodeClient;
       const unused = (operation: string) => () => Effect.die(`${operation} is not used`);
-      const runtime: OpenCodeRuntime.OpenCodeRuntimeShape = {
+      const runtime: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
         startOpenCodeServerProcess: unused("startOpenCodeServerProcess"),
         connectToOpenCodeServer: () =>
           Effect.succeed({
@@ -2599,7 +2599,7 @@ describe("OpenCodeAdapterV2", () => {
         Layer.mergeAll(
           IdAllocator.layer,
           McpProviderSessions.layer,
-          layerTestProviderHost().pipe(Layer.provide(NodeServices.layer)),
+          TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)),
         ),
       ),
     ),
