@@ -1013,7 +1013,7 @@ export const makeLegacyImportService = Effect.fn("LegacyImport.makeLegacyImportS
   },
 );
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const stopActiveProviderSession = Effect.fn("LegacyImport.stopActiveProviderSession")(function* (
     threadId: ThreadId,

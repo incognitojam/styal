@@ -37,7 +37,7 @@ function buildTooltipContent(context: IssueContextDraft): string {
   return lines.join("\n");
 }
 
-export function ComposerPendingIssueContextChip({
+function ComposerPendingIssueContextChip({
   context,
   onRemove,
 }: ComposerPendingIssueContextChipProps) {

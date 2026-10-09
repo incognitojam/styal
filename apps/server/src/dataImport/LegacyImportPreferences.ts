@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 
 const decodeServerSettingsJson = Schema.decodeUnknownSync(Schema.fromJsonString(ServerSettings));
 
-export function selectLegacyImportPreferences(settings: ServerSettings): LegacyImportPreferences {
+function selectLegacyImportPreferences(settings: ServerSettings): LegacyImportPreferences {
   return {
     responseStreamingMode: settings.responseStreamingMode,
     enableProviderUpdateChecks: settings.enableProviderUpdateChecks,

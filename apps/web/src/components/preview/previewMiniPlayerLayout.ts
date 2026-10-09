@@ -10,7 +10,7 @@ import type { PreviewMiniPlayerPosition, PreviewMiniPlayerSize } from "~/preview
 import type { DeviceScreenSize } from "@t3tools/client-runtime/device/stream";
 
 export const PREVIEW_MINI_PLAYER_EDGE_GAP = 12;
-export const PREVIEW_MINI_PLAYER_CORNER_RADIUS = 12;
+const PREVIEW_MINI_PLAYER_CORNER_RADIUS = 12;
 // The mini-player shell straddles this webview at 47 and 49; dialogs begin at 50.
 export const PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX = 48;
 // A fresh player is the largest box at the source aspect ratio that fits here.

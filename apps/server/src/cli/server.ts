@@ -5,7 +5,7 @@ import { ServerConfig, type StartupPresentation } from "../config.ts";
 import { runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
 
-export const runServerCommand = (
+const runServerCommand = (
   flags: CliServerFlags,
   options?: {
     readonly startupPresentation?: StartupPresentation;

@@ -627,7 +627,7 @@ export const HostActivity = Schema.Struct({
 });
 export type HostActivity = typeof HostActivity.Type;
 
-export class EnvironmentActivityHttpApi extends HttpApiGroup.make("activity").add(
+class EnvironmentActivityHttpApi extends HttpApiGroup.make("activity").add(
   HttpApiEndpoint.get("get", "/api/environment/activity", {
     headers: OptionalBearerHeaders,
     success: HostActivity,

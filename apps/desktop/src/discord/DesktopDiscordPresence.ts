@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 // Public application identifier, shared by every styal desktop installation.
-export const DISCORD_APPLICATION_ID = "1550496042082893854";
+const DISCORD_APPLICATION_ID = "1550496042082893854";
 const RETRY_DELAY_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 
@@ -167,7 +167,7 @@ export class DiscordPresenceController {
   }
 }
 
-export const make = (
+const make = (
   createClient: () => DiscordRpcClient = () => new Client({ clientId: DISCORD_APPLICATION_ID }),
 ) =>
   Effect.acquireRelease(

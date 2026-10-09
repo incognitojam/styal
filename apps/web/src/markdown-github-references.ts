@@ -61,10 +61,7 @@ function formatGithubReference(
   return isSameRepository ? `#${reference.number}` : `${reference.repository}#${reference.number}`;
 }
 
-export function githubReferenceHref(
-  context: GithubReferenceContext,
-  reference: GithubReference,
-): string {
+function githubReferenceHref(context: GithubReferenceContext, reference: GithubReference): string {
   return `https://${context.host}/${reference.repository}/issues/${reference.number}`;
 }
 
@@ -74,7 +71,7 @@ export function formatGithubReferenceKey(reference: GithubReference): string {
 }
 
 /** The reference a URL names, if it names one on this host. */
-export function parseGithubReferenceUrl(
+function parseGithubReferenceUrl(
   context: GithubReferenceContext,
   targetUrl: string,
 ): { reference: GithubReference; suffix: string } | null {

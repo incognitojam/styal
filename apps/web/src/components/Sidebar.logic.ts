@@ -160,7 +160,7 @@ export function sidebarListItemId(item: SidebarListItem): string {
 /** Stable-cluster `items` by group, keeping their relative order within a
     group. Groups missing from `groupOrder` lead, in order of their first
     item; the rest follow `groupOrder`. */
-export function clusterSidebarItemsByGroup<T>(
+function clusterSidebarItemsByGroup<T>(
   items: readonly T[],
   groupOf: (item: T) => string,
   groupOrder: readonly string[] = [],

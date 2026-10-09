@@ -92,7 +92,7 @@ function mapPersistenceError(operation: string) {
   return (cause: unknown) => new ComposerDraftPersistenceError({ operation, cause });
 }
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const changes = yield* PubSub.unbounded<ComposerDraftSnapshot>();
 

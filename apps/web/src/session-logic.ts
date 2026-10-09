@@ -63,7 +63,6 @@ export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/
 export { formatDuration } from "@t3tools/shared/orchestrationTiming";
 
 export {
-  workEntryReviewFindings,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
