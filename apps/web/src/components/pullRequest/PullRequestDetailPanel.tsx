@@ -1875,12 +1875,7 @@ function PullRequestDetailPanelBody({
                   />
                   <TooltipPopup side="top">{detail.title}</TooltipPopup>
                 </Tooltip>
-                {conflicting ? (
-                  <Badge variant="error" size="sm" className="shrink-0">
-                    <TriangleAlertIcon className="size-3" />
-                    Conflicts
-                  </Badge>
-                ) : mergeVerdict ? (
+                {mergeVerdict ? (
                   <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
                     {mergeVerdict.policy === null ? (
                       checksMark
