@@ -1145,7 +1145,8 @@ features:
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
       - Mobile production and preview profiles retain styal identity and fork Expo configuration; Android distribution uses installable APKs without store submission, while iOS submits to TestFlight.
       - Each finished production Android APK is published as a GitHub release tagged `android-<version>-<versionCode>`, created without claiming Latest from a stable `v` release, and only when its signing certificate matches the pinned production key; release notes contain installation guidance and APK checksums are attached as `SHA256SUMS`.
-      - Production Android installs offer the newest GitHub release once per release, and keep it in About styal, only when its runtime version differs from the installed binary's, because over-the-air updates cannot reach that install.
+      - Production Android installs offer the newest GitHub release once per release, and keep its download directly below Version in About styal, only when its runtime version differs from the installed binary's, because over-the-air updates cannot reach that install.
+      - Mobile About styal identifies the installed binary by its native version and build number on Android and iOS, retaining non-production variant labels.
     implementation_paths:
       - .github/scripts/publish-android-release.sh
       - .github/workflows/desktop-macos-preview.yml
