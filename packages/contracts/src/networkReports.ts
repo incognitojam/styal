@@ -19,6 +19,7 @@ export const NetworkReportRouteKind = Schema.Literals([
   "relay",
   "lan",
   "tailnet",
+  "vpn",
   "public",
   "ssh",
   "unknown",

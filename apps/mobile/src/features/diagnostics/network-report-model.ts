@@ -19,6 +19,7 @@ const ROUTE_KIND_LABELS: Record<NetworkReportRouteKind, string> = {
   relay: "styal Link",
   lan: "LAN",
   tailnet: "Tailscale",
+  vpn: "VPN",
   public: "Public address",
   ssh: "SSH",
   unknown: "No connection yet",
