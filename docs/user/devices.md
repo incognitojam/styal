@@ -61,6 +61,10 @@ If the thread has several devices open, choose one in the viewer. Closing the
 viewer stops streaming and leaves the device available to the agent. Device
 activity also appears in the thread timeline.
 
+Agents can see which devices other threads have open. An agent opens one of
+those only when it names it explicitly, so for parallel work start another
+simulator or emulator.
+
 Agents drive the device through the `agent-device` command line. styal
 installs and starts it only after **Agent device access** is enabled. iOS
 taps build a small test runner on first use, which takes a couple of minutes

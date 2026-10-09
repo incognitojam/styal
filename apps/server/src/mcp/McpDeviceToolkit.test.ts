@@ -174,3 +174,102 @@ it.effect("rejects unavailable agent access before booting or opening a device",
     ),
   );
 });
+
+it.effect("reports another thread's device and does not open it unless named", () => {
+  const emulator = {
+    hostId: "local",
+    id: "emulator-5554",
+    platform: "android" as const,
+    name: "pixel_7_api_37",
+    version: "Android 17.0",
+    booted: true,
+    physical: false,
+  };
+  const shared = {
+    ...state,
+    hosts: [
+      {
+        ...state.hosts[0]!,
+        platforms: [
+          { platform: "ios" as const, available: false, reason: "No Xcode" },
+          { platform: "android" as const, available: true },
+        ],
+      },
+    ],
+    devices: [emulator],
+    sessions: [
+      {
+        threadId: ThreadId.make("thread-other"),
+        hostId: "local",
+        deviceId: "emulator-5554",
+        platform: "android" as const,
+        openedAt: "2026-10-09T00:00:00.000Z",
+      },
+    ],
+  };
+  let opened = 0;
+  const service = Layer.mock(DeviceService.DeviceService)({
+    state: Effect.succeed(shared),
+    list: Effect.succeed(shared),
+    agentTarget: () => Effect.succeed(["--session", "thread-device"]),
+    agentCli: Effect.succeed("/cli"),
+    open: (input) =>
+      Effect.sync(() => {
+        opened += 1;
+        return {
+          threadId: input.threadId,
+          hostId: "local",
+          deviceId: input.deviceId,
+          platform: input.platform,
+          openedAt: "2026-10-09T00:00:01.000Z",
+        };
+      }),
+  });
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const call = (name: string, args: Record<string, unknown>) =>
+      server
+        .callTool({ name, arguments: args })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(["device"])),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+
+    const listed = yield* call("device_list", {});
+    expect(listed.structuredContent).toMatchObject({
+      open: [],
+      openInOtherThreads: [{ hostId: "local", deviceId: "emulator-5554" }],
+    });
+
+    const implicit = yield* call("device_open", { platform: "android" });
+    expect(implicit.isError).toBe(true);
+    expect(implicit.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("Another thread has pixel_7_api_37 (emulator-5554) open"),
+        }),
+      ]),
+    );
+    expect(opened).toBe(0);
+
+    const named = yield* call("device_open", { deviceId: "emulator-5554" });
+    expect(named.isError).toBe(false);
+    expect((named.structuredContent as { quickStart: string }).quickStart).toMatch(
+      /^Another thread also has this device open/,
+    );
+    expect(opened).toBe(1);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(service),
+        Layer.provide(
+          ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-shared-test-" }),
+        ),
+        Layer.provide(NodeServices.layer),
+      ),
+    ),
+  );
+});
