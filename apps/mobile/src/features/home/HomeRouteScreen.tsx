@@ -13,6 +13,7 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { WorkspaceEmptyDetail } from "../layout/WorkspaceEmptyDetail";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
 import { checkForAppUpdateOnLaunch, startAppUpdateForegroundRecheck } from "../updates/app-updates";
+import { startNativeAppUpdateChecks } from "../updates/native-app-updates";
 import { AndroidHomeFabLayout } from "./AndroidHomeFab";
 import { HomeScreen } from "./HomeScreen";
 import { HomeHeader } from "./HomeHeader";
@@ -39,6 +40,7 @@ export function HomeRouteScreen() {
   useEffect(() => {
     void checkForAppUpdateOnLaunch();
     startAppUpdateForegroundRecheck();
+    startNativeAppUpdateChecks();
   }, []);
 
   const {

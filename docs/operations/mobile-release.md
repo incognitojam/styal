@@ -81,10 +81,16 @@ APK build without store submission.
 production APK as a GitHub release tagged `android-<version>-<versionCode>`. EAS
 artifact links expire after two weeks; the release keeps the APK available. Run
 the workflow manually to publish a build without waiting. The tags never start
-with `v` and the releases are never marked Latest, because the CLI installers,
-the desktop updater, and the release workflows select releases by those rules.
+with `v`, so the CLI installers and the release workflows ignore them. The
+releases never take Latest from a stable `v` release, but while the fork has no
+stable release, GitHub reports the newest Android release as Latest.
 The workflow refuses an APK whose signing certificate differs from the one
 pinned in it, since existing installations cannot update to it.
+
+Each release also carries `android-update.json` with the build's runtime
+version. Installed production apps read it and offer the download when it
+differs from their own, since over-the-air updates only reach a matching
+runtime.
 
 The optional version override commits the new version before building. It uses
 the fork's `NIGHTLY_APP_CLIENT_ID` variable and `NIGHTLY_APP_PRIVATE_KEY` secret;

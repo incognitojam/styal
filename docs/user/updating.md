@@ -88,6 +88,9 @@ next leave the app. It saves drafts and queued messages before restarting. If yo
 keep the app open for a long time, it may ask to install immediately; choosing
 **Later** leaves the update queued for the next suitable moment.
 
-Some updates need a new app build. On Android, install the newest **styal for
+Some updates need a new app build. On Android, styal offers to download the new
+build once, and keeps it available in **Settings → About styal** until you
+install it. Open the downloaded APK to install it over the current app; your
+saved environments are kept. You can also install the newest **styal for
 Android** release from GitHub, as described in [installing the mobile
 app](./install.md#mobile-app).

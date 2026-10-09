@@ -12,6 +12,11 @@ import {
   registerHiddenUpdateTap,
   runAppUpdateCheck,
 } from "../updates/app-updates";
+import {
+  formatApkSize,
+  openNativeAppUpdateDownload,
+  useAvailableNativeAppUpdate,
+} from "../updates/native-app-updates";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -38,6 +43,7 @@ function AppSettingsSection() {
   const [updateState, setUpdateState] = useState<AppUpdateCheckState>("idle");
   const updateInFlight = useRef(false);
   const hiddenUpdateTapCount = useRef(0);
+  const nativeUpdate = useAvailableNativeAppUpdate();
 
   const version = Constants.expoConfig?.version ?? "0.0.0";
   // Fall back to "production" to match resolveAppVariant in app.config.ts, so a
@@ -120,6 +126,14 @@ function AppSettingsSection() {
 
   return (
     <SettingsSection title="App">
+      {nativeUpdate ? (
+        <SettingsRow
+          icon="square.and.arrow.down"
+          label={`Update to styal ${nativeUpdate.version}`}
+          value={`${formatApkSize(nativeUpdate.apkSizeBytes)} download`}
+          onPress={() => void openNativeAppUpdateDownload(nativeUpdate)}
+        />
+      ) : null}
       <SettingsRow icon="internaldrive" label="Client Storage" target="SettingsClientStorage" />
       <SettingsRow icon="stethoscope" label="Diagnostics" target="SettingsDiagnostics" />
       <SettingsRow

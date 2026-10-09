@@ -3,13 +3,18 @@
 # Publishes the newest finished EAS production Android build as a GitHub
 # release. EAS artifact links expire after two weeks; the release keeps the
 # APK at a permanent public URL that Obtainium and the docs can point at.
+# The android-update.json asset tells installed apps whether the release has a
+# different runtime version, which over-the-air updates cannot deliver; see
+# apps/mobile/src/features/updates/native-app-updates.ts.
 #
 # Safe to rerun: a build that already has a published release is left alone,
 # and a draft left by an interrupted run is replaced.
 #
-# Tags are android-<version>-<versionCode> and releases are never marked
-# Latest. The CLI installers, the desktop updater, and the release workflows
-# look only for v<semver> tags or the Latest release, so they ignore these.
+# Tags are android-<version>-<versionCode>, and releases are created with
+# --latest=false so they never take Latest from a stable v<semver> release.
+# Until the first stable release exists, GitHub still reports the newest one as
+# Latest. The CLI installers and the release workflows look only for v<semver>
+# tags.
 #
 # Environment: EXPO_TOKEN, EXPO_OWNER, EXPO_PROJECT_ID, GH_TOKEN,
 # GITHUB_REPOSITORY, RUNNER_TEMP, ANDROID_HOME, ANDROID_SIGNING_CERT_SHA256.
@@ -39,10 +44,11 @@ code="$(jq -r '.appBuildVersion' <<< "$build")"
 commit="$(jq -r '.gitCommitHash' <<< "$build")"
 url="$(jq -r '.artifacts.buildUrl' <<< "$build")"
 build_id="$(jq -r '.id' <<< "$build")"
+runtime_version="$(jq -r '.runtime.version' <<< "$build")"
 
-if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ && "$code" =~ ^[0-9]+$ && "$commit" =~ ^[0-9a-f]{40}$ && "$url" == https://*.apk ]]; then
+if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ && "$code" =~ ^[0-9]+$ && "$commit" =~ ^[0-9a-f]{40}$ && "$url" == https://*.apk && "$runtime_version" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "Unexpected build metadata for EAS build $build_id:" >&2
-  jq '{appVersion, appBuildVersion, gitCommitHash, artifacts}' <<< "$build" >&2
+  jq '{appVersion, appBuildVersion, gitCommitHash, runtime, artifacts}' <<< "$build" >&2
   exit 1
 fi
 
@@ -79,7 +85,11 @@ if [[ "$badging" != *"$expected_package"* ]]; then
   exit 1
 fi
 
-(cd "$work/assets" && sha256sum "$apk_name" > SHA256SUMS)
+jq -n --arg version "$version" --argjson versionCode "$code" --arg runtimeVersion "$runtime_version" \
+  --arg apk "$apk_name" --argjson apkSizeBytes "$(stat -c %s "$apk")" \
+  '{$version, $versionCode, $runtimeVersion, $apk, $apkSizeBytes}' \
+  > "$work/assets/android-update.json"
+(cd "$work/assets" && sha256sum "$apk_name" android-update.json > SHA256SUMS)
 
 cat > "$work/notes.md" << EOF
 styal for Android ${version} (build ${code}). Requires Android 7.0 or newer.
@@ -89,7 +99,7 @@ EOF
 
 if [[ "${DRY_RUN:-}" == "1" ]]; then
   echo "Dry run: would publish ${tag} at ${commit} with:"
-  cat "$work/assets/SHA256SUMS" "$work/notes.md"
+  cat "$work/assets/SHA256SUMS" "$work/assets/android-update.json" "$work/notes.md"
   exit 0
 fi
 
@@ -103,7 +113,7 @@ gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
     gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/${stale}"
   done
 
-gh release create "$tag" "$apk" "$work/assets/SHA256SUMS" \
+gh release create "$tag" "$apk" "$work/assets/android-update.json" "$work/assets/SHA256SUMS" \
   --repo "$GITHUB_REPOSITORY" \
   --target "$commit" \
   --title "styal for Android ${version} (${code})" \
