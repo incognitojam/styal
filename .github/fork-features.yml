@@ -1142,7 +1142,8 @@ features:
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
       - Mobile production and preview profiles retain styal identity and fork Expo configuration; Android distribution uses installable APKs without store submission, while iOS submits to TestFlight.
-      - Each finished production Android APK is published as a GitHub release tagged `android-<version>-<versionCode>`, never marked Latest, and only when its signing certificate matches the pinned production key; release notes contain installation guidance and APK checksums are attached as `SHA256SUMS`.
+      - Each finished production Android APK is published as a GitHub release tagged `android-<version>-<versionCode>`, created without claiming Latest from a stable `v` release, and only when its signing certificate matches the pinned production key; release notes contain installation guidance and APK checksums are attached as `SHA256SUMS`.
+      - Production Android installs offer the newest GitHub release once per release, and keep it in About styal, only when its runtime version differs from the installed binary's, because over-the-air updates cannot reach that install.
     implementation_paths:
       - .github/scripts/publish-android-release.sh
       - .github/workflows/desktop-macos-preview.yml
@@ -1177,6 +1178,7 @@ features:
       - apps/mobile/modules/t3-composer-editor/android/src/main/java/expo/modules/t3composereditor/T3ComposerEditorModule.kt
       - apps/mobile/src/features/connection/GitHubRoutingSettings.tsx
       - apps/mobile/src/features/settings/appearance/components/AppearancePreviews.tsx
+      - apps/mobile/src/features/updates/native-app-updates.ts
       - apps/server/package.json
       - apps/server/src/bin.ts
       - apps/server/src/cli/triage.ts
@@ -1231,6 +1233,7 @@ features:
       - apps/desktop/src/app/DesktopEnvironment.test.ts
       - apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
       - apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
+      - apps/mobile/src/features/updates/native-app-updates.test.ts
       - apps/server/src/bin.test.ts
       - apps/server/src/cloud/bootService.test.ts
       - apps/server/src/device/sshDeviceScript.test.ts
