@@ -1142,7 +1142,9 @@ features:
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
       - Mobile production and preview profiles retain styal identity and fork Expo configuration; Android distribution uses installable APKs without store submission, while iOS submits to TestFlight.
+      - Each finished production Android APK is published as a GitHub release tagged `android-<version>-<versionCode>`, never marked Latest, and only when its signing certificate matches the pinned production key.
     implementation_paths:
+      - .github/scripts/publish-android-release.sh
       - .github/workflows/desktop-macos-preview.yml
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-cli-build.yml
@@ -1151,6 +1153,7 @@ features:
       - .github/workflows/fork-js-bundle.yml
       - .github/workflows/fork-nightly.yml
       - .github/workflows/fork-release.yml
+      - .github/workflows/mobile-android-release.yml
       - .github/workflows/mobile-eas-production.yml
       - apps/desktop/gnome-extension/bundle.json
       - apps/desktop/gnome-extension/captureService.js

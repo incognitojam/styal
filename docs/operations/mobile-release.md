@@ -75,8 +75,16 @@ place of all `.gitignore` files, so keep its exclusions aligned when those chang
 
 Run **Mobile EAS Production** with `mode=build` and the desired platform. Selecting
 `all` schedules an iOS build with automatic TestFlight submission and an Android
-APK build without store submission. Download the Android artifact from the EAS
-build page and share its installation link with testers.
+APK build without store submission.
+
+**Mobile Android Release** checks EAS hourly and publishes the newest finished
+production APK as a GitHub release tagged `android-<version>-<versionCode>`. EAS
+artifact links expire after two weeks; the release keeps the APK available. Run
+the workflow manually to publish a build without waiting. The tags never start
+with `v` and the releases are never marked Latest, because the CLI installers,
+the desktop updater, and the release workflows select releases by those rules.
+The workflow refuses an APK whose signing certificate differs from the one
+pinned in it, since existing installations cannot update to it.
 
 The optional version override commits the new version before building. It uses
 the fork's `NIGHTLY_APP_CLIENT_ID` variable and `NIGHTLY_APP_PRIVATE_KEY` secret;

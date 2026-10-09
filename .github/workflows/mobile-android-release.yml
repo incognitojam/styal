@@ -1,0 +1,75 @@
+name: Mobile Android Release
+
+# Publishes each production Android APK as a GitHub release; see
+# .github/scripts/publish-android-release.sh. mobile-eas-production.yml
+# schedules EAS builds with --no-wait, so no workflow learns when a build
+# finishes. This polls instead, and a run with nothing new makes no writes.
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-android-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish Android APK
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - id: expo-token
+        name: Check for EXPO_TOKEN
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+          EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+        run: |
+          if [ -n "$EXPO_TOKEN" ] && [ -n "$EXPO_OWNER" ] && [ -n "$EXPO_PROJECT_ID" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "EXPO_TOKEN, EXPO_OWNER, or EXPO_PROJECT_ID is not available; skipping."
+          fi
+
+      - name: Checkout
+        if: steps.expo-token.outputs.present == 'true'
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /.github/scripts/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node
+        if: steps.expo-token.outputs.present == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Setup EAS
+        if: steps.expo-token.outputs.present == 'true'
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - name: Publish newest production APK
+        if: steps.expo-token.outputs.present == 'true'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+          EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          # The EAS-managed production keystore that every released APK must
+          # carry. Users cannot install an APK from another key over an
+          # existing installation.
+          ANDROID_SIGNING_CERT_SHA256: 168a6f8a44785ce28af01c4814c38b7ac27eab6fc0137138757d26e4c979fd04
+        run: .github/scripts/publish-android-release.sh
