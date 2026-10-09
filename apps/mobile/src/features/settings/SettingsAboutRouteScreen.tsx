@@ -138,14 +138,6 @@ function AppSettingsSection() {
         target="SettingsOpenSourceLicenses"
       />
       <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
-      {nativeUpdate ? (
-        <SettingsRow
-          icon="square.and.arrow.down"
-          label={`Update to styal ${nativeUpdate.version}`}
-          value={`${formatApkSize(nativeUpdate.apkSizeBytes)} download`}
-          onPress={() => void openNativeAppUpdateDownload(nativeUpdate)}
-        />
-      ) : null}
       {updateCheckAvailable ? (
         <Pressable
           accessibilityLabel={`Version ${versionLabel}`}
@@ -158,6 +150,14 @@ function AppSettingsSection() {
       ) : (
         versionRow
       )}
+      {nativeUpdate ? (
+        <SettingsRow
+          icon="square.and.arrow.down"
+          label={`Update to styal ${nativeUpdate.version}`}
+          value={`${formatApkSize(nativeUpdate.apkSizeBytes)} download`}
+          onPress={() => void openNativeAppUpdateDownload(nativeUpdate)}
+        />
+      ) : null}
     </SettingsSection>
   );
 }
