@@ -1,5 +1,5 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
-import { ACTIVE_MCP_SERVER_NAME, type McpServerName } from "../mcp/McpProviderSession.ts";
+import { ACTIVE_MCP_SERVER_NAME, type McpServerName } from "./mcpSession.ts";
 
 /** Render the actual namespace without changing durable provider tool identities. */
 export function renderProviderToolInstructions(

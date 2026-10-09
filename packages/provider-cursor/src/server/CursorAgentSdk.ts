@@ -16,10 +16,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { Agent, createAgentPlatform, cursorSdkModulePath } from "../../provider/cursorSdk.ts";
+import { Agent, createAgentPlatform, cursorSdkModulePath } from "./sdk.ts";
 import { makeCursorSdkWorkerApi } from "./CursorSdkWorker.ts";
-import type { EventNdjsonLogger } from "../../provider/EventNdjsonLogger.ts";
-import * as ProviderEventLoggers from "../../provider/ProviderEventLoggers.ts";
+import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 
 export const CURSOR_AGENT_SDK_PROTOCOL = "cursor-agent-sdk.local" as const;
 export const CURSOR_PROVIDER = ProviderDriverKind.make("cursor");
@@ -79,7 +78,7 @@ export interface CursorAgentSdkRunnerShape {
 export class CursorAgentSdkRunner extends Context.Service<
   CursorAgentSdkRunner,
   CursorAgentSdkRunnerShape
->()("@styal/cli/orchestration-v2/Adapters/CursorAgentSdk/CursorAgentSdkRunner") {}
+>()("@t3tools/provider-cursor/server/CursorAgentSdk/CursorAgentSdkRunner") {}
 
 export interface CursorAgentSdkLoggedAgentOptions {
   readonly model?: AgentOptions["model"];
@@ -278,7 +277,7 @@ export function loggedCursorSendOptions(
 }
 
 function makeCursorAgentSdkProtocolLogger(input: {
-  readonly nativeEventLogger: EventNdjsonLogger | undefined;
+  readonly nativeEventLogger: ProviderEventLoggers.EventNdjsonLogger | undefined;
   readonly threadId: ThreadId;
   readonly providerSessionId: OrchestrationV2ProviderSession["id"];
 }): CursorAgentSdkProtocolLogger | undefined {

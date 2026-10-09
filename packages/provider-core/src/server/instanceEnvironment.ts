@@ -1,7 +1,7 @@
 import type { ProviderInstanceEnvironment } from "@t3tools/contracts";
 
 import { expandHomePath } from "./pathExpansion.ts";
-import { stripServerOwnedEnvironment } from "../serverOwnedEnvironment.ts";
+import { stripServerOwnedEnvironment } from "@t3tools/shared/serverOwnedEnvironment";
 
 /** Read by the Codex adapter from the provider environment, so it must survive stripping. */
 const CODEX_LAUNCH_ARGS_ENV = "T3CODE_CODEX_LAUNCH_ARGS";

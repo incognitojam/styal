@@ -1,5 +1,7 @@
-import { BOOT_SERVICE_UNIT_ENV } from "./cloud/bootService.ts";
-import { SERVICE_LAUNCHER_CONTEXT_ENV } from "./cloud/serviceProtocol.ts";
+/** Set by the service launcher for the server it runs. */
+export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
+/** Set by the boot service unit for the server it starts. */
+export const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
 
 const SERVER_OWNED_ENV_KEYS = new Set([
   "STYAL_HOME",

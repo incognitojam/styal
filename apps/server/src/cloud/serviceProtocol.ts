@@ -1,8 +1,9 @@
 import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
+import { SERVICE_LAUNCHER_CONTEXT_ENV } from "@t3tools/shared/serverOwnedEnvironment";
 
 /** Protocol 4 requires isolated styal executable archives. Protocol 3 selected npm runtimes. */
 export const SERVICE_LAUNCHER_PROTOCOL = 4 as const;
-export const SERVICE_LAUNCHER_CONTEXT_ENV = "T3_SERVICE_LAUNCHER_CONTEXT";
+export { SERVICE_LAUNCHER_CONTEXT_ENV };
 export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
 export const SERVICE_STATE_FILE = "service-state.json";
 /** Written by the launcher just before an explicit stop kills its child, so

@@ -19,6 +19,7 @@ import * as Schema from "effect/Schema";
 import { CLI_RELEASE_BASE_URL_ENV } from "@t3tools/shared/cliRelease";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { BOOT_SERVICE_UNIT_ENV } from "@t3tools/shared/serverOwnedEnvironment";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimeCommand,
@@ -42,7 +43,6 @@ const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // (build.styal.app), so launchd and TCC records never collide.
 const BOOT_SERVICE_LAUNCHD_LABEL = "build.styal.app.service";
 const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
-export const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
 /** File in the logs dir that receives the service's stdout and stderr. `t3 triage` points agents at it. */
 export const BOOT_SERVICE_LOG_FILE = "boot-service.log";
 

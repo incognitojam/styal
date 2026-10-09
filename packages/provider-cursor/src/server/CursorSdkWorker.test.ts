@@ -5,7 +5,7 @@ import { assert, it } from "@effect/vitest";
 import { makeCursorSdkWorkerApi } from "./CursorSdkWorker.ts";
 
 it("isolates concurrent provider environments in actual shell children and preserves SDK operations", async () => {
-  const scratchDir = NodePath.resolve(import.meta.dirname, "../../../../../.scratch");
+  const scratchDir = NodePath.resolve(import.meta.dirname, "../../../../.scratch");
   NodeFS.mkdirSync(scratchDir, { recursive: true });
   const directory = NodeFS.mkdtempSync(NodePath.join(scratchDir, "upstream-v2-cursor-worker-"));
   const modulePath = NodePath.join(directory, "synthetic-sdk.cjs");
