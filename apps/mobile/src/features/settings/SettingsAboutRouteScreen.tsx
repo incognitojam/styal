@@ -128,7 +128,7 @@ function AppSettingsSection() {
     <SettingsSection title="App">
       {nativeUpdate ? (
         <SettingsRow
-          icon="arrow.down.circle"
+          icon="square.and.arrow.down"
           label={`Update to styal ${nativeUpdate.version}`}
           value={`${formatApkSize(nativeUpdate.apkSizeBytes)} download`}
           onPress={() => void openNativeAppUpdateDownload(nativeUpdate)}

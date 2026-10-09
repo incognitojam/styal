@@ -47,6 +47,7 @@ import IconDeviceMobile from "@tabler/icons-react-native/IconDeviceMobile";
 import IconDots from "@tabler/icons-react-native/IconDots";
 import IconDotsVertical from "@tabler/icons-react-native/IconDotsVertical";
 import IconDotsCircleHorizontal from "@tabler/icons-react-native/IconDotsCircleHorizontal";
+import IconDownload from "@tabler/icons-react-native/IconDownload";
 import IconEdit from "@tabler/icons-react-native/IconEdit";
 import IconExternalLink from "@tabler/icons-react-native/IconExternalLink";
 import IconEye from "@tabler/icons-react-native/IconEye";
@@ -205,6 +206,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "sidebar.left": IconLayoutSidebar,
   "sidebar.right": IconLayoutSidebarRight,
   "slider.horizontal.3": IconAdjustmentsHorizontal,
+  "square.and.arrow.down": IconDownload,
   "square.and.pencil": IconEdit,
   "square.on.square": IconCopy,
   "square.grid.2x2": IconApps,
