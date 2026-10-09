@@ -496,6 +496,32 @@ features:
         - https://github.com/pingdotgg/t3code/pull/11347
       retire_when: Upstream prefers GPT-6.1-Sol for new Codex threads, retains a fallback when it is unavailable, and shows the effort unselected turns run at.
 
+  - id: codex-exit-reason
+    title: Show why Codex exited and flag provider updates that leave it broken
+    status: maintained
+    prs: [PR_NUMBER]
+    invariants:
+      - When the Codex app server exits, its error includes the reason Codex printed to stderr, such as a missing platform binary, so provider banners and thread errors name the cause.
+      - A provider update whose command exits 0 but leaves the provider in an error state is reported as unchanged with the provider's error, not as a success.
+    implementation_paths:
+      - packages/effect-codex-app-server/src/_internal/stdio.ts
+      - packages/effect-codex-app-server/src/client.ts
+      - packages/effect-codex-app-server/src/errors.ts
+      - apps/server/src/provider/providerMaintenanceRunner.ts
+    upstream_paths:
+      - packages/effect-codex-app-server/src/_internal/stdio.ts
+      - packages/effect-codex-app-server/src/client.ts
+      - packages/effect-codex-app-server/src/errors.ts
+      - apps/server/src/provider/providerMaintenanceRunner.ts
+    tests:
+      - packages/effect-codex-app-server/src/client.test.ts
+      - apps/server/src/provider/providerMaintenanceRunner.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/16160
+      retire_when: Upstream surfaces Codex app-server stderr in exit errors and stops reporting an update as successful when the provider no longer starts.
+
   - id: codex-model-display-names
     title: Display Codex model word suffixes with spaces
     status: maintained

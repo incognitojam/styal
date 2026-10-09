@@ -148,15 +148,36 @@ export class CodexAppServerProcessExitedError extends Schema.TaggedError<CodexAp
   {
     code: Schema.optional(Schema.Number),
     pid: Schema.optionalKey(Schema.Int),
+    /** The last few kilobytes the process wrote to stderr. */
+    stderr: Schema.optionalKey(Schema.String),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message() {
-    return this.code === undefined
-      ? "Codex App Server process exited"
-      : `Codex App Server process exited with code ${this.code}`;
+    const exited =
+      this.code === undefined
+        ? "Codex App Server process exited"
+        : `Codex App Server process exited with code ${this.code}`;
+    const reason = this.stderr === undefined ? undefined : stderrReason(this.stderr);
+    return reason ? `${exited}: ${reason}` : exited;
   }
 }
+
+const STDERR_REASON_MAX_CHARS = 500;
+
+/**
+ * Picks the line that explains a crash out of a stderr tail: the last
+ * `Error:` line (Node launcher and Rust `anyhow` failures both print one,
+ * followed by stack frames or a runtime banner), else the last non-empty line.
+ */
+const stderrReason = (stderr: string): string | undefined => {
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const line = lines.findLast((candidate) => /\bError:/.test(candidate)) ?? lines.at(-1);
+  return line?.replace(/\.$/, "").slice(0, STDERR_REASON_MAX_CHARS);
+};
 
 export class CodexAppServerProtocolParseError extends Schema.TaggedError<CodexAppServerProtocolParseError>()(
   "CodexAppServerProtocolParseError",

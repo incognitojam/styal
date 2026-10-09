@@ -154,4 +154,47 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
       assert.equal(initialized.userAgent, "mock-codex-app-server");
     }),
   );
+
+  it.effect("reports the crash reason a launcher prints to stderr before exiting", () =>
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      // Mirrors the npm launcher left behind when its platform binary failed to install.
+      const launcher = [
+        "process.stderr.write([",
+        "  'file:///prefix/@openai/codex/bin/codex.js:107',",
+        "  '  throw new Error(',",
+        "  '',",
+        "  'Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest',",
+        "  '    at findCodexExecutable (file:///prefix/@openai/codex/bin/codex.js:107:9)',",
+        "  '',",
+        "  'Node.js v24.0.0',",
+        "].join('\\n') + '\\n');",
+        "process.exit(1);",
+      ].join("\n");
+      const handle = yield* spawner.spawn(ChildProcess.make(process.execPath, ["-e", launcher]));
+      const scope = yield* Scope.make();
+      const context = yield* Layer.buildWithScope(CodexClient.layerChildProcess(handle), scope);
+
+      const error = yield* Effect.gen(function* () {
+        const client = yield* CodexClient.CodexAppServerClient;
+        return yield* client.request("initialize", {
+          clientInfo: {
+            name: "effect-codex-app-server-test",
+            title: "Effect Codex App Server Test",
+            version: "0.0.0",
+          },
+          capabilities: {
+            experimentalApi: true,
+            optOutNotificationMethods: null,
+          },
+        });
+      }).pipe(Effect.flip, Effect.provide(context), Effect.ensuring(Scope.close(scope, Exit.void)));
+
+      assert.equal(error._tag, "CodexAppServerProcessExitedError");
+      assert.equal(
+        error.message,
+        "Codex App Server process exited with code 1: Error: Missing optional dependency @openai/codex-linux-x64. Reinstall Codex: npm install -g @openai/codex@latest",
+      );
+    }),
+  );
 });

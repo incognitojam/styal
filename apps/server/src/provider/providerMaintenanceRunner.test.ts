@@ -282,6 +282,42 @@ describe("providerMaintenanceRunner", () => {
     );
   });
 
+  it.effect("reports unchanged when the updater exits 0 but the provider no longer starts", () => {
+    return Effect.gen(function* () {
+      const { registry, providersRef } = yield* makeRegistry(baseProvider);
+      const probeMessage =
+        "Codex app-server provider probe failed: Codex App Server process exited with code 1: Error: Missing optional dependency @openai/codex-linux-x64.";
+      const updater = yield* makeTestRunner({
+        ...registry,
+        refreshInstance: () =>
+          Ref.updateAndGet(providersRef, (providers) =>
+            providers.map((provider) => ({
+              ...provider,
+              installed: true,
+              version: null,
+              status: "error" as const,
+              message: probeMessage,
+            })),
+          ),
+      });
+
+      const result = yield* updater.updateProvider(CODEX_DRIVER);
+      assert.strictEqual(result.providers[0]?.updateState?.status, "unchanged");
+      assert.strictEqual(
+        result.providers[0]?.updateState?.message,
+        `Update command completed, but the provider reports an error: ${probeMessage}`,
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NonWindowsPlatform,
+          latestVersionHttpClient("0.0.0"),
+          mockSpawnerLayer(() => ({ stdout: "updated" })),
+        ),
+      ),
+    );
+  });
+
   it.effect(
     "keeps a successful update when the binary is present but its version is unreadable",
     () => {

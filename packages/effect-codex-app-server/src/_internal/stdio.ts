@@ -1,6 +1,9 @@
 import * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Sink from "effect/Sink";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
@@ -44,6 +47,33 @@ export const makeInMemoryStdio = Effect.fn("makeInMemoryStdio")(function* () {
   };
 });
 
+const STDERR_TAIL_MAX_CHARS = 8_000;
+// Bounds the wait for stderr EOF after exit, in case a grandchild holds the pipe open.
+const STDERR_SETTLE_TIMEOUT = Duration.seconds(1);
+
+/**
+ * Drains a child's stderr in the background and keeps its last few kilobytes.
+ * The returned effect waits briefly for stderr to end, then reads the tail, so
+ * an exit error can carry the reason the process printed before it died.
+ */
+export const collectStderrTail = Effect.fn("collectStderrTail")(function* <E>(
+  stderr: Stream.Stream<Uint8Array, E>,
+) {
+  const tail = yield* Ref.make("");
+  const fiber = yield* stderr.pipe(
+    Stream.decodeText(),
+    Stream.runForEach((chunk) =>
+      Ref.update(tail, (current) => (current + chunk).slice(-STDERR_TAIL_MAX_CHARS)),
+    ),
+    Effect.ignore,
+    Effect.forkScoped,
+  );
+  return Fiber.join(fiber).pipe(
+    Effect.timeoutOption(STDERR_SETTLE_TIMEOUT),
+    Effect.andThen(Ref.get(tail)),
+  );
+});
+
 type ChildProcessTerminationHandle = Pick<
   ChildProcessSpawner.ChildProcessHandle,
   "exitCode" | "pid"
@@ -51,13 +81,25 @@ type ChildProcessTerminationHandle = Pick<
 
 export const makeTerminationError = (
   handle: ChildProcessTerminationHandle,
+  stderrTail: Effect.Effect<string> = Effect.succeed(""),
 ): Effect.Effect<CodexError.CodexAppServerError> =>
-  Effect.match(handle.exitCode, {
+  Effect.matchEffect(handle.exitCode, {
     onFailure: (cause) =>
-      new CodexError.CodexAppServerTransportError({
-        operation: "read-process-exit-status",
-        pid: handle.pid,
-        cause,
-      }),
-    onSuccess: (code) => new CodexError.CodexAppServerProcessExitedError({ code, pid: handle.pid }),
+      Effect.succeed(
+        new CodexError.CodexAppServerTransportError({
+          operation: "read-process-exit-status",
+          pid: handle.pid,
+          cause,
+        }),
+      ),
+    onSuccess: (code) =>
+      Effect.map(
+        stderrTail,
+        (stderr) =>
+          new CodexError.CodexAppServerProcessExitedError({
+            code,
+            pid: handle.pid,
+            ...(stderr.trim() ? { stderr } : {}),
+          }),
+      ),
   });
