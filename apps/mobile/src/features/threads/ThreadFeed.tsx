@@ -71,6 +71,7 @@ import {
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import {
   createContext,
   memo,
@@ -322,6 +323,7 @@ export interface ThreadFeedProps {
   readonly contentBottomInset?: number;
   readonly historyControls?: ThreadFeedHistoryControls;
   readonly contentMaxWidth?: number;
+  readonly contentSideInsets?: { readonly left: number; readonly right: number };
   readonly layoutVariant?: LayoutVariant;
   readonly usesAutomaticContentInsets?: boolean;
   readonly onHeaderMaterialVisibilityChange?: (visible: boolean) => void;
@@ -1622,6 +1624,7 @@ function renderFeedEntry(
     readonly reviewCommentColors: ReviewCommentColors;
     readonly reviewCommentBubbleWidth: number;
     readonly themeAppearance: "light" | "dark";
+    readonly usesNativeWorkspaceColumns: boolean;
     readonly userBubbleMaxWidth: number;
     /** Width assistant markdown lays out in, so images can size their frame before layout. */
     readonly markdownContentWidth: number;
@@ -1837,11 +1840,19 @@ function renderFeedEntry(
             className="min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5"
             style={{
               backgroundColor: userBubbleColor,
-              maxWidth: props.userBubbleMaxWidth,
+              maxWidth:
+                props.usesNativeWorkspaceColumns && Platform.OS === "ios" && !Platform.isPad
+                  ? "85%"
+                  : props.userBubbleMaxWidth,
               ...(hasReviewCommentContext
                 ? { width: props.reviewCommentBubbleWidth }
                 : hasWideBlock
-                  ? { width: props.userBubbleMaxWidth }
+                  ? {
+                      width:
+                        props.usesNativeWorkspaceColumns && Platform.OS === "ios" && !Platform.isPad
+                          ? "85%"
+                          : props.userBubbleMaxWidth,
+                    }
                   : null),
             }}
           >
@@ -2336,6 +2347,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   }, [props.detailThreadRef]);
   const restartRuns = useAtomValue(restartRunsAtom);
   const continuedRunRoots = useMemo(() => deriveFeedContinuedRunRoots(restartRuns), [restartRuns]);
+  const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const navigation = useNavigation();
   const { themeAppearance } = useAppearancePreferences();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2419,12 +2431,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     setExpandedFile(null);
   }, [props.environmentId, props.threadId, props.contentPresentation.kind]);
   const horizontalPadding = props.layoutVariant === "split" ? 20 : 16;
+  const contentLeftInset = props.contentSideInsets?.left ?? 0;
+  const contentRightInset = props.contentSideInsets?.right ?? 0;
+  const usableViewportWidth = Math.max(0, viewportWidth - contentLeftInset - contentRightInset);
   const contentHorizontalPadding = deriveCenteredContentHorizontalPadding({
-    viewportWidth,
+    viewportWidth: usableViewportWidth,
     maxContentWidth: props.contentMaxWidth ?? null,
     minimumPadding: horizontalPadding,
   });
-  const contentWidth = Math.max(0, viewportWidth - contentHorizontalPadding * 2);
+  const contentWidth = Math.max(0, usableViewportWidth - contentHorizontalPadding * 2);
   const userBubbleMaxWidth = contentWidth * 0.85;
   const markdownContentWidth = Math.max(0, contentWidth - ASSISTANT_ROW_HORIZONTAL_PADDING * 2);
   const reviewCommentBubbleWidth = Math.min(Math.max(280, contentWidth * 0.85), contentWidth);
@@ -2447,7 +2462,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // header-providing screen) and fall back to the standard iOS bar height.
   const navigationHeaderHeight = useContext(HeaderHeightContext);
   const anchorTopInset = usesNativeAutomaticInsets
-    ? navigationHeaderHeight || insets.top + IOS_NAV_BAR_HEIGHT
+    ? (navigationHeaderHeight ?? insets.top + IOS_NAV_BAR_HEIGHT)
     : topContentInset;
 
   const theme = useUniwindTheme();
@@ -3196,6 +3211,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             reviewCommentColors,
             reviewCommentBubbleWidth,
             themeAppearance,
+            usesNativeWorkspaceColumns,
             userBubbleMaxWidth,
             markdownContentWidth,
             contentWidth,
@@ -3234,6 +3250,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       reviewCommentColors,
       reviewCommentBubbleWidth,
       themeAppearance,
+      usesNativeWorkspaceColumns,
       userBubbleMaxWidth,
       markdownContentWidth,
       contentWidth,
@@ -3286,7 +3303,18 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             // (facebook/react-native#54123); the anchored end space after a send
             // is pure inset, so without this the blank region can't be scrolled.
             applyWorkaroundForContentInsetHitTestBug
-            contentInsetAdjustmentBehavior={usesNativeAutomaticInsets ? "automatic" : "never"}
+            // Horizontal Duo reservations are already included in the row padding.
+            // Let UIKit adjust the scrolling axis without shifting content sideways.
+            contentInsetAdjustmentBehavior={
+              usesNativeAutomaticInsets
+                ? usesNativeWorkspaceColumns &&
+                  Platform.OS === "ios" &&
+                  !Platform.isPad &&
+                  props.layoutVariant === "split"
+                  ? "scrollableAxes"
+                  : "automatic"
+                : "never"
+            }
             automaticallyAdjustsScrollIndicatorInsets={usesNativeAutomaticInsets}
             {...(usesNativeAutomaticInsets
               ? {
@@ -3398,7 +3426,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             }
             contentContainerStyle={{
               paddingTop: 12,
-              paddingHorizontal: contentHorizontalPadding,
+              paddingLeft: contentHorizontalPadding + contentLeftInset,
+              paddingRight: contentHorizontalPadding + contentRightInset,
             }}
           />
         </View>
@@ -3406,7 +3435,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         !props.worktreeSetup &&
         props.activeWorkStartedAt === null &&
         props.contentPresentation.kind === "ready" ? (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { left: contentLeftInset, right: contentRightInset }]}
+          >
             <ThreadFeedPlaceholder
               title="No conversation yet"
               detail="Ask the agent to inspect the repo, run a command, or continue the active thread."
