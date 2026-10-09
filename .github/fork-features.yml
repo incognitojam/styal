@@ -1714,7 +1714,7 @@ features:
   - id: mobile-clerk-load-recovery
     title: Recover and explain styal Link sign-in after a failed Clerk startup
     status: maintained
-    prs: [436, 662]
+    prs: [436, 662, 680]
     invariants:
       - A Clerk GET request on mobile that has no caller abort signal is aborted after 15 seconds, so a stalled startup load fails instead of keeping the account in the loading state.
       - Reading the saved Clerk client token on mobile times out after 15 seconds even before a network request starts. A timeout fails the load for retry without returning a signed-out client or deleting saved credentials and environments.
