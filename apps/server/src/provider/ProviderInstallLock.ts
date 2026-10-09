@@ -1,6 +1,6 @@
 // Upstream's machine-wide install lock, kept close to its source so intake can reconcile
 // it (provenance: ledger entry provider-auto-updates). The fork adds `keyHeld`.
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -81,7 +81,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
-  const environment = yield* HostProcessEnvironment;
+  const environment = yield* HostProcess.Environment;
   const cacheHome = environment.XDG_CACHE_HOME || path.join(NodeOS.homedir(), ".cache");
   // Upstream's directory, so styal and T3 Code servers on one host also exclude each other.
   const directory = path.join(cacheHome, "t3", "provider-install");

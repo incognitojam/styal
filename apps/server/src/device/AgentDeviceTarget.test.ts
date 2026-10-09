@@ -1,9 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - exercises concurrent real CLI subprocesses.
-import {
-  HostProcessExecutablePath,
-  HostProcessIsExecutable,
-  HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
@@ -20,7 +16,7 @@ import {
 } from "./AgentDeviceTarget.ts";
 
 const exec = NodeUtil.promisify(NodeChildProcess.execFile);
-const windowsHost = HostProcessPlatform.defaultValue() === "win32";
+const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 const decodeOutput = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 describe("host-bound agent commands", () => {
@@ -50,8 +46,8 @@ exec ${quote(process.execPath)} "$@"
         `console.log(JSON.stringify({ args: process.argv.slice(2), nodeMode: process.env.ELECTRON_RUN_AS_NODE }));`,
       );
       const shim = yield* ensureAgentDeviceShim({ entryPath, stateDir: dir }).pipe(
-        Effect.provideService(HostProcessExecutablePath, executable),
-        Effect.provideService(HostProcessIsExecutable, false),
+        Effect.provideService(HostProcess.ExecutablePath, executable),
+        Effect.provideService(HostProcess.IsExecutable, false),
       );
       const env = { ...process.env, ELECTRON_RUN_AS_NODE: "0" };
       const args = ["snapshot", "--config", "synthetic-host.json", "--session", "test-session"];
@@ -108,7 +104,7 @@ exec ${quote(process.execPath)} "$@"
       expect(result.stderr).toBe("");
     }).pipe(
       Effect.scoped,
-      Effect.provideService(HostProcessIsExecutable, false),
+      Effect.provideService(HostProcess.IsExecutable, false),
       Effect.provide(NodeServices.layer),
     ),
   );
@@ -118,7 +114,7 @@ exec ${quote(process.execPath)} "$@"
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const temp = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-target-" });
-      const platform = yield* HostProcessPlatform;
+      const platform = yield* HostProcess.Platform;
       const dir = path.join(
         temp,
         platform === "win32" ? "paths with spaces" : "quotes '\" $HOME `literal`",
@@ -184,8 +180,8 @@ if (process.env.AGENT_DEVICE_DAEMON_BASE_URL) process.exit(2);`,
       }
     }).pipe(
       Effect.scoped,
-      Effect.provideService(HostProcessIsExecutable, true),
-      Effect.provideService(HostProcessExecutablePath, "/packaged/t3"),
+      Effect.provideService(HostProcess.IsExecutable, true),
+      Effect.provideService(HostProcess.ExecutablePath, "/packaged/t3"),
       Effect.provide(NodeServices.layer),
     ),
   );

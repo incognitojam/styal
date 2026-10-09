@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 import * as Effect from "effect/Effect";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { build } from "vite-plus";
 import { isDesktopRuntimeExternalDependency } from "../../../scripts/lib/desktop-external-packages.ts";
 import { resolveElectronBinaryPath } from "./electron-launcher.mjs";
@@ -48,7 +48,7 @@ await build({
 });
 // Use the unbranded runtime: calibration must not register the app's URL schemes.
 const electronPath = resolveElectronBinaryPath();
-const platform = await Effect.runPromise(HostProcessPlatform);
+const platform = await Effect.runPromise(HostProcess.Platform);
 const args = [NodePath.join(outputDir, "bundle/main.cjs"), `--calibration-output=${outputDir}`];
 if (platform === "linux") args.unshift("--no-sandbox");
 const environment = { ...NodeProcess.env };

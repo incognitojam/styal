@@ -1,5 +1,5 @@
 import { OrchestrationV2ShellSnapshotJson } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -150,9 +150,9 @@ export const driveServeCommand = Command.make("serve", {
       yield* Console.error(
         "Drive demo: provider reactors are disabled. Use a normal server to verify real provider interactions.",
       );
-      const environment = yield* HostProcessEnvironment;
+      const environment = yield* HostProcess.Environment;
       return yield* runServer.pipe(
-        Effect.provideService(HostProcessEnvironment, {
+        Effect.provideService(HostProcess.Environment, {
           ...environment,
           [SERVICE_LAUNCHER_CONTEXT_ENV]: undefined,
           T3_BOOT_SERVICE_UNIT: undefined,

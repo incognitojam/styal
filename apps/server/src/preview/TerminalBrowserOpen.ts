@@ -1,5 +1,5 @@
 import { ThreadId, type PreviewError } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -172,7 +172,7 @@ export class TerminalBrowserOpen extends Context.Service<
 export const make = Effect.gen(function* TerminalBrowserOpenMake() {
   const config = yield* ServerConfig.ServerConfig;
   const crypto = yield* Crypto.Crypto;
-  const platform = yield* HostProcessPlatform;
+  const platform = yield* HostProcess.Platform;
   const previews = yield* PreviewManager.PreviewManager;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;

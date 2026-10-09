@@ -28,7 +28,7 @@ import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
@@ -487,8 +487,8 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
   const executableName = input.platform === "win" ? "styal.exe" : "styal";
   // tsdown suffixes cross-built executables with their target (t3-darwin-x64);
   // a host build is plain t3. Prefer the exact target when both exist.
-  const hostPlatform = yield* HostProcessPlatform;
-  const hostArch = yield* HostProcessArchitecture;
+  const hostPlatform = yield* HostProcess.Platform;
+  const hostArch = yield* HostProcess.Architecture;
   if (cliArchivePlatformKey(input.platform, input.arch) !== `${hostPlatform}-${hostArch}`) {
     return yield* new CliArchiveInputMissingError({
       inputPath: `${input.platform}-${input.arch}`,

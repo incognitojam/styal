@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   makeTargetedProviderUpdateAction,
   resolveProviderMaintenanceCapabilitiesEffect,
@@ -16,7 +16,7 @@ import { CLAUDE_MAINTENANCE } from "./ClaudeDriver.ts";
 const noSpawn = ChildProcessSpawner.make(() => Effect.die("Resolving Claude must not spawn"));
 
 it.layer(NodeServices.layer)("Claude maintenance", (it) => {
-  it.effect.skipIf(HostProcessPlatform.defaultValue() === "win32")(
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     "updates a native install to the latest release manually and pins it in the background",
     () =>
       Effect.gen(function* () {

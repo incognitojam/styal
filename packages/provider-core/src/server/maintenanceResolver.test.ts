@@ -6,7 +6,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -37,7 +37,7 @@ import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 const driver = (value: string) => ProviderDriverKind.make(value);
 // These write `#!/bin/sh` stubs and evaluate them with darwin/linux path
 // semantics; a Windows temp path cannot be split on `:`.
-const windowsHost = HostProcessPlatform.defaultValue() === "win32";
+const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 const makeTempDir = (name: string) =>
   Crypto.Crypto.pipe(
     Effect.flatMap((crypto) => crypto.randomUUIDv4),
@@ -324,7 +324,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         binaryPath: shim,
         env: { PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "win32"),
+        Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
       );
 
@@ -340,7 +340,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         binaryPath: script,
         env: { PATH: "" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "linux"),
+        Effect.provideService(HostProcess.Platform, "linux"),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
       );
       expect(posix.update).toBeNull();
@@ -393,7 +393,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
             env: { PATH: bunBinDir },
           },
         ).pipe(
-          Effect.provideService(HostProcessPlatform, "darwin"),
+          Effect.provideService(HostProcess.Platform, "darwin"),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
         );
 
@@ -418,7 +418,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           env: { PATH: nativeBinDir },
         },
       ).pipe(
-        Effect.provideService(HostProcessPlatform, "darwin"),
+        Effect.provideService(HostProcess.Platform, "darwin"),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
       );
 
@@ -623,7 +623,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
             env: { PATH: brewBinDir },
           },
         ).pipe(
-          Effect.provideService(HostProcessPlatform, "darwin"),
+          Effect.provideService(HostProcess.Platform, "darwin"),
           Effect.provideService(
             ChildProcessSpawner.ChildProcessSpawner,
             stdoutSpawner((command, args) => {
@@ -689,7 +689,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
             env: { PATH: brewBinDir },
           },
         ).pipe(
-          Effect.provideService(HostProcessPlatform, "darwin"),
+          Effect.provideService(HostProcess.Platform, "darwin"),
           Effect.provideService(
             ChildProcessSpawner.ChildProcessSpawner,
             stdoutSpawner(() => "/opt/homebrew\n"),
@@ -828,7 +828,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
         binaryPath: kegBinary,
         env: { PATH: "" },
       }).pipe(
-        Effect.provideService(HostProcessPlatform, "darwin"),
+        Effect.provideService(HostProcess.Platform, "darwin"),
         Effect.provideService(
           ChildProcessSpawner.ChildProcessSpawner,
           stdoutSpawner((_command, args) => (args[0] === "--prefix" ? `${tempDir}\n` : "{}")),

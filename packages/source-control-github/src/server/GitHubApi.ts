@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
@@ -362,7 +362,7 @@ export const make = Effect.gen(function* () {
   // Test-only: the end-to-end tests set this to a local fake GitHub API
   // (e2e/support/fake-github-api.ts), which then answers for every host. Unset, each host's
   // real API is used.
-  const testApiUrl = (yield* HostProcessEnvironment).T3CODE_TEST_GITHUB_API_URL?.trim().replace(
+  const testApiUrl = (yield* HostProcess.Environment).T3CODE_TEST_GITHUB_API_URL?.trim().replace(
     /\/+$/,
     "",
   );

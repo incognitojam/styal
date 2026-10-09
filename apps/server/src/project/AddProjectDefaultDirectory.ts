@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeOS from "node:os";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -13,7 +13,7 @@ import * as Path from "effect/Path";
  */
 export const resolveAddProjectDefaultDirectory = (options: { readonly homeDir?: string } = {}) =>
   Effect.gen(function* () {
-    if ((yield* HostProcessPlatform) !== "darwin") {
+    if ((yield* HostProcess.Platform) !== "darwin") {
       return "~/";
     }
     const fileSystem = yield* FileSystem.FileSystem;

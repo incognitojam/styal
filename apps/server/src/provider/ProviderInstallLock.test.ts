@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -46,7 +46,7 @@ it.effect("skips a second installer for the same target until the first releases
     }).pipe(
       Effect.provide(
         ProviderInstallLock.layer.pipe(
-          Layer.provide(Layer.succeed(HostProcessEnvironment, { XDG_CACHE_HOME: cacheHome })),
+          Layer.provide(Layer.succeed(HostProcess.Environment, { XDG_CACHE_HOME: cacheHome })),
         ),
       ),
     );

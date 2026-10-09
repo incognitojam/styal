@@ -7,7 +7,7 @@ import { app, BrowserWindow, nativeImage } from "electron";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HostProcessPlatform, HostProcessArchitecture } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as DesktopEnvironment from "../../src/app/DesktopEnvironment.ts";
 import * as DesktopConfig from "../../src/app/DesktopConfig.ts";
 import * as ElectronDialog from "../../src/electron/ElectronDialog.ts";
@@ -65,8 +65,8 @@ async function run() {
     guest.on("render-process-gone", (_event, details) => runtimeErrors.push(details.reason));
     if (guest.isLoading()) await new Promise((resolve) => guest.once("did-finish-load", resolve));
 
-    const platform = await Effect.runPromise(HostProcessPlatform);
-    const arch = await Effect.runPromise(HostProcessArchitecture);
+    const platform = await Effect.runPromise(HostProcess.Platform);
+    const arch = await Effect.runPromise(HostProcess.Architecture);
     const environment = DesktopEnvironment.layer({
       dirname: outputDir,
       homeDirectory: outputDir,
@@ -92,7 +92,7 @@ async function run() {
       ),
       Layer.provide(environment.pipe(Layer.provide(DesktopConfig.layerTest({})))),
       Layer.provide(NodeServices.layer),
-      Layer.provide(Layer.succeed(HostProcessPlatform, platform)),
+      Layer.provide(Layer.succeed(HostProcess.Platform, platform)),
     );
     await Effect.runPromise(
       Effect.scoped(

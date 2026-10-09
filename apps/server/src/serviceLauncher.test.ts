@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -130,7 +130,7 @@ it("rejects contradictory service state", () => {
 
 it.layer(NodeServices.layer)("service state persistence", (it) => {
   // Managed services support Linux/macOS; subprocess fixtures use POSIX shebangs.
-  const serviceProcessTest = it.effect.skipIf(HostProcessPlatform.defaultValue() === "win32");
+  const serviceProcessTest = it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32");
   it.effect("durably replaces and strictly reads one state document", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

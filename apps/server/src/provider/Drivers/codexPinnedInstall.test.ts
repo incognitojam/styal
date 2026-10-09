@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - runs the generated shell script against a stub curl.
 import { describe, expect, it } from "@effect/vitest";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -8,7 +8,7 @@ import * as NodePath from "node:path";
 
 import { CODEX_INSTALL_SCRIPT_URL, makeCodexPinnedInstall } from "./codexPinnedInstall.ts";
 
-const windowsHost = HostProcessPlatform.defaultValue() === "win32";
+const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
 // Stands in for curl: records the URL and saves an installer that records how it ran.
 const FAKE_CURL = `#!/bin/sh

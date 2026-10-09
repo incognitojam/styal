@@ -12,7 +12,7 @@ import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as ServerConfig from "../config.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
@@ -143,8 +143,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         ),
         Layer.provide(
           Layer.mergeAll(
-            Layer.succeed(HostProcessPlatform, "win32"),
-            Layer.succeed(HostProcessArchitecture, "x64"),
+            Layer.succeed(HostProcess.Platform, "win32"),
+            Layer.succeed(HostProcess.Architecture, "x64"),
             layerAcceptThenFailClient(batches),
           ),
         ),
@@ -189,8 +189,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         Layer.provide(layerConfig),
         Layer.provide(
           Layer.mergeAll(
-            Layer.succeed(HostProcessPlatform, "linux"),
-            Layer.succeed(HostProcessArchitecture, "arm64"),
+            Layer.succeed(HostProcess.Platform, "linux"),
+            Layer.succeed(HostProcess.Architecture, "arm64"),
           ),
         ),
         Layer.provideMerge(NodeHttpServer.layerTest),
@@ -279,8 +279,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         ),
         Layer.provide(
           Layer.mergeAll(
-            Layer.succeed(HostProcessPlatform, "linux"),
-            Layer.succeed(HostProcessArchitecture, "x64"),
+            Layer.succeed(HostProcess.Platform, "linux"),
+            Layer.succeed(HostProcess.Architecture, "x64"),
           ),
         ),
         Layer.provideMerge(NodeHttpServer.layerTest),
@@ -322,8 +322,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
         Layer.provide(layerConfig),
         Layer.provide(
           Layer.mergeAll(
-            Layer.succeed(HostProcessPlatform, "linux"),
-            Layer.succeed(HostProcessArchitecture, "arm64"),
+            Layer.succeed(HostProcess.Platform, "linux"),
+            Layer.succeed(HostProcess.Architecture, "arm64"),
           ),
         ),
         Layer.provideMerge(NodeHttpServer.layerTest),
@@ -379,8 +379,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
           Layer.provide(configLayer),
           Layer.provide(
             Layer.mergeAll(
-              Layer.succeed(HostProcessPlatform, "linux"),
-              Layer.succeed(HostProcessArchitecture, "arm64"),
+              Layer.succeed(HostProcess.Platform, "linux"),
+              Layer.succeed(HostProcess.Architecture, "arm64"),
             ),
           ),
           Layer.provideMerge(NodeHttpServer.layerTest),

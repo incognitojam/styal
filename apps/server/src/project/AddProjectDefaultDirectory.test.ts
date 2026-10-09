@@ -1,4 +1,4 @@
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -7,8 +7,8 @@ import * as Path from "effect/Path";
 
 import { resolveAddProjectDefaultDirectory } from "./AddProjectDefaultDirectory.ts";
 
-const onMac = Effect.provideService(HostProcessPlatform, "darwin");
-const onLinux = Effect.provideService(HostProcessPlatform, "linux");
+const onMac = Effect.provideService(HostProcess.Platform, "darwin");
+const onLinux = Effect.provideService(HostProcess.Platform, "linux");
 
 it.layer(NodeServices.layer)("resolveAddProjectDefaultDirectory", (it) => {
   it.effect("starts in ~/Developer on macOS when the directory exists", () =>
