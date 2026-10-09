@@ -2708,6 +2708,32 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15604
       retire_when: Upstream provides equivalent capability-specific update guidance that distinguishes legacy service migration from foreground starts while preserving direct updates for managed services.
 
+  - id: settled-shelf-auto-collapse
+    title: Close the settled shelf once the user moves on
+    status: maintained
+    prs: []
+    invariants:
+      - On web, desktop, and mobile, an expanded settled shelf collapses when the user opens a thread outside it or a new user message arrives in the open thread.
+      - Opening settled threads or un-settling threads, including several in a row, leaves the shelf expanded; leaving threads for another screen and returning to the same thread does not collapse it.
+    rationale: Upstream persists the shelf's expanded state indefinitely, so a shelf opened once to find old work stays open long after, crowding the list. Collapsing on the user's next move keeps the manual toggle while making expansion a temporary browsing state.
+    implementation_paths:
+      - apps/mobile/src/features/threads/SettledShelfAutoCollapse.tsx
+      - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
+      - apps/web/src/components/Sidebar.tsx
+      - packages/client-runtime/src/state/threadSettled.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
+      - apps/web/src/components/Sidebar.tsx
+      - packages/client-runtime/src/state/threadSettled.ts
+    tests:
+      - packages/client-runtime/src/state/threadSettled.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/5136
+        - https://github.com/pingdotgg/t3code/pull/5152
+      retire_when: Upstream collapses an expanded settled shelf on web and mobile when the user opens a thread outside it or sends a message, without collapsing it on un-settle.
+
   - id: setup-script-observability
     title: Keep setup scripts safe and inspectable
     status: review-needed

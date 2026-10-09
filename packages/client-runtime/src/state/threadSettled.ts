@@ -45,6 +45,38 @@ export function hasQueuedTurnStart(
 }
 
 /**
+ * The open thread as the settled-shelf collapse rule sees it. `threadKey` is
+ * null when no thread is open; `latestUserMessageAt` is undefined while the
+ * thread's shell is not loaded.
+ */
+export interface SettledShelfFocus {
+  readonly threadKey: string | null;
+  readonly settled: boolean;
+  readonly latestUserMessageAt: string | null | undefined;
+}
+
+/**
+ * An expanded settled shelf is a browsing state that closes once the user
+ * moves on: opening a thread outside the shelf, or a new user message in the
+ * open thread. Un-settling alone never collapses it, so several settled
+ * threads can be un-settled in a row. Leaving threads entirely (settings,
+ * home) keeps the previous focus, so returning to the same thread is not a
+ * move. Callers keep the returned focus as the next `previous`.
+ */
+export function advanceSettledShelfFocus(
+  previous: SettledShelfFocus,
+  next: SettledShelfFocus,
+): { readonly focus: SettledShelfFocus; readonly collapse: boolean } {
+  if (next.threadKey === null) return { focus: previous, collapse: false };
+  if (next.threadKey !== previous.threadKey) return { focus: next, collapse: !next.settled };
+  const messageSent =
+    previous.latestUserMessageAt !== undefined &&
+    next.latestUserMessageAt != null &&
+    next.latestUserMessageAt !== previous.latestUserMessageAt;
+  return { focus: next, collapse: messageSent };
+}
+
+/**
  * The snooze lifecycle fields plus everything needed to detect a raised
  * hand. Snooze is an overlay on the active state: a snoozed thread stays
  * "active" in the data model and is only suppressed from the inbox until

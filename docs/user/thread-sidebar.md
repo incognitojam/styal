@@ -127,6 +127,10 @@ and prevents automatic settlement until new activity resumes the usual rules.
 Manually settling an idle thread dismisses unanswered async questions without
 sending an answer or restarting the agent.
 
+Settled threads wait in the collapsed **Settled** shelf at the bottom of the list. Once
+expanded, it stays open while you browse or un-settle threads, and closes when you open a
+thread outside it or send a message.
+
 By default, environments settle inactive threads after three days and settle
 threads whose pull request merged. A closed pull request can also settle an idle
 thread. Work in progress, pending questions or approvals, and live background work
