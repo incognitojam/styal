@@ -30,7 +30,8 @@ storage write must leave the old copy recoverable. Stash migration uses separate
 cannot release a pending upload still owned by a composer draft.
 
 Mobile keeps its own copies of picked and shared files until ownership transfers or the content is
-removed. It uploads them at send time, and a retry can upload the local copy again if the server's
+removed. A background worker uploads them while the environment is connected and records each
+upload on the draft. Sending reuses that upload, or uploads the local copy again if the server's
 upload expired. Cleanup waits until every owner has hydrated and written durably; a read or decode
 failure must never be treated as an empty owner set. Previews, thumbnail extraction, and share
 copies hold a temporary reference until they finish, even when the attachment has been sent or
