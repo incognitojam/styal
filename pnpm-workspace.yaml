@@ -31,14 +31,14 @@ catalog:
   "@clerk/expo": 4.6.8
   "@clerk/react": 6.16.1
   "@clerk/shared": 4.33.0
-  "@effect/atom-react": 4.0.1
-  "@effect/openapi-generator": 4.0.1
-  "@effect/platform-node": 4.0.1
-  "@effect/platform-node-shared": 4.0.1
-  "@effect/sql-pg": 4.0.1
-  "@effect/sql-sqlite-do": 4.0.1
+  "@effect/atom-react": 4.0.2
+  "@effect/openapi-generator": 4.0.2
+  "@effect/platform-node": 4.0.2
+  "@effect/platform-node-shared": 4.0.2
+  "@effect/sql-pg": 4.0.2
+  "@effect/sql-sqlite-do": 4.0.2
   "@effect/tsgo": 0.46.1
-  "@effect/vitest": 4.0.1
+  "@effect/vitest": 4.0.2
   "@legendapp/list": 3.3.5
   "@noble/curves": 1.9.1
   "@noble/hashes": 1.8.0
@@ -49,7 +49,8 @@ catalog:
   "@tailwindcss/oxide": 4.3.3
   "@tailwindcss/vite": 4.3.3
   "@types/node": 24.12.4
-  effect: 4.0.1
+  "@types/ws": 8.18.2
+  effect: 4.0.2
   jose: 6.2.2
   lightningcss: 1.33.0
   tailwindcss: 4.3.3
@@ -89,15 +90,15 @@ minimumReleaseAgeExclude:
   - "@distilled.cloud/core@1.0.0-rc.13"
   - "@distilled.cloud/neon@1.0.0-rc.13"
   - "@distilled.cloud/planetscale@1.0.0-rc.13"
-  - "@effect/atom-react@4.0.1"
-  - "@effect/openapi-generator@4.0.1"
-  - "@effect/platform-node-shared@4.0.1"
-  - "@effect/platform-node@4.0.1"
-  - "@effect/sql-pg@4.0.1"
-  - "@effect/sql-sqlite-do@4.0.1"
-  - "@effect/vitest@4.0.1"
+  - "@effect/atom-react@4.0.2"
+  - "@effect/openapi-generator@4.0.2"
+  - "@effect/platform-node-shared@4.0.2"
+  - "@effect/platform-node@4.0.2"
+  - "@effect/sql-pg@4.0.2"
+  - "@effect/sql-sqlite-do@4.0.2"
+  - "@effect/vitest@4.0.2"
   - alchemy@2.0.0-beta.80
-  - effect@4.0.1
+  - effect@4.0.2
   - "@legendapp/list@3.3.5"
   - "@expo/cli@58.1.1"
   - "@expo/env@2.5.1"
@@ -261,6 +262,7 @@ overrides:
   tailwindcss: "catalog:"
   # Ranges from @effect/platform-node, jsdom, unifont, Expo and libsql otherwise
   # settle on two patch releases of each major. Older majors stay as they are.
+  "@types/ws@^8": "catalog:"
   "undici@^8": "catalog:"
   "ws@^8": "catalog:"
   vite: "catalog:"
@@ -285,7 +287,7 @@ patchedDependencies:
   "@clerk/expo@4.6.8": patches/@clerk__expo@4.6.8.patch
   # Staple retries never ran: the promise-retry callback ignored `retry`. Fixed in @electron/notarize 3.x, but electron-builder pins 2.5.0.
   "@electron/notarize@2.5.0": patches/@electron__notarize@2.5.0.patch
-  "@effect/vitest@4.0.1": patches/@effect__vitest@4.0.1.patch
+  "@effect/vitest@4.0.2": patches/@effect__vitest@4.0.2.patch
   "@expo/metro-config@58.0.6": patches/@expo__metro-config@58.0.6.patch
   expo-sharing@58.0.13: patches/expo-sharing@58.0.13.patch
   expo-widgets@58.0.11: patches/expo-widgets@58.0.11.patch
@@ -301,7 +303,7 @@ patchedDependencies:
   "@react-native-menu/menu@2.0.0": patches/@react-native-menu__menu@2.0.0.patch
   "@react-navigation/native-stack@7.17.6": patches/@react-navigation%2Fnative-stack@7.17.6.patch
   dbus-next@0.10.2: patches/dbus-next@0.10.2.patch
-  effect@4.0.1: patches/effect@4.0.1.patch
+  effect@4.0.2: patches/effect@4.0.2.patch
   expo-modules-core@58.0.11: patches/expo-modules-core@58.0.11.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
   # Link http(s) URLs with a port or a single-label host. md4c otherwise requires a dotted host and stops at ':'.
