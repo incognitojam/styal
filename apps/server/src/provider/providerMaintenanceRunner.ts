@@ -408,19 +408,29 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             const couldNotVerify =
               verifiedProviders.length === 0 ||
               verifiedProviders.some((verifiedProvider) => !isStillInstalled(verifiedProvider));
+            // npm exits 0 when an optional platform package fails to download,
+            // leaving a launcher that cannot start. The probe error says why.
+            const brokenProvider = verifiedProviders.find(
+              (verifiedProvider) => verifiedProvider.status === "error",
+            );
             const stillOutdated = verifiedProviders.some((verifiedProvider) =>
               isOutdatedProvider(verifiedProvider),
             );
             return yield* finish(
               makeUpdateState({
-                status: couldNotVerify || stillOutdated ? "unchanged" : "succeeded",
+                status:
+                  couldNotVerify || brokenProvider || stillOutdated ? "unchanged" : "succeeded",
                 startedAt,
                 finishedAt,
                 message: couldNotVerify
                   ? "Update command completed, but styal could not verify the provider version."
-                  : stillOutdated
-                    ? "Update command completed, but styal still detects an outdated provider version."
-                    : "Provider updated.",
+                  : brokenProvider
+                    ? `Update command completed, but the provider reports an error: ${
+                        brokenProvider.message ?? "unknown error"
+                      }`
+                    : stillOutdated
+                      ? "Update command completed, but styal still detects an outdated provider version."
+                      : "Provider updated.",
                 output: commandOutput(result),
               }),
             );
