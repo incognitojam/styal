@@ -69,7 +69,7 @@ Upstream's direct release commits (`chore(release): prepare vX.Y.Z`) bump packag
 
 When an upstream change adds, removes, or bumps dependencies and the lockfile conflicts, keep the fork's lockfile and regenerate it with `pnpm install --lockfile-only`. In the `Fork adaptation:` note, name any package that resolves to a different version than upstream's.
 
-Keep upstream files the fork does not use identical to upstream, such as `.github/workflows/release.yml`, which is disabled in favour of the fork's own release workflows. When an import adapts an upstream change into a fork-owned file instead of the file upstream changed, apply upstream's change to its own file too. Otherwise that file drifts, and later upstream commits to it conflict.
+Keep upstream files the fork does not use identical to upstream, such as `.github/workflows/release.yml`, which is disabled in favour of the fork's own release workflows. When an import adapts an upstream change into a fork-owned file instead of the file upstream changed, apply upstream's change to its own file too. Otherwise that file drifts, and later upstream commits to it conflict. The disabled `.github/workflows/ci.yml` is the exception: Fork CI (`fork-ci.yml`) runs its checks, and promotion rejects candidates that change `fork-ci.yml`. When a batch changes a check in `ci.yml`, port it to `fork-ci.yml` in a separate maintainer pull request after promotion.
 
 ## 3. Validate the final batch
 

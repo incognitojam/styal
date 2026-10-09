@@ -150,8 +150,18 @@ jobs:
       - name: Install browser secret helper build libraries
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
+      # Files/dependencies are repo-wide; export checks cover clean workspaces only.
+      - name: Check unused code
+        run: vp run knip:check
+
       - name: Check
         run: vp check
+
+      - name: Check className overrides on components/ui do not grow
+        run: vp run lint:restyle-ceiling
+
+      - name: Test nightly release checks
+        run: node --test .github/scripts/check-nightly-release.test.cjs
 
       - name: Check fork feature ledger
         run: vp run --filter @t3tools/scripts ledger:check
@@ -164,17 +174,17 @@ jobs:
       - name: Typecheck
         run: vpr typecheck
 
-      - name: Check resource monitor formatting
-        run: cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check
+      - name: Check Rust formatting
+        run: |
+          for crate in resource-monitor kde-snap-shot hyprland-snap-shot; do
+            cargo fmt --manifest-path "native/$crate/Cargo.toml" -- --check
+          done
 
       - name: Build desktop pipeline
         run: vp run build:desktop
 
       - name: Verify preload bundle output
-        run: |
-          test -f apps/desktop/dist-electron/preload.cjs
-          grep -nE "desktopBridge|getLocalEnvironmentBootstrap|PICK_FOLDER_CHANNEL|wsUrl" apps/desktop/dist-electron/preload.cjs
-          grep -n "__clerk_internal_electron_passkeys" apps/desktop/dist-electron/preload.cjs
+        run: node apps/desktop/scripts/verify-preload-bundle.mjs
 
   test_server:
     name: Fork Test (Server ${{ matrix.shard }}/${{ strategy.job-total }})
@@ -344,9 +354,12 @@ jobs:
             --reporter=default \
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
 
-      - name: Test resource monitor
+      - name: Test Rust crates
         if: matrix.native
-        run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
+        run: |
+          for crate in resource-monitor kde-snap-shot hyprland-snap-shot; do
+            cargo test --locked --manifest-path "native/$crate/Cargo.toml"
+          done
 
   test_workspace_required:
     name: Fork Test (Workspace)
@@ -356,6 +369,118 @@ jobs:
     steps:
       - name: Require every workspace shard to pass
         run: test '${{ needs.test_workspace.result }}' = success
+
+  # The static analysis below needs a macOS runner, which GitHub allows only a
+  # few of at once, so gate it on the native sources it actually lints instead
+  # of running it on every push. Detection is API-only (no checkout) and fails open: if
+  # the diff cannot be resolved, the lint runs.
+  mobile_native_changes:
+    name: Fork Mobile Native Changes
+    if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.detect.outputs.changed }}
+    steps:
+      - name: Detect mobile native changes
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -uo pipefail
+
+          fail_open() {
+            echo "$* Running native static analysis."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          count_rows() {
+            printf '%s\n' "$1" | grep -c . || true
+          }
+
+          # One row per changed file, holding the new path and, for a rename,
+          # the path it replaced: renaming a matched file out of the matched
+          # paths removes a lint input just like editing it.
+          row='[.filename, (.previous_filename // empty)] | @tsv'
+
+          if [[ -n "${PR_NUMBER}" ]]; then
+            # The PR files endpoint stops at 3000 files and pagination cannot
+            # extend it, so cross-check against the count the PR itself reports.
+            expected=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.changed_files') \
+              || fail_open "Could not read the pull request."
+            rows=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq ".[] | ${row}") \
+              || fail_open "Could not resolve changed files."
+
+            listed=$(count_rows "$rows")
+            if [[ "$listed" -lt "$expected" ]]; then
+              fail_open "GitHub listed only ${listed} of ${expected} changed files."
+            fi
+          else
+            rows=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${BEFORE_SHA}...${GITHUB_SHA}" --jq ".files[]? | ${row}") \
+              || fail_open "Could not resolve changed files."
+
+            # The compare endpoint reports at most 300 files and pagination does
+            # not extend that list, so a full list may be hiding native changes.
+            listed=$(count_rows "$rows")
+            if [[ "$listed" -ge 300 ]]; then
+              fail_open "GitHub listed ${listed} changed files, the compare endpoint maximum."
+            fi
+          fi
+
+          paths=$(tr '\t' '\n' <<< "$rows")
+
+          # Sources scripts/mobile-native-static-check.ts lints, plus the tool
+          # and rule configuration that decides how it lints them, plus the
+          # root package.json that defines the lint:mobile command.
+          pattern='^apps/mobile/.*\.(swift|kt|kts)$|^apps/mobile/(\.swiftlint\.yml|detekt\.yml|\.editorconfig|Brewfile)$|^scripts/mobile-native-static-check\.ts$|^package\.json$|^\.github/workflows/fork-ci\.yml$'
+
+          if grep -qE "$pattern" <<< "$paths"; then
+            echo "Native sources or lint configuration changed:"
+            grep -E "$pattern" <<< "$paths"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No mobile native sources or lint configuration changed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  mobile_native_static_analysis:
+    name: Fork Mobile Native Static Analysis
+    needs: mobile_native_changes
+    # Skip only on an explicit "no": a gate job that failed or errored leaves the
+    # output empty, and that must run the lint rather than silently skip it. A
+    # skipped gate (outside this repository) skips the lint too.
+    if: ${{ !cancelled() && needs.mobile_native_changes.result != 'skipped' && needs.mobile_native_changes.outputs.changed != 'false' }}
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - name: Install mobile native static analysis tools
+        run: brew bundle install --file apps/mobile/Brewfile
+
+      - name: Lint mobile native sources
+        run: vp run lint:mobile
 
   release_smoke:
     name: Fork Release Smoke
