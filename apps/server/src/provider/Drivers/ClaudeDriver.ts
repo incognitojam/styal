@@ -43,7 +43,7 @@ import {
   probeClaudeWorkspaceSnapshot,
 } from "../ClaudeProvider.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
-import * as ModelManifest from "../ModelManifest.ts";
+import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
 import {
   defaultProviderContinuationIdentity,
@@ -101,7 +101,7 @@ export type ClaudeDriverEnv =
   | Crypto.Crypto
   | FileSystem.FileSystem
   | HttpClient.HttpClient
-  | ModelManifest.ModelManifest
+  | ModelCatalog.ModelCatalog
   | Path.Path
   | ProviderEventLoggers.ProviderEventLoggers
   | ServerConfig.ServerConfig;
@@ -123,8 +123,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const httpClient = yield* HttpClient.HttpClient;
       const resetCreditCoordinator = yield* ResetCreditCoordinator.ResetCreditCoordinator;
       const host = yield* ProviderHost;
-      const modelManifest = yield* ModelManifest.ModelManifest;
-      const modelCatalog = modelManifest.current.pipe(Effect.map(resolveClaudeModelCatalog));
+      const catalogService = yield* ModelCatalog.ModelCatalog;
+      const modelCatalog = catalogService
+        .current(DRIVER_KIND)
+        .pipe(Effect.map(resolveClaudeModelCatalog));
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -209,16 +211,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
 
       // Start the TTL-gated refresh without delaying provider readiness. The
       // next check observes a remote manifest after the background fetch lands.
-      const checkProvider = modelManifest.refreshInBackground.pipe(
+      const checkProvider = catalogService.refreshInBackground.pipe(
         Effect.andThen(
-          modelManifest.current.pipe(
-            Effect.flatMap((manifest) =>
+          modelCatalog.pipe(
+            Effect.flatMap((catalog) =>
               checkClaudeProviderStatus(
                 effectiveConfig,
                 () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
                 processEnv,
                 cwd,
-                resolveClaudeModelCatalog(manifest),
+                catalog,
                 scopedLimitNames,
                 (version) =>
                   ClaudeResetCredits.readClaudeResetCredits(configDir, version).pipe(
@@ -247,10 +249,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
         initialSnapshot: (settings) =>
-          modelManifest.current.pipe(
-            Effect.flatMap((manifest) =>
-              makePendingClaudeProvider(settings.provider, resolveClaudeModelCatalog(manifest)),
-            ),
+          modelCatalog.pipe(
+            Effect.flatMap((catalog) => makePendingClaudeProvider(settings.provider, catalog)),
             Effect.flatMap((snapshot) =>
               readClaudeHistoryRetention(configDir).pipe(
                 Effect.map((historyRetention) => stampIdentity({ ...snapshot, historyRetention })),

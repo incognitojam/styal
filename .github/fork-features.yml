@@ -123,8 +123,8 @@ features:
       - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts
       - apps/server/src/provider/AntigravityModels.ts
       - apps/server/src/provider/AntigravityProvider.ts
-      - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
+      - apps/server/src/provider/antigravityModelCatalog.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
       - apps/web/src/components/chat/composerProviderState.tsx
       - apps/web/src/components/settings/ProjectDefaultsSettings.tsx
@@ -149,8 +149,8 @@ features:
       - apps/mobile/src/lib/modelOptions.test.ts
       - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.test.ts
       - apps/server/src/provider/AntigravityProvider.test.ts
-      - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.test.ts
+      - apps/server/src/provider/antigravityModelCatalog.test.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.test.ts
       - apps/web/src/components/chat/composerProviderState.test.tsx
       - apps/web/src/modelSelection.test.ts
@@ -636,12 +636,14 @@ features:
     implementation_paths:
       - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/provider/model-manifest.json
+      - packages/provider-core/src/server/ModelCatalog.ts
       - packages/shared/src/model.ts
     upstream_paths:
       - apps/server/src/provider/CodexProvider.ts
       - packages/shared/src/model.ts
     tests:
       - apps/server/src/provider/CodexProvider.test.ts
+      - packages/provider-core/src/server/ModelCatalog.test.ts
       - packages/shared/src/model.test.ts
     upstream:
       status: tracking
