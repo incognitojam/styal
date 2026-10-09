@@ -105,6 +105,8 @@ export type T3ProjectFile = typeof T3ProjectFile.Type;
  * change for a new file-backed setting.
  */
 export const PROJECT_FILE_BACKED_SETTINGS = {
+  // Clients use the current checkout when the project is not a Git repo or
+  // has no commit to branch from, without changing this inherited default.
   defaultThreadEnvMode: { field: "defaultThreadEnvMode", builtIn: "worktree" },
   worktreeSubmodules: { field: "worktreeSubmodules", builtIn: "recursive" },
 } as const satisfies {

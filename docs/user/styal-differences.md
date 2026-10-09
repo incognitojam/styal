@@ -38,12 +38,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   available, then GPT-6-Sol, GPT-6-Astra or an older model offered by the installed CLI. T3 Code
   defaults to GPT-6-Astra as of
   [revision 2cbc24f](https://github.com/pingdotgg/t3code/tree/2cbc24fcae2b5649d7b60b68da72053a37fa82d5).
-- **New threads start in a worktree.** Both apps support isolated Git worktrees. styal defaults new
-  threads to a worktree, while T3 Code defaults to the local checkout as of
-  [revision 451afcb](https://github.com/pingdotgg/t3code/tree/451afcb22d93f06cb24f9bc16703404564952553);
-  either default can be changed. A newly initialized repository runs its first threads in the
-  current checkout until it has a commit, then uses the worktree default again. T3 Code still
-  offers a new worktree in that state and runs the thread in the current checkout instead.
+- **New threads start in a worktree.** Both apps support isolated Git worktrees. After project,
+  environment, and `t3.json` settings, styal defaults to a worktree when the project is a Git
+  repository with a commit, and the current checkout otherwise. T3 Code defaults to the local
+  checkout at this last step as of
+  [revision a6ec88f](https://github.com/pingdotgg/t3code/tree/a6ec88f7a716fc421bd22c2484881c44110f9375).
+  Once a newly initialized repository has its first commit, the worktree default takes effect.
   [Working with threads](./thread-sidebar.md).
 - **Stable development ports.** Each workspace gets a persistent range of ten ports. Agents,
   terminals, and project scripts receive the same assignment across restarts, so parallel workspaces
