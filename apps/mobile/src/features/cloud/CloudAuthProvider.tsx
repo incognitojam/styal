@@ -27,10 +27,17 @@ import {
   setAgentAwarenessRelayTokenProvider,
   unregisterAgentAwarenessDeviceForCurrentUser,
 } from "../agent-awareness/remoteRegistration";
-import { limitClerkRequestDuration, retryFailedClerkLoads } from "./clerkLoadRecovery";
+import {
+  limitClerkRequestDuration,
+  recoverableClerkTokenCache,
+  retryFailedClerkLoads,
+} from "./clerkLoadRecovery";
 import { clearConnectOnboardingRequest, requestConnectOnboarding } from "./connectOnboarding";
 import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publicConfig";
 import { removeCloudEnvironments } from "./cloud-drafts";
+
+// Keep the wrapper stable: Clerk uses the cache identity to track native sync.
+const cloudTokenCache = tokenCache ? recoverableClerkTokenCache(tokenCache) : undefined;
 
 function resetManagedRelayTokenCache() {
   return settleAsyncResult(() =>
@@ -258,7 +265,7 @@ export function CloudAuthProvider(props: { readonly children: ReactNode }) {
   limitClerkRequestDuration(getClerkInstance({ publishableKey }));
 
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+    <ClerkProvider publishableKey={publishableKey} tokenCache={cloudTokenCache}>
       <ClerkLoadRecovery />
       <CloudAuthBridge>{props.children}</CloudAuthBridge>
     </ClerkProvider>

@@ -4,7 +4,9 @@ import {
   CLERK_LOAD_RETRY_INITIAL_DELAY_MS,
   CLERK_LOAD_RETRY_MAX_DELAY_MS,
   CLERK_REQUEST_TIMEOUT_MS,
+  CLERK_TOKEN_READ_TIMEOUT_MS,
   limitClerkRequestDuration,
+  recoverableClerkTokenCache,
   retryFailedClerkLoads,
 } from "./clerkLoadRecovery";
 
@@ -52,6 +54,105 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("recoverableClerkTokenCache", () => {
+  function storedTokenCache() {
+    return {
+      getToken: vi.fn(async (_key: string): Promise<string | null> => "synthetic-client-token"),
+      saveToken: vi.fn(async (_key: string, _token: string) => {}),
+      clearToken: vi.fn(async (_key: string) => {}),
+    };
+  }
+
+  it("reads a saved sign-in and clears the timeout once storage responds", async () => {
+    const cache = storedTokenCache();
+    const wrapped = recoverableClerkTokenCache(cache);
+
+    await expect(wrapped.getToken("client-token")).resolves.toBe("synthetic-client-token");
+    expect(cache.getToken).toHaveBeenCalledWith("client-token");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("rejects a stalled read without signing out or clearing saved credentials", async () => {
+    const cache = storedTokenCache();
+    cache.getToken.mockImplementationOnce(() => new Promise(() => {}));
+    const wrapped = recoverableClerkTokenCache(cache);
+    const read = expect(wrapped.getToken("client-token")).rejects.toThrow(
+      "Reading the saved styal Link sign-in timed out.",
+    );
+
+    await vi.advanceTimersByTimeAsync(CLERK_TOKEN_READ_TIMEOUT_MS);
+    await read;
+    expect(cache.clearToken).not.toHaveBeenCalled();
+    expect(cache.saveToken).not.toHaveBeenCalled();
+    // The timed-out promise is not cached, so a new attempt reads storage again.
+    await expect(wrapped.getToken("client-token")).resolves.toBe("synthetic-client-token");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("lets the failed-load retry restore the same saved sign-in", async () => {
+    const cache = storedTokenCache();
+    cache.getToken.mockImplementationOnce(() => new Promise(() => {}));
+    const wrapped = recoverableClerkTokenCache(cache);
+    const clerk = fakeClerk([]);
+    const onLoadFailed = vi.fn();
+    let restoredToken: string | null | undefined;
+    clerk.loadHeadlessClerk = () => {
+      clerk.loadAttempts += 1;
+      void wrapped.getToken("client-token").then(
+        (token) => {
+          restoredToken = token;
+          clerk.emit("ready");
+        },
+        () => clerk.emit("error"),
+      );
+    };
+    const stop = retryFailedClerkLoads(clerk, appActiveSource().subscribe, onLoadFailed);
+
+    clerk.loadHeadlessClerk();
+    await vi.advanceTimersByTimeAsync(CLERK_TOKEN_READ_TIMEOUT_MS);
+    expect(onLoadFailed).toHaveBeenCalledOnce();
+    expect(clerk.loaded).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(CLERK_LOAD_RETRY_INITIAL_DELAY_MS);
+    expect(clerk.loaded).toBe(true);
+    expect(restoredToken).toBe("synthetic-client-token");
+    expect(clerk.loadAttempts).toBe(2);
+    expect(cache.clearToken).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("ignores a late completion from the timed-out read", async () => {
+    const cache = storedTokenCache();
+    let finishRead: (token: string) => void = () => {};
+    cache.getToken.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const wrapped = recoverableClerkTokenCache(cache);
+    const read = expect(wrapped.getToken("client-token")).rejects.toThrow("timed out");
+
+    await vi.advanceTimersByTimeAsync(CLERK_TOKEN_READ_TIMEOUT_MS);
+    await read;
+    finishRead("obsolete-client-token");
+    await expect(wrapped.getToken("client-token")).resolves.toBe("synthetic-client-token");
+    expect(cache.saveToken).not.toHaveBeenCalled();
+    expect(cache.clearToken).not.toHaveBeenCalled();
+  });
+
+  it("preserves genuine missing-token and storage-error results", async () => {
+    const cache = storedTokenCache();
+    cache.getToken.mockResolvedValueOnce(null);
+    const wrapped = recoverableClerkTokenCache(cache);
+    await expect(wrapped.getToken("client-token")).resolves.toBeNull();
+    const error = new Error("Synthetic storage failure");
+    cache.getToken.mockRejectedValueOnce(error);
+    await expect(wrapped.getToken("client-token")).rejects.toBe(error);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
 describe("retryFailedClerkLoads", () => {

@@ -1,9 +1,13 @@
-// Clerk's headless (React Native) startup has two failure modes that leave
+import type { tokenCache } from "@clerk/expo/token-cache";
+
+// Clerk's headless (React Native) startup has failure modes that leave
 // `useAuth().isLoaded` false until the app is restarted:
 //
 // - React Native on Android sets no connect or read timeout on `fetch`, so the
 //   initial environment/client request can stall indefinitely on a network that
 //   is still coming up.
+// - Expo awaits the saved client token before running our request timeout hook.
+//   A stalled native storage read never reaches fetch or reports a load failure.
 // - When the initial load fails, `@clerk/react` reports status "error" and never
 //   calls `load()` again.
 //
@@ -11,6 +15,7 @@
 // checks for the member at runtime and does nothing when a Clerk upgrade removes it.
 
 export const CLERK_REQUEST_TIMEOUT_MS = 15_000;
+export const CLERK_TOKEN_READ_TIMEOUT_MS = 15_000;
 export const CLERK_LOAD_RETRY_INITIAL_DELAY_MS = 2_000;
 export const CLERK_LOAD_RETRY_MAX_DELAY_MS = 30_000;
 
@@ -30,6 +35,34 @@ interface HeadlessClerkLoader {
 }
 
 const timedClerkInstances = new WeakSet<object>();
+
+/**
+ * A failed read must reject, rather than look like a missing token: returning null
+ * would load a signed-out client and remove the user's saved relay environments.
+ * Keep Expo's cache responsible for storage, and leave its contents untouched on
+ * timeout so the next Clerk load can retry the read.
+ */
+export function recoverableClerkTokenCache(cache: NonNullable<typeof tokenCache>) {
+  return {
+    ...cache,
+    getToken: async (key: string) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          cache.getToken(key),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("Reading the saved styal Link sign-in timed out.")),
+              CLERK_TOKEN_READ_TIMEOUT_MS,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
 
 /**
  * Aborts Clerk GET requests that do not finish within the timeout, so a stalled
