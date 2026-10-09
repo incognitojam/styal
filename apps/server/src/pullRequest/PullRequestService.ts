@@ -80,7 +80,7 @@ import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/source
 
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import { parseUnifiedDiffPaths } from "../checkpointing/Diffs.ts";
-import { AllowGitHubReserve } from "../sourceControl/GitHubApi.ts";
+import { AllowGitHubReserve } from "@t3tools/source-control-github/server/GitHubApi";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";

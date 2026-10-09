@@ -49,7 +49,7 @@ import {
 } from "../project/gitCloneProgress.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { classifyNonZeroExit } from "../vcs/VcsProcess.ts";
-import { MAX_REFERENCES_PER_REQUEST } from "./gitHubReferences.ts";
+import { MAX_REFERENCES_PER_REQUEST } from "@t3tools/source-control-github/server/gitHubReferences";
 import { makeReferenceCache } from "./referenceCache.ts";
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";

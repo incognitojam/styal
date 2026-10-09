@@ -14,7 +14,7 @@ import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
-import * as GitHubQuota from "./githubQuota.ts";
+import * as GitHubQuota from "./GitHubQuota.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 
 const DEFAULT_TIMEOUT = Duration.seconds(30);
@@ -32,7 +32,9 @@ export const PinnedGitHubCredential = Context.Reference<{
   readonly host: string;
   readonly token: Redacted.Redacted<string>;
   readonly credentialFingerprint: string;
-} | null>("t3/sourceControl/PinnedGitHubCredential", { defaultValue: () => null });
+} | null>("@t3tools/source-control-github/server/GitHubApi/PinnedGitHubCredential", {
+  defaultValue: () => null,
+});
 
 /**
  * Set by interactive callers (a user's read or write, not a background sweep). Requests made
@@ -40,7 +42,7 @@ export const PinnedGitHubCredential = Context.Reference<{
  * pull request should not be refused because a background read exhausted the quota.
  */
 export const AllowGitHubReserve = Context.Reference<boolean>(
-  "t3/sourceControl/AllowGitHubReserve",
+  "@t3tools/source-control-github/server/GitHubApi/AllowGitHubReserve",
   { defaultValue: () => false },
 );
 
@@ -170,7 +172,7 @@ export class GitHubApi extends Context.Service<
       GitHubApiError
     >;
   }
->()("@styal/cli/sourceControl/GitHubApi") {}
+>()("@t3tools/source-control-github/server/GitHubApi") {}
 
 function normalizeHost(host: string): string {
   return host.trim().toLowerCase();
