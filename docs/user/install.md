@@ -95,6 +95,13 @@ The styal mobile app is a work in progress. The phone connects to a server on
 another machine. Follow [remote access](./remote-access.md) to link it through
 styal Link or a pairing URL.
 
+On Android 7.0 or newer, open the newest **styal for Android** release on the
+[releases page](https://github.com/incognitojam/styal/releases) and download its
+APK on your phone. Android asks you to allow installs from your browser the first
+time. Install a newer release the same way to update; your saved environments are
+kept. To have an app such as Obtainium track releases for you, filter release
+titles by `Android`.
+
 If the app crashes during launch, open Settings → Diagnostics on the next launch
 that succeeds. It lists startup crashes from the last 7 days with the error and
 component stack that store crash reports leave out. Copy the report and paste it

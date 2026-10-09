@@ -87,3 +87,7 @@ The mobile app can download updates in the background and apply them when you
 next leave the app. It saves drafts and queued messages before restarting. If you
 keep the app open for a long time, it may ask to install immediately; choosing
 **Later** leaves the update queued for the next suitable moment.
+
+Some updates need a new app build. On Android, install the newest **styal for
+Android** release from GitHub, as described in [installing the mobile
+app](./install.md#mobile-app).
