@@ -1417,18 +1417,18 @@ features:
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/scripts/seed-tool-presentation-fixture.ts
-      - apps/server/src/mcp/AcpMcpOverAcpBridge.ts
       - apps/server/src/mcp/McpHttpServer.ts
       - apps/server/src/mcp/toolkits/testing/toolPresentationFixtures.ts
-      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
-      - apps/server/src/provider/acp/AcpRuntimeModel.ts
       - packages/client-runtime/src/work-log/presentation.ts
+      - packages/provider-acp/src/server/adapter.ts
+      - packages/provider-acp/src/server/mcpOverAcpBridge.ts
+      - packages/provider-acp/src/server/runtimeModel.ts
       - packages/provider-core/src/server/mcpSession.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
       - packages/provider-core/src/server/runtimeInstructions.ts
@@ -1442,12 +1442,12 @@ features:
     upstream_paths:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/mcp/McpHttpServer.ts
-      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
+      - packages/provider-acp/src/server/adapter.ts
       - packages/provider-core/src/server/mcpSession.ts
       - packages/provider-core/src/server/mcpToolPresentation.ts
       - packages/provider-core/src/server/orchestrationInstructions.ts
@@ -1456,14 +1456,14 @@ features:
       - packages/provider-opencode/src/server/adapter.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/server/src/mcp/AcpMcpOverAcpBridge.test.ts
       - apps/server/src/mcp/toolkits/core.test.ts
       - apps/server/src/mcp/toolkits/toolPresentation.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
-      - apps/server/src/provider/acp/AcpRuntimeModel.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
+      - packages/provider-acp/src/server/mcpOverAcpBridge.test.ts
+      - packages/provider-acp/src/server/runtimeModel.test.ts
       - packages/provider-core/src/server/mcpSession.test.ts
       - packages/provider-core/src/server/mcpToolPresentation.test.ts
       - packages/provider-core/src/server/orchestrationInstructions.test.ts
@@ -2912,7 +2912,6 @@ features:
       - Codex receives complete project instructions through additional context even when the model catalog replaces collaboration-mode text, and restores that context after root-thread compaction.
       - Projects without additional instructions preserve the ordinary upstream provider prompt and session behavior.
     implementation_paths:
-      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
@@ -2922,13 +2921,13 @@ features:
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/contracts/src/orchestrationV2.ts
+      - packages/provider-acp/src/server/adapter.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
       - packages/provider-cursor/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
       - packages/provider-opencode/src/server/v2/adapter.ts
       - packages/provider-pi/src/server/adapter.ts
     upstream_paths:
-      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
@@ -2937,6 +2936,7 @@ features:
       - apps/server/src/provider/CodexDeveloperInstructions.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/contracts/src/orchestrationV2.ts
+      - packages/provider-acp/src/server/adapter.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
       - packages/provider-cursor/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
@@ -4335,7 +4335,6 @@ features:
       - The repository dev runner uses the workspace base port for the server and the next port for Vite while preserving explicit port, offset, instance, and development URL overrides.
       - Cursor SDK sessions use separate worker environments, so simultaneous workspaces and provider profiles expose their own ports and device environment to shell children without changing the server environment.
     implementation_paths:
-      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
@@ -4344,6 +4343,7 @@ features:
       - apps/server/src/server.ts
       - apps/server/src/terminal/Manager.ts
       - apps/server/src/workspace/WorkspacePortAllocator.ts
+      - packages/provider-acp/src/server/adapter.ts
       - packages/provider-cursor/src/server/CursorAgentSdk.ts
       - packages/provider-cursor/src/server/CursorSdkWorker.ts
       - packages/provider-cursor/src/server/adapter.ts
@@ -4353,12 +4353,12 @@ features:
       - scripts/dev-runner.ts
       - t3.json
     upstream_paths:
-      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts
       - apps/server/src/orchestration-v2/RuntimePolicy.ts
       - apps/server/src/terminal/Manager.ts
+      - packages/provider-acp/src/server/adapter.ts
       - packages/provider-cursor/src/server/CursorAgentSdk.ts
       - packages/provider-cursor/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
@@ -4627,7 +4627,6 @@ features:
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
-      - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
@@ -4645,6 +4644,7 @@ features:
       - apps/web/src/session-logic.ts
       - packages/contracts/src/providerRuntime.ts
       - packages/contracts/src/settings.ts
+      - packages/provider-acp/src/server/adapter.ts
       - packages/provider-cursor/src/server/adapter.ts
       - packages/provider-opencode/src/server/adapter.ts
     tests:

@@ -5,7 +5,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import type * as AcpSchema from "effect-acp/compat";
 
-import { responsePayloads } from "./AcpMcpStdioBridge.ts";
+import { responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
 import { ACTIVE_MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME } from "./McpProviderSession.ts";
 
 const MAX_CONNECTIONS = 16;
@@ -134,7 +134,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
             new AcpMcpOverAcpError(`T3 Code MCP endpoint responded with HTTP ${response.status}.`),
           );
         }
-        const payloads = [...(yield* Stream.runCollect(responsePayloads(response)))];
+        const payloads = [...(yield* Stream.runCollect(responsePayloads(response, bridgeError)))];
         for (const payload of payloads) {
           connection.protocolVersion = protocolVersionOf(payload) ?? connection.protocolVersion;
         }
