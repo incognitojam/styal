@@ -61,6 +61,8 @@ export function resolveNativeAppUpdate(
     typeof apk !== "string" ||
     !/^[\w.-]+\.apk$/.test(apk) ||
     typeof apkSizeBytes !== "number" ||
+    !Number.isSafeInteger(apkSizeBytes) ||
+    apkSizeBytes <= 0 ||
     typeof runtimeVersion !== "string" ||
     runtimeVersion.length === 0 ||
     typeof version !== "string"
@@ -71,7 +73,7 @@ export function resolveNativeAppUpdate(
   return { tag, version, apkUrl: `${RELEASE_DOWNLOAD_URL}/${tag}/${apk}`, apkSizeBytes };
 }
 
-/** Binary megabytes, matching the size Chrome shows when the download starts. */
+/** Binary megabytes for the release download size. */
 export function formatApkSize(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024 / 1024))} MB`;
 }
@@ -215,8 +217,13 @@ export function useAvailableNativeAppUpdate(): NativeAppUpdate | undefined {
 }
 
 export async function openNativeAppUpdateDownload(update: NativeAppUpdate): Promise<void> {
-  const { tryOpenExternalUrl } = await import("../../lib/openExternalUrl");
-  await tryOpenExternalUrl(update.apkUrl, "app-update");
+  const [Linking, { nativeAppUpdateDownloader }] = await Promise.all([
+    import("expo-linking"),
+    import("./native-app-update-download"),
+  ]);
+  // The launch prompt shares the About screen's progress, cancellation and retry actions.
+  await Linking.openURL(Linking.createURL("settings/about"));
+  await nativeAppUpdateDownloader.start(update);
 }
 
 async function defaultConfirmDownload(update: NativeAppUpdate): Promise<boolean> {

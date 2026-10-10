@@ -88,6 +88,15 @@ describe("newestAndroidReleaseTag", () => {
 });
 
 describe("resolveNativeAppUpdate", () => {
+  it.each([0, -1, NaN, Infinity, 1.5])("rejects unusable APK size %s", (apkSizeBytes) => {
+    expect(
+      resolveNativeAppUpdate(
+        "android-1.3.1-16",
+        { ...manifest(NEWER_RUNTIME), apkSizeBytes },
+        INSTALLED_RUNTIME,
+      ),
+    ).toBeUndefined();
+  });
   it("offers a release only when its runtime differs from the installed one", () => {
     expect(
       resolveNativeAppUpdate("android-1.3.1-16", manifest(INSTALLED_RUNTIME), INSTALLED_RUNTIME),

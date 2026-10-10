@@ -1171,6 +1171,7 @@ features:
       - Mobile production and preview profiles retain styal identity and fork Expo configuration; Android distribution uses installable APKs without store submission, while iOS submits to TestFlight.
       - Each finished production Android APK is published as a GitHub release tagged `android-<version>-<versionCode>`, created without claiming Latest from a stable `v` release, and only when its signing certificate matches the pinned production key; release notes contain installation guidance and APK checksums are attached as `SHA256SUMS`.
       - Production Android installs offer the newest GitHub release once per release, and keep its download directly below Version in About styal, only when its runtime version differs from the installed binary's, because over-the-air updates cannot reach that install.
+      - Android APK updates download inside styal with progress, cancellation and retry; incomplete APKs are discarded, complete APKs remain available after installer dismissal, and installs require Android's source permission and system confirmation. Downloads finishing in the background wait for an explicit install action.
       - Mobile About styal identifies the installed binary by its native version and build number on Android and iOS, retaining non-production variant labels.
     implementation_paths:
       - .github/scripts/publish-android-release.sh
@@ -1204,8 +1205,12 @@ features:
       - apps/mobile/eas.json
       - apps/mobile/modules/t3-agent-notifications/android/src/main/res/drawable/agent_activity_mark.xml
       - apps/mobile/modules/t3-composer-editor/android/src/main/java/expo/modules/t3composereditor/T3ComposerEditorModule.kt
+      - apps/mobile/modules/t3-native-controls/android/src/main/AndroidManifest.xml
+      - apps/mobile/modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3NativeControlsModule.kt
       - apps/mobile/src/features/connection/GitHubRoutingSettings.tsx
       - apps/mobile/src/features/settings/appearance/components/AppearancePreviews.tsx
+      - apps/mobile/src/features/settings/components/NativeAppUpdateRow.tsx
+      - apps/mobile/src/features/updates/native-app-update-download.ts
       - apps/mobile/src/features/updates/native-app-updates.ts
       - apps/server/package.json
       - apps/server/src/bin.ts
@@ -1261,6 +1266,8 @@ features:
       - apps/desktop/src/app/DesktopEnvironment.test.ts
       - apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
       - apps/desktop/src/wsl/DesktopWslEnvironment.test.ts
+      - apps/mobile/src/features/updates/native-app-update-apk.test.ts
+      - apps/mobile/src/features/updates/native-app-update-download.test.ts
       - apps/mobile/src/features/updates/native-app-updates.test.ts
       - apps/server/src/bin.test.ts
       - apps/server/src/cloud/bootService.test.ts

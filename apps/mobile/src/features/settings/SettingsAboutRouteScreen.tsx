@@ -13,11 +13,8 @@ import {
   registerHiddenUpdateTap,
   runAppUpdateCheck,
 } from "../updates/app-updates";
-import {
-  formatApkSize,
-  openNativeAppUpdateDownload,
-  useAvailableNativeAppUpdate,
-} from "../updates/native-app-updates";
+import { useAvailableNativeAppUpdate } from "../updates/native-app-updates";
+import { NativeAppUpdateRow } from "./components/NativeAppUpdateRow";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -150,14 +147,7 @@ function AppSettingsSection() {
       ) : (
         versionRow
       )}
-      {nativeUpdate ? (
-        <SettingsRow
-          icon="square.and.arrow.down"
-          label={`Update to styal ${nativeUpdate.version}`}
-          value={`${formatApkSize(nativeUpdate.apkSizeBytes)} download`}
-          onPress={() => void openNativeAppUpdateDownload(nativeUpdate)}
-        />
-      ) : null}
+      {nativeUpdate ? <NativeAppUpdateRow update={nativeUpdate} /> : null}
     </SettingsSection>
   );
 }
