@@ -144,7 +144,11 @@ function SettingsContentLayout() {
   const location = useLocation();
   const navigateToMainApp = useNavigateToMainApp();
   useEscapeToGoBack(navigateToMainApp);
-  const { search } = useSettingsScope();
+  const { search, environment } = useSettingsScope();
+  const contentScopeKey =
+    location.pathname === "/settings/diagnostics" || location.pathname === "/settings/providers"
+      ? environment?.environmentId
+      : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
   const hasScope = !SETTINGS_DEVICE_ONLY_PATHS.has(location.pathname);
 
@@ -152,7 +156,7 @@ function SettingsContentLayout() {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         <SettingsScopeDockProvider
-          key={`${location.pathname}:${JSON.stringify(search)}:${restoreSignal}`}
+          key={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
           enabled={hasScope}
         >
           <SettingsToolbar
