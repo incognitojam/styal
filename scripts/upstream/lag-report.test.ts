@@ -74,7 +74,7 @@ describe("provisional PR lifecycle", () => {
           exceptions: {},
         }),
       );
-      write(trackedPath, JSON.stringify({ pullRequests: [{ pr: 11, reason: "Watch change" }] }));
+      write(trackedPath, JSON.stringify({ pullRequests: [11] }));
       write("fixture.txt", "synthetic fork invariant\n");
       write("fixture.test.ts", "export {};\n");
       write(
@@ -99,7 +99,11 @@ describe("provisional PR lifecycle", () => {
           ],
         }),
       );
-      const forkBase = commit("initial fork policy");
+      commit("initial fork policy");
+      write(trackedPath, JSON.stringify({ pullRequests: [{ pr: 11 }] }));
+      commit("legacy watch entry without a reason");
+      write(trackedPath, JSON.stringify({ pullRequests: [{ pr: 11, reason: "Watch change" }] }));
+      const forkBase = commit("current watch entry with a reason");
       write("flow.txt", "final\n");
       commit("snapshot import\n\nUpstream-PR: 11");
       write(
