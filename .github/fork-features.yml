@@ -1891,7 +1891,7 @@ features:
   - id: pinned-thread-auto-settlement
     title: Keep pinned threads active until unpinned or manually settled
     status: retiring
-    prs: []
+    prs: [719]
     invariants:
       - Sidebar pins block automatic settlement from inactivity and merged or closed pull requests, including a pin racing an in-flight settlement lookup.
       - Unpinning immediately queues a settlement check for that thread without resetting its activity timestamps; pending work, explicit Un-settle, and per-thread auto-settle opt-outs still prevent settlement.
