@@ -82,6 +82,7 @@ import {
 } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { PullRequestStackMenu } from "./PullRequestStackMenu";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { PullRequestThreadLinks } from "./PullRequestThreadLinks";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -310,7 +311,7 @@ const openNumberContextMenu = (
   event.stopPropagation();
   void showPullRequestLinkContextMenu({
     url: detail.url,
-    openLabel: openOnHostLabel(detail.provider),
+    openLabel: openOnHostLabel(sourceControlClients.get(detail.provider)),
     position: { x: event.clientX, y: event.clientY },
   });
 };
@@ -764,16 +765,18 @@ function PullRequestDetailPanelBody({
     if (detail?.autoMergeMethod !== undefined) setMergeMethod(detail.autoMergeMethod);
   }, [detail?.autoMergeMethod, pullRequestKey]);
   const repositoryUrl = detail === null ? null : changeRequestRepositoryUrl(detail.url);
+  const hostClient = sourceControlClients.get(detail?.provider);
   const markdownContext = useMemo(
-    () => ({ repositoryUrl: detail?.provider === "github" ? repositoryUrl : null, threadRef }),
-    [detail?.provider, repositoryUrl, threadRef],
+    () => ({
+      repositoryUrl:
+        repositoryUrl === null ? null : hostClient.referenceAutolinkRepositoryUrl(repositoryUrl),
+      threadRef,
+    }),
+    [hostClient, repositoryUrl, threadRef],
   );
   const authorProfileUrl =
-    detail?.provider === "github" &&
-    detail.author !== null &&
-    !detail.author.login.endsWith("[bot]") &&
-    repositoryUrl !== null
-      ? new URL(`/${encodeURIComponent(detail.author.login)}`, repositoryUrl).toString()
+    detail?.author && repositoryUrl !== null
+      ? hostClient.authorProfileUrl(detail.author.login, repositoryUrl)
       : null;
   const checkoutCommand = handoffSummary
     ? pullRequestCheckoutCommand(
@@ -1778,7 +1781,7 @@ function PullRequestDetailPanelBody({
                       </button>
                     }
                   />
-                  <TooltipPopup side="top">{openOnHostLabel(detail.provider)}</TooltipPopup>
+                  <TooltipPopup side="top">{openOnHostLabel(hostClient)}</TooltipPopup>
                 </Tooltip>
               </>
             ) : null}
@@ -1833,7 +1836,7 @@ function PullRequestDetailPanelBody({
                       </button>
                     }
                   />
-                  <TooltipPopup side="top">{openOnHostLabel(detail.provider)}</TooltipPopup>
+                  <TooltipPopup side="top">{openOnHostLabel(hostClient)}</TooltipPopup>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger
@@ -1883,6 +1886,7 @@ function PullRequestDetailPanelBody({
               ) : null}
               {nativeStack ? (
                 <PullRequestStackMenu
+                  hostLabel={hostClient.label}
                   stack={nativeStack}
                   notice={nativeStackQuery.notice}
                   onRetry={nativeStackQuery.error ? nativeStackQuery.refresh : undefined}
@@ -2290,7 +2294,7 @@ function PullRequestDetailPanelBody({
                   ) : null}
                   <MenuItem onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}>
                     <ArrowUpRightIcon className="size-3.5" />
-                    {openOnHostLabel(detail.provider)}
+                    {openOnHostLabel(hostClient)}
                   </MenuItem>
                   <MenuItem onClick={() => copyReference(detail.url, "PR link")}>
                     <LinkIcon className="size-3.5" />
