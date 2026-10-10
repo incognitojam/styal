@@ -3270,7 +3270,7 @@ features:
       retire_when: Mobile offers Undo that restores an accidentally unpinned thread's previous pinned position, or upstream confirms unpinning by default on mobile.
 
   - id: turn-token-usage
-    title: Show the model and token usage under each agent turn, and the thread's total
+    title: Show the model, token usage, and estimated cost under each agent turn, and the thread's total
     status: review-needed
     prs: []
     invariants:
@@ -3279,6 +3279,7 @@ features:
       - Web and desktop show the turn's model and effort, then its total tokens, beside its timestamp, with input, cached share, output, reasoning, and cache writes on hover; mobile shows the same with details on tap.
       - Each usage activity carries the thread's total, summed on the server over every recorded turn, so long threads are not undercounted by the client's activity window; the composer shows it, and its breakdown says how many turns it includes when some reported no usage. Activities without usage carry no total until some turn reports usage, and decode as no usage on clients that predate models.
       - Claude, Codex, and OpenCode turns record their subagents' usage separately from the main agent's; turn and thread figures include it, and the breakdown notes subagent usage only where a provider could not report it.
+      - The server prices each turn when recording it, by model where the provider splits usage, preferring custom rates, then the provider's own cost (Claude modelUsage, OpenCode steps), then LiteLLM rates; a turn with any unpriced model records no cost. Breakdowns show the turn's and thread's estimated API cost, and say how many turns the thread's cost covers.
       - A client setting (device-local on mobile) hides the figures, and usage activities never render as work-log rows.
     implementation_paths:
       - apps/mobile/src/features/threads/TurnUsageText.tsx
@@ -3300,6 +3301,8 @@ features:
       - apps/server/src/provider/Layers/GrokAdapter.ts
       - apps/server/src/provider/Layers/OpenCodeAdapter.ts
       - apps/server/src/provider/Layers/ProviderService.ts
+      - apps/server/src/usage/UsageService.ts
+      - apps/server/src/usage/usagePricing.ts
       - apps/web/src/components/BranchToolbar.tsx
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
@@ -3315,13 +3318,14 @@ features:
       - apps/server/src/provider/Layers/CodexAdapter.test.ts
       - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
       - apps/server/src/provider/Layers/ProviderService.test.ts
+      - apps/server/src/usage/UsageService.test.ts
       - packages/shared/src/turnUsage.test.ts
     upstream:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/issues/2518
         - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream shows each turn's model and token usage and the thread's total in the conversation on web, desktop, and mobile, with a way to hide it.
+      retire_when: Upstream shows each turn's model, token usage, and cost and the thread's total in the conversation on web, desktop, and mobile, with a way to hide it.
 
   - id: usage-carbon-estimate
     title: Estimate operational carbon emissions from usage

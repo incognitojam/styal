@@ -63,9 +63,16 @@ subagents used, with the subagents' share listed separately. A subagent still wo
 finishes is not counted. Antigravity turns cover the main agent only. Turns that finished before
 your server recorded them show neither.
 
+The breakdown also estimates what the turn would cost at API rates, subagents included. It uses
+Claude Code's and OpenCode's own prices where they report one, otherwise the same rates as
+**Usage**, including your [custom model prices](#set-custom-model-prices). It is not what a
+subscription charges. A turn keeps the price it was recorded with, so changing a custom price
+affects only later turns. Turns on a model with no known price show no cost.
+
 The composer shows the thread's total beside the branch picker, or beside the model on mobile, with
 the same breakdown. The total updates when a turn finishes. When some turns reported no usage, such
-as Cursor or Grok turns, the breakdown says how many turns it includes.
+as Cursor or Grok turns, the breakdown says how many turns it includes, and likewise when only some
+turns have a cost.
 
 To hide the figures, turn off **Settings → General → Turn usage**. On mobile, the setting is in
 **Settings → Thread behavior** and applies to that device.

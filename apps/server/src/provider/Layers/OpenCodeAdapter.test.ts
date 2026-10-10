@@ -2700,7 +2700,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         messageID: "assistant-step-usage-1",
         type: "step-finish",
         reason: "tool-calls",
-        cost: 0,
+        cost: 0.01,
         tokens: {
           input: 100,
           output: 20,
@@ -2744,6 +2744,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           part: {
             ...stepPart,
             id: "step-usage-2",
+            cost: 0.02,
             tokens: {
               input: 50,
               output: 10,
@@ -2791,6 +2792,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
             ...stepPart,
             id: "step-usage-recovered",
             messageID: "assistant-step-usage-recovered",
+            cost: 0.03,
             tokens: {
               input: 30,
               output: 10,
@@ -2844,6 +2846,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
             id: "step-usage-child",
             sessionID: "child-step-usage",
             messageID: "assistant-step-usage-child",
+            cost: 0.1,
             tokens: {
               input: 300,
               output: 60,
@@ -2867,7 +2870,18 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("1 second"));
       NodeAssert.equal(completed._tag, "Some");
       if (completed._tag === "Some" && completed.value.type === "turn.completed") {
-        NodeAssert.deepStrictEqual(completed.value.payload.tokenUsage, {
+        // OpenCode's own step prices, subagent included and each step once.
+        const { byModel, ...tokenUsage } = completed.value.payload.tokenUsage ?? {};
+        const { reportedCostUsd, ...pricedTokens } = byModel?.[0] ?? {};
+        NodeAssert.equal(byModel?.length, 1);
+        NodeAssert.ok(Math.abs((reportedCostUsd ?? 0) - 0.16) < 1e-9);
+        NodeAssert.deepStrictEqual(pricedTokens, {
+          inputTokens: 796,
+          cachedInputTokens: 255,
+          cacheCreationTokens: 61,
+          outputTokens: 129,
+        });
+        NodeAssert.deepStrictEqual(tokenUsage, {
           usageStatus: "partial",
           usageScope: "main_agent",
           inputTokens: 246,

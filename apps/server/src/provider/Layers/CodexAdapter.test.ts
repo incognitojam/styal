@@ -1021,6 +1021,13 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       yield* runtime.emit(codexTurnEvent("turn/started", "turn-subagents"));
       yield* runtime.emit(codexTokenUsageEvent({ ...counts(100, 40, 20), id: "evt-main-usage" }));
       yield* runtime.emit(childUsage("evt-child-a-1", "child-a", counts(1_000, 600, 50)));
+      // Codex names a child's model on a separate event; its usage carries none.
+      yield* runtime.emit({
+        ...codexTurnEvent("turn/started", "turn-subagents"),
+        id: asEventId("evt-child-b-model"),
+        method: "collabAgent/metadataUpdated",
+        payload: { agentThreadId: "child-b", model: "gpt-mini" },
+      });
       yield* runtime.emit(childUsage("evt-child-b-1", "child-b", counts(300, 0, 10)));
       yield* runtime.emit(
         childUsage("evt-child-a-2", "child-a", {
@@ -1040,6 +1047,22 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           outputTokens: 100,
           reasoningTokens: 0,
         });
+        // Priced by model: a child Codex named apart, the rest at the turn's model.
+        NodeAssert.deepStrictEqual(completed.value.payload.tokenUsage?.byModel, [
+          {
+            inputTokens: 1_900,
+            cachedInputTokens: 1_340,
+            cacheCreationTokens: 0,
+            outputTokens: 110,
+          },
+          {
+            model: "gpt-mini",
+            inputTokens: 300,
+            cachedInputTokens: 0,
+            cacheCreationTokens: 0,
+            outputTokens: 10,
+          },
+        ]);
       }
     }),
   );

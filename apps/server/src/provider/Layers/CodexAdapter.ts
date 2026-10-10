@@ -26,6 +26,7 @@ import {
   RuntimeItemId,
   RuntimeRequestId,
   RuntimeTaskId,
+  type ModelTokenUsage,
   type RuntimeTaskUsage,
   type SubagentTokenUsage,
   type TurnTokenUsage,
@@ -145,6 +146,8 @@ interface CodexTurnTokenUsageAccumulator {
   hasSubagents: boolean;
   /** Growth of collab child threads while this turn was live. */
   subagents: CodexCumulativeTokenUsage | undefined;
+  /** The same growth by child model, keyed "" when Codex has not named it. */
+  readonly subagentsByModel: Map<string, CodexCumulativeTokenUsage>;
 }
 
 interface CodexTurnTokenUsageState {
@@ -153,6 +156,8 @@ interface CodexTurnTokenUsageState {
   readonly byTurnId: Map<string, CodexTurnTokenUsageAccumulator>;
   /** Each collab child thread's last running total, kept across turns. */
   readonly childBaselines: Map<string, CodexCumulativeTokenUsage>;
+  /** Each collab child thread's model, from whichever event named it first. */
+  readonly childModels: Map<string, string>;
 }
 
 function mapCodexRuntimeError(
@@ -502,6 +507,7 @@ function makeCodexTurnTokenUsageState(): CodexTurnTokenUsageState {
     activeTurnId: undefined,
     byTurnId: new Map(),
     childBaselines: new Map(),
+    childModels: new Map(),
   };
 }
 
@@ -520,6 +526,7 @@ function getCodexTurnAccumulator(
     observed: false,
     hasSubagents: false,
     subagents: undefined,
+    subagentsByModel: new Map(),
   };
   state.byTurnId.set(turnId, created);
   return created;
@@ -599,8 +606,11 @@ function accumulateCodexTurnTokenUsage(
   }
 }
 
+const CodexChildModel = Schema.Struct({ agentThreadId: Schema.String, model: Schema.String });
+
 const CodexChildTokenUsage = Schema.Struct({
   agentThreadId: Schema.String,
+  model: Schema.optional(Schema.String),
   tokenUsage: EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification__ThreadTokenUsage,
 });
 
@@ -624,14 +634,45 @@ function accumulateCodexSubagentTokenUsage(
   if (state.activeTurnId === undefined) return;
 
   const accumulator = getCodexTurnAccumulator(state, state.activeTurnId);
-  const previous = accumulator.subagents;
-  accumulator.subagents = {
+  const add = (previous: CodexCumulativeTokenUsage | undefined) => ({
     inputTokens: (previous?.inputTokens ?? 0) + delta.inputTokens,
     cachedInputTokens: (previous?.cachedInputTokens ?? 0) + delta.cachedInputTokens,
     cacheCreationTokens: (previous?.cacheCreationTokens ?? 0) + (delta.cacheCreationTokens ?? 0),
     outputTokens: (previous?.outputTokens ?? 0) + delta.outputTokens,
     reasoningTokens: (previous?.reasoningTokens ?? 0) + delta.reasoningTokens,
-  };
+  });
+  accumulator.subagents = add(accumulator.subagents);
+  const model = child.model?.trim() || state.childModels.get(child.agentThreadId) || "";
+  accumulator.subagentsByModel.set(model, add(accumulator.subagentsByModel.get(model)));
+}
+
+/**
+ * Splits a turn's tokens by model for pricing when its subagents named their
+ * own. Without that, every token is priced at the turn's model.
+ */
+function codexTokensByModel(
+  usage: CodexTurnTokenUsageAccumulator,
+): ReadonlyArray<ModelTokenUsage> | undefined {
+  const named = [...usage.subagentsByModel].filter(([model]) => model.length > 0);
+  if (named.length === 0) return undefined;
+  const tokens = (counts: CodexCumulativeTokenUsage) => ({
+    inputTokens: counts.inputTokens,
+    cachedInputTokens: Math.min(counts.inputTokens, counts.cachedInputTokens),
+    cacheCreationTokens: Math.min(counts.inputTokens, counts.cacheCreationTokens ?? 0),
+    outputTokens: counts.outputTokens,
+  });
+  const unnamed = usage.subagentsByModel.get("");
+  return [
+    // The main agent and any subagent on the turn's own model.
+    tokens({
+      inputTokens: usage.inputTokens + (unnamed?.inputTokens ?? 0),
+      cachedInputTokens: usage.cachedInputTokens + (unnamed?.cachedInputTokens ?? 0),
+      cacheCreationTokens: (usage.cacheCreationTokens ?? 0) + (unnamed?.cacheCreationTokens ?? 0),
+      outputTokens: usage.outputTokens + (unnamed?.outputTokens ?? 0),
+      reasoningTokens: 0,
+    }),
+    ...named.map(([model, counts]) => ({ model, ...tokens(counts) })),
+  ];
 }
 
 function codexSubagentTokenUsage(
@@ -674,6 +715,7 @@ function completeCodexTurnTokenUsage(
   }
 
   const subagents = codexSubagentTokenUsage(usage.subagents);
+  const byModel = codexTokensByModel(usage);
   // Codex counts cache reads and writes inside inputTokens. Clamp the
   // subsets so the record keeps the documented relationships even if a
   // counter drifts.
@@ -689,6 +731,7 @@ function completeCodexTurnTokenUsage(
     reasoningTokens: Math.min(usage.outputTokens, usage.reasoningTokens),
     hasSubagents: usage.hasSubagents,
     ...(subagents ? { subagents } : {}),
+    ...(byModel ? { byModel } : {}),
   };
 }
 
@@ -2467,6 +2510,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         const eventFiber = yield* Stream.runForEach(runtime.events, (event) =>
           Effect.gen(function* () {
             yield* writeNativeEvent(event);
+            if (event.method.startsWith("collabAgent/")) {
+              const child = readPayload(CodexChildModel, event.payload);
+              const model = child?.model.trim();
+              if (child && model) turnTokenUsage.childModels.set(child.agentThreadId, model);
+            }
             if (event.method === "turn/started" && event.turnId) {
               if (turnTokenUsage.activeTurnId !== event.turnId) {
                 turnTokenUsage.byTurnId.clear();

@@ -878,6 +878,63 @@ describe("UsageService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("prices a turn's tokens by model from the first rates fetch", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      yield* Effect.gen(function* () {
+        const service = yield* UsageService.make;
+        const tokens = {
+          model: "example-model",
+          inputTokens: 3_000_000,
+          cachedInputTokens: 2_000_000,
+          outputTokens: 100_000,
+        };
+
+        // No table is loaded yet, so pricing waits for the first fetch.
+        assert.closeTo((yield* service.priceTokens([tokens])) ?? -1, 2 + 1 + 0.8, 1e-9);
+        // A provider's own cost stands in for the table, model by model.
+        assert.closeTo(
+          (yield* service.priceTokens([tokens, { ...tokens, reportedCostUsd: 0.25 }])) ?? -1,
+          3.8 + 0.25,
+          1e-9,
+        );
+        // Part of a cost would understate it, so one unknown model leaves the turn unpriced.
+        assert.strictEqual(
+          yield* service.priceTokens([tokens, { ...tokens, model: "unknown-model" }]),
+          null,
+        );
+
+        const settingsService = yield* ServerSettings.ServerSettingsService;
+        yield* settingsService.updateSettings({
+          usagePriceOverrides: {
+            "example-model": { inputCostPerMillionTokens: 1, outputCostPerMillionTokens: 1 },
+          },
+        });
+        // Custom prices win over both, as on the Usage page.
+        assert.closeTo(
+          (yield* service.priceTokens([{ ...tokens, reportedCostUsd: 0.25 }])) ?? -1,
+          3.1,
+          1e-9,
+        );
+      }).pipe(
+        Effect.provide(
+          serviceLayers({
+            prefix: "usage-service-price-tokens-test",
+            home,
+            settings,
+            ratesDocument: {
+              "example-model": {
+                input_cost_per_token: 2e-6,
+                output_cost_per_token: 8e-6,
+                cache_read_input_token_cost: 0.5e-6,
+              },
+            },
+          }),
+        ),
+      );
+    }).pipe(Effect.scoped),
+  );
+
   it.live("does not share an in-flight scan after custom prices change", () =>
     Effect.gen(function* () {
       const { transcript, settings, home } = yield* setup;

@@ -10,6 +10,7 @@ import {
   isToolLifecycleItemType,
   ThreadId,
   type ThreadTokenUsageSnapshot,
+  type TurnTokenUsage,
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationThreadActivity,
@@ -38,6 +39,7 @@ import { formatTokens } from "@t3tools/shared/usageFormat";
 import { sumThreadTokenUsage } from "@t3tools/shared/turnUsage";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { UsageService } from "../../usage/UsageService.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import {
@@ -494,15 +496,37 @@ function reportedTurnTokenUsage(event: TurnEndEvent) {
 }
 
 /**
- * A `turn.usage` record: the reported usage and the `TurnModel` the turn ran
- * on, or undefined when the turn has neither.
+ * The tokens to price a turn by, each with its model: the provider's own split
+ * by model, or every token at the turn's model. Undefined when a model is
+ * unknown.
  */
-function turnUsageRecordPayload(event: TurnEndEvent) {
-  const usage = reportedTurnTokenUsage(event);
+function turnTokensByModel(usage: TurnTokenUsage, turnModel: string | undefined) {
+  const subagents = usage.subagents;
+  const byModel = usage.byModel ?? [
+    {
+      inputTokens: (usage.inputTokens ?? 0) + (subagents?.inputTokens ?? 0),
+      cachedInputTokens: (usage.cachedInputTokens ?? 0) + (subagents?.cachedInputTokens ?? 0),
+      cacheCreationTokens: (usage.cacheCreationTokens ?? 0) + (subagents?.cacheCreationTokens ?? 0),
+      outputTokens: (usage.outputTokens ?? 0) + (subagents?.outputTokens ?? 0),
+    },
+  ];
+  const priced = byModel.map((entry) => {
+    const model = entry.model ?? turnModel;
+    return model === undefined ? undefined : { ...entry, model };
+  });
+  return priced.every(Predicate.isNotUndefined) ? priced : undefined;
+}
+
+/**
+ * A `turn.usage` record: the reported usage, without its pricing split, and
+ * the `TurnModel` the turn ran on. Undefined when the turn has neither.
+ */
+function turnUsageRecordPayload(event: TurnEndEvent, usage = reportedTurnTokenUsage(event)) {
   const model = event.payload.model;
   if (usage === undefined && model === undefined) return undefined;
+  const { byModel: _byModel, ...recordedUsage } = usage ?? {};
   return {
-    ...usage,
+    ...recordedUsage,
     ...(model !== undefined
       ? {
           ...(event.providerInstanceId !== undefined
@@ -1279,6 +1303,7 @@ const make = Effect.gen(function* () {
   const projectionThreadProposedPlans = yield* ProjectionThreadProposedPlanRepository;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
+  const usageService = yield* UsageService;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
@@ -2978,7 +3003,10 @@ const make = Effect.gen(function* () {
     ) {
       return activity;
     }
-    const usage = reportedTurnTokenUsage(event) ?? null;
+    const reported = reportedTurnTokenUsage(event);
+    const tokensByModel = reported && turnTokensByModel(reported, event.payload.model);
+    const costUsd = tokensByModel ? yield* usageService.priceTokens(tokensByModel) : null;
+    const usage = reported ? { ...reported, ...(costUsd !== null ? { costUsd } : {}) } : null;
     const [recorded, turns] = yield* Effect.all([
       projectionThreadActivityRepository.listByThreadId({
         threadId,
@@ -2994,7 +3022,10 @@ const make = Effect.gen(function* () {
     });
     // A thread with no usage yet has no total to show.
     if (thread.countedTurns === 0) return activity;
-    return { ...activity, payload: { ...turnUsageRecordPayload(event), thread } };
+    return {
+      ...activity,
+      payload: { ...turnUsageRecordPayload(event, usage ?? undefined), thread },
+    };
   });
 
   const processDomainEvent = (_event: TurnStartRequestedDomainEvent) => Effect.void;

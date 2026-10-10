@@ -7,7 +7,7 @@
  *
  * @module usagePricing
  */
-import type { UsageCostSource, UsageModelPriceOverride } from "@t3tools/contracts";
+import type { ModelTokenUsage, UsageCostSource, UsageModelPriceOverride } from "@t3tools/contracts";
 
 import type { UsageRecord } from "./usageTranscripts.ts";
 
@@ -243,4 +243,43 @@ export function cacheSavingsUsd(
     (rate.inputCostPerToken - rate.cacheReadCostPerToken) *
     (record.fast ? rate.fastMultiplier : 1)
   );
+}
+
+/**
+ * Prices a turn's tokens model by model, as the Usage page prices transcript
+ * records: a custom rate first, then the provider's own cost, then the table.
+ * Null when any model has no price, since part of a cost would understate it.
+ */
+export function priceModelTokens(
+  table: RateTable,
+  usage: ReadonlyArray<ModelTokenUsage & { readonly model: string }>,
+  overrides?: RateTable,
+): number | null {
+  let costUsd = 0;
+  for (const entry of usage) {
+    const cachedInputTokens = entry.cachedInputTokens ?? 0;
+    const cacheCreationTokens = entry.cacheCreationTokens ?? 0;
+    const priced = priceUsage(
+      table,
+      {
+        model: entry.model,
+        totals: {
+          uncachedInputTokens: Math.max(
+            0,
+            entry.inputTokens - cachedInputTokens - cacheCreationTokens,
+          ),
+          cachedInputTokens,
+          cacheCreationTokens,
+          outputTokens: entry.outputTokens,
+          reasoningTokens: 0,
+        },
+        fast: false,
+        reportedCostUsd: entry.reportedCostUsd ?? null,
+      },
+      overrides,
+    );
+    if (priced.costSource === "unpriced") return null;
+    costUsd += priced.costUsd;
+  }
+  return costUsd;
 }
