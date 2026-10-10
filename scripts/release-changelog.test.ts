@@ -45,6 +45,21 @@ function commitPaths(cwd: string, paths: ReadonlyArray<string>, subject: string)
   return runGit(cwd, "rev-parse", "HEAD");
 }
 
+function commitFiles(
+  cwd: string,
+  files: Readonly<Record<string, string>>,
+  message: string,
+): string {
+  for (const [path, contents] of Object.entries(files)) {
+    const filePath = NodePath.join(cwd, path);
+    NodeFS.mkdirSync(NodePath.dirname(filePath), { recursive: true });
+    NodeFS.writeFileSync(filePath, contents);
+    runGit(cwd, "add", path);
+  }
+  runGit(cwd, "commit", "-m", message);
+  return runGit(cwd, "rev-parse", "HEAD");
+}
+
 function listForkReleaseCommits(
   cwd: string,
   previousReleaseRef: string,
@@ -362,6 +377,229 @@ render_release_notes example/fork "$2" "$3" "$4" "$5"`,
   return result.stdout;
 }
 
+it.each([
+  {
+    name: "mobile version bookkeeping",
+    before: { "apps/mobile/app.config.ts": 'const config = {\n  version: "1.0.0",\n};\n' },
+    after: { "apps/mobile/app.config.ts": 'const config = {\n  version: "1.0.1",\n};\n' },
+    message: "chore(mobile): bump app version",
+    listed: false,
+  },
+  {
+    name: "package prerelease version bookkeeping",
+    before: { "packages/shared/package.json": '{\n  "version": "1.0.0-nightly.1"\n}\n' },
+    after: { "packages/shared/package.json": '{\n  "version": "1.0.0-nightly.2"\n}\n' },
+    message: "chore(release): prepare nightly",
+    listed: false,
+  },
+  {
+    name: "version bump with dependency changes",
+    before: {
+      "apps/server/package.json":
+        '{\n  "version": "1.0.0",\n  "dependencies": { "synthetic-dependency": "1.0.0" }\n}\n',
+    },
+    after: {
+      "apps/server/package.json":
+        '{\n  "version": "1.0.1",\n  "dependencies": { "synthetic-dependency": "1.0.1" }\n}\n',
+    },
+    message: "chore(release): prepare release",
+    listed: true,
+  },
+  {
+    name: "version bump with runtime config changes",
+    before: {
+      "apps/mobile/app.config.ts": 'const config = {\n  version: "1.0.0",\n  scheme: "old",\n};\n',
+    },
+    after: {
+      "apps/mobile/app.config.ts": 'const config = {\n  version: "1.0.1",\n  scheme: "new",\n};\n',
+    },
+    message: "chore(mobile): bump app version",
+    listed: true,
+  },
+  {
+    name: "version bump with runtime edits",
+    before: {
+      "apps/mobile/app.config.ts": 'version: "1.0.0",\n',
+      "apps/mobile/src/update.ts": "export const supported = false;\n",
+    },
+    after: {
+      "apps/mobile/app.config.ts": 'version: "1.0.1",\n',
+      "apps/mobile/src/update.ts": "export const supported = true;\n",
+    },
+    message: "chore(mobile): bump app version",
+    listed: true,
+  },
+  {
+    name: "version bump with a dependency lockfile change",
+    before: { "apps/mobile/app.config.ts": 'version: "1.0.0",\n', "pnpm-lock.yaml": "old\n" },
+    after: { "apps/mobile/app.config.ts": 'version: "1.0.1",\n', "pnpm-lock.yaml": "new\n" },
+    message: "chore(mobile): bump app version",
+    listed: true,
+  },
+  {
+    name: "new package manifest",
+    before: { "base.txt": "synthetic base\n" },
+    after: { "packages/shared/package.json": '{\n  "version": "1.0.0"\n}\n' },
+    message: "feat: add package",
+    listed: true,
+  },
+  {
+    name: "adding a manifest version field",
+    before: { "apps/desktop/package.json": '{\n  "name": "synthetic-package"\n}\n' },
+    after: {
+      "apps/desktop/package.json": '{\n  "version": "1.0.0",\n  "name": "synthetic-package"\n}\n',
+    },
+    message: "fix(desktop): give packaged builds a version",
+    listed: true,
+  },
+  {
+    name: "removing a manifest version field",
+    before: {
+      "apps/desktop/package.json": '{\n  "version": "1.0.0",\n  "name": "synthetic-package"\n}\n',
+    },
+    after: { "apps/desktop/package.json": '{\n  "name": "synthetic-package"\n}\n' },
+    message: "chore(desktop): remove version field",
+    listed: true,
+  },
+  {
+    name: "lint-labelled runtime fixes",
+    before: { "apps/web/src/index.css": ".focus { color: red; }\n" },
+    after: { "apps/web/src/index.css": ".focus { color: blue; }\n" },
+    message: "lint/unknown and static",
+    listed: true,
+  },
+  {
+    name: "refactor-labelled navigation changes",
+    before: { "apps/web/src/navigation.ts": 'export const location = "settings";\n' },
+    after: { "apps/web/src/navigation.ts": 'export const location = "breadcrumbs";\n' },
+    message: "refactor(web): move settings scope pickers into breadcrumbs",
+    listed: true,
+  },
+  {
+    name: "explicit opt out",
+    before: { "apps/web/src/navigation.ts": "export const unused = false;\n" },
+    after: { "apps/web/src/navigation.ts": "const unused = false;\n" },
+    message: "chore: clean up unused exports\n\nRelease-Note: skip",
+    listed: false,
+  },
+  {
+    name: "explicit opt in for a version-only change",
+    before: { "apps/mobile/app.config.ts": 'version: "1.0.0",\n' },
+    after: { "apps/mobile/app.config.ts": 'version: "1.0.1",\n' },
+    message: "chore(mobile): bump app version\n\nRelease-Note: include",
+    listed: true,
+  },
+  {
+    name: "unknown override",
+    before: { "apps/web/src/navigation.ts": "export const supported = false;\n" },
+    after: { "apps/web/src/navigation.ts": "export const supported = true;\n" },
+    message: "fix: restore navigation\n\nRelease-Note: skpi",
+    listed: true,
+  },
+  {
+    name: "ambiguous overrides",
+    before: { "apps/web/src/navigation.ts": "export const supported = false;\n" },
+    after: { "apps/web/src/navigation.ts": "export const supported = true;\n" },
+    message: "fix: restore navigation\n\nRelease-Note: skip\nRelease-Note: include",
+    listed: true,
+  },
+])("filters $name without changing release eligibility", ({ before, after, message, listed }) => {
+  const fixtureRoot = createFixture();
+  try {
+    commitFiles(fixtureRoot, before, "feat: synthetic base");
+    const sha = commitFiles(fixtureRoot, after, message);
+    const result = NodeChildProcess.spawnSync(
+      "bash",
+      [
+        "-c",
+        `set -euo pipefail
+source "$1"
+changes_shipped_code "$2"
+range_changes_shipped_code "$2^" "$2"
+if should_list_release_change "$2"; then printf 'listed'; else printf 'omitted'; fi`,
+        "release-changelog-test",
+        helperPath,
+        sha,
+      ],
+      { cwd: fixtureRoot, encoding: "utf8" },
+    );
+    if (result.error) throw result.error;
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, listed ? "listed" : "omitted");
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it("counts omitted fork and upstream notes and retains explicit inclusions", () => {
+  const fixtureRoot = createFixture();
+  try {
+    commitFiles(
+      fixtureRoot,
+      {
+        "apps/mobile/app.config.ts": 'version: "1.0.0",\n',
+        "apps/web/src/navigation.ts": "export const unused = true;\n",
+      },
+      "feat: synthetic base",
+    );
+    runGit(fixtureRoot, "tag", "previous-release");
+    runGit(fixtureRoot, "switch", "-c", "upstream");
+    commitFiles(
+      fixtureRoot,
+      { "apps/mobile/app.config.ts": 'version: "1.0.1",\n' },
+      "chore(mobile): bump version (#5001)",
+    );
+
+    runGit(fixtureRoot, "switch", "-c", "fork-source");
+    commitFiles(
+      fixtureRoot,
+      { "apps/web/src/navigation.ts": "const unused = true;\n" },
+      "chore: remove unused export (#11)\n\nRelease-Note: skip",
+    );
+    commitFiles(
+      fixtureRoot,
+      { "apps/mobile/app.config.ts": 'version: "1.0.2",\n' },
+      "chore(mobile): announce binary version (#12)\n\nRelease-Note: include",
+    );
+
+    assert.equal(
+      renderReleaseNotes(fixtureRoot, "previous-release", "new-release", "fork-source", "upstream"),
+      "## What's Changed\n\n" +
+        "- chore(mobile): announce binary version ([example/fork#12](https://github.com/example/fork/pull/12)) by @release-author\n" +
+        "\n**Full Changelog**: https://github.com/example/fork/compare/previous-release...new-release" +
+        " (includes 2 additional changes not listed above)\n",
+    );
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+it("does not claim a version-only build has no behavior changes", () => {
+  const fixtureRoot = createFixture();
+  try {
+    commitFiles(
+      fixtureRoot,
+      { "apps/mobile/app.config.ts": 'version: "1.0.0",\n' },
+      "feat: synthetic base",
+    );
+    runGit(fixtureRoot, "tag", "previous-release");
+    runGit(fixtureRoot, "branch", "upstream");
+    commitFiles(
+      fixtureRoot,
+      { "apps/mobile/app.config.ts": 'version: "1.0.1",\n' },
+      "chore(mobile): bump app version",
+    );
+    assert.equal(
+      renderReleaseNotes(fixtureRoot, "previous-release", "new-release", "HEAD", "upstream"),
+      "## What's Changed\n\nNo release-note entries.\n" +
+        "\n**Full Changelog**: https://github.com/example/fork/compare/previous-release...new-release" +
+        " (includes 1 additional change not listed above)\n",
+    );
+  } finally {
+    NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 it("lists only fork and upstream changes to shipped code and counts the rest", () => {
   const fixtureRoot = createFixture();
   try {
@@ -389,14 +627,14 @@ it("lists only fork and upstream changes to shipped code and counts the rest", (
         "- ci(release): fork packaging change ([example/fork#13](https://github.com/example/fork/pull/13)) by @release-author\n" +
         "- fix(server): upstream fix ([pingdotgg/t3code#5001](https://github.com/pingdotgg/t3code/pull/5001)) by @release-author\n" +
         "\n**Full Changelog**: https://github.com/example/fork/compare/previous-release...new-release" +
-        " (includes 3 docs, CI, test, and tooling changes not listed above)\n",
+        " (includes 3 additional changes not listed above)\n",
     );
   } finally {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 });
 
-it("says there are no user-facing changes when every commit is internal", () => {
+it("says there are no release-note entries when every commit is internal", () => {
   const fixtureRoot = createFixture();
   try {
     commitPaths(fixtureRoot, ["apps/web/src/main.tsx"], "feat: base");
@@ -407,9 +645,9 @@ it("says there are no user-facing changes when every commit is internal", () => 
     assert.equal(
       renderReleaseNotes(fixtureRoot, "previous-release", "new-release", "HEAD", "upstream"),
       "## What's Changed\n\n" +
-        "No user-facing changes.\n" +
+        "No release-note entries.\n" +
         "\n**Full Changelog**: https://github.com/example/fork/compare/previous-release...new-release" +
-        " (includes 1 docs, CI, test, or tooling change not listed above)\n",
+        " (includes 1 additional change not listed above)\n",
     );
   } finally {
     NodeFS.rmSync(fixtureRoot, { recursive: true, force: true });

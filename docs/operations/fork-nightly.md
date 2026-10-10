@@ -53,11 +53,20 @@ GitHub lookups succeed. Commits without a resolvable PR use commit links. The li
 upstream changes across all clients, followed by a comparison link between the fork's release tags.
 The desktop updater uses these same notes.
 
-Only commits that change shipped code are listed: files under `apps/web`, `apps/desktop`,
+Release eligibility considers changes to shipped code: files under `apps/web`, `apps/desktop`,
 `apps/mobile`, `apps/server`, `packages/`, or `patches/`, other than tests, fixtures, scripts, and
 Markdown, plus `pnpm-lock.yaml` and `pnpm-workspace.yaml`, which pin dependency versions. The decision uses changed paths rather than the commit subject, so a `ci(release)` commit
-that changes desktop code is still listed. Other commits, including relay changes, which deploy
-separately, are counted on the comparison link line instead.
+that changes desktop code still qualifies. Release notes additionally omit commits whose shipped edits
+only change version values in existing package manifests or the mobile app configuration. A version bump
+that also changes dependencies, other configuration, or runtime code stays listed.
+
+To omit an internal cleanup that touches shipped code, add a `Release-Note: skip` trailer to its final
+squash or import commit message. `Release-Note: include` keeps a version-only change listed. Missing,
+unknown, or conflicting values use the default rules; commit types such as `chore`, `ci`, and `refactor`
+are not excluded automatically. These overrides affect notes, not whether a build ships. Omitted commits,
+including relay changes, which deploy separately, remain available through the full comparison link and
+are counted on that line instead. An empty list says there are no release-note entries without claiming
+that the build has no behavior changes.
 
 Release notes do not use AI generation or require an OpenAI API key. The nightly workflow no longer
 updates the rolling `styal features and improvements` issue. The maintained
