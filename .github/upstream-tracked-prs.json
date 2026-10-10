@@ -1,6 +1,14 @@
 {
   "pullRequests": [
     {
+      "pr": 8338,
+      "reason": "Imported provisionally as one snapshot: the server, pairing and shared development leave a Tailscale Serve handler they do not own unchanged, and shutdown removes only a mapping that targets this server. Fixes fork #366. The fork keeps its styal naming in the remote access guide and pairing tests. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments, verify startup and shutdown with a foreign handler on the Serve port, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "5a574a77d1bef579b01d137b81888f68eabf7d4b",
+        "head": "2fa37ecbfdf980143984851c1c09b8d5208e19b8"
+      }
+    },
+    {
       "pr": 10027,
       "reason": "The styal Link authorization complete page still has the blue and indigo banner from before the cotton reel artwork (fork #477); this replaces it with a plain card. Swap in the styal wordmark on intake."
     },
