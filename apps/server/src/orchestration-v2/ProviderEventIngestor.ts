@@ -28,6 +28,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { addThreadTokenUsage, sumThreadTokenUsage } from "@t3tools/shared/turnUsage";
 import { UsageService } from "../usage/UsageService.ts";
@@ -324,6 +325,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const analytics = yield* ProviderTurnAnalytics;
+    const agentScope = yield* AgentScope;
     const completedTurnAnalytics = new Set<string>();
     const usagePricing = yield* Effect.serviceOption(UsageService);
     const ingestExecutor = yield* KeyedLock.make<ThreadId>();
@@ -771,6 +773,11 @@ export const layer: Layer.Layer<
               return dismissed;
             }
             const occurredAt = yield* DateTime.now;
+            // A turn that failed because systemd killed the agent's scope for
+            // memory would otherwise read as a plain provider crash.
+            const failure = (yield* agentScope.oomKilled(input.threadId))
+              ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
+              : input.event.failure;
             return [
               ...dismissed,
               yield* makeDomainEvent(input, {
@@ -783,7 +790,7 @@ export const layer: Layer.Layer<
                   providerThreadId: input.event.providerThreadId,
                   providerTurnId: input.event.providerTurnId,
                   itemOrdinal: input.event.failureItemOrdinal,
-                  failure: input.event.failure,
+                  failure,
                   ...(input.event.retry === undefined ? {} : { retry: input.event.retry }),
                   ...(input.event.retryStartedAt === undefined
                     ? {}
