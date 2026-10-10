@@ -68,11 +68,12 @@ export function buildThreadTranscript(
       // sent before inline context references end with terminal and element blocks. The
       // transcript takes the text the user actually wrote, as the timeline renders it.
       // Attribution matches the label the timeline shows above the message.
-      const author = presentation.isAutomation
-        ? "Automation"
-        : item.createdBy === "agent"
-          ? "Another agent"
-          : "User";
+      const author =
+        presentation.attribution === "automation"
+          ? "Automation"
+          : presentation.attribution === "agent"
+            ? "Another agent"
+            : "User";
       rendered = section(author, visibleUserText(presentation.text), item.attachments);
     } else if (item.type === "assistant_message" && !item.streaming) {
       rendered = section("Assistant", item.text.trim(), item.attachments ?? []);

@@ -258,11 +258,17 @@ describe("restart-cancelled background work", () => {
         );
         assert.equal(continuation?.restartContinuationOfRunId, root?.id);
         assert.isUndefined(user?.restartContinuationOfRunId);
+        // The continuation shows as a styal notice whose detail is the note it sent.
         assert.deepEqual(userTexts(projection), [
           CLAUDE_BACKGROUND_SUBAGENT_AFTER_ROOT_PROMPT,
-          NOTE,
           FIRST_AFTER_RESTART,
         ]);
+        assert.deepInclude(
+          projection.turnItems.flatMap((item) =>
+            item.type === "notification" && item.runId === continuation?.id ? [item.detail] : [],
+          ),
+          NOTE,
+        );
       }).pipe(
         provideDeterministicTestRuntime,
         Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer)),
