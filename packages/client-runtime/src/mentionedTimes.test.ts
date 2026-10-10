@@ -13,7 +13,7 @@ function matchedText(text: string): string[] {
 }
 
 function resolveAll(text: string, anchor: MentionedTimeAnchor): (string | null)[] {
-  return findMentionedTimes(text).map((match) => {
+  return findMentionedTimes(text, { messageZone: findMessageZone(text) }).map((match) => {
     const resolved = resolveMentionedTime(match.time, anchor);
     return resolved === null ? null : new Date(resolved.instantMs).toISOString();
   });
@@ -27,6 +27,12 @@ const LONDON_AFTERNOON: MentionedTimeAnchor = {
 describe("findMentionedTimes", () => {
   it.each([
     ["PR 330 merged at 14:39 UTC.", ["14:39 UTC"]],
+    ["15:55:19 UTC: the worker started.", ["15:55:19 UTC"]],
+    ["15:55:43: a message arrived.", ["15:55:43"]],
+    ["About 15:55:45:", ["15:55:45"]],
+    ["16:20: the retry started.", ["16:20"]],
+    ["16:21 UTC:\nThe retry finished.", ["16:21 UTC"]],
+    ["2026-10-10T15:55:19+01:00: the worker started.", ["2026-10-10T15:55:19+01:00"]],
     ["finished at **15:52:27 UTC** today", ["15:52:27 UTC"]],
     ["the browser shows 3:41 PM BST", ["3:41 PM BST"]],
     ["merged at 14:20 (UTC)", ["14:20 (UTC)"]],
@@ -53,6 +59,12 @@ describe("findMentionedTimes", () => {
 
   it.each([
     ["CI finished that step in 2:48 and 4:11"],
+    ["Elapsed 2:48: the step finished."],
+    ["see src/example.ts:12:34: for the call"],
+    ["the identifier is 15:55:43:123"],
+    ["the identifier is 15:55:43:error"],
+    ["the invalid time is 15:55:99: or 24:55:"],
+    ["the IPv6 suffix is ::12:34:"],
     ["see src/index.ts:12:34 for the call"],
     ["the screen is 16:9"],
     ["all tests completed in 69 seconds"],
@@ -78,6 +90,22 @@ describe("findMentionedTimes", () => {
     ]);
     const table = "| Time (UTC) | Event |\n|---|---|\n| 12:17:07 | Worktree created |";
     expect(findMessageZone(table)).toEqual({ offsetMinutes: 0, name: "UTC" });
+  });
+
+  it("keeps a written zone before a label colon and shares it with other times", () => {
+    const text = "15:55:19 UTC: started. 15:55:43: arrived. About 15:55:45: caught up.";
+    const zone = findMessageZone(text);
+    expect(zone).toEqual({ offsetMinutes: 0, name: "UTC" });
+    expect(findMentionedTimes(text, { messageZone: zone }).map((match) => match.time)).toEqual([
+      { kind: "clock", hour: 15, minute: 55, second: 19, zone },
+      { kind: "clock", hour: 15, minute: 55, second: 43, zone, zoneFromMessage: true },
+      { kind: "clock", hour: 15, minute: 55, second: 45, zone, zoneFromMessage: true },
+    ]);
+    expect(resolveAll(text, LONDON_AFTERNOON)).toEqual([
+      "2026-10-01T15:55:19.000Z",
+      "2026-10-01T15:55:43.000Z",
+      "2026-10-01T15:55:45.000Z",
+    ]);
   });
 
   it("treats a zone in parentheses or after 'in' as written with the time", () => {

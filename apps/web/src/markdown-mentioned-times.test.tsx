@@ -1,4 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { resolveMentionedTime, type MentionedTime } from "@t3tools/client-runtime/mentioned-times";
+import type { Root, RootContent } from "mdast";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
@@ -6,7 +8,11 @@ import remarkGfm from "remark-gfm";
 import { describe, expect, it } from "vite-plus/test";
 
 import { CHAT_MARKDOWN_SANITIZE_SCHEMA } from "./components/ChatMarkdown";
-import { readMentionedTime, remarkMentionedTimes } from "./markdown-mentioned-times";
+import {
+  MENTIONED_TIME_PROPERTY,
+  readMentionedTime,
+  remarkMentionedTimes,
+} from "./markdown-mentioned-times";
 
 function renderMarkdown(markdown: string) {
   return renderToStaticMarkup(
@@ -26,6 +32,75 @@ function mentionedTimes(html: string): unknown[] {
 }
 
 describe("remarkMentionedTimes", () => {
+  it("resolves bold timeline labels in their written zone while leaving code and links alone", () => {
+    const times: MentionedTime[] = [];
+    const collect = (node: Root | RootContent): void => {
+      const properties = node.data?.hProperties;
+      if (typeof properties === "object" && properties !== null) {
+        const time = readMentionedTime(
+          (properties as Record<string, unknown>)[MENTIONED_TIME_PROPERTY],
+        );
+        if (time) times.push(time);
+      }
+      if ("children" in node) node.children.forEach(collect);
+    };
+    ReactMarkdown({
+      children: [
+        "- **15:55:19 UTC:** the worker started.",
+        "- **15:55:43:** a message arrived.",
+        "- **About 15:55:45:** startup catch-up was still running.",
+        "",
+        "The reply was sent at `15:55:46`.",
+        "[15:55:43:](https://example.com/run) and src/example.ts:12:34: stay plain.",
+        "",
+        "```text",
+        "15:55:43:",
+        "```",
+      ].join("\n"),
+      remarkPlugins: [remarkGfm, remarkMentionedTimes, () => collect],
+    });
+
+    expect(times).toHaveLength(3);
+    expect(times[0]).toEqual({
+      kind: "clock",
+      hour: 15,
+      minute: 55,
+      second: 19,
+      zone: { offsetMinutes: 0, name: "UTC" },
+    });
+    expect(times.slice(1)).toEqual([
+      {
+        kind: "clock",
+        hour: 15,
+        minute: 55,
+        second: 43,
+        zone: { offsetMinutes: 0, name: "UTC" },
+        zoneFromMessage: true,
+      },
+      {
+        kind: "clock",
+        hour: 15,
+        minute: 55,
+        second: 45,
+        zone: { offsetMinutes: 0, name: "UTC" },
+        zoneFromMessage: true,
+      },
+    ]);
+    expect(
+      times.map(
+        (time) =>
+          resolveMentionedTime(time, {
+            writtenAtMs: Date.parse("2026-10-10T16:02:00Z"),
+            environmentTimeZone: "America/Los_Angeles",
+          })?.instantMs,
+      ),
+    ).toEqual([
+      Date.parse("2026-10-10T15:55:19Z"),
+      Date.parse("2026-10-10T15:55:43Z"),
+      Date.parse("2026-10-10T15:55:45Z"),
+    ]);
+  });
+
   it("marks a time in prose and keeps its text, through the chat sanitizer", () => {
     const html = renderMarkdown("PR 330 merged at **14:39 UTC**.");
 
