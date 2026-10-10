@@ -186,7 +186,9 @@ export function MediaVideoPlayer({
             // Holds a 16:9 slot until metadata arrives, then takes the video's own shape.
             sizedSrc === src ? "max-w-full" : "aspect-video w-full",
             "max-h-full bg-black object-contain",
-            onOpen && "pointer-events-none",
+            // Native controls are about 48px tall, so a very wide video would sit entirely
+            // behind them. Letterbox it, with the picture above the controls.
+            onOpen ? "pointer-events-none" : "min-h-28 object-top",
             videoClassName,
           )}
           style={style}
