@@ -430,6 +430,7 @@ function AboutVersionSection() {
   return (
     <>
       <SettingsRow
+        id={searchableSetting("app-version").id}
         title={<AboutVersionTitle />}
         description={description}
         status={<AboutBuildProvenance />}
@@ -459,7 +460,7 @@ function AboutVersionSection() {
       />
       {hasDesktopBridge ? (
         <SettingsRow
-          title="Update track"
+          {...searchableSetting("update-track")}
           description="Nightly gets new changes first. Stable gets versions promoted after they've spent time on Nightly."
           control={
             <Select
@@ -491,7 +492,7 @@ function AboutVersionSection() {
         />
       ) : selectedHostedAppChannel ? (
         <SettingsRow
-          title="Update track"
+          {...searchableSetting("update-track")}
           description="Switches the hosted app release channel."
           control={
             <Select
@@ -3631,6 +3632,7 @@ export function GeneralSettingsPanel() {
           <AboutVersionSection />
         ) : (
           <SettingsRow
+            id={searchableSetting("app-version").id}
             title={<AboutVersionTitle />}
             description="Current version of the application."
             status={<AboutBuildProvenance />}
