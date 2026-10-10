@@ -68,10 +68,23 @@ beforeEach(async () => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
+      readonly observed = new Set<Element>();
       constructor(callback: ResizeObserverCallback) {
-        resize = () => callback([], this as unknown as ResizeObserver);
+        resize = () =>
+          callback(
+            [...this.observed].map(
+              (target) =>
+                ({ target, contentRect: target.getBoundingClientRect() }) as ResizeObserverEntry,
+            ),
+            this as unknown as ResizeObserver,
+          );
       }
-      observe() {}
+      observe(target: Element) {
+        this.observed.add(target);
+      }
+      unobserve(target: Element) {
+        this.observed.delete(target);
+      }
       disconnect = disconnect;
     },
   );

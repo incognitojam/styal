@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { SettingsScopeSentence } from "./SettingsScopeSentence";
+import { observeResize } from "~/lib/observeResize";
 
 interface SettingsScopeDockValue {
   readonly enabled: boolean;
@@ -86,13 +87,11 @@ export function SettingsScopeDockProvider({
       updateDocked(false);
     };
     // Geometry is measured on layout changes; scrolling only compares two numbers.
-    const observer = new ResizeObserver(measure);
-    observer.observe(source);
-    observer.observe(scroll);
+    const stopObserving = observeResize([source, scroll], measure);
     scroll.addEventListener("scroll", onScroll, { passive: true });
     measure();
     return () => {
-      observer.disconnect();
+      stopObserving();
       scroll.removeEventListener("scroll", onScroll);
     };
   }, [source]);
