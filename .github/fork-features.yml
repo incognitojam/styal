@@ -1775,7 +1775,7 @@ features:
   - id: mentioned-time-chips
     title: Explain times mentioned in agent messages in the reader's time zone
     status: maintained
-    prs: [595]
+    prs: [595, 711]
     invariants:
       - Times in assistant message prose (clock times with or without a zone or date, "N units ago", and cued "in N units") render as chips that keep the written text; code spans, code blocks and link labels are never marked.
       - Hovering a chip shows the moment in the reader's zone, locale and 12/24-hour setting, how far it is from now, and which assumptions were made (the environment's zone, the message's day, or counting from when the message was sent); the relative time is computed when the tooltip opens and never ticks.
