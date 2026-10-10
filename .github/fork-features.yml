@@ -333,7 +333,7 @@ features:
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
     status: review-needed
-    prs: [285, 405, 519]
+    prs: [285, 405, 519, 720]
     invariants:
       - Claude's complete built-in catalog comes from a validated manifest bundled for offline startup and refreshed from the styal fork, with invalid fetches preserving the last valid cache or bundle and a newer bundle replacing an older cache.
       - Provider-owned schemas and installed Claude Code versions filter manifest data before clients receive model aliases, presentation metadata, effort mappings, and context-window capabilities.
@@ -341,6 +341,7 @@ features:
       - New Claude Code threads prefer Opus 5.5 when the installed CLI supports it; older CLIs use an available model from the filtered catalog.
       - Claude Sonnet 5.5 has its own profile that follows the Claude Code catalog, with medium as the default effort and Ultracode offered, instead of reusing the Sonnet 5 profile, whose default effort is high.
       - Claude Sonnet 5 and Claude Opus 5 are legacy models.
+      - Claude Haiku 5.5 offers Ultracode, which Claude Code allows on every model with xhigh effort, and is Claude's text generation default.
     implementation_paths:
       - apps/server/src/provider/ClaudeModelCatalog.ts
       - apps/server/src/provider/ClaudeModelManifest.ts

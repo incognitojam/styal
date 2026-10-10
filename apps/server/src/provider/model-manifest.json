@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-01T12:17:00.000Z",
+  "updatedAt": "2026-10-10T21:30:00.000Z",
   "compatibility": [
     {
       "driver": "codex",
@@ -76,7 +76,7 @@
       "gpt-daybreak-blue-latest",
       "gpt-daybreak-red-latest"
     ],
-    "claudeAgent": ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"],
+    "claudeAgent": ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
     "antigravity": [
       "gemini-3.8-flash",
       "gemini-3.8-flash-high",
@@ -698,6 +698,37 @@
             }
           }
         },
+        "haiku-5-5": {
+          "capabilities": {
+            "optionDescriptors": [
+              {
+                "id": "effort",
+                "label": "Reasoning",
+                "type": "select",
+                "options": [
+                  { "id": "low", "label": "Low" },
+                  { "id": "medium", "label": "Medium", "isDefault": true },
+                  { "id": "high", "label": "High" },
+                  { "id": "xhigh", "label": "Extra High" },
+                  { "id": "max", "label": "Max" },
+                  {
+                    "id": "ultracode",
+                    "label": "Ultracode",
+                    "description": "xhigh effort plus multi-agent workflow orchestration"
+                  },
+                  { "id": "ultrathink", "label": "Ultrathink" }
+                ],
+                "promptInjectedValues": ["ultrathink"]
+              }
+            ]
+          },
+          "adapter": {
+            "claudeCode": {
+              "effortMap": { "ultracode": "xhigh", "ultrathink": null },
+              "fixedContextWindowTokens": 1000000
+            }
+          }
+        },
         "haiku-4-5": {
           "capabilities": {
             "optionDescriptors": [
@@ -812,9 +843,18 @@
           "profile": "sonnet-4-6"
         },
         {
+          "slug": "claude-haiku-5-5",
+          "name": "Claude Haiku 5.5",
+          "aliases": ["haiku", "haiku-5.5", "claude-haiku-5.5"],
+          "status": "current",
+          "badge": "new",
+          "profile": "haiku-5-5",
+          "adapter": { "claudeCode": { "minVersion": "2.1.293" } }
+        },
+        {
           "slug": "claude-haiku-4-5",
           "name": "Claude Haiku 4.5",
-          "aliases": ["haiku", "haiku-4.5", "claude-haiku-4.5", "claude-haiku-4-5-20251001"],
+          "aliases": ["haiku-4.5", "claude-haiku-4.5", "claude-haiku-4-5-20251001"],
           "status": "legacy",
           "profile": "haiku-4-5"
         }
