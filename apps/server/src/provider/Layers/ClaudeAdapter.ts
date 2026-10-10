@@ -44,6 +44,7 @@ import {
   type ProviderSendTurnInput,
   type ProviderSession,
   type ThreadTokenUsageSnapshot,
+  type SubagentTokenUsage,
   type TurnTokenUsage,
   type ProviderUserInputAnswers,
   type RuntimeContentStreamKind,
@@ -480,6 +481,8 @@ interface ClaudeSessionContext {
   resumeHandshakePending: boolean;
   suppressNextIdleStreamFailure: boolean;
   lastKnownContextWindow: number | undefined;
+  /** `modelUsage` from the latest result, the baseline for the next turn's share. */
+  lastModelUsage: Record<string, ModelUsage> | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
   lastKnownTotalProcessedTokens: number | undefined;
   lastAssistantUuid: string | undefined;
@@ -892,10 +895,101 @@ function normalizeClaudeActiveTokenUsage(
   });
 }
 
+interface ClaudeModelUsageCounts {
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly cacheCreationTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+}
+
+/**
+ * One result's share of `modelUsage`, summed over models. The SDK keeps
+ * `modelUsage` as a running total for the whole query() session, covering the
+ * main loop, subagents and internal calls such as compaction. A count that
+ * went down means the total restarted (a resume or `/clear`), so the new
+ * total is this result's alone.
+ */
+function claudeModelUsageDelta(
+  previous: Record<string, ModelUsage> | undefined,
+  current: Record<string, ModelUsage>,
+): ClaudeModelUsageCounts {
+  const restarted =
+    previous !== undefined &&
+    Object.entries(previous).some(([model, before]) => {
+      const after = current[model];
+      return (
+        after === undefined ||
+        after.inputTokens < before.inputTokens ||
+        after.cacheReadInputTokens < before.cacheReadInputTokens ||
+        after.cacheCreationInputTokens < before.cacheCreationInputTokens ||
+        after.outputTokens < before.outputTokens
+      );
+    });
+  const baseline = restarted ? undefined : previous;
+  const delta = {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheCreationTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+  };
+  for (const [model, after] of Object.entries(current)) {
+    const before = baseline?.[model];
+    const read = after.cacheReadInputTokens - (before?.cacheReadInputTokens ?? 0);
+    const write = after.cacheCreationInputTokens - (before?.cacheCreationInputTokens ?? 0);
+    delta.inputTokens += after.inputTokens - (before?.inputTokens ?? 0) + read + write;
+    delta.cachedInputTokens += read;
+    delta.cacheCreationTokens += write;
+    delta.outputTokens += after.outputTokens - (before?.outputTokens ?? 0);
+    delta.reasoningTokens += Math.max(
+      0,
+      (after.thinkingTokens ?? 0) - (before?.thinkingTokens ?? 0),
+    );
+  }
+  return delta;
+}
+
+/**
+ * What a turn's subagents used: the turn's share of `modelUsage` less the
+ * main loop's own usage. Undefined when nothing is left over.
+ */
+function claudeSubagentTokenUsage(
+  turn: ClaudeModelUsageCounts,
+  main: {
+    readonly inputTokens: number;
+    readonly cachedInputTokens: number;
+    readonly cacheCreationTokens: number;
+    readonly outputTokens: number;
+    readonly reasoningTokens: number;
+  },
+): SubagentTokenUsage | undefined {
+  const inputTokens = Math.max(0, turn.inputTokens - main.inputTokens);
+  const outputTokens = Math.max(0, turn.outputTokens - main.outputTokens);
+  if (inputTokens + outputTokens === 0) return undefined;
+  return {
+    inputTokens,
+    cachedInputTokens: Math.min(
+      inputTokens,
+      Math.max(0, turn.cachedInputTokens - main.cachedInputTokens),
+    ),
+    cacheCreationTokens: Math.min(
+      inputTokens,
+      Math.max(0, turn.cacheCreationTokens - main.cacheCreationTokens),
+    ),
+    outputTokens,
+    reasoningTokens: Math.min(
+      outputTokens,
+      Math.max(0, turn.reasoningTokens - main.reasoningTokens),
+    ),
+  };
+}
+
 function normalizeClaudeTurnTokenUsage(
   result: SDKResultMessage | undefined,
   hasSubagents: boolean,
   terminalStatus: ProviderRuntimeTurnStatus,
+  turnModelUsage?: ClaudeModelUsageCounts,
 ): TurnTokenUsage {
   const usage = result?.usage as Record<string, unknown> | undefined;
   if (!usage) {
@@ -941,6 +1035,21 @@ function normalizeClaudeTurnTokenUsage(
     };
   }
 
+  // Only turns that ran subagents report the remainder, so compaction alone
+  // never shows up as subagent usage.
+  const subagents =
+    hasSubagents &&
+    turnModelUsage !== undefined &&
+    inputTokens !== undefined &&
+    rawOutputTokens !== undefined
+      ? claudeSubagentTokenUsage(turnModelUsage, {
+          inputTokens,
+          cachedInputTokens: cachedInputTokens ?? 0,
+          cacheCreationTokens: cacheCreationTokens ?? 0,
+          outputTokens: rawOutputTokens,
+          reasoningTokens: thinkingTokens ?? 0,
+        })
+      : undefined;
   const commonUsage = {
     usageScope: "main_agent",
     ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
@@ -949,6 +1058,7 @@ function normalizeClaudeTurnTokenUsage(
       ? { reasoningTokens: Math.min(rawOutputTokens, thinkingTokens) }
       : {}),
     hasSubagents,
+    ...(subagents ? { subagents } : {}),
   } as const;
   if (
     terminalStatus === "completed" &&
@@ -2756,6 +2866,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (resultContextWindow !== undefined) {
       context.lastKnownContextWindow = resultContextWindow;
     }
+    // Every result moves the baseline, including ones that complete no turn.
+    const turnModelUsage = result?.modelUsage
+      ? claudeModelUsageDelta(context.lastModelUsage, result.modelUsage)
+      : undefined;
+    if (result?.modelUsage) context.lastModelUsage = result.modelUsage;
 
     const maxTokens = resultContextWindow ?? context.lastKnownContextWindow;
     const accumulatedTotalProcessedTokens = claudeTotalProcessedTokens(result?.usage);
@@ -2939,7 +3054,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ? { totalCostUsd: result.total_cost_usd }
           : {}),
         ...(errorMessage ? { errorMessage } : {}),
-        tokenUsage: normalizeClaudeTurnTokenUsage(result, turnState.hasSubagents, status),
+        tokenUsage: normalizeClaudeTurnTokenUsage(
+          result,
+          turnState.hasSubagents,
+          status,
+          turnModelUsage,
+        ),
       },
       providerRefs: nativeProviderRefs(context),
     });
@@ -5288,6 +5408,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         resumeHandshakePending: existingResumeSessionId !== undefined,
         suppressNextIdleStreamFailure: false,
         lastKnownContextWindow: initialContextWindow,
+        lastModelUsage: undefined,
         lastKnownTokenUsage: undefined,
         lastKnownTotalProcessedTokens: undefined,
         lastAssistantUuid: resumeState?.resumeSessionAt,

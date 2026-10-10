@@ -90,17 +90,36 @@ export function sumThreadTokenUsage(input: {
     turns: Math.max(input.turns, byTurnId.size),
     partialTurns: 0,
     subagentTurns: 0,
+    subagentTokens: 0,
   };
   for (const usage of byTurnId.values()) {
-    total.inputTokens += usage.inputTokens ?? 0;
-    total.cachedInputTokens += usage.cachedInputTokens ?? 0;
-    total.cacheCreationTokens += usage.cacheCreationTokens ?? 0;
-    total.outputTokens += usage.outputTokens ?? 0;
-    total.reasoningTokens += usage.reasoningTokens ?? 0;
+    const counts = combinedTokenCounts(usage);
+    total.inputTokens += counts.inputTokens;
+    total.cachedInputTokens += counts.cachedInputTokens;
+    total.cacheCreationTokens += counts.cacheCreationTokens;
+    total.outputTokens += counts.outputTokens;
+    total.reasoningTokens += counts.reasoningTokens;
+    total.subagentTokens += subagentTokens(usage);
     if (usage.usageStatus !== "complete") total.partialTurns += 1;
-    if (usage.hasSubagents) total.subagentTurns += 1;
+    if (usage.hasSubagents && usage.subagents === undefined) total.subagentTurns += 1;
   }
   return total;
+}
+
+/** The main agent's usage plus any its subagents reported. */
+function combinedTokenCounts(usage: TurnTokenUsage) {
+  const subagents = usage.subagents;
+  return {
+    inputTokens: (usage.inputTokens ?? 0) + (subagents?.inputTokens ?? 0),
+    cachedInputTokens: (usage.cachedInputTokens ?? 0) + (subagents?.cachedInputTokens ?? 0),
+    cacheCreationTokens: (usage.cacheCreationTokens ?? 0) + (subagents?.cacheCreationTokens ?? 0),
+    outputTokens: (usage.outputTokens ?? 0) + (subagents?.outputTokens ?? 0),
+    reasoningTokens: (usage.reasoningTokens ?? 0) + (subagents?.reasoningTokens ?? 0),
+  };
+}
+
+function subagentTokens(usage: TurnTokenUsage): number {
+  return (usage.subagents?.inputTokens ?? 0) + (usage.subagents?.outputTokens ?? 0);
 }
 
 export interface TurnUsageView {
@@ -121,7 +140,11 @@ type TokenCounts = {
   ]?: number | undefined;
 };
 
-function usageView(usage: TokenCounts, notes: ReadonlyArray<string>): TurnUsageView {
+function usageView(
+  usage: TokenCounts,
+  subagents: number,
+  notes: ReadonlyArray<string>,
+): TurnUsageView {
   // Input already includes cache reads and writes.
   const input = usage.inputTokens ?? 0;
   const output = usage.outputTokens ?? 0;
@@ -146,15 +169,19 @@ function usageView(usage: TokenCounts, notes: ReadonlyArray<string>): TurnUsageV
     },
   ];
   if (cacheWrites > 0) rows.push({ label: "Cache writes", value: formatTokens(cacheWrites) });
+  // Already within the rows above; this shows their share.
+  if (subagents > 0) rows.push({ label: "Subagents", value: formatTokens(subagents) });
 
   return { headline: `${formatTokens(input + output)} tokens`, rows, notes };
 }
 
 export function turnUsageView(usage: TurnTokenUsage): TurnUsageView {
   const notes: string[] = [];
-  if (usage.hasSubagents) notes.push("Subagent usage isn't included.");
+  if (usage.hasSubagents && usage.subagents === undefined) {
+    notes.push("Subagent usage isn't included.");
+  }
   if (usage.usageStatus === "partial") notes.push("The provider reported only some token counts.");
-  return usageView(usage, notes);
+  return usageView(combinedTokenCounts(usage), subagentTokens(usage), notes);
 }
 
 export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
@@ -162,7 +189,13 @@ export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
   if (usage.countedTurns < usage.turns) {
     notes.push(`Includes ${usage.countedTurns} of ${usage.turns} turns.`);
   }
-  if (usage.subagentTurns > 0) notes.push("Subagent usage isn't included.");
+  if (usage.subagentTurns > 0) {
+    notes.push(
+      usage.subagentTokens
+        ? "Some turns' subagent usage isn't included."
+        : "Subagent usage isn't included.",
+    );
+  }
   if (usage.partialTurns > 0) notes.push("Some turns reported only some token counts.");
-  return usageView(usage, notes);
+  return usageView(usage, usage.subagentTokens ?? 0, notes);
 }

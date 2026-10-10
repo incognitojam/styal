@@ -2795,6 +2795,121 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("reports a turn's subagent usage from its share of session modelUsage", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const firstTurnSettled = yield* Deferred.make<void>();
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.tap((event) =>
+          event.type === "session.state.changed" && event.payload.reason === "api_retry:1/2"
+            ? Deferred.succeed(firstTurnSettled, undefined).pipe(Effect.asVoid)
+            : Effect.void,
+        ),
+        Stream.filter((event) => event.type === "turn.completed"),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const result = (uuid: string, usage: object, modelUsage: object) =>
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          errors: [],
+          usage,
+          modelUsage,
+          session_id: "sdk-session-usage",
+          uuid,
+        } as unknown as SDKMessage);
+      const sonnet = (input: number, read: number, write: number, output: number) => ({
+        inputTokens: input,
+        cacheReadInputTokens: read,
+        cacheCreationInputTokens: write,
+        outputTokens: output,
+        webSearchRequests: 0,
+        costUSD: 0,
+        contextWindow: 200_000,
+        maxOutputTokens: 64_000,
+      });
+
+      // Turn 1 runs no subagents; its modelUsage becomes the baseline.
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "look", attachments: [] });
+      result(
+        "result-usage-1",
+        {
+          input_tokens: 100,
+          cache_read_input_tokens: 40,
+          cache_creation_input_tokens: 10,
+          output_tokens: 20,
+        },
+        { "claude-sonnet-4-5": sonnet(100, 40, 10, 20) },
+      );
+      harness.query.emit({
+        type: "system",
+        subtype: "api_retry",
+        attempt: 1,
+        max_retries: 2,
+        retry_delay_ms: 1,
+        error_status: 502,
+        error: { type: "api_error" },
+        session_id: "sdk-session-usage",
+        uuid: "usage-barrier",
+      } as unknown as SDKMessage);
+      yield* Deferred.await(firstTurnSettled);
+
+      // Turn 2 delegates to a subagent on another model.
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "delegate", attachments: [] });
+      harness.query.emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-agent-usage",
+        description: "Review the database layer",
+        task_type: "local_agent",
+        tool_use_id: "tool-task-usage",
+        uuid: "task-agent-usage-uuid",
+        session_id: "sdk-session-usage",
+      } as unknown as SDKMessage);
+      result(
+        "result-usage-2",
+        {
+          input_tokens: 50,
+          cache_read_input_tokens: 200,
+          cache_creation_input_tokens: 0,
+          output_tokens: 30,
+        },
+        {
+          "claude-sonnet-4-5": sonnet(150, 240, 10, 50),
+          "claude-haiku-4-5": sonnet(300, 1_000, 500, 80),
+        },
+      );
+
+      const completed = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      assert.equal(completed.length, 2);
+      const [first, second] = completed;
+      if (first?.type === "turn.completed" && second?.type === "turn.completed") {
+        assert.equal(first.payload.tokenUsage?.subagents, undefined);
+        assert.equal(second.payload.tokenUsage?.inputTokens, 250);
+        assert.deepEqual(second.payload.tokenUsage?.subagents, {
+          inputTokens: 1_800,
+          cachedInputTokens: 1_000,
+          cacheCreationTokens: 500,
+          outputTokens: 80,
+          reasoningTokens: 0,
+        });
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("treats user-aborted Claude results as interrupted without a runtime error", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

@@ -134,7 +134,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked September 23, 2026, where proactive panels are opt-in.
 - **Tokens per turn and thread.** Each completed turn shows the tokens it used beside its
   timestamp, and the composer shows the thread's total; hover or tap for the input, cached, output,
-  and reasoning breakdown. Compared with
+  reasoning, and subagent breakdown. Compared with
   [T3 Code revision c2fa9fc](https://github.com/pingdotgg/t3code/tree/c2fa9fc911daeac97df4760f95fc57dca42b84c8),
   checked September 30, 2026, which shows token use only on its Usage page and context meter.
   [See what a turn used](./usage.md#see-what-a-turn-used).

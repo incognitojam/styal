@@ -386,12 +386,23 @@ interface OpenCodeSessionContext {
   readonly sessionScope: Scope.Closeable;
 }
 
+interface OpenCodeTokenCounts {
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheCreationTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+}
+
 interface OpenCodeTurnTokenUsageAccumulator {
   readonly partIds: Set<string>;
   readonly promptMessageIds: Set<string>;
   readonly assistantOwnershipByMessageId: Map<string, "owned" | "other" | "unknown">;
   // Native removal does not undo usage. Keep unresolved counts until this turn settles.
   readonly unresolvedStepsByMessageId: Map<string, Map<string, OpenCodeStepUsage>>;
+  /** Steps finished in child sessions, i.e. subagents, during this turn. */
+  readonly subagentPartIds: Set<string>;
+  readonly subagents: OpenCodeTokenCounts;
   inputTokens: number;
   cachedInputTokens: number;
   cacheCreationTokens: number;
@@ -407,6 +418,14 @@ function makeOpenCodeTurnTokenUsageAccumulator(): OpenCodeTurnTokenUsageAccumula
     promptMessageIds: new Set(),
     assistantOwnershipByMessageId: new Map(),
     unresolvedStepsByMessageId: new Map(),
+    subagentPartIds: new Set(),
+    subagents: {
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      cacheCreationTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+    },
     inputTokens: 0,
     cachedInputTokens: 0,
     cacheCreationTokens: 0,
@@ -417,17 +436,30 @@ function makeOpenCodeTurnTokenUsageAccumulator(): OpenCodeTurnTokenUsageAccumula
   };
 }
 
+function addOpenCodeStepTokens(counts: OpenCodeTokenCounts, part: OpenCodeStepUsage): void {
+  counts.inputTokens += part.tokens.input + part.tokens.cache.read + part.tokens.cache.write;
+  counts.cachedInputTokens += part.tokens.cache.read;
+  counts.cacheCreationTokens += part.tokens.cache.write;
+  counts.outputTokens += part.tokens.output + part.tokens.reasoning;
+  counts.reasoningTokens += part.tokens.reasoning;
+}
+
 function accumulateOpenCodeStepUsage(
   accumulator: OpenCodeTurnTokenUsageAccumulator,
   part: OpenCodeStepUsage,
 ): void {
   if (accumulator.partIds.has(part.id)) return;
   accumulator.partIds.add(part.id);
-  accumulator.inputTokens += part.tokens.input + part.tokens.cache.read + part.tokens.cache.write;
-  accumulator.cachedInputTokens += part.tokens.cache.read;
-  accumulator.cacheCreationTokens += part.tokens.cache.write;
-  accumulator.outputTokens += part.tokens.output + part.tokens.reasoning;
-  accumulator.reasoningTokens += part.tokens.reasoning;
+  addOpenCodeStepTokens(accumulator, part);
+}
+
+function accumulateOpenCodeSubagentStepUsage(
+  accumulator: OpenCodeTurnTokenUsageAccumulator,
+  part: OpenCodeStepUsage,
+): void {
+  if (accumulator.subagentPartIds.has(part.id)) return;
+  accumulator.subagentPartIds.add(part.id);
+  addOpenCodeStepTokens(accumulator.subagents, part);
 }
 
 function takeOpenCodeTurnTokenUsage(
@@ -443,6 +475,7 @@ function takeOpenCodeTurnTokenUsage(
       hasSubagents: usage?.hasSubagents ?? false,
     };
   }
+  const subagents = usage.subagents;
   return {
     usageStatus:
       complete && usage.complete && usage.unresolvedStepsByMessageId.size === 0
@@ -455,6 +488,14 @@ function takeOpenCodeTurnTokenUsage(
     outputTokens: usage.outputTokens,
     reasoningTokens: Math.min(usage.outputTokens, usage.reasoningTokens),
     hasSubagents: usage.hasSubagents,
+    ...(subagents.inputTokens + subagents.outputTokens > 0
+      ? {
+          subagents: {
+            ...subagents,
+            reasoningTokens: Math.min(subagents.outputTokens, subagents.reasoningTokens),
+          },
+        }
+      : {}),
   };
 }
 
@@ -2283,6 +2324,19 @@ export function makeOpenCodeAdapter(
         payloadSessionId !== undefined &&
         isOpenCodeChildRequestEvent(event) &&
         (context.relatedSessionIds.has(payloadSessionId) || isKnownPendingTerminalEvent);
+      // A subagent's finished steps count toward the live turn; nothing else
+      // from its session reaches the parent timeline.
+      if (
+        !isParentEvent &&
+        payloadSessionId !== undefined &&
+        context.relatedSessionIds.has(payloadSessionId) &&
+        event.type === "message.part.updated" &&
+        event.properties.part.type === "step-finish" &&
+        context.activeTurnId &&
+        context.turnTokenUsage
+      ) {
+        accumulateOpenCodeSubagentStepUsage(context.turnTokenUsage, event.properties.part);
+      }
       if (!isParentEvent && !isChildRequestEvent) {
         return;
       }

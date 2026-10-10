@@ -3226,6 +3226,7 @@ features:
       - A completed or aborted turn whose provider reports token usage records one usage activity for that turn; turns without usage record nothing.
       - Web and desktop show the turn's total tokens beside its timestamp, with input, cached share, output, reasoning, and cache writes on hover; mobile shows the same with details on tap.
       - Each usage activity carries the thread's total, summed on the server over every recorded turn, so long threads are not undercounted by the client's activity window; the composer shows it, and its breakdown says how many turns it includes when some reported no usage.
+      - Claude, Codex, and OpenCode turns record their subagents' usage separately from the main agent's; turn and thread figures include it, and the breakdown notes subagent usage only where a provider could not report it.
       - A client setting (device-local on mobile) hides the figures, and usage activities never render as work-log rows.
     implementation_paths:
       - apps/mobile/src/features/threads/TurnUsageText.tsx
@@ -3239,6 +3240,9 @@ features:
       - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
       - apps/server/src/persistence/Layers/ProjectionTurns.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.ts
+      - apps/server/src/provider/Layers/CodexAdapter.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.ts
       - apps/web/src/components/BranchToolbar.tsx
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
@@ -3250,6 +3254,9 @@ features:
     tests:
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.activity.test.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
+      - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
+      - apps/server/src/provider/Layers/CodexAdapter.test.ts
+      - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
       - packages/shared/src/turnUsage.test.ts
     upstream:
       status: partial

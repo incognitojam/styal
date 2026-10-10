@@ -947,6 +947,68 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("adds collab child threads' usage to the live turn as subagent usage", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const completedFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "turn.completed"),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      // The session runtime re-emits a child's own usage notification under
+      // the parent thread, keeping the child's running total.
+      const childUsage = (
+        id: string,
+        agentThreadId: string,
+        counts: Parameters<typeof codexTokenUsageEvent>[0],
+      ): ProviderEvent => {
+        const event = codexTokenUsageEvent(counts);
+        return {
+          ...event,
+          id: asEventId(id),
+          method: "collabAgent/tokenUsage",
+          payload: {
+            agentThreadId,
+            tokenUsage: (event.payload as { tokenUsage: unknown }).tokenUsage,
+          },
+        };
+      };
+      const counts = (inputTokens: number, cachedInputTokens: number, outputTokens: number) => ({
+        id: "unused",
+        turnId: "turn-subagents",
+        inputTokens,
+        cachedInputTokens,
+        cacheCreationTokens: 0,
+        outputTokens,
+        reasoningTokens: 0,
+      });
+
+      yield* runtime.emit(codexTurnEvent("turn/started", "turn-subagents"));
+      yield* runtime.emit(codexTokenUsageEvent({ ...counts(100, 40, 20), id: "evt-main-usage" }));
+      yield* runtime.emit(childUsage("evt-child-a-1", "child-a", counts(1_000, 600, 50)));
+      yield* runtime.emit(childUsage("evt-child-b-1", "child-b", counts(300, 0, 10)));
+      yield* runtime.emit(
+        childUsage("evt-child-a-2", "child-a", {
+          ...counts(1_800, 1_300, 90),
+          last: { ...counts(800, 700, 40) },
+        }),
+      );
+      yield* runtime.emit(codexTurnEvent("turn/completed", "turn-subagents"));
+
+      const completed = yield* Fiber.join(completedFiber);
+      NodeAssert.equal(completed._tag, "Some");
+      if (completed._tag === "Some" && completed.value.type === "turn.completed") {
+        NodeAssert.equal(completed.value.payload.tokenUsage?.inputTokens, 100);
+        NodeAssert.deepStrictEqual(completed.value.payload.tokenUsage?.subagents, {
+          inputTokens: 2_100,
+          cachedInputTokens: 1_300,
+          outputTokens: 100,
+          reasoningTokens: 0,
+        });
+      }
+    }),
+  );
+
   it.effect("does not charge a late prior-turn update to the next Codex turn", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();

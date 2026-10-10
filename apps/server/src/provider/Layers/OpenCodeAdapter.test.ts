@@ -2592,6 +2592,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       const recoveredIncompleteHeader = promiseWithResolvers<unknown>();
       const recoveredCompleteHeader = promiseWithResolvers<unknown>();
       const childSession = promiseWithResolvers<unknown>();
+      const childStep = promiseWithResolvers<unknown>();
+      const childStepDuplicate = promiseWithResolvers<unknown>();
       const idle = promiseWithResolvers<unknown>();
       runtimeMock.state.subscribedEvents = [
         busy.promise,
@@ -2605,6 +2607,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         recoveredIncompleteHeader.promise,
         recoveredCompleteHeader.promise,
         childSession.promise,
+        childStep.promise,
+        childStepDuplicate.promise,
         idle.promise,
       ];
 
@@ -2779,6 +2783,27 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           },
         },
       });
+      // The subagent's own steps count separately from the main agent's.
+      const childStepEvent = {
+        type: "message.part.updated",
+        properties: {
+          sessionID: "child-step-usage",
+          part: {
+            ...stepPart,
+            id: "step-usage-child",
+            sessionID: "child-step-usage",
+            messageID: "assistant-step-usage-child",
+            tokens: {
+              input: 300,
+              output: 60,
+              reasoning: 20,
+              cache: { read: 200, write: 50 },
+            },
+          },
+        },
+      };
+      childStep.resolve({ id: "evt-step-usage-child-step", ...childStepEvent });
+      childStepDuplicate.resolve({ id: "evt-step-usage-child-step-duplicate", ...childStepEvent });
       idle.resolve({
         id: "evt-step-usage-idle",
         type: "session.status",
@@ -2800,6 +2825,13 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           outputTokens: 49,
           reasoningTokens: 9,
           hasSubagents: true,
+          subagents: {
+            inputTokens: 550,
+            cachedInputTokens: 200,
+            cacheCreationTokens: 50,
+            outputTokens: 80,
+            reasoningTokens: 20,
+          },
         });
       }
 
