@@ -898,6 +898,17 @@ export const PullRequestDeployment = Schema.Struct({
 });
 export type PullRequestDeployment = typeof PullRequestDeployment.Type;
 
+/**
+ * The state a read routed to another environment saw, reported to the environment the read was
+ * for so its thread links can catch up. A hint only: that environment confirms with the host
+ * before writing anything.
+ */
+export const PullRequestReportStateInput = Schema.Struct({
+  reference: PullRequestRef,
+  state: PullRequestState,
+});
+export type PullRequestReportStateInput = typeof PullRequestReportStateInput.Type;
+
 export const PullRequestDetail = Schema.Struct({
   provider: SourceControlProviderKind,
   capabilities: PullRequestCapabilities,
