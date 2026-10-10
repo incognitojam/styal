@@ -41,7 +41,9 @@ A run skips the release when `main`'s tree matches `origin/nightly`, the source 
 published artifact, or when no commit since then changes shipped code as defined under
 [Release notes](#release-notes). Skipped commits are counted in the next nightly that ships code.
 Run the workflow manually with `force_publish` to release anyway, for example after fixing the
-build or signing pipeline. Dry runs build and verify without publishing.
+build or signing pipeline. Dry runs build and verify without publishing. A dry run leaves an
+unpublished draft release with its artifacts attached for inspection; delete it from the
+repository's Releases page when it is no longer needed.
 
 ## Release notes
 
