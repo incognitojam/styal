@@ -1,4 +1,3 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
 import { MaterialListRow } from "../../components/MaterialListRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
@@ -22,9 +21,9 @@ import {
   getNewProjectGitHubTarget,
   getNewProjectPathPreview,
   normalizePastedCloneUrl,
+  parseAddProjectRemoteSource,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
-  type AddProjectRemoteProviderKind,
   type AddProjectRemoteSource,
 } from "@t3tools/client-runtime/operations/projects";
 import {
@@ -55,6 +54,7 @@ import {
   SourceControlRepositoryError,
   type SourceControlCloneDefaultRepository,
   type SourceControlDefaultRepositoryRemote,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 import {
   CommonActions,
@@ -92,6 +92,7 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/App
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ErrorBanner } from "../../components/ErrorBanner";
 import { SourceControlIcon } from "../../components/SourceControlIcon";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { ThemedSwitch } from "../../components/ThemedSwitch";
 import { uuidv4 } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -147,18 +148,7 @@ function stringParam(value: string | string[] | undefined): string | null {
 }
 
 function sourceFromParam(value: string | string[] | undefined): AddProjectRemoteSource {
-  const source = stringParam(value);
-  if (
-    source === "url" ||
-    source === "github" ||
-    source === "gitlab" ||
-    source === "forgejo" ||
-    source === "bitbucket" ||
-    source === "azure-devops"
-  ) {
-    return source;
-  }
-  return "url";
+  return parseAddProjectRemoteSource(stringParam(value));
 }
 
 function SectionTitle(props: { readonly children: string }) {
@@ -287,7 +277,7 @@ function ListRow(props: {
 function RepositoryOwnerAvatar(props: {
   readonly nameWithOwner: string;
   readonly remoteUrl: string | null;
-  readonly provider: AddProjectRemoteProviderKind;
+  readonly provider: SourceControlProviderKind;
 }) {
   const [hasFailed, setHasFailed] = useState(false);
   const avatarUrl = props.remoteUrl
@@ -343,7 +333,7 @@ function DefaultRepositoryRow(props: {
   readonly nameWithOwner: string;
   readonly remoteName: string;
   readonly remoteUrl: string | null;
-  readonly provider: AddProjectRemoteProviderKind;
+  readonly provider: SourceControlProviderKind;
   readonly isFirst?: boolean;
   readonly disabled?: boolean;
   readonly right?: ReactNode;
@@ -616,7 +606,7 @@ function SourceControlRow(props: {
       />
     ) : (
       <SourceControlIcon
-        kind={props.source}
+        kind={sourceControlClients.get(props.source).icon}
         size={Platform.OS === "android" ? 24 : 18}
         colorClassName="accent-icon"
       />
@@ -784,13 +774,13 @@ export function AddProjectSourceScreen() {
                   key={candidate}
                   source={candidate}
                   selectedEnvironmentId={selectedEnvironment.environmentId}
-                  ready={canCloneProject && readiness[candidate].ready}
+                  ready={canCloneProject && readiness(candidate).ready}
                   hint={
                     !canCloneProject
                       ? "This connection cannot clone projects."
-                      : readiness[candidate].ready
+                      : readiness(candidate).ready
                         ? addProjectRemoteSourcePathHint(candidate)
-                        : (readiness[candidate].hint ?? "")
+                        : (readiness(candidate).hint ?? "")
                   }
                   isFirst={false}
                 />
@@ -938,7 +928,7 @@ export function AddProjectRepositoryScreen(props: {
     const result = await lookupRepositoryQuery({
       environmentId: environment.environmentId,
       input: {
-        provider: SourceControlProviderKind.make(provider),
+        provider,
         repository: repositoryInput.trim(),
       },
     });
@@ -1282,7 +1272,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                 }
                 icon={
                   <SourceControlIcon
-                    kind="github"
+                    kind={sourceControlClients.get("github").icon}
                     size={Platform.OS === "android" ? 24 : 18}
                     colorClassName="accent-icon"
                   />
