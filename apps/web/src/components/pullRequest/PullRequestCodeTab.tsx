@@ -33,7 +33,7 @@ import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings"
 import { useTheme } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
-import { canEditPullRequestComment } from "./pullRequestEditing.logic";
+import { canEditPullRequestComment, canResolvePullRequestThread } from "./pullRequestEditing.logic";
 import { diffFileTier, orderDiffFiles } from "~/lib/diffFileOrder";
 import { useDiffPanelStore } from "~/diffPanelStore";
 import {
@@ -963,7 +963,7 @@ function PullRequestCodeTab({
         detail={detail}
         environmentId={environmentId}
         canReply={review.reply}
-        canResolve={review.resolve}
+        canResolve={review.resolve && canResolvePullRequestThread(detail, thread)}
         canReact={detail.capabilities.reactions === true}
         reference={reference}
         pending={threadPending}
@@ -994,7 +994,11 @@ function PullRequestCodeTab({
         }
         // A conversation on a line is made of review comments, whatever the host filed them as.
         canEditComment={(comment) =>
-          canEditPullRequestComment(detail, { author: comment.author, kind: "review-comment" })
+          canEditPullRequestComment(detail, {
+            author: comment.author,
+            kind: "review-comment",
+            canEdit: comment.canEdit,
+          })
         }
         onEditComment={(commentId, body) =>
           runThreadCommand("The comment could not be saved", () =>
