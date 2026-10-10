@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { removeAgentCredits } from "@t3tools/source-control-core/server/mergeMessage";
 import * as Effect from "effect/Effect";
 import type {
@@ -204,7 +205,7 @@ export const make = Effect.gen(function* () {
 
   const fail = (operation: string) => (error: GitHubPullRequestApi.GitHubPullRequestApiError) =>
     new PullRequestProviderError({
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       operation,
       ...gitHubProviderFailure(error),
       detail: error.message,
@@ -263,7 +264,7 @@ export const make = Effect.gen(function* () {
     );
 
   const provider: PullRequestProviderApi = {
-    kind: "github",
+    kind: SourceControlProviderKind.make("github"),
     capabilities: CAPABILITIES,
     mergeMessageRewrite: removeAgentCredits,
     getRoutingIdentity: (input) =>

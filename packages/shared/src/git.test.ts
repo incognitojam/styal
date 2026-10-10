@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   DEFAULT_SERVER_SETTINGS,
   type VcsStatusRemoteResult,
@@ -265,7 +266,7 @@ describe("applyGitStatusStreamEvent", () => {
     const current: VcsStatusResult = {
       isRepo: true,
       sourceControlProvider: {
-        kind: "github",
+        kind: SourceControlProviderKind.make("github"),
         name: "GitHub",
         baseUrl: "https://github.com",
       },

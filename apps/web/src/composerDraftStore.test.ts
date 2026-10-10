@@ -12,6 +12,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  SourceControlProviderKind,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ThreadId,
   type SourceControlIssue,
@@ -1219,7 +1220,7 @@ describe("composerDraftStore issue contexts", () => {
   const threadId = ThreadId.make("thread-issue");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
   const issue = {
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     repository: "acme/web",
     number: 18,
     title: "Fix login crash",
@@ -2948,7 +2949,7 @@ describe("composerDraftStore model seed migration", () => {
               attachments: [],
               issueContexts: [
                 issueContextRecord({
-                  provider: "github",
+                  provider: SourceControlProviderKind.make("github"),
                   repository: "example/project",
                   number: 42,
                   title: "Preserve issue context",

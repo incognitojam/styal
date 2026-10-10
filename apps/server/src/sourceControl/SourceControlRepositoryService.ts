@@ -18,7 +18,7 @@ import {
   type SourceControlDefaultRepositoryRemote,
   type SourceControlDefaultRepositoryState,
   type SourceControlGetDefaultRepositoryInput,
-  type SourceControlProviderKind,
+  SourceControlProviderKind,
   type SourceControlPublishRepositoryInput,
   type SourceControlPublishRepositoryResult,
   type SourceControlRepositoryCloneUrls,
@@ -303,7 +303,9 @@ function parseRemoteConfig(stdout: string): ParsedRemoteConfig {
             remoteName: entry.remoteName,
             url: entry.url,
             nameWithOwner: repositoryNameWithOwnerFromRemoteUrl(entry.url),
-            provider: detectSourceControlProviderFromGitRemoteUrl(entry.url)?.kind ?? "unknown",
+            provider:
+              detectSourceControlProviderFromGitRemoteUrl(entry.url)?.kind ??
+              SourceControlProviderKind.make("unknown"),
           },
         ],
   );
@@ -376,7 +378,7 @@ export const make = Effect.gen(function* () {
       if (trimmed.length === 0) {
         return yield* new SourceControlRepositoryError({
           operation: "cloneRepository",
-          provider: "unknown",
+          provider: SourceControlProviderKind.make("unknown"),
           detail: "Choose a destination path before cloning.",
         });
       }
@@ -397,7 +399,7 @@ export const make = Effect.gen(function* () {
               (cause) =>
                 new SourceControlRepositoryError({
                   operation: "cloneRepository",
-                  provider: "unknown",
+                  provider: SourceControlProviderKind.make("unknown"),
                   detail: "Destination path already exists and is not a directory.",
                   cause,
                 }),
@@ -406,7 +408,7 @@ export const make = Effect.gen(function* () {
         if (entries.length > 0) {
           return yield* new SourceControlRepositoryError({
             operation: "cloneRepository",
-            provider: "unknown",
+            provider: SourceControlProviderKind.make("unknown"),
             detail: "Destination path already exists and is not empty.",
           });
         }
@@ -480,7 +482,7 @@ export const make = Effect.gen(function* () {
       if (remoteName && !config.state.remotes.some((remote) => remote.remoteName === remoteName)) {
         return yield* new SourceControlRepositoryError({
           operation: "setDefaultRepository",
-          provider: "unknown",
+          provider: SourceControlProviderKind.make("unknown"),
           detail: "Choose a remote that exists in this repository.",
         });
       }
@@ -588,7 +590,8 @@ export const make = Effect.gen(function* () {
     const preparedDestination = yield* prepareDestination(input.destinationPath);
     let repository: SourceControlRepositoryInfo | null = null;
     let remoteUrl = input.remoteUrl?.trim() ?? null;
-    let provider: SourceControlProviderKind = input.provider ?? "unknown";
+    let provider: SourceControlProviderKind =
+      input.provider ?? SourceControlProviderKind.make("unknown");
 
     if (input.provider && input.repository) {
       provider = input.provider;
@@ -669,7 +672,7 @@ export const make = Effect.gen(function* () {
           (cause) =>
             new SourceControlRepositoryError({
               operation: "cloneRepository",
-              provider: input.provider ?? "unknown",
+              provider: input.provider ?? SourceControlProviderKind.make("unknown"),
               detail: describeCloneFailure(stderrTail, cause),
               cause,
             }),
@@ -678,7 +681,7 @@ export const make = Effect.gen(function* () {
 
     const upstream = yield* wireClonedFork({
       cwd: prepared.destinationPath,
-      provider: input.provider ?? "unknown",
+      provider: input.provider ?? SourceControlProviderKind.make("unknown"),
       repository: prepared.repository,
       cloneUrl: prepared.cloneUrl,
       protocol: input.protocol,
@@ -711,7 +714,7 @@ export const make = Effect.gen(function* () {
         (cause) =>
           new SourceControlRepositoryError({
             operation: "discardClone",
-            provider: "unknown",
+            provider: SourceControlProviderKind.make("unknown"),
             detail: "The clone destination could not be inspected.",
             cause,
           }),
@@ -720,7 +723,7 @@ export const make = Effect.gen(function* () {
     if (entries.length > 0 && !entries.includes(".git")) {
       return yield* new SourceControlRepositoryError({
         operation: "discardClone",
-        provider: "unknown",
+        provider: SourceControlProviderKind.make("unknown"),
         detail: "Destination path contains files that are not from the clone.",
       });
     }
@@ -734,7 +737,7 @@ export const make = Effect.gen(function* () {
         (cause) =>
           new SourceControlRepositoryError({
             operation: "discardClone",
-            provider: "unknown",
+            provider: SourceControlProviderKind.make("unknown"),
             detail: "The partial clone could not be removed.",
             cause,
           }),
@@ -886,20 +889,34 @@ export const make = Effect.gen(function* () {
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
     prepareClone: (input) =>
-      prepareClone(input).pipe(mapRepositoryError("cloneRepository", input.provider ?? "unknown")),
+      prepareClone(input).pipe(
+        mapRepositoryError(
+          "cloneRepository",
+          input.provider ?? SourceControlProviderKind.make("unknown"),
+        ),
+      ),
     cloneRepository: (input, options) =>
       cloneRepository(input, options).pipe(
-        mapRepositoryError("cloneRepository", input.provider ?? "unknown"),
+        mapRepositoryError(
+          "cloneRepository",
+          input.provider ?? SourceControlProviderKind.make("unknown"),
+        ),
       ),
     wireClonedFork,
     discardClone: (destinationPath) =>
-      discardClone(destinationPath).pipe(mapRepositoryError("discardClone", "unknown")),
+      discardClone(destinationPath).pipe(
+        mapRepositoryError("discardClone", SourceControlProviderKind.make("unknown")),
+      ),
     publishRepository: (input) =>
       publishRepository(input).pipe(mapRepositoryError("publishRepository", input.provider)),
     getDefaultRepository: (input) =>
-      getDefaultRepository(input).pipe(mapRepositoryError("getDefaultRepository", "unknown")),
+      getDefaultRepository(input).pipe(
+        mapRepositoryError("getDefaultRepository", SourceControlProviderKind.make("unknown")),
+      ),
     setDefaultRepository: (input) =>
-      setDefaultRepository(input).pipe(mapRepositoryError("setDefaultRepository", "unknown")),
+      setDefaultRepository(input).pipe(
+        mapRepositoryError("setDefaultRepository", SourceControlProviderKind.make("unknown")),
+      ),
   });
 });
 

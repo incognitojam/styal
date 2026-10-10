@@ -8,13 +8,13 @@ import type {
   SourceControlDefaultRepositoryRemote,
   SourceControlDefaultRepositoryState,
   SourceControlDiscoveryResult,
-  SourceControlProviderKind,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
 import {
   detectSourceControlProviderFromGitRemoteUrl,
   normalizeGitRemoteUrl,
 } from "@t3tools/shared/git";
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
@@ -31,10 +31,12 @@ import {
 } from "../state/projects.ts";
 import type { EnvironmentProject } from "../state/models.ts";
 
-export type AddProjectRemoteProviderKind = Extract<
-  SourceControlProviderKind,
-  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
->;
+export type AddProjectRemoteProviderKind =
+  | "github"
+  | "gitlab"
+  | "forgejo"
+  | "bitbucket"
+  | "azure-devops";
 export type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
 export function canCreateProjectInEnvironment(
@@ -253,7 +255,7 @@ export function buildAddProjectRemoteSourceReadiness(
   for (const source of ADD_PROJECT_REMOTE_SOURCES) {
     const kind = addProjectRemoteSourceProvider(source);
     if (!kind) continue;
-    const provider = providerByKind.get(kind);
+    const provider = providerByKind.get(SourceControlProviderKind.make(kind));
     if (!provider) {
       readiness[source] = unavailable;
       continue;

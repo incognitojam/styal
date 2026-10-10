@@ -73,7 +73,7 @@ import {
   type PullRequestThreadCommentsResult,
   type PullRequestUpdateInput,
   type SourceControlProviderInfo,
-  type SourceControlProviderKind,
+  SourceControlProviderKind,
   type ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -755,14 +755,15 @@ export const make = Effect.gen(function* () {
         sourceControlRepositorySelector(project.repositoryIdentity) === null
       )
         continue;
-      const host = pullRequestHostOf(identity, "unknown");
+      const host = pullRequestHostOf(identity, SourceControlProviderKind.make("unknown"));
       // A legacy identity has no canonical host until its provider is refined, so it must reach
       // the refinement before a host filter can decide whether it belongs in the result.
       if (
         filter.host !== undefined &&
         host !== "unknown" &&
         host !== filter.host.toLowerCase() &&
-        pullRequestHostOf(identity, "forgejo") !== filter.host.toLowerCase() &&
+        pullRequestHostOf(identity, SourceControlProviderKind.make("forgejo")) !==
+          filter.host.toLowerCase() &&
         !isSshRemoteUrl(identity.locator.remoteUrl)
       ) {
         continue;
@@ -787,7 +788,9 @@ export const make = Effect.gen(function* () {
                 cwd: project.workspaceRoot,
                 context: {
                   provider:
-                    provider.kind === "forgejo" ? { ...provider, kind: "unknown" } : provider,
+                    provider.kind === "forgejo"
+                      ? { ...provider, kind: SourceControlProviderKind.make("unknown") }
+                      : provider,
                   remoteName,
                   remoteUrl,
                   ...(filter.host !== undefined && isSshRemoteUrl(remoteUrl)

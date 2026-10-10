@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -137,7 +138,11 @@ const makeProvider = (api: Partial<GitHubApi.GitHubApi["Service"]>) =>
   GitHubSourceControlProvider.make.pipe(Effect.provide(harness({ remotes: "", api }).layer));
 
 const githubContext = (host: string) => ({
-  provider: { kind: "github" as const, name: "GitHub", baseUrl: `https://${host}` },
+  provider: {
+    kind: SourceControlProviderKind.make("github"),
+    name: "GitHub",
+    baseUrl: `https://${host}`,
+  },
   remoteName: "origin",
   remoteUrl: `git@${host}:acme/web.git`,
 });
@@ -1061,7 +1066,7 @@ describe("GitHubSourceControlProvider issues, references and fork parents", () =
         result.map(({ updatedAt: _updatedAt, ...issue }) => issue),
         [
           {
-            provider: "github",
+            provider: SourceControlProviderKind.make("github"),
             number: 123,
             title: "Fix login crash",
             url: "https://github.com/pingdotgg/codething-mvp/issues/123",
@@ -1124,7 +1129,7 @@ describe("GitHubSourceControlProvider issues, references and fork parents", () =
       const result = yield* gh.getIssue({ cwd: "/repo", number: 123 });
 
       assert.deepStrictEqual(result, {
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         number: 123,
         title: "Fix login crash",
         url: "https://github.com/pingdotgg/codething-mvp/issues/123",
@@ -1326,7 +1331,7 @@ it.live.each([
       cwd: "/repo",
       context: {
         provider: {
-          kind: "github" as const,
+          kind: SourceControlProviderKind.make("github"),
           name: "GitHub Self-Hosted",
           baseUrl: "https://code.example.test",
         },
@@ -1443,7 +1448,11 @@ it.effect.each([
       const input = {
         cwd: "/repo",
         context: {
-          provider: { kind: "github" as const, name: "GitHub", baseUrl: `https://${host}` },
+          provider: {
+            kind: SourceControlProviderKind.make("github"),
+            name: "GitHub",
+            baseUrl: `https://${host}`,
+          },
           remoteName: "origin",
           remoteUrl: `git@${host}:me/web.git`,
         },

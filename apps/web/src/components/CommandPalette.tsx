@@ -44,7 +44,7 @@ import {
   type SourceControlCloneDefaultRepository,
   type SourceControlDefaultRepositoryRemote,
   type SourceControlDiscoveryResult,
-  type SourceControlProviderKind,
+  SourceControlProviderKind,
   type SourceControlRepositoryInfo,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   SourceControlRepositoryError,
@@ -345,10 +345,13 @@ interface AddProjectEnvironmentOption {
   readonly status: string;
 }
 
-type AddProjectRemoteProviderKind = Extract<
-  SourceControlProviderKind,
-  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops" | "gitcafe"
->;
+type AddProjectRemoteProviderKind =
+  | "github"
+  | "gitlab"
+  | "forgejo"
+  | "bitbucket"
+  | "azure-devops"
+  | "gitcafe";
 type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
 type AddProjectCloneFlow =
@@ -535,7 +538,7 @@ function buildAddProjectRemoteSourceReadiness(
   for (const source of REMOTE_PROJECT_SOURCES) {
     const kind = sourceProviderKind(source);
     if (!kind) continue;
-    const provider = providerByKind.get(kind);
+    const provider = providerByKind.get(SourceControlProviderKind.make(kind));
     if (!provider) {
       readiness[source] = unavailable;
       continue;
@@ -3133,7 +3136,7 @@ function OpenCommandPaletteDialog(props: {
       const lookupResult = await lookupRepository({
         environmentId: addProjectCloneFlow.environmentId,
         input: {
-          provider,
+          provider: SourceControlProviderKind.make(provider),
           repository: rawRepository,
         },
       });

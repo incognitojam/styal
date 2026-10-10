@@ -1,4 +1,5 @@
 import type { ComposerContextId, ComposerContextRecord } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -285,7 +286,7 @@ describe("provider projection", () => {
           kind: "issue",
           contextId: ctx("issue_abc"),
           label: "#12 Login crash",
-          provider: "github",
+          provider: SourceControlProviderKind.make("github"),
           repository: "acme/web",
           number: 12,
           title: "Login crash",

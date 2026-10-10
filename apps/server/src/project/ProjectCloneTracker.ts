@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import type {
   ProjectCloneSnapshot,
   ProjectCloneStage,
@@ -6,7 +7,6 @@ import type {
   ProjectId,
   SourceControlCloneDefaultRepository,
   SourceControlCloneProtocol,
-  SourceControlProviderKind,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
 import {
@@ -312,7 +312,7 @@ export const make = Effect.gen(function* () {
             cloneUrl: prepared.cloneUrl,
             destinationPath: prepared.destinationPath,
             repository: prepared.repository,
-            provider: input.provider ?? "unknown",
+            provider: input.provider ?? SourceControlProviderKind.make("unknown"),
             protocol: input.protocol,
             defaultRepository: input.defaultRepository,
           },
@@ -322,7 +322,7 @@ export const make = Effect.gen(function* () {
       if (!claimed) {
         return yield* new SourceControlRepositoryError({
           operation: "cloneRepository",
-          provider: input.provider ?? "unknown",
+          provider: input.provider ?? SourceControlProviderKind.make("unknown"),
           detail: "A clone into this destination is already in progress.",
         });
       }

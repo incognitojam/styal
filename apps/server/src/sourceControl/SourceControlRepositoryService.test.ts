@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -53,7 +54,7 @@ function makeProvider(
     >;
 
   return {
-    kind: "github",
+    kind: SourceControlProviderKind.make("github"),
     listChangeRequests: () => unsupported("listChangeRequests"),
     listIssues: () => unsupported("listIssues"),
     getIssue: () => unsupported("getIssue"),
@@ -136,19 +137,22 @@ it.effect("looks up repositories through the requested provider without search",
   return Effect.gen(function* () {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.lookupRepository({
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       repository: "octocat/t3code",
       cwd: "/workspace",
     });
 
-    assert.deepStrictEqual(result, { provider: "github", ...CLONE_URLS });
+    assert.deepStrictEqual(result, {
+      provider: SourceControlProviderKind.make("github"),
+      ...CLONE_URLS,
+    });
     assert.deepStrictEqual(calls, [{ cwd: "/workspace", repository: "octocat/t3code" }]);
   }).pipe(Effect.provide(layer({ provider })));
 });
 
 it.effect("preserves provider failures without deriving the repository message from them", () => {
   const providerCause = new SourceControlProviderError({
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     operation: "getRepositoryCloneUrls",
     cwd: "/workspace",
     repository: "octocat/t3code",
@@ -162,7 +166,7 @@ it.effect("preserves provider failures without deriving the repository message f
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const error = yield* Effect.flip(
       service.lookupRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         repository: "octocat/t3code",
         cwd: "/workspace",
       }),
@@ -198,7 +202,7 @@ it.effect(
       yield* Effect.gen(function* () {
         const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
         const input = {
-          provider: "bitbucket" as const,
+          provider: SourceControlProviderKind.make("bitbucket"),
           repository: locatorCause.repository,
           cwd: "/workspace",
         };
@@ -226,11 +230,11 @@ it.effect(
 
 it.effect("keeps a plain Bitbucket locator lookalike out of the repository message", () => {
   const provider = makeProvider({
-    kind: "bitbucket",
+    kind: SourceControlProviderKind.make("bitbucket"),
     getRepositoryCloneUrls: () =>
       Effect.fail(
         new SourceControlProviderError({
-          provider: "bitbucket",
+          provider: SourceControlProviderKind.make("bitbucket"),
           operation: "getRepositoryCloneUrls",
           cwd: "/workspace",
           detail: "credential token abc123 was rejected",
@@ -246,7 +250,10 @@ it.effect("keeps a plain Bitbucket locator lookalike out of the repository messa
   return Effect.gen(function* () {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const error = yield* Effect.flip(
-      service.lookupRepository({ provider: "bitbucket", repository: "t3code" }),
+      service.lookupRepository({
+        provider: SourceControlProviderKind.make("bitbucket"),
+        repository: "t3code",
+      }),
     );
 
     assert.strictEqual(error.detail, "The source control operation could not be completed.");
@@ -272,7 +279,7 @@ it.effect("keeps arbitrary Bitbucket request failures out of the repository mess
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const error = yield* Effect.flip(
         service.lookupRepository({
-          provider: "bitbucket",
+          provider: SourceControlProviderKind.make("bitbucket"),
           repository: "pingdotgg/t3code",
           cwd: "/workspace",
         }),
@@ -298,7 +305,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const result = yield* service.cloneRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         repository: "octocat/t3code",
         destinationPath,
         protocol: "https",
@@ -307,7 +314,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       assert.deepStrictEqual(result, {
         cwd: destinationPath,
         remoteUrl: CLONE_URLS.url,
-        repository: { provider: "github", ...CLONE_URLS },
+        repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
       });
       assert.deepStrictEqual(cloneCalls, [
         {
@@ -537,13 +544,13 @@ it.effect("lists remote candidates and the current default repository", () =>
           remoteName: "origin",
           url: CLONE_URLS.url,
           nameWithOwner: "octocat/t3code",
-          provider: "github",
+          provider: SourceControlProviderKind.make("github"),
         },
         {
           remoteName: "upstream",
           url: PARENT_URLS.url,
           nameWithOwner: "t3/t3code",
-          provider: "github",
+          provider: SourceControlProviderKind.make("github"),
         },
       ],
       defaultRemoteName: "upstream",
@@ -711,7 +718,7 @@ it.effect("keeps the client-resolved fork transport when wiring and pinning its 
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const result = yield* service.cloneRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         repository: "octocat/t3code",
         remoteUrl: CLONE_URLS.url,
         destinationPath,
@@ -771,7 +778,7 @@ it.effect("infers SSH upstreams for SSH fork URLs and custom URL fallbacks", () 
         });
         const destinationPath = `${parent}/t3code`;
         const result = yield* service.cloneRepository({
-          provider: "github",
+          provider: SourceControlProviderKind.make("github"),
           repository: "octocat/t3code",
           remoteUrl: testCase.remoteUrl,
           destinationPath,
@@ -815,7 +822,7 @@ it.effect("pins the parent when the clone asks to contribute upstream", () =>
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       yield* service.cloneRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         repository: "octocat/t3code",
         destinationPath,
         protocol: "https",
@@ -863,7 +870,7 @@ it.effect("fetches the upstream remote, and keeps the clone when that fetch fail
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const result = yield* service.cloneRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         repository: "octocat/t3code",
         destinationPath,
       });
@@ -908,7 +915,7 @@ it.effect("keeps a fork clone when the upstream remote cannot be added", () =>
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const result = yield* service.cloneRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         repository: "octocat/t3code",
         destinationPath,
       });
@@ -946,7 +953,7 @@ it.effect("falls back to the requested clone URL when the repository lookup fail
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const result = yield* service.cloneRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         repository: "octocat/t3code",
         remoteUrl: CLONE_URLS.sshUrl,
         destinationPath,
@@ -963,7 +970,7 @@ it.effect("falls back to the requested clone URL when the repository lookup fail
           provider: makeProvider({
             getRepositoryCloneUrls: (input) =>
               new SourceControlProviderError({
-                provider: "github",
+                provider: SourceControlProviderKind.make("github"),
                 operation: "getRepositoryCloneUrls",
                 cwd: input.cwd,
                 repository: input.repository,
@@ -1206,7 +1213,7 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       repository: "octocat/t3code",
       visibility: "private",
       remoteName: "origin",
@@ -1214,7 +1221,7 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
     });
 
     assert.deepStrictEqual(result, {
-      repository: { provider: "github", ...CLONE_URLS },
+      repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
       remoteName: "origin",
       remoteUrl: CLONE_URLS.sshUrl,
       branch: "feature/remote-v1",
@@ -1261,7 +1268,7 @@ it.effect("publishes to the remote name returned by ensureRemote", () => {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       repository: "octocat/t3code",
       visibility: "private",
       remoteName: "origin",
@@ -1297,7 +1304,7 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       repository: "octocat/t3code",
       visibility: "private",
       remoteName: "origin",
@@ -1305,7 +1312,7 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     });
 
     assert.deepStrictEqual(result, {
-      repository: { provider: "github", ...CLONE_URLS },
+      repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
       remoteName: "origin",
       remoteUrl: CLONE_URLS.sshUrl,
       branch: "main",

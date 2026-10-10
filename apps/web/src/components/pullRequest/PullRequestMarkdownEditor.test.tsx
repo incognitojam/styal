@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   ProjectId,
   type PullRequestDetailView,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -38,7 +39,7 @@ vi.mock("./PullRequestMarkdown", () => ({ PullRequestMarkdown: "article" }));
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 
 const detail: PullRequestDetailView = {
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   projectId: ProjectId.make("project"),
   projectTitle: "Project",
   workspaceRoot: "/workspace",
