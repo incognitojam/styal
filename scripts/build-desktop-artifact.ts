@@ -2928,6 +2928,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       extendInfo: {
         // Older macOS releases fall back to icon.icns through CFBundleIconFile.
         CFBundleIconName: MAC_ICON_NAME,
+        NSLocalNetworkUsageDescription:
+          "styal connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
           "styal captures the active window when you use the window capture shortcut.",
         // macOS lists an app under Default web browser only when it opens web
