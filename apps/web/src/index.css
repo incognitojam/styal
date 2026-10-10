@@ -205,6 +205,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
      compositor updates discrete frames instead of every vsync. */
   --animate-status-pulse: status-pulse 2s infinite;
   --animate-status-ping: status-ping 2s infinite;
+  /* One roll of a changed digit, like a meter wheel; it never repeats. */
+  --animate-meter-in: meter-in 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-meter-out: meter-out 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -284,6 +287,22 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
     100% {
       opacity: 1;
+    }
+  }
+  @keyframes meter-in {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  @keyframes meter-out {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(-100%);
     }
   }
   @keyframes status-pulse {

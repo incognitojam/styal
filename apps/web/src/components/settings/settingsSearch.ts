@@ -451,6 +451,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage tokens cache reasoning input output turn"],
   },
   {
+    id: "turn-usage-figure",
+    title: "Show usage as",
+    to: "/settings/general",
+    searchTerms: ["usage tokens cost price dollars api estimate turn thread composer"],
+  },
+  {
     id: "provider-update-checks",
     title: "Provider update checks",
     to: "/settings/general",

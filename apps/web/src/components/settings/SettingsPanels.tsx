@@ -624,6 +624,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.turnUsageEnabled !== DEFAULT_UNIFIED_SETTINGS.turnUsageEnabled
         ? ["Turn usage"]
         : []),
+      ...(settings.turnUsageFigure !== DEFAULT_UNIFIED_SETTINGS.turnUsageFigure
+        ? ["Show usage as"]
+        : []),
       ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
         ? ["Context window indicator"]
         : []),
@@ -692,6 +695,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sendShortcut,
       settings.followUpBehavior,
       settings.turnUsageEnabled,
+      settings.turnUsageFigure,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
@@ -815,6 +819,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
       turnUsageEnabled: DEFAULT_UNIFIED_SETTINGS.turnUsageEnabled,
+      turnUsageFigure: DEFAULT_UNIFIED_SETTINGS.turnUsageFigure,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
@@ -2941,6 +2946,43 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+
+        {settings.turnUsageEnabled ? (
+          <SettingsRow
+            {...searchableSetting("turn-usage-figure")}
+            description="Lead with tokens, or with what they would cost at API rates. Turns without a cost show tokens."
+            resetAction={
+              settings.turnUsageFigure !== DEFAULT_UNIFIED_SETTINGS.turnUsageFigure ? (
+                <SettingResetButton
+                  label="usage figure"
+                  onClick={() =>
+                    updateSettings({ turnUsageFigure: DEFAULT_UNIFIED_SETTINGS.turnUsageFigure })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={settings.turnUsageFigure}
+                onValueChange={(value) => {
+                  if (value === "tokens" || value === "cost") {
+                    updateSettings({ turnUsageFigure: value });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-auto min-w-0" aria-label="Show usage as">
+                  <SelectValue>
+                    {settings.turnUsageFigure === "cost" ? "Est. API cost" : "Tokens"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="tokens">Tokens</SelectItem>
+                  <SelectItem value="cost">Est. API cost</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        ) : null}
 
         <SettingsRow
           serverScoped

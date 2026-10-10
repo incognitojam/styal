@@ -142,7 +142,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Model and tokens per turn, and thread totals.** Each completed turn shows the model and
   effort it ran on and the tokens it used beside its timestamp, and the composer shows the
   thread's total; hover or tap for the input, cached, output, reasoning, and subagent breakdown,
-  and an estimated API cost. Compared with
+  and an estimated API cost, which can lead instead of tokens. Compared with
   [T3 Code revision 2a4ee33](https://github.com/pingdotgg/t3code/tree/2a4ee339827e480da6ad0139585cf634a46ff73e),
   checked October 10, 2026, which shows token use and cost only on its Usage page and context
   meter, and names a model in the conversation only where the thread switches models.

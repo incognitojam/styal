@@ -10278,6 +10278,7 @@ export default function ChatView(props: ChatViewProps) {
                             activeThreadModelSelection={activeThread?.modelSelection}
                             activeContextWindow={activeContextWindow}
                             threadUsage={showComposerContextStrip ? null : threadUsage}
+                            threadUsageKey={routeThreadKey}
                             compactThreadUnavailable={compactThreadUnavailable}
                             compactDisabled={compactDisabled}
                             compactDisabledReason={compactDisabledReason}
@@ -10389,6 +10390,7 @@ export default function ChatView(props: ChatViewProps) {
                                 composerControlsHostRef={setRestingComposerControlsHost}
                                 contextStripVisible={showComposerContextStrip}
                                 threadUsage={showComposerContextStrip ? threadUsage : null}
+                                threadUsageKey={routeThreadKey}
                               />
                             </div>
                           )}

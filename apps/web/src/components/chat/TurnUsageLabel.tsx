@@ -1,8 +1,14 @@
-import type { OrchestrationThreadActivity, ServerProvider } from "@t3tools/contracts";
+import type {
+  ClientSettings,
+  OrchestrationThreadActivity,
+  ServerProvider,
+} from "@t3tools/contracts";
 import {
   deriveTurnUsage,
   EMPTY_TURN_USAGE,
+  meterWheels,
   turnSummaryViews,
+  usageFigureText,
   type TurnRecord,
   type TurnSummaryView,
   type TurnUsageByTurn,
@@ -10,7 +16,10 @@ import {
 } from "@t3tools/shared/turnUsage";
 import { useMemo, useState } from "react";
 
+import { useClientSettings } from "../../hooks/useSettings";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+
+const selectUsageFigure = (settings: ClientSettings) => settings.turnUsageFigure;
 
 /**
  * Turn usage that keeps its identity until a usage activity arrives, so the
@@ -43,22 +52,76 @@ export function useTurnSummaries(
   return summaries;
 }
 
-/** One figure in its surroundings' colour; the token breakdown opens on hover. */
+/**
+ * Text whose changed digits roll up once, like a meter's wheels, when it
+ * changes under the same `meterKey`. A new key shows the text as it is, so
+ * switching threads never rolls.
+ */
+function MeterText({ text, meterKey }: { text: string; meterKey: string }) {
+  const [shown, setShown] = useState({ text, meterKey, previous: null as string | null, roll: 0 });
+  if (shown.text !== text || shown.meterKey !== meterKey) {
+    setShown({
+      text,
+      meterKey,
+      previous: shown.meterKey === meterKey ? shown.text : null,
+      roll: shown.roll + 1,
+    });
+  }
+  const previous = shown.previous;
+  if (previous === null) return text;
+  return meterWheels(previous, text).map(({ position, char, before, rolls }) => {
+    if (!rolls) return <span key={position}>{char}</span>;
+    // The rightmost wheel turns first, as on a meter.
+    const delay = { animationDelay: `${position * 40}ms` };
+    return (
+      // Clipping moves an inline block's baseline to its bottom edge, so the
+      // wheel aligns by its bottom to sit level with the other characters.
+      <span
+        key={`${shown.roll}:${position}`}
+        className="relative inline-block overflow-hidden align-bottom"
+      >
+        <span className="inline-block motion-safe:animate-meter-in" style={delay}>
+          {char}
+        </span>
+        {before !== undefined ? (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 hidden motion-safe:block motion-safe:animate-meter-out"
+            style={delay}
+          >
+            {before}
+          </span>
+        ) : null}
+      </span>
+    );
+  });
+}
+
+/**
+ * The turn or thread figure in its surroundings' colour, tokens or cost as the
+ * user chose; the breakdown opens on hover. With `meterKey`, a changing cost
+ * rolls like a meter.
+ */
 export function TurnUsageLabel({
   view,
   subject = "Turn usage",
+  meterKey,
 }: {
   view: TurnUsageView;
   /** Names the figure for screen readers. */
   subject?: string;
+  /** Identifies what the figure counts, e.g. the thread; see `MeterText`. */
+  meterKey?: string;
 }) {
+  const figure = useClientSettings(selectUsageFigure);
+  const text = usageFigureText(view, figure);
   return (
     <Popover>
       <PopoverTrigger
         openOnHover
         delay={150}
         closeDelay={0}
-        aria-label={`${subject}: ${view.headline}`}
+        aria-label={`${subject}: ${text}`}
         render={
           <button
             type="button"
@@ -66,7 +129,11 @@ export function TurnUsageLabel({
           />
         }
       >
-        {view.headline}
+        {meterKey !== undefined && figure === "cost" ? (
+          <MeterText text={text} meterKey={meterKey} />
+        ) : (
+          text
+        )}
       </PopoverTrigger>
       <PopoverPopup
         tooltipStyle

@@ -144,8 +144,10 @@ function subagentTokens(usage: TurnTokenUsage): number {
 }
 
 export interface TurnUsageView {
-  /** The one figure shown beside the turn's timestamp or in the composer. */
+  /** The token total shown beside the turn's timestamp or in the composer. */
   readonly headline: string;
+  /** The estimated API cost, when known, for those who lead with cost. */
+  readonly costUsd: number | null;
   readonly rows: ReadonlyArray<{ readonly label: string; readonly value: string }>;
   readonly notes: ReadonlyArray<string>;
 }
@@ -201,7 +203,39 @@ function usageView(
   // What these tokens would cost at API rates; subscriptions bill separately.
   if (costUsd !== undefined) rows.push({ label: "Est. API cost", value: formatCost(costUsd) });
 
-  return { headline: `${formatTokens(input + output)} tokens`, rows, notes };
+  return {
+    headline: `${formatTokens(input + output)} tokens`,
+    costUsd: costUsd ?? null,
+    rows,
+    notes,
+  };
+}
+
+/** One character of a meter reading, on the wheel `position` from the right. */
+export interface MeterWheel {
+  readonly position: number;
+  readonly char: string;
+  /** The wheel's previous character, when the old reading reached it. */
+  readonly before: string | undefined;
+  /** Only a digit that changed rolls; everything else just shows. */
+  readonly rolls: boolean;
+}
+
+/** Lines a new reading up against the previous one from the right, as wheels are. */
+export function meterWheels(previous: string, text: string): ReadonlyArray<MeterWheel> {
+  return [...text].map((char, index) => {
+    const position = text.length - 1 - index;
+    const before = previous[previous.length - 1 - position];
+    return { position, char, before, rolls: before !== char && /\d/.test(char) };
+  });
+}
+
+/** Which figure turn and thread usage lead with. */
+export type TurnUsageFigure = "tokens" | "cost";
+
+/** The figure a view leads with: its cost when chosen and known, else its tokens. */
+export function usageFigureText(view: TurnUsageView, figure: TurnUsageFigure): string {
+  return figure === "cost" && view.costUsd !== null ? formatCost(view.costUsd) : view.headline;
 }
 
 export function turnUsageView(usage: TurnTokenUsage): TurnUsageView {

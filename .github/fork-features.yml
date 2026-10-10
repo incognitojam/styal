@@ -3280,13 +3280,16 @@ features:
       - Each usage activity carries the thread's total, summed on the server over every recorded turn, so long threads are not undercounted by the client's activity window; the composer shows it, and its breakdown says how many turns it includes when some reported no usage. Activities without usage carry no total until some turn reports usage, and decode as no usage on clients that predate models.
       - Claude, Codex, and OpenCode turns record their subagents' usage separately from the main agent's; turn and thread figures include it, and the breakdown notes subagent usage only where a provider could not report it.
       - The server prices each turn when recording it, by model where the provider splits usage, preferring custom rates, then the provider's own cost (Claude modelUsage, OpenCode steps), then LiteLLM rates; a turn with any unpriced model records no cost. Breakdowns show the turn's and thread's estimated API cost, and say how many turns the thread's cost covers.
+      - A client setting (device-local on mobile) makes the turn and composer figures lead with the estimated cost, falling back to tokens where there is none; the composer's cost rolls its changed digits once when it changes within a thread, never on a thread switch and not under reduced motion.
       - A client setting (device-local on mobile) hides the figures, and usage activities never render as work-log rows.
     implementation_paths:
+      - apps/mobile/src/features/threads/MeterText.tsx
       - apps/mobile/src/features/threads/TurnUsageText.tsx
       - apps/mobile/src/state/use-turn-usage.ts
       - apps/web/src/components/chat/TurnUsageLabel.tsx
       - packages/shared/src/turnUsage.ts
     upstream_paths:
+      - apps/mobile/src/features/settings/SettingsThreadsRouteScreen.tsx
       - apps/mobile/src/features/threads/ThreadComposer.tsx
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
@@ -3308,6 +3311,8 @@ features:
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/index.css
       - apps/web/src/session-logic.ts
       - packages/contracts/src/providerRuntime.ts
       - packages/contracts/src/settings.ts
