@@ -285,6 +285,8 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
+import { TurnUsageLabel } from "./TurnUsageLabel";
+import type { TurnUsageView } from "@t3tools/shared/turnUsage";
 import {
   claudeSelectionCacheLoss,
   providerSupportsManualCompaction,
@@ -1416,6 +1418,8 @@ export interface ChatComposerProps {
 
   // Context window
   activeContextWindow: ContextWindowSnapshot | null;
+  /** The thread's token total, shown here only while the context strip is hidden. */
+  threadUsage?: TurnUsageView | null;
   compactThreadUnavailable: boolean;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
@@ -1544,6 +1548,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeContextWindow,
+    threadUsage,
     compactThreadUnavailable,
     compactDisabled,
     compactDisabledReason,
@@ -7199,6 +7204,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {threadUsage && !isComposerResting ? (
+                    <TurnUsageLabel view={threadUsage} subject="Thread usage" />
+                  ) : null}
                   {showComposerAttachAction ? (
                     <>
                       <input

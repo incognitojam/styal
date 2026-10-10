@@ -143,6 +143,13 @@ export interface ProjectionTurnRepositoryShape {
   ) => Effect.Effect<ReadonlyArray<ProjectionTurn>, ProjectionRepositoryError>;
 
   /**
+   * Counts a thread's concrete turns, excluding pending-start placeholders.
+   */
+  readonly countByThreadId: (
+    input: ListProjectionTurnsByThreadInput,
+  ) => Effect.Effect<number, ProjectionRepositoryError>;
+
+  /**
    * Looks up a concrete turn row by `{threadId, turnId}` and never returns pending placeholder rows.
    */
   readonly getByTurnId: (

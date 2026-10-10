@@ -169,6 +169,18 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       `,
   });
 
+  const countProjectionTurnsByThread = SqlSchema.findOne({
+    Request: ListProjectionTurnsByThreadInput,
+    Result: Schema.Struct({ count: Schema.Number }),
+    execute: ({ threadId }) =>
+      sql`
+        SELECT COUNT(*) AS "count"
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+          AND turn_id IS NOT NULL
+      `,
+  });
+
   const listProjectionTurnsByThread = SqlSchema.findAll({
     Request: ListProjectionTurnsByThreadInput,
     Result: ProjectionTurnDbRowSchema,
@@ -307,6 +319,17 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       Effect.map((rows) => rows as ReadonlyArray<Schema.Schema.Type<typeof ProjectionTurn>>),
     );
 
+  const countByThreadId: ProjectionTurnRepositoryShape["countByThreadId"] = (input) =>
+    countProjectionTurnsByThread(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionTurnRepository.countByThreadId:query",
+          "ProjectionTurnRepository.countByThreadId:decodeRow",
+        ),
+      ),
+      Effect.map((row) => row.count),
+    );
+
   const getByTurnId: ProjectionTurnRepositoryShape["getByTurnId"] = (input) =>
     getProjectionTurnByTurnId(input).pipe(
       Effect.mapError(
@@ -342,6 +365,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
     getPendingTurnStartByThreadId,
     deletePendingTurnStartByThreadId,
     listByThreadId,
+    countByThreadId,
     getByTurnId,
     clearCheckpointTurnConflict,
     deleteByThreadId,

@@ -36,6 +36,7 @@ import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
+import { threadUsageView } from "@t3tools/shared/turnUsage";
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
@@ -354,6 +355,11 @@ function ThreadRouteContent(
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
+  const selectedThreadUsage = composer.selectedTurnUsage.thread;
+  const threadUsage = useMemo(
+    () => (selectedThreadUsage ? threadUsageView(selectedThreadUsage) : null),
+    [selectedThreadUsage],
+  );
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
@@ -989,6 +995,7 @@ function ThreadRouteContent(
           onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
           turnUsageByTurnId={composer.selectedTurnUsage.byTurnId}
+          threadUsage={threadUsage}
           activeWorkStartedAt={composer.activeWorkStartedAt}
           isCompacting={composer.isCompacting}
           creationState={creationState}

@@ -68,6 +68,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceContentWidth } from "../layout/workspace-content-width";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
+import type { TurnUsageView } from "@t3tools/shared/turnUsage";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerAttachment } from "../../lib/composerImages";
@@ -125,6 +126,7 @@ export interface ThreadDetailScreenProps {
   readonly onDismissFeedback: (id: MessageId) => void;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
   readonly turnUsageByTurnId: ReadonlyMap<string, TurnTokenUsage>;
+  readonly threadUsage: TurnUsageView | null;
   readonly activeWorkStartedAt: string | null;
   readonly isCompacting: boolean;
   /**
@@ -1082,6 +1084,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   connectionState={props.connectionStateLabel}
                   environmentLabel={props.environmentLabel}
                   selectedThread={props.selectedThread}
+                  threadUsage={props.threadUsage}
                   hasCompactableConversation={hasCompactableConversation && !props.isCompacting}
                   serverConfig={props.serverConfig}
                   queueCount={props.selectedThreadQueueCount}

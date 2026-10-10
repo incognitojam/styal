@@ -424,7 +424,7 @@ import {
   shouldOfferResumeCompaction,
 } from "./chat/ContextWindowMeter.logic";
 import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
-import { EMPTY_TURN_USAGE } from "@t3tools/shared/turnUsage";
+import { EMPTY_TURN_USAGE, threadUsageView } from "@t3tools/shared/turnUsage";
 import { useTurnUsage } from "./chat/TurnUsageLabel";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -3003,6 +3003,10 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities],
   );
   const turnUsage = useTurnUsage(threadActivities, settings.turnUsageEnabled);
+  const threadUsage = useMemo(
+    () => (turnUsage.thread ? threadUsageView(turnUsage.thread) : null),
+    [turnUsage.thread],
+  );
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
   // Native subagent fold: memoized by activity-list identity, shared by the
   // Agents surface, live strip, and workflow cards. v2Projection is null
@@ -10382,6 +10386,7 @@ export default function ChatView(props: ChatViewProps) {
                             activeProjectDefaultModelSelection={activeProjectDefaultModelSelection}
                             activeThreadModelSelection={activeThread?.modelSelection}
                             activeContextWindow={activeContextWindow}
+                            threadUsage={showComposerContextStrip ? null : threadUsage}
                             compactThreadUnavailable={compactThreadUnavailable}
                             compactDisabled={compactDisabled}
                             compactDisabledReason={compactDisabledReason}
@@ -10492,6 +10497,7 @@ export default function ChatView(props: ChatViewProps) {
                                 availableEnvironments={logicalProjectEnvironments}
                                 composerControlsHostRef={setRestingComposerControlsHost}
                                 contextStripVisible={showComposerContextStrip}
+                                threadUsage={showComposerContextStrip ? threadUsage : null}
                               />
                             </div>
                           )}

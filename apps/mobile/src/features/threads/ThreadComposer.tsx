@@ -20,6 +20,7 @@ import {
   hasProviderUsageLimits,
   isUsageLimitsCommand,
 } from "@t3tools/shared/usageLimits";
+import type { TurnUsageView } from "@t3tools/shared/turnUsage";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import {
@@ -91,6 +92,7 @@ import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import type { RemoteClientConnectionState } from "../../lib/connection";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
+import { TurnUsageText } from "./TurnUsageText";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
 import {
   ComposerDictationCancelAction,
@@ -132,6 +134,8 @@ export interface ThreadComposerProps {
   readonly connectionState: RemoteClientConnectionState;
   readonly environmentLabel: string | null;
   readonly selectedThread: OrchestrationThreadShell;
+  /** The thread's token total, shown beside the model. */
+  readonly threadUsage?: TurnUsageView | null;
   readonly hasCompactableConversation: boolean;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
@@ -973,6 +977,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                         onPress={openSettings}
                       />
                     </View>
+                    {props.threadUsage ? (
+                      <View className="shrink-0 pl-2">
+                        <TurnUsageText view={props.threadUsage} subject="Thread usage" />
+                      </View>
+                    ) : null}
                   </View>
                 )}
                 <View className="shrink-0 flex-row items-center">

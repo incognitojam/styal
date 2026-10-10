@@ -348,9 +348,30 @@ export type TurnTokenUsage = typeof TurnTokenUsage.Type;
 
 /**
  * Thread activity holding a finished turn's `TurnTokenUsage`, shown under
- * the turn. Recorded only when the provider reported some usage.
+ * the turn. Recorded only when the provider reported some usage. Newer records
+ * also carry the thread's total as `thread`, a `ThreadTokenUsage`.
  */
 export const TURN_USAGE_ACTIVITY_KIND = "turn.usage";
+
+/**
+ * A thread's main-agent usage, summed over every turn with a usage record when
+ * the newest one was written. Clients see only recent activities, so the
+ * server sums instead of leaving clients to add up turns they may not have.
+ */
+export const ThreadTokenUsage = Schema.Struct({
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningTokens: NonNegativeInt,
+  /** Turns whose usage is included. */
+  countedTurns: NonNegativeInt,
+  /** Every turn the thread had, including those without usage. */
+  turns: NonNegativeInt,
+  partialTurns: NonNegativeInt,
+  subagentTurns: NonNegativeInt,
+});
+export type ThreadTokenUsage = typeof ThreadTokenUsage.Type;
 
 const TurnCompletedPayload = Schema.Struct({
   state: RuntimeTurnState,
