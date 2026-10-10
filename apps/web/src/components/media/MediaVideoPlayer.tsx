@@ -54,6 +54,7 @@ export function MediaVideoPlayer({
   const [retrying, setRetrying] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [preloadedSrc, setPreloadedSrc] = useState<string | null>(null);
+  const [sizedSrc, setSizedSrc] = useState<string | null>(null);
   const src = playbackSource?.src ?? latestSrc;
   const sourceRevision = playbackSource === null ? revision : playbackSource.revision;
   const failed = src !== null ? failedSrc === src : sourceFailed;
@@ -68,6 +69,12 @@ export function MediaVideoPlayer({
     }
   }, [revision]);
   useEffect(refreshPausedRevision, [refreshPausedRevision]);
+
+  // Metadata can finish before React attaches onLoadedMetadata, so check on mount too.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video && video.readyState >= HTMLMediaElement.HAVE_METADATA) setSizedSrc(src);
+  }, [src, failed, loadAttempt]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -176,12 +183,17 @@ export function MediaVideoPlayer({
           playsInline
           preload={preload === "metadata" || preloadedSrc === src ? "metadata" : "none"}
           className={cn(
-            "aspect-video max-h-full w-full bg-black object-contain",
+            // Holds a 16:9 slot until metadata arrives, then takes the video's own shape.
+            sizedSrc === src ? "max-w-full" : "aspect-video w-full",
+            "max-h-full bg-black object-contain",
             onOpen && "pointer-events-none",
             videoClassName,
           )}
           style={style}
-          onLoadedMetadata={(event) => prepareVideoFirstFrame(event.currentTarget)}
+          onLoadedMetadata={(event) => {
+            setSizedSrc(src);
+            prepareVideoFirstFrame(event.currentTarget);
+          }}
           onPlay={() => setPlaybackSource({ src, revision: sourceRevision })}
           onPause={refreshPausedRevision}
           onEnded={refreshPausedRevision}
