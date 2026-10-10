@@ -20,7 +20,10 @@ export function renderTrackedPRReport(
 ): string {
   const rows = statuses.map((pr) => {
     const cell = (text: string) => text.replaceAll("|", "\\|").replaceAll("\n", " ");
-    const status = `${pr.status}${pr.beyondTarget ? " (beyond target)" : ""}`;
+    const snapshot = pr.snapshot
+      ? ` · snapshot ${pr.snapshot.head.slice(0, 10)} (provisional)`
+      : "";
+    const status = `${pr.status}${pr.beyondTarget ? " (beyond target)" : ""}${snapshot}`;
     return `| [#${pr.number}](https://github.com/${repository}/pull/${pr.number}) | ${cell(pr.title)} | ${cell(pr.reason)} | ${status} | ${pr.mergedAt?.slice(0, 10) ?? "—"} | ${pr.daysAheadOfTip === null ? "—" : `${pr.daysAheadOfTip.toFixed(1)} days`} |`;
   });
   return [
@@ -30,7 +33,7 @@ export function renderTrackedPRReport(
     "| --- | --- | --- | --- | --- | ---: |",
     ...rows,
     "",
-    "Recorded means import evidence or reviewed baseline coverage exists; it does not prove the current behavior still works. Ahead of fork tip compares each pending PR's upstream merge time with the fork's last reconciled upstream integration. This report does not change intake order.",
+    "Recorded means import evidence or reviewed baseline coverage exists; it does not prove the current behavior still works. Provisional snapshots require final reconciliation, even when the merged change is identical. Ahead of fork tip compares each pending PR's upstream merge time with the fork's last reconciled upstream integration. This report does not change intake order.",
     "",
   ].join("\n");
 }
@@ -59,14 +62,18 @@ function main() {
       maxBuffer: 64 * 1024 * 1024,
     });
   const state = decodeState(NodeFS.readFileSync(NodePath.resolve(root, values.state), "utf8"));
-  const history = readLagHistory(run, values["fork-ref"], values["upstream-ref"], values.state);
+  const history = readLagHistory(
+    run,
+    values["fork-ref"],
+    values["upstream-ref"],
+    values.state,
+    values.tracked,
+  );
   const tip = replayIntake(history).steps.at(-1)?.tip ?? 0;
   const tipMergedAt = history.upstream
     .slice(0, tip)
     .reduce((time, integration) => Math.max(time, integration.time), history.base.time);
-  const tracked = decodeTrackedPRs(
-    NodeFS.readFileSync(NodePath.resolve(root, values.tracked), "utf8"),
-  );
+  const tracked = decodeTrackedPRs(run("git", ["show", `${values["fork-ref"]}:${values.tracked}`]));
   const chain = (ref: string) =>
     new Set(run("git", ["rev-list", "--first-parent", ref]).trim().split("\n"));
   const forkLog = run("git", ["log", "--format=%H%x00%B%x00", values["fork-ref"]]).split("\0");

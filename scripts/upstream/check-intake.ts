@@ -3,7 +3,6 @@
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -35,6 +34,12 @@ import {
   upstreamMigrationManifestPath,
 } from "./lib/migrations.ts";
 import { parseUpstreamProvenance } from "./lib/provenance.ts";
+import {
+  decodeTrackedPRs,
+  fetchTrackedPRMetadata,
+  snapshotTrackingErrors,
+  type TrackedPR,
+} from "./lib/tracked-prs.ts";
 import { makeUpstreamMigrationGit } from "./migration-git.ts";
 import { fetchAssociations } from "./queue.ts";
 
@@ -158,10 +163,10 @@ function commitExists(sha: string): boolean {
   );
 }
 
-function patch(sha: string): string {
+function patch(sha: string, base = `${sha}^`): string {
   const result = NodeChildProcess.spawnSync(
     "git",
-    ["diff", "--no-color", "--no-renames", "--no-ext-diff", "-U0", `${sha}^`, sha],
+    ["diff", "--no-color", "--no-renames", "--no-ext-diff", "-U0", base, sha],
     { cwd: repoRoot, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
   );
   if (result.status !== 0) throw new Error(result.stderr.trim() || `git diff ${sha} failed.`);
@@ -207,20 +212,28 @@ function reviewCommits(input: {
   readonly commitMessages: ReadonlyArray<string>;
   readonly ledger: ForkFeatureLedger;
   readonly scratch: string;
+  readonly tracked: readonly TrackedPR[];
 }): ReadonlyArray<CommitReview> {
   return input.commits.map((sha, index) => {
     const message = input.commitMessages[index] ?? "";
     const provenance = parseUpstreamProvenance([message]);
     const sourceCommits = [...new Set([...cherryPickSources(message), ...provenance.commitShas])];
+    const snapshots = input.tracked
+      .filter((pr) => pr.snapshot && provenance.pullRequestNumbers.includes(pr.number))
+      .map((pr) => pr.snapshot!);
     const paths = lines(git(["diff-tree", "--no-commit-id", "--name-only", "-r", sha]));
+    const trackingOnly = paths.length === 1 && paths[0] === ".github/upstream-tracked-prs.json";
     const featureIds = findForkFeatureOverlaps(input.ledger, paths).map(
       ({ feature }) => feature.id,
     );
-    const missing = sourceCommits.filter((source) => !commitExists(source));
+    const missing = [
+      ...sourceCommits,
+      ...snapshots.flatMap((snapshot) => [snapshot.base, snapshot.head]),
+    ].filter((source) => !commitExists(source));
     const comparison: CommitReview["comparison"] =
       paths.length === 0
         ? { status: "provenance-only" }
-        : sourceCommits.length === 0
+        : sourceCommits.length === 0 && snapshots.length === 0
           ? { status: "unavailable", reason: "no cherry-picked or Upstream-Commit source." }
           : missing.length > 0
             ? {
@@ -228,7 +241,16 @@ function reviewCommits(input: {
                 reason: `upstream ${missing.map((source) => source.slice(0, 10)).join(", ")} not fetched.`,
               }
             : (() => {
-                const upstreamPatches = sourceCommits.map(patch);
+                const sourceHeads = [
+                  ...sourceCommits,
+                  ...snapshots.map((snapshot) => snapshot.head),
+                ];
+                const upstreamPatches = trackingOnly
+                  ? []
+                  : [
+                      ...sourceCommits.map((source) => patch(source)),
+                      ...snapshots.map((snapshot) => patch(snapshot.head, snapshot.base)),
+                    ];
                 const files = compareWithUpstream({
                   upstreamPatches,
                   forkPatch: patch(sha),
@@ -241,7 +263,7 @@ function reviewCommits(input: {
                     );
                     return (
                       lastSource === -1 ||
-                      blobAt(sha, file.path) !== blobAt(sourceCommits[lastSource]!, file.path)
+                      blobAt(sha, file.path) !== blobAt(sourceHeads[lastSource]!, file.path)
                     );
                   })
                   .map((file) => ({
@@ -267,7 +289,18 @@ function reviewCommits(input: {
 }
 
 function withScratchDirectory<A>(use: (directory: string) => A): A {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "styal-intake-review-"));
+  const scratch = NodePath.join(repoRoot, ".scratch");
+  const ignored = NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch/"], {
+    cwd: repoRoot,
+  });
+  if (ignored.status === 1) {
+    NodeFS.appendFileSync(
+      git(["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"]),
+      "\n/.scratch/\n",
+    );
+  } else if (ignored.status !== 0) throw new Error("Could not check scratch ignore rules.");
+  NodeFS.mkdirSync(scratch, { recursive: true });
+  const directory = NodeFS.mkdtempSync(NodePath.join(scratch, "upstream-intake-review-"));
   try {
     return use(directory);
   } finally {
@@ -447,6 +480,42 @@ try {
   });
   const commits = lines(git(["rev-list", "--reverse", `${baseSha}..${headSha}`]));
   const commitMessages = commits.map((commit) => git(["show", "-s", "--format=%B", commit]));
+  const tracked = decodeTrackedPRs(git(["show", `${headSha}:.github/upstream-tracked-prs.json`]));
+  const previousTracked = decodeTrackedPRs(
+    git(["show", `${baseSha}:.github/upstream-tracked-prs.json`]),
+  );
+  const sourcePRs = parseUpstreamProvenance(commitMessages).pullRequestNumbers;
+  const snapshotErrors = snapshotTrackingErrors({
+    tracked,
+    previous: previousTracked,
+    sourcePRs,
+    metadata: fetchTrackedPRMetadata(
+      ledger.upstream_repository,
+      sourcePRs.map((number) => ({ number, reason: "Candidate source" })),
+      (command, args) =>
+        NodeChildProcess.execFileSync(command, args, { cwd: repoRoot, encoding: "utf8" }),
+    ),
+  });
+  if (snapshotErrors.length) throw new Error(snapshotErrors.join("\n"));
+  for (const pr of tracked) {
+    if (!pr.snapshot || !sourcePRs.includes(pr.number)) continue;
+    if (!commitExists(pr.snapshot.head)) {
+      NodeChildProcess.execFileSync(
+        "git",
+        [
+          "fetch",
+          "--no-tags",
+          `https://github.com/${ledger.upstream_repository}.git`,
+          pr.snapshot.head,
+        ],
+        { cwd: repoRoot, stdio: "pipe" },
+      );
+    }
+    if (!commitExists(pr.snapshot.base) || !isAncestor(pr.snapshot.base, pr.snapshot.head))
+      throw new Error(
+        `Tracked PR #${pr.number} snapshot base must be an ancestor of its fetched head.`,
+      );
+  }
   const audit = auditUpstreamIntakeCandidate({
     baseSha,
     headSha,
@@ -464,7 +533,7 @@ try {
     migrationErrors: migrations.errors,
     migrationChanges: migrations.changes,
     commitReviews: withScratchDirectory((scratch) =>
-      reviewCommits({ commits, commitMessages, ledger, scratch }),
+      reviewCommits({ commits, commitMessages, ledger, scratch, tracked }),
     ),
   });
 

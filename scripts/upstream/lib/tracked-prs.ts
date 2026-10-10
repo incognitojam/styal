@@ -5,6 +5,8 @@ export interface TrackedPR {
   readonly number: number;
   /** Why the fork is waiting on this change, so the entry can be dropped once that is resolved. */
   readonly reason: string;
+  /** Reviewed open-PR diff; remains provisional until its final outcome is reconciled. */
+  readonly snapshot?: { readonly base: string; readonly head: string };
 }
 
 export interface TrackedPRMetadata {
@@ -18,7 +20,14 @@ export interface TrackedPRMetadata {
 export interface TrackedPRStatus extends TrackedPR {
   readonly title: string;
   readonly mergedAt: string | null;
-  readonly status: "open" | "closed" | "pending" | "recorded" | "skipped" | "fetch upstream";
+  readonly status:
+    | "open"
+    | "closed"
+    | "review closed import"
+    | "pending"
+    | "recorded"
+    | "skipped"
+    | "fetch upstream";
   readonly daysAheadOfTip: number | null;
   readonly beyondTarget: boolean;
 }
@@ -55,14 +64,69 @@ export function decodeTrackedPRs(input: string): readonly TrackedPR[] {
     throw new Error("Invalid tracked PRs: expected a pullRequests array.");
   const seen = new Set<number>();
   return document.pullRequests.map((entry: unknown) => {
-    const { pr, reason } = (entry ?? {}) as { pr?: unknown; reason?: unknown };
+    const { pr, reason, snapshot } = (entry ?? {}) as {
+      pr?: unknown;
+      reason?: unknown;
+      snapshot?: { base?: unknown; head?: unknown };
+    };
     if (!Number.isSafeInteger(pr) || (pr as number) < 1 || seen.has(pr as number))
       throw new Error(`Invalid or duplicate tracked PR: ${JSON.stringify(entry)}.`);
     if (typeof reason !== "string" || !reason.trim())
       throw new Error(`Tracked PR #${String(pr)} needs a reason.`);
+    if (
+      snapshot !== undefined &&
+      (!snapshot ||
+        typeof snapshot.base !== "string" ||
+        typeof snapshot.head !== "string" ||
+        !/^[0-9a-f]{40}$/u.test(snapshot.base) ||
+        !/^[0-9a-f]{40}$/u.test(snapshot.head) ||
+        snapshot.base === snapshot.head)
+    )
+      throw new Error(
+        `Tracked PR #${String(pr)} needs distinct full lowercase snapshot base and head SHAs.`,
+      );
     seen.add(pr as number);
-    return { number: pr as number, reason: reason.trim() };
+    return {
+      number: pr as number,
+      reason: reason.trim(),
+      ...(snapshot === undefined
+        ? {}
+        : { snapshot: { base: snapshot.base as string, head: snapshot.head as string } }),
+    };
   });
+}
+
+/** Open-PR provenance must land with its marker; clearing one must cite the reviewed PR. */
+export function snapshotTrackingErrors(input: {
+  readonly tracked: readonly TrackedPR[];
+  readonly previous: readonly TrackedPR[];
+  readonly sourcePRs: readonly number[];
+  readonly metadata: readonly TrackedPRMetadata[];
+}): readonly string[] {
+  const errors: string[] = [];
+  for (const pr of input.metadata) {
+    if (
+      pr.state !== "MERGED" &&
+      !input.tracked.some((tracked) => tracked.number === pr.number && tracked.snapshot) &&
+      !input.previous.some((tracked) => tracked.number === pr.number && tracked.snapshot)
+    )
+      errors.push(
+        `Unmerged source PR #${pr.number} needs a provisional snapshot in the candidate's tracked PR list.`,
+      );
+  }
+  const numbers = new Set([...input.tracked, ...input.previous].map((pr) => pr.number));
+  for (const number of numbers) {
+    const before = input.previous.find((pr) => pr.number === number)?.snapshot;
+    const after = input.tracked.find((pr) => pr.number === number)?.snapshot;
+    if (
+      (before?.base !== after?.base || before?.head !== after?.head) &&
+      !input.sourcePRs.includes(number)
+    )
+      errors.push(
+        `Changed snapshot tracking for PR #${number} needs its Upstream-PR provenance in the candidate.`,
+      );
+  }
+  return errors;
 }
 
 export function trackedPRStatuses(input: {
@@ -87,7 +151,7 @@ export function trackedPRStatuses(input: {
         ...tracked,
         title: pr.title,
         mergedAt: null,
-        status: pr.state === "OPEN" ? "open" : "closed",
+        status: pr.state === "OPEN" ? "open" : tracked.snapshot ? "review closed import" : "closed",
         daysAheadOfTip: null,
         beyondTarget: false,
       };
@@ -113,14 +177,18 @@ export function trackedPRStatuses(input: {
         ? "pending"
         : exception === "skip" || entries.some((entry) => entry.disposition === "skip")
           ? "skipped"
-          : exception === "already present" ||
-              recorded ||
-              input.baselineFirstParent.has(sha) ||
-              entries.length > 0
-            ? "recorded"
-            : inUpstream
+          : tracked.snapshot && exception !== "already present"
+            ? inUpstream
               ? "pending"
-              : "fetch upstream";
+              : "fetch upstream"
+            : exception === "already present" ||
+                recorded ||
+                input.baselineFirstParent.has(sha) ||
+                entries.length > 0
+              ? "recorded"
+              : inUpstream
+                ? "pending"
+                : "fetch upstream";
     return {
       ...tracked,
       title: pr.title,

@@ -11,7 +11,12 @@ import {
   resolveEarlyDependencies,
 } from "./lib/early.ts";
 import { parseUpstreamProvenance, withoutFencedExamples } from "./lib/provenance.ts";
-import { decodeTrackedPRs, fetchTrackedPRMetadata, trackedPRStatuses } from "./lib/tracked-prs.ts";
+import {
+  decodeTrackedPRs,
+  fetchTrackedPRMetadata,
+  trackedPRStatuses,
+  type TrackedPR,
+} from "./lib/tracked-prs.ts";
 
 export interface IntakeState {
   upstreamRepository: string;
@@ -189,7 +194,11 @@ export function reconcile(
   integrations: Integration[],
   forkCommits: { sha: string; message: string }[],
   exceptions: IntakeState["exceptions"],
+  tracked: readonly TrackedPR[] = [],
 ): QueueEntry[] {
+  const snapshots = new Map(
+    tracked.filter((pr) => pr.snapshot).map((pr) => [pr.number, pr.snapshot!]),
+  );
   const commits = new Map<string, string[]>();
   const prs = new Map<number, string[]>();
   const add = <K>(map: Map<K, string[]>, key: K, evidence: string) =>
@@ -208,15 +217,21 @@ export function reconcile(
   }
   return integrations.map((integration) => {
     const exception = exceptions[integration.sha];
+    const snapshot = integration.pr === null ? undefined : snapshots.get(integration.pr);
     const evidence = [
       ...(commits.get(integration.sha) ?? []),
       ...(integration.pr === null ? [] : (prs.get(integration.pr) ?? [])),
     ];
     if (exception) evidence.push(`${exception.disposition}: ${exception.reason}`);
+    if (snapshot)
+      evidence.push(
+        `Provisional snapshot ${snapshot.base}..${snapshot.head}; reconcile upstream's final version.`,
+      );
     return {
       ...integration,
       evidence,
-      disposition: exception?.disposition ?? (evidence.length ? "recorded" : "pending"),
+      disposition:
+        exception?.disposition ?? (snapshot ? "pending" : evidence.length ? "recorded" : "pending"),
     };
   });
 }
@@ -554,7 +569,10 @@ function main() {
   const forkCommits: { sha: string; message: string }[] = [];
   for (let index = 0; index + 1 < forkLog.length; index += 2)
     forkCommits.push({ sha: forkLog[index]!.trim(), message: forkLog[index + 1]! });
-  const entries = reconcile(associated, forkCommits, state.exceptions);
+  const trackedPRs = decodeTrackedPRs(
+    run("git", ["show", `${fork}:.github/upstream-tracked-prs.json`]),
+  );
+  const entries = reconcile(associated, forkCommits, state.exceptions, trackedPRs);
   const through = reconciledThrough(state.baseline, entries);
   if (command === "early") {
     const localScratch = NodePath.resolve(root, ".scratch");
@@ -831,12 +849,7 @@ function main() {
   const tracked =
     command === "status"
       ? (() => {
-          const selected = decodeTrackedPRs(
-            NodeFS.readFileSync(
-              NodePath.resolve(root, ".github/upstream-tracked-prs.json"),
-              "utf8",
-            ),
-          );
+          const selected = trackedPRs;
           return trackedPRStatuses({
             tracked: selected,
             metadata: fetchTrackedPRMetadata(state.upstreamRepository, selected, run),
@@ -892,6 +905,8 @@ function main() {
         const merged = pr.mergedAt ? `, merged ${pr.mergedAt.slice(0, 10)}` : "";
         console.log(`#${pr.number} [${pr.status}${target}${merged}${gap}] ${pr.title}`);
         console.log(`  ${pr.reason}`);
+        if (pr.snapshot)
+          console.log(`  Provisional snapshot: ${pr.snapshot.base}..${pr.snapshot.head}`);
       }
     }
   }
