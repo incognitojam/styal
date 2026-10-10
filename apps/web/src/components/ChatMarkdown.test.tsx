@@ -17,6 +17,7 @@ import { GitHubIcon } from "./Icons";
 import { Button } from "./ui/button";
 import { setMarkdownTaskChecked } from "./files/filePreviewMode";
 
+vi.mock("../hooks/useFileMetadata", () => ({ useFileMetadata: () => null }));
 const serverConfigAtom = vi.hoisted(() => ({}));
 // No server config is connected. Every other atom reads as a pending query.
 vi.mock("@effect/atom-react", () => ({

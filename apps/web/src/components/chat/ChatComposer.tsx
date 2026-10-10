@@ -1942,6 +1942,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerContextActions = useMemo(
     () => ({
       environmentId,
+      cwd: gitCwd ?? undefined,
       expandImage: (imageId: string) => {
         const preview = buildExpandedImagePreview(composerImages, imageId);
         if (preview) onExpandImage(preview);
@@ -1976,6 +1977,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       composerFiles,
       composerImages,
+      gitCwd,
       environmentId,
       onExpandImage,
       onExternalLinkContextMenu,

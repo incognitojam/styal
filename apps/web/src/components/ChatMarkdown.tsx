@@ -137,6 +137,7 @@ import { markdownImageGallery, markdownImageItems } from "./chat/markdownImageGa
 import { MediaVideoPlayer } from "./media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "./media/MediaActions";
 import { resolveProtocolRelativeMediaUrl } from "./media/mediaContent";
+import { WorkspaceEntryTooltip } from "./chat/WorkspaceEntryIcon";
 import { FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import {
@@ -1212,6 +1213,7 @@ function UncachedShikiCodeBlock({
 }
 
 interface MarkdownFileLinkProps {
+  environmentId: EnvironmentId | null;
   href: string;
   targetPath: string;
   iconPath: string;
@@ -1951,6 +1953,7 @@ function MarkdownExternalLinkContent({
 }
 
 const MarkdownFileLink = memo(function MarkdownFileLink({
+  environmentId,
   href,
   targetPath,
   iconPath,
@@ -2233,7 +2236,9 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     canOpenInPanel,
   });
   const linkClassName = children === undefined ? undefined : "chat-markdown-file-text";
-  const content = children ?? <FileTagChipContent path={iconPath} label={label} theme={theme} />;
+  const content = children ?? (
+    <FileTagChipContent path={iconPath} environmentId={environmentId} label={label} theme={theme} />
+  );
 
   const link = hasPrimaryAction ? (
     <a
@@ -2284,7 +2289,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
       <TooltipPopup side="top" variant="code">
         {/* Show the full destination for both compact chips and descriptive links. */}
         <div className="overflow-x-auto whitespace-nowrap scrollbar-thumb-border/78 scrollbar-track-transparent [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border/78 [&::-webkit-scrollbar-track]:bg-transparent">
-          {targetPath}
+          <WorkspaceEntryTooltip path={iconPath} label={targetPath} environmentId={environmentId} />
         </div>
       </TooltipPopup>
     </Tooltip>
@@ -2299,6 +2304,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.href === next.href &&
     previous.targetPath === next.targetPath &&
     previous.iconPath === next.iconPath &&
+    previous.environmentId === next.environmentId &&
     previous.displayPath === next.displayPath &&
     previous.panelPath === next.panelPath &&
     previous.line === next.line &&
@@ -2643,6 +2649,7 @@ function useChatMarkdownState({
 
       return (
         <MarkdownFileLink
+          environmentId={environmentId}
           href={fileLinkMeta.targetPath}
           targetPath={fileLinkMeta.targetPath}
           iconPath={fileLinkMeta.filePath}
@@ -2690,6 +2697,7 @@ function useChatMarkdownState({
     [
       canUseShellActions,
       canOperatePreview,
+      environmentId,
       fileLinkParentSuffixByPath,
       openFileInPanel,
       openInPreferredEditor,

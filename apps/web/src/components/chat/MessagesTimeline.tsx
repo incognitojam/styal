@@ -220,7 +220,7 @@ import { MessageCopyButton } from "./MessageCopyButton";
 import { TurnUsageLabel } from "./TurnUsageLabel";
 import { EMPTY_TURN_SUMMARIES, type TurnSummaryView } from "@t3tools/shared/turnUsage";
 import { PierreEntryIcon } from "./PierreEntryIcon";
-import { inferEntryKindFromPath } from "../../pierre-icons";
+import { WorkspaceEntryIcon, WorkspaceEntryTooltip } from "./WorkspaceEntryIcon";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import {
@@ -4489,16 +4489,23 @@ function UserMessageMentionChip(props: {
                 useRightPanelStore.getState().openFile(ctx.threadRef, props.record.path);
             }}
           >
-            <PierreEntryIcon
-              pathValue={props.record.path}
-              kind={inferEntryKindFromPath(props.record.path)}
+            <WorkspaceEntryIcon
+              path={props.record.path}
+              environmentId={ctx.activeThreadEnvironmentId}
+              cwd={ctx.workspaceRoot}
               theme={ctx.resolvedTheme}
             />
             <ContextChipLabel>{props.record.label}</ContextChipLabel>
           </ContextChip>
         }
       />
-      <TooltipPopup>{props.record.path}</TooltipPopup>
+      <TooltipPopup>
+        <WorkspaceEntryTooltip
+          path={props.record.path}
+          environmentId={ctx.activeThreadEnvironmentId}
+          cwd={ctx.workspaceRoot}
+        />
+      </TooltipPopup>
     </Tooltip>
   );
 }
