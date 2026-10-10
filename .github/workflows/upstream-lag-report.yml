@@ -41,6 +41,9 @@ jobs:
       - name: Write report
         run: node scripts/upstream/lag-report.ts >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Report upstream divergence
+        run: node scripts/upstream/divergence-report.ts >> "$GITHUB_STEP_SUMMARY"
+
       - name: Report tracked PRs
         env:
           GH_TOKEN: ${{ github.token }}
