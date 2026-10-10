@@ -220,7 +220,10 @@ function statusLine(review: CommitReview): string {
   }
 }
 
-/** One section per candidate commit, in order, grouped under the upstream sources it imports. */
+/**
+ * One section per candidate commit, numbered in candidate order. Commits that differ from upstream
+ * or could not be compared come first; the rest are collapsed, since they need no review.
+ */
 export function renderCommitReviews(input: {
   readonly upstreamRepository: string;
   readonly reviews: ReadonlyArray<CommitReview>;
@@ -276,6 +279,23 @@ export function renderCommitReviews(input: {
     }
     return lines.join("\n");
   });
+  const needsReview = (review: CommitReview) =>
+    review.comparison.status === "adapted" || review.comparison.status === "unavailable";
+  const reviewed = sections.filter((_, index) => needsReview(input.reviews[index]!));
+  const unchanged = sections.filter((_, index) => !needsReview(input.reviews[index]!));
+  const provenanceOnly = input.reviews.some(
+    (review) => review.comparison.status === "provenance-only",
+  );
+  const unchangedLabel =
+    unchanged.length === 1
+      ? `1 commit ${provenanceOnly ? "changes no files" : "matches upstream"}`
+      : `${unchanged.length} commits match upstream${provenanceOnly ? " or change no files" : ""}`;
+  const parts = [
+    ...reviewed,
+    ...(unchanged.length > 0
+      ? [`<details><summary>${unchangedLabel}</summary>\n\n${unchanged.join("\n\n")}\n\n</details>`]
+      : []),
+  ];
   const adapted = input.reviews.filter((review) => review.comparison.status === "adapted").length;
-  return `\n## Commits\n\n${adapted} of ${input.reviews.length} commits differ from their upstream sources.\n\n${sections.join("\n\n")}\n`;
+  return `\n## Commits\n\n${adapted} of ${input.reviews.length} commits differ from their upstream sources.\n\n${parts.join("\n\n")}\n`;
 }

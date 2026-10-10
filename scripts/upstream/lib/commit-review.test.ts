@@ -189,8 +189,36 @@ describe("renderCommitReviews", () => {
     assert.include(summary, "Changes no files; records provenance only.");
     assert.include(summary, "> Already present.");
     assert.include(summary, "Fork features: `watched-capability`");
+    assert.include(
+      summary,
+      "<details><summary>2 commits match upstream or change no files</summary>",
+    );
     // The PR link covers the commit cherry-picked from it.
     assert.notInclude(summary, "/commit/aaaaaaaaaa");
+  });
+
+  it("puts commits that differ first and collapses the ones that match", () => {
+    const summary = renderCommitReviews({
+      upstreamRepository: "example/upstream",
+      reviews: [
+        { ...base, subject: "fix: matches" },
+        {
+          ...base,
+          subject: "fix: not compared",
+          comparison: { status: "unavailable", reason: "the source is missing." },
+        },
+        { ...base, subject: "fix: adapted", comparison: adapted },
+      ],
+    });
+
+    const notCompared = summary.indexOf("### 2. fix: not compared");
+    const adaptedSection = summary.indexOf("### 3. fix: adapted");
+    const collapsed = summary.indexOf("<details><summary>1 commit matches upstream</summary>");
+    const matches = summary.indexOf("### 1. fix: matches");
+    assert.isAbove(notCompared, -1);
+    assert.isAbove(adaptedSection, notCompared);
+    assert.isAbove(collapsed, adaptedSection);
+    assert.isAbove(matches, collapsed);
   });
 
   it("shows how an adapted commit differs, with the command for the full comparison", () => {
