@@ -54,7 +54,11 @@ files directly; see [Attach files](./composer.md#attach-files).
 On web and desktop, pinning or unpinning a thread keeps the sidebar at your current
 scroll position instead of following the thread to its new place in the list.
 
-Pinning does not prevent automatic settlement. Settling a thread removes its pin.
+Pinned threads stay active even after their pull requests merge or they become inactive.
+Unpinning immediately checks the usual settlement rules, so finished work may move into
+**Settled** straight away. Pinning a settled thread brings it back while the pin remains;
+an explicit **Un-settle** keeps its separate protection until new activity.
+Manually settling a thread removes its pin.
 
 On web and desktop, drag a thread between sections to change its state. Drag a thread up into
 the pinned section to pin it at the spot you drop it; drag a pinned thread down into the active

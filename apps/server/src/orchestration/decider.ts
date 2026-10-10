@@ -490,7 +490,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
       if (
         command.type === "thread.auto-settle" &&
-        (thread.settledOverride !== null || thread.autoSettleDisabledAt != null)
+        (thread.settledOverride !== null ||
+          thread.pinnedAt != null ||
+          thread.autoSettleDisabledAt != null)
       ) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -757,9 +759,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
       // Pinning is a promotion: it clears the parked states rather than
-      // silently outranking them. An explicit settle un-settles (reason
-      // "user", same override the un-settle button stamps), and a snooze's
-      // return ticket is spent — the thread is on top NOW, not on Tuesday.
+      // silently outranking them. The pin itself holds the thread active;
+      // use the neutral activity reset so unpinning restores auto-settlement.
+      // A snooze's return ticket is spent — the thread is on top now.
       const promotionEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
       if (thread.settledOverride === "settled") {
         promotionEvents.push({
@@ -772,7 +774,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           type: "thread.unsettled",
           payload: {
             threadId: command.threadId,
-            reason: "user",
+            reason: "activity",
             updatedAt: occurredAt,
           },
         });

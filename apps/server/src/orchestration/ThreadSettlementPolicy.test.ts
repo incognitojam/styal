@@ -169,8 +169,19 @@ describe("resolveAutoSettlementAt", () => {
     expect(decide(thread, { state: "merged", mergedAt: "2026-08-26T00:00:00.000Z" })).toBe(true);
   });
 
-  it("blocks pins, snooze, pending work, live sessions, and queued starts", () => {
+  it("blocks the explicit keep-active override", () => {
     expect(decide(makeThread({ settledOverride: "active" }))).toBe(false);
+  });
+
+  it("protects sidebar pins from inactivity, merged, and closed PR settlement", () => {
+    const pinned = makeThread({ pinnedAt: NOW });
+    expect(decide(pinned)).toBe(false);
+    expect(decide(pinned, { state: "merged", mergedAt: NOW }, { days: null })).toBe(false);
+    expect(decide(pinned, { state: "closed", closedAt: NOW }, { days: null })).toBe(false);
+    const unpinned = { ...pinned, pinnedAt: null };
+    expect(decide(unpinned)).toBe(true);
+    expect(decide(unpinned, { state: "merged", mergedAt: NOW }, { days: null })).toBe(true);
+    expect(decide(unpinned, { state: "closed", closedAt: NOW }, { days: null })).toBe(true);
   });
 
   it("never settles a thread whose auto-settle is turned off, by inactivity or merge", () => {

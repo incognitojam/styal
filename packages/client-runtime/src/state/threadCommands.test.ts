@@ -110,7 +110,11 @@ describe("remote thread lifecycle commands", () => {
       { snoozedUntil: "2099-01-01T00:00:00.000Z" },
     ],
     ["unsnooze", { reason: "user" }, { snoozedUntil: null, snoozedAt: null }],
-    ["pin", { orderKey: "a" }, { pinnedAt: expect.any(String), pinOrderKey: "a" }],
+    [
+      "pin",
+      { orderKey: "a" },
+      { pinnedAt: expect.any(String), pinOrderKey: "a", settledOverride: null, settledAt: null },
+    ],
     ["unpin", {}, { pinnedAt: null, pinOrderKey: null }],
     ["reorderPin", { orderKey: "b" }, { pinOrderKey: "b" }],
     ["reorderActive", { orderKey: "b" }, { activeOrderKey: "b" }],
