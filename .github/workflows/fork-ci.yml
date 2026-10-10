@@ -101,13 +101,12 @@ jobs:
             --base refs/remotes/origin/main \
             --head "$GITHUB_SHA"
 
-  check:
-    name: Fork Check
+  # Lint, typecheck, and the desktop build each get a runner so they run side by
+  # side instead of one after another. `Fork Check` passes only when all three do.
+  lint:
+    name: Fork Lint
     needs: changes
     if: needs.changes.outputs.run_ci == 'true'
-    # This job normally finishes before the server and workspace test suites,
-    # so the public repository's free GitHub-hosted capacity keeps the overall
-    # CI critical path unchanged.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -147,9 +146,6 @@ jobs:
       - name: Ensure Electron runtime is installed
         run: vp run --filter @t3tools/desktop ensure:electron
 
-      - name: Install browser secret helper build libraries
-        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
-
       # Files/dependencies are repo-wide; export checks cover clean workspaces only.
       - name: Check unused code
         run: vp run knip:check
@@ -168,20 +164,80 @@ jobs:
           git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
           vp run --filter @t3tools/scripts migrations:check
 
-      - name: Typecheck
-        run: vpr typecheck
-
       - name: Check Rust formatting
         run: |
           for crate in resource-monitor kde-snap-shot hyprland-snap-shot; do
             cargo fmt --manifest-path "native/$crate/Cargo.toml" -- --check
           done
 
+  typecheck:
+    name: Fork Typecheck
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup cached dependencies
+        uses: ./.github/actions/setup-deps
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Typecheck
+        run: vpr typecheck
+
+  build:
+    name: Fork Build
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup cached dependencies
+        uses: ./.github/actions/setup-deps
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Install browser secret helper build libraries
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
       - name: Build desktop pipeline
         run: vp run build:desktop
 
       - name: Verify preload bundle output
         run: node apps/desktop/scripts/verify-preload-bundle.mjs
+
+  # Rulesets require this job by its name, `Fork Check`.
+  check:
+    name: Fork Check
+    needs: [changes, lint, typecheck, build]
+    if: ${{ !cancelled() && needs.changes.outputs.run_ci == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require lint, typecheck, and build to pass
+        run: |
+          test '${{ needs.lint.result }}' = success
+          test '${{ needs.typecheck.result }}' = success
+          test '${{ needs.build.result }}' = success
 
   test_server:
     name: Fork Test (Server ${{ matrix.shard }}/${{ strategy.job-total }})
