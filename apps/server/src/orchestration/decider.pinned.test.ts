@@ -148,7 +148,7 @@ it.layer(NodeServices.layer)("pinned thread decider", (it) => {
       expect(events.map((entry) => entry.type)).toEqual(["thread.pinned", "thread.unsettled"]);
       const unsettled = events.find((entry) => entry.type === "thread.unsettled");
       if (unsettled?.type === "thread.unsettled") {
-        expect(unsettled.payload.reason).toBe("user");
+        expect(unsettled.payload.reason).toBe("activity");
       }
     }),
   );
@@ -180,6 +180,37 @@ it.layer(NodeServices.layer)("pinned thread decider", (it) => {
       });
       const events = Array.isArray(event) ? event : [event];
       expect(events.map((entry) => entry.type)).toEqual(["thread.pinned"]);
+    }),
+  );
+
+  it.effect("pinning and unpinning preserve an explicit keep-active override", () =>
+    Effect.gen(function* () {
+      for (const type of ["thread.pin", "thread.unpin"] as const) {
+        const event = yield* decideOrchestrationCommand({
+          command: { type, commandId: CommandId.make(type), threadId: ThreadId.make("thread-1") },
+          readModel: makeReadModel({ settledOverride: "active", pinnedAt: PINNED_AT }),
+        });
+        const events = Array.isArray(event) ? event : [event];
+        expect(events.map((entry) => entry.type)).toEqual([
+          type === "thread.pin" ? "thread.pinned" : "thread.unpinned",
+        ]);
+      }
+    }),
+  );
+
+  it.effect("rejects automatic settlement of a sidebar-pinned thread", () =>
+    Effect.gen(function* () {
+      const error = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.auto-settle",
+          commandId: CommandId.make("auto-settle-pinned"),
+          threadId: ThreadId.make("thread-1"),
+          snapshotSequence: 0,
+          settledAt: NOW,
+        },
+        readModel: makeReadModel({ pinnedAt: PINNED_AT }),
+      }).pipe(Effect.flip);
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
     }),
   );
 

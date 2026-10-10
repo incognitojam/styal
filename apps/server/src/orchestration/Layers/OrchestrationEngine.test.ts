@@ -595,6 +595,86 @@ describe("OrchestrationEngine", () => {
     }).pipe(Effect.provide(makeOrchestrationLayer())),
   );
 
+  effectIt.effect("pinning settled work holds it only until unpinning", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const snapshots = yield* ProjectionSnapshotQuery;
+      const projectId = ProjectId.make("pin-lifecycle-project");
+      const threadId = ThreadId.make("pin-lifecycle-thread");
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("pin-project"),
+        projectId,
+        title: "Pin lifecycle",
+        workspaceRoot: "/workspace/pin-lifecycle",
+        createdAt: now(),
+      });
+      yield* engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("pin-create"),
+        threadId,
+        projectId,
+        title: "Finished work",
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      });
+      yield* engine.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make("pin-settle"),
+        threadId,
+      });
+      const beforePin = yield* engine.latestSequence;
+      yield* engine.dispatch({
+        type: "thread.pin",
+        commandId: CommandId.make("pin-finished"),
+        threadId,
+      });
+      const pinned = (yield* snapshots.getSnapshot()).threads.find(
+        (thread) => thread.id === threadId,
+      );
+      expect(pinned?.pinnedAt).not.toBeNull();
+      expect(pinned?.settledOverride).toBeNull();
+      expect(pinned?.settledAt).toBeNull();
+      for (const [suffix, snapshotSequence] of [
+        ["raced", beforePin],
+        ["current", yield* engine.latestSequence],
+      ] as const) {
+        const error = yield* engine
+          .dispatch({
+            type: "thread.auto-settle",
+            commandId: CommandId.make(`pin-auto-${suffix}`),
+            threadId,
+            snapshotSequence,
+            settledAt: now(),
+          })
+          .pipe(Effect.flip);
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      }
+      yield* engine.dispatch({
+        type: "thread.unpin",
+        commandId: CommandId.make("pin-release"),
+        threadId,
+      });
+      yield* engine.dispatch({
+        type: "thread.auto-settle",
+        commandId: CommandId.make("pin-auto-released"),
+        threadId,
+        snapshotSequence: yield* engine.latestSequence,
+        settledAt: now(),
+      });
+      const settled = (yield* snapshots.getSnapshot()).threads.find(
+        (thread) => thread.id === threadId,
+      );
+      expect(settled?.pinnedAt).toBeNull();
+      expect(settled?.settledOverride).toBe("settled");
+      expect(settled?.settledAt).toBe(now());
+    }).pipe(Effect.provide(makeOrchestrationLayer())),
+  );
+
   effectIt.effect(
     "rejects persisted changes and live background work without blocking unrelated threads",
     () =>

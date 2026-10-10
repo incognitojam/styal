@@ -333,6 +333,9 @@ export const make = Effect.gen(function* () {
 
   const processEvent = (event: OrchestrationEvent) => {
     switch (event.type) {
+      case "thread.unpinned":
+        // Releasing a pin restores the existing merge and inactivity rules.
+        return worker.enqueue(event.payload.threadId);
       case "thread.pull-request-linked":
       case "thread.pull-request-synced":
       case "thread.pull-request-unlinked":

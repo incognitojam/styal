@@ -107,6 +107,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Unpinning restores settlement immediately.** Pins keep threads active after inactivity or
+  a merged review. Unpinning immediately checks whether the thread is finished, while an explicit
+  **Un-settle** still keeps it active until new activity. T3 Code also protects pinned threads
+  in its newer orchestrator as of
+  [revision 4f63275](https://github.com/pingdotgg/t3code/tree/4f63275ac7885281d245022e65f1e9e8816b1382),
+  checked October 10, 2026, but unpinning waits for its next settlement sweep.
+  [Pin and reorder threads](./thread-sidebar.md#pin-and-reorder-threads).
 - **Discard drafts with a swipe on mobile.** New-task drafts support swipe-to-discard with
   confirmation in the thread list and tablet sidebar. T3 Code offers discard from the long-press
   menu as of [revision 98beed1](https://github.com/pingdotgg/t3code/tree/98beed1a226c42b85c52ff5ee9d5dbb67d776a77),

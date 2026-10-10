@@ -1,6 +1,10 @@
 {
   "pullRequests": [
     {
+      "pr": 2829,
+      "reason": "Orchestration V2 protects sidebar-pinned threads from automatic settlement. When the queue reaches V2, retire the fork's V1 pinned-thread-auto-settlement patch in favor of upstream's policy. Verify the pin/unpin lifecycle, explicit Un-settle and per-thread auto-settle opt-outs, manual settle, and merge/inactivity eligibility. V2 currently lacks an unpin-triggered settlement sweep; carry the immediate recheck forward if still needed, then remove the ledger entry when all fork-owned behavior is replaced."
+    },
+    {
       "pr": 8338,
       "reason": "Imported provisionally as one snapshot: the server, pairing and shared development leave a Tailscale Serve handler they do not own unchanged, and shutdown removes only a mapping that targets this server. Fixes fork #366. The fork keeps its styal naming in the remote access guide and pairing tests. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments, verify startup and shutdown with a foreign handler on the Serve port, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
       "snapshot": {

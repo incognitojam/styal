@@ -1888,6 +1888,38 @@ features:
       tracking: []
       retire_when: Upstream keeps unsubmitted web question answers outside the chat view component so a remount does not discard them.
 
+  - id: pinned-thread-auto-settlement
+    title: Keep pinned threads active until unpinned or manually settled
+    status: retiring
+    prs: [719]
+    invariants:
+      - Sidebar pins block automatic settlement from inactivity and merged or closed pull requests, including a pin racing an in-flight settlement lookup.
+      - Unpinning immediately queues a settlement check for that thread without resetting its activity timestamps; pending work, explicit Un-settle, and per-thread auto-settle opt-outs still prevent settlement.
+      - Pinning settled work clears settlement without creating a separate keep-active override, while an existing explicit Un-settle override is preserved.
+      - Manual settlement still removes the pin, and web, desktop, and mobile share the same server behavior and optimistic pin state.
+    rationale: This is a temporary adaptation for the V1 orchestrator. Upstream orchestration V2 already protects pinned threads, so retire the V1 patch during V2 intake rather than maintaining a parallel policy. Compared with upstream revision 4f63275ac7885281d245022e65f1e9e8816b1382 on October 10, 2026; its settlement service does not yet recheck on unpin.
+    implementation_paths:
+      - apps/server/src/orchestration/ThreadSettlementPolicy.ts
+      - apps/server/src/orchestration/ThreadSettlementReactor.ts
+      - apps/server/src/orchestration/decider.ts
+      - packages/client-runtime/src/state/threadCommands.ts
+    upstream_paths:
+      - apps/server/src/orchestration/ThreadSettlementPolicy.ts
+      - apps/server/src/orchestration/ThreadSettlementReactor.ts
+      - apps/server/src/orchestration/decider.ts
+      - packages/client-runtime/src/state/threadCommands.ts
+    tests:
+      - apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts
+      - apps/server/src/orchestration/ThreadSettlementPolicy.test.ts
+      - apps/server/src/orchestration/ThreadSettlementReactor.test.ts
+      - apps/server/src/orchestration/decider.pinned.test.ts
+      - packages/client-runtime/src/state/threadCommands.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/2829
+      retire_when: Take upstream's pinned-thread protection during orchestration V2 intake and remove the V1 policy, decider, and reactor adaptations. Preserve an immediate check on unpin and the pin/unpin lifecycle if upstream still lacks them; remove this entry once upstream replaces the remaining fork-owned behavior.
+
   - id: preview-hidden-tab-capture
     title: Capture hidden preview tabs reliably
     status: review-needed

@@ -352,6 +352,90 @@ const startHarness = Effect.fn("startThreadSettlementHarness")(function* (
 });
 
 describe("ThreadSettlementReactor", () => {
+  it.effect(
+    "protects pins and rechecks only the released thread without waiting for the timer",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(Date.parse(NOW));
+          const terminalLink = (state: "merged" | "closed") => ({
+            host: "example.test",
+            repository: "owner/repository",
+            number: state === "merged" ? 1 : 2,
+            url: "https://example.test/owner/repository/pull/1",
+            source: "manual" as const,
+            linkedAt: NOW,
+            snapshot: {
+              state,
+              title: "Finished review",
+              headBranch: "feature",
+              baseBranch: "main",
+              isDraft: false,
+              updatedAt: NOW,
+              syncedAt: NOW,
+              mergedAt: state === "merged" ? NOW : null,
+              closedAt: state === "closed" ? NOW : null,
+            },
+            stack: null,
+          });
+          const threads = [
+            makeThread("inactive"),
+            makeThread("merged", {
+              latestUserMessageAt: "2026-08-27T12:00:00.000Z",
+              pullRequests: [terminalLink("merged")],
+            }),
+            makeThread("closed", {
+              latestUserMessageAt: "2026-08-27T12:00:00.000Z",
+              pullRequests: [terminalLink("closed")],
+            }),
+            makeThread("recent", { latestUserMessageAt: "2026-08-28T11:00:00.000Z" }),
+            makeThread("kept-active", { settledOverride: "active" }),
+            makeThread("disabled", { autoSettleDisabledAt: NOW }),
+            makeThread("pending", { hasPendingApprovals: true }),
+          ].map((thread) => ({ ...thread, pinnedAt: NOW }));
+          const fixture = yield* makeHarness({ snapshot: makeSnapshot(threads) });
+          yield* Effect.gen(function* () {
+            const reactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+            yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+            yield* TestClock.adjust("1 minute");
+            yield* Queue.take(fixture.snapshotReads);
+            yield* reactor.drain;
+            assert.deepStrictEqual(yield* Ref.get(fixture.commands), []);
+            assert.deepStrictEqual(yield* Ref.get(fixture.branchCalls), []);
+            assert.deepStrictEqual(yield* Ref.get(fixture.summaryCalls), []);
+
+            for (const thread of threads) {
+              yield* Ref.update(fixture.snapshots, (snapshot) => ({
+                ...snapshot,
+                threads: snapshot.threads.map((current) =>
+                  current.id === thread.id ? { ...current, pinnedAt: null } : current,
+                ),
+              }));
+              yield* fixture.publishEvent({
+                sequence: 2,
+                eventId: EventId.make(`unpin-${thread.id}`),
+                aggregateKind: "thread",
+                aggregateId: thread.id,
+                occurredAt: NOW,
+                commandId: null,
+                causationEventId: null,
+                correlationId: null,
+                metadata: {},
+                type: "thread.unpinned",
+                payload: { threadId: thread.id, updatedAt: NOW },
+              });
+              assert.strictEqual(yield* Queue.take(fixture.snapshotReads), thread.id);
+              yield* reactor.drain;
+            }
+            assert.deepStrictEqual(
+              (yield* Ref.get(fixture.commands)).map(({ threadId }) => threadId),
+              ["inactive", "merged", "closed"],
+            );
+          }).pipe(Effect.provide(fixture.layer));
+        }),
+      ),
+  );
+
   it("distinguishes a project that inherits the threshold from one that disables it", () => {
     const inherits = ThreadSettlementReactor.autoSettlementSettingsKey({
       ...DEFAULT_SERVER_SETTINGS,

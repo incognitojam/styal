@@ -317,7 +317,7 @@ export function createThreadEnvironmentAtoms<R, E>(
       pinOrderKey: thread.pinnedAt == null ? (input.orderKey ?? null) : thread.pinOrderKey,
       ...(thread.settledOverride === "settled"
         ? {
-            settledOverride: "active" as const,
+            settledOverride: null,
             settledAt: null,
             unsettledAt: now,
           }
