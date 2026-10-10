@@ -481,6 +481,40 @@ function buildContextWindowActivityPayload(
   return event.payload.usage;
 }
 
+type TurnEndEvent = Extract<ProviderRuntimeEvent, { type: "turn.completed" | "turn.aborted" }>;
+
+/** The turn's usage when the provider reported any tokens. */
+function reportedTurnTokenUsage(event: TurnEndEvent) {
+  const usage = event.payload.tokenUsage;
+  return usage === undefined ||
+    usage.usageStatus === "unavailable" ||
+    (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) === 0
+    ? undefined
+    : usage;
+}
+
+/**
+ * A `turn.usage` record: the reported usage and the `TurnModel` the turn ran
+ * on, or undefined when the turn has neither.
+ */
+function turnUsageRecordPayload(event: TurnEndEvent) {
+  const usage = reportedTurnTokenUsage(event);
+  const model = event.payload.model;
+  if (usage === undefined && model === undefined) return undefined;
+  return {
+    ...usage,
+    ...(model !== undefined
+      ? {
+          ...(event.providerInstanceId !== undefined
+            ? { instanceId: event.providerInstanceId }
+            : {}),
+          model,
+          ...(event.payload.effort !== undefined ? { effort: event.payload.effort } : {}),
+        }
+      : {}),
+  };
+}
+
 function compactedTokenCountsFromActivities(
   activities: ReadonlyArray<
     Pick<OrchestrationThreadActivity, "kind" | "payload" | "sequence" | "createdAt">
@@ -763,12 +797,8 @@ export function runtimeEventToActivities(
 
     case "turn.completed":
     case "turn.aborted": {
-      const usage = event.payload.tokenUsage;
-      if (
-        usage === undefined ||
-        usage.usageStatus === "unavailable" ||
-        (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0) === 0
-      ) {
+      const payload = turnUsageRecordPayload(event);
+      if (payload === undefined) {
         return [];
       }
       return [
@@ -778,7 +808,7 @@ export function runtimeEventToActivities(
           tone: "info",
           kind: TURN_USAGE_ACTIVITY_KIND,
           summary: "Turn usage",
-          payload: usage,
+          payload,
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
         },
@@ -2943,12 +2973,11 @@ const make = Effect.gen(function* () {
     if (
       activity.kind !== TURN_USAGE_ACTIVITY_KIND ||
       activity.turnId === null ||
-      (event.type !== "turn.completed" && event.type !== "turn.aborted") ||
-      event.payload.tokenUsage === undefined
+      (event.type !== "turn.completed" && event.type !== "turn.aborted")
     ) {
       return activity;
     }
-    const usage = event.payload.tokenUsage;
+    const usage = reportedTurnTokenUsage(event) ?? null;
     const [recorded, turns] = yield* Effect.all([
       projectionThreadActivityRepository.listByThreadId({
         threadId,
@@ -2962,7 +2991,9 @@ const make = Effect.gen(function* () {
       usage,
       turns,
     });
-    return { ...activity, payload: { ...usage, thread } };
+    // A thread with no usage yet has no total to show.
+    if (thread.countedTurns === 0) return activity;
+    return { ...activity, payload: { ...turnUsageRecordPayload(event), thread } };
   });
 
   const processDomainEvent = (_event: TurnStartRequestedDomainEvent) => Effect.void;

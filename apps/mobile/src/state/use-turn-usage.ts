@@ -1,6 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
-import { deriveTurnUsage, EMPTY_TURN_USAGE, type TurnUsageByTurn } from "@t3tools/shared/turnUsage";
+import type { OrchestrationThreadActivity, ServerProvider } from "@t3tools/contracts";
+import {
+  deriveTurnUsage,
+  EMPTY_TURN_SUMMARIES,
+  EMPTY_TURN_USAGE,
+  turnSummaryViews,
+  type TurnRecord,
+  type TurnSummaryView,
+  type TurnUsageByTurn,
+} from "@t3tools/shared/turnUsage";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useMemo, useState } from "react";
 
@@ -24,4 +32,18 @@ export function useTurnUsage(
   );
   if (usage !== previous) setPrevious(usage);
   return usage;
+}
+
+/** Each turn's model and usage, keeping identity while neither changes. */
+export function useTurnSummaries(
+  byTurnId: ReadonlyMap<string, TurnRecord>,
+  providers: ReadonlyArray<ServerProvider>,
+): ReadonlyMap<string, TurnSummaryView> {
+  const [previous, setPrevious] = useState(EMPTY_TURN_SUMMARIES);
+  const summaries = useMemo(
+    () => turnSummaryViews(byTurnId, providers, previous),
+    [byTurnId, providers, previous],
+  );
+  if (summaries !== previous) setPrevious(summaries);
+  return summaries;
 }

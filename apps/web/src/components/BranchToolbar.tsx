@@ -729,7 +729,7 @@ export const BranchToolbar = memo(function BranchToolbar({
         <div
           data-composer-context-control
           className={cn(
-            "flex shrink-0 items-center px-1",
+            "flex shrink-0 items-center px-1 text-muted-foreground/70",
             showGitControls ? "@3xl/composer-surface:ml-auto" : "ml-auto",
           )}
         >

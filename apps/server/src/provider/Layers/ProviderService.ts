@@ -34,6 +34,7 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
   type ServerSettings as ServerSettingsValue,
+  type TurnStartedPayload,
 } from "@t3tools/contracts";
 import { expandAssistantCitationsForProvider } from "@t3tools/shared/assistantCitations";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -296,6 +297,55 @@ interface TurnAnalyticsState {
   readonly completedOrder: Array<string>;
 }
 
+const MAX_TRACKED_TURN_MODELS = 256;
+
+/**
+ * Copies the model and effort a turn started with onto its completion, so the
+ * turn's usage record shows what it ran on. A reroute replaces the model.
+ * `turnModels` is keyed by instance, thread and turn.
+ */
+function withTurnModel(
+  turnModels: Map<string, TurnStartedPayload>,
+  instanceId: ProviderInstanceId,
+  event: ProviderRuntimeEvent,
+): ProviderRuntimeEvent {
+  if (event.turnId === undefined) return event;
+  const key = turnAnalyticsCompletionKey(instanceId, event.threadId, String(event.turnId));
+  switch (event.type) {
+    case "turn.started": {
+      turnModels.delete(key);
+      if (event.payload.model === undefined) return event;
+      turnModels.set(key, event.payload);
+      const oldest = turnModels.keys().next().value;
+      if (turnModels.size > MAX_TRACKED_TURN_MODELS && oldest !== undefined) {
+        turnModels.delete(oldest);
+      }
+      return event;
+    }
+    case "model.rerouted": {
+      const started = turnModels.get(key);
+      if (started) turnModels.set(key, { ...started, model: event.payload.toModel });
+      return event;
+    }
+    case "turn.completed":
+    case "turn.aborted": {
+      const started = turnModels.get(key);
+      turnModels.delete(key);
+      if (started?.model === undefined || event.payload.model !== undefined) return event;
+      const turnModel = {
+        model: started.model,
+        ...(started.effortOption !== undefined ? { effort: started.effortOption } : {}),
+      };
+      // Separate branches keep each payload paired with its event type.
+      return event.type === "turn.completed"
+        ? { ...event, payload: { ...event.payload, ...turnModel } }
+        : { ...event, payload: { ...event.payload, ...turnModel } };
+    }
+    default:
+      return event;
+  }
+}
+
 const MAX_COMPLETED_TURN_ANALYTICS_KEYS = 512;
 const MAX_ACTIVE_TURN_ANALYTICS_PER_SESSION = 8;
 
@@ -530,6 +580,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   // published, so stopping the sessions does not settle their turns.
   let shuttingDown = false;
   const pendingCompactions = new Map<ThreadId, PendingCompaction>();
+  const turnModels = new Map<string, TurnStartedPayload>();
   const timedOutNativeCompactions = new Set<ThreadId>();
   const settleCompaction = (threadId: ThreadId, pending: PendingCompaction, terminal: string) =>
     Effect.gen(function* () {
@@ -1130,7 +1181,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   ): Effect.Effect<void> =>
     Effect.gen(function* () {
       const canonicalEvent = yield* Effect.sync(() =>
-        correlateRuntimeEventWithInstance(source, event),
+        withTurnModel(
+          turnModels,
+          source.instanceId,
+          correlateRuntimeEventWithInstance(source, event),
+        ),
       );
       yield* increment(providerRuntimeEventsTotal, {
         provider: canonicalEvent.provider,

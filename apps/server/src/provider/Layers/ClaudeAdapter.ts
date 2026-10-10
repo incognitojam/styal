@@ -435,6 +435,8 @@ interface ClaudeSessionContext {
   /** Effective effort for the session's turns; subagents without an explicit
    * effort override inherit this. */
   currentEffort: string | undefined;
+  /** The selected effort option before runtime mapping, shown on turn usage. */
+  currentEffortOption: string | undefined;
   resumeSessionId: string | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
@@ -581,6 +583,14 @@ function normalizeClaudeStreamMessages(
 
   const squashed = toMessage(Cause.squash(cause), "").trim();
   return squashed.length > 0 ? [squashed] : [];
+}
+
+/** The model and effort option a turn starts with, for its usage record. */
+function claudeTurnModel(context: ClaudeSessionContext) {
+  return {
+    ...(context.session.model ? { model: context.session.model } : {}),
+    ...(context.currentEffortOption ? { effortOption: context.currentEffortOption } : {}),
+  };
 }
 
 function getEffectiveClaudeAgentEffort(
@@ -3659,7 +3669,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         createdAt: turnStartedStamp.createdAt,
         threadId: context.session.threadId,
         turnId,
-        payload: {},
+        payload: claudeTurnModel(context),
         providerRefs: {
           ...nativeProviderRefs(context),
           providerTurnId: turnId,
@@ -5400,6 +5410,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         basePermissionMode: permissionMode,
         currentApiModelId: apiModelId,
         currentEffort: effectiveEffort ?? undefined,
+        currentEffortOption: effort ?? undefined,
         resumeSessionId: sessionId,
         pendingApprovals,
         pendingUserInputs,
@@ -5569,6 +5580,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
       }
       context.currentEffort = effectiveEffort;
+      context.currentEffortOption = turnEffort;
     }
 
     // Apply interaction mode by switching the SDK's permission mode.
@@ -5624,7 +5636,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         createdAt: turnStartedStamp.createdAt,
         threadId: context.session.threadId,
         turnId,
-        payload: modelSelection?.model ? { model: modelSelection.model } : {},
+        payload: claudeTurnModel(context),
         providerRefs: {},
       });
     }

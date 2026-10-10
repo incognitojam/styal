@@ -869,6 +869,41 @@ function codexTurnEvent(method: "turn/started" | "turn/completed", turnId: strin
 }
 
 lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
+  it.effect("starts each turn with the model and effort it was sent with", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const threadId = asThreadId("thread-1");
+      const startedFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "turn.started"),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "first",
+        attachments: [],
+        modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-test", [
+          { id: "reasoningEffort", value: "xhigh" },
+        ]),
+      });
+      yield* runtime.emit(codexTurnEvent("turn/started", "turn-first"));
+      // Codex keeps the previous turn's model when a turn names none.
+      yield* adapter.sendTurn({ threadId, input: "second", attachments: [] });
+      yield* runtime.emit(codexTurnEvent("turn/started", "turn-second"));
+
+      const started = [...(yield* Fiber.join(startedFiber))];
+      NodeAssert.deepStrictEqual(
+        started.map((event) => (event.type === "turn.started" ? event.payload : undefined)),
+        [
+          { model: "gpt-test", effortOption: "xhigh" },
+          { model: "gpt-test", effortOption: "xhigh" },
+        ],
+      );
+    }),
+  );
+
   it.effect("calculates one Codex turn total from cumulative counters", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();

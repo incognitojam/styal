@@ -1,7 +1,10 @@
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import type { OrchestrationThreadActivity, ServerProvider } from "@t3tools/contracts";
 import {
   deriveTurnUsage,
   EMPTY_TURN_USAGE,
+  turnSummaryViews,
+  type TurnRecord,
+  type TurnSummaryView,
   type TurnUsageByTurn,
   type TurnUsageView,
 } from "@t3tools/shared/turnUsage";
@@ -26,7 +29,21 @@ export function useTurnUsage(
   return usage;
 }
 
-/** One muted figure; the token breakdown opens on hover. */
+/** Each turn's model and usage, keeping identity while neither changes. */
+export function useTurnSummaries(
+  byTurnId: ReadonlyMap<string, TurnRecord>,
+  providers: ReadonlyArray<ServerProvider>,
+): ReadonlyMap<string, TurnSummaryView> {
+  const [previous, setPrevious] = useState<ReadonlyMap<string, TurnSummaryView>>(() => new Map());
+  const summaries = useMemo(
+    () => turnSummaryViews(byTurnId, providers, previous),
+    [byTurnId, providers, previous],
+  );
+  if (summaries !== previous) setPrevious(summaries);
+  return summaries;
+}
+
+/** One figure in its surroundings' colour; the token breakdown opens on hover. */
 export function TurnUsageLabel({
   view,
   subject = "Turn usage",
@@ -45,7 +62,7 @@ export function TurnUsageLabel({
         render={
           <button
             type="button"
-            className="shrink-0 cursor-default rounded-sm text-muted-foreground/70 text-xs tabular-nums outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="shrink-0 cursor-default rounded-sm text-xs tabular-nums outline-none hover:text-foreground/80 focus-visible:ring-2 focus-visible:ring-ring"
           />
         }
       >

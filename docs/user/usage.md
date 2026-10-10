@@ -54,12 +54,14 @@ and are also approximate.
 
 ## See what a turn used
 
-Each completed Codex, Claude Code, OpenCode, or Antigravity turn shows the tokens it used beside its
-timestamp. Hover the figure on web or desktop, or tap it on mobile, for input tokens and the share
-served from cache, output and reasoning tokens, and cache writes. Claude Code, Codex, and OpenCode
-turns include the tokens their subagents used, with the subagents' share listed separately. A
-subagent still working after its turn finishes is not counted. Antigravity turns cover the main agent
-only. Turns that finished before your server recorded usage show nothing.
+Each completed turn shows the model and reasoning effort it ran on beside its timestamp, named as
+in the composer. If Codex reroutes a turn to another model, the turn shows the model that ran.
+Codex, Claude Code, OpenCode, and Antigravity turns also show the tokens they used. Hover the figure
+on web or desktop, or tap it on mobile, for input tokens and the share served from cache, output and
+reasoning tokens, and cache writes. Claude Code, Codex, and OpenCode turns include the tokens their
+subagents used, with the subagents' share listed separately. A subagent still working after its turn
+finishes is not counted. Antigravity turns cover the main agent only. Turns that finished before
+your server recorded them show neither.
 
 The composer shows the thread's total beside the branch picker, or beside the model on mobile, with
 the same breakdown. The total updates when a turn finishes. When some turns reported no usage, such

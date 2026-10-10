@@ -312,8 +312,15 @@ const ThreadRealtimeClosedPayload = Schema.Struct({
 export type ThreadRealtimeClosedPayload = typeof ThreadRealtimeClosedPayload.Type;
 
 const TurnStartedPayload = Schema.Struct({
+  /** The model slug the turn runs with. */
   model: Schema.optional(TrimmedNonEmptyStringSchema),
+  /** The reasoning effort sent to the provider, for analytics. */
   effort: Schema.optional(TrimmedNonEmptyStringSchema),
+  /**
+   * The id of the model's reasoning option as the composer shows it. The
+   * provider service copies it and `model` onto the turn's completion.
+   */
+  effortOption: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TurnStartedPayload = typeof TurnStartedPayload.Type;
 
@@ -363,11 +370,23 @@ export const TurnTokenUsage = Schema.Union([
 export type TurnTokenUsage = typeof TurnTokenUsage.Type;
 
 /**
- * Thread activity holding a finished turn's `TurnTokenUsage`, shown under
- * the turn. Recorded only when the provider reported some usage. Newer records
- * also carry the thread's total as `thread`, a `ThreadTokenUsage`.
+ * Thread activity holding a finished turn's `TurnTokenUsage` and `TurnModel`,
+ * shown under the turn. Recorded when the provider reported some usage or the
+ * turn's model is known; without usage it holds only the `TurnModel` fields.
+ * Newer records also carry the thread's total as `thread`, a `ThreadTokenUsage`.
  */
 export const TURN_USAGE_ACTIVITY_KIND = "turn.usage";
+
+/**
+ * The model and effort a turn ran with, as the provider's ids. `effort` is the
+ * id of the model's reasoning option, so clients label it as the composer does.
+ */
+export const TurnModel = Schema.Struct({
+  instanceId: Schema.optional(ProviderInstanceId),
+  model: TrimmedNonEmptyStringSchema,
+  effort: Schema.optional(TrimmedNonEmptyStringSchema),
+});
+export type TurnModel = typeof TurnModel.Type;
 
 /**
  * A thread's main-agent usage, summed over every turn with a usage record when
@@ -401,12 +420,18 @@ const TurnCompletedPayload = Schema.Struct({
   totalCostUsd: Schema.optional(Schema.Number),
   errorMessage: Schema.optional(TrimmedNonEmptyStringSchema),
   tokenUsage: Schema.optional(TurnTokenUsage),
+  /** Filled by the provider service from the turn's start. */
+  model: Schema.optional(TrimmedNonEmptyStringSchema),
+  effort: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TurnCompletedPayload = typeof TurnCompletedPayload.Type;
 
 const TurnAbortedPayload = Schema.Struct({
   reason: TrimmedNonEmptyStringSchema,
   tokenUsage: Schema.optional(TurnTokenUsage),
+  /** Filled by the provider service from the turn's start. */
+  model: Schema.optional(TrimmedNonEmptyStringSchema),
+  effort: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TurnAbortedPayload = typeof TurnAbortedPayload.Type;
 

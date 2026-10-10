@@ -1,15 +1,18 @@
 /**
- * Reads `turn.usage` activities for the token count under each agent turn and
- * the thread total in the composer, and formats them identically on web and
- * mobile. The server uses {@link sumThreadTokenUsage} to write that total.
+ * Reads `turn.usage` activities for the model and token count under each agent
+ * turn and the thread total in the composer, and formats them identically on
+ * web and mobile. The server uses {@link sumThreadTokenUsage} to write that
+ * total.
  *
  * @module turnUsage
  */
 import {
   ThreadTokenUsage,
   TURN_USAGE_ACTIVITY_KIND,
+  TurnModel,
   TurnTokenUsage,
   type OrchestrationThreadActivity,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -17,14 +20,21 @@ import * as Schema from "effect/Schema";
 import { formatPercent, formatTokens } from "./usageFormat.ts";
 
 const decodeTurnTokenUsage = Schema.decodeUnknownOption(TurnTokenUsage);
+const decodeTurnModel = Schema.decodeUnknownOption(TurnModel);
 const decodeThreadTokenUsage = Schema.decodeUnknownOption(
   Schema.Struct({ thread: ThreadTokenUsage }),
 );
 
+/** One turn's usage record. Either part may be missing, but not both. */
+export interface TurnRecord {
+  readonly usage: TurnTokenUsage | null;
+  readonly model: TurnModel | null;
+}
+
 export interface TurnUsageByTurn {
   /** Ids of the usage activities this was derived from. */
   readonly key: string;
-  readonly byTurnId: ReadonlyMap<string, TurnTokenUsage>;
+  readonly byTurnId: ReadonlyMap<string, TurnRecord>;
   /** The thread total carried by the newest usage record, if it has one. */
   readonly thread: ThreadTokenUsage | null;
 }
@@ -45,11 +55,14 @@ export function deriveTurnUsage(
   const key = usageActivities.map((activity) => activity.id).join(",");
   if (key === previous.key) return previous;
 
-  const byTurnId = new Map<string, TurnTokenUsage>();
+  const byTurnId = new Map<string, TurnRecord>();
   let newest: OrchestrationThreadActivity | undefined;
   for (const activity of usageActivities) {
     const usage = Option.getOrNull(decodeTurnTokenUsage(activity.payload));
-    if (usage !== null && activity.turnId !== null) byTurnId.set(activity.turnId, usage);
+    const model = Option.getOrNull(decodeTurnModel(activity.payload));
+    if ((usage !== null || model !== null) && activity.turnId !== null) {
+      byTurnId.set(activity.turnId, { usage, model });
+    }
     // Activities are ordered by provider session sequence, which restarts with
     // each session, so the newest record is found by time instead.
     if (newest === undefined || activity.createdAt >= newest.createdAt) newest = activity;
@@ -69,7 +82,8 @@ export function deriveTurnUsage(
 export function sumThreadTokenUsage(input: {
   readonly activities: ReadonlyArray<Pick<OrchestrationThreadActivity, "turnId" | "payload">>;
   readonly turnId: string;
-  readonly usage: TurnTokenUsage;
+  /** Null when the turn reported no usage. */
+  readonly usage: TurnTokenUsage | null;
   /** Every turn the thread has, including those without usage. */
   readonly turns: number;
 }): ThreadTokenUsage {
@@ -78,7 +92,8 @@ export function sumThreadTokenUsage(input: {
     const usage = Option.getOrNull(decodeTurnTokenUsage(activity.payload));
     if (usage !== null && activity.turnId !== null) byTurnId.set(activity.turnId, usage);
   }
-  byTurnId.set(input.turnId, input.usage);
+  if (input.usage === null) byTurnId.delete(input.turnId);
+  else byTurnId.set(input.turnId, input.usage);
 
   const total = {
     inputTokens: 0,
@@ -198,4 +213,69 @@ export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
   }
   if (usage.partialTurns > 0) notes.push("Some turns reported only some token counts.");
   return usageView(usage, usage.subagentTokens ?? 0, notes);
+}
+
+/** What shows under a turn: the model it ran on and its usage figure. */
+export interface TurnSummaryView {
+  readonly model: string | null;
+  readonly usage: TurnUsageView | null;
+  /** The record it was built from, so unchanged turns keep their view. */
+  readonly record: TurnRecord;
+}
+
+export const EMPTY_TURN_SUMMARIES: ReadonlyMap<string, TurnSummaryView> = new Map();
+
+/**
+ * Builds each turn's summary. Turns whose record and model label are unchanged
+ * keep their `previous` view, and an unchanged map keeps its identity, so a
+ * provider refresh does not re-render the timeline.
+ */
+export function turnSummaryViews(
+  byTurnId: ReadonlyMap<string, TurnRecord>,
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "models">>,
+  previous: ReadonlyMap<string, TurnSummaryView> = EMPTY_TURN_SUMMARIES,
+): ReadonlyMap<string, TurnSummaryView> {
+  const views = new Map<string, TurnSummaryView>();
+  let changed = byTurnId.size !== previous.size;
+  for (const [turnId, record] of byTurnId) {
+    const model = record.model ? turnModelLabel(record.model, providers) : null;
+    const prior = previous.get(turnId);
+    if (prior?.record === record && prior.model === model) {
+      views.set(turnId, prior);
+      continue;
+    }
+    changed = true;
+    views.set(turnId, {
+      model,
+      usage: record.usage ? turnUsageView(record.usage) : null,
+      record,
+    });
+  }
+  return changed ? views : previous;
+}
+
+/**
+ * Names a turn's model and effort as the composer does, e.g.
+ * "GPT-6.1 Sol (Medium)". Models no longer listed keep the provider's ids.
+ */
+export function turnModelLabel(
+  turnModel: TurnModel,
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "models">>,
+): string {
+  const provider = providers.find((candidate) => candidate.instanceId === turnModel.instanceId);
+  const model = (provider ? [provider] : providers)
+    .flatMap((candidate) => candidate.models)
+    .find(
+      (candidate) =>
+        candidate.slug === turnModel.model || candidate.aliases?.includes(turnModel.model),
+    );
+  const name = model?.name ?? turnModel.model;
+  if (turnModel.effort === undefined) return name;
+  // Effort is an option id. Reasoning is a model's first select option, and
+  // its ids don't overlap the others' (context window, service tier, agent).
+  const effort =
+    (model?.capabilities?.optionDescriptors ?? [])
+      .flatMap((descriptor) => (descriptor.type === "select" ? descriptor.options : []))
+      .find((option) => option.id === turnModel.effort)?.label ?? turnModel.effort;
+  return `${name} (${effort})`;
 }

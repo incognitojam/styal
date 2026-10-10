@@ -25,7 +25,6 @@ import type {
   RuntimeMode,
   ServerConfig as T3ServerConfig,
   ThreadId,
-  TurnTokenUsage,
   UsageLimitsReport,
   UserInputQuestion,
 } from "@t3tools/contracts";
@@ -68,7 +67,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceContentWidth } from "../layout/workspace-content-width";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
-import type { TurnUsageView } from "@t3tools/shared/turnUsage";
+import type { TurnSummaryView, TurnUsageView } from "@t3tools/shared/turnUsage";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerAttachment } from "../../lib/composerImages";
@@ -125,7 +124,7 @@ export interface ThreadDetailScreenProps {
   readonly feedbackSubmissions: ReadonlyArray<CodexFeedbackSubmission>;
   readonly onDismissFeedback: (id: MessageId) => void;
   readonly selectedThreadFeed: ReadonlyArray<ThreadFeedEntry>;
-  readonly turnUsageByTurnId: ReadonlyMap<string, TurnTokenUsage>;
+  readonly turnUsageByTurnId: ReadonlyMap<string, TurnSummaryView>;
   readonly threadUsage: TurnUsageView | null;
   readonly activeWorkStartedAt: string | null;
   readonly isCompacting: boolean;
