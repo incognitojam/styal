@@ -107,6 +107,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Discard drafts with a swipe on mobile.** New-task drafts support swipe-to-discard with
+  confirmation in the thread list and tablet sidebar. T3 Code offers discard from the long-press
+  menu as of [revision 98beed1](https://github.com/pingdotgg/t3code/tree/98beed1a226c42b85c52ff5ee9d5dbb67d776a77),
+  checked October 10, 2026. [Composer drafts](./composer-drafts.md).
 - **Confirm unpinning on mobile.** Mobile asks before removing a thread from the pinned
   section, with a device-local opt-out in **Settings → Thread behavior**. T3 Code mobile
   unpins immediately and has no Undo as of
