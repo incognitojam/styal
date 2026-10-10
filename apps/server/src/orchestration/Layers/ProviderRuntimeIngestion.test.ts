@@ -71,6 +71,7 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import * as UsageService from "../../usage/UsageService.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { makeSqlStatementCounter } from "../../../integration/SqlStatementCounter.integration.ts";
 
@@ -297,7 +298,9 @@ describe("ProviderRuntimeIngestion", () => {
     threadTitle?: string;
     workspaceSubdirectory?: string;
     isGitRepository?: CheckpointStore.CheckpointStore["Service"]["isGitRepository"];
+    priceTokens?: UsageService.UsageService["Service"]["priceTokens"];
   }) {
+    const priceTokens = options?.priceTokens;
     const repositoryRoot = makeTempDir("t3-provider-project-");
     NodeChildProcess.execFileSync("git", ["init", "--initial-branch=main"], {
       cwd: repositoryRoot,
@@ -357,6 +360,14 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
+      Layer.provideMerge(
+        priceTokens
+          ? Layer.effect(
+              UsageService.UsageService,
+              Effect.map(UsageService.UsageService, (usage) => ({ ...usage, priceTokens })),
+            ).pipe(Layer.provide(UsageService.layerTest))
+          : UsageService.layerTest,
+      ),
       Layer.provideMerge(
         Layer.effect(
           CheckpointStore.CheckpointStore,
@@ -510,10 +521,100 @@ describe("ProviderRuntimeIngestion", () => {
             partialTurns: 0,
             subagentTurns: 0,
             subagentTokens: 0,
+            costUsd: 0,
+            pricedTurns: 0,
           },
         },
       ],
     ]);
+  });
+
+  it("prices each turn by model and totals the cost", async () => {
+    const priced: Array<Parameters<UsageService.UsageService["Service"]["priceTokens"]>[0]> = [];
+    const harness = await createHarness({
+      // $1 per million tokens, or the provider's own cost; "unlisted" has no price.
+      priceTokens: (usage) => {
+        priced.push(usage);
+        return Effect.succeed(
+          usage.some((entry) => entry.model === "unlisted")
+            ? null
+            : usage.reduce(
+                (sum, entry) =>
+                  sum +
+                  (entry.reportedCostUsd ?? (entry.inputTokens + entry.outputTokens) / 1_000_000),
+                0,
+              ),
+        );
+      },
+    });
+    const base = {
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+    };
+    const tokenUsage = {
+      usageScope: "main_agent",
+      usageStatus: "complete",
+      inputTokens: 900_000,
+      outputTokens: 100_000,
+      hasSubagents: true,
+      subagents: { inputTokens: 400_000, outputTokens: 100_000 },
+    } as const;
+    const turn = (turnId: string, second: number, payload: Record<string, unknown>) =>
+      [
+        {
+          ...base,
+          turnId: asTurnId(turnId),
+          type: "turn.started",
+          eventId: asEventId(`evt-${turnId}-started`),
+          createdAt: `2026-01-01T00:00:0${second}.000Z`,
+        },
+        {
+          ...base,
+          turnId: asTurnId(turnId),
+          type: "turn.completed",
+          eventId: asEventId(`evt-${turnId}-completed`),
+          createdAt: `2026-01-01T00:00:0${second + 1}.000Z`,
+          payload: { state: "completed", ...payload },
+        },
+      ] as const;
+    await harness.emitAndDrain([
+      // Every token, subagents included, at the turn's model.
+      ...turn("turn-1", 1, { tokenUsage, model: "gpt-test" }),
+      // The provider's split by model and its own cost.
+      ...turn("turn-2", 3, {
+        tokenUsage: {
+          ...tokenUsage,
+          byModel: [
+            { inputTokens: 900_000, outputTokens: 100_000 },
+            {
+              model: "gpt-mini",
+              inputTokens: 400_000,
+              outputTokens: 100_000,
+              reportedCostUsd: 0.2,
+            },
+          ],
+        },
+        model: "gpt-test",
+      }),
+      ...turn("turn-3", 5, { tokenUsage, model: "unlisted" }),
+    ]);
+
+    expect(priced.map((usage) => usage.map((entry) => entry.model))).toEqual([
+      ["gpt-test"],
+      ["gpt-test", "gpt-mini"],
+      ["unlisted"],
+    ]);
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    const usage = thread?.activities.filter((activity) => activity.kind === "turn.usage");
+    expect(usage?.map((activity) => (activity.payload as { costUsd?: number }).costUsd)).toEqual([
+      1.5,
+      1.2,
+      undefined,
+    ]);
+    expect(usage?.[1]?.payload).not.toHaveProperty("byModel");
+    expect(usage?.[2]?.payload).toMatchObject({
+      thread: { costUsd: 2.7, pricedTurns: 2, countedTurns: 3 },
+    });
   });
 
   it("totals the thread's usage across turns, noting turns that reported none", async () => {

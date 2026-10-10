@@ -164,7 +164,23 @@ describe("sumThreadTokenUsage", () => {
       partialTurns: 1,
       subagentTurns: 1,
       subagentTokens: 0,
+      costUsd: 0,
+      pricedTurns: 0,
     });
+  });
+
+  it("adds the cost of the turns that have one", () => {
+    const total = sumThreadTokenUsage({
+      activities: [
+        activity("usage-1", "turn-1", "turn.usage", { ...usage, costUsd: 1.25 }),
+        activity("usage-2", "turn-2", "turn.usage"),
+      ],
+      turnId: "turn-3",
+      usage: { ...usage, costUsd: 0.5 },
+      turns: 3,
+    });
+
+    expect(total).toMatchObject({ costUsd: 1.75, pricedTurns: 2, countedTurns: 3 });
   });
 
   it("adds reported subagent usage and counts only turns missing it", () => {
@@ -257,6 +273,25 @@ describe("turnUsageView", () => {
       "Subagent usage isn't included.",
       "The provider reported only some token counts.",
     ]);
+  });
+});
+
+describe("cost", () => {
+  it("adds an estimated API cost row, keeping sub-cent costs visible", () => {
+    expect(turnUsageView({ ...usage, costUsd: 0.8412 }).rows.at(-1)).toEqual({
+      label: "Est. API cost",
+      value: "$0.84",
+    });
+    expect(turnUsageView({ ...usage, costUsd: 0.0031 }).rows.at(-1)?.value).toBe("<$0.01");
+    expect(turnUsageView(usage).rows.map((row) => row.label)).not.toContain("Est. API cost");
+  });
+
+  it("says how many turns the thread's cost covers", () => {
+    const view = threadUsageView({ ...threadTotal, costUsd: 4.2, pricedTurns: 2 });
+
+    expect(view.rows.at(-1)).toEqual({ label: "Est. API cost", value: "$4.20" });
+    expect(view.notes).toEqual(["Cost covers 2 of 3 turns."]);
+    expect(threadUsageView({ ...threadTotal, costUsd: 0, pricedTurns: 0 }).rows).toHaveLength(2);
   });
 });
 

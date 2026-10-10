@@ -44,6 +44,7 @@ import {
   type ProviderSendTurnInput,
   type ProviderSession,
   type ThreadTokenUsageSnapshot,
+  type ModelTokenUsage,
   type SubagentTokenUsage,
   type TurnTokenUsage,
   type ProviderUserInputAnswers,
@@ -906,6 +907,8 @@ interface ClaudeModelUsageCounts {
   readonly cacheCreationTokens: number;
   readonly outputTokens: number;
   readonly reasoningTokens: number;
+  /** The same share split by model, with Claude's own cost, for pricing. */
+  readonly byModel: ReadonlyArray<ModelTokenUsage>;
 }
 
 /**
@@ -928,7 +931,8 @@ function claudeModelUsageDelta(
         after.inputTokens < before.inputTokens ||
         after.cacheReadInputTokens < before.cacheReadInputTokens ||
         after.cacheCreationInputTokens < before.cacheCreationInputTokens ||
-        after.outputTokens < before.outputTokens
+        after.outputTokens < before.outputTokens ||
+        after.costUSD < before.costUSD
       );
     });
   const baseline = restarted ? undefined : previous;
@@ -939,20 +943,35 @@ function claudeModelUsageDelta(
     outputTokens: 0,
     reasoningTokens: 0,
   };
+  const byModel: ModelTokenUsage[] = [];
   for (const [model, after] of Object.entries(current)) {
     const before = baseline?.[model];
     const read = after.cacheReadInputTokens - (before?.cacheReadInputTokens ?? 0);
     const write = after.cacheCreationInputTokens - (before?.cacheCreationInputTokens ?? 0);
-    delta.inputTokens += after.inputTokens - (before?.inputTokens ?? 0) + read + write;
+    const input = after.inputTokens - (before?.inputTokens ?? 0) + read + write;
+    const output = after.outputTokens - (before?.outputTokens ?? 0);
+    const costUsd = after.costUSD - (before?.costUSD ?? 0);
+    delta.inputTokens += input;
     delta.cachedInputTokens += read;
     delta.cacheCreationTokens += write;
-    delta.outputTokens += after.outputTokens - (before?.outputTokens ?? 0);
+    delta.outputTokens += output;
     delta.reasoningTokens += Math.max(
       0,
       (after.thinkingTokens ?? 0) - (before?.thinkingTokens ?? 0),
     );
+    if (input + output > 0) {
+      byModel.push({
+        model,
+        inputTokens: input,
+        cachedInputTokens: read,
+        cacheCreationTokens: write,
+        outputTokens: output,
+        // Zero means Claude Code has no price for the model; rates may.
+        ...(Number.isFinite(costUsd) && costUsd > 0 ? { reportedCostUsd: costUsd } : {}),
+      });
+    }
   }
-  return delta;
+  return { ...delta, byModel };
 }
 
 /**
@@ -1064,6 +1083,9 @@ function normalizeClaudeTurnTokenUsage(
       : {}),
     hasSubagents,
     ...(subagents ? { subagents } : {}),
+    ...(turnModelUsage && turnModelUsage.byModel.length > 0
+      ? { byModel: turnModelUsage.byModel }
+      : {}),
   } as const;
   if (
     terminalStatus === "completed" &&

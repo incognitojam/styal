@@ -17,6 +17,7 @@ import * as NodeOS from "node:os";
 import {
   ClaudeSettings,
   CodexSettings,
+  type ModelTokenUsage,
   type ProviderInstanceConfig,
   ProviderInstanceId,
   USAGE_CONTRACT_VERSION,
@@ -54,7 +55,12 @@ import { readOpenCodeUsage } from "./opencodeUsageReader.ts";
 import { readAntigravityUsage } from "./antigravityUsageReader.ts";
 import { readCursorAccountUsage } from "./cursorUsageReader.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
-import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
+import {
+  createOverrideRateTable,
+  parseRateTable,
+  priceModelTokens,
+  type RateTable,
+} from "./usagePricing.ts";
 import {
   listTranscriptFiles,
   readDirectoryVolumeId,
@@ -119,8 +125,18 @@ export class UsageService extends Context.Service<
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
     /** Refetches the rate table ahead of its TTL. See `ensureRates`. */
     readonly refreshRates: Effect.Effect<UsagePricing>;
+    /**
+     * Estimated API cost of a turn's tokens by model, or null when a model has
+     * no price. Uses the rates already loaded; see `priceModelTokens`.
+     */
+    readonly priceTokens: (
+      usage: ReadonlyArray<ModelTokenUsage & { readonly model: string }>,
+    ) => Effect.Effect<number | null>;
   }
 >()("@styal/cli/usage/UsageService") {}
+
+/** How long pricing a turn waits for the first rates fetch on a fresh install. */
+const PRICE_TOKENS_FIRST_FETCH_WAIT = "3 seconds";
 
 const EMPTY_PRICING: UsagePricing = {
   status: "unavailable",
@@ -146,6 +162,7 @@ export const layerTest = Layer.succeed(
         scanDurationMs: 0,
       }),
     refreshRates: Effect.succeed(EMPTY_PRICING),
+    priceTokens: () => Effect.succeed(null),
   }),
 );
 
@@ -892,7 +909,25 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
-  return { readSummary, refreshRates } as const;
+  // Turns are priced on the ingestion queue, so this waits on the network only
+  // briefly, and only while no table has ever loaded. A stale table refreshes
+  // in the background and prices this turn as it stands.
+  const priceTokens = Effect.fn("UsageService.priceTokens")(function* (
+    usage: ReadonlyArray<ModelTokenUsage & { readonly model: string }>,
+  ) {
+    if (ratesFetchedAtMs === null) {
+      yield* ensureRates(false).pipe(Effect.timeout(PRICE_TOKENS_FIRST_FETCH_WAIT), Effect.ignore);
+    } else {
+      yield* ensureRates(false).pipe(Effect.forkDetach);
+    }
+    const overrides = yield* settingsService.getSettings.pipe(
+      Effect.map((settings) => createOverrideRateTable(settings.usagePriceOverrides)),
+      Effect.catchCause(() => Effect.succeed<RateTable>(new Map())),
+    );
+    return priceModelTokens(rates, usage, overrides);
+  });
+
+  return { readSummary, refreshRates, priceTokens } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

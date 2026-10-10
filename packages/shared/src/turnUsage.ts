@@ -17,7 +17,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { formatPercent, formatTokens } from "./usageFormat.ts";
+import { formatPercent, formatTokens, formatUsd } from "./usageFormat.ts";
 
 const decodeTurnTokenUsage = Schema.decodeUnknownOption(TurnTokenUsage);
 const decodeTurnModel = Schema.decodeUnknownOption(TurnModel);
@@ -106,6 +106,8 @@ export function sumThreadTokenUsage(input: {
     partialTurns: 0,
     subagentTurns: 0,
     subagentTokens: 0,
+    costUsd: 0,
+    pricedTurns: 0,
   };
   for (const usage of byTurnId.values()) {
     const counts = combinedTokenCounts(usage);
@@ -117,6 +119,10 @@ export function sumThreadTokenUsage(input: {
     total.subagentTokens += subagentTokens(usage);
     if (usage.usageStatus !== "complete") total.partialTurns += 1;
     if (usage.hasSubagents && usage.subagents === undefined) total.subagentTurns += 1;
+    if (usage.costUsd !== undefined) {
+      total.costUsd += usage.costUsd;
+      total.pricedTurns += 1;
+    }
   }
   return total;
 }
@@ -155,9 +161,15 @@ type TokenCounts = {
   ]?: number | undefined;
 };
 
+/** Cents, with sub-cent costs shown as such rather than as $0.00. */
+function formatCost(usd: number): string {
+  return usd > 0 && usd < 0.01 ? "<$0.01" : formatUsd(usd);
+}
+
 function usageView(
   usage: TokenCounts,
   subagents: number,
+  costUsd: number | undefined,
   notes: ReadonlyArray<string>,
 ): TurnUsageView {
   // Input already includes cache reads and writes.
@@ -186,6 +198,8 @@ function usageView(
   if (cacheWrites > 0) rows.push({ label: "Cache writes", value: formatTokens(cacheWrites) });
   // Already within the rows above; this shows their share.
   if (subagents > 0) rows.push({ label: "Subagents", value: formatTokens(subagents) });
+  // What these tokens would cost at API rates; subscriptions bill separately.
+  if (costUsd !== undefined) rows.push({ label: "Est. API cost", value: formatCost(costUsd) });
 
   return { headline: `${formatTokens(input + output)} tokens`, rows, notes };
 }
@@ -196,7 +210,7 @@ export function turnUsageView(usage: TurnTokenUsage): TurnUsageView {
     notes.push("Subagent usage isn't included.");
   }
   if (usage.usageStatus === "partial") notes.push("The provider reported only some token counts.");
-  return usageView(combinedTokenCounts(usage), subagentTokens(usage), notes);
+  return usageView(combinedTokenCounts(usage), subagentTokens(usage), usage.costUsd, notes);
 }
 
 export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
@@ -212,7 +226,16 @@ export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
     );
   }
   if (usage.partialTurns > 0) notes.push("Some turns reported only some token counts.");
-  return usageView(usage, usage.subagentTokens ?? 0, notes);
+  const pricedTurns = usage.pricedTurns ?? 0;
+  if (pricedTurns > 0 && pricedTurns < usage.countedTurns) {
+    notes.push(`Cost covers ${pricedTurns} of ${usage.turns} turns.`);
+  }
+  return usageView(
+    usage,
+    usage.subagentTokens ?? 0,
+    pricedTurns > 0 ? usage.costUsd : undefined,
+    notes,
+  );
 }
 
 /** What shows under a turn: the model it ran on and its usage figure. */

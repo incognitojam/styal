@@ -334,7 +334,9 @@ type OpenCodeTextPartState = Pick<OpenCodeTextPart, "id" | "messageID" | "type" 
   completed: boolean;
 };
 
-type OpenCodeStepUsage = Pick<Extract<Part, { readonly type: "step-finish" }>, "id" | "tokens">;
+type OpenCodeStepUsage = Pick<Extract<Part, { readonly type: "step-finish" }>, "id" | "tokens"> & {
+  readonly cost?: number;
+};
 
 interface OpenCodeSessionContext {
   session: ProviderSession;
@@ -392,6 +394,8 @@ interface OpenCodeTokenCounts {
   cacheCreationTokens: number;
   outputTokens: number;
   reasoningTokens: number;
+  /** OpenCode's own price for these steps, zero when it has none. */
+  costUsd: number;
 }
 
 interface OpenCodeTurnTokenUsageAccumulator {
@@ -408,6 +412,7 @@ interface OpenCodeTurnTokenUsageAccumulator {
   cacheCreationTokens: number;
   outputTokens: number;
   reasoningTokens: number;
+  costUsd: number;
   complete: boolean;
   hasSubagents: boolean;
 }
@@ -425,12 +430,14 @@ function makeOpenCodeTurnTokenUsageAccumulator(): OpenCodeTurnTokenUsageAccumula
       cacheCreationTokens: 0,
       outputTokens: 0,
       reasoningTokens: 0,
+      costUsd: 0,
     },
     inputTokens: 0,
     cachedInputTokens: 0,
     cacheCreationTokens: 0,
     outputTokens: 0,
     reasoningTokens: 0,
+    costUsd: 0,
     complete: true,
     hasSubagents: false,
   };
@@ -442,6 +449,9 @@ function addOpenCodeStepTokens(counts: OpenCodeTokenCounts, part: OpenCodeStepUs
   counts.cacheCreationTokens += part.tokens.cache.write;
   counts.outputTokens += part.tokens.output + part.tokens.reasoning;
   counts.reasoningTokens += part.tokens.reasoning;
+  if (part.cost !== undefined && Number.isFinite(part.cost) && part.cost > 0) {
+    counts.costUsd += part.cost;
+  }
 }
 
 function accumulateOpenCodeStepUsage(
@@ -475,7 +485,8 @@ function takeOpenCodeTurnTokenUsage(
       hasSubagents: usage?.hasSubagents ?? false,
     };
   }
-  const subagents = usage.subagents;
+  const { costUsd: subagentCostUsd, ...subagents } = usage.subagents;
+  const costUsd = usage.costUsd + subagentCostUsd;
   return {
     usageStatus:
       complete && usage.complete && usage.unresolvedStepsByMessageId.size === 0
@@ -494,6 +505,21 @@ function takeOpenCodeTurnTokenUsage(
             ...subagents,
             reasoningTokens: Math.min(subagents.outputTokens, subagents.reasoningTokens),
           },
+        }
+      : {}),
+    // OpenCode prices every step itself. Without that, the server prices the
+    // tokens at the turn's model.
+    ...(costUsd > 0
+      ? {
+          byModel: [
+            {
+              inputTokens: usage.inputTokens + subagents.inputTokens,
+              cachedInputTokens: usage.cachedInputTokens + subagents.cachedInputTokens,
+              cacheCreationTokens: usage.cacheCreationTokens + subagents.cacheCreationTokens,
+              outputTokens: usage.outputTokens + subagents.outputTokens,
+              reportedCostUsd: costUsd,
+            },
+          ],
         }
       : {}),
   };
@@ -2540,7 +2566,7 @@ export function makeOpenCodeAdapter(
               const steps =
                 usage.unresolvedStepsByMessageId.get(part.messageID) ??
                 new Map<string, OpenCodeStepUsage>();
-              steps.set(part.id, { id: part.id, tokens: part.tokens });
+              steps.set(part.id, { id: part.id, tokens: part.tokens, cost: part.cost });
               usage.unresolvedStepsByMessageId.set(part.messageID, steps);
             }
           }

@@ -337,6 +337,23 @@ export const SubagentTokenUsage = Schema.Struct({
 });
 export type SubagentTokenUsage = typeof SubagentTokenUsage.Type;
 
+const UsdAmount = Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0));
+
+/**
+ * Tokens one model used during a turn, main agent and subagents together, for
+ * pricing the turn. `model` is absent for the turn's own model. Input includes
+ * cache reads and writes. `reportedCostUsd` is the provider's own price.
+ */
+export const ModelTokenUsage = Schema.Struct({
+  model: Schema.optional(TrimmedNonEmptyStringSchema),
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: Schema.optional(NonNegativeInt),
+  cacheCreationTokens: Schema.optional(NonNegativeInt),
+  outputTokens: NonNegativeInt,
+  reportedCostUsd: Schema.optional(UsdAmount),
+});
+export type ModelTokenUsage = typeof ModelTokenUsage.Type;
+
 /**
  * Normalized main-agent usage for one turn, with `subagents` alongside when
  * reported. Input includes cache reads and writes. Output includes reasoning,
@@ -352,6 +369,16 @@ const TurnTokenUsageCommonFields = {
   hasSubagents: Schema.Boolean,
   /** Present when the provider reported what the turn's subagents used. */
   subagents: Schema.optional(SubagentTokenUsage),
+  /**
+   * The whole turn's tokens by model, for pricing. Without it, every token is
+   * priced at the turn's model. The usage record leaves it out.
+   */
+  byModel: Schema.optional(Schema.Array(ModelTokenUsage)),
+  /**
+   * Estimated API cost in USD of the main agent and its subagents. The server
+   * prices the turn when recording it; subscriptions bill separately.
+   */
+  costUsd: Schema.optional(UsdAmount),
 };
 export const TurnTokenUsage = Schema.Union([
   Schema.Struct({
@@ -409,6 +436,10 @@ export const ThreadTokenUsage = Schema.Struct({
   subagentTurns: NonNegativeInt,
   /** Reported subagent input and output, already within the totals above. */
   subagentTokens: Schema.optional(NonNegativeInt),
+  /** Estimated API cost of the turns that have one. */
+  costUsd: Schema.optional(UsdAmount),
+  /** Counted turns with a cost. */
+  pricedTurns: Schema.optional(NonNegativeInt),
 });
 export type ThreadTokenUsage = typeof ThreadTokenUsage.Type;
 

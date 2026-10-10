@@ -4809,6 +4809,13 @@ describe("ClaudeAdapterLive", () => {
       } as unknown as SDKMessage);
 
       const completed = Array.from(yield* Fiber.join(completedFiber));
+      const turnShare = {
+        inputTokens: 12_500,
+        cachedInputTokens: 2_000,
+        cacheCreationTokens: 500,
+        outputTokens: 1_000,
+        reportedCostUsd: 1,
+      };
       assert.equal(completed[0]?.type, "turn.completed");
       assert.equal(completed[1]?.type, "turn.completed");
       if (completed[0]?.type === "turn.completed" && completed[1]?.type === "turn.completed") {
@@ -4820,7 +4827,9 @@ describe("ClaudeAdapterLive", () => {
           cacheCreationTokens: 5,
           outputTokens: 10,
           hasSubagents: false,
+          byModel: [{ model: "claude-opus-4-6", ...turnShare }],
         });
+        // The second turn's share is the running total's growth, cost included.
         assert.deepEqual(completed[1].payload.tokenUsage, {
           usageStatus: "complete",
           usageScope: "main_agent",
@@ -4829,6 +4838,7 @@ describe("ClaudeAdapterLive", () => {
           cacheCreationTokens: 3,
           outputTokens: 7,
           hasSubagents: false,
+          byModel: [{ model: "claude-opus-4-6", ...turnShare }],
         });
       }
     }).pipe(
