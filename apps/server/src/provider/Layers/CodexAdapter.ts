@@ -27,6 +27,7 @@ import {
   RuntimeRequestId,
   RuntimeTaskId,
   type RuntimeTaskUsage,
+  type SubagentTokenUsage,
   type TurnTokenUsage,
   ProviderApprovalDecision,
   ThreadId,
@@ -132,12 +133,16 @@ interface CodexTurnTokenUsageAccumulator {
   reasoningTokens: number;
   observed: boolean;
   hasSubagents: boolean;
+  /** Growth of collab child threads while this turn was live. */
+  subagents: CodexCumulativeTokenUsage | undefined;
 }
 
 interface CodexTurnTokenUsageState {
   baseline: CodexCumulativeTokenUsage | undefined;
   activeTurnId: string | undefined;
   readonly byTurnId: Map<string, CodexTurnTokenUsageAccumulator>;
+  /** Each collab child thread's last running total, kept across turns. */
+  readonly childBaselines: Map<string, CodexCumulativeTokenUsage>;
 }
 
 function mapCodexRuntimeError(
@@ -486,6 +491,7 @@ function makeCodexTurnTokenUsageState(): CodexTurnTokenUsageState {
     baseline: undefined,
     activeTurnId: undefined,
     byTurnId: new Map(),
+    childBaselines: new Map(),
   };
 }
 
@@ -503,6 +509,7 @@ function getCodexTurnAccumulator(
     reasoningTokens: 0,
     observed: false,
     hasSubagents: false,
+    subagents: undefined,
   };
   state.byTurnId.set(turnId, created);
   return created;
@@ -582,6 +589,56 @@ function accumulateCodexTurnTokenUsage(
   }
 }
 
+const CodexChildTokenUsage = Schema.Struct({
+  agentThreadId: Schema.String,
+  tokenUsage: EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification__ThreadTokenUsage,
+});
+
+/**
+ * Adds a collab child thread's growth to the live turn. Each child reports its
+ * own running total, so each keeps its own baseline. Growth reported while no
+ * turn is live, such as a subagent outliving the turn that spawned it, is not
+ * counted.
+ */
+function accumulateCodexSubagentTokenUsage(
+  state: CodexTurnTokenUsageState,
+  child: typeof CodexChildTokenUsage.Type,
+): void {
+  const current = codexTokenUsageBreakdown(child.tokenUsage.total);
+  const delta = codexTurnTokenUsageDelta(
+    state.childBaselines.get(child.agentThreadId),
+    current,
+    codexTokenUsageBreakdown(child.tokenUsage.last),
+  );
+  state.childBaselines.set(child.agentThreadId, current);
+  if (state.activeTurnId === undefined) return;
+
+  const accumulator = getCodexTurnAccumulator(state, state.activeTurnId);
+  const previous = accumulator.subagents;
+  accumulator.subagents = {
+    inputTokens: (previous?.inputTokens ?? 0) + delta.inputTokens,
+    cachedInputTokens: (previous?.cachedInputTokens ?? 0) + delta.cachedInputTokens,
+    cacheCreationTokens: (previous?.cacheCreationTokens ?? 0) + (delta.cacheCreationTokens ?? 0),
+    outputTokens: (previous?.outputTokens ?? 0) + delta.outputTokens,
+    reasoningTokens: (previous?.reasoningTokens ?? 0) + delta.reasoningTokens,
+  };
+}
+
+function codexSubagentTokenUsage(
+  usage: CodexCumulativeTokenUsage | undefined,
+): SubagentTokenUsage | undefined {
+  if (!usage || usage.inputTokens + usage.outputTokens === 0) return undefined;
+  return {
+    inputTokens: usage.inputTokens,
+    cachedInputTokens: Math.min(usage.inputTokens, usage.cachedInputTokens),
+    ...(usage.cacheCreationTokens
+      ? { cacheCreationTokens: Math.min(usage.inputTokens, usage.cacheCreationTokens) }
+      : {}),
+    outputTokens: usage.outputTokens,
+    reasoningTokens: Math.min(usage.outputTokens, usage.reasoningTokens),
+  };
+}
+
 function completeCodexTurnTokenUsage(
   state: CodexTurnTokenUsageState,
   turnId: string,
@@ -606,6 +663,7 @@ function completeCodexTurnTokenUsage(
     };
   }
 
+  const subagents = codexSubagentTokenUsage(usage.subagents);
   // Codex counts cache reads and writes inside inputTokens. Clamp the
   // subsets so the record keeps the documented relationships even if a
   // counter drifts.
@@ -620,6 +678,7 @@ function completeCodexTurnTokenUsage(
     outputTokens: usage.outputTokens,
     reasoningTokens: Math.min(usage.outputTokens, usage.reasoningTokens),
     hasSubagents: usage.hasSubagents,
+    ...(subagents ? { subagents } : {}),
   };
 }
 
@@ -2396,6 +2455,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               if (payload) {
                 accumulateCodexTurnTokenUsage(turnTokenUsage, payload.turnId, payload.tokenUsage);
               }
+            } else if (event.method === "collabAgent/tokenUsage") {
+              const child = readPayload(CodexChildTokenUsage, event.payload);
+              if (child) accumulateCodexSubagentTokenUsage(turnTokenUsage, child);
             } else if (turnTokenUsage.activeTurnId) {
               const collabPayload =
                 typeof event.payload === "object" && event.payload !== null

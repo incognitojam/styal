@@ -142,6 +142,28 @@ describe("sumThreadTokenUsage", () => {
       turns: 4,
       partialTurns: 1,
       subagentTurns: 1,
+      subagentTokens: 0,
+    });
+  });
+
+  it("adds reported subagent usage and counts only turns missing it", () => {
+    const total = sumThreadTokenUsage({
+      activities: [activity("usage-1", "turn-1", "turn.usage", { ...usage, hasSubagents: true })],
+      turnId: "turn-2",
+      usage: {
+        ...usage,
+        hasSubagents: true,
+        subagents: { inputTokens: 400_000, cachedInputTokens: 300_000, outputTokens: 8_000 },
+      },
+      turns: 2,
+    });
+
+    expect(total).toMatchObject({
+      inputTokens: 2_400_000,
+      cachedInputTokens: 1_500_000,
+      outputTokens: 108_000,
+      subagentTurns: 1,
+      subagentTokens: 408_000,
     });
   });
 
@@ -159,6 +181,24 @@ describe("sumThreadTokenUsage", () => {
 });
 
 describe("turnUsageView", () => {
+  it("folds reported subagent usage into the figure and shows its share", () => {
+    const view = turnUsageView({
+      ...usage,
+      hasSubagents: true,
+      subagents: { inputTokens: 200_000, outputTokens: 10_000, reasoningTokens: 4_000 },
+    });
+
+    expect(view).toEqual({
+      headline: "1.26M tokens",
+      rows: [
+        { label: "Input", value: "1.20M (50% cached)" },
+        { label: "Output", value: "60K (24K reasoning)" },
+        { label: "Subagents", value: "210K" },
+      ],
+      notes: [],
+    });
+  });
+
   it("leads with total tokens and details the cached share and reasoning", () => {
     expect(turnUsageView(usage)).toEqual({
       headline: "1.05M tokens",
@@ -208,5 +248,12 @@ describe("threadUsageView", () => {
       "Subagent usage isn't included.",
       "Some turns reported only some token counts.",
     ]);
+  });
+
+  it("shows the subagents' share and says when only some turns reported it", () => {
+    const view = threadUsageView({ ...threadTotal, subagentTurns: 1, subagentTokens: 900_000 });
+
+    expect(view.rows).toContainEqual({ label: "Subagents", value: "900K" });
+    expect(view.notes).toEqual(["Some turns' subagent usage isn't included."]);
   });
 });

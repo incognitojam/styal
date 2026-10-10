@@ -318,8 +318,22 @@ const TurnStartedPayload = Schema.Struct({
 export type TurnStartedPayload = typeof TurnStartedPayload.Type;
 
 /**
- * Normalized main-agent usage for one turn. Input includes cache reads and
- * writes. Output includes reasoning, and reasoningTokens is an optional subset.
+ * Tokens a turn's subagents used, kept apart from the main agent's counts.
+ * Input includes cache reads and writes; output includes reasoning.
+ */
+export const SubagentTokenUsage = Schema.Struct({
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: Schema.optional(NonNegativeInt),
+  cacheCreationTokens: Schema.optional(NonNegativeInt),
+  outputTokens: NonNegativeInt,
+  reasoningTokens: Schema.optional(NonNegativeInt),
+});
+export type SubagentTokenUsage = typeof SubagentTokenUsage.Type;
+
+/**
+ * Normalized main-agent usage for one turn, with `subagents` alongside when
+ * reported. Input includes cache reads and writes. Output includes reasoning,
+ * and reasoningTokens is an optional subset.
  * Complete means the provider supplied full input and output totals. Partial
  * means every included count is valid, but the full turn total is not known.
  */
@@ -329,6 +343,8 @@ const TurnTokenUsageCommonFields = {
   cacheCreationTokens: Schema.optional(NonNegativeInt),
   reasoningTokens: Schema.optional(NonNegativeInt),
   hasSubagents: Schema.Boolean,
+  /** Present when the provider reported what the turn's subagents used. */
+  subagents: Schema.optional(SubagentTokenUsage),
 };
 export const TurnTokenUsage = Schema.Union([
   Schema.Struct({
@@ -359,6 +375,7 @@ export const TURN_USAGE_ACTIVITY_KIND = "turn.usage";
  * server sums instead of leaving clients to add up turns they may not have.
  */
 export const ThreadTokenUsage = Schema.Struct({
+  /** Main agent and reported subagent usage combined. */
   inputTokens: NonNegativeInt,
   cachedInputTokens: NonNegativeInt,
   cacheCreationTokens: NonNegativeInt,
@@ -369,7 +386,10 @@ export const ThreadTokenUsage = Schema.Struct({
   /** Every turn the thread had, including those without usage. */
   turns: NonNegativeInt,
   partialTurns: NonNegativeInt,
+  /** Turns that ran subagents without reporting their usage. */
   subagentTurns: NonNegativeInt,
+  /** Reported subagent input and output, already within the totals above. */
+  subagentTokens: Schema.optional(NonNegativeInt),
 });
 export type ThreadTokenUsage = typeof ThreadTokenUsage.Type;
 

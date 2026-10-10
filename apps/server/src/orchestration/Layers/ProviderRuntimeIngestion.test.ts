@@ -509,6 +509,7 @@ describe("ProviderRuntimeIngestion", () => {
             turns: 1,
             partialTurns: 0,
             subagentTurns: 0,
+            subagentTokens: 0,
           },
         },
       ],
