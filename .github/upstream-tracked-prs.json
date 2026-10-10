@@ -81,6 +81,10 @@
       "reason": "Imported early from its unmerged commits: Claude Haiku 4.5 shows thinking On by default, matching Claude Code, and Claude text generation sends a thinking setting only when one was chosen. When it merges, the queue takes it and must reconcile with that import; the fork's manifest copy was reapplied with its own updatedAt, so expect a conflict there only."
     },
     {
+      "pr": 15057,
+      "reason": "Agents can watch a pull request and are woken when checks fail, required checks pass, someone else comments or reviews, or the branch conflicts. Covers fork #191 (autofix CI and address PR reviews). Waiting for intake; an early import conflicts with orchestration V2 and needs earlier pending PRs. Its follow-ups land after it."
+    },
+    {
       "pr": 16933,
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
     }
