@@ -1166,6 +1166,7 @@ features:
       - npm publication starts only after every release artifact has passed its build verification, waits for every platform package to become readable with the uploaded integrity before exposing its launcher, and a retry accepts an existing package version only when its registry integrity matches the exact tarball being released and its channel tag points to that version.
       - Stale release retries are rejected before npm publication or integrity acceptance when any package channel tag is newer; nightly source promotion cannot move the branch backward.
       - Successful Fork CI pushes to main request a nightly of the newest eligible green commit; rejected CI completions cannot replace a pending publisher, and scheduled and manual requests retain the same release gates.
+      - Stable and nightly notes omit changes outside shipped code and version-only manifest edits, support explicit Release-Note skip/include commit trailers, and retain a full comparison link and omitted count; note visibility never changes release eligibility.
       - Fork release intermediate artifacts expire after three days; manual desktop deliverables remain downloadable for 90 days, and published GitHub release assets keep their own lifetimes.
       - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
       - The web and desktop setup wizard and sidebar share the outlined Zilla Slab styal wordmark.
@@ -1180,6 +1181,7 @@ features:
       - Mobile About styal identifies the installed binary by its native version and build number on Android and iOS, retaining non-production variant labels.
     implementation_paths:
       - .github/scripts/publish-android-release.sh
+      - .github/scripts/release-changelog.sh
       - .github/workflows/desktop-macos-preview.yml
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-cli-build.yml
@@ -1288,6 +1290,7 @@ features:
       - scripts/lib/cli-external-packages.test.ts
       - scripts/lib/macos-icon-safe-area.test.ts
       - scripts/lib/smoke-native-terminal.test.ts
+      - scripts/release-changelog.test.ts
       - scripts/smoke-cli-archive.mjs
       - scripts/verify-cli-package.mjs
     upstream:

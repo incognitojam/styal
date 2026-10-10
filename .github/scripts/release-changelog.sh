@@ -1,19 +1,64 @@
 #!/usr/bin/env bash
 
-# Succeeds when the commit changes a file that ships in the server, web,
+# Lists changed files that ship in the server, web,
 # desktop, or mobile builds, including dependency patches, the lockfile, and
 # the workspace catalog. Docs, CI, repository tooling, the separately deployed
 # relay, tests, and their fixtures do not count, whatever the commit subject
 # says.
+list_shipped_paths() {
+  git diff-tree --no-commit-id --name-only -r --root "$1" \
+    | grep -E '^((apps/(web|desktop|mobile|server)|packages/[^/]+|patches)/|pnpm-(lock|workspace)\.yaml$)' \
+    | grep -vE '\.md$|\.(test|spec)\.[cm]?[jt]sx?$|/(__tests__|tests?|testing|testUtils|testFixtures|fixtures|integration|scripts)/' \
+    || true
+}
+
 changes_shipped_code() {
-  local sha="$1" shipped
-  shipped=$(
-    git diff-tree --no-commit-id --name-only -r --root "$sha" \
-      | grep -E '^((apps/(web|desktop|mobile|server)|packages/[^/]+|patches)/|pnpm-(lock|workspace)\.yaml$)' \
-      | grep -vE '\.md$|\.(test|spec)\.[cm]?[jt]sx?$|/(__tests__|tests?|testing|testUtils|testFixtures|fixtures|integration|scripts)/' \
-      || true
-  )
+  local shipped
+  shipped=$(list_shipped_paths "$1")
   [[ -n "$shipped" ]]
+}
+
+# Release eligibility still uses changes_shipped_code. Note visibility may be
+# overridden in a squash/import commit with a Release-Note: skip/include trailer;
+# unknown values keep the default so a typo cannot silently hide a change.
+should_list_release_change() {
+  local sha="$1" shipped note paths=() path changes
+  shipped=$(list_shipped_paths "$sha")
+  [[ -n "$shipped" ]] || return 1
+
+  note=$(git show -s --format='%(trailers:key=Release-Note,valueonly,separator=%x2C)' "$sha")
+  case "$note" in
+    skip) return 1 ;;
+    include) return 0 ;;
+  esac
+
+  # Hide version bookkeeping only when every shipped edit is a version value
+  # in an existing manifest. Other config, dependencies, generated schemas,
+  # and runtime edits stay visible regardless of the subject's commit type.
+  while IFS= read -r path; do
+    if [[ "$path" != apps/mobile/app.config.ts \
+      && ! "$path" =~ ^(apps/(web|desktop|mobile|server)|packages/[^/]+)/package\.json$ ]]; then
+      return 0
+    fi
+    paths+=("$path")
+  done <<< "$shipped"
+
+  # Each manifest must replace one version line, rather than add/remove a
+  # version field or file. Those structural changes may affect packaging.
+  if git diff-tree --no-commit-id --no-renames --numstat -r --root "$sha" -- "${paths[@]}" \
+    | grep -qv $'^1\t1\t'; then
+    return 0
+  fi
+
+  changes=$(git diff-tree --no-commit-id --no-ext-diff --no-textconv -r --root -p \
+    --unified=0 "$sha" -- "${paths[@]}" \
+    | grep -E '^[-+]' | grep -vE '^(---|\+\+\+)' || true)
+  [[ -n "$changes" ]] || return 0
+  if printf '%s\n' "$changes" \
+    | grep -qvE '^[-+][[:space:]]*("version"|version): "[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?",?$'; then
+    return 0
+  fi
+  return 1
 }
 
 # Succeeds when any commit in from..to changes shipped code. The nightly skips
@@ -106,7 +151,7 @@ latest_stable_tag() {
 
 # Prints the "What's Changed" release notes for the commits between
 # previous_tag and fork_source_ref: fork changes first, then the upstream
-# changes brought in over the same range. Commits that change no shipped code
+# changes brought in over the same range. Internal and version-only changes
 # are counted but not listed. previous_tag may be empty.
 render_release_notes() {
   local repository="$1"
@@ -126,14 +171,14 @@ render_release_notes() {
   local upstream_changes=() fork_changes=() commit_count=0 sha
   while IFS= read -r sha; do
     commit_count=$((commit_count + 1))
-    if changes_shipped_code "$sha"; then
+    if should_list_release_change "$sha"; then
       upstream_changes+=("$sha")
     fi
   done < <(git rev-list --reverse "${previous_upstream_ref}..${upstream_ref}")
 
   while IFS= read -r sha; do
     commit_count=$((commit_count + 1))
-    if changes_shipped_code "$sha"; then
+    if should_list_release_change "$sha"; then
       fork_changes+=("$sha")
     fi
   done < <(list_fork_release_commits "$previous_tag" "$fork_source_ref" "$upstream_ref")
@@ -148,7 +193,7 @@ render_release_notes() {
     append_release_changes pingdotgg/t3code "${upstream_changes[@]}"
   fi
   if (( ${#fork_changes[@]} + ${#upstream_changes[@]} == 0 )); then
-    printf 'No user-facing changes.\n'
+    printf 'No release-note entries.\n'
   fi
   # Compare the fork's own release tags. Comparing upstream refs named the
   # wrong repository, and collapsed to an empty range whenever the release
@@ -158,9 +203,9 @@ render_release_notes() {
     printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s' \
       "$repository" "$previous_tag" "$new_tag"
     if (( omitted_count == 1 )); then
-      printf ' (includes 1 docs, CI, test, or tooling change not listed above)'
+      printf ' (includes 1 additional change not listed above)'
     elif (( omitted_count > 1 )); then
-      printf ' (includes %s docs, CI, test, and tooling changes not listed above)' \
+      printf ' (includes %s additional changes not listed above)' \
         "$omitted_count"
     fi
     printf '\n'
