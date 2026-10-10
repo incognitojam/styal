@@ -9,6 +9,9 @@ excerpts, pull request chips, preview selections, review comments, and other dev
 also remain local. While an existing-thread draft contains any of that context, T3 Code withholds the
 whole draft from other devices so they cannot send an incomplete version of it.
 
+On mobile, swipe left on a new-task draft in the thread list and choose **Discard**. A full swipe
+also asks for confirmation. You can also discard a draft from its long-press menu.
+
 Sending clears only the server revision that was visible when Send was pressed. If another device
 has already changed the draft, that newer revision is preserved. Mobile keeps this revision with a
 queued message, so the same protection applies when an offline send is delivered later.

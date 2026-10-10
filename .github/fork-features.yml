@@ -1862,6 +1862,34 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15894
       retire_when: Upstream or Clerk retries a failed headless Clerk load and bounds stalled Clerk requests on mobile.
 
+  - id: mobile-draft-discard-swipe
+    title: Discard mobile new-task drafts with a swipe
+    status: maintained
+    prs: [705]
+    invariants:
+      - New-task drafts in mobile Home and the tablet sidebar reveal one destructive Discard action on a left swipe; full swipes and action taps use the same confirmation as the long-press menu.
+      - Canceling discard preserves the draft; confirming clears its content and task selections through the existing draft reset.
+      - Draft swipes share thread rows' scroll gating, open-row coordination, and recycled-row identity reset. Queued tasks retain their existing menu actions.
+    implementation_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/home/thread-swipe-actions.tsx
+      - apps/mobile/src/features/home/usePendingTaskListActions.ts
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+    upstream_paths:
+      - apps/mobile/src/features/home/HomeScreen.tsx
+      - apps/mobile/src/features/home/thread-swipe-actions.tsx
+      - apps/mobile/src/features/home/usePendingTaskListActions.ts
+      - apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+    tests:
+      - apps/mobile/src/state/use-composer-drafts.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/98beed1a226c42b85c52ff5ee9d5dbb67d776a77
+      retire_when: Upstream offers swipe-to-discard on new-task drafts in mobile Home and the tablet sidebar with confirmation or equivalent recovery.
+
   - id: pending-question-answer-drafts
     title: Keep unsubmitted question answers when the chat view remounts
     status: maintained
