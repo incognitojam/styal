@@ -354,6 +354,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(mac.appId, "build.styal.app.preview");
       assert.deepStrictEqual((mac.mac as { protocols: unknown }).protocols, [
         { name: "styal", schemes: ["styal-preview"] },
+        { name: "Web site URL", schemes: ["http", "https"], role: "Viewer" },
       ]);
       assert.deepStrictEqual((linux.linux as { protocols: unknown }).protocols, [
         { name: "styal", schemes: ["styal-preview"] },
@@ -760,6 +761,21 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // entry advertises MimeType=x-scheme-handler/styal; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
         { name: "styal", schemes: ["styal", "styal-dev"] },
+      ]);
+      // macOS also offers itself as a web browser, so it can be chosen as the default.
+      assert.deepStrictEqual((mac.mac as Record<string, unknown>).protocols, [
+        { name: "styal", schemes: ["styal", "styal-dev"] },
+        { name: "Web site URL", schemes: ["http", "https"], role: "Viewer" },
+      ]);
+      // macOS lists a default browser only when it also opens web pages as documents.
+      const macInfo = (mac.mac as { extendInfo: Record<string, unknown> }).extendInfo;
+      assert.deepStrictEqual(macInfo.CFBundleDocumentTypes, [
+        {
+          CFBundleTypeName: "Web page",
+          CFBundleTypeRole: "Viewer",
+          LSHandlerRank: "Alternate",
+          LSItemContentTypes: ["public.html", "public.xhtml"],
+        },
       ]);
       assert.deepStrictEqual(linux.toolsets, { appimage: "1.0.3" });
       assert.notProperty(mac, "toolsets");
@@ -2098,7 +2114,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.match(String(mac.sign), /[\\/]scripts[\\/]sign-macos\.ts$/);
-      assert.deepStrictEqual(mac.protocols, [{ name: "styal", schemes: ["styal", "styal-dev"] }]);
+      assert.deepStrictEqual(mac.protocols, [
+        { name: "styal", schemes: ["styal", "styal-dev"] },
+        { name: "Web site URL", schemes: ["http", "https"], role: "Viewer" },
+      ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 

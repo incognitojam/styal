@@ -2930,11 +2930,28 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         CFBundleIconName: MAC_ICON_NAME,
         NSScreenCaptureUsageDescription:
           "styal captures the active window when you use the window capture shortcut.",
+        // macOS lists an app under Default web browser only when it opens web
+        // pages as documents as well as http and https links (see protocols).
+        CFBundleDocumentTypes: [
+          {
+            CFBundleTypeName: "Web page",
+            CFBundleTypeRole: "Viewer",
+            LSHandlerRank: "Alternate",
+            LSItemContentTypes: ["public.html", "public.xhtml"],
+          },
+        ],
       },
       protocols: [
         {
           name: "styal",
           schemes: [...packageIdentity.protocolSchemes],
+        },
+        // Lets people choose styal as their default web browser, which opens
+        // each link in a new thread's browser panel.
+        {
+          name: "Web site URL",
+          schemes: ["http", "https"],
+          role: "Viewer",
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),

@@ -20,6 +20,7 @@
 - [Visual replies](./user/html-renders.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Import T3 Code data](./user/importing-t3-code-data.md)
+- [Use styal as your default browser](./user/default-browser.md)
 - [Devices](./user/devices.md)
 - [Hardware](./user/hardware.md)
 - [Usage and limits](./user/usage.md)
