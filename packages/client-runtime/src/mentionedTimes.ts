@@ -146,8 +146,9 @@ const ZONE =
   `|\\s+in\\s+(?<inZone>${ZONE_ABBREVIATION}))`;
 
 const TRAILING_DAY = `(?:,?\\s+(?<trailingDay>today|tonight|tomorrow|yesterday))`;
+// A label's colon is punctuation; a colon attached to another token is not a clock boundary.
 const CLOCK_PATTERN = new RegExp(
-  `(?<![\\w:./#])(?:${DATE}${DATE_SEPARATOR})?${CLOCK}${ZONE}?${TRAILING_DAY}?(?![\\w:]|\\.\\d)`,
+  `(?<![\\w:./#])(?:${DATE}${DATE_SEPARATOR})?${CLOCK}${ZONE}?${TRAILING_DAY}?(?!\\w|:\\S|\\.\\d)`,
   "g",
 );
 
