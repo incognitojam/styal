@@ -101,6 +101,52 @@ describe("chronological upstream queue", () => {
     assert.include(entries[1]!.evidence.join("\n"), "Historical import omitted");
   });
 
+  it("keeps a provisional PR pending until tracking cleanup, including identical final sources", () => {
+    const sources = [integration(1, 11), integration(2, 11), integration(3, 12)];
+    const fork = [{ sha: sha(20), message: `Upstream-PR: 11\nUpstream-Commit: ${sha(1)}` }];
+    const tracked = [
+      { number: 11, reason: "Reconcile final outcome", snapshot: { base: sha(0), head: sha(10) } },
+    ];
+    const entries = reconcile(sources, fork, {}, tracked);
+    assert.deepEqual(
+      entries.map((entry) => entry.disposition),
+      ["pending", "pending", "pending"],
+    );
+    assert.include(entries[0]!.evidence.join("\n"), "Provisional snapshot");
+    assert.deepEqual(
+      nextBatch(entries, 1).map((entry) => entry.sha),
+      [sha(1), sha(2)],
+    );
+    assert.equal(reconciledThrough(sha(0), entries), sha(0));
+    assert.throws(
+      () =>
+        advanceBaseline(
+          {
+            upstreamRepository: "example/upstream",
+            baseline: sha(0),
+            target: sha(3),
+            exceptions: {},
+          },
+          entries,
+          sha(2),
+        ),
+      "unresolved",
+    );
+    assert.deepEqual(
+      reconcile(sources, fork, {}, []).map((entry) => entry.disposition),
+      ["recorded", "recorded", "pending"],
+    );
+    assert.equal(
+      reconcile(
+        sources,
+        fork,
+        { [sha(1)]: { disposition: "skip", reason: "Reviewed final outcome" } },
+        tracked,
+      )[0]!.disposition,
+      "skip",
+    );
+  });
+
   it("does not silently split PRs with interleaved commit associations", () => {
     const entries = reconcile([integration(1, 11), integration(2, 12), integration(3, 11)], [], {});
     assert.throws(() => nextBatch(entries, 1), "interleaved PR");

@@ -1401,6 +1401,40 @@ features:
       tracking: []
       retire_when: The fork stops shipping as a separately installable application or adopts a shared downstream-namespacing mechanism that preserves the same isolation and hosted-origin cleanup boundary.
 
+  - id: fork-upstream-intake-provenance
+    title: Reconcile provisional upstream imports explicitly
+    status: maintained
+    prs: []
+    invariants:
+      - An open upstream PR is imported as one attributed snapshot commit with PR provenance and a separate tracking commit recording the frozen base and head and the reconciliation plan.
+      - A snapshot remains provisional until its final upstream outcome is reviewed; PR provenance alone cannot skip its eventual integration or advance the intake baseline.
+      - Queue and candidate reports read committed tracking metadata from the selected fork ref, and lag history records completion at reconciliation rather than the initial snapshot.
+    rationale: Open PRs can be amended, rebased, or closed after intake. A reviewed snapshot keeps useful PR provenance without treating unfinished upstream work as fully reconciled.
+    implementation_paths:
+      - .github/upstream-tracked-prs.json
+      - docs/operations/upstream-tracking.md
+      - scripts/upstream/check-intake.ts
+      - scripts/upstream/lag-report.ts
+      - scripts/upstream/lib/tracked-prs.ts
+      - scripts/upstream/queue.ts
+      - scripts/upstream/tracked-prs-report.ts
+    upstream_paths:
+      - .github/upstream-tracked-prs.json
+      - docs/operations/upstream-tracking.md
+      - scripts/upstream/check-intake.ts
+      - scripts/upstream/lag-report.ts
+      - scripts/upstream/lib/tracked-prs.ts
+      - scripts/upstream/queue.ts
+      - scripts/upstream/tracked-prs-report.ts
+    tests:
+      - scripts/upstream/lag-report.test.ts
+      - scripts/upstream/lib/tracked-prs.test.ts
+      - scripts/upstream/queue.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: The fork stops managing its own upstream intake or adopts another process that preserves explicit reconciliation of provisional imports.
+
   - id: github-issue-thread-context
     title: Start a thread from a GitHub issue
     status: review-needed
