@@ -1,0 +1,75 @@
+name: Upstream divergence comment
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  comment:
+    name: Comment upstream divergence
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: upstream-divergence-comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # This pull_request_target job runs the base repository's report and reads the pull
+      # request's commits only as git data. Do not install dependencies or run PR code here.
+      - name: Checkout base repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /scripts/
+            /.github/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Fetch pull request and upstream main
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
+
+      - name: Write report
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          node scripts/upstream/divergence-report.ts --base "$BASE_SHA" --head refs/remotes/pr/head --pr-comment > "$RUNNER_TEMP/upstream-divergence.md"
+          cat "$RUNNER_TEMP/upstream-divergence.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update comment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("node:fs");
+            const marker = "<!-- upstream-divergence -->";
+            const body = fs.readFileSync(`${process.env.RUNNER_TEMP}/upstream-divergence.md`, "utf8");
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (comment) => comment.user?.type === "Bot" && comment.body?.startsWith(marker),
+            );
+            if (existing) {
+              if (existing.body !== body)
+                await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number, body });
+            }
