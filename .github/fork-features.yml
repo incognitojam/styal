@@ -1125,31 +1125,6 @@ features:
         - https://github.com/pingdotgg/t3code/pull/8481
       retire_when: Upstream provides a first-class distribution identity that includes the producing repository on every analytics event.
 
-  - id: fork-ci-check-compatibility
-    title: Keep protected Fork CI entry points usable during intake
-    status: retiring
-    prs: []
-    invariants:
-      - Upstream intake leaves protected Fork CI unchanged and keeps every command it invokes available until a separately reviewed maintainer workflow update removes that invocation.
-      - Web component style overrides remain gated while upstream's lint enforcement replaces the legacy restyle ceiling.
-    rationale: The intake promotion workflow rejects changes to Fork CI, so deleting an upstream check cannot delete the fork's still-invoked entry point in the same batch. Keep the compatibility command only until the separate workflow cleanup lands.
-    implementation_paths:
-      - .github/workflows/fork-ci.yml
-      - package.json
-      - scripts/lint-restyle-ceiling.ts
-      - vite.config.ts
-    upstream_paths:
-      - .github/workflows/ci.yml
-      - package.json
-      - vite.config.ts
-    tests:
-      - scripts/lint-restyle-ceiling.test.ts
-    upstream:
-      status: equivalent
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/13210
-      retire_when: A separately reviewed maintainer change removes the legacy restyle invocation from Fork CI and deletes its compatibility command, script and test.
-
   - id: fork-distribution-identity
     title: Keep fork builds distinctly identifiable
     status: maintained
