@@ -386,12 +386,12 @@ describe("upstream intake audit", () => {
   it("checks the upstream migration history in Fork CI", () => {
     const workflow = parse(NodeFS.readFileSync(ciWorkflowPath, "utf8")) as {
       readonly jobs: {
-        readonly check: {
+        readonly lint: {
           readonly steps: ReadonlyArray<{ readonly name?: string; readonly run?: string }>;
         };
       };
     };
-    const step = workflow.jobs.check.steps.find(
+    const step = workflow.jobs.lint.steps.find(
       (candidate) => candidate.name === "Check upstream migration history",
     );
     assert.include(step?.run ?? "", "refs/remotes/upstream/main");

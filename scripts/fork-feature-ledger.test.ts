@@ -204,7 +204,7 @@ features: []
   it("reviews pull request paths in Fork CI instead of upstream ancestry in Fork Nightly", () => {
     const ciWorkflow = parse(NodeFS.readFileSync(ciWorkflowPath, "utf8")) as {
       readonly jobs: {
-        readonly check: {
+        readonly lint: {
           readonly steps: ReadonlyArray<{
             readonly id?: string;
             readonly name?: string;
@@ -215,14 +215,14 @@ features: []
         };
       };
     };
-    const reviewIndex = ciWorkflow.jobs.check.steps.findIndex(
+    const reviewIndex = ciWorkflow.jobs.lint.steps.findIndex(
       (step) => step.name === "Review pull request overlap with fork features",
     );
-    const review = ciWorkflow.jobs.check.steps[reviewIndex];
-    const setupViteIndex = ciWorkflow.jobs.check.steps.findIndex(
+    const review = ciWorkflow.jobs.lint.steps[reviewIndex];
+    const setupViteIndex = ciWorkflow.jobs.lint.steps.findIndex(
       (step) => step.name === "Setup Vite+",
     );
-    const setupRustIndex = ciWorkflow.jobs.check.steps.findIndex(
+    const setupRustIndex = ciWorkflow.jobs.lint.steps.findIndex(
       (step) => step.name === "Setup Rust",
     );
 
