@@ -15,9 +15,8 @@ import type {
   OrchestrationMessageContext,
   ThreadId,
   TurnId,
-  TurnTokenUsage,
 } from "@t3tools/contracts";
-import { turnUsageView } from "@t3tools/shared/turnUsage";
+import type { TurnSummaryView } from "@t3tools/shared/turnUsage";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -269,7 +268,7 @@ export interface ThreadFeedProps {
   readonly workspaceRoot?: string | null;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
   /** Usage for completed turns; empty when turn usage is turned off. */
-  readonly turnUsageByTurnId: ReadonlyMap<string, TurnTokenUsage>;
+  readonly turnUsageByTurnId: ReadonlyMap<string, TurnSummaryView>;
   readonly contentPresentation: ThreadContentPresentation;
   readonly agentLabel: string;
   readonly latestTurn: ThreadFeedLatestTurn | null;
@@ -1863,10 +1862,21 @@ function renderFeedEntry(
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {timestampLabel}
             </Text>
-            {turnUsage ? (
+            {turnUsage?.model ? (
               <>
-                <Text className="text-xs text-adaptive-neutral-600-400">·</Text>
-                <TurnUsageText view={turnUsageView(turnUsage)} />
+                <Text className="font-t3-medium text-xs text-foreground-secondary">·</Text>
+                <Text
+                  className="shrink font-t3-medium text-xs text-foreground-secondary"
+                  numberOfLines={1}
+                >
+                  {turnUsage.model}
+                </Text>
+              </>
+            ) : null}
+            {turnUsage?.usage ? (
+              <>
+                <Text className="font-t3-medium text-xs text-foreground-secondary">·</Text>
+                <TurnUsageText view={turnUsage.usage} tone="secondary" />
               </>
             ) : null}
           </View>

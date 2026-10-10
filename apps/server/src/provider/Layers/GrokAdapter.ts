@@ -1696,7 +1696,12 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   provider: PROVIDER,
                   threadId: input.threadId,
                   turnId,
-                  payload: displayModel ? { model: displayModel } : {},
+                  payload: {
+                    ...(displayModel ? { model: displayModel } : {}),
+                    ...(ctx.currentReasoningEffort
+                      ? { effortOption: ctx.currentReasoningEffort }
+                      : {}),
+                  },
                 });
               } else {
                 // Discard the previous epoch only after this replacement is

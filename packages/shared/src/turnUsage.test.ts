@@ -1,10 +1,17 @@
-import { EventId, TurnId, type OrchestrationThreadActivity } from "@t3tools/contracts";
+import {
+  EventId,
+  ProviderInstanceId,
+  TurnId,
+  type OrchestrationThreadActivity,
+  type ServerProviderModel,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   deriveTurnUsage,
   sumThreadTokenUsage,
   threadUsageView,
+  turnModelLabel,
   turnUsageView,
 } from "./turnUsage.ts";
 
@@ -56,8 +63,22 @@ describe("deriveTurnUsage", () => {
       activity("tool-1", "turn-2", "tool.updated"),
     ]);
 
-    expect(derived.byTurnId.get("turn-1")?.inputTokens).toBe(1_000_000);
+    expect(derived.byTurnId.get("turn-1")).toEqual({ usage, model: null });
     expect([...derived.byTurnId.keys()]).toEqual(["turn-1"]);
+  });
+
+  it("reads the model a turn ran on, with or without its usage", () => {
+    const model = { instanceId: "codex", model: "gpt-6.1-sol", effort: "medium" };
+    const derived = deriveTurnUsage([
+      activity("usage-1", "turn-1", "turn.usage", { ...usage, ...model }),
+      activity("usage-2", "turn-2", "turn.usage", { model: "cursor-auto" }),
+    ]);
+
+    expect(derived.byTurnId.get("turn-1")).toEqual({ usage, model });
+    expect(derived.byTurnId.get("turn-2")).toEqual({
+      usage: null,
+      model: { model: "cursor-auto" },
+    });
   });
 
   it("keeps its identity until a usage activity arrives", () => {
@@ -96,7 +117,7 @@ describe("deriveTurnUsage", () => {
     ]);
 
     expect(derived.thread).toEqual(threadTotal);
-    expect(derived.byTurnId.get("turn-3")?.inputTokens).toBe(1_000_000);
+    expect(derived.byTurnId.get("turn-3")?.usage?.inputTokens).toBe(1_000_000);
   });
 
   it("has no thread total while the newest record predates totals", () => {
@@ -165,6 +186,17 @@ describe("sumThreadTokenUsage", () => {
       subagentTurns: 1,
       subagentTokens: 408_000,
     });
+  });
+
+  it("leaves out a turn that reported no usage", () => {
+    const total = sumThreadTokenUsage({
+      activities: [activity("usage-1", "turn-1", "turn.usage")],
+      turnId: "turn-2",
+      usage: null,
+      turns: 2,
+    });
+
+    expect(total).toMatchObject({ inputTokens: 1_000_000, countedTurns: 1, turns: 2 });
   });
 
   it("counts a turn once when it is recorded again", () => {
@@ -255,5 +287,57 @@ describe("threadUsageView", () => {
 
     expect(view.rows).toContainEqual({ label: "Subagents", value: "900K" });
     expect(view.notes).toEqual(["Some turns' subagent usage isn't included."]);
+  });
+});
+
+describe("turnModelLabel", () => {
+  const sol: ServerProviderModel = {
+    slug: "gpt-6.1-sol",
+    name: "GPT-6.1 Sol",
+    isCustom: false,
+    capabilities: {
+      optionDescriptors: [
+        {
+          id: "reasoningEffort",
+          label: "Reasoning",
+          type: "select",
+          options: [
+            { id: "medium", label: "Medium" },
+            { id: "xhigh", label: "Extra High" },
+          ],
+        },
+      ],
+    },
+  };
+  const providers = [
+    { instanceId: ProviderInstanceId.make("codex"), models: [sol] },
+    {
+      instanceId: ProviderInstanceId.make("codex-work"),
+      models: [{ ...sol, name: "GPT-6.1 Sol (Work)" }],
+    },
+  ];
+
+  it("names the model and effort as the composer does", () => {
+    expect(
+      turnModelLabel(
+        { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol", effort: "xhigh" },
+        providers,
+      ),
+    ).toBe("GPT-6.1 Sol (Extra High)");
+  });
+
+  it("prefers the turn's own provider instance", () => {
+    expect(
+      turnModelLabel(
+        { instanceId: ProviderInstanceId.make("codex-work"), model: "gpt-6.1-sol" },
+        providers,
+      ),
+    ).toBe("GPT-6.1 Sol (Work)");
+  });
+
+  it("keeps the provider's ids for a model that is no longer listed", () => {
+    expect(turnModelLabel({ model: "gpt-5-retired", effort: "high" }, providers)).toBe(
+      "gpt-5-retired (high)",
+    );
   });
 });

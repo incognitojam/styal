@@ -25,6 +25,7 @@ import {
   EnvironmentId,
   ThreadId,
   type ProjectScript,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import {
   requestOlderThreadTurns,
@@ -80,6 +81,7 @@ import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-s
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
+import { useTurnSummaries } from "../../state/use-turn-usage";
 import { threadEnvironment } from "../../state/threads";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -202,6 +204,8 @@ function InspectorPaneRoleActivation() {
   useAdaptiveWorkspacePaneRole("inspector");
   return null;
 }
+
+const EMPTY_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 
 function firstRouteParam(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {
@@ -430,6 +434,10 @@ function ThreadRouteContent(
     }, [props.renderInspector]),
   );
   const routeEnvironmentRuntime = useRemoteEnvironmentRuntime(environmentId);
+  const turnSummaries = useTurnSummaries(
+    composer.selectedTurnUsage.byTurnId,
+    routeEnvironmentRuntime?.serverConfig?.providers ?? EMPTY_PROVIDERS,
+  );
   const routeConnectionState =
     routeEnvironmentRuntime?.connectionState ?? (environmentId ? "available" : connectionState);
   const routeConnectionError = routeEnvironmentRuntime?.connectionError ?? null;
@@ -994,7 +1002,7 @@ function ThreadRouteContent(
           feedbackSubmissions={composer.feedbackSubmissions}
           onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
-          turnUsageByTurnId={composer.selectedTurnUsage.byTurnId}
+          turnUsageByTurnId={turnSummaries}
           threadUsage={threadUsage}
           activeWorkStartedAt={composer.activeWorkStartedAt}
           isCompacting={composer.isCompacting}

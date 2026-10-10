@@ -425,8 +425,8 @@ import {
   shouldOfferResumeCompaction,
 } from "./chat/ContextWindowMeter.logic";
 import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
-import { EMPTY_TURN_USAGE, threadUsageView } from "@t3tools/shared/turnUsage";
-import { useTurnUsage } from "./chat/TurnUsageLabel";
+import { EMPTY_TURN_SUMMARIES, threadUsageView } from "@t3tools/shared/turnUsage";
+import { useTurnSummaries, useTurnUsage } from "./chat/TurnUsageLabel";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_EASING,
@@ -2978,6 +2978,7 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities],
   );
   const turnUsage = useTurnUsage(threadActivities, settings.turnUsageEnabled);
+  const turnSummaries = useTurnSummaries(turnUsage.byTurnId, providerStatuses);
   const threadUsage = useMemo(
     () => (turnUsage.thread ? threadUsageView(turnUsage.thread) : null),
     [turnUsage.thread],
@@ -10066,7 +10067,7 @@ export default function ChatView(props: ChatViewProps) {
                     : activeThread.checkpoints
                 }
                 turnUsageByTurnId={
-                  paintOnlyDisplayedTimeline ? EMPTY_TURN_USAGE.byTurnId : turnUsage.byTurnId
+                  paintOnlyDisplayedTimeline ? EMPTY_TURN_SUMMARIES : turnSummaries
                 }
                 activeThreadEnvironmentId={
                   displayedThreadRef?.environmentId ?? activeThread.environmentId

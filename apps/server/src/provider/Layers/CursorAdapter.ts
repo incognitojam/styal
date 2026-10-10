@@ -21,6 +21,7 @@ import {
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -993,6 +994,7 @@ export function makeCursorAdapter(
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const model = turnModelSelection?.model ?? ctx.session.model;
           const resolvedModel = resolveCursorAcpBaseModelId(model);
+          const turnReasoning = getModelSelectionStringOptionValue(turnModelSelection, "reasoning");
           yield* applyRequestedSessionConfiguration({
             runtime: ctx.acp,
             runtimeMode: ctx.session.runtimeMode,
@@ -1025,7 +1027,10 @@ export function makeCursorAdapter(
               provider: PROVIDER,
               threadId: input.threadId,
               turnId,
-              payload: { model: resolvedModel },
+              payload: {
+                model: resolvedModel,
+                ...(turnReasoning ? { effortOption: turnReasoning } : {}),
+              },
             });
           }
 

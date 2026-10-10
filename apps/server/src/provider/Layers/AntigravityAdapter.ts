@@ -16,6 +16,7 @@ import {
   type ThreadId,
   type TurnCompletedPayload,
 } from "@t3tools/contracts";
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -1119,7 +1120,18 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               provider: PROVIDER,
               threadId: input.threadId,
               turnId,
-              payload: model ? { model } : {},
+              // A thinking variant's model id is also its effort option's id.
+              payload: model
+                ? {
+                    model,
+                    ...(getModelSelectionStringOptionValue(
+                      input.modelSelection,
+                      "reasoningEffort",
+                    ) === model
+                      ? { effortOption: model }
+                      : {}),
+                  }
+                : {},
             });
           }
           if (context.promptFiber) {

@@ -3218,13 +3218,14 @@ features:
       retire_when: Mobile offers Undo that restores an accidentally unpinned thread's previous pinned position, or upstream confirms unpinning by default on mobile.
 
   - id: turn-token-usage
-    title: Show token usage under each agent turn and for the thread
+    title: Show the model and token usage under each agent turn, and the thread's total
     status: review-needed
     prs: []
     invariants:
-      - A completed or aborted turn whose provider reports token usage records one usage activity for that turn; turns without usage record nothing.
-      - Web and desktop show the turn's total tokens beside its timestamp, with input, cached share, output, reasoning, and cache writes on hover; mobile shows the same with details on tap.
-      - Each usage activity carries the thread's total, summed on the server over every recorded turn, so long threads are not undercounted by the client's activity window; the composer shows it, and its breakdown says how many turns it includes when some reported no usage.
+      - A completed or aborted turn records one usage activity when its provider reported token usage or its model is known; turns with neither record nothing.
+      - Every provider reports the model and reasoning-option id each turn starts with; the provider service copies them onto the turn's completion, replacing the model on a reroute, and clients name them as the composer does, falling back to the provider's ids.
+      - Web and desktop show the turn's model and effort, then its total tokens, beside its timestamp, with input, cached share, output, reasoning, and cache writes on hover; mobile shows the same with details on tap.
+      - Each usage activity carries the thread's total, summed on the server over every recorded turn, so long threads are not undercounted by the client's activity window; the composer shows it, and its breakdown says how many turns it includes when some reported no usage. Activities without usage carry no total until some turn reports usage, and decode as no usage on clients that predate models.
       - Claude, Codex, and OpenCode turns record their subagents' usage separately from the main agent's; turn and thread figures include it, and the breakdown notes subagent usage only where a provider could not report it.
       - A client setting (device-local on mobile) hides the figures, and usage activities never render as work-log rows.
     implementation_paths:
@@ -3235,13 +3236,18 @@ features:
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadComposer.tsx
       - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
       - apps/server/src/persistence/Layers/ProjectionTurns.ts
+      - apps/server/src/provider/Layers/AntigravityAdapter.ts
       - apps/server/src/provider/Layers/ClaudeAdapter.ts
       - apps/server/src/provider/Layers/CodexAdapter.ts
+      - apps/server/src/provider/Layers/CursorAdapter.ts
+      - apps/server/src/provider/Layers/GrokAdapter.ts
       - apps/server/src/provider/Layers/OpenCodeAdapter.ts
+      - apps/server/src/provider/Layers/ProviderService.ts
       - apps/web/src/components/BranchToolbar.tsx
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
@@ -3256,12 +3262,14 @@ features:
       - apps/server/src/provider/Layers/ClaudeAdapter.test.ts
       - apps/server/src/provider/Layers/CodexAdapter.test.ts
       - apps/server/src/provider/Layers/OpenCodeAdapter.test.ts
+      - apps/server/src/provider/Layers/ProviderService.test.ts
       - packages/shared/src/turnUsage.test.ts
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/issues/2518
         - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream shows each turn's and the thread's token usage in the conversation on web, desktop, and mobile, with a way to hide it.
+      retire_when: Upstream shows each turn's model and token usage and the thread's total in the conversation on web, desktop, and mobile, with a way to hide it.
 
   - id: usage-carbon-estimate
     title: Estimate operational carbon emissions from usage

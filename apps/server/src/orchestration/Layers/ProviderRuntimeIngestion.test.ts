@@ -563,6 +563,69 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
+  it("records the model a turn ran on, with or without its usage", async () => {
+    const harness = await createHarness();
+    const base = {
+      provider: ProviderDriverKind.make("cursor"),
+      providerInstanceId: ProviderInstanceId.make("cursor"),
+      threadId: asThreadId("thread-1"),
+    };
+    const tokenUsage = {
+      usageScope: "main_agent",
+      usageStatus: "complete",
+      inputTokens: 120_000,
+      outputTokens: 4_000,
+      hasSubagents: false,
+    } as const;
+    await harness.emitAndDrain([
+      {
+        ...base,
+        turnId: asTurnId("turn-1"),
+        type: "turn.started",
+        eventId: asEventId("evt-1-started"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        ...base,
+        turnId: asTurnId("turn-1"),
+        type: "turn.completed",
+        eventId: asEventId("evt-1-completed"),
+        createdAt: "2026-01-01T00:00:02.000Z",
+        payload: { state: "completed", model: "composer-2", effort: "high" },
+      },
+      {
+        ...base,
+        turnId: asTurnId("turn-2"),
+        type: "turn.started",
+        eventId: asEventId("evt-2-started"),
+        createdAt: "2026-01-01T00:00:03.000Z",
+      },
+      {
+        ...base,
+        turnId: asTurnId("turn-2"),
+        type: "turn.completed",
+        eventId: asEventId("evt-2-completed"),
+        createdAt: "2026-01-01T00:00:04.000Z",
+        payload: { state: "completed", tokenUsage, model: "composer-2" },
+      },
+    ]);
+
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    const usage = thread?.activities.filter((activity) => activity.kind === "turn.usage");
+    // A thread with no usage yet carries no total, so clients show none.
+    expect(usage?.[0]?.payload).toEqual({
+      instanceId: "cursor",
+      model: "composer-2",
+      effort: "high",
+    });
+    expect(usage?.[1]?.payload).toMatchObject({
+      ...tokenUsage,
+      instanceId: "cursor",
+      model: "composer-2",
+      thread: { inputTokens: 120_000, countedTurns: 1, turns: 2 },
+    });
+  });
+
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

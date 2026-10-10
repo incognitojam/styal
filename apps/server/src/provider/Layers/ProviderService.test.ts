@@ -4732,6 +4732,56 @@ turnAnalytics.layer("ProviderServiceLive turn analytics", (it) => {
     }),
   );
 
+  it.effect("copies the model a turn started with onto its completion", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-turn-model");
+      const turnId = asTurnId("turn-model");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const runtimeEvents = yield* Stream.take(provider.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      const base = {
+        provider: CODEX_DRIVER,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId,
+      } as const;
+      primaryAnalyticsCodex.emit({
+        ...base,
+        type: "turn.started",
+        eventId: asEventId("evt-turn-model-start"),
+        payload: { model: "gpt-5.6-sol", effortOption: "xhigh" },
+      });
+      primaryAnalyticsCodex.emit({
+        ...base,
+        type: "model.rerouted",
+        eventId: asEventId("evt-turn-model-rerouted"),
+        payload: { fromModel: "gpt-5.6-sol", toModel: "gpt-5.6-terra", reason: "capacity" },
+      });
+      primaryAnalyticsCodex.emit({
+        ...base,
+        type: "turn.completed",
+        eventId: asEventId("evt-turn-model-complete"),
+        payload: { state: "completed" },
+      });
+
+      const completed = [...(yield* Fiber.join(runtimeEvents))].at(-1);
+      assert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        assert.equal(completed.payload.model, "gpt-5.6-terra");
+        assert.equal(completed.payload.effort, "xhigh");
+      }
+    }),
+  );
+
   it.effect("bounds active metadata while preserving recent delayed completions", () =>
     Effect.gen(function* () {
       recordedTurnAnalytics.reset();

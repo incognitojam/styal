@@ -165,7 +165,6 @@ import type {
   ComposerContextId,
   ComposerContextRecord,
   KnownComposerContextRecord,
-  TurnTokenUsage,
 } from "@t3tools/contracts";
 import { Button } from "../ui/button";
 import type { QueuedComposerMessage } from "../../queuedMessageStore";
@@ -197,7 +196,7 @@ import {
 } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { TurnUsageLabel } from "./TurnUsageLabel";
-import { EMPTY_TURN_USAGE, turnUsageView } from "@t3tools/shared/turnUsage";
+import { EMPTY_TURN_SUMMARIES, type TurnSummaryView } from "@t3tools/shared/turnUsage";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { inferEntryKindFromPath } from "../../pierre-icons";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
@@ -309,7 +308,7 @@ interface TimelineRowSharedState {
   citationRequest: AssistantCitationTarget | null;
   listRef: React.RefObject<LegendListRef | null>;
   timestampFormat: TimestampFormat;
-  turnUsageByTurnId: ReadonlyMap<string, TurnTokenUsage>;
+  turnUsageByTurnId: ReadonlyMap<string, TurnSummaryView>;
   routeThreadKey: string;
   threadRef: ScopedThreadRef | null;
   markdownCwd: string | undefined;
@@ -459,8 +458,8 @@ interface MessagesTimelineProps {
   latestTurn: TimelineLatestTurn | null;
   runningTurnId: TurnId | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
-  /** Usage for completed turns; empty when turn usage is turned off. */
-  turnUsageByTurnId?: ReadonlyMap<string, TurnTokenUsage>;
+  /** Model and usage for completed turns; empty when turn usage is turned off. */
+  turnUsageByTurnId?: ReadonlyMap<string, TurnSummaryView>;
   routeThreadKey: string;
   /**
    * Thread whose entries are currently painted. Differs from `routeThreadKey`
@@ -536,7 +535,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   latestTurn,
   runningTurnId,
   turnDiffSummaries,
-  turnUsageByTurnId = EMPTY_TURN_USAGE.byTurnId,
+  turnUsageByTurnId = EMPTY_TURN_SUMMARIES,
   routeThreadKey,
   displayThreadKey,
   onOpenTurnDiff,
@@ -2623,23 +2622,29 @@ function AssistantMessageMeta({
         streaming={copyStreaming}
       />
       {!message.streaming && (
-        <Tooltip>
-          <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
-            {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
-          </TooltipTrigger>
-          <TooltipPopup>
-            {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
-          </TooltipPopup>
-        </Tooltip>
+        <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <Tooltip>
+            <TooltipTrigger render={<p className="text-xs tabular-nums" />}>
+              {formatDayAwareTimestamp(message.updatedAt, ctx.timestampFormat)}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {formatChatTimestampTooltip(message.updatedAt, ctx.timestampFormat)}
+            </TooltipPopup>
+          </Tooltip>
+          {turnUsage?.model ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">{turnUsage.model}</span>
+            </>
+          ) : null}
+          {turnUsage?.usage ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <TurnUsageLabel view={turnUsage.usage} />
+            </>
+          ) : null}
+        </div>
       )}
-      {!message.streaming && turnUsage ? (
-        <span className="flex items-center gap-1">
-          <span aria-hidden="true" className="text-muted-foreground/50">
-            ·
-          </span>
-          <TurnUsageLabel view={turnUsageView(turnUsage)} />
-        </span>
-      ) : null}
     </div>
   );
 }

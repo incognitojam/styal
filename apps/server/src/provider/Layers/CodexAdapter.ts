@@ -114,6 +114,8 @@ interface CodexAdapterSessionContext {
   readonly runtime: CodexSessionRuntimeShape;
   readonly eventFiber: Fiber.Fiber<void, never>;
   readonly turnTokenUsage: CodexTurnTokenUsageState;
+  /** The model and reasoning effort the next turn starts with. */
+  readonly turnModel: { model?: string; effort?: string };
   stopped: boolean;
 }
 
@@ -2403,6 +2405,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             : {}),
         };
         const turnTokenUsage = makeCodexTurnTokenUsageState();
+        const turnModel: CodexAdapterSessionContext["turnModel"] = {};
         // Codex reports a usage-limit stop as OpenAI's own sentence, which on a
         // Business workspace blames credits for a window that ran out. The
         // snapshot naming that window arrives in its own notification, before or
@@ -2517,6 +2520,16 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             }
 
             const mappedEvents = mapToRuntimeEvents(event, event.threadId).map((runtimeEvent) => {
+              if (runtimeEvent.type === "turn.started") {
+                return {
+                  ...runtimeEvent,
+                  payload: {
+                    ...runtimeEvent.payload,
+                    ...(turnModel.model ? { model: turnModel.model } : {}),
+                    ...(turnModel.effort ? { effortOption: turnModel.effort } : {}),
+                  },
+                } satisfies ProviderRuntimeEvent;
+              }
               if (runtimeEvent.type === "turn.completed" && runtimeEvent.turnId) {
                 return {
                   ...runtimeEvent,
@@ -2589,6 +2602,15 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           return yield* startSession({ ...input, resumeCursor: undefined });
         }
         const started = startResult.session;
+        const startModelSelection =
+          input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
+        const startModel = startModelSelection?.model ?? started.model;
+        if (startModel) turnModel.model = startModel;
+        const startEffort = startModelSelection
+          ? (getModelSelectionStringOptionValue(startModelSelection, "reasoningEffort") ??
+            (yield* defaultReasoningEffort(startModelSelection.model)))
+          : undefined;
+        if (startEffort) turnModel.effort = startEffort;
 
         sessions.set(input.threadId, {
           threadId: input.threadId,
@@ -2596,6 +2618,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           runtime,
           eventFiber,
           turnTokenUsage,
+          turnModel,
           stopped: false,
         });
         sessionScopeTransferred = true;
@@ -2648,6 +2671,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       input.modelSelection?.instanceId === boundInstanceId
         ? getCodexServiceTierOptionValue(input.modelSelection)
         : undefined;
+    // Codex keeps a turn's model and effort for later turns that name none.
+    if (modelSelection) {
+      session.turnModel.model = modelSelection.model;
+      if (reasoningEffort) session.turnModel.effort = reasoningEffort;
+    }
     return yield* session.runtime
       .sendTurn({
         ...(input.input !== undefined ? { input: input.input } : {}),
