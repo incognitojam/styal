@@ -53,26 +53,6 @@
       "reason": "Provider forms wait for settings saves to be confirmed. Once it lands, provider name, accent colour and environment variable inputs can report their save result, so they stop briefly reverting to the old value while saving."
     },
     {
-      "pr": 13109,
-      "reason": "Found while adding Claude Opus 5.5: Refresh bypasses cached model lists so new models appear immediately."
-    },
-    {
-      "pr": 13183,
-      "reason": "Mobile Settings still offers the Legacy Thread List switch; this removes the old grouped thread list and the switch. Too entangled with 16 earlier pending mobile PRs to import early."
-    },
-    {
-      "pr": 13203,
-      "reason": "Follow-up to #13183: clears leftover legacy-list code and settings."
-    },
-    {
-      "pr": 13516,
-      "reason": "Back and Escape in Settings step back through browser history, so after switching between settings pages or environments on the Providers page they walk back through those pages instead of closing Settings. This always returns to the main app. Conflicts with 13 earlier pending sidebar and settings PRs, so it was not imported early."
-    },
-    {
-      "pr": 13673,
-      "reason": "Settling a thread leaves its terminals running, so idle shells pile up across settled threads; this closes idle shells on settle and stops zsh prompt helpers from counting as running commands. Not imported early: it builds on upstream setup-script work the fork has not taken. The setup-script half does not apply to the fork, whose setup commands exit on their own, but becomes relevant if intake brings in upstream's interactive setup shell."
-    },
-    {
       "pr": 13914,
       "reason": "Imported early from its unmerged commits: puts keyboard focus back in the app after an agent click in a preview tab. When it merges, the queue takes it and must reconcile with that import. Known gap to recheck then: a person clicking into the page during an agent click gets focus moved back to the composer, because the interruption check reads an error tag that desktop IPC does not carry."
     },
