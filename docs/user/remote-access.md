@@ -105,9 +105,9 @@ default-port mapping with:
 tailscale serve --https=443 off
 ```
 
-If that port is already in use, choose another with
-`--tailscale-serve-port`. See `npx @styal/cli pair --help` for other pairing
-options.
+If that port has a different Serve handler, styal leaves it unchanged even if its
+backend is unavailable. Choose another port with `--tailscale-serve-port`. See
+`npx @styal/cli pair --help` for other pairing options.
 
 ### Hosted web app
 
