@@ -55,6 +55,8 @@ const runWithTempDirectory = <A, E, R>(
       const fileSystem = yield* FileSystem.FileSystem;
       const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-pr-template-" });
       yield* runGit(cwd, ["init", "--initial-branch=main"]);
+      // Detached maintenance can outlive a fixture commit and race scoped directory cleanup.
+      yield* runGit(cwd, ["config", "maintenance.auto", "false"]);
       yield* runGit(cwd, ["config", "user.email", "test@example.com"]);
       yield* runGit(cwd, ["config", "user.name", "Test User"]);
       return yield* test(cwd);
