@@ -9,20 +9,8 @@
       }
     },
     {
-      "pr": 10027,
-      "reason": "The styal Link authorization complete page still has the blue and indigo banner from before the cotton reel artwork (fork #477); this replaces it with a plain card. Swap in the styal wordmark on intake."
-    },
-    {
       "pr": 10411,
       "reason": "Imported early from its unmerged commits; when it merges, the queue takes it and must reconcile with that import and the styal naming from fork #425."
-    },
-    {
-      "pr": 10845,
-      "reason": "Follow-up to #10300: keeps same-email Codex subscriptions on different plans apart when pooling."
-    },
-    {
-      "pr": 11088,
-      "reason": "Renaming or recolouring a provider rebuilds its instance and stops every running turn on it; this keeps the instance for presentation-only edits and warns before rebuilds that would stop running threads. Watching, not importing early; the early import of #12533 makes such rebuilds end turns visibly instead of leaving them running."
     },
     {
       "pr": 11488,
@@ -33,32 +21,12 @@
       }
     },
     {
-      "pr": 11577,
-      "reason": "An agent click in a preview tab takes keyboard focus from the composer, even from a hidden tab in another thread. This hosts preview pages outside the app window's focus hierarchy so an agent click cannot move focus; restoring focus after the click (#13914) still lets a few keystrokes reach the page. Reworks page display, input and capture, so it overlaps hidden-tab capture, recording and the mini player. Watching, not importing early."
-    },
-    {
       "pr": 12533,
       "reason": "Imported early from its unmerged commits: editing a provider instance's settings stopped its running Codex turns without telling orchestration, leaving threads showing running until the next message. When it merges, the queue takes it and must reconcile with that import; the fork kept its legacy resume test option and took only the live Codex registry test."
     },
     {
       "pr": 12645,
       "reason": "Fix for #10875: GitHub Enterprise hosts without the stacks API lose the merge button."
-    },
-    {
-      "pr": 12759,
-      "reason": "Reuses unchanged tool rows during large mobile chat sync to reduce CPU work; the reported black-screen symptom remains unverified."
-    },
-    {
-      "pr": 12874,
-      "reason": "Provider forms wait for settings saves to be confirmed. Once it lands, provider name, accent colour and environment variable inputs can report their save result, so they stop briefly reverting to the old value while saving."
-    },
-    {
-      "pr": 13914,
-      "reason": "Imported early from its unmerged commits: puts keyboard focus back in the app after an agent click in a preview tab. When it merges, the queue takes it and must reconcile with that import. Known gap to recheck then: a person clicking into the page during an agent click gets focus moved back to the composer, because the interruption check reads an error tag that desktop IPC does not carry."
-    },
-    {
-      "pr": 13933,
-      "reason": "When a Claude background task or subagent finishes while the agent is idle, the agent wakes and keeps working, but the thread briefly reads as done: the completion sound and notification fire then, and again when the woken turn settles. This keeps the thread working through that handoff (fixes #13625). #14073 fixes the same alert inside the Claude adapter instead; take whichever upstream merges."
     },
     {
       "pr": 14291,
@@ -69,12 +37,20 @@
       "reason": "Imported early from its unmerged commits: Claude Haiku 4.5 shows thinking On by default, matching Claude Code, and Claude text generation sends a thinking setting only when one was chosen. When it merges, the queue takes it and must reconcile with that import; the fork's manifest copy was reapplied with its own updatedAt, so expect a conflict there only."
     },
     {
+      "pr": 15008,
+      "reason": "Replaces #13914, which upstream closed after the fork imported it early from its unmerged commits: puts keyboard focus back in the app after an agent click in a preview tab. Same host-side approach; it also restores focus when the click fails and hands focus between overlapping clicks. When the queue reaches it, reconcile the #13914 import with it and take upstream's version. Known gap from that import to recheck then: a person clicking into the page during an agent click gets focus moved back to the composer, because the interruption check reads an error tag that desktop IPC does not carry."
+    },
+    {
       "pr": 15057,
       "reason": "Agents can watch a pull request and are woken when checks fail, required checks pass, someone else comments or reviews, or the branch conflicts. Covers fork #191 (autofix CI and address PR reviews). Waiting for intake; an early import conflicts with orchestration V2 and needs earlier pending PRs. Its follow-ups land after it."
     },
     {
       "pr": 16933,
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
+    },
+    {
+      "pr": 17711,
+      "reason": "Supersedes #10845, which upstream closed: Usage → Limits keeps one email signed in to two workspaces, such as a ChatGPT Plus plan and a Business workspace or a Claude login in two orgs, as two accounts instead of merging their quotas. Follow-up to #10300."
     }
   ]
 }
