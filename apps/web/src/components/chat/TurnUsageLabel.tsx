@@ -27,14 +27,21 @@ export function useTurnUsage(
 }
 
 /** One muted figure; the token breakdown opens on hover. */
-export function TurnUsageLabel({ view }: { view: TurnUsageView }) {
+export function TurnUsageLabel({
+  view,
+  subject = "Turn usage",
+}: {
+  view: TurnUsageView;
+  /** Names the figure for screen readers. */
+  subject?: string;
+}) {
   return (
     <Popover>
       <PopoverTrigger
         openOnHover
         delay={150}
         closeDelay={0}
-        aria-label={`Turn usage: ${view.headline}`}
+        aria-label={`${subject}: ${view.headline}`}
         render={
           <button
             type="button"

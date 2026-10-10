@@ -3219,12 +3219,13 @@ features:
       retire_when: Mobile offers Undo that restores an accidentally unpinned thread's previous pinned position, or upstream confirms unpinning by default on mobile.
 
   - id: turn-token-usage
-    title: Show token usage under each agent turn
+    title: Show token usage under each agent turn and for the thread
     status: review-needed
     prs: []
     invariants:
       - A completed or aborted turn whose provider reports token usage records one usage activity for that turn; turns without usage record nothing.
       - Web and desktop show the turn's total tokens beside its timestamp, with input, cached share, output, reasoning, and cache writes on hover; mobile shows the same with details on tap.
+      - Each usage activity carries the thread's total, summed on the server over every recorded turn, so long threads are not undercounted by the client's activity window; the composer shows it, and its breakdown says how many turns it includes when some reported no usage.
       - A client setting (device-local on mobile) hides the figures, and usage activities never render as work-log rows.
     implementation_paths:
       - apps/mobile/src/features/threads/TurnUsageText.tsx
@@ -3232,11 +3233,15 @@ features:
       - apps/web/src/components/chat/TurnUsageLabel.tsx
       - packages/shared/src/turnUsage.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/ThreadComposer.tsx
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/mobile/src/persistence/mobile-preferences.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/persistence/Layers/ProjectionTurns.ts
+      - apps/web/src/components/BranchToolbar.tsx
       - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/session-logic.ts
@@ -3244,12 +3249,13 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.activity.test.ts
+      - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts
       - packages/shared/src/turnUsage.test.ts
     upstream:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream shows each turn's token usage in the conversation on web, desktop, and mobile, with a way to hide it.
+      retire_when: Upstream shows each turn's and the thread's token usage in the conversation on web, desktop, and mobile, with a way to hide it.
 
   - id: usage-carbon-estimate
     title: Estimate operational carbon emissions from usage

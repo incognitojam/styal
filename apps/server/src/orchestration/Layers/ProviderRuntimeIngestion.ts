@@ -35,6 +35,7 @@ import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { formatTokens } from "@t3tools/shared/usageFormat";
+import { sumThreadTokenUsage } from "@t3tools/shared/turnUsage";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
@@ -2911,7 +2912,10 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(activityEvent, taskTitle, taskClassification);
+      const activities = yield* Effect.forEach(
+        runtimeEventToActivities(activityEvent, taskTitle, taskClassification),
+        (activity) => withThreadTokenUsage(thread.id, activity, activityEvent),
+      );
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
@@ -2926,6 +2930,40 @@ const make = Effect.gen(function* () {
         ),
       ).pipe(Effect.asVoid);
     });
+
+  /**
+   * Adds the thread's total to a turn's usage record, summed from every stored
+   * record so clients never need turns outside their activity window.
+   */
+  const withThreadTokenUsage = Effect.fn("withThreadTokenUsage")(function* (
+    threadId: ThreadId,
+    activity: OrchestrationThreadActivity,
+    event: ProviderRuntimeEvent,
+  ) {
+    if (
+      activity.kind !== TURN_USAGE_ACTIVITY_KIND ||
+      activity.turnId === null ||
+      (event.type !== "turn.completed" && event.type !== "turn.aborted") ||
+      event.payload.tokenUsage === undefined
+    ) {
+      return activity;
+    }
+    const usage = event.payload.tokenUsage;
+    const [recorded, turns] = yield* Effect.all([
+      projectionThreadActivityRepository.listByThreadId({
+        threadId,
+        activityKinds: [TURN_USAGE_ACTIVITY_KIND],
+      }),
+      projectionTurnRepository.countByThreadId({ threadId }),
+    ]);
+    const thread = sumThreadTokenUsage({
+      activities: recorded,
+      turnId: activity.turnId,
+      usage,
+      turns,
+    });
+    return { ...activity, payload: { ...usage, thread } };
+  });
 
   const processDomainEvent = (_event: TurnStartRequestedDomainEvent) => Effect.void;
 

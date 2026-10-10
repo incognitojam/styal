@@ -25,6 +25,7 @@ import {
   type ServerSettings,
   ThreadId,
   TurnId,
+  type TurnTokenUsage,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -494,8 +495,71 @@ describe("ProviderRuntimeIngestion", () => {
     const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
     const usage = thread?.activities.filter((activity) => activity.kind === "turn.usage");
     expect(usage?.map((activity) => [activity.turnId, activity.payload])).toEqual([
-      ["turn-1", tokenUsage],
+      [
+        "turn-1",
+        {
+          ...tokenUsage,
+          thread: {
+            inputTokens: 120_000,
+            cachedInputTokens: 100_000,
+            cacheCreationTokens: 0,
+            outputTokens: 4_000,
+            reasoningTokens: 0,
+            countedTurns: 1,
+            turns: 1,
+            partialTurns: 0,
+            subagentTurns: 0,
+          },
+        },
+      ],
     ]);
+  });
+
+  it("totals the thread's usage across turns, noting turns that reported none", async () => {
+    const harness = await createHarness();
+    const tokenUsage = {
+      usageScope: "main_agent",
+      usageStatus: "complete",
+      inputTokens: 120_000,
+      cachedInputTokens: 100_000,
+      outputTokens: 4_000,
+      hasSubagents: false,
+    } as const;
+    const turn = (turnId: string, second: number, usage?: TurnTokenUsage) => {
+      const base = {
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId(turnId),
+      };
+      return [
+        {
+          ...base,
+          type: "turn.started",
+          eventId: asEventId(`evt-${turnId}-started`),
+          createdAt: `2026-01-01T00:00:0${second}.000Z`,
+        },
+        {
+          ...base,
+          type: "turn.completed",
+          eventId: asEventId(`evt-${turnId}-completed`),
+          createdAt: `2026-01-01T00:00:0${second + 1}.000Z`,
+          payload: { state: "completed", ...(usage ? { tokenUsage: usage } : {}) },
+        },
+      ] as const;
+    };
+    await harness.emitAndDrain([
+      ...turn("turn-1", 1, tokenUsage),
+      ...turn("turn-2", 3),
+      ...turn("turn-3", 5, { ...tokenUsage, inputTokens: 80_000 }),
+    ]);
+
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    const latest = thread?.activities.findLast((activity) => activity.kind === "turn.usage");
+    expect(latest?.turnId).toBe("turn-3");
+    expect(latest?.payload).toMatchObject({
+      inputTokens: 80_000,
+      thread: { inputTokens: 200_000, outputTokens: 8_000, countedTurns: 2, turns: 3 },
+    });
   });
 
   it("maps turn started/completed events into thread session updates", async () => {

@@ -1,5 +1,6 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { TurnUsageView } from "@t3tools/shared/turnUsage";
 import {
   ChevronDownIcon,
   FolderGit2Icon,
@@ -41,6 +42,7 @@ import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSele
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
 import { ComposerControl } from "./chat/ComposerControl";
+import { TurnUsageLabel } from "./chat/TurnUsageLabel";
 import {
   Menu,
   MenuGroup,
@@ -89,6 +91,8 @@ interface BranchToolbarProps {
   composerControlsHostRef?: (element: HTMLDivElement | null) => void;
   contextStripVisible?: boolean;
   worktreeUnavailableReason?: string | null;
+  /** The thread's token total, shown left of the branch picker. */
+  threadUsage?: TurnUsageView | null;
 }
 
 interface MobileRunContextSelectorProps {
@@ -538,6 +542,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   composerControlsHostRef,
   contextStripVisible = true,
   worktreeUnavailableReason = null,
+  threadUsage = null,
 }: BranchToolbarProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = useMemo(
@@ -720,11 +725,26 @@ export const BranchToolbar = memo(function BranchToolbar({
         />
       ) : null}
 
+      {threadUsage ? (
+        <div
+          data-composer-context-control
+          className={cn(
+            "flex shrink-0 items-center px-1",
+            showGitControls ? "@3xl/composer-surface:ml-auto" : "ml-auto",
+          )}
+        >
+          <TurnUsageLabel view={threadUsage} subject="Thread usage" />
+        </div>
+      ) : null}
+
       {showGitControls ? (
         <BranchToolbarBranchSelector
           forceNewWorktree={forceNewWorktree}
           ref={branchSelectorRef}
-          className="min-w-0 flex-initial justify-end @3xl/composer-surface:ml-auto"
+          className={cn(
+            "min-w-0 flex-initial justify-end",
+            !threadUsage && "@3xl/composer-surface:ml-auto",
+          )}
           environmentId={environmentId}
           threadId={threadId}
           {...(draftId ? { draftId } : {})}

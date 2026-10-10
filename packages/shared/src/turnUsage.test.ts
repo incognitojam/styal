@@ -1,7 +1,12 @@
 import { EventId, TurnId, type OrchestrationThreadActivity } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { deriveTurnUsage, turnUsageView } from "./turnUsage.ts";
+import {
+  deriveTurnUsage,
+  sumThreadTokenUsage,
+  threadUsageView,
+  turnUsageView,
+} from "./turnUsage.ts";
 
 const usage = {
   usageScope: "main_agent",
@@ -18,6 +23,7 @@ function activity(
   turnId: string,
   kind: string,
   payload: unknown = usage,
+  createdAt = "2026-01-01T00:00:00.000Z",
 ): OrchestrationThreadActivity {
   return {
     id: EventId.make(id),
@@ -25,10 +31,22 @@ function activity(
     kind,
     summary: "Turn usage",
     turnId: TurnId.make(turnId),
-    createdAt: "2026-01-01T00:00:00.000Z",
+    createdAt,
     payload,
   };
 }
+
+const threadTotal = {
+  inputTokens: 3_000_000,
+  cachedInputTokens: 2_000_000,
+  cacheCreationTokens: 0,
+  outputTokens: 120_000,
+  reasoningTokens: 40_000,
+  countedTurns: 3,
+  turns: 3,
+  partialTurns: 0,
+  subagentTurns: 0,
+} as const;
 
 describe("deriveTurnUsage", () => {
   it("indexes usage by turn and skips records it cannot read", () => {
@@ -56,6 +74,87 @@ describe("deriveTurnUsage", () => {
     expect(streamed).toBe(first);
     expect(finished).not.toBe(first);
     expect(finished.byTurnId.has("turn-2")).toBe(true);
+  });
+
+  it("takes the thread total from the newest record, not the last in sequence order", () => {
+    // A new provider session restarts sequences, so the newer record can sort first.
+    const derived = deriveTurnUsage([
+      activity(
+        "usage-3",
+        "turn-3",
+        "turn.usage",
+        { ...usage, thread: threadTotal },
+        "2026-01-03T00:00:00.000Z",
+      ),
+      activity(
+        "usage-2",
+        "turn-2",
+        "turn.usage",
+        { ...usage, thread: { ...threadTotal, countedTurns: 2 } },
+        "2026-01-02T00:00:00.000Z",
+      ),
+    ]);
+
+    expect(derived.thread).toEqual(threadTotal);
+    expect(derived.byTurnId.get("turn-3")?.inputTokens).toBe(1_000_000);
+  });
+
+  it("has no thread total while the newest record predates totals", () => {
+    const derived = deriveTurnUsage([
+      activity(
+        "usage-1",
+        "turn-1",
+        "turn.usage",
+        { ...usage, thread: threadTotal },
+        "2026-01-01T00:00:00.000Z",
+      ),
+      activity("usage-2", "turn-2", "turn.usage", usage, "2026-01-02T00:00:00.000Z"),
+    ]);
+
+    expect(derived.thread).toBeNull();
+  });
+});
+
+describe("sumThreadTokenUsage", () => {
+  it("adds every recorded turn, including records written before totals", () => {
+    const total = sumThreadTokenUsage({
+      activities: [
+        activity("usage-1", "turn-1", "turn.usage"),
+        activity("usage-2", "turn-2", "turn.usage", {
+          usageScope: "main_agent",
+          usageStatus: "partial",
+          outputTokens: 1_000,
+          hasSubagents: true,
+        }),
+      ],
+      turnId: "turn-4",
+      usage,
+      turns: 4,
+    });
+
+    expect(total).toEqual({
+      inputTokens: 2_000_000,
+      cachedInputTokens: 1_200_000,
+      cacheCreationTokens: 0,
+      outputTokens: 101_000,
+      reasoningTokens: 40_000,
+      countedTurns: 3,
+      turns: 4,
+      partialTurns: 1,
+      subagentTurns: 1,
+    });
+  });
+
+  it("counts a turn once when it is recorded again", () => {
+    const total = sumThreadTokenUsage({
+      activities: [activity("usage-1", "turn-1", "turn.usage", { ...usage, inputTokens: 5 })],
+      turnId: "turn-1",
+      usage,
+      turns: 1,
+    });
+
+    expect(total.inputTokens).toBe(1_000_000);
+    expect(total.countedTurns).toBe(1);
   });
 });
 
@@ -85,6 +184,29 @@ describe("turnUsageView", () => {
     expect(view.notes).toEqual([
       "Subagent usage isn't included.",
       "The provider reported only some token counts.",
+    ]);
+  });
+});
+
+describe("threadUsageView", () => {
+  it("shows the same breakdown as a turn and stays quiet when every turn counts", () => {
+    expect(threadUsageView(threadTotal)).toEqual({
+      headline: "3.12M tokens",
+      rows: [
+        { label: "Input", value: "3M (67% cached)" },
+        { label: "Output", value: "120K (40K reasoning)" },
+      ],
+      notes: [],
+    });
+  });
+
+  it("says how many turns the total leaves out", () => {
+    const view = threadUsageView({ ...threadTotal, turns: 5, partialTurns: 1, subagentTurns: 2 });
+
+    expect(view.notes).toEqual([
+      "Includes 3 of 5 turns.",
+      "Subagent usage isn't included.",
+      "Some turns reported only some token counts.",
     ]);
   });
 });
