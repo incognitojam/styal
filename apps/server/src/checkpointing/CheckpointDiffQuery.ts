@@ -31,7 +31,7 @@ import {
 } from "./Errors.ts";
 import type { CheckpointServiceError } from "./Errors.ts";
 import { checkpointRefForThreadTurn } from "./Utils.ts";
-import { parseTurnDiffFilesFromUnifiedDiff } from "./Diffs.ts";
+import { parseUnifiedDiffPaths } from "./Diffs.ts";
 import * as CheckpointStore from "./CheckpointStore.ts";
 
 /** Service tag for checkpoint diff queries. */
@@ -88,7 +88,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     diff: string,
   ) {
-    const paths = parseTurnDiffFilesFromUnifiedDiff(diff).map((file) => file.path);
+    const paths = parseUnifiedDiffPaths(diff);
     if (paths.length === 0) return [];
     return yield* checkpointStore
       .readGeneratedDiffPaths({ cwd, paths })

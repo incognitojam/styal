@@ -74,7 +74,7 @@ import {
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
-import { parseTurnDiffFilesFromUnifiedDiff } from "../checkpointing/Diffs.ts";
+import { parseUnifiedDiffPaths } from "../checkpointing/Diffs.ts";
 import { AllowGitHubReserve } from "../sourceControl/GitHubCli.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";
@@ -1806,7 +1806,7 @@ export const make = Effect.gen(function* () {
   // the project's checkout does, so the slice is read with the same `.gitattributes` answer the
   // diff panel gets. A checkout that cannot answer costs the attributions, not the diff.
   const attachGeneratedPaths = (cwd: string, slice: PullRequestDiffResult) => {
-    const paths = parseTurnDiffFilesFromUnifiedDiff(slice.patch).map((file) => file.path);
+    const paths = parseUnifiedDiffPaths(slice.patch);
     if (paths.length === 0) return Effect.succeed(slice);
     return checkpointStore.readGeneratedDiffPaths({ cwd, paths }).pipe(
       Effect.orElseSucceed((): ReadonlyArray<string> => []),
