@@ -113,7 +113,18 @@ export function readLagHistory(
   const trackedHistory = new Map(
     records("%H", `${base}..${fork}`, trackedPath).map(([sha]) => {
       const exists = run("git", ["ls-tree", "--name-only", sha!, "--", trackedPath]).trim();
-      const tracked = exists ? decodeTrackedPRs(run("git", ["show", `${sha}:${trackedPath}`])) : [];
+      // Old watch lists used bare PR numbers and later entries without reasons. Only
+      // provisional snapshots participate in replay; validate those with today's schema.
+      const document = exists
+        ? (JSON.parse(run("git", ["show", `${sha}:${trackedPath}`])) as { pullRequests: unknown[] })
+        : { pullRequests: [] };
+      const tracked = decodeTrackedPRs(
+        JSON.stringify({
+          pullRequests: document.pullRequests.filter(
+            (entry) => typeof entry === "object" && entry !== null && "snapshot" in entry,
+          ),
+        }),
+      );
       return [sha!, new Set(tracked.filter((pr) => pr.snapshot).map((pr) => pr.number))];
     }),
   );
