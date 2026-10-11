@@ -109,22 +109,64 @@ export function sumThreadTokenUsage(input: {
     costUsd: 0,
     pricedTurns: 0,
   };
-  for (const usage of byTurnId.values()) {
-    const counts = combinedTokenCounts(usage);
-    total.inputTokens += counts.inputTokens;
-    total.cachedInputTokens += counts.cachedInputTokens;
-    total.cacheCreationTokens += counts.cacheCreationTokens;
-    total.outputTokens += counts.outputTokens;
-    total.reasoningTokens += counts.reasoningTokens;
-    total.subagentTokens += subagentTokens(usage);
-    if (usage.usageStatus !== "complete") total.partialTurns += 1;
-    if (usage.hasSubagents && usage.subagents === undefined) total.subagentTurns += 1;
-    if (usage.costUsd !== undefined) {
-      total.costUsd += usage.costUsd;
-      total.pricedTurns += 1;
-    }
-  }
-  return total;
+  return [...byTurnId.values()].reduce(addTurnUsage, total);
+}
+
+/** A thread total with a running turn's usage so far added in. */
+export function withLiveTurnUsage(
+  thread: ThreadTokenUsage | null,
+  live: TurnTokenUsage,
+): ThreadTokenUsage {
+  const base = thread ?? {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    cacheCreationTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    countedTurns: 0,
+    turns: 0,
+    partialTurns: 0,
+    subagentTurns: 0,
+  };
+  const total = addTurnUsage(
+    {
+      ...base,
+      countedTurns: base.countedTurns + 1,
+      turns: base.turns + 1,
+      subagentTokens: base.subagentTokens ?? 0,
+      costUsd: base.costUsd ?? 0,
+      pricedTurns: base.pricedTurns ?? 0,
+    },
+    live,
+  );
+  // A running turn has only some of its usage by nature.
+  return { ...total, partialTurns: base.partialTurns };
+}
+
+type ThreadTokenTotal = ThreadTokenUsage & {
+  subagentTokens: number;
+  costUsd: number;
+  pricedTurns: number;
+};
+
+/** Adds one turn's usage into a total whose turn counts already include it. */
+function addTurnUsage(total: ThreadTokenTotal, usage: TurnTokenUsage): ThreadTokenTotal {
+  const counts = combinedTokenCounts(usage);
+  const priced = usage.costUsd !== undefined;
+  return {
+    ...total,
+    inputTokens: total.inputTokens + counts.inputTokens,
+    cachedInputTokens: total.cachedInputTokens + counts.cachedInputTokens,
+    cacheCreationTokens: total.cacheCreationTokens + counts.cacheCreationTokens,
+    outputTokens: total.outputTokens + counts.outputTokens,
+    reasoningTokens: total.reasoningTokens + counts.reasoningTokens,
+    subagentTokens: total.subagentTokens + subagentTokens(usage),
+    partialTurns: total.partialTurns + (usage.usageStatus !== "complete" ? 1 : 0),
+    subagentTurns:
+      total.subagentTurns + (usage.hasSubagents && usage.subagents === undefined ? 1 : 0),
+    costUsd: total.costUsd + (usage.costUsd ?? 0),
+    pricedTurns: total.pricedTurns + (priced ? 1 : 0),
+  };
 }
 
 /** The main agent's usage plus any its subagents reported. */

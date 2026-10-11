@@ -56,6 +56,7 @@ import {
 } from "../../persistence/Errors.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
 import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
+import { ThreadLiveTurnUsageService } from "../ThreadLiveTurnUsage.ts";
 import { ProjectionProject } from "../../persistence/Services/ProjectionProjects.ts";
 import { ProjectionState } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
@@ -497,6 +498,7 @@ function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: st
 const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
+  const threadLiveTurnUsage = yield* ThreadLiveTurnUsageService;
   const sql = yield* SqlClient.SqlClient;
   const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const repositoryIdentityResolutionConcurrency = 4;
@@ -2821,7 +2823,10 @@ pending_approval_requests AS (
                         session: sessionByThread.get(row.threadId) ?? null,
                         latestUserMessageAt: row.latestUserMessageAt,
                         latestMessageAt: row.latestMessageAt ?? null,
-                        tokenUsage: row.tokenUsage ?? null,
+                        tokenUsage: threadLiveTurnUsage.withLiveTurnUsage(
+                          row.threadId,
+                          row.tokenUsage ?? null,
+                        ),
                         hasPendingApprovals: row.pendingApprovalCount > 0,
                         hasPendingUserInput: row.pendingUserInputCount > 0,
                         hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
@@ -3009,7 +3014,10 @@ pending_approval_requests AS (
                   session: sessionByThread.get(row.threadId) ?? null,
                   latestUserMessageAt: row.latestUserMessageAt,
                   latestMessageAt: row.latestMessageAt ?? null,
-                  tokenUsage: row.tokenUsage ?? null,
+                  tokenUsage: threadLiveTurnUsage.withLiveTurnUsage(
+                    row.threadId,
+                    row.tokenUsage ?? null,
+                  ),
                   hasPendingApprovals: row.pendingApprovalCount > 0,
                   hasPendingUserInput: row.pendingUserInputCount > 0,
                   hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
@@ -3361,7 +3369,10 @@ pending_approval_requests AS (
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
         latestMessageAt: threadRow.value.latestMessageAt ?? null,
-        tokenUsage: threadRow.value.tokenUsage ?? null,
+        tokenUsage: threadLiveTurnUsage.withLiveTurnUsage(
+          threadRow.value.threadId,
+          threadRow.value.tokenUsage ?? null,
+        ),
         hasPendingApprovals: threadRow.value.pendingApprovalCount > 0,
         hasPendingUserInput: threadRow.value.pendingUserInputCount > 0,
         hasActionableProposedPlan: threadRow.value.hasActionableProposedPlan > 0,

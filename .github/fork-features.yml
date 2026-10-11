@@ -3433,11 +3433,13 @@ features:
       - The server prices each turn when recording it, by model where the provider splits usage, preferring custom rates, then the provider's own cost (Claude modelUsage, OpenCode steps), then LiteLLM rates; a turn with any unpriced model records no cost. Breakdowns show the turn's and thread's estimated API cost, and say how many turns the thread's cost covers.
       - A client setting (device-local on mobile) makes the turn and composer figures lead with the estimated cost, falling back to tokens where there is none; the composer's figure, tokens or cost, rolls its changed digits once when it changes within a thread, never on a thread switch and not under reduced motion.
       - The thread summary carries the newest usage record's thread total, kept by the projector and recomputed after a revert; the web sidebar's thread hover card and the mobile thread menu's title show it, as tokens or cost per the same settings.
+      - Claude, Codex, and OpenCode report a running turn's usage as it grows; the server prices it and keeps it in memory only, adding it to the thread summary's total until the turn's usage record replaces it, so the composer's total moves during a turn without writing extra rows.
       - A client setting (device-local on mobile) hides the figures, and usage activities never render as work-log rows.
     implementation_paths:
       - apps/mobile/src/features/threads/MeterText.tsx
       - apps/mobile/src/features/threads/TurnUsageText.tsx
       - apps/mobile/src/state/use-turn-usage.ts
+      - apps/server/src/orchestration/ThreadLiveTurnUsage.ts
       - apps/server/src/persistence/ForkMigrations/005_ProjectionThreadTokenUsage.ts
       - apps/web/src/components/chat/TurnUsageLabel.tsx
       - packages/shared/src/turnUsage.ts
@@ -3452,6 +3454,7 @@ features:
       - apps/server/src/orchestration/Layers/ProjectionPipeline.ts
       - apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
       - apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
+      - apps/server/src/orchestration/runtimeLayer.ts
       - apps/server/src/persistence/Layers/ProjectionThreads.ts
       - apps/server/src/persistence/Layers/ProjectionTurns.ts
       - apps/server/src/persistence/Services/ProjectionThreads.ts

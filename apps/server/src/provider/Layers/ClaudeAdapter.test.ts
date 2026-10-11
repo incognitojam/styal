@@ -6487,6 +6487,97 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("reports a running turn's usage summed over its streamed messages", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const liveFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "turn.usage.updated"),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+      const stream = (uuid: string, event: unknown, parentToolUseId: string | null = null) =>
+        harness.query.emit({
+          type: "stream_event",
+          session_id: "sdk-session-live-usage",
+          uuid,
+          parent_tool_use_id: parentToolUseId,
+          event,
+        } as unknown as SDKMessage);
+      const start = (id: string, usage: Record<string, number>) => ({
+        type: "message_start",
+        message: { id, type: "message", role: "assistant", content: [], usage },
+      });
+
+      stream(
+        "live-1",
+        start("msg-1", {
+          input_tokens: 100,
+          cache_read_input_tokens: 40,
+          cache_creation_input_tokens: 10,
+          output_tokens: 1,
+        }),
+      );
+      stream("live-2", { type: "message_delta", delta: {}, usage: { output_tokens: 20 } });
+      // A subagent's messages are not the main agent's usage.
+      stream(
+        "live-3",
+        { type: "message_delta", delta: {}, usage: { output_tokens: 999 } },
+        "tool-task-1",
+      );
+      stream("live-4", start("msg-2", { input_tokens: 5, cache_read_input_tokens: 150 }));
+      stream("live-5", { type: "message_delta", delta: {}, usage: { output_tokens: 30 } });
+
+      const live = Array.from(yield* Fiber.join(liveFiber));
+      assert.deepEqual(
+        live.map((event) => [
+          event.turnId,
+          event.type === "turn.usage.updated" ? event.payload.tokenUsage : undefined,
+        ]),
+        [
+          [
+            turn.turnId,
+            {
+              usageStatus: "partial",
+              usageScope: "main_agent",
+              inputTokens: 150,
+              cachedInputTokens: 40,
+              cacheCreationTokens: 10,
+              outputTokens: 20,
+              hasSubagents: false,
+            },
+          ],
+          [
+            turn.turnId,
+            {
+              usageStatus: "partial",
+              usageScope: "main_agent",
+              inputTokens: 305,
+              cachedInputTokens: 190,
+              cacheCreationTokens: 10,
+              outputTokens: 50,
+              hasSubagents: false,
+            },
+          ],
+        ],
+      );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("emits thread token usage updates from Claude task progress", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

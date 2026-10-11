@@ -454,22 +454,25 @@ function addOpenCodeStepTokens(counts: OpenCodeTokenCounts, part: OpenCodeStepUs
   }
 }
 
+/** Counts a step once; false when it was already counted. */
 function accumulateOpenCodeStepUsage(
   accumulator: OpenCodeTurnTokenUsageAccumulator,
   part: OpenCodeStepUsage,
-): void {
-  if (accumulator.partIds.has(part.id)) return;
+): boolean {
+  if (accumulator.partIds.has(part.id)) return false;
   accumulator.partIds.add(part.id);
   addOpenCodeStepTokens(accumulator, part);
+  return true;
 }
 
 function accumulateOpenCodeSubagentStepUsage(
   accumulator: OpenCodeTurnTokenUsageAccumulator,
   part: OpenCodeStepUsage,
-): void {
-  if (accumulator.subagentPartIds.has(part.id)) return;
+): boolean {
+  if (accumulator.subagentPartIds.has(part.id)) return false;
   accumulator.subagentPartIds.add(part.id);
   addOpenCodeStepTokens(accumulator.subagents, part);
+  return true;
 }
 
 function takeOpenCodeTurnTokenUsage(
@@ -478,6 +481,13 @@ function takeOpenCodeTurnTokenUsage(
 ): TurnTokenUsage {
   const usage = context.turnTokenUsage;
   context.turnTokenUsage = undefined;
+  return openCodeTurnTokenUsage(usage, complete);
+}
+
+function openCodeTurnTokenUsage(
+  usage: OpenCodeTurnTokenUsageAccumulator | undefined,
+  complete: boolean,
+): TurnTokenUsage {
   if (!usage || usage.partIds.size === 0) {
     return {
       usageStatus: "unavailable",
@@ -1168,6 +1178,18 @@ export function makeOpenCodeAdapter(
 
     const emit = (event: ProviderRuntimeEvent) =>
       Queue.offer(runtimeEvents, event).pipe(Effect.asVoid);
+    /** The running turn's usage so far, once one of its own steps has finished. */
+    const emitLiveTurnUsage = (context: OpenCodeSessionContext) =>
+      Effect.gen(function* () {
+        const turnId = context.activeTurnId;
+        const usage = context.turnTokenUsage;
+        if (!turnId || !usage || usage.partIds.size === 0) return;
+        yield* emit({
+          ...(yield* buildEventBase({ threadId: context.session.threadId, turnId })),
+          type: "turn.usage.updated",
+          payload: { tokenUsage: openCodeTurnTokenUsage(usage, false) },
+        });
+      });
     // Synchronous publish for callers that must not yield between a state
     // check and the enqueue, e.g. reopening an approval only if its terminal
     // event has not landed yet.
@@ -2361,7 +2383,9 @@ export function makeOpenCodeAdapter(
         context.activeTurnId &&
         context.turnTokenUsage
       ) {
-        accumulateOpenCodeSubagentStepUsage(context.turnTokenUsage, event.properties.part);
+        if (accumulateOpenCodeSubagentStepUsage(context.turnTokenUsage, event.properties.part)) {
+          yield* emitLiveTurnUsage(context);
+        }
       }
       if (!isParentEvent && !isChildRequestEvent) {
         return;
@@ -2479,9 +2503,10 @@ export function makeOpenCodeAdapter(
               if (ownership !== "unknown") {
                 const steps = usage.unresolvedStepsByMessageId.get(event.properties.info.id);
                 if (ownership === "owned" && steps) {
-                  for (const step of steps.values()) {
-                    accumulateOpenCodeStepUsage(usage, step);
-                  }
+                  const counted = [...steps.values()].filter((step) =>
+                    accumulateOpenCodeStepUsage(usage, step),
+                  );
+                  if (counted.length > 0) yield* emitLiveTurnUsage(context);
                 }
                 usage.unresolvedStepsByMessageId.delete(event.properties.info.id);
               }
@@ -2557,7 +2582,7 @@ export function makeOpenCodeAdapter(
             const usage = context.turnTokenUsage;
             const ownership = usage.assistantOwnershipByMessageId.get(part.messageID);
             if (ownership === "owned") {
-              accumulateOpenCodeStepUsage(usage, part);
+              if (accumulateOpenCodeStepUsage(usage, part)) yield* emitLiveTurnUsage(context);
             } else if (
               ownership === "unknown" ||
               (ownership === undefined &&

@@ -328,6 +328,11 @@ function withTurnModel(
       if (started) turnModels.set(key, { ...started, model: event.payload.toModel });
       return event;
     }
+    case "turn.usage.updated": {
+      const model = turnModels.get(key)?.model;
+      if (model === undefined || event.payload.model !== undefined) return event;
+      return { ...event, payload: { ...event.payload, model } };
+    }
     case "turn.completed":
     case "turn.aborted": {
       const started = turnModels.get(key);

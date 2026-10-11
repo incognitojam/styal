@@ -39,6 +39,7 @@ import { ProviderCommandReactorLive } from "../orchestration/Layers/ProviderComm
 import { OrchestrationCommandInvariantError } from "../orchestration/Errors.ts";
 import * as ThreadBackgroundLiveness from "../orchestration/ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../orchestration/ThreadPlanProgress.ts";
+import * as ThreadLiveTurnUsage from "../orchestration/ThreadLiveTurnUsage.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderCommandReactor } from "../orchestration/Services/ProviderCommandReactor.ts";
@@ -590,6 +591,7 @@ const integrationLayer = Layer.mergeAll(
 ).pipe(
   Layer.provide(ThreadBackgroundLiveness.layer),
   Layer.provide(ThreadPlanProgress.layer),
+  Layer.provide(ThreadLiveTurnUsage.layer),
   Layer.provide(OrchestrationEventStoreLive),
   Layer.provide(OrchestrationCommandReceiptRepositoryLive),
   Layer.provide(RepositoryIdentityResolver.layer),

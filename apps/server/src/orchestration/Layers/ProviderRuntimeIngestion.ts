@@ -55,6 +55,7 @@ import { ProjectionThreadProposedPlanRepositoryLive } from "../../persistence/La
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
 import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
+import { ThreadLiveTurnUsageService } from "../ThreadLiveTurnUsage.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ProviderRuntimeIngestionService,
@@ -1294,6 +1295,7 @@ export function runtimeEventToActivities(
 const make = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
+  const threadLiveTurnUsage = yield* ThreadLiveTurnUsageService;
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
@@ -2848,12 +2850,27 @@ const make = Effect.gen(function* () {
       // active turn's progress; session.exited always clears.
       if (event.type === "session.exited") {
         threadPlanProgress.clearThreadPlanProgress(thread.id);
+        threadLiveTurnUsage.clearLiveTurnUsage(thread.id);
       } else if (!conflictsWithActiveTurn) {
         if (event.type === "turn.plan.updated") {
           threadPlanProgress.recordPlanProgress(thread.id, event.payload.plan);
         } else if (isTerminalTurn && shouldApplyThreadLifecycle) {
           threadPlanProgress.clearThreadPlanProgress(thread.id);
         }
+      }
+
+      // The running turn's usage so far, added to the thread's total until
+      // the turn's own usage record replaces it.
+      if (
+        event.type === "turn.usage.updated" &&
+        eventTurnId !== undefined &&
+        !conflictsWithActiveTurn
+      ) {
+        const { byModel: _byModel, ...usage } = yield* pricedTurnUsage(
+          event.payload.tokenUsage,
+          event.payload.model,
+        );
+        threadLiveTurnUsage.recordLiveTurnUsage(thread.id, eventTurnId, usage);
       }
 
       // Sidebar background liveness: fed from the same lifecycle stream,
@@ -2985,7 +3002,21 @@ const make = Effect.gen(function* () {
           ),
         ),
       ).pipe(Effect.asVoid);
+      // Its usage record, now appended, counts what the live usage did.
+      if (isTerminalTurn && eventTurnId !== undefined) {
+        threadLiveTurnUsage.clearLiveTurnUsage(thread.id, eventTurnId);
+      }
     });
+
+  /** A turn's usage with its estimated cost, when every model in it has a price. */
+  const pricedTurnUsage = Effect.fn("pricedTurnUsage")(function* (
+    usage: TurnTokenUsage,
+    model: string | undefined,
+  ) {
+    const tokensByModel = turnTokensByModel(usage, model);
+    const costUsd = tokensByModel ? yield* usageService.priceTokens(tokensByModel) : null;
+    return { ...usage, ...(costUsd !== null ? { costUsd } : {}) };
+  });
 
   /**
    * Adds the thread's total to a turn's usage record, summed from every stored
@@ -3004,9 +3035,7 @@ const make = Effect.gen(function* () {
       return activity;
     }
     const reported = reportedTurnTokenUsage(event);
-    const tokensByModel = reported && turnTokensByModel(reported, event.payload.model);
-    const costUsd = tokensByModel ? yield* usageService.priceTokens(tokensByModel) : null;
-    const usage = reported ? { ...reported, ...(costUsd !== null ? { costUsd } : {}) } : null;
+    const usage = reported ? yield* pricedTurnUsage(reported, event.payload.model) : null;
     const [recorded, turns] = yield* Effect.all([
       projectionThreadActivityRepository.listByThreadId({
         threadId,

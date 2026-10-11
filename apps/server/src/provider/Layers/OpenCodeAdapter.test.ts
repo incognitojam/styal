@@ -2663,9 +2663,10 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         idle.promise,
       ];
 
-      const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.threadId === threadId && event.type === "turn.completed"),
-        Stream.runHead,
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
         Effect.forkChild,
       );
       yield* adapter.startSession({
@@ -2867,11 +2868,31 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         },
       });
 
-      const completed = yield* Fiber.join(completedFiber).pipe(Effect.timeout("1 second"));
-      NodeAssert.equal(completed._tag, "Some");
-      if (completed._tag === "Some" && completed.value.type === "turn.completed") {
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      // Each newly counted step reports the running turn's usage so far.
+      NodeAssert.deepStrictEqual(
+        events.flatMap((event) =>
+          event.type === "turn.usage.updated"
+            ? [
+                [
+                  event.payload.tokenUsage.inputTokens,
+                  event.payload.tokenUsage.subagents?.inputTokens,
+                ],
+              ]
+            : [],
+        ),
+        [
+          [150, undefined],
+          [210, undefined],
+          [246, undefined],
+          [246, 550],
+        ],
+      );
+      const completed = events.at(-1);
+      NodeAssert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
         // OpenCode's own step prices, subagent included and each step once.
-        const { byModel, ...tokenUsage } = completed.value.payload.tokenUsage ?? {};
+        const { byModel, ...tokenUsage } = completed.payload.tokenUsage ?? {};
         const { reportedCostUsd, ...pricedTokens } = byModel?.[0] ?? {};
         NodeAssert.equal(byModel?.length, 1);
         NodeAssert.ok(Math.abs((reportedCostUsd ?? 0) - 0.16) < 1e-9);
@@ -2931,13 +2952,18 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       const terminalUuidStarted = yield* Deferred.make<void>();
       const terminalUuidRelease = yield* Deferred.make<void>();
       let blockFirstStepWrite = true;
-      let blockNextUuid = false;
+      // UUIDs to hand out before blocking one; undefined while nothing blocks.
+      let uuidsBeforeBlock: number | undefined;
       const nodeCrypto = yield* Crypto.Crypto;
       const gatedCrypto = {
         ...nodeCrypto,
         randomUUIDv4: Effect.suspend(() => {
-          if (!blockNextUuid) return nodeCrypto.randomUUIDv4;
-          blockNextUuid = false;
+          if (uuidsBeforeBlock === undefined) return nodeCrypto.randomUUIDv4;
+          if (uuidsBeforeBlock > 0) {
+            uuidsBeforeBlock -= 1;
+            return nodeCrypto.randomUUIDv4;
+          }
+          uuidsBeforeBlock = undefined;
           return Deferred.succeed(terminalUuidStarted, undefined).pipe(
             Effect.andThen(Deferred.await(terminalUuidRelease)),
             Effect.andThen(nodeCrypto.randomUUIDv4),
@@ -3028,7 +3054,8 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         },
       });
       yield* Deferred.await(firstStepWriteStarted);
-      blockNextUuid = true;
+      // The step's live usage update takes one; the turn's completion is next.
+      uuidsBeforeBlock = 1;
       firstIdle.resolve({
         id: "evt-token-handoff-first-idle",
         type: "session.status",

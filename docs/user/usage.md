@@ -70,7 +70,9 @@ subscription charges. A turn keeps the price it was recorded with, so changing a
 affects only later turns. Turns on a model with no known price show no cost.
 
 The composer shows the thread's total beside the branch picker, or beside the model on mobile, with
-the same breakdown. The total updates when a turn finishes. When some turns reported no usage, such
+the same breakdown. For Claude Code, Codex, and OpenCode, the total moves while a turn runs and
+settles on the turn's own figure when it finishes; until then, a Claude Code turn counts only its main
+agent. Other providers update the total when a turn finishes. When some turns reported no usage, such
 as Cursor or Grok turns, the breakdown says how many turns it includes, and likewise when only some
 turns have a cost. The thread's total also shows when you hover a thread in the sidebar, and at the
 top of a thread's menu when you long-press it on mobile.

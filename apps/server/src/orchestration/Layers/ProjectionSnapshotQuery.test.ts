@@ -28,6 +28,7 @@ import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
+import * as ThreadLiveTurnUsage from "../ThreadLiveTurnUsage.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { encodeThreadDetailPageCursor } from "../threadDetailCursor.ts";
 import { projectThreadDetailSnapshot } from "../ActivityPayloadProjection.ts";
@@ -55,6 +56,7 @@ it.effect("reads project shells without loading threads or resolving excluded pr
   const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(ThreadLiveTurnUsage.layer),
     Layer.provide(
       Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
         resolve: (root) =>
@@ -106,6 +108,7 @@ const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(ThreadLiveTurnUsage.layer),
     Layer.provideMerge(RepositoryIdentityResolver.layer),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),
@@ -2431,6 +2434,7 @@ it.effect(
     const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(ThreadBackgroundLiveness.layer),
       Layer.provide(ThreadPlanProgress.layer),
+      Layer.provide(ThreadLiveTurnUsage.layer),
       Layer.provideMerge(
         Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
           resolve: (cwd: string) =>
@@ -3490,6 +3494,7 @@ it.effect("omits foreign-host PRs from legacy snapshots while preserving native 
   const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(ThreadLiveTurnUsage.layer),
     Layer.provide(
       Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
         resolve: () =>
@@ -3546,6 +3551,7 @@ it.effect(
     const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(ThreadBackgroundLiveness.layer),
       Layer.provide(ThreadPlanProgress.layer),
+      Layer.provide(ThreadLiveTurnUsage.layer),
       Layer.provide(
         Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
           resolve: (root) =>
@@ -3614,6 +3620,7 @@ it.effect("reads one sweep thread and its projects like the shell snapshot", () 
   const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(ThreadLiveTurnUsage.layer),
     Layer.provide(
       Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
         resolve: () =>
@@ -3683,6 +3690,7 @@ it.effect("reads a full sweep from unsettled threads and every project", () => {
   const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(ThreadLiveTurnUsage.layer),
     Layer.provide(
       Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
         resolve: (root) =>
