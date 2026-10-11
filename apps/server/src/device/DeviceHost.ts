@@ -110,6 +110,8 @@ export class DeviceHost extends Context.Service<
     >;
     /** Current endpoints when already running, without starting anything. */
     readonly current: Effect.Effect<DeviceHostReady | null>;
+    /** The running agent-device endpoint, without starting anything. Local hosts only. */
+    readonly currentAgent?: Effect.Effect<AgentDeviceEndpoint | null>;
     /** Stops only agent-device. Manual viewing through the hub stays available. */
     readonly stopAgent: Effect.Effect<void>;
     /** Stops helpers. Devices themselves keep running; the user owns those. */

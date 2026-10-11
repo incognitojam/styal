@@ -158,6 +158,10 @@ export class DeviceService extends Context.Service<
       hostId?: DeviceHostId,
     ) => Effect.Effect<DeviceAgentReadiness | null, DeviceError>;
     readonly currentReadiness: (hostId?: DeviceHostId) => Effect.Effect<DeviceReadiness | null>;
+    /** The running agent-device endpoint of a local host, without the lifecycle lock. */
+    readonly currentAgentEndpoint: (
+      hostId?: DeviceHostId,
+    ) => Effect.Effect<DeviceHost.AgentDeviceEndpoint | null>;
     readonly sessionsForThread: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<DeviceSession>>;
   }
 >()("@styal/cli/device/DeviceService") {}
@@ -377,6 +381,11 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               }),
           ),
         );
+      if (hosts.get(host.id) !== host)
+        return yield* new DeviceHostUnavailableError({
+          hostId: host.id,
+          reason: "Host configuration changed. Retry the operation.",
+        });
       const hostSummaries = yield* Effect.forEach(hosts.values(), (candidate) => candidate.summary);
       yield* publish((state) => ({ ...state, hosts: hostSummaries }));
       yield* setHostStatus(host.id, { status: "ready" });
@@ -597,9 +606,15 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               ),
             );
           if (!nextEnabled) {
-            yield* Effect.forEach(hosts.values(), (host) => host.stop, { discard: true });
+            yield* Effect.forEach(hosts.values(), (host) => host.stop, {
+              discard: true,
+              concurrency: "unbounded",
+            });
           } else if (input.agentAccessEnabled === false) {
-            yield* Effect.forEach(hosts.values(), (host) => host.stopAgent, { discard: true });
+            yield* Effect.forEach(hosts.values(), (host) => host.stopAgent, {
+              discard: true,
+              concurrency: "unbounded",
+            });
           }
           yield* publish((state) => ({
             ...state,
@@ -1021,6 +1036,16 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
                   hostId: host.id,
                   reason: "Host configuration changed. Retry the operation.",
                 });
+              // Environment hosts start agent access without this lock. If access was
+              // turned off meanwhile, drop the credential instead of writing it.
+              const current = yield* readDeviceSettings;
+              if (!current.enabled || !current.agentAccessEnabled) {
+                yield* host.stopAgent;
+                return yield* new DeviceHostUnavailableError({
+                  hostId: host.id,
+                  reason: "Agent device access was turned off.",
+                });
+              }
               return yield* configureAgent(input.hostId, ready);
             }),
           );
@@ -1051,6 +1076,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       readinessIfSupported,
       agentReadinessIfSupported,
       currentReadiness,
+      currentAgentEndpoint: (hostId) =>
+        Effect.suspend(
+          () => hosts.get(hostId ?? LOCAL_DEVICE_HOST_ID)?.currentAgent ?? Effect.succeed(null),
+        ),
       sessionsForThread,
     }),
     setHostStatus,

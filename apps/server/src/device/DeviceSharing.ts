@@ -36,9 +36,9 @@ import {
 } from "./EnvironmentDeviceHost.ts";
 
 const sharingError = (cause: unknown) =>
-  new DeviceOperationError({
-    operation: "share environment devices",
-    reason: "request_failed",
+  new DeviceHostUnavailableError({
+    hostId: LOCAL_DEVICE_HOST_ID,
+    reason: "Device sharing could not read or save its settings or credentials. Retry.",
     cause,
   });
 /** User-facing failure. Remote callers rewrite `hostId` to their own host entry. */
@@ -85,12 +85,10 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const environmentId = yield* environment.getEnvironmentId;
   const lock = yield* Semaphore.make(1);
-  // Agent credentials live only in memory. A restart or a stop-agent, release, or
-  // revoke command drops them; the source asks for a new one before the next agent
-  // command. The local daemon endpoint is captured when the credential is issued so
-  // proxied requests do not take the device lifecycle lock.
+  // Agent credentials live only in memory. A restart, a stop-agent, release, or revoke
+  // command, or finding local device or agent access off drops them. The source gets a
+  // new one the next time an agent opens a device.
   const agents = new Map<AuthSessionId, { token: string; checkedAt: number }>();
-  let agentEndpoint: { origin: string; token: string } | null = null;
   const requireAccess = Effect.gen(function* () {
     const value = yield* settings.getSettings.pipe(Effect.mapError(sharingError));
     if (!value.enableDeviceSupport || !value.enableAgentDeviceAccess)
@@ -129,6 +127,7 @@ const make = Effect.gen(function* () {
         !session.subject.startsWith("device-host:"))
     )
       return yield* unavailable("This session is not a device access grant.");
+    agents.delete(sessionId);
     yield* auth.revokeSession(sessionId).pipe(Effect.mapError(sharingError));
   });
   const connect = Effect.fn("DeviceSharing.connect")(function* (
@@ -291,7 +290,6 @@ const make = Effect.gen(function* () {
           return yield* unavailable(
             "Agent device access is unavailable on the device environment.",
           );
-        agentEndpoint = { origin: ready.agentDevice.baseUrl, token: ready.agentDevice.token };
         const token =
           agents.get(session.sessionId)?.token ?? NodeCrypto.randomBytes(32).toString("base64url");
         agents.set(session.sessionId, { token, checkedAt: yield* Clock.currentTimeMillis });
@@ -330,9 +328,9 @@ const make = Effect.gen(function* () {
     return { origin: ready.hub.origin };
   });
   const agentTarget = Effect.fn("DeviceSharing.agentTarget")(function* (token: string) {
-    yield* requireAccess;
     const match = [...agents].find(([, entry]) => sameToken(entry.token, token));
     if (!match) return null;
+    yield* requireAccess.pipe(Effect.tapError(() => Effect.sync(() => agents.clear())));
     const [sessionId, entry] = match;
     const now = yield* Clock.currentTimeMillis;
     if (now - entry.checkedAt > AGENT_SESSION_CHECK_MS) {
@@ -345,13 +343,19 @@ const make = Effect.gen(function* () {
       }
       agents.set(sessionId, { ...entry, checkedAt: now });
     }
-    if (!agentEndpoint)
+    // Read without the lifecycle lock so proxied requests neither wait on device work nor
+    // publish state. The daemon's port and token change when it restarts.
+    const endpoint = yield* devices.currentAgentEndpoint(LOCAL_DEVICE_HOST_ID);
+    if (!endpoint)
       return yield* unavailable("Agent device access is unavailable on the device environment.");
     return {
-      origin: agentEndpoint.origin,
+      origin: endpoint.baseUrl,
       headers: {
-        authorization: `Bearer ${agentEndpoint.token}`,
-        "x-agent-device-token": agentEndpoint.token,
+        authorization: `Bearer ${endpoint.token}`,
+        "x-agent-device-token": endpoint.token,
+        // agent-device's own remote proxy sends this. It makes the daemon refuse
+        // installs from local paths and limits its network requests to public addresses.
+        "x-agent-device-network-access": "public-only",
       },
     };
   });

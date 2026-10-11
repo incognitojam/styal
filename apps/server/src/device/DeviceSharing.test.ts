@@ -19,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse, HttpRouter } from "effect/unstable/http";
@@ -39,6 +40,9 @@ import {
 const encodeSettings = Schema.encodeSync(Schema.fromJsonString(ServerSettingsSchema));
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodePeerAgent = Schema.decodeUnknownSync(DevicePeerAgent);
+const decodeCommandBody = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ operation: Schema.String })),
+);
 
 const sourceId = EnvironmentId.make("atlas");
 const targetId = EnvironmentId.make("orion");
@@ -114,6 +118,8 @@ const fixture = Effect.gen(function* () {
     body: string | undefined;
   }[] = [];
   let unavailable = false;
+  // Peer commands the target finished handling, as "operation:status".
+  const commands = yield* Queue.unbounded<string>();
   let inventoryUnavailable = false;
   let handler: (request: Request) => Promise<Response>;
   const http = HttpClient.make((request) =>
@@ -134,6 +140,8 @@ const fixture = Effect.gen(function* () {
             }),
           ),
         );
+        if (request.url.endsWith("/api/device-share/command") && body)
+          yield* Queue.offer(commands, `${decodeCommandBody(body).operation}:${response.status}`);
         return HttpClientResponse.fromWeb(request, response);
       }
       if (request.url.startsWith("http://daemon.test")) {
@@ -216,6 +224,11 @@ const fixture = Effect.gen(function* () {
           : Effect.fail(new EnvironmentAuth.ServerAuthMissingCredentialError({}));
       }),
   });
+  let daemon: DeviceHost.AgentDeviceEndpoint = {
+    baseUrl: "http://daemon.test",
+    token: "synthetic-daemon-token",
+    entryPath: "/driver",
+  };
   const ready: DeviceHost.DeviceHostAgentReady = {
     nodePath: process.execPath,
     hub: { origin: "http://hub.test" },
@@ -241,6 +254,7 @@ const fixture = Effect.gen(function* () {
     ensureReady: () => Effect.succeed(ready),
     ensureAgentReady: () => Effect.succeed(ready),
     current: Effect.succeed(ready),
+    currentAgent: Effect.sync(() => daemon),
     stopAgent: Effect.void,
     stop: Effect.void,
   });
@@ -310,6 +324,10 @@ const fixture = Effect.gen(function* () {
     handler,
     http,
     daemonRequests,
+    commands,
+    setDaemon: (value: DeviceHost.AgentDeviceEndpoint) => {
+      daemon = value;
+    },
     setUnavailable: (value: boolean) => {
       unavailable = value;
     },
@@ -468,6 +486,7 @@ it.effect(
       yield* Effect.promise(() => response.text());
       expect(f.daemonRequests[0]?.headers.authorization).toBe("Bearer synthetic-daemon-token");
       expect(f.daemonRequests[0]?.headers["x-agent-device-token"]).toBe("synthetic-daemon-token");
+      expect(f.daemonRequests[0]?.headers["x-agent-device-network-access"]).toBe("public-only");
       // The grant does not reach the agent proxy, and the agent credential cannot issue
       // peer commands such as re-enabling itself.
       expect((yield* call("agent/health", f.grant.token)).status).toBe(401);
@@ -477,6 +496,10 @@ it.effect(
       });
       expect(command.status).toBe(401);
       expect((yield* call("agent/shutdown", agentToken)).status).toBe(404);
+      // Preflight responses carry the daemon credential, so direct uploads stay local.
+      expect(
+        (yield* call("agent/upload/preflight", agentToken, { method: "POST", body: "{}" })).status,
+      ).toBe(404);
       expect(
         (yield* call("agent/admin/human-control/holds/device", agentToken, { method: "PUT" }))
           .status,
@@ -567,6 +590,52 @@ it.effect("closes the local session when the device environment is unreachable",
     f.setUnavailable(true);
     yield* source.close({ threadId, hostId: host.id });
     expect((yield* source.state).sessions).toEqual([]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("retries stopping agent access until the device environment is reachable", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const host = yield* f.host;
+    const { agentDevice } = yield* host.ensureAgentReady(() => Effect.void);
+    const health = Effect.promise(() =>
+      f.handler(
+        new Request("http://orion.test/api/device-share/agent/health", {
+          headers: { authorization: `Bearer ${agentDevice.token}` },
+        }),
+      ),
+    );
+    f.setUnavailable(true);
+    yield* host.stopAgent;
+    f.setUnavailable(false);
+    const allowed = yield* health;
+    expect(allowed.status).toBe(200);
+    yield* Effect.promise(() => allowed.text());
+    yield* TestClock.adjust("31 seconds");
+    while ((yield* Queue.take(f.commands)) !== "stop-agent:200");
+    expect((yield* health).status).toBe(401);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("forwards agent requests to the device environment's current daemon", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const session = { subject: `device-host:${sourceId}`, sessionId: f.grant.sessionId };
+    const issued = decodePeerAgent(yield* f.target.command(session, { operation: "agent" }));
+    expect((yield* f.target.agentTarget(issued.token))?.origin).toBe("http://daemon.test");
+    // Turning agent access off and on restarts the daemon with a new port and token.
+    f.setDaemon({ baseUrl: "http://daemon-restarted.test", token: "restarted", entryPath: "" });
+    expect(yield* f.target.agentTarget(issued.token)).toMatchObject({
+      origin: "http://daemon-restarted.test",
+      headers: { authorization: "Bearer restarted" },
+    });
+    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: false });
+    expect(yield* f.target.agentTarget(issued.token).pipe(Effect.flip)).toMatchObject({
+      reason: expect.stringContaining("Enable device hub"),
+    });
+    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: true });
+    expect(yield* f.target.agentTarget(issued.token)).toBeNull();
   }).pipe(Effect.scoped),
 );
 

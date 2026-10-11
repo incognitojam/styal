@@ -25,8 +25,8 @@ export function SettingsDevicesRouteScreen() {
   const { selectedTargets, availableTargets, selectedProjectKey } = useSettingsEnvironmentFilter();
   const [sourceId, setSourceId] = useState<EnvironmentId | null>(null);
   const [targetId, setTargetId] = useState<EnvironmentId | null>(null);
-  // "connect" while connecting, so the connect row shows progress only for its own work.
-  const [pending, setPending] = useState<"connect" | "other" | null>(null);
+  // "connect", a revoked host's key, or "other", so each row shows progress only for its own work.
+  const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const source =
     selectedTargets.find((entry) => entry.environmentId === sourceId) ?? selectedTargets[0];
@@ -49,10 +49,7 @@ export function SettingsDevicesRouteScreen() {
   const linked = source?.serverConfig.settings.environmentDeviceHosts?.some(
     (host) => host.environmentId === target?.environmentId,
   );
-  const perform = (
-    action: () => Promise<AtomCommandResult<unknown, unknown>>,
-    kind: "connect" | "other" = "other",
-  ) => {
+  const perform = (action: () => Promise<AtomCommandResult<unknown, unknown>>, kind = "other") => {
     setError(null);
     setPending(kind);
     void action()
@@ -189,13 +186,16 @@ export function SettingsDevicesRouteScreen() {
                   icon="trash"
                   label="Revoke device access"
                   tone="danger"
+                  loading={pending === `${entry.environmentId}:${host.id}`}
                   disabled={disabled}
                   onPress={() =>
-                    perform(() =>
-                      disconnect({
-                        environmentId: entry.environmentId,
-                        input: { hostId: host.id },
-                      }),
+                    perform(
+                      () =>
+                        disconnect({
+                          environmentId: entry.environmentId,
+                          input: { hostId: host.id },
+                        }),
+                      `${entry.environmentId}:${host.id}`,
                     )
                   }
                 />

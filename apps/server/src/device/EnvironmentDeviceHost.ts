@@ -14,9 +14,18 @@ import {
 } from "@t3tools/contracts";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import * as Cause from "effect/Cause";
+import {
+  HttpClient,
+  HttpClientError,
+  HttpClientRequest,
+  HttpClientResponse,
+} from "effect/unstable/http";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as DeviceHost from "./DeviceHost.ts";
@@ -88,9 +97,17 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
       Effect.mapError((cause) =>
         isDeviceError(cause)
           ? cause
-          : unavailable(
-              "Cannot reach the device environment from this server. Use an address reachable from both machines.",
-            ),
+          : Cause.isTimeoutError(cause)
+            ? unavailable(
+                "The device environment did not respond in time. Check that it is online and retry.",
+              )
+            : HttpClientError.isHttpClientError(cause)
+              ? unavailable(
+                  "Cannot reach the device environment from this server. Use an address reachable from both machines.",
+                )
+              : unavailable(
+                  "The device environment sent an unexpected response. Update both environments and retry.",
+                ),
       ),
     );
   const info = (operation: "inspect" | "list") =>
@@ -185,16 +202,60 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   let current: DeviceHost.DeviceHostReady | null = null;
   const hostError = (cause: unknown) =>
     new DeviceHost.DeviceHostError({ hostId: config.id, step: "connecting to environment", cause });
-  const stop = client.request({ operation: "release" }, Schema.Null).pipe(
-    Effect.timeout("5 seconds"),
-    Effect.ignore,
+  // Readiness calls run without the device lifecycle lock, so one can finish after
+  // stop. Each stop starts a new generation, and late results from an older one are dropped.
+  let generation = 0;
+  const scope = yield* Effect.scope;
+  let pendingStop: Fiber.Fiber<void> | null = null;
+  const cancelPendingStop = Effect.suspend(() => {
+    const fiber = pendingStop;
+    pendingStop = null;
+    return fiber ? Fiber.interrupt(fiber) : Effect.void;
+  });
+  /**
+   * Tells the device environment to drop this environment's agent credential, or all
+   * of its sessions for "release". An unreachable peer is retried in the background so
+   * the credential cannot come back into use when it returns; starting agent access
+   * again cancels the retry.
+   */
+  const stopRemote = (operation: "stop-agent" | "release") =>
+    Effect.gen(function* () {
+      generation += 1;
+      yield* cancelPendingStop;
+      const attempt = client.request({ operation }, Schema.Null);
+      const exit = yield* attempt.pipe(Effect.timeout("5 seconds"), Effect.exit);
+      if (Exit.isFailure(exit))
+        pendingStop = yield* attempt.pipe(
+          Effect.retry(Schedule.spaced("30 seconds")),
+          Effect.ignore,
+          Effect.forkIn(scope),
+        );
+    });
+  const stopAgent = stopRemote("stop-agent");
+  const stale = (started: number): Effect.Effect<void, DeviceHostUnavailableError> =>
+    started === generation
+      ? Effect.void
+      : Effect.fail(
+          new DeviceHostUnavailableError({
+            hostId: config.id,
+            reason: "Device access to this environment was stopped. Retry the operation.",
+          }),
+        );
+  const stop = stopRemote("release").pipe(
     Effect.andThen(
       Effect.sync(() => {
         current = null;
       }),
     ),
   );
-  yield* Effect.addFinalizer(() => (current ? stop : Effect.void));
+  // The host scope is closing here, so this is a single attempt without a retry.
+  yield* Effect.addFinalizer(() =>
+    current
+      ? client
+          .request({ operation: "release" }, Schema.Null)
+          .pipe(Effect.timeout("5 seconds"), Effect.ignore)
+      : Effect.void,
+  );
   return DeviceHost.DeviceHost.of({
     id: config.id,
     summary: Effect.sync(() => summary),
@@ -211,37 +272,43 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
         },
       ),
     ensureReady: () =>
-      current
-        ? Effect.succeed(current)
-        : client.info("inspect").pipe(
-            Effect.map(update),
-            Effect.map(() => {
-              current = ready;
-              return ready;
-            }),
-            Effect.mapError(hostError),
-          ),
+      Effect.suspend(() => {
+        if (current) return Effect.succeed(current);
+        const started = generation;
+        return client.info("inspect").pipe(
+          Effect.tap(() => stale(started)),
+          Effect.map(update),
+          Effect.map(() => {
+            current = ready;
+            return ready;
+          }),
+          Effect.mapError(hostError),
+        );
+      }),
     ensureAgentReady: () =>
-      client.request({ operation: "agent" }, DevicePeerAgent).pipe(
-        Effect.map((agent) => {
-          current = ready;
-          return {
-            ...ready,
-            agentDevice: {
-              baseUrl: `${client.baseUrl}/api/device-share/agent`,
-              token: agent.token,
-              entryPath: "",
-            },
-          };
-        }),
-        Effect.mapError(hostError),
-      ),
+      Effect.suspend(() => {
+        const started = generation;
+        return cancelPendingStop.pipe(
+          Effect.andThen(client.request({ operation: "agent" }, DevicePeerAgent)),
+          Effect.tap(() => stale(started).pipe(Effect.tapError(() => stopAgent))),
+          Effect.map((agent) => {
+            current = ready;
+            return {
+              ...ready,
+              agentDevice: {
+                baseUrl: `${client.baseUrl}/api/device-share/agent`,
+                token: agent.token,
+                entryPath: "",
+              },
+            };
+          }),
+          Effect.mapError(hostError),
+        );
+      }),
     current: Effect.sync(() => current),
     // Drops the agent credential on the device environment. The agent-device config
     // keeps the old token, but the proxy no longer accepts it.
-    stopAgent: client
-      .request({ operation: "stop-agent" }, Schema.Null)
-      .pipe(Effect.timeout("5 seconds"), Effect.ignore),
+    stopAgent,
     stop,
   });
 });

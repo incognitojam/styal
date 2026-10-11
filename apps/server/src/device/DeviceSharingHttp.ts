@@ -66,23 +66,20 @@ const command = errors(
 );
 
 /**
- * Routes agent-device's own remote proxy forwards. Daemon administration routes
- * such as human-control holds stay local to the device machine.
+ * Routes agent-device's own remote proxy forwards, except direct uploads. Their
+ * preflight response carries the daemon's credential and loopback address, which
+ * agent-device's proxy rewrites; without it the client falls back to `POST /upload`.
+ * Daemon administration routes such as human-control holds stay local.
  */
 const isAllowedAgentRequest = (path: string, method: string) =>
-  path === "/rpc" ||
-  path === "/upload" ||
-  path === "/upload/preflight" ||
-  path === "/upload/finalize"
+  path === "/rpc" || path === "/upload"
     ? method === "POST"
-    : path.startsWith("/upload/direct/")
-      ? method === "PUT"
-      : path === "/health" ||
-          path === "/artifacts" ||
-          path.startsWith("/artifacts/") ||
-          /^\/sessions\/[^/]+\/requests\/[^/]+\/diagnostics$/.test(path)
-        ? method === "GET"
-        : false;
+    : path === "/health" ||
+        path === "/artifacts" ||
+        path.startsWith("/artifacts/") ||
+        /^\/sessions\/[^/]+\/requests\/[^/]+\/diagnostics$/.test(path)
+      ? method === "GET"
+      : false;
 const agentToken = (request: HttpServerRequest.HttpServerRequest) => {
   const authorization = request.headers.authorization ?? "";
   return authorization.toLowerCase().startsWith("bearer ")
@@ -105,7 +102,11 @@ const proxy = errors(
       // Agents hold a separate credential that reaches only this proxy, never peer commands.
       const token = agentToken(request);
       const resolved = token ? yield* sharing.agentTarget(token) : null;
-      if (!resolved) return HttpServerResponse.empty({ status: 401 });
+      if (!resolved)
+        return HttpServerResponse.text(
+          "Agent device access to this environment ended. Open the device again with device_open to renew it.",
+          { status: 401 },
+        );
       if (upgrade || !isAllowedAgentRequest(path, request.method))
         return HttpServerResponse.empty({ status: 404 });
       target = resolved;
