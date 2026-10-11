@@ -1,5 +1,5 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { CheckIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
+import { DownloadIcon, RotateCwIcon } from "lucide-react";
 import type { AnimationEventHandler } from "react";
 
 import { cn } from "../../lib/utils";
@@ -68,17 +68,6 @@ function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | 
   );
 }
 
-function DesktopUpdateDownloadedIcon() {
-  return (
-    <span className="relative grid size-4 place-items-center">
-      <RotateCwIcon className="size-4" />
-      <span className="absolute -right-1 -bottom-1 grid size-2.5 place-items-center rounded-full bg-foreground text-background ring-2 ring-background">
-        <CheckIcon className="size-2" strokeWidth={3} />
-      </span>
-    </span>
-  );
-}
-
 export function DesktopUpdateStatusIcon({
   downloadPercent,
   isCheckAnimating,
@@ -94,7 +83,7 @@ export function DesktopUpdateStatusIcon({
   if (status === "downloading") {
     return <DesktopUpdateDownloadingIcon percent={downloadPercent ?? null} />;
   }
-  if (status === "downloaded") return <DesktopUpdateDownloadedIcon />;
+  if (status === "downloaded") return <RotateCwIcon className="size-4" />;
 
   return (
     <RefreshIcon
