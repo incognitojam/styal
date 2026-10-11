@@ -53,6 +53,14 @@
       "reason": "Moves agent preview tabs from the desktop app to a browser on the environment server. The fork imported #17693 early while previews still ran in the desktop app, so it kept the desktop wording of the no-host and recording-transfer errors and the MCP snapshot test that checks it. #15328 does not change those messages and the queue already counts #17693 as recorded, so when the queue reaches #15328, also apply #17693's wording for them."
     },
     {
+      "pr": 16172,
+      "reason": "Imported provisionally as one snapshot in fork #734: a visible thread Undo notice claims mod+z from focused text fields until another keypress or text edit, so Undo works from the composer. The fork keeps the handler in its own sidebar component and consumes held-key repeats until release, so they cannot undo the composer draft after the notice clears. Upstream closed the PR unmerged for missing real-client evidence; the fork retains the change as maintained behavior (ledger thread-action-undo-shortcut). If it reopens and merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and the held-key handling, verify Undo from the composer, text undo after typing and a held key, then clear the snapshot marker with that intake.",
+      "snapshot": {
+        "base": "b12b3f706d1257b79c69c34699babb6834a72b34",
+        "head": "31fb063804eb12fc9469c964be933976ca56e177"
+      }
+    },
+    {
       "pr": 16933,
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
     },
