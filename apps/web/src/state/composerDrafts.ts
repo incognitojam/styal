@@ -3,7 +3,7 @@ import {
   canonicalComposerDraftCommon,
   composerDraftCommonEquals,
   createComposerDraftEnvironmentAtoms,
-  createComposerDraftSyncController,
+  createComposerDraftSyncControllerPool,
   type ComposerDraftSyncController,
 } from "@t3tools/client-runtime/state/composer-drafts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -27,6 +27,7 @@ import { serverEnvironment } from "./server";
 import { randomUUID } from "../lib/utils";
 
 const composerDraftEnvironment = createComposerDraftEnvironmentAtoms(connectionAtomRuntime);
+const controllers = createComposerDraftSyncControllerPool();
 
 const EMPTY_SYNC_ATOM = Atom.make<null>(null).pipe(Atom.withLabel("composer-draft-sync:disabled"));
 const revisions = new Map<string, number>();
@@ -132,7 +133,6 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
   const controllerRef = useRef<ComposerDraftSyncController | null>(null);
 
   useEffect(() => {
-    controllerRef.current?.dispose();
     if (!enabled || threadRef === null) {
       controllerRef.current = null;
       return;
@@ -147,7 +147,7 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
       if (composerDraftCommonEquals(common, baseline)) return null;
       return common;
     };
-    const controller = createComposerDraftSyncController({
+    const controller = controllers.acquire(key, {
       threadId: threadRef.threadId,
       readLocal,
       canApplyRemote: () => {
@@ -190,9 +190,8 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
     });
     controllerRef.current = controller;
     return () => {
-      controller.dispose();
+      controllers.release(key, controller);
       if (controllerRef.current === controller) controllerRef.current = null;
-      revisions.delete(key);
     };
   }, [enabled, threadRef?.environmentId, threadRef?.threadId]);
 
