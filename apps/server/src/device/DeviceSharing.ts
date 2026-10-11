@@ -22,6 +22,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient } from "effect/unstable/http";
+import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -157,7 +158,17 @@ const make = Effect.gen(function* () {
     const client = yield* makeClient(host, input.grant.token, environmentId).pipe(
       Effect.provideService(HttpClient.HttpClient, http),
     );
-    yield* client.info("inspect");
+    yield* client.info("inspect").pipe(
+      Effect.mapError((error) =>
+        // A loopback address from the client may reach this server itself or nothing.
+        isLocalLoopbackHost(url.hostname)
+          ? unavailable(
+              `This server could not reach the device environment at ${host.url}. Loopback addresses only work when both environments run on the same machine; enter a LAN, Tailscale, or styal Link address instead.`,
+              host.id,
+            )
+          : error,
+      ),
+    );
     const current = yield* settings.getSettings.pipe(Effect.mapError(sharingError));
     if (current.deviceHosts.some((entry) => entry.id === host.id))
       return yield* unavailable(

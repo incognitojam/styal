@@ -1,4 +1,8 @@
-import { deviceSharingErrorMessage } from "@t3tools/client-runtime/state/device";
+import {
+  deviceSharingErrorMessage,
+  isClientOnlyDeviceAddress,
+  suggestDeviceSharingAddress,
+} from "@t3tools/client-runtime/state/device";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
 import { View } from "react-native";
@@ -6,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Option from "effect/Option";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ScreenScrollView } from "../../components/ScreenScrollView";
-import { AppText } from "../../components/AppText";
+import { AppText, AppTextInput } from "../../components/AppText";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
 import { usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -35,6 +39,17 @@ export function SettingsDevicesRouteScreen() {
   );
   const target = candidates.find((entry) => entry.environmentId === targetId) ?? candidates[0];
   const prepared = Option.getOrNull(usePreparedConnection(target?.environmentId ?? null));
+  // An address typed for one device environment does not carry over to another.
+  const [addressDraft, setAddressDraft] = useState<{
+    readonly targetId: EnvironmentId;
+    readonly value: string;
+  } | null>(null);
+  const url = (
+    addressDraft && addressDraft.targetId === target?.environmentId
+      ? addressDraft.value
+      : (suggestDeviceSharingAddress(prepared?.httpBaseUrl ?? null) ?? "")
+  ).trim();
+  const clientOnly = url !== "" && isClientOnlyDeviceAddress(url);
   const sourceState = useDeviceState(source?.environmentId ?? null);
   const targetState = useDeviceState(target?.environmentId ?? null);
   const connect = useAtomCommand(deviceEnvironment.connectEnvironment);
@@ -141,14 +156,37 @@ export function SettingsDevicesRouteScreen() {
                     ? `${source.label} agents will be allowed to control devices on ${target.label}. Device hub and agent access will be enabled on both. Access keeps working when you close the app.`
                     : "Update both environments to a version that supports device sharing."}
               </AppText>
+              <SettingsSection title={`Address ${source.label} uses to reach ${target.label}`}>
+                <View className="px-4 py-3">
+                  <AppTextInput
+                    accessibilityLabel={`Address ${source.label} uses to reach ${target.label}`}
+                    value={url}
+                    onChangeText={(value) =>
+                      setAddressDraft({ targetId: target.environmentId, value })
+                    }
+                    editable={!disabled}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    className="min-h-10 rounded-xl px-3 py-2 text-base text-foreground"
+                  />
+                </View>
+              </SettingsSection>
+              {clientOnly ? (
+                <AppText className="px-2 text-sm text-foreground-muted">
+                  This address only works if {source.label} runs on the same machine as{" "}
+                  {target.label}. Otherwise enter a LAN, Tailscale, or styal Link address for{" "}
+                  {target.label}.
+                </AppText>
+              ) : null}
               <SettingsSection>
                 <SettingsActionRow
                   icon="link"
                   label={linked ? "Reconnect device access" : "Allow device access"}
                   loading={pending === "connect"}
-                  disabled={disabled || !prepared || !compatible}
+                  disabled={disabled || !url || !compatible}
                   onPress={() => {
-                    if (!prepared) return;
+                    if (!url) return;
                     perform(
                       () =>
                         connect({
@@ -156,7 +194,7 @@ export function SettingsDevicesRouteScreen() {
                           input: {
                             targetEnvironmentId: target.environmentId,
                             targetLabel: target.label,
-                            url: prepared.httpBaseUrl,
+                            url,
                             sourceLabel: source.label,
                           },
                         }),

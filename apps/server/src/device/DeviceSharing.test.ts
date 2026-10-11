@@ -661,6 +661,20 @@ it.effect("forwards agent requests to the device environment's current daemon", 
   }).pipe(Effect.scoped),
 );
 
+it.effect("explains loopback addresses when the device environment cannot be reached", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const failure = yield* f.source
+      .connect({ label: "Orion", url: "http://127.0.0.1:3773", grant: f.grant })
+      .pipe(Effect.flip);
+    expect(failure).toMatchObject({
+      _tag: "DeviceHostUnavailableError",
+      reason: expect.stringContaining("Loopback addresses only work"),
+    });
+    expect(f.sourceSettings.read().environmentDeviceHosts).toEqual([]);
+  }).pipe(Effect.scoped),
+);
+
 it.effect("rejects a mismatched environment identity without storing access", () =>
   Effect.gen(function* () {
     const f = yield* fixture;

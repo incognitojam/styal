@@ -691,7 +691,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Devices from connected environments",
     to: "/settings/integrations",
     searchTerms: [
-      "share sharing simulator emulator ios android another environment remote agent access revoke",
+      "share sharing simulator emulator ios android another environment remote agent access revoke address",
     ],
   },
   {

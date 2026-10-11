@@ -1,4 +1,10 @@
-import { type DeviceToolVersions, type EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import {
+  type AdvertisedEndpoint,
+  type DeviceToolVersions,
+  type EnvironmentId,
+  WS_METHODS,
+} from "@t3tools/contracts";
+import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { Atom } from "effect/unstable/reactivity";
@@ -163,4 +169,32 @@ export function deviceSharingErrorMessage(cause: Cause.Cause<unknown>) {
   return error instanceof Error
     ? error.message
     : "Device access could not be changed. Reconnect both environments and try again.";
+}
+
+/** True when an address only reaches the device environment from the client's own machine. */
+export function isClientOnlyDeviceAddress(url: string) {
+  try {
+    return isLocalLoopbackHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The address the agent environment should use to reach the device environment.
+ * The client's own address is used unless it is loopback, as it is for the desktop
+ * app's own server or an SSH tunnel. Then the device environment's advertised network
+ * addresses are preferred, in the order the pairing link uses.
+ */
+export function suggestDeviceSharingAddress(
+  clientUrl: string | null,
+  advertisedEndpoints: ReadonlyArray<AdvertisedEndpoint> = [],
+) {
+  if (clientUrl && !isClientOnlyDeviceAddress(clientUrl)) return clientUrl;
+  const reachable = advertisedEndpoints.filter(
+    (endpoint) => endpoint.status !== "unavailable" && endpoint.reachability !== "loopback",
+  );
+  return (
+    (reachable.find((endpoint) => endpoint.isDefault) ?? reachable[0])?.httpBaseUrl ?? clientUrl
+  );
 }

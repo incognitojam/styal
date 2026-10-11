@@ -25,6 +25,7 @@ vi.mock("../../state/environments", () => ({
   useEnvironments: () => ({ environments: [], isReady: true }),
   usePrimaryEnvironment: () => null,
   useEnvironmentHttpBaseUrl: () => null,
+  usePrimaryEnvironmentId: () => null,
 }));
 vi.mock("../../hooks/useSettings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../hooks/useSettings")>()),
