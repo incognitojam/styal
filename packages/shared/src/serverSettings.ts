@@ -88,7 +88,7 @@ export function isModelSelectionProviderEnabled(
  * Whether a provider snapshot can run text generation now. A provider that has
  * not been checked yet counts as usable, so startup does not flip selections.
  */
-export function canProviderGenerateText(provider: ServerProvider): boolean {
+function canProviderGenerateText(provider: ServerProvider): boolean {
   return (
     provider.enabled &&
     isProviderAvailable(provider) &&
