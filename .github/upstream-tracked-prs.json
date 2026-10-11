@@ -33,6 +33,14 @@
       "reason": "Fix for #10875: GitHub Enterprise hosts without the stacks API lose the merge button."
     },
     {
+      "pr": 14256,
+      "reason": "Imported provisionally as one snapshot: unmanaged provider updates name the available version and resolved executable, and launch notices direct those installs to the app or tool that installed them while preserving managed update actions. The aggregate upstream patch applies without fork adaptations. When it merges, compare the frozen base-to-head diff with the final change, reconcile amendments, verify unmanaged, managed, and mixed update guidance, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the import or retain it as maintained fork behavior before clearing the marker.",
+      "snapshot": {
+        "base": "d2c9281b8112dc3b2991642c4bdb985e4b08b9bb",
+        "head": "a9dbea74de31dec1d6033829750829ca50b5bf68"
+      }
+    },
+    {
       "pr": 14291,
       "reason": "Makes upstream's repository identity honour gh repo set-default, which the fork's resolver has done since fork #123, including `owner/repo` values. When it merges, take upstream's version and keep the fork's rule that the branch's tracking remote does not count (ledger pull-request-association-continuity)."
     },
