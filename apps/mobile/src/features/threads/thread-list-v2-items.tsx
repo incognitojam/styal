@@ -35,6 +35,7 @@ import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr } from "../../state/use-thread-pr";
+import { useThreadUsageSummary } from "../../state/use-turn-usage";
 import { useSwipeRowDormant } from "../home/swipe-row-activation";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
@@ -596,6 +597,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const dormant = useSwipeRowDormant(props.activationKey);
 
   const pr = useThreadPr(thread);
+  const usageSummary = useThreadUsageSummary(thread.tokenUsage);
 
   const theme = useUniwindTheme();
   const sidebarPane = props.pane === "sidebar";
@@ -1256,6 +1258,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       >
         {(close) => (
           <ControlPillMenu
+            // Phones have no hover card, so the thread's usage heads its menu.
+            {...(usageSummary ? { title: usageSummary } : {})}
             actions={[
               ...(thread.branch
                 ? [

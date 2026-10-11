@@ -336,6 +336,13 @@ export function threadUsageView(usage: ThreadTokenUsage): TurnUsageView {
   );
 }
 
+/** A thread's total on one line, where nothing nearby says what a bare cost is. */
+export function threadUsageSummary(usage: ThreadTokenUsage, figure: TurnUsageFigure): string {
+  const view = threadUsageView(usage);
+  const text = usageFigureText(view, figure);
+  return usageFigureShown(view, figure) === "cost" ? `${text} est. API cost` : text;
+}
+
 /** What shows under a turn: the model it ran on and its usage figure. */
 export interface TurnSummaryView {
   readonly model: string | null;

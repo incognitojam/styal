@@ -12,6 +12,7 @@ import {
   TurnId,
   ProviderInstanceId,
   OrchestrationMessageContext,
+  ThreadTokenUsage,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -44,6 +45,7 @@ const encodeChatAttachments = Schema.encodeEffect(
 const encodeThreadLinkedPullRequest = Schema.encodeSync(
   Schema.fromJsonString(ThreadLinkedPullRequest),
 );
+const encodeThreadTokenUsage = Schema.encodeSync(Schema.fromJsonString(ThreadTokenUsage));
 const encodeMessageContext = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationMessageContext),
 );
@@ -109,6 +111,20 @@ const projectionSnapshotLayer = it.layer(
     Layer.provideMerge(NodeServices.layer),
   ),
 );
+
+const threadTokenUsage = {
+  inputTokens: 1_200,
+  cachedInputTokens: 800,
+  cacheCreationTokens: 0,
+  outputTokens: 300,
+  reasoningTokens: 100,
+  countedTurns: 2,
+  turns: 2,
+  partialTurns: 0,
+  subagentTurns: 0,
+  costUsd: 0.42,
+  pricedTurns: 2,
+};
 
 projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
   it.effect("hydrates read model from projection tables and computes snapshot sequence", () =>
@@ -205,6 +221,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           latest_turn_id,
           latest_user_message_at,
           latest_message_at,
+          token_usage_json,
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
@@ -229,6 +246,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'turn-1',
           '2026-02-24T00:00:04.000Z',
           '2026-02-24T00:00:05.000Z',
+          ${encodeThreadTokenUsage(threadTokenUsage)},
           1,
           0,
           0,
@@ -636,6 +654,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           hasActionableProposedPlan: false,
           backgroundLiveness: null,
           planProgress: null,
+          tokenUsage: threadTokenUsage,
         },
       ]);
 

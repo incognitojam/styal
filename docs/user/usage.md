@@ -72,7 +72,8 @@ affects only later turns. Turns on a model with no known price show no cost.
 The composer shows the thread's total beside the branch picker, or beside the model on mobile, with
 the same breakdown. The total updates when a turn finishes. When some turns reported no usage, such
 as Cursor or Grok turns, the breakdown says how many turns it includes, and likewise when only some
-turns have a cost.
+turns have a cost. The thread's total also shows when you hover a thread in the sidebar, and at the
+top of a thread's menu when you long-press it on mobile.
 
 To lead with the estimated cost instead of tokens, set **Settings → General → Show usage as** to
 **Est. API cost**, or turn on **Show cost** in **Settings → Thread behavior** on mobile. Turns
