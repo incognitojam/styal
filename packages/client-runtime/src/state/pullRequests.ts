@@ -1,5 +1,14 @@
 import {
   WS_METHODS,
+  PullRequestActivity,
+  PullRequestDetail as PullRequestDetailSchema,
+  PullRequestPreview,
+  PullRequestReviewGuideResult,
+  PullRequestListResult,
+  PullRequestChecks,
+  PullRequestDiffResult,
+  PullRequestFilesViewedResult,
+  PullRequestLinkedThreadsResult,
   type EnvironmentId,
   type PullRequestActor,
   type PullRequestActionInput,
@@ -15,6 +24,9 @@ import {
 } from "@t3tools/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { persistPullRequestStats } from "./pullRequestStatsPersistence.ts";
+import { persistQuery } from "./queryPersistence.ts";
 import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
@@ -189,6 +201,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   const activity = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:activity",
+      persistence: persistQuery(PullRequestActivity),
       tag: WS_METHODS.pullRequestsActivity,
       execute: (input) => routedRequest(WS_METHODS.pullRequestsActivity, input),
       staleTimeMs: 60_000,
@@ -198,6 +211,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   const detail = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:detail",
+      persistence: persistQuery(PullRequestDetailSchema),
       tag: WS_METHODS.pullRequestsDetail,
       execute: (input) => routedRequest(WS_METHODS.pullRequestsDetail, input),
       staleTimeMs: 60_000,
@@ -207,6 +221,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   const preview = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:preview",
+      persistence: persistQuery(PullRequestPreview),
       tag: WS_METHODS.pullRequestsPreview,
       execute: (input) => routedRequest(WS_METHODS.pullRequestsPreview, input),
       staleTimeMs: 60_000,
@@ -262,6 +277,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   const reviewGuide = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:review-guide",
+      persistence: persistQuery(PullRequestReviewGuideResult),
       tag: WS_METHODS.pullRequestsReviewGuide,
       execute: (input) => routedRequest(WS_METHODS.pullRequestsReviewGuide, input),
       staleTimeMs: 60_000,
@@ -373,6 +389,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     refreshes,
     linkedThreads: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:linked-threads",
+      persistence: persistQuery(PullRequestLinkedThreadsResult),
       tag: WS_METHODS.pullRequestsLinkedThreads,
       staleTimeMs: 0,
       refreshIntervalMs: 10_000,
@@ -380,6 +397,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     }),
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list",
+      persistence: persistQuery(PullRequestListResult),
       tag: WS_METHODS.pullRequestsList,
       staleTimeMs: 30_000,
       refreshTrigger: ({ environmentId, input }) =>
@@ -393,6 +411,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
      */
     listStats: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list-stats",
+      persistence: persistPullRequestStats(),
       tag: WS_METHODS.pullRequestsListStats,
       staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
@@ -401,6 +420,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     preview,
     checks: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:checks",
+      persistence: persistQuery(Schema.NullOr(PullRequestChecks)),
       tag: WS_METHODS.pullRequestsChecks,
       execute: (input) => routedRequest(WS_METHODS.pullRequestsChecks, input),
       staleTimeMs: 45_000,
@@ -420,6 +440,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     }),
     diff: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
+      persistence: persistQuery(PullRequestDiffResult),
       staleTimeMs: 60_000,
       execute: (input: PullRequestDiffInput) =>
         Effect.gen(function* () {
@@ -457,6 +478,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     }),
     filesViewed: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:files-viewed",
+      persistence: persistQuery(PullRequestFilesViewedResult),
       tag: WS_METHODS.pullRequestsFilesViewed,
       execute: (input) => routedRequest(WS_METHODS.pullRequestsFilesViewed, input),
       staleTimeMs: 15_000,
@@ -669,7 +691,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       label: "environment-data:pull-requests:generate-review-guide",
       tag: WS_METHODS.pullRequestsGenerateReviewGuide,
       execute: (input) => routedRequest(WS_METHODS.pullRequestsGenerateReviewGuide, input),
-      onSuccess: (target, registry) => Effect.sync(() => registry.refresh(reviewGuide(target))),
+      onSuccess: (target, registry, result) =>
+        Effect.sync(() => {
+          // The command returns the accepted run. Publish it before starting ends so readers
+          // never fall back to the empty/failed state while the follow-up query is in flight.
+          updateCached(registry, reviewGuide(target), () => result, true);
+        }),
     }),
     /** A repository catalogue for immediate display while a PR-specific read revalidates. */
     repositoryLabelCandidates,
