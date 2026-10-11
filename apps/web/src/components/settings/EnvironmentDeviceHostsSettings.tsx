@@ -14,7 +14,8 @@ export function EnvironmentDeviceHostsSettings() {
   const { environments } = useEnvironments();
   const [sourceId, setSourceId] = useState<EnvironmentId | null>(null);
   const [targetId, setTargetId] = useState<EnvironmentId | null>(null);
-  const [busy, setBusy] = useState(false);
+  // "connect" or the host ID being revoked, so each button reports only its own work.
+  const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const source =
     connectedEnvironments.find((entry) => entry.environmentId === sourceId) ??
@@ -29,11 +30,14 @@ export function EnvironmentDeviceHostsSettings() {
   const targetState = useDeviceState(target?.environmentId ?? null);
   const connect = useAtomCommand(deviceEnvironment.connectEnvironment);
   const disconnect = useAtomCommand(deviceEnvironment.disconnectEnvironment);
-  const disabled = busy || scope.kind === "project" || scope.kind === "checkout";
+  const disabled = pending !== null || scope.kind === "project" || scope.kind === "checkout";
   const existing = source?.serverConfig?.settings.environmentDeviceHosts ?? [];
   const linked = existing.some((host) => host.environmentId === target?.environmentId);
+  const checked = sourceState.loaded && targetState.loaded;
   const compatible =
-    sourceState.state.supportsEnvironmentHosts && targetState.state.supportsEnvironmentHosts;
+    checked &&
+    sourceState.state.supportsEnvironmentHosts &&
+    targetState.state.supportsEnvironmentHosts;
   return (
     <SettingsRow
       id="environment-device-hosts"
@@ -98,9 +102,11 @@ export function EnvironmentDeviceHostsSettings() {
               </label>
             </div>
             <p className="text-sm text-muted-foreground">
-              {compatible
-                ? `${source.label} agents will be allowed to control devices on ${target.label}. Device hub and agent access will be enabled on both.`
-                : "Update both environments to a version that supports device sharing."}
+              {!checked
+                ? "Checking whether both environments support device sharing…"
+                : compatible
+                  ? `${source.label} agents will be allowed to control devices on ${target.label}. Device hub and agent access will be enabled on both.`
+                  : "Update both environments to a version that supports device sharing."}
             </p>
             <Button
               size="sm"
@@ -109,7 +115,7 @@ export function EnvironmentDeviceHostsSettings() {
               onClick={() => {
                 if (!url) return;
                 setError(null);
-                setBusy(true);
+                setPending("connect");
                 void connect({
                   environmentId: source.environmentId,
                   input: {
@@ -123,10 +129,14 @@ export function EnvironmentDeviceHostsSettings() {
                     if (result._tag === "Failure")
                       setError(deviceSharingErrorMessage(result.cause));
                   })
-                  .finally(() => setBusy(false));
+                  .finally(() => setPending(null));
               }}
             >
-              {busy ? "Connecting…" : linked ? "Reconnect device access" : "Allow device access"}
+              {pending === "connect"
+                ? "Connecting…"
+                : linked
+                  ? "Reconnect device access"
+                  : "Allow device access"}
             </Button>
           </>
         )}
@@ -153,7 +163,7 @@ export function EnvironmentDeviceHostsSettings() {
                 disabled={disabled}
                 onClick={() => {
                   setError(null);
-                  setBusy(true);
+                  setPending(host.id);
                   void disconnect({
                     environmentId: environment.environmentId,
                     input: { hostId: host.id },
@@ -162,10 +172,10 @@ export function EnvironmentDeviceHostsSettings() {
                       if (result._tag === "Failure")
                         setError(deviceSharingErrorMessage(result.cause));
                     })
-                    .finally(() => setBusy(false));
+                    .finally(() => setPending(null));
                 }}
               >
-                Revoke access
+                {pending === host.id ? "Revoking…" : "Revoke access"}
               </Button>
             </div>
           )),

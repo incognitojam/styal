@@ -25,7 +25,8 @@ export function SettingsDevicesRouteScreen() {
   const { selectedTargets, availableTargets, selectedProjectKey } = useSettingsEnvironmentFilter();
   const [sourceId, setSourceId] = useState<EnvironmentId | null>(null);
   const [targetId, setTargetId] = useState<EnvironmentId | null>(null);
-  const [busy, setBusy] = useState(false);
+  // "connect" while connecting, so the connect row shows progress only for its own work.
+  const [pending, setPending] = useState<"connect" | "other" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const source =
     selectedTargets.find((entry) => entry.environmentId === sourceId) ?? selectedTargets[0];
@@ -39,20 +40,26 @@ export function SettingsDevicesRouteScreen() {
   const connect = useAtomCommand(deviceEnvironment.connectEnvironment);
   const disconnect = useAtomCommand(deviceEnvironment.disconnectEnvironment);
   const configure = useAtomCommand(deviceEnvironment.configure);
-  const disabled = busy || selectedProjectKey !== null;
+  const disabled = pending !== null || selectedProjectKey !== null;
+  const checked = sourceState.loaded && targetState.loaded;
   const compatible =
-    sourceState.state.supportsEnvironmentHosts && targetState.state.supportsEnvironmentHosts;
+    checked &&
+    sourceState.state.supportsEnvironmentHosts &&
+    targetState.state.supportsEnvironmentHosts;
   const linked = source?.serverConfig.settings.environmentDeviceHosts?.some(
     (host) => host.environmentId === target?.environmentId,
   );
-  const perform = (action: () => Promise<AtomCommandResult<unknown, unknown>>) => {
+  const perform = (
+    action: () => Promise<AtomCommandResult<unknown, unknown>>,
+    kind: "connect" | "other" = "other",
+  ) => {
     setError(null);
-    setBusy(true);
+    setPending(kind);
     void action()
       .then((result) => {
         if (result._tag === "Failure") setError(deviceSharingErrorMessage(result.cause));
       })
-      .finally(() => setBusy(false));
+      .finally(() => setPending(null));
   };
   return (
     <>
@@ -131,28 +138,32 @@ export function SettingsDevicesRouteScreen() {
           {source && target ? (
             <View className="gap-3">
               <AppText className="px-2 text-sm text-foreground-muted">
-                {compatible
-                  ? `${source.label} agents will be allowed to control devices on ${target.label}. Device hub and agent access will be enabled on both. Access keeps working when you close the app.`
-                  : "Update both environments to a version that supports device sharing."}
+                {!checked
+                  ? "Checking whether both environments support device sharing…"
+                  : compatible
+                    ? `${source.label} agents will be allowed to control devices on ${target.label}. Device hub and agent access will be enabled on both. Access keeps working when you close the app.`
+                    : "Update both environments to a version that supports device sharing."}
               </AppText>
               <SettingsSection>
                 <SettingsActionRow
                   icon="link"
                   label={linked ? "Reconnect device access" : "Allow device access"}
-                  loading={busy}
+                  loading={pending === "connect"}
                   disabled={disabled || !prepared || !compatible}
                   onPress={() => {
                     if (!prepared) return;
-                    perform(() =>
-                      connect({
-                        environmentId: source.environmentId,
-                        input: {
-                          targetEnvironmentId: target.environmentId,
-                          targetLabel: target.label,
-                          url: prepared.httpBaseUrl,
-                          sourceLabel: source.label,
-                        },
-                      }),
+                    perform(
+                      () =>
+                        connect({
+                          environmentId: source.environmentId,
+                          input: {
+                            targetEnvironmentId: target.environmentId,
+                            targetLabel: target.label,
+                            url: prepared.httpBaseUrl,
+                            sourceLabel: source.label,
+                          },
+                        }),
+                      "connect",
                     );
                   }}
                 />

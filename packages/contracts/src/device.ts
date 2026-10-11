@@ -402,7 +402,9 @@ export const DeviceEnvironmentInfo = Schema.Struct({
 });
 export type DeviceEnvironmentInfo = typeof DeviceEnvironmentInfo.Type;
 export const DevicePeerCommand = Schema.Union([
-  Schema.Struct({ operation: Schema.Literals(["inspect", "list", "agent", "release", "revoke"]) }),
+  Schema.Struct({
+    operation: Schema.Literals(["inspect", "list", "agent", "stop-agent", "release", "revoke"]),
+  }),
   Schema.Struct({ operation: Schema.Literal("open"), input: DeviceOpenInput }),
   Schema.Struct({ operation: Schema.Literal("close"), input: DeviceCloseInput }),
   Schema.Struct({ operation: Schema.Literal("shutdown"), input: DeviceShutdownInput }),
@@ -412,6 +414,8 @@ export const DevicePeerCommand = Schema.Union([
 ]);
 export type DevicePeerCommand = typeof DevicePeerCommand.Type;
 export const DevicePeerScreenshot = Schema.Struct({ device: DeviceSummary, png: Schema.String });
+/** Agent proxy credential, separate from the grant so agents cannot issue peer commands. */
+export const DevicePeerAgent = Schema.Struct({ token: TrimmedNonEmptyString });
 
 export class DeviceHostUnavailableError extends Schema.TaggedError<DeviceHostUnavailableError>()(
   "DeviceHostUnavailableError",

@@ -1,5 +1,7 @@
+import * as NodeCrypto from "node:crypto";
 import {
   AuthDeviceOperateScope,
+  DeviceHostUnavailableError,
   DeviceOperationError,
   LOCAL_DEVICE_HOST_ID,
   type DeviceHostGrant,
@@ -7,10 +9,12 @@ import {
   type DeviceConnectEnvironmentInput,
   type DevicePeerCommand,
   type DeviceError,
+  type DeviceHostId,
   type AuthSessionId,
   ThreadId,
   EnvironmentId,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -31,14 +35,22 @@ import {
   makeClient,
 } from "./EnvironmentDeviceHost.ts";
 
-const isDeviceOperationError = Schema.is(DeviceOperationError);
-
 const sharingError = (cause: unknown) =>
   new DeviceOperationError({
     operation: "share environment devices",
     reason: "request_failed",
     cause,
   });
+/** User-facing failure. Remote callers rewrite `hostId` to their own host entry. */
+const unavailable = (reason: string, hostId: DeviceHostId = LOCAL_DEVICE_HOST_ID) =>
+  new DeviceHostUnavailableError({ hostId, reason });
+const sameToken = (left: string, right: string) => {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && NodeCrypto.timingSafeEqual(a, b);
+};
+/** How long a session check covers agent proxy requests before the grant is checked again. */
+const AGENT_SESSION_CHECK_MS = 30_000;
 
 export class DeviceSharing extends Context.Service<
   DeviceSharing,
@@ -49,9 +61,14 @@ export class DeviceSharing extends Context.Service<
     readonly revokeGrant: (sessionId: AuthSessionId) => Effect.Effect<void, DeviceError>;
     readonly connect: (input: DeviceConnectEnvironmentInput) => Effect.Effect<void, DeviceError>;
     readonly disconnect: (hostId: string) => Effect.Effect<void, DeviceError>;
-    readonly proxyTarget: (
-      agent: boolean,
-    ) => Effect.Effect<{ origin: string; headers?: Readonly<Record<string, string>> }, DeviceError>;
+    readonly hubTarget: Effect.Effect<{ origin: string }, DeviceError>;
+    /** Resolves an agent proxy credential. Null means the credential is unknown or revoked. */
+    readonly agentTarget: (
+      token: string,
+    ) => Effect.Effect<
+      { origin: string; headers: Readonly<Record<string, string>> } | null,
+      DeviceError
+    >;
     readonly command: (
       session: Pick<EnvironmentAuth.AuthenticatedSession, "subject" | "sessionId">,
       input: DevicePeerCommand,
@@ -68,25 +85,25 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const environmentId = yield* environment.getEnvironmentId;
   const lock = yield* Semaphore.make(1);
+  // Agent credentials live only in memory. A restart or a stop-agent, release, or
+  // revoke command drops them; the source asks for a new one before the next agent
+  // command. The local daemon endpoint is captured when the credential is issued so
+  // proxied requests do not take the device lifecycle lock.
+  const agents = new Map<AuthSessionId, { token: string; checkedAt: number }>();
+  let agentEndpoint: { origin: string; token: string } | null = null;
   const requireAccess = Effect.gen(function* () {
     const value = yield* settings.getSettings.pipe(Effect.mapError(sharingError));
     if (!value.enableDeviceSupport || !value.enableAgentDeviceAccess)
-      return yield* new DeviceOperationError({
-        operation: "Enable device hub and agent device access on the device environment first",
-        reason: "hub_rejected",
-        cause: undefined,
-      });
+      return yield* unavailable(
+        "Enable device hub and agent device access on the device environment first.",
+      );
   });
   const createGrant = Effect.fn("DeviceSharing.createGrant")(function* (
     input: typeof DeviceHostGrantInput.Type,
   ) {
     yield* requireAccess;
     if (input.sourceEnvironmentId === environmentId)
-      return yield* new DeviceOperationError({
-        operation: "This environment's devices are already local",
-        reason: "invalid_payload",
-        cause: undefined,
-      });
+      return yield* unavailable("This environment's devices are already local.");
     const session = yield* auth
       .issueSession({
         subject: `device-host:${input.sourceEnvironmentId}`,
@@ -111,25 +128,18 @@ const make = Effect.gen(function* () {
         session.scopes[0] !== AuthDeviceOperateScope ||
         !session.subject.startsWith("device-host:"))
     )
-      return yield* new DeviceOperationError({
-        operation: "revoke device access",
-        reason: "invalid_payload",
-        cause: undefined,
-      });
+      return yield* unavailable("This session is not a device access grant.");
     yield* auth.revokeSession(sessionId).pipe(Effect.mapError(sharingError));
   });
   const connect = Effect.fn("DeviceSharing.connect")(function* (
     input: DeviceConnectEnvironmentInput,
   ) {
+    const hostId = environmentDeviceHostId(input.grant.environmentId);
     if (
       input.grant.sourceEnvironmentId !== environmentId ||
       input.grant.environmentId === environmentId
     )
-      return yield* new DeviceOperationError({
-        operation: "Device access was issued for another environment",
-        reason: "invalid_payload",
-        cause: undefined,
-      });
+      return yield* unavailable("Device access was issued for another environment.", hostId);
     const url = yield* Effect.try({ try: () => new URL(input.url), catch: sharingError });
     if (
       !["http:", "https:"].includes(url.protocol) ||
@@ -138,13 +148,9 @@ const make = Effect.gen(function* () {
       url.search ||
       url.hash
     )
-      return yield* new DeviceOperationError({
-        operation: "Invalid device environment address",
-        reason: "invalid_payload",
-        cause: undefined,
-      });
+      return yield* unavailable("Invalid device environment address.", hostId);
     const host = {
-      id: environmentDeviceHostId(input.grant.environmentId),
+      id: hostId,
       label: input.label,
       environmentId: input.grant.environmentId,
       url: url.toString().replace(/\/+$/, ""),
@@ -156,12 +162,10 @@ const make = Effect.gen(function* () {
     yield* client.info("inspect");
     const current = yield* settings.getSettings.pipe(Effect.mapError(sharingError));
     if (current.deviceHosts.some((entry) => entry.id === host.id))
-      return yield* new DeviceOperationError({
-        operation:
-          "An SSH host already uses this device host ID. Remove that host before connecting this environment",
-        reason: "invalid_payload",
-        cause: undefined,
-      });
+      return yield* unavailable(
+        "An SSH host already uses this device host ID. Remove that host before connecting this environment.",
+        host.id,
+      );
     const previous = current.environmentDeviceHosts.find((entry) => entry.id === host.id);
     const previousToken = yield* secrets
       .get(environmentDeviceHostSecret(host.id))
@@ -216,19 +220,16 @@ const make = Effect.gen(function* () {
           Effect.sync(() => {
             if (
               !(
-                isDeviceOperationError(error) &&
                 typeof error.cause === "object" &&
                 error.cause !== null &&
                 "httpStatus" in error.cause &&
                 error.cause.httpStatus === 401
               )
             )
-              revocationError = new DeviceOperationError({
-                operation:
-                  "Device host removed locally. The remote environment could not be reached; revoke its Devices for this environment session in Connections",
-                reason: "request_failed",
-                cause: undefined,
-              });
+              revocationError = unavailable(
+                "Device host removed locally. The remote environment could not be reached; revoke its Devices for this environment session in Connections.",
+                host.id,
+              );
           }),
         ),
       );
@@ -249,14 +250,15 @@ const make = Effect.gen(function* () {
   ) {
     const sourceId = session.subject.slice("device-host:".length);
     if (!session.subject.startsWith("device-host:") || !sourceId)
-      return yield* new DeviceOperationError({
-        operation: "Invalid device access credential",
-        reason: "invalid_payload",
-        cause: undefined,
-      });
+      return yield* unavailable("Invalid device access credential.");
     const prefix = devicePeerThreadPrefix(sourceId);
     const thread = (id: string) => ThreadId.make(`${prefix}${id}`);
+    if (input.operation === "stop-agent") {
+      agents.delete(session.sessionId);
+      return null;
+    }
     if (input.operation === "revoke" || input.operation === "release") {
+      agents.delete(session.sessionId);
       const state = yield* devices.state;
       for (const open of state.sessions.filter((entry) => entry.threadId.startsWith(prefix)))
         yield* devices.close({ threadId: open.threadId, hostId: LOCAL_DEVICE_HOST_ID });
@@ -274,12 +276,7 @@ const make = Effect.gen(function* () {
           ? devices.state
           : devices.listHost(LOCAL_DEVICE_HOST_ID);
         const host = state.hosts.find((entry) => entry.id === LOCAL_DEVICE_HOST_ID);
-        if (!host)
-          return yield* new DeviceOperationError({
-            operation: "Local device host is unavailable",
-            reason: "hub_rejected",
-            cause: undefined,
-          });
+        if (!host) return yield* unavailable("The device environment has no local device host.");
         return {
           environmentId,
           sourceEnvironmentId: EnvironmentId.make(sourceId),
@@ -291,12 +288,14 @@ const make = Effect.gen(function* () {
       case "agent": {
         const ready = yield* devices.agentReadinessIfSupported(LOCAL_DEVICE_HOST_ID);
         if (!ready)
-          return yield* new DeviceOperationError({
-            operation: "Agent device access is unavailable",
-            reason: "hub_rejected",
-            cause: undefined,
-          });
-        return null;
+          return yield* unavailable(
+            "Agent device access is unavailable on the device environment.",
+          );
+        agentEndpoint = { origin: ready.agentDevice.baseUrl, token: ready.agentDevice.token };
+        const token =
+          agents.get(session.sessionId)?.token ?? NodeCrypto.randomBytes(32).toString("base64url");
+        agents.set(session.sessionId, { token, checkedAt: yield* Clock.currentTimeMillis });
+        return { token };
       }
       case "open":
         return yield* devices.open({
@@ -324,34 +323,47 @@ const make = Effect.gen(function* () {
       }
     }
   });
-  const proxyTarget = Effect.fn("DeviceSharing.proxyTarget")(function* (agent: boolean) {
+  const hubTarget = Effect.gen(function* () {
     yield* requireAccess;
-    if (agent) {
-      const ready = yield* devices.agentReadinessIfSupported(LOCAL_DEVICE_HOST_ID);
-      if (!ready)
-        return yield* new DeviceOperationError({
-          operation: "Agent device access is unavailable",
-          reason: "hub_rejected",
-          cause: undefined,
-        });
-      return {
-        origin: ready.agentDevice.baseUrl,
-        headers: {
-          authorization: `Bearer ${ready.agentDevice.token}`,
-          "x-agent-device-token": ready.agentDevice.token,
-        },
-      };
-    }
     const ready = yield* devices.readinessIfSupported(LOCAL_DEVICE_HOST_ID);
-    if (!ready)
-      return yield* new DeviceOperationError({
-        operation: "Device hub is unavailable",
-        reason: "hub_rejected",
-        cause: undefined,
-      });
+    if (!ready) return yield* unavailable("Device hub is unavailable on the device environment.");
     return { origin: ready.hub.origin };
   });
-  return DeviceSharing.of({ createGrant, revokeGrant, connect, disconnect, command, proxyTarget });
+  const agentTarget = Effect.fn("DeviceSharing.agentTarget")(function* (token: string) {
+    yield* requireAccess;
+    const match = [...agents].find(([, entry]) => sameToken(entry.token, token));
+    if (!match) return null;
+    const [sessionId, entry] = match;
+    const now = yield* Clock.currentTimeMillis;
+    if (now - entry.checkedAt > AGENT_SESSION_CHECK_MS) {
+      // Grants revoked from Connections settings bypass this service, so confirm the
+      // session is still active before forwarding.
+      const sessions = yield* auth.listSessions().pipe(Effect.mapError(sharingError));
+      if (!sessions.some((candidate) => candidate.sessionId === sessionId)) {
+        agents.delete(sessionId);
+        return null;
+      }
+      agents.set(sessionId, { ...entry, checkedAt: now });
+    }
+    if (!agentEndpoint)
+      return yield* unavailable("Agent device access is unavailable on the device environment.");
+    return {
+      origin: agentEndpoint.origin,
+      headers: {
+        authorization: `Bearer ${agentEndpoint.token}`,
+        "x-agent-device-token": agentEndpoint.token,
+      },
+    };
+  });
+  return DeviceSharing.of({
+    createGrant,
+    revokeGrant,
+    connect,
+    disconnect,
+    command,
+    hubTarget,
+    agentTarget,
+  });
 });
 
 export const layer = Layer.effect(DeviceSharing, make);

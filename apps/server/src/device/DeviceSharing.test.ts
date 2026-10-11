@@ -4,6 +4,8 @@ import {
   AuthOrchestrationOperateScope,
   AuthSessionId,
   DEFAULT_SERVER_SETTINGS,
+  DeviceNotFoundError,
+  DevicePeerAgent,
   ServerSettings as ServerSettingsSchema,
   ServerSettingsError,
   EnvironmentId,
@@ -18,6 +20,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse, HttpRouter } from "effect/unstable/http";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -35,6 +38,7 @@ import {
 
 const encodeSettings = Schema.encodeSync(Schema.fromJsonString(ServerSettingsSchema));
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const decodePeerAgent = Schema.decodeUnknownSync(DevicePeerAgent);
 
 const sourceId = EnvironmentId.make("atlas");
 const targetId = EnvironmentId.make("orion");
@@ -191,7 +195,18 @@ const fixture = Effect.gen(function* () {
         for (const [token, session] of active) if (session.sessionId === id) active.delete(token);
         return true;
       }),
-    listSessions: () => Effect.succeed([]),
+    listSessions: () =>
+      Effect.sync(() =>
+        [...active.values()].map((session) => ({
+          ...session,
+          client: { deviceType: "unknown" as const },
+          issuedAt: DateTime.makeUnsafe("2026-01-01"),
+          expiresAt: DateTime.makeUnsafe("2027-01-01"),
+          lastConnectedAt: null,
+          connected: false,
+          current: false,
+        })),
+      ),
     authenticateHttpRequest: (request) =>
       Effect.suspend(() => {
         const token = request.headers.authorization?.replace(/^Bearer /, "") ?? "";
@@ -408,56 +423,150 @@ it.effect(
         hostId: LOCAL_DEVICE_HOST_ID,
       });
       yield* f.targetDevices.configure({ agentAccessEnabled: false });
-      expect((yield* call(f.grant.token, { operation: "list" })).status).toBe(403);
+      const disabled = yield* call(f.grant.token, { operation: "list" });
+      expect(disabled.status).toBe(422);
+      expect(yield* Effect.promise(() => disabled.json())).toMatchObject({
+        error: {
+          _tag: "DeviceHostUnavailableError",
+          reason: expect.stringContaining("Enable device hub"),
+        },
+      });
       expect((yield* call(f.grant.token, { operation: "revoke" })).status).toBe(200);
       expect((yield* f.targetDevices.state).sessions).toEqual([]);
       expect((yield* call(f.grant.token, { operation: "list" })).status).toBe(401);
     }).pipe(Effect.scoped),
 );
 
-it.effect("proxies the agent endpoint with the daemon credential and blocks daemon shutdown", () =>
+it.effect(
+  "proxies agent routes with a separate credential that stops when agent access stops",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.connect;
+      const host = yield* f.host;
+      const ready = yield* host.ensureAgentReady(() => Effect.void);
+      expect(ready.agentDevice.baseUrl).toBe("http://orion.test/api/device-share/agent");
+      expect(ready.agentDevice.token).not.toBe(f.grant.token);
+      const agentToken = ready.agentDevice.token;
+      const call = (path: string, token: string, init: RequestInit = {}) =>
+        Effect.promise(() =>
+          f.handler(
+            new Request(`http://orion.test/api/device-share/${path}`, {
+              ...init,
+              headers: {
+                authorization: `Bearer ${token}`,
+                "content-type": "application/json",
+                ...init.headers,
+              },
+            }),
+          ),
+        );
+      const response = yield* call("agent/health", agentToken, {
+        headers: { "x-agent-device-token": "must-not-forward" },
+      });
+      expect(response.status).toBe(200);
+      yield* Effect.promise(() => response.text());
+      expect(f.daemonRequests[0]?.headers.authorization).toBe("Bearer synthetic-daemon-token");
+      expect(f.daemonRequests[0]?.headers["x-agent-device-token"]).toBe("synthetic-daemon-token");
+      // The grant does not reach the agent proxy, and the agent credential cannot issue
+      // peer commands such as re-enabling itself.
+      expect((yield* call("agent/health", f.grant.token)).status).toBe(401);
+      const command = yield* call("command", agentToken, {
+        method: "POST",
+        body: encodeJson({ operation: "agent" }),
+      });
+      expect(command.status).toBe(401);
+      expect((yield* call("agent/shutdown", agentToken)).status).toBe(404);
+      expect(
+        (yield* call("agent/admin/human-control/holds/device", agentToken, { method: "PUT" }))
+          .status,
+      ).toBe(404);
+      const rpc = yield* call("agent/rpc", agentToken, {
+        method: "POST",
+        body: encodeJson({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "agent_device.command",
+          params: { token: agentToken, command: "session_list" },
+        }),
+      });
+      expect(rpc.status).toBe(200);
+      yield* Effect.promise(() => rpc.text());
+      expect(f.daemonRequests[1]?.body).not.toContain(agentToken);
+      expect(f.daemonRequests[1]?.body).toContain('"command":"session_list"');
+      expect(f.daemonRequests[1]?.headers.authorization).toBe("Bearer synthetic-daemon-token");
+      expect(f.daemonRequests).toHaveLength(2);
+
+      yield* host.stopAgent;
+      expect((yield* call("agent/health", agentToken)).status).toBe(401);
+      const renewed = yield* host.ensureAgentReady(() => Effect.void);
+      const renewedResponse = yield* call("agent/health", renewed.agentDevice.token);
+      expect(renewedResponse.status).toBe(200);
+      yield* Effect.promise(() => renewedResponse.text());
+    }).pipe(Effect.scoped),
+);
+
+it.effect("stops forwarding agent requests after the grant is revoked in Connections", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const agent = yield* f.target.command(
+      { subject: `device-host:${sourceId}`, sessionId: f.grant.sessionId },
+      { operation: "agent" },
+    );
+    const { token } = decodePeerAgent(agent);
+    expect(yield* f.target.agentTarget(token)).not.toBeNull();
+    // Connections settings revoke the session without telling the sharing service.
+    f.active.delete(f.grant.token);
+    yield* TestClock.adjust("31 seconds");
+    expect(yield* f.target.agentTarget(token)).toBeNull();
+  }).pipe(Effect.scoped),
+);
+
+it.effect("reports the device environment's own error with this host's ID", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     yield* f.connect;
     const host = yield* f.host;
-    const ready = yield* host.ensureAgentReady(() => Effect.void);
-    expect(ready.agentDevice.baseUrl).toBe("http://orion.test/api/device-share/agent");
-    const call = (path: string) =>
-      Effect.promise(() =>
-        f.handler(
-          new Request(`http://orion.test/api/device-share/agent/${path}`, {
-            headers: {
-              authorization: `Bearer ${f.grant.token}`,
-              "x-agent-device-token": "must-not-forward",
-            },
-          }),
-        ),
-      );
-    const response = yield* call("health");
-    expect(response.status).toBe(200);
-    yield* Effect.promise(() => response.text());
-    expect(f.daemonRequests[0]?.headers.authorization).toBe("Bearer synthetic-daemon-token");
-    expect(f.daemonRequests[0]?.headers["x-agent-device-token"]).toBe("synthetic-daemon-token");
-    expect((yield* call("shutdown")).status).toBe(404);
-    const rpc = yield* Effect.promise(() =>
-      f.handler(
-        new Request("http://orion.test/api/device-share/agent/rpc", {
-          method: "POST",
-          headers: { authorization: `Bearer ${f.grant.token}`, "content-type": "application/json" },
-          body: encodeJson({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "agent_device.command",
-            params: { token: f.grant.token, command: "session_list" },
-          }),
-        }),
-      ),
+    const ready = yield* host.ensureReady(() => Effect.void);
+    const missing = yield* ready
+      .remote!.open({
+        threadId: ThreadId.make("thread"),
+        deviceId: "emulator-0000",
+        platform: "android",
+      })
+      .pipe(Effect.flip);
+    expect(missing).toBeInstanceOf(DeviceNotFoundError);
+    expect(missing).toMatchObject({ hostId: host.id, deviceId: "emulator-0000" });
+
+    f.active.delete(f.grant.token);
+    const expired = yield* ready.remote!.list.pipe(Effect.flip);
+    expect(expired).toMatchObject({
+      _tag: "DeviceHostUnavailableError",
+      hostId: host.id,
+      reason: "Device access expired or was revoked. Reconnect the environment.",
+    });
+  }).pipe(Effect.scoped),
+);
+
+it.effect("closes the local session when the device environment is unreachable", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const host = yield* f.host;
+    const source = yield* DeviceService.makeWithHosts(new Map([[host.id, host]])).pipe(
+      Effect.provideService(ServerSettingsService.ServerSettingsService, f.sourceSettings.service),
+      Effect.provideService(HttpClient.HttpClient, f.http),
     );
-    expect(rpc.status).toBe(200);
-    yield* Effect.promise(() => rpc.text());
-    expect(f.daemonRequests[1]?.body).not.toContain(f.grant.token);
-    expect(f.daemonRequests[1]?.body).toContain('"command":"session_list"');
-    expect(f.daemonRequests[1]?.headers.authorization).toBe("Bearer synthetic-daemon-token");
+    const threadId = ThreadId.make("thread");
+    yield* source.open({
+      threadId,
+      hostId: host.id,
+      deviceId: "emulator-5554",
+      platform: "android",
+    });
+    f.setUnavailable(true);
+    yield* source.close({ threadId, hostId: host.id });
+    expect((yield* source.state).sessions).toEqual([]);
   }).pipe(Effect.scoped),
 );
 
@@ -595,7 +704,7 @@ it.effect(
       expect(result._tag).toBe("Failure");
       if (result._tag === "Failure")
         expect(result.failure).toMatchObject({
-          operation: expect.stringContaining("removed locally"),
+          reason: expect.stringContaining("removed locally"),
         });
       expect(f.sourceSettings.read().environmentDeviceHosts).toEqual([]);
       expect(f.secrets.entries.size).toBe(0);

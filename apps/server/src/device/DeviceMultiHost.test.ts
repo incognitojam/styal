@@ -131,3 +131,59 @@ it.effect("keeps hosts independent when serials collide and another host fails",
     ),
   ),
 );
+
+it.effect("does not hold local device work behind a connected environment that is waiting", () =>
+  Effect.gen(function* () {
+    const peerStarted = yield* Deferred.make<void>();
+    const ready = {
+      nodePath: process.execPath,
+      hub: { origin: "http://local" },
+      agentDevice: { baseUrl: "http://local", token: "test", entryPath: "/agent-device" },
+      run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
+      helpers: { serveSimAxSettings: null, serveSimCli: null },
+    };
+    const host = (id: string, kind: "local" | "environment"): DeviceHost["Service"] => {
+      // The environment never answers, like a peer that went to sleep mid-request.
+      const waiting = Deferred.succeed(peerStarted, undefined).pipe(Effect.andThen(Effect.never));
+      return {
+        id,
+        summary: Effect.succeed({
+          id,
+          label: id,
+          kind,
+          hubInstalled: true,
+          agentDeviceInstalled: true,
+          platforms: [{ platform: "android", available: true }],
+        }),
+        platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
+        ensureReady: () => (kind === "environment" ? waiting : Effect.succeed(ready)),
+        ensureAgentReady: () => (kind === "environment" ? waiting : Effect.succeed(ready)),
+        current: Effect.succeed(null),
+        stopAgent: Effect.void,
+        stop: Effect.void,
+      };
+    };
+    const service = yield* makeWithHosts(
+      new Map([
+        ["local", host("local", "local")],
+        ["peer", host("peer", "environment")],
+      ]),
+    ).pipe(
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({}))),
+        ),
+      ),
+    );
+    const waiting = yield* service.agentReadinessIfSupported("peer").pipe(Effect.forkChild);
+    yield* Deferred.await(peerStarted);
+    expect((yield* service.readiness("local")).hostId).toBe("local");
+    expect(yield* service.agentReadinessIfSupported("local")).not.toBeNull();
+    yield* Fiber.interrupt(waiting);
+  }).pipe(
+    Effect.provide(
+      ServerSettingsService.layerTest({ enableDeviceSupport: true, enableAgentDeviceAccess: true }),
+    ),
+  ),
+);

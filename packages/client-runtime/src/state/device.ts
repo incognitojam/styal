@@ -155,11 +155,11 @@ export function deviceSharingErrorMessage(cause: Cause.Cause<unknown>) {
     typeof error === "object" &&
     error !== null &&
     "_tag" in error &&
-    error._tag === "DeviceOperationError" &&
-    "operation" in error &&
-    typeof error.operation === "string"
+    error._tag === "DeviceHostUnavailableError" &&
+    "reason" in error &&
+    typeof error.reason === "string"
   )
-    return error.operation;
+    return error.reason;
   return error instanceof Error
     ? error.message
     : "Device access could not be changed. Reconnect both environments and try again.";

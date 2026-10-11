@@ -76,6 +76,7 @@ export const DEVICE_HUB_ROUTE_PREFIX = "/api/device-hub";
 
 const BOOT_TIMEOUT = Duration.minutes(3);
 const SCREENSHOT_TIMEOUT = Duration.seconds(20);
+const isDeviceHostUnavailableError = Schema.is(DeviceHostUnavailableError);
 
 const HubDevice = Schema.Struct({
   id: Schema.String,
@@ -258,6 +259,27 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           })),
     );
 
+  // Environment hosts wait on another server. Holding the lifecycle lock across that
+  // request would let an offline peer block local devices, and two environments that
+  // share devices with each other would wait on each other's lock.
+  const withHostLifecycle = <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+    hostId: DeviceHostId | undefined,
+  ) =>
+    Effect.suspend(() => {
+      const host = hosts.get(hostId ?? LOCAL_DEVICE_HOST_ID);
+      return host ? host.summary : Effect.succeed(undefined);
+    }).pipe(
+      Effect.flatMap((summary) =>
+        summary?.kind === "environment" ? effect : lifecycleLock.withPermit(effect),
+      ),
+    );
+  /** Environment hosts report a user-facing reason from the device environment. */
+  const hostReason = (error: { readonly _tag: string; readonly cause?: unknown }) =>
+    error._tag === "DeviceHostError" && isDeviceHostUnavailableError(error.cause)
+      ? error.cause
+      : undefined;
+
   const readiness: DeviceService["Service"]["readiness"] = Effect.fn("DeviceService.readiness")(
     function* (hostId) {
       const host = yield* resolveHost(hostId);
@@ -274,10 +296,14 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         )
         .pipe(
           Effect.tapError((error) =>
-            setHostStatus(host.id, { status: "failed", detail: error.message }),
+            setHostStatus(host.id, {
+              status: "failed",
+              detail: hostReason(error)?.reason ?? error.message,
+            }),
           ),
           Effect.mapError(
             (error) =>
+              hostReason(error) ??
               new DeviceHostUnavailableError({
                 hostId: host.id,
                 reason:
@@ -301,7 +327,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       }
       return { hostId: host.id, ...ready };
     },
-    lifecycleLock.withPermit,
+    withHostLifecycle,
   );
 
   const readinessIfSupported: DeviceService["Service"]["readinessIfSupported"] = Effect.fn(
@@ -329,10 +355,14 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         )
         .pipe(
           Effect.tapError((error) =>
-            setHostStatus(host.id, { status: "failed", detail: error.message }),
+            setHostStatus(host.id, {
+              status: "failed",
+              detail: hostReason(error)?.reason ?? error.message,
+            }),
           ),
           Effect.mapError(
             (error) =>
+              hostReason(error) ??
               new DeviceHostUnavailableError({
                 hostId: host.id,
                 reason:
@@ -351,7 +381,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       yield* publish((state) => ({ ...state, hosts: hostSummaries }));
       yield* setHostStatus(host.id, { status: "ready" });
       return { hostId: host.id, ...ready };
-    }, lifecycleLock.withPermit);
+    }, withHostLifecycle);
 
   const currentReadiness: DeviceService["Service"]["currentReadiness"] = (hostId) =>
     resolveHost(hostId).pipe(
@@ -838,8 +868,20 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         (session) =>
           Effect.gen(function* () {
             const ready = yield* currentReadiness(session.hostId);
+            // The local session closes even when the device environment is offline.
+            // Its own session ends when it releases this environment's access.
             if (ready?.remote)
-              yield* ready.remote.close({ threadId: input.threadId, deviceId: session.deviceId });
+              yield* ready.remote
+                .close({ threadId: input.threadId, deviceId: session.deviceId })
+                .pipe(
+                  Effect.catch((error) =>
+                    Effect.logWarning("Could not close the remote device session", {
+                      hostId: session.hostId,
+                      deviceId: session.deviceId,
+                      error: error.message,
+                    }),
+                  ),
+                );
           }),
         { discard: true },
       );

@@ -1,8 +1,4 @@
-import {
-  AuthDeviceOperateScope,
-  DeviceOperationError,
-  DevicePeerCommand,
-} from "@t3tools/contracts";
+import { AuthDeviceOperateScope, DeviceError, DevicePeerCommand } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -15,7 +11,8 @@ import {
   proxyDeviceWebSocket,
 } from "./DeviceHubProxy.ts";
 
-const isDeviceOperationError = Schema.is(DeviceOperationError);
+const isDeviceError = Schema.is(DeviceError);
+const encodeDeviceError = Schema.encodeSync(DeviceError);
 const AgentRpcRequest = Schema.Struct({
   jsonrpc: Schema.Literal("2.0"),
   id: Schema.optional(Schema.Unknown),
@@ -34,26 +31,25 @@ const authenticate = Effect.gen(function* () {
     return yield* Effect.fail(HttpServerResponse.empty({ status: 403 }));
   return session;
 });
+/**
+ * Device failures travel as encoded `DeviceError`s so the source can show the real
+ * cause. Other failures are request or credential problems.
+ */
 const errors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.catch((error) =>
       Effect.succeed(
         HttpServerResponse.isHttpServerResponse(error)
           ? error
-          : HttpServerResponse.text(
-              "Device sharing is unavailable. Check device access and reconnect the environment.",
-              {
-                status: EnvironmentAuth.isServerAuthCredentialError(error)
-                  ? 401
-                  : isDeviceOperationError(error)
-                    ? error.reason === "hub_rejected"
-                      ? 403
-                      : error.reason === "invalid_payload"
-                        ? 400
-                        : 503
-                    : 400,
-              },
-            ),
+          : isDeviceError(error)
+            ? HttpServerResponse.jsonUnsafe(
+                { error: encodeDeviceError(error) },
+                { status: 422, headers: { "cache-control": "no-store" } },
+              )
+            : HttpServerResponse.text(
+                "Device sharing is unavailable. Check device access and reconnect the environment.",
+                { status: EnvironmentAuth.isServerAuthCredentialError(error) ? 401 : 400 },
+              ),
       ),
     ),
   );
@@ -69,9 +65,33 @@ const command = errors(
   }),
 );
 
+/**
+ * Routes agent-device's own remote proxy forwards. Daemon administration routes
+ * such as human-control holds stay local to the device machine.
+ */
+const isAllowedAgentRequest = (path: string, method: string) =>
+  path === "/rpc" ||
+  path === "/upload" ||
+  path === "/upload/preflight" ||
+  path === "/upload/finalize"
+    ? method === "POST"
+    : path.startsWith("/upload/direct/")
+      ? method === "PUT"
+      : path === "/health" ||
+          path === "/artifacts" ||
+          path.startsWith("/artifacts/") ||
+          /^\/sessions\/[^/]+\/requests\/[^/]+\/diagnostics$/.test(path)
+        ? method === "GET"
+        : false;
+const agentToken = (request: HttpServerRequest.HttpServerRequest) => {
+  const authorization = request.headers.authorization ?? "";
+  return authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice("bearer ".length)
+    : (request.headers["x-agent-device-token"] ?? "");
+};
+
 const proxy = errors(
   Effect.gen(function* () {
-    yield* authenticate;
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = HttpServerRequest.toURL(request);
     if (Option.isNone(url)) return HttpServerResponse.empty({ status: 400 });
@@ -79,30 +99,38 @@ const proxy = errors(
     const prefix = agent ? "/api/device-share/agent" : "/api/device-share/hub";
     const path = url.value.pathname.slice(prefix.length);
     const upgrade = request.headers.upgrade?.toLowerCase() === "websocket";
-    if (
-      agent
-        ? upgrade || /shutdown|stop-daemon/.test(path)
-        : !isAllowedDeviceHubRequest(path, request.method, upgrade)
-    )
-      return HttpServerResponse.empty({ status: 404 });
     const sharing = yield* DeviceSharing.DeviceSharing;
-    const { origin, headers } = yield* sharing.proxyTarget(agent);
+    let target: { origin: string; headers?: Readonly<Record<string, string>> };
+    if (agent) {
+      // Agents hold a separate credential that reaches only this proxy, never peer commands.
+      const token = agentToken(request);
+      const resolved = token ? yield* sharing.agentTarget(token) : null;
+      if (!resolved) return HttpServerResponse.empty({ status: 401 });
+      if (upgrade || !isAllowedAgentRequest(path, request.method))
+        return HttpServerResponse.empty({ status: 404 });
+      target = resolved;
+    } else {
+      yield* authenticate;
+      if (!isAllowedDeviceHubRequest(path, request.method, upgrade))
+        return HttpServerResponse.empty({ status: 404 });
+      target = yield* sharing.hubTarget;
+    }
     url.value.searchParams.delete("hostId");
     url.value.searchParams.delete("wsTicket");
     const query = url.value.searchParams.toString();
-    const upstream = `${origin}${path}${query ? `?${query}` : ""}`;
+    const upstream = `${target.origin}${path}${query ? `?${query}` : ""}`;
     let jsonBody: typeof AgentRpcRequest.Type | undefined;
     if (agent && path === "/rpc" && request.method === "POST") {
       const body = yield* HttpServerRequest.schemaBodyJson(AgentRpcRequest);
       const params = { ...body.params };
-      // agent-device prefers params.token to header credentials. The peer token
+      // agent-device prefers params.token to header credentials. The agent credential
       // authenticates this route; only the local daemon token may go upstream.
       delete params.token;
       jsonBody = { ...body, params };
     }
     return yield* upgrade
       ? proxyDeviceWebSocket(request, upstream.replace(/^http/, "ws"))
-      : proxyDeviceHttp(request, upstream, origin, headers, jsonBody);
+      : proxyDeviceHttp(request, upstream, target.origin, target.headers, jsonBody);
   }),
 );
 
