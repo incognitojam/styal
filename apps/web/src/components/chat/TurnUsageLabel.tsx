@@ -8,6 +8,7 @@ import {
   EMPTY_TURN_USAGE,
   meterWheels,
   turnSummaryViews,
+  usageFigureShown,
   usageFigureText,
   type TurnRecord,
   type TurnSummaryView,
@@ -69,19 +70,18 @@ function MeterText({ text, meterKey }: { text: string; meterKey: string }) {
   }
   const previous = shown.previous;
   if (previous === null) return text;
-  return meterWheels(previous, text).map(({ position, char, before, rolls }) => {
-    if (!rolls) return <span key={position}>{char}</span>;
-    // The rightmost wheel turns first, as on a meter.
-    const delay = { animationDelay: `${position * 40}ms` };
+  return meterWheels(previous, text).map(({ position, text: shownText, before, rolls, order }) => {
+    if (!rolls) return <span key={position}>{shownText}</span>;
+    const delay = { animationDelay: `${order * 40}ms` };
     return (
       // Clipping moves an inline block's baseline to its bottom edge, so the
       // wheel aligns by its bottom to sit level with the other characters.
       <span
         key={`${shown.roll}:${position}`}
-        className="relative inline-block overflow-hidden align-bottom"
+        className="relative inline-block overflow-hidden align-bottom whitespace-pre"
       >
         <span className="inline-block motion-safe:animate-meter-in" style={delay}>
-          {char}
+          {shownText}
         </span>
         {before !== undefined ? (
           <span
@@ -99,7 +99,7 @@ function MeterText({ text, meterKey }: { text: string; meterKey: string }) {
 
 /**
  * The turn or thread figure in its surroundings' colour, tokens or cost as the
- * user chose; the breakdown opens on hover. With `meterKey`, a changing cost
+ * user chose; the breakdown opens on hover. With `meterKey`, a changing figure
  * rolls like a meter.
  */
 export function TurnUsageLabel({
@@ -129,8 +129,9 @@ export function TurnUsageLabel({
           />
         }
       >
-        {meterKey !== undefined && figure === "cost" ? (
-          <MeterText text={text} meterKey={meterKey} />
+        {meterKey !== undefined ? (
+          // Changing between tokens and cost is not a reading changing.
+          <MeterText text={text} meterKey={`${meterKey}:${usageFigureShown(view, figure)}`} />
         ) : (
           text
         )}
