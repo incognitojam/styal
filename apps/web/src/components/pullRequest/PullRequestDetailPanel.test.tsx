@@ -52,7 +52,13 @@ vi.mock("~/lib/sourceControlActions", () => ({
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("~/state/pullRequests", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/state/pullRequests")>()),
-  pullRequestEnvironment: { detail: () => "detail", activity: () => "activity" },
+  pullRequestEnvironment: {
+    detail: () => "detail",
+    activity: () => "activity",
+    // The header menu reads the stored guide to label "Write guide" or "Rewrite guide".
+    reviewGuide: () => "review-guide",
+    generateReviewGuide: { permissionAtom: () => "generate-review-guide" },
+  },
   useSharedPullRequestSummary: sharedSummary,
 }));
 vi.mock("~/state/vcs", () => ({ vcsEnvironment: { listRefs: () => null } }));
@@ -126,6 +132,8 @@ vi.mock("./PullRequestSummaryTab", () => ({
     </div>
   ),
 }));
+// The guide renders diffs, which start the diff worker; this suite never opens it.
+vi.mock("./PullRequestGuideTab", () => ({ PullRequestGuideTab: () => null }));
 vi.mock("./PullRequestCodeTab", () => ({
   default: ({
     onAddToAgentSelection,
