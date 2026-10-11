@@ -167,3 +167,13 @@ export function formatReviewFindingsMarkdown(
   const format = options.details ? formatFindingDetails : formatFindingSummary;
   return report.findings.map(format).join("\n\n");
 }
+
+/** Clipboard content includes the heading and full details even when the card is collapsed. */
+export function formatReviewFindingsCopyText(report: ReviewFindingsReport): string {
+  return [
+    `## ${reviewFindingsHeading(report)}`,
+    formatReviewFindingsMarkdown(report, { details: true }),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}

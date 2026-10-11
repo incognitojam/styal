@@ -124,6 +124,7 @@ import {
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
 import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
 import {
+  formatReviewFindingsCopyText,
   formatReviewFindingsMarkdown,
   reviewFindingsHeading,
 } from "@t3tools/shared/reviewFindings";
@@ -5958,6 +5959,7 @@ function ReviewFindingsTimelineRow({
     () => formatReviewFindingsMarkdown(row.report, { details: row.expanded }),
     [row.report, row.expanded],
   );
+  const copyText = useMemo(() => formatReviewFindingsCopyText(row.report), [row.report]);
 
   return (
     <div className="min-w-0 px-1 py-0.5">
@@ -5967,17 +5969,20 @@ function ReviewFindingsTimelineRow({
             <SearchIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             {reviewFindingsHeading(row.report)}
           </p>
-          {markdown ? (
-            <Button
-              size="xs"
-              variant="ghost"
-              data-scroll-anchor-ignore
-              aria-expanded={row.expanded}
-              onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
-            >
-              {row.expanded ? "Hide details" : "Show details"}
-            </Button>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-1">
+            {markdown ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                data-scroll-anchor-ignore
+                aria-expanded={row.expanded}
+                onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
+              >
+                {row.expanded ? "Hide details" : "Show details"}
+              </Button>
+            ) : null}
+            <MessageCopyButton text={copyText} label="Copy review" variant="ghost" />
+          </div>
         </div>
         {markdown ? (
           <ChatMarkdown

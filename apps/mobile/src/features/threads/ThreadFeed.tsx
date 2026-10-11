@@ -54,6 +54,7 @@ import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3too
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
 import {
+  formatReviewFindingsCopyText,
   formatReviewFindingsMarkdown,
   reviewFindingsHeading,
   type ReviewFindingsReport,
@@ -960,6 +961,7 @@ const ReviewFindingsCard = memo(function ReviewFindingsCard(props: {
     () => formatReviewFindingsMarkdown(props.report, { details: props.expanded }),
     [props.report, props.expanded],
   );
+  const copyText = useMemo(() => formatReviewFindingsCopyText(props.report), [props.report]);
   return (
     <View className="mb-3 px-1">
       <View className="gap-2 rounded-xl border border-adaptive-neutral-200-a80-white-a8 bg-card px-3 py-2.5">
@@ -985,6 +987,11 @@ const ReviewFindingsCard = memo(function ReviewFindingsCard(props: {
               </Text>
             </Pressable>
           ) : null}
+          <CopyTextButton
+            accessibilityLabel="Copy review"
+            text={copyText}
+            tintColor={props.iconSubtleColor}
+          />
         </View>
         {markdown ? (
           <AssistantMarkdownContent

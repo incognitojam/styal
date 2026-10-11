@@ -2941,10 +2941,11 @@ features:
   - id: review-findings-card
     title: Show code-review findings as a card
     status: maintained
-    prs: [516]
+    prs: [516, 751]
     invariants:
       - An accepted Claude Code ReportFindings call renders on web and mobile as a findings card listing each finding with a linked file location, instead of a collapsed tool row.
       - The findings card stays visible when its turn folds, since the closing message only refers back to it.
+      - The findings card has its own Copy review action on web and mobile that copies the report heading, full details, and file locations regardless of card expansion, including reviews that found no issues.
       - The findings card lists each finding's title and location when collapsed and adds the summary and failure scenario when expanded; on web it starts expanded while its report belongs to the thread's latest turn, on mobile it starts collapsed, and toggling flips that default.
       - A rejected ReportFindings call is hidden once the agent submits an accepted report in the same turn; a rejection with no accepted retry stays visible.
       - The activity projection carries ReportFindings findings with a bounded count and bounded field lengths, and keeps them off the wire for every other tool.
