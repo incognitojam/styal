@@ -1619,13 +1619,13 @@ features:
   - id: github-outage-status
     title: Provider outage status in the sidebar
     status: maintained
-    prs: [14, 136, 180, 183, 196, 200, 212, 277, 280, 373, 542, 729]
+    prs: [14, 136, 180, 183, 196, 200, 212, 277, 280, 373, 542, 729, 752]
     invariants:
       - Enabled clients distinguish GitHub, Claude, and OpenAI incidents from missing or malformed status responses.
       - Sidebar notices are scoped to relevant projects or providers and remain readable without blocking ordinary work.
       - GitHub, Claude, and OpenAI alerts can each be turned off under Outage alerts in Settings, and a disabled alert stops polling its status page.
       - Provider-specific filters omit incidents confined to surfaces styal does not use while retaining broader or unattributable disruptions.
-      - OpenAI notices omit Space and ChatGPT Space Pages outages and the exact componentless Pages incident while retaining concurrent API outages and incidents spanning Codex.
+      - OpenAI filters narrowly scoped componentless incidents unrelated to Codex while retaining concurrent API outages and incidents explicitly affecting Codex.
     implementation_paths:
       - apps/web/src/claudeStatus.ts
       - apps/web/src/components/settings/SettingsPanels.tsx

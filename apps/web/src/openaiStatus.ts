@@ -57,6 +57,7 @@ const OPENAI_IGNORED_COMPONENTS = [
  */
 const OPENAI_IGNORED_INCIDENT_PATTERNS = [
   /^Delayed support responses\.?$/i,
+  /^Delayed Costs data in the Compliance API\.?$/i,
   /^Support available via email\.?$/i,
   /^Elevated errors in ChatGPT Space Pages\.?$/i,
   /^Elevated errors in ChatGPT Work\.?$/i,
