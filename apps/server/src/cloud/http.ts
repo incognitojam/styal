@@ -1100,7 +1100,7 @@ export const recoverManagedCloudTunnel = Effect.fn("environment.cloud.recoverMan
     });
     if (recovered.endpointRuntime.providerKind !== "cloudflare_tunnel") {
       return yield* new EnvironmentHttpInternalServerError({
-        message: "T3 Connect returned an unsupported managed tunnel configuration.",
+        message: "styal Link returned an unsupported managed tunnel configuration.",
       });
     }
 
