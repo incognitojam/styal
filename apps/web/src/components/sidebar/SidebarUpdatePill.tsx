@@ -146,8 +146,8 @@ function SidebarUpdateControl() {
       className={cn(
         "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2",
         isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
-        "bg-sidebar-control-surface text-sidebar-foreground",
-        !isInteractionDisabled && "hover:bg-sidebar-row-hover",
+        "bg-update-surface text-update-foreground",
+        !isInteractionDisabled && "hover:bg-update-surface-hover",
         isInteractionDisabled && "opacity-60",
       )}
       onClick={handleAction}
