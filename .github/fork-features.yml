@@ -791,7 +791,7 @@ features:
   - id: desktop-background-updates
     title: Download desktop updates in the background and install on quit
     status: maintained
-    prs: [110, 128, 358, 390, 754]
+    prs: [110, 128, 358, 390, 754, 758]
     invariants:
       - Nightly release previews retain curated highlights and footer filtering while showing newest entries with counts and links to styal releases.
       - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
