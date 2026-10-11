@@ -1,10 +1,21 @@
-import { deviceSharingErrorMessage } from "@t3tools/client-runtime/state/device";
+import {
+  deviceSharingErrorMessage,
+  isClientOnlyDeviceAddress,
+  suggestDeviceSharingAddress,
+} from "@t3tools/client-runtime/state/device";
 import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
-import { useEnvironments, useEnvironmentHttpBaseUrl } from "../../state/environments";
+import { desktopNetworkAccessStateAtom } from "../../state/desktopNetworkAccess";
+import {
+  useEnvironments,
+  useEnvironmentHttpBaseUrl,
+  usePrimaryEnvironmentId,
+} from "../../state/environments";
+import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingsRow } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -17,6 +28,11 @@ export function EnvironmentDeviceHostsSettings() {
   // "connect" or the host ID being revoked, so each button reports only its own work.
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // An address typed for one device environment does not carry over to another.
+  const [addressDraft, setAddressDraft] = useState<{
+    readonly targetId: EnvironmentId;
+    readonly value: string;
+  } | null>(null);
   const source =
     connectedEnvironments.find((entry) => entry.environmentId === sourceId) ??
     connectedEnvironments[0];
@@ -25,7 +41,24 @@ export function EnvironmentDeviceHostsSettings() {
       entry.connection.phase === "connected" && entry.environmentId !== source?.environmentId,
   );
   const target = candidates.find((entry) => entry.environmentId === targetId) ?? candidates[0];
-  const url = useEnvironmentHttpBaseUrl(target?.environmentId ?? null);
+  const clientUrl = useEnvironmentHttpBaseUrl(target?.environmentId ?? null);
+  // The desktop app reaches its own server on loopback, but knows its network addresses.
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const desktopNetworkAccess = useEnvironmentQuery(
+    target && target.environmentId === primaryEnvironmentId && window.desktopBridge
+      ? desktopNetworkAccessStateAtom
+      : null,
+  );
+  const suggestedUrl = suggestDeviceSharingAddress(
+    clientUrl,
+    desktopNetworkAccess.data?.advertisedEndpoints,
+  );
+  const url = (
+    addressDraft && addressDraft.targetId === target?.environmentId
+      ? addressDraft.value
+      : (suggestedUrl ?? "")
+  ).trim();
+  const clientOnly = url !== "" && isClientOnlyDeviceAddress(url);
   const sourceState = useDeviceState(source?.environmentId ?? null);
   const targetState = useDeviceState(target?.environmentId ?? null);
   const connect = useAtomCommand(deviceEnvironment.connectEnvironment);
@@ -101,6 +134,27 @@ export function EnvironmentDeviceHostsSettings() {
                 </Select>
               </label>
             </div>
+            <label className="block space-y-1.5 text-sm">
+              <span>
+                Address {source.label} uses to reach {target.label}
+              </span>
+              <Input
+                value={url}
+                disabled={disabled}
+                spellCheck={false}
+                autoComplete="off"
+                aria-label={`Address ${source.label} uses to reach ${target.label}`}
+                onChange={(event) =>
+                  setAddressDraft({ targetId: target.environmentId, value: event.target.value })
+                }
+              />
+            </label>
+            {clientOnly ? (
+              <p className="text-sm text-muted-foreground">
+                This address only works if {source.label} runs on the same machine as {target.label}
+                . Otherwise enter a LAN, Tailscale, or styal Link address for {target.label}.
+              </p>
+            ) : null}
             <p className="text-sm text-muted-foreground">
               {!checked
                 ? "Checking whether both environments support device sharing…"
