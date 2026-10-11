@@ -220,7 +220,11 @@ describe("OpenAI status notice", () => {
     });
   });
 
-  describe.each(["ChatGPT Work", "ChatGPT Space Pages"])("%s incidents", (surface) => {
+  describe.each([
+    ["ChatGPT Work", "Elevated errors in ChatGPT Work"],
+    ["ChatGPT Space Pages", "Elevated errors in ChatGPT Space Pages"],
+    ["Compliance API", "Delayed Costs data in the Compliance API"],
+  ])("%s incidents", (surface, incidentName) => {
     it.each([undefined, []])("ignores a componentless incident (%j)", (components) => {
       expect(
         resolveOpenAIStatusNotice(
@@ -230,7 +234,7 @@ describe("OpenAI status notice", () => {
               {
                 ...(components === undefined ? {} : { components }),
                 impact: "minor",
-                name: `Elevated errors in ${surface}`,
+                name: incidentName,
                 status: "monitoring",
               },
             ],
@@ -249,7 +253,7 @@ describe("OpenAI status notice", () => {
               {
                 components: [{ name: surface }],
                 impact: "minor",
-                name: `Elevated errors in ${surface}`,
+                name: incidentName,
                 status: "monitoring",
               },
             ],
@@ -266,7 +270,7 @@ describe("OpenAI status notice", () => {
               {
                 components: [{ name: surface }, { name: "Codex API" }],
                 impact: "minor",
-                name: `Elevated errors in ${surface}`,
+                name: incidentName,
                 status: "monitoring",
               },
             ],
@@ -278,7 +282,7 @@ describe("OpenAI status notice", () => {
     it("keeps concurrent API outages and broader componentless incidents", () => {
       const broaderIncident = {
         impact: "minor",
-        name: `Elevated errors in ${surface} and Codex`,
+        name: `${incidentName} and Codex`,
         status: "investigating",
       };
       expect(
@@ -287,7 +291,7 @@ describe("OpenAI status notice", () => {
             indicator: "major",
             components: [{ name: "Responses", status: "partial_outage" }],
             incidents: [
-              { impact: "minor", name: `Elevated errors in ${surface}`, status: "monitoring" },
+              { impact: "minor", name: incidentName, status: "monitoring" },
               broaderIncident,
             ],
           }),
