@@ -6,6 +6,7 @@ import type {
   SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { resolveSettingsScope, validateSettingsScopeSearch } from "./settingsScope";
+import { selectSingleEnvironmentScope } from "./settingsScopeAxis";
 
 const laptopId = EnvironmentId.make("laptop");
 const serverId = EnvironmentId.make("server");
@@ -89,6 +90,30 @@ describe("settings scope search", () => {
 });
 
 describe("settings scope resolution", () => {
+  it("opens a legacy checkout's providers on its environment without retaining the project filter", () => {
+    const search = { project: "t3code", checkout: third.physicalProjectKey };
+    const candidates = environments.map((environment) => ({
+      ...environment,
+      connection: { phase: "connected" as const },
+    }));
+    const selected = selectSingleEnvironmentScope(
+      search,
+      resolveSettingsScope(search, groups, candidates),
+      candidates,
+      laptopId,
+    );
+    expect(selected).toEqual({ machine: serverId });
+    expect(resolveSettingsScope(selected, groups, candidates)).toMatchObject({
+      kind: "environment",
+      environmentId: serverId,
+      members: [],
+    });
+    expect(resolveSettingsScope({ machine: laptopId }, groups, candidates)).toMatchObject({
+      kind: "environment",
+      environmentId: laptopId,
+    });
+  });
+
   it("defaults to every environment with no project", () => {
     expect(resolveSettingsScope({}, groups, environments)).toMatchObject({
       kind: "all",
