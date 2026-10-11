@@ -16,6 +16,7 @@ import {
   isModelSelectionProviderEnabled,
   parsePersistedServerObservabilitySettings,
   resolveSourceControlWriterModelSelection,
+  resolveTextGenerationModelSelection,
   resolveProjectAgentBrowserAccess,
   resolveProjectAutoPull,
 } from "./serverSettings.ts";
@@ -464,6 +465,129 @@ describe("serverSettings helpers", () => {
       settings.textGenerationModelSelection,
     );
     expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
+  });
+
+  describe("resolveTextGenerationModelSelection", () => {
+    const provider = (driver: string, overrides: Partial<ServerProvider> = {}): ServerProvider => ({
+      instanceId: ProviderInstanceId.make(driver),
+      driver: ProviderDriverKind.make(driver),
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-10-10T00:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+      ...overrides,
+    });
+    const codexLuna = createModelSelection(ProviderInstanceId.make("codex"), "gpt-6-luna", [
+      { id: "reasoningEffort", value: "low" },
+    ]);
+
+    it("defaults to Claude Haiku 5.5 when Claude can run", () => {
+      expect(
+        resolveTextGenerationModelSelection(DEFAULT_SERVER_SETTINGS, [
+          provider("codex"),
+          provider("claudeAgent"),
+        ]),
+      ).toBe(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection);
+      expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toMatchObject({
+        instanceId: "claudeAgent",
+        model: "claude-haiku-5-5",
+      });
+    });
+
+    it("falls back to GPT-6 Luna when Claude is signed out, missing, or disabled", () => {
+      for (const claude of [
+        provider("claudeAgent", { status: "error", auth: { status: "unauthenticated" } }),
+        provider("claudeAgent", { installed: false, status: "error", auth: { status: "unknown" } }),
+        provider("claudeAgent", { enabled: false, status: "disabled" }),
+      ]) {
+        expect(
+          resolveTextGenerationModelSelection(DEFAULT_SERVER_SETTINGS, [
+            claude,
+            provider("cursor"),
+            provider("codex"),
+          ]),
+        ).toEqual(codexLuna);
+      }
+    });
+
+    it("keeps Claude while its status is still being checked", () => {
+      const pendingClaude = provider("claudeAgent", {
+        installed: false,
+        status: "warning",
+        auth: { status: "unknown" },
+      });
+      expect(
+        resolveTextGenerationModelSelection(DEFAULT_SERVER_SETTINGS, [
+          pendingClaude,
+          provider("codex"),
+        ]),
+      ).toBe(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection);
+    });
+
+    it("prefers Claude Haiku 5.5, then GPT-6 Luna, when the chosen provider is signed out", () => {
+      const settings = {
+        textGenerationModelSelection: createModelSelection(
+          ProviderInstanceId.make("cursor"),
+          "composer-2",
+        ),
+      };
+      const signedOut = { status: "error", auth: { status: "unauthenticated" } } as const;
+      expect(
+        resolveTextGenerationModelSelection(settings, [
+          provider("codex"),
+          provider("cursor", signedOut),
+          provider("claudeAgent"),
+        ]),
+      ).toEqual(
+        createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-haiku-5-5", [
+          { id: "effort", value: "low" },
+        ]),
+      );
+      expect(
+        resolveTextGenerationModelSelection(settings, [
+          provider("cursor", signedOut),
+          provider("claudeAgent", signedOut),
+          provider("codex"),
+        ]),
+      ).toEqual(codexLuna);
+    });
+
+    it("uses another provider's text generation default when Codex cannot run", () => {
+      expect(
+        resolveTextGenerationModelSelection(DEFAULT_SERVER_SETTINGS, [
+          provider("claudeAgent", { status: "error", auth: { status: "unauthenticated" } }),
+          provider("codex", { status: "error", auth: { status: "unauthenticated" } }),
+          provider("cursor"),
+        ]),
+      ).toEqual(createModelSelection(ProviderInstanceId.make("cursor"), "composer-2"));
+    });
+
+    it("keeps the selection when no provider can run text generation", () => {
+      const signedOut = { status: "error", auth: { status: "unauthenticated" } } as const;
+      expect(
+        resolveTextGenerationModelSelection(DEFAULT_SERVER_SETTINGS, [
+          provider("claudeAgent", signedOut),
+          provider("codex", signedOut),
+        ]),
+      ).toBe(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection);
+    });
+
+    it("routes source control writing through the fallback", () => {
+      expect(
+        resolveSourceControlWriterModelSelection(
+          { ...DEFAULT_SERVER_SETTINGS, sourceControlWriterModelSelection: null },
+          [
+            provider("claudeAgent", { status: "error", auth: { status: "unauthenticated" } }),
+            provider("codex"),
+          ],
+        ),
+      ).toEqual(codexLuna);
+    });
   });
 
   it("replaces providerInstances maps so omitted instance fields are cleared", () => {

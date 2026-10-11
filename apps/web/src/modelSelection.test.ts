@@ -13,6 +13,7 @@ import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "./pr
 import {
   getCustomModelOptionsByInstance,
   getAppModelOptionsForInstance,
+  normalizeAppModelSelection,
   resolveAppModelSelectionForInstance,
   resolveAppModelSelectionState,
   resolvePlanAgentHealPatch,
@@ -866,6 +867,26 @@ describe("instance-scoped model selection", () => {
     expect(resolveAppModelSelectionState(settings, providers)).toEqual({
       instanceId: ProviderInstanceId.make("claude_openrouter"),
       model: "openai/gpt-5.5",
+    });
+  });
+
+  it("shows GPT-6 Luna while Claude is signed out, without saving it over the pick", () => {
+    const claude = {
+      ...provider({ instanceId: "claudeAgent", models: ["claude-haiku-5-5"] }),
+      status: "error" as const,
+      auth: { status: "unauthenticated" as const },
+    };
+    const codex = provider({ instanceId: "codex", models: ["gpt-6-luna"] });
+    const pick = createModelSelection(claude.instanceId, "claude-haiku-5-5");
+    const settings = { ...DEFAULT_UNIFIED_SETTINGS, textGenerationModelSelection: pick };
+
+    expect(resolveAppModelSelectionState(settings, [claude, codex])).toMatchObject({
+      instanceId: codex.instanceId,
+      model: "gpt-6-luna",
+    });
+    expect(normalizeAppModelSelection(settings, [claude, codex])).toMatchObject({
+      instanceId: claude.instanceId,
+      model: "claude-haiku-5-5",
     });
   });
 

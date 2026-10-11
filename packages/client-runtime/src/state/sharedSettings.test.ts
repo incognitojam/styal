@@ -140,16 +140,16 @@ describe("filterSharedServerPatch", () => {
       const settings = {
         ...DEFAULT_SERVER_SETTINGS,
         providerInstances: {
-          codex: { driver: ProviderDriverKind.make("codex"), enabled: false, config: {} },
+          codex: { driver: ProviderDriverKind.make("codex"), enabled: true, config: {} },
           claudeAgent: {
             driver: ProviderDriverKind.make("claudeAgent"),
-            enabled: true,
+            enabled: false,
             config: {},
           },
         },
         textGenerationModelSelection: {
-          instanceId: ProviderInstanceId.make("claudeAgent"),
-          model: "claude-opus-4-6",
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
         },
       };
       const patch = {
