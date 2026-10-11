@@ -44,6 +44,7 @@ export function SelectableMarkdownText({
   textStyle,
   highlightCode,
   preserveSoftBreaks = false,
+  parseRawHtml = true,
   onLinkPress,
   fileContextMenu,
   onFileContextMenuAction,
@@ -53,7 +54,7 @@ export function SelectableMarkdownText({
 }: SelectableMarkdownTextProps) {
   const chunks = useMemo(() => {
     const parsedDocument = nativeMarkdownWithAuthoredWindowsPaths(
-      parseMarkdownWithOptions(markdown, { gfm: true, html: true, math: false }),
+      parseMarkdownWithOptions(markdown, { gfm: true, html: parseRawHtml, math: false }),
       markdown,
     );
     const document = preserveSoftBreaks
@@ -67,7 +68,7 @@ export function SelectableMarkdownText({
           }
         : chunk,
     );
-  }, [markdown, preserveSoftBreaks, skills]);
+  }, [markdown, preserveSoftBreaks, parseRawHtml, skills]);
 
   const fileContextMenuHandlers = useMemo<MarkdownFileContextMenuHandlers | null>(
     () =>

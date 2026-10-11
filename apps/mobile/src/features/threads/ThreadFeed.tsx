@@ -1993,6 +1993,7 @@ function LegacyUserMessageContent(props: UserMessageContentProps) {
           skills={props.skills}
           textStyle={props.markdownStyles.nativeTextStyle}
           preserveSoftBreaks
+          parseRawHtml={false}
           {...props.linkHandlers}
           renderImage={props.renderImage}
         />
@@ -2000,7 +2001,7 @@ function LegacyUserMessageContent(props: UserMessageContentProps) {
     }
     return (
       <Markdown
-        options={{ gfm: true }}
+        options={{ gfm: true, html: false }}
         renderers={props.markdownStyles.renderers}
         styles={props.markdownStyles.styles}
         theme={props.markdownStyles.theme}
@@ -2036,13 +2037,14 @@ function LegacyUserMessageContent(props: UserMessageContentProps) {
             skills={props.skills}
             textStyle={props.markdownStyles.nativeTextStyle}
             preserveSoftBreaks
+            parseRawHtml={false}
             {...props.linkHandlers}
             renderImage={props.renderImage}
           />
         ) : (
           <Markdown
             key={segment.id}
-            options={{ gfm: true }}
+            options={{ gfm: true, html: false }}
             renderers={props.markdownStyles.renderers}
             styles={props.markdownStyles.styles}
             theme={props.markdownStyles.theme}

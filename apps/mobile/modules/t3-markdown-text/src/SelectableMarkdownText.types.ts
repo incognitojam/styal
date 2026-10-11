@@ -83,6 +83,8 @@ export interface SelectableMarkdownTextProps {
   readonly highlightCode: MarkdownCodeHighlighter;
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly preserveSoftBreaks?: boolean;
+  /** Render raw HTML for agent prose; user messages preserve it as authored text. */
+  readonly parseRawHtml?: boolean;
   readonly onLinkPress?: (href: string) => void;
   readonly fileContextMenu?: (href: string) => MarkdownFileContextMenu | undefined;
   readonly onFileContextMenuAction?: (href: string, actionId: string) => void;
