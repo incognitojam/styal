@@ -84,6 +84,7 @@ import {
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import { truncate } from "@t3tools/shared/String";
+import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import {
   getTerminalLabel,
@@ -3335,11 +3336,20 @@ export default function ChatView(props: ChatViewProps) {
     isCompacting ||
     awaitingBootstrapTurn;
   const isPreparingWorktree = isLocallyPreparingWorktree || awaitingBootstrapTurn;
-  const activeWorkStartedAt = deriveActiveWorkStartedAt(
-    activeLatestTurn,
-    activeThread?.session ?? null,
-    localDispatchStartedAt,
-    latestUserMessageAt,
+  const activeWorkStartedAt = useMemo(
+    () =>
+      continuedResponseWorkStartedAt({
+        startedAt: deriveActiveWorkStartedAt(
+          activeLatestTurn,
+          activeThread?.session ?? null,
+          localDispatchStartedAt,
+          latestUserMessageAt,
+        ),
+        latestTurn: activeLatestTurn,
+        messages: activeThread?.messages ?? [],
+        activities: activeThread?.activities ?? [],
+      }),
+    [activeLatestTurn, activeThread, localDispatchStartedAt, latestUserMessageAt],
   );
   useEffect(() => {
     attachmentPreviewHandoffByMessageIdRef.current = attachmentPreviewHandoffByMessageId;

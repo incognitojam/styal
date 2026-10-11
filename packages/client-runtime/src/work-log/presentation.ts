@@ -3,6 +3,9 @@ import {
   SERVER_RESTART_BACKGROUND_ACTIVITY_KIND,
   SERVER_RESTART_CONTINUED_ACTIVITY_KIND,
   type AssetResource,
+  type OrchestrationLatestTurn,
+  type OrchestrationMessage,
+  type OrchestrationThreadActivity,
   type RuntimeItemStatus,
   type ThreadId,
   type ToolActivitySource,
@@ -12,6 +15,7 @@ import {
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import * as DateTime from "effect/DateTime";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import {
   isReportFindingsToolName,
@@ -134,6 +138,85 @@ export function restartDowntimeMs<Entry>(
     }
   }
   return downtimeMs;
+}
+
+/**
+ * Keep the live clock on the same response as the settled "Worked for" row.
+ * The effective start excludes restart gaps, using the same boundaries as
+ * the response fold. Local sends and turns without a continuation keep
+ * their own clock.
+ */
+export function continuedResponseWorkStartedAt(input: {
+  readonly startedAt: string | null;
+  readonly latestTurn: Pick<OrchestrationLatestTurn, "turnId" | "startedAt" | "requestedAt"> | null;
+  readonly messages: ReadonlyArray<
+    Pick<OrchestrationMessage, "role" | "turnId" | "createdAt" | "updatedAt">
+  >;
+  readonly activities: ReadonlyArray<
+    Pick<OrchestrationThreadActivity, "kind" | "turnId" | "createdAt">
+  >;
+}): string | null {
+  const { startedAt, latestTurn } = input;
+  if (
+    startedAt === null ||
+    latestTurn === null ||
+    startedAt !== (latestTurn.startedAt ?? latestTurn.requestedAt)
+  ) {
+    return startedAt;
+  }
+  const latestUserMessageAt = input.messages.findLast(
+    (message) => message.role === "user",
+  )?.createdAt;
+  const responseActivities = input.activities.filter(
+    (activity) => latestUserMessageAt === undefined || activity.createdAt >= latestUserMessageAt,
+  );
+  if (
+    !responseActivities.some((activity) => activity.kind === SERVER_RESTART_CONTINUED_ACTIVITY_KIND)
+  ) {
+    return startedAt;
+  }
+
+  const entries = [
+    ...input.messages
+      .filter(
+        (message) => latestUserMessageAt === undefined || message.createdAt >= latestUserMessageAt,
+      )
+      .map((message) => ({
+        turnId:
+          message.role === "assistant" || message.role === "reasoning" ? message.turnId : null,
+        isUserMessage: message.role === "user",
+        activityKind: undefined,
+        startedAt: message.createdAt,
+        endedAt: message.updatedAt,
+      })),
+    ...responseActivities.map((activity) => ({
+      turnId: activity.turnId,
+      isUserMessage: false,
+      activityKind: activity.kind,
+      startedAt: activity.createdAt,
+      endedAt: activity.createdAt,
+    })),
+  ].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+  const roots = deriveContinuedTurnRoots(entries, (entry) => entry);
+  const root = roots.get(latestTurn.turnId);
+  if (root === undefined || root === latestTurn.turnId) return startedAt;
+
+  const responseEntries = entries.filter(
+    (entry) => entry.turnId !== null && roots.get(entry.turnId) === root,
+  );
+  const firstEntry = responseEntries[0];
+  if (firstEntry === undefined) return startedAt;
+  const userBoundary = entries.findLast(
+    (entry) => entry.isUserMessage && entry.startedAt <= firstEntry.startedAt,
+  );
+  const startMs = Date.parse(userBoundary?.startedAt ?? firstEntry.startedAt);
+  if (!Number.isFinite(startMs)) return startedAt;
+  const downtimeMs = restartDowntimeMs(responseEntries, (entry) => ({
+    turnId: entry.turnId ?? root,
+    startedAt: entry.startedAt,
+    endedAt: entry.endedAt,
+  }));
+  return DateTime.formatIso(DateTime.makeUnsafe(startMs + downtimeMs));
 }
 
 /**
