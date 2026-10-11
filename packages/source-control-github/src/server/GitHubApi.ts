@@ -565,8 +565,6 @@ export const make = Effect.gen(function* () {
   const graphql: GitHubApi["Service"]["graphql"] = Effect.fn("GitHubApi.graphql")(
     function* (input) {
       const host = normalizeHost(input.host);
-      const { fingerprint } = yield* credential(host);
-      const scope = (yield* SourceControlRateLimit.CredentialScope) || fingerprint;
       const allowReserve = input.allowReserve ?? (yield* SourceControlRateLimit.Interactive);
       // The document, never its variables: user text (bodies, search terms) travels as variables.
       yield* Effect.annotateCurrentSpan({
@@ -577,33 +575,31 @@ export const make = Effect.gen(function* () {
             ? `${input.query.slice(0, TRACED_QUERY_MAX_CHARS)}…`
             : input.query,
       });
-      return yield* Effect.gen(function* () {
-        const response = yield* send({
+      const response = yield* send({
+        host,
+        operation: input.operation,
+        request: HttpClientRequest.post(apiUrls(host).graphql).pipe(
+          HttpClientRequest.acceptJson,
+          HttpClientRequest.bodyJsonUnsafe({
+            query: input.query,
+            variables: input.variables ?? {},
+          }),
+        ),
+        maxResponseBytes: input.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+        allowReserve,
+        acceptNotModified: false,
+        graphql: true,
+        acceptPartialData: input.acceptPartialData === true,
+      });
+      // A body cut at the byte cap hides any `errors` past the cut and cannot be decoded.
+      if (response.truncated) {
+        return yield* new GitHubApiResponseError({
           host,
           operation: input.operation,
-          request: HttpClientRequest.post(apiUrls(host).graphql).pipe(
-            HttpClientRequest.acceptJson,
-            HttpClientRequest.bodyJsonUnsafe({
-              query: input.query,
-              variables: input.variables ?? {},
-            }),
-          ),
-          maxResponseBytes: input.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
-          allowReserve,
-          acceptNotModified: false,
-          graphql: true,
-          acceptPartialData: input.acceptPartialData === true,
+          status: response.status,
         });
-        // A body cut at the byte cap hides any `errors` past the cut and cannot be decoded.
-        if (response.truncated) {
-          return yield* new GitHubApiResponseError({
-            host,
-            operation: input.operation,
-            status: response.status,
-          });
-        }
-        return response.body;
-      }).pipe(Effect.provideService(SourceControlRateLimit.CredentialScope, scope));
+      }
+      return response.body;
     },
   );
 
