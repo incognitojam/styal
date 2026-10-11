@@ -81,6 +81,8 @@ import {
 import { createSwipeRowActivation } from "./swipe-row-activation";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-swipe-actions";
 import { useMaterialFabScroll } from "./MaterialFabScrollContext";
+import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+import { ThreadListFilters } from "./ThreadListFilters";
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
 
@@ -278,6 +280,8 @@ export function HomeScreen(props: HomeScreenProps) {
     : "last_prompted";
   const draftThreadKeys = useDraftThreadKeys();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
+  const workspace = useWorkspaceTabs();
+  const [initialScrollOffset] = useState(() => workspace?.getScrollOffset("threads") ?? 0);
   const primaryColumn = use(NativePrimaryColumnContext);
   const contentBackground = primaryColumn ? "bg-drawer" : "bg-screen";
   const containerClassName = cn(
@@ -298,7 +302,11 @@ export function HomeScreen(props: HomeScreenProps) {
     ? (columnMetrics ?? screenMetrics)?.safeArea
     : undefined;
   // UIKit's column safe area already includes its bottom toolbar.
-  const iosBottomClearance = Math.max(columnMetrics?.safeArea.bottom ?? insets.bottom, 24);
+  const iosBottomClearance = Math.max(
+    columnMetrics?.safeArea.bottom ?? insets.bottom,
+    24,
+    workspace?.bottomClearance ?? 0,
+  );
   const searchEnvironmentIds = useMemo(
     () =>
       props.selectedEnvironmentId === null
@@ -346,6 +354,15 @@ export function HomeScreen(props: HomeScreenProps) {
   }, []);
   const onMaterialFabScroll = useMaterialFabScroll();
   const listRef = useRef<LegendListRef>(null);
+  const searchMode = workspace?.state.tabs.threads.searchMode;
+  const restoredOffset = workspace?.state.tabs.threads.scrollOffset;
+  useEffect(() => {
+    if (searchMode !== "resting" || restoredOffset === undefined) return;
+    listRef.current?.scrollToOffset({
+      offset: restoredOffset - (Platform.OS === "ios" ? insets.top : 0),
+      animated: false,
+    });
+  }, [searchMode, insets.top, restoredOffset]);
   const swipeRowActivation = useMemo(() => createSwipeRowActivation(), []);
   const activateVisibleRows = useCallback(
     (rows: ReadonlyArray<ThreadListV2ListItem>) => {
@@ -364,13 +381,18 @@ export function HomeScreen(props: HomeScreenProps) {
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       onMaterialFabScroll?.(event);
+      if (workspace)
+        workspace.recordScrollOffset(
+          "threads",
+          Math.max(0, event.nativeEvent.contentOffset.y + (Platform.OS === "ios" ? insets.top : 0)),
+        );
       clearTimeout(activationTimerRef.current);
       activationTimerRef.current = setTimeout(
         () => activateVisibleRows(listRef.current?.getState().data ?? []),
         200,
       );
     },
-    [activateVisibleRows, onMaterialFabScroll],
+    [activateVisibleRows, onMaterialFabScroll, workspace, insets.top],
   );
   const trackListTouches = useCallback(
     (event: GestureResponderEvent, started: boolean) => {
@@ -973,9 +995,21 @@ export function HomeScreen(props: HomeScreenProps) {
 
   const listHeader = Platform.OS === "ios" ? undefined : <HomeTopContentSpacer />;
 
-  // Project scoping lives in the header filter menu (no inline chip row on
-  // mobile — the menu is the one filter surface).
-  const v2ListHeader = listHeader;
+  const v2ListHeader = (
+    <>
+      {listHeader}
+      {workspace ? (
+        <ThreadListFilters
+          environments={props.environments}
+          projects={projectScopes.map((scope) => ({ key: scope.key, label: scope.title }))}
+          selectedEnvironmentId={props.selectedEnvironmentId}
+          selectedProjectKey={props.selectedProjectKey}
+          onEnvironmentChange={props.onEnvironmentChange}
+          onProjectChange={props.onProjectChange}
+        />
+      ) : null}
+    </>
+  );
 
   // Use the v2 project scope for its empty state. Snoozed threads need no
   // special empty state: their shelf header is a list row even while collapsed.
@@ -1064,6 +1098,11 @@ export function HomeScreen(props: HomeScreenProps) {
               contentInsetAdjustmentBehavior="never"
               contentInset={Platform.OS === "ios" ? { top: insets.top } : undefined}
               contentInsetStartAdjustment={Platform.OS === "ios" ? insets.top : 0}
+              initialScrollOffset={
+                initialScrollOffset > 0
+                  ? initialScrollOffset - (Platform.OS === "ios" ? insets.top : 0)
+                  : undefined
+              }
               showsVerticalScrollIndicator={false}
               keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="handled"
@@ -1075,7 +1114,9 @@ export function HomeScreen(props: HomeScreenProps) {
                 paddingBottom:
                   Platform.OS === "ios"
                     ? iosBottomClearance
-                    : Math.max(insets.bottom, 16) + (Platform.OS === "android" ? fabClearance : 88),
+                    : (workspace?.bottomClearance ??
+                      Math.max(insets.bottom, 16) +
+                        (Platform.OS === "android" ? fabClearance : 88)),
               }}
             />
           </GestureDetector>
