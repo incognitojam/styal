@@ -197,8 +197,6 @@ const EMPTY_CONTEXT: RunContext = {
   code: false,
 };
 
-const INLINE_HTML_TAG_PATTERN = /<\/?(?:kbd|mark|sub|sup|u)(?:\s[^>]*)?>/gi;
-
 function decodeCodePoint(codePoint: number, entity: string): string {
   if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
     return entity;
@@ -249,7 +247,7 @@ function decodeHtmlEntities(value: string): string {
 }
 
 function textNodeContent(value: string): string {
-  return decodeHtmlEntities(value).replace(INLINE_HTML_TAG_PATTERN, "");
+  return decodeHtmlEntities(value);
 }
 
 function inlineHtmlText(value: string): string {

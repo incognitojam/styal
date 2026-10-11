@@ -285,7 +285,7 @@ describe("nativeMarkdownTextRuns", () => {
     expect(nativeMarkdownTextRuns(node)).toEqual([{ text: "Less than: < ⌘\nhighlighted" }]);
   });
 
-  it("normalizes double-encoded entities and inline tags emitted as text", () => {
+  it("normalizes double-encoded entities without stripping literal HTML-looking text", () => {
     const node: MarkdownNode = {
       type: "paragraph",
       children: [
@@ -298,9 +298,27 @@ describe("nativeMarkdownTextRuns", () => {
     };
 
     expect(nativeMarkdownTextRuns(node)).toEqual([
-      { text: "Keyboard: ⌘ + K; Less than: <; Greater than: >" },
+      { text: "Keyboard: <kbd>⌘</kbd> + <kbd>K</kbd>; Less than: <; Greater than: >" },
     ]);
   });
+
+  it.each(["<GPT>", "<GPT>answer</GPT>", "<div>example</div>", "<!-- example -->"])(
+    "preserves user-authored %s in selectable display and copy text",
+    (content) => {
+      const document: MarkdownNode = {
+        type: "document",
+        children: [{ type: "paragraph", children: [{ type: "text", content }] }],
+      };
+      const chunks = nativeMarkdownDocumentChunks(document);
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]?.kind).toBe("selectable");
+      expect(
+        nativeMarkdownDocumentRuns(chunks[0]?.node ?? document)
+          .map((run) => run.text)
+          .join(""),
+      ).toBe(content);
+    },
+  );
 
   it.each([
     ["&#128512;", "😀"],

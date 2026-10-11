@@ -1913,6 +1913,33 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9135
       retire_when: Upstream validates missing project and worktree paths before every provider starts, and a stream failure after a failed Claude result no longer replaces that result's error.
 
+  - id: mobile-chat-literal-html
+    title: Preserve HTML-looking text in mobile user messages
+    status: maintained
+    prs: []
+    rationale: User messages must retain authored angle-bracket text just as web and desktop do, rather than treating it as HTML to discard.
+    invariants:
+      - Android and iOS user messages preserve literal HTML-looking text, including standalone tags, paired tags, and comments, in selectable display and copy text.
+      - Plain messages and text beside legacy review comments use the same literal HTML policy; agent prose retains its existing HTML handling.
+    implementation_paths:
+      - apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx
+      - apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.types.ts
+      - apps/mobile/modules/t3-markdown-text/src/nativeMarkdownText.ts
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+    upstream_paths:
+      - apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx
+      - apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.types.ts
+      - apps/mobile/modules/t3-markdown-text/src/nativeMarkdownText.ts
+      - apps/mobile/src/features/threads/ThreadFeed.tsx
+    tests:
+      - apps/mobile/src/lib/nativeMarkdownText.test.ts
+    upstream:
+      status: partial
+      # Compared against ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e.
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e/apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx
+      retire_when: Upstream preserves HTML-looking user-message text on Android and iOS while retaining agent HTML handling.
+
   - id: mobile-clerk-load-recovery
     title: Recover and explain styal Link sign-in after a failed Clerk startup
     status: maintained
