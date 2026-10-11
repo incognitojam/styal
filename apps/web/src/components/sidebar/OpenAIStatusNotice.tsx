@@ -5,8 +5,13 @@ import {
   resolveOpenAIStatusNotice,
 } from "../../openaiStatus";
 import { useClientSettings } from "../../hooks/useSettings";
-import { OpenAI } from "../Icons";
+import { cn } from "../../lib/utils";
+import { OpenAI, type Icon } from "../Icons";
 import { StatusPageNotice } from "./StatusPageNotice";
+
+const OpenAIBrandIcon: Icon = ({ className, ...props }) => (
+  <OpenAI {...props} className={cn("text-black dark:text-white", className)} />
+);
 
 export function OpenAIStatusNotice() {
   const enabled = useClientSettings((settings) => settings.openaiStatusAlertsEnabled);
@@ -15,7 +20,7 @@ export function OpenAIStatusNotice() {
     <StatusPageNotice
       componentsUrl={OPENAI_STATUS_COMPONENTS_URL}
       enabled={enabled}
-      icon={OpenAI}
+      icon={OpenAIBrandIcon}
       pageName="OpenAI"
       pageUrl={OPENAI_STATUS_PAGE_URL}
       resolveNotice={resolveOpenAIStatusNotice}
