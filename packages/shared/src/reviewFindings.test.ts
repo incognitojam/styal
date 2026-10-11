@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  formatReviewFindingsCopyText,
   formatReviewFindingsMarkdown,
   readReviewFindingsReport,
   reviewFindingsHeading,
@@ -47,6 +48,33 @@ describe("readReviewFindingsReport", () => {
 });
 
 describe("formatReviewFindingsMarkdown", () => {
+  it("copies the heading and full review details, including collapsed content", () => {
+    const report = readReviewFindingsReport({
+      findings: [
+        {
+          file: "src/gateway.ts",
+          line: 25,
+          short_summary: "Log row written too late",
+          summary: "The log row is written after the call returns.",
+          failure_scenario: "A restart loses the result of a successful send.",
+          category: "correctness",
+          verdict: "confirmed",
+        },
+      ],
+    })!;
+
+    expect(formatReviewFindingsCopyText(report)).toBe(
+      [
+        "## Code review found 1 issue",
+        "**1. Log row written too late**",
+        "[src/gateway.ts:25](<src/gateway.ts#L25>) · correctness · confirmed",
+        "The log row is written after the call returns.",
+        "*Failure scenario:* A restart loses the result of a successful send.",
+      ].join("\n\n"),
+    );
+    expect(formatReviewFindingsCopyText({ findings: [] })).toBe("## Code review found no issues");
+  });
+
   it("numbers findings and gives each a linked location", () => {
     const report = readReviewFindingsReport({
       findings: [

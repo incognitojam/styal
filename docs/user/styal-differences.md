@@ -117,9 +117,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Code review findings in the conversation.** When Claude Code's `/code-review` reports its
   findings, they appear as a list with links to each file and line, and stay visible after the turn
-  collapses. Compared with
-  [T3 Code revision d15210c](https://github.com/pingdotgg/t3code/tree/d15210cd3da79f9a1a495a6309d912d76362a046),
-  checked September 28, 2026, where the report is only visible as a collapsed tool call.
+  collapses. Copy review copies the full findings, even when their details are
+  collapsed. Compared with
+  [T3 Code revision f23d008](https://github.com/pingdotgg/t3code/tree/f23d0084b6e023ffb1af9e332d8666affc99d542),
+  checked October 11, 2026, where the report is only visible as a collapsed tool call.
 
 ## Staying oriented while agents work
 
