@@ -258,6 +258,19 @@ function DeviceThreadSettingsSection() {
         }
         onValueChange={(value) => savePreferences({ turnUsageEnabled: value })}
       />
+      {!AsyncResult.isSuccess(preferencesResult) ||
+      preferencesResult.value.turnUsageEnabled !== false ? (
+        <SettingsSwitchRow
+          icon="chart.bar.xaxis"
+          label="Show cost"
+          subtitle="Lead with the estimated API cost instead of tokens. Turns without a cost show tokens."
+          value={
+            AsyncResult.isSuccess(preferencesResult) &&
+            preferencesResult.value.turnUsageFigure === "cost"
+          }
+          onValueChange={(value) => savePreferences({ turnUsageFigure: value ? "cost" : "tokens" })}
+        />
+      ) : null}
     </SettingsSection>
   );
 }

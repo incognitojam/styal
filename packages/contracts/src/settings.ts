@@ -468,6 +468,11 @@ const ClientSettingsFields = Schema.Struct({
   contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Quiet token count under each completed agent turn.
   turnUsageEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // Which figure turn and thread usage lead with; cost falls back to tokens
+  // where there is none.
+  turnUsageFigure: Schema.Literals(["tokens", "cost"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("tokens" as const)),
+  ),
   // Desktop resting composer: scrolling an existing thread's conversation
   // settles the composer into its single-line layout. Losing focus never does.
   composerCollapseOnScroll: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -1724,6 +1729,7 @@ export const ClientSettingsPatch = Schema.Struct({
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
   turnUsageEnabled: Schema.optionalKey(Schema.Boolean),
+  turnUsageFigure: Schema.optionalKey(Schema.Literals(["tokens", "cost"])),
   composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),
   composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),
   sendShortcut: Schema.optionalKey(Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"])),

@@ -74,6 +74,10 @@ the same breakdown. The total updates when a turn finishes. When some turns repo
 as Cursor or Grok turns, the breakdown says how many turns it includes, and likewise when only some
 turns have a cost.
 
+To lead with the estimated cost instead of tokens, set **Settings → General → Show usage as** to
+**Est. API cost**, or turn on **Show cost** in **Settings → Thread behavior** on mobile. Turns
+without a cost keep showing tokens, and the composer's total ticks over when it changes.
+
 To hide the figures, turn off **Settings → General → Turn usage**. On mobile, the setting is in
 **Settings → Thread behavior** and applies to that device.
 

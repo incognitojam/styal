@@ -39,6 +39,8 @@ export interface Preferences {
   readonly planModeEnabled?: boolean;
   /** Device-local counterpart of desktop's `turnUsageEnabled`; unset means on. */
   readonly turnUsageEnabled?: boolean;
+  /** Device-local counterpart of desktop's `turnUsageFigure`; unset means tokens. */
+  readonly turnUsageFigure?: "tokens" | "cost";
   /** Model favorites belong to this device, like the web client setting. */
   readonly modelFavorites?: ReadonlyArray<{
     readonly provider: ProviderInstanceId;
@@ -109,6 +111,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadTimestampMode?: "last_prompted" | "last_message";
     planModeEnabled?: boolean;
     turnUsageEnabled?: boolean;
+    turnUsageFigure?: "tokens" | "cost";
     modelFavorites?: Preferences["modelFavorites"];
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
@@ -191,6 +194,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.turnUsageEnabled === "boolean") {
     preferences.turnUsageEnabled = parsed.turnUsageEnabled;
+  }
+  if (parsed.turnUsageFigure === "tokens" || parsed.turnUsageFigure === "cost") {
+    preferences.turnUsageFigure = parsed.turnUsageFigure;
   }
   if (Array.isArray(parsed.modelFavorites)) {
     preferences.modelFavorites = parsed.modelFavorites.filter(

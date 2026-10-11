@@ -1425,6 +1425,8 @@ export interface ChatComposerProps {
   activeContextWindow: ContextWindowSnapshot | null;
   /** The thread's token total, shown here only while the context strip is hidden. */
   threadUsage?: TurnUsageView | null;
+  /** The thread the total counts, so a cost figure rolls only within it. */
+  threadUsageKey?: string;
   compactThreadUnavailable: boolean;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
@@ -1554,6 +1556,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadModelSelection,
     activeContextWindow,
     threadUsage,
+    threadUsageKey,
     compactThreadUnavailable,
     compactDisabled,
     compactDisabledReason,
@@ -7236,7 +7239,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 >
                   {threadUsage && !isComposerResting ? (
                     <span className="text-muted-foreground/70">
-                      <TurnUsageLabel view={threadUsage} subject="Thread usage" />
+                      <TurnUsageLabel
+                        view={threadUsage}
+                        subject="Thread usage"
+                        {...(threadUsageKey !== undefined ? { meterKey: threadUsageKey } : {})}
+                      />
                     </span>
                   ) : null}
                   {showComposerAttachAction ? (

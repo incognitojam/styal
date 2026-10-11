@@ -93,6 +93,8 @@ interface BranchToolbarProps {
   worktreeUnavailableReason?: string | null;
   /** The thread's token total, shown left of the branch picker. */
   threadUsage?: TurnUsageView | null;
+  /** The thread the total counts, so a cost figure rolls only within it. */
+  threadUsageKey?: string;
 }
 
 interface MobileRunContextSelectorProps {
@@ -543,6 +545,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   contextStripVisible = true,
   worktreeUnavailableReason = null,
   threadUsage = null,
+  threadUsageKey,
 }: BranchToolbarProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = useMemo(
@@ -733,7 +736,11 @@ export const BranchToolbar = memo(function BranchToolbar({
             showGitControls ? "@3xl/composer-surface:ml-auto" : "ml-auto",
           )}
         >
-          <TurnUsageLabel view={threadUsage} subject="Thread usage" />
+          <TurnUsageLabel
+            view={threadUsage}
+            subject="Thread usage"
+            {...(threadUsageKey !== undefined ? { meterKey: threadUsageKey } : {})}
+          />
         </div>
       ) : null}
 

@@ -8,6 +8,7 @@ import {
   type TurnRecord,
   type TurnSummaryView,
   type TurnUsageByTurn,
+  type TurnUsageFigure,
 } from "@t3tools/shared/turnUsage";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useMemo, useState } from "react";
@@ -46,4 +47,12 @@ export function useTurnSummaries(
   );
   if (summaries !== previous) setPrevious(summaries);
   return summaries;
+}
+
+/** Which figure this device leads with; tokens until it chooses cost. */
+export function useTurnUsageFigure(): TurnUsageFigure {
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  return AsyncResult.isSuccess(preferences) && preferences.value.turnUsageFigure === "cost"
+    ? "cost"
+    : "tokens";
 }

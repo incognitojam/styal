@@ -12,7 +12,9 @@ import {
   sumThreadTokenUsage,
   threadUsageView,
   turnModelLabel,
+  meterWheels,
   turnUsageView,
+  usageFigureText,
 } from "./turnUsage.ts";
 
 const usage = {
@@ -238,6 +240,7 @@ describe("turnUsageView", () => {
 
     expect(view).toEqual({
       headline: "1.26M tokens",
+      costUsd: null,
       rows: [
         { label: "Input", value: "1.20M (50% cached)" },
         { label: "Output", value: "60K (24K reasoning)" },
@@ -250,6 +253,7 @@ describe("turnUsageView", () => {
   it("leads with total tokens and details the cached share and reasoning", () => {
     expect(turnUsageView(usage)).toEqual({
       headline: "1.05M tokens",
+      costUsd: null,
       rows: [
         { label: "Input", value: "1M (60% cached)" },
         { label: "Output", value: "50K (20K reasoning)" },
@@ -295,10 +299,41 @@ describe("cost", () => {
   });
 });
 
+describe("usageFigureText", () => {
+  it("leads with cost when chosen and known, and tokens otherwise", () => {
+    const priced = turnUsageView({ ...usage, costUsd: 0.8412 });
+
+    expect(usageFigureText(priced, "cost")).toBe("$0.84");
+    expect(usageFigureText(priced, "tokens")).toBe("1.05M tokens");
+    expect(usageFigureText(turnUsageView(usage), "cost")).toBe("1.05M tokens");
+    expect(
+      usageFigureText(threadUsageView({ ...threadTotal, costUsd: 0, pricedTurns: 0 }), "cost"),
+    ).toBe("3.12M tokens");
+  });
+});
+
+describe("meterWheels", () => {
+  it("rolls only the digits that changed, lining readings up from the right", () => {
+    const rolling = (previous: string, text: string) =>
+      meterWheels(previous, text)
+        .filter((wheel) => wheel.rolls)
+        .map((wheel) => `${wheel.before ?? "_"}>${wheel.char}@${wheel.position}`);
+
+    expect(rolling("$0.84", "$0.97")).toEqual(["8>9@1", "4>7@0"]);
+    // A longer reading shifts the symbol left; the wheel it left rolls up.
+    expect(rolling("$9.99", "$10.01")).toEqual(["$>1@4", "9>0@3", "9>0@1", "9>1@0"]);
+    expect(rolling("$0.01", "$10.01")).toEqual(["$>1@4"]);
+    // Symbols never roll, so "<$0.01" becoming a cost only rolls its digits.
+    expect(rolling("<$0.01", "$0.02")).toEqual(["1>2@0"]);
+    expect(rolling("$1.23", "$1.23")).toEqual([]);
+  });
+});
+
 describe("threadUsageView", () => {
   it("shows the same breakdown as a turn and stays quiet when every turn counts", () => {
     expect(threadUsageView(threadTotal)).toEqual({
       headline: "3.12M tokens",
+      costUsd: null,
       rows: [
         { label: "Input", value: "3M (67% cached)" },
         { label: "Output", value: "120K (40K reasoning)" },

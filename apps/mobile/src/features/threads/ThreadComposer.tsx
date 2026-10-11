@@ -988,7 +988,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     </View>
                     {props.threadUsage ? (
                       <View className="shrink-0 pl-2">
-                        <TurnUsageText view={props.threadUsage} subject="Thread usage" />
+                        <TurnUsageText
+                          view={props.threadUsage}
+                          subject="Thread usage"
+                          meterKey={composerOwnerKey}
+                        />
                       </View>
                     ) : null}
                   </View>
