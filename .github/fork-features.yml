@@ -754,7 +754,7 @@ features:
       - Imported user prompts stay linked to their root provider turns through derived thread.turn-prompt-linked events, so live, coalesced, replayed, and windowed thread-detail reads keep showing them; already-imported projects without those events reappear as repairable.
       - Partial imports keep failed work selected for retry and clear completed selections; pending imports remain locked across Settings remounts, and leaving the page prevents subsequent requests in the batch.
       - V1 and native V2 source imports retain complete messages, structured tool and plan history, checkpoint metadata and associations, and recorded token and cost history without repricing; projection compaction and rebuild preserve the imported result.
-      - V1 runtime bookkeeping that the V1 work log never displayed (context window, turn usage, plan, checkpoint, task lifecycle, and bare tool-start activity) does not become turn items; fork migration 7 removes such items from earlier imports.
+      - V1 runtime bookkeeping that the V1 work log never displayed (context window, turn usage, plan, checkpoint, task lifecycle, setup-script start, subagent progress, and bare tool-start activity) does not become turn items; informational activity imports as neutral notifications with its recorded summary, compactions as compaction items, and only warnings and errors as system notices; a tool's status comes from its completion rather than a later in-progress update. Fork migrations 7 and 9 bring earlier imports in line and move the history rewrite fence so cached clients refresh.
       - Imported native V2 sessions remain stopped while durable native conversation references remain resumable; process sessions, pending effects, and runtime requests never migrate.
       - Fork imports retain history through the chosen source run even when ancestors are deleted, excluded, not yet imported, or fail during the batch. Materialized history keeps original fork lineage and never duplicates when an ancestor is imported later.
     implementation_paths:
@@ -767,6 +767,7 @@ features:
       - apps/server/src/dataImport/V2HistoryImport.ts
       - apps/server/src/orchestration-v2/legacy/LegacyHistoricalItems.ts
       - apps/server/src/persistence/ForkMigrations/007_DropUndisplayedLegacyActivityItems.ts
+      - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.ts
       - apps/web/src/components/import/DataImportPanel.tsx
       - apps/web/src/components/import/ImportComputer.tsx
       - apps/web/src/components/import/ImportDataView.tsx

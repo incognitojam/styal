@@ -57,6 +57,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 6, name: "LegacyTurnUsage" },
         { migration_id: 7, name: "DropUndisplayedLegacyActivityItems" },
         { migration_id: 8, name: "HistoryRewriteFence" },
+        { migration_id: 9, name: "RederiveLegacyActivityItems" },
       ]);
     }),
   );
@@ -91,6 +92,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [6, "LegacyTurnUsage"],
     [7, "DropUndisplayedLegacyActivityItems"],
     [8, "HistoryRewriteFence"],
+    [9, "RederiveLegacyActivityItems"],
   ]);
 });
 
