@@ -6,6 +6,8 @@ import {
   type OrchestrationEvent,
   type OrchestrationSessionStatus,
   ThreadId,
+  ThreadTokenUsage,
+  TURN_USAGE_ACTIVITY_KIND,
 } from "@t3tools/contracts";
 import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
 import * as Effect from "effect/Effect";
@@ -477,6 +479,15 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
     { concurrency: 1 },
   );
 });
+
+const decodeTurnUsageThreadTotal = Schema.decodeUnknownOption(
+  Schema.Struct({ thread: ThreadTokenUsage }),
+);
+
+/** The thread total a turn usage record carries; records from before totals have none. */
+function turnUsageThreadTotal(payload: unknown): ThreadTokenUsage | null {
+  return Option.getOrNull(Option.map(decodeTurnUsageThreadTotal(payload), ({ thread }) => thread));
+}
 
 const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjectionPipeline")(
   function* () {
@@ -1101,6 +1112,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
+            ...(event.type === "thread.activity-appended" &&
+            event.payload.activity.kind === TURN_USAGE_ACTIVITY_KIND
+              ? { tokenUsage: turnUsageThreadTotal(event.payload.activity.payload) }
+              : {}),
             updatedAt: event.occurredAt,
           });
           if (shouldRefreshThreadShellSummary(event)) {
@@ -1174,10 +1189,21 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const latestMessageAt = yield* projectionThreadMessageRepository.getLatestMessageAt({
             threadId: event.payload.threadId,
           });
+          // The activities projector has already dropped the reverted turns' records.
+          const usageRecords = yield* projectionThreadActivityRepository.listByThreadId({
+            threadId: event.payload.threadId,
+            activityKinds: [TURN_USAGE_ACTIVITY_KIND],
+          });
+          const newestUsage = usageRecords.reduce<ProjectionThreadActivity | undefined>(
+            (newest, record) =>
+              newest === undefined || record.createdAt >= newest.createdAt ? record : newest,
+            undefined,
+          );
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             latestTurnId,
             latestMessageAt,
+            tokenUsage: newestUsage ? turnUsageThreadTotal(newestUsage.payload) : null,
             updatedAt: event.occurredAt,
           });
           yield* refreshOrDeferThreadShellSummary(event.payload.threadId, attachmentSideEffects);

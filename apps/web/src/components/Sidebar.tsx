@@ -6,6 +6,7 @@ import {
 } from "@t3tools/shared/threadPullRequests";
 import { useAtomValue } from "@effect/atom-react";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import { threadUsageSummary } from "@t3tools/shared/turnUsage";
 import * as Schema from "effect/Schema";
 import {
   DndContext,
@@ -44,6 +45,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import {
   resolveEnvironmentMachineKind,
+  type ClientSettings,
   type EnvironmentMachineKind,
   type ProjectIconOverride,
   type ScopedThreadRef,
@@ -57,6 +59,7 @@ import {
   ChevronDownIcon,
   CircleAlertIcon,
   CircleCheckIcon,
+  ChartNoAxesColumnIcon,
   CircleDashedIcon,
   ClockIcon,
   EyeIcon,
@@ -365,6 +368,9 @@ function terminalProcessLabel(count: number): string {
   return `${count} terminal ${count === 1 ? "process" : "processes"} running`;
 }
 
+const selectTurnUsageEnabled = (settings: ClientSettings) => settings.turnUsageEnabled;
+const selectTurnUsageFigure = (settings: ClientSettings) => settings.turnUsageFigure;
+
 function SidebarThreadTooltip({
   thread,
   project,
@@ -400,6 +406,8 @@ function SidebarThreadTooltip({
 }) {
   const driverKind = providerEntry?.driverKind ?? null;
   const supportsMultiplePullRequests = useSupportsMultiplePullRequests(thread.environmentId);
+  const usageEnabled = useClientSettings(selectTurnUsageEnabled);
+  const usageFigure = useClientSettings(selectTurnUsageFigure);
   const pullRequests = supportsMultiplePullRequests ? thread.pullRequests : [];
   return (
     <TooltipPopup side="right" align="start" sideOffset={4} variant="glass">
@@ -456,6 +464,17 @@ function SidebarThreadTooltip({
                 {showInstanceBadge && providerEntry
                   ? `${modelLabel} · ${providerEntry.displayName}`
                   : modelLabel}
+              </div>
+            </div>
+          ) : null}
+          {usageEnabled && thread.tokenUsage ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <ChartNoAxesColumnIcon
+                aria-hidden
+                className="size-3 shrink-0 stroke-muted-foreground"
+              />
+              <div className="min-w-0 truncate text-foreground/75 tabular-nums">
+                {threadUsageSummary(thread.tokenUsage, usageFigure)}
               </div>
             </div>
           ) : null}

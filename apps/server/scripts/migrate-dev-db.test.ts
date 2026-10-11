@@ -212,6 +212,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { migration_id: 2, name: "WorkspacePortAllocations" },
         { migration_id: 3, name: "ProjectAdditionalInstructions" },
         { migration_id: 4, name: "ProjectionThreadLatestMessageAt" },
+        { migration_id: 5, name: "ProjectionThreadTokenUsage" },
       ]);
       assert.deepStrictEqual(migrated.drafts, [{ thread_id: "stopped-thread" }]);
     }),

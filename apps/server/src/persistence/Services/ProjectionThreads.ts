@@ -18,6 +18,7 @@ import {
   ThreadTitleState,
   ThreadId,
   TurnId,
+  ThreadTokenUsage,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -55,6 +56,8 @@ export const ProjectionThread = Schema.Struct({
   titleRegenerationStartedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   latestMessageAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  /** The newest turn usage record's thread total. */
+  tokenUsage: Schema.optional(Schema.NullOr(ThreadTokenUsage)),
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,
   hasActionableProposedPlan: NonNegativeInt,

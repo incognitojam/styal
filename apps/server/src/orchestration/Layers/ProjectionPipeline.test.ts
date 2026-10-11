@@ -14,6 +14,7 @@ import {
   type OrchestrationEvent,
   ProviderInstanceId,
   type ProviderDriverKind,
+  TURN_USAGE_ACTIVITY_KIND,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -4187,6 +4188,132 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           latestMessageAt: "2026-02-26T12:00:02.100Z",
         },
       ]);
+    }),
+  );
+
+  it.effect("keeps the newest turn usage total on the thread, also across a revert", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-usage");
+      const savedEvents: OrchestrationEvent[] = [];
+      let sequence = 0;
+      const append = (
+        occurredAt: string,
+        event: Pick<OrchestrationEvent, "type" | "payload"> & { readonly aggregateKind?: string },
+      ) => {
+        sequence += 1;
+        const commandId = CommandId.make(`cmd-usage-${sequence}`);
+        return eventStore
+          .append({
+            eventId: EventId.make(`evt-usage-${sequence}`),
+            aggregateKind: "thread",
+            aggregateId: threadId,
+            occurredAt,
+            commandId,
+            causationEventId: null,
+            correlationId: CorrelationId.make(commandId),
+            metadata: {},
+            ...event,
+          } as Parameters<typeof eventStore.append>[0])
+          .pipe(Effect.tap((saved) => Effect.sync(() => savedEvents.push(saved))));
+      };
+      const total = (inputTokens: number, countedTurns: number) => ({
+        inputTokens,
+        cachedInputTokens: 0,
+        cacheCreationTokens: 0,
+        outputTokens: 10 * countedTurns,
+        reasoningTokens: 0,
+        countedTurns,
+        turns: countedTurns,
+        partialTurns: 0,
+        subagentTurns: 0,
+      });
+      const turn = (turnNumber: number, at: string) => [
+        append(at, {
+          type: "thread.turn-diff-completed",
+          payload: {
+            threadId,
+            turnId: TurnId.make(`turn-${turnNumber}`),
+            checkpointTurnCount: turnNumber,
+            checkpointRef: CheckpointRef.make(
+              `refs/t3/checkpoints/thread-usage/turn/${turnNumber}`,
+            ),
+            status: "ready",
+            files: [],
+            assistantMessageId: null,
+            completedAt: at,
+          },
+        }),
+        append(at, {
+          type: "thread.activity-appended",
+          payload: {
+            threadId,
+            activity: {
+              id: EventId.make(`usage-${turnNumber}`),
+              tone: "info",
+              kind: TURN_USAGE_ACTIVITY_KIND,
+              summary: "Turn usage",
+              payload: { thread: total(100 * turnNumber, turnNumber) },
+              turnId: TurnId.make(`turn-${turnNumber}`),
+              createdAt: at,
+            },
+          },
+        }),
+      ];
+      const readTotal = sql<{ readonly tokenUsage: string | null }>`
+        SELECT token_usage_json AS "tokenUsage"
+        FROM projection_threads
+        WHERE thread_id = 'thread-usage'
+      `.pipe(Effect.map((rows) => rows.map((row) => row.tokenUsage && JSON.parse(row.tokenUsage))));
+
+      yield* append("2026-02-26T12:00:00.000Z", {
+        type: "project.created",
+        aggregateKind: "project",
+        aggregateId: ProjectId.make("project-usage"),
+        payload: {
+          projectId: ProjectId.make("project-usage"),
+          title: "Project Usage",
+          workspaceRoot: "/tmp/project-usage",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-02-26T12:00:00.000Z",
+          updatedAt: "2026-02-26T12:00:00.000Z",
+        },
+      } as never);
+      yield* append("2026-02-26T12:00:01.000Z", {
+        type: "thread.created",
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-usage"),
+          title: "Thread Usage",
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: "2026-02-26T12:00:01.000Z",
+          updatedAt: "2026-02-26T12:00:01.000Z",
+        },
+      });
+      for (const step of turn(1, "2026-02-26T12:00:02.000Z")) yield* step;
+      for (const step of turn(2, "2026-02-26T12:00:03.000Z")) yield* step;
+      yield* projectionPipeline.projectEvents(savedEvents.splice(0));
+      assert.deepEqual(yield* readTotal, [total(200, 2)]);
+
+      yield* append("2026-02-26T12:00:04.000Z", {
+        type: "thread.reverted",
+        payload: { threadId, turnCount: 1 },
+      });
+      yield* projectionPipeline.projectEvents(savedEvents.splice(0));
+      assert.deepEqual(yield* readTotal, [total(100, 1)]);
+
+      yield* append("2026-02-26T12:00:05.000Z", {
+        type: "thread.reverted",
+        payload: { threadId, turnCount: 0 },
+      });
+      yield* projectionPipeline.projectEvents(savedEvents.splice(0));
+      assert.deepEqual(yield* readTotal, [null]);
     }),
   );
 

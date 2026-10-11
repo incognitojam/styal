@@ -14,6 +14,7 @@ import {
   turnModelLabel,
   meterWheels,
   turnUsageView,
+  threadUsageSummary,
   usageFigureShown,
   usageFigureText,
 } from "./turnUsage.ts";
@@ -312,6 +313,18 @@ describe("usageFigureText", () => {
     ).toBe("3.12M tokens");
     expect(usageFigureShown(priced, "cost")).toBe("cost");
     expect(usageFigureShown(turnUsageView(usage), "cost")).toBe("tokens");
+  });
+});
+
+describe("threadUsageSummary", () => {
+  it("says what a cost is, and falls back to tokens without one", () => {
+    expect(threadUsageSummary({ ...threadTotal, costUsd: 2.124, pricedTurns: 3 }, "cost")).toBe(
+      "$2.12 est. API cost",
+    );
+    expect(threadUsageSummary({ ...threadTotal, costUsd: 2.124, pricedTurns: 3 }, "tokens")).toBe(
+      "3.12M tokens",
+    );
+    expect(threadUsageSummary(threadTotal, "cost")).toBe("3.12M tokens");
   });
 });
 

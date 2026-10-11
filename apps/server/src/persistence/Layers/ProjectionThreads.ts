@@ -12,12 +12,18 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, ThreadLinkedPullRequest, ThreadTitleState } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  ThreadLinkedPullRequest,
+  ThreadTitleState,
+  ThreadTokenUsage,
+} from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
+    tokenUsage: Schema.NullOr(Schema.fromJsonString(ThreadTokenUsage)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
     branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
   }),
@@ -59,6 +65,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           title_regeneration_started_at,
           latest_user_message_at,
           latest_message_at,
+          token_usage_json,
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
@@ -93,6 +100,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.titleRegenerationStartedAt ?? null},
           ${row.latestUserMessageAt},
           ${row.latestMessageAt ?? null},
+          ${row.tokenUsage == null ? null : JSON.stringify(row.tokenUsage)},
           ${row.pendingApprovalCount},
           ${row.pendingUserInputCount},
           ${row.hasActionableProposedPlan},
@@ -127,6 +135,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           title_regeneration_started_at = excluded.title_regeneration_started_at,
           latest_user_message_at = excluded.latest_user_message_at,
           latest_message_at = excluded.latest_message_at,
+          token_usage_json = excluded.token_usage_json,
           pending_approval_count = excluded.pending_approval_count,
           pending_user_input_count = excluded.pending_user_input_count,
           has_actionable_proposed_plan = excluded.has_actionable_proposed_plan,
@@ -168,6 +177,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
           latest_message_at AS "latestMessageAt",
+          token_usage_json AS "tokenUsage",
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",

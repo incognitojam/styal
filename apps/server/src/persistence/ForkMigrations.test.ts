@@ -49,6 +49,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 2, name: "WorkspacePortAllocations" },
         { migration_id: 3, name: "ProjectAdditionalInstructions" },
         { migration_id: 4, name: "ProjectionThreadLatestMessageAt" },
+        { migration_id: 5, name: "ProjectionThreadTokenUsage" },
       ]);
     }),
   );
@@ -79,6 +80,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [2, "WorkspacePortAllocations"],
     [3, "ProjectAdditionalInstructions"],
     [4, "ProjectionThreadLatestMessageAt"],
+    [5, "ProjectionThreadTokenUsage"],
   ]);
 });
 
@@ -128,6 +130,43 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
         assert.deepEqual(yield* readLatestMessageAt, [
           { latestMessageAt: "2026-01-01T10:13:00.000Z" },
         ]);
+      }),
+    );
+  },
+);
+
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
+  "ForkMigrations thread token usage",
+  (it) => {
+    it.effect("backfills the total from the newest turn usage record", () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations();
+        yield* runForkMigrations({ toMigrationInclusive: 4 });
+        yield* insertSyntheticThread;
+        yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at
+        ) VALUES
+          ('usage-2', 'thread-1', 'turn-2', 'info', 'turn.usage', 'Turn usage',
+            '{"inputTokens":5,"thread":{"inputTokens":15,"countedTurns":2}}',
+            '2026-01-01T10:20:00.000Z'),
+          ('usage-1', 'thread-1', 'turn-1', 'info', 'turn.usage', 'Turn usage',
+            '{"inputTokens":10,"thread":{"inputTokens":10,"countedTurns":1}}',
+            '2026-01-01T10:10:00.000Z'),
+          ('other', 'thread-1', 'turn-2', 'info', 'tool.completed', 'Tool',
+            '{"thread":{"inputTokens":99}}', '2026-01-01T10:25:00.000Z')
+      `;
+
+        yield* runForkMigrations({ toMigrationInclusive: 5 });
+
+        const rows = yield* sql<{ readonly tokenUsage: string | null }>`
+        SELECT token_usage_json AS "tokenUsage" FROM projection_threads
+      `;
+        assert.deepEqual(
+          rows.map((row) => (row.tokenUsage === null ? null : JSON.parse(row.tokenUsage))),
+          [{ inputTokens: 15, countedTurns: 2 }],
+        );
       }),
     );
   },

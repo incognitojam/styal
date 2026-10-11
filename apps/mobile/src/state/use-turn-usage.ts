@@ -1,9 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { OrchestrationThreadActivity, ServerProvider } from "@t3tools/contracts";
+import type {
+  OrchestrationThreadActivity,
+  ServerProvider,
+  ThreadTokenUsage,
+} from "@t3tools/contracts";
 import {
   deriveTurnUsage,
   EMPTY_TURN_SUMMARIES,
   EMPTY_TURN_USAGE,
+  threadUsageSummary,
   turnSummaryViews,
   type TurnRecord,
   type TurnSummaryView,
@@ -55,4 +60,13 @@ export function useTurnUsageFigure(): TurnUsageFigure {
   return AsyncResult.isSuccess(preferences) && preferences.value.turnUsageFigure === "cost"
     ? "cost"
     : "tokens";
+}
+
+/** A thread's total on one line, as this device shows usage; null while hidden or unknown. */
+export function useThreadUsageSummary(usage: ThreadTokenUsage | null | undefined): string | null {
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const figure = useTurnUsageFigure();
+  const enabled =
+    !AsyncResult.isSuccess(preferences) || preferences.value.turnUsageEnabled !== false;
+  return enabled && usage ? threadUsageSummary(usage, figure) : null;
 }

@@ -890,6 +890,36 @@ export const OrchestrationProjectShell = Schema.Struct({
 });
 export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 
+export const UsdAmount = Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0));
+
+/**
+ * A thread's main-agent usage, summed over every turn with a usage record when
+ * the newest one was written. Clients see only recent activities, so the
+ * server sums instead of leaving clients to add up turns they may not have.
+ */
+export const ThreadTokenUsage = Schema.Struct({
+  /** Main agent and reported subagent usage combined. */
+  inputTokens: NonNegativeInt,
+  cachedInputTokens: NonNegativeInt,
+  cacheCreationTokens: NonNegativeInt,
+  outputTokens: NonNegativeInt,
+  reasoningTokens: NonNegativeInt,
+  /** Turns whose usage is included. */
+  countedTurns: NonNegativeInt,
+  /** Every turn the thread had, including those without usage. */
+  turns: NonNegativeInt,
+  partialTurns: NonNegativeInt,
+  /** Turns that ran subagents without reporting their usage. */
+  subagentTurns: NonNegativeInt,
+  /** Reported subagent input and output, already within the totals above. */
+  subagentTokens: Schema.optional(NonNegativeInt),
+  /** Estimated API cost of the turns that have one. */
+  costUsd: Schema.optional(UsdAmount),
+  /** Counted turns with a cost. */
+  pricedTurns: Schema.optional(NonNegativeInt),
+});
+export type ThreadTokenUsage = typeof ThreadTokenUsage.Type;
+
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -950,6 +980,8 @@ export const OrchestrationThreadShell = Schema.Struct({
       }),
     ),
   ),
+  /** The newest turn usage record's thread total. Optional so old servers interop. */
+  tokenUsage: Schema.optional(Schema.NullOr(ThreadTokenUsage)),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 

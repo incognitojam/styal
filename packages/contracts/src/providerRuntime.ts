@@ -15,7 +15,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 import { ProviderUsageLimitsUpdate } from "./providerUsageLimits.ts";
-import { ProviderApprovalOption } from "./orchestration.ts";
+import { ProviderApprovalOption, UsdAmount } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -337,8 +337,6 @@ export const SubagentTokenUsage = Schema.Struct({
 });
 export type SubagentTokenUsage = typeof SubagentTokenUsage.Type;
 
-const UsdAmount = Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0));
-
 /**
  * Tokens one model used during a turn, main agent and subagents together, for
  * pricing the turn. `model` is absent for the turn's own model. Input includes
@@ -414,34 +412,6 @@ export const TurnModel = Schema.Struct({
   effort: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TurnModel = typeof TurnModel.Type;
-
-/**
- * A thread's main-agent usage, summed over every turn with a usage record when
- * the newest one was written. Clients see only recent activities, so the
- * server sums instead of leaving clients to add up turns they may not have.
- */
-export const ThreadTokenUsage = Schema.Struct({
-  /** Main agent and reported subagent usage combined. */
-  inputTokens: NonNegativeInt,
-  cachedInputTokens: NonNegativeInt,
-  cacheCreationTokens: NonNegativeInt,
-  outputTokens: NonNegativeInt,
-  reasoningTokens: NonNegativeInt,
-  /** Turns whose usage is included. */
-  countedTurns: NonNegativeInt,
-  /** Every turn the thread had, including those without usage. */
-  turns: NonNegativeInt,
-  partialTurns: NonNegativeInt,
-  /** Turns that ran subagents without reporting their usage. */
-  subagentTurns: NonNegativeInt,
-  /** Reported subagent input and output, already within the totals above. */
-  subagentTokens: Schema.optional(NonNegativeInt),
-  /** Estimated API cost of the turns that have one. */
-  costUsd: Schema.optional(UsdAmount),
-  /** Counted turns with a cost. */
-  pricedTurns: Schema.optional(NonNegativeInt),
-});
-export type ThreadTokenUsage = typeof ThreadTokenUsage.Type;
 
 const TurnCompletedPayload = Schema.Struct({
   state: RuntimeTurnState,
