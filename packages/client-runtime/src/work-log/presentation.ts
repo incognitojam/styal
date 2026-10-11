@@ -14,7 +14,7 @@ import {
 } from "@t3tools/contracts";
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
-import { makeToolStartLookup } from "./toolStart.js";
+import { makeToolStartLookup } from "@t3tools/client-runtime/work-log/tool-start";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import * as DateTime from "effect/DateTime";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
