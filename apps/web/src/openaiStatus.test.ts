@@ -158,7 +158,7 @@ describe("OpenAI status notice", () => {
     expect(notice(consumer)?.label).toBe("1 active incident");
     expect(
       notice([...consumer, { name: "Responses", status: "degraded_performance" }])?.label,
-    ).toBe("Outage: Responses");
+    ).toBe("Degraded: Responses");
   });
 
   it("narrows a broad outage to the services a Codex turn uses", () => {
@@ -212,7 +212,7 @@ describe("OpenAI status notice", () => {
         }),
       ),
     ).toMatchObject({
-      label: "Outage: Responses",
+      label: "Degraded: Responses",
       affectedComponents: [{ name: "Responses" }],
       activeIncidents: [
         { affectedComponents: ["Responses"], name: "Elevated latency for some API requests" },

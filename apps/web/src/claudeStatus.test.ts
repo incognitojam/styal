@@ -127,7 +127,7 @@ describe("Claude status notice", () => {
         ...elsewhere,
         { name: "Claude API (api.anthropic.com)", status: "degraded_performance", showcase: true },
       ]),
-    ).toBe("Outage: API");
+    ).toBe("Degraded: API");
   });
 
   it.each([

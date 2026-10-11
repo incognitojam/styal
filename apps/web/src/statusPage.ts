@@ -94,7 +94,8 @@ function componentStatusLabel(status: string): string {
   }
 }
 
-function isErrorStatus(status: string): boolean {
+/** Whether a component status counts as an outage rather than a degradation. */
+export function isOutageComponentStatus(status: string): boolean {
   return status === "partial_outage" || status === "major_outage";
 }
 
@@ -111,6 +112,21 @@ function componentStatusSeverity(status: string): number {
     default:
       return 0;
   }
+}
+
+/**
+ * Names the worst component disruption, so degraded performance or maintenance
+ * is not announced as an outage.
+ */
+function componentDisruptionPrefix(components: ReadonlyArray<StatusPageComponentIssue>): string {
+  if (components.some((component) => isOutageComponentStatus(component.status))) return "Outage";
+  if (components.some((component) => component.status === "degraded_performance")) {
+    return "Degraded";
+  }
+  if (components.every((component) => component.status === "under_maintenance")) {
+    return "Maintenance";
+  }
+  return "Outage";
 }
 
 function componentNameKey(name: string): string {
@@ -288,7 +304,7 @@ export function resolveStatusPageNotice(
   const tone =
     (!ignoredAnyDisruption &&
       (summary.status.indicator === "major" || summary.status.indicator === "critical")) ||
-    affectedComponents.some((component) => isErrorStatus(component.status)) ||
+    affectedComponents.some((component) => isOutageComponentStatus(component.status)) ||
     activeIncidents.some((incident) => isErrorImpact(incident.impact))
       ? "error"
       : "warning";
@@ -305,7 +321,7 @@ export function resolveStatusPageNotice(
   const rendered =
     affectedComponents.length > 0
       ? {
-          label: `Outage: ${affectedServicesLabel(
+          label: `${componentDisruptionPrefix(affectedComponents)}: ${affectedServicesLabel(
             affectedComponents.map((component) => component.name),
             serviceName,
           )}`,
