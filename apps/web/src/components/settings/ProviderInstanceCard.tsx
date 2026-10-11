@@ -39,6 +39,8 @@ import {
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { normalizeProviderAccentColor } from "../../providerInstances";
+import { useEnvironmentQuery } from "../../state/query";
+import { serverEnvironment } from "../../state/server";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
@@ -61,6 +63,7 @@ import {
   PROVIDER_STATUS_STYLES,
   getProviderSummary,
   getProviderVersionLabel,
+  isProviderInstallActive,
   type ProviderStatusKey,
 } from "./providerStatus";
 
@@ -573,8 +576,18 @@ export function ProviderInstanceCard({
     ? ((liveProvider?.status as ProviderStatusKey | undefined) ?? "warning")
     : "disabled";
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
+  // Only a missing provider with a managed installer can have an install that changes its status.
+  const installQuery = useEnvironmentQuery(
+    enabled &&
+      environmentId !== undefined &&
+      liveProvider?.setup?.canInstall === true &&
+      !liveProvider.installed
+      ? serverEnvironment.providerInstallState({ environmentId, input: { instanceId } })
+      : null,
+  );
+  const installing = isProviderInstallActive(installQuery.data);
   const summary = enabled
-    ? getProviderSummary(liveProvider)
+    ? getProviderSummary(liveProvider, installQuery.data)
     : { headline: "Disabled", detail: null };
   const authEmail = liveProvider?.auth.email?.trim();
   const isAuthenticated = enabled && liveProvider?.auth.status === "authenticated";
@@ -730,12 +743,11 @@ export function ProviderInstanceCard({
   const versionCodeNode = versionLabel ? (
     <code className="text-xs text-muted-foreground">{versionLabel}</code>
   ) : null;
-  // Healthy and disabled rows read fine from their text; only trouble gets a dot.
-  const statusDotNode =
-    statusKey === "warning" || statusKey === "error" ? (
-      <span className={cn("size-1.5 shrink-0 rounded-full", statusStyle.dot)} aria-hidden />
-    ) : null;
-  const needsAttention = statusKey === "warning" || statusKey === "error";
+  // Healthy, disabled, and installing rows read fine from their text; only trouble gets a dot.
+  const needsAttention = !installing && (statusKey === "warning" || statusKey === "error");
+  const statusDotNode = needsAttention ? (
+    <span className={cn("size-1.5 shrink-0 rounded-full", statusStyle.dot)} aria-hidden />
+  ) : null;
   const statusDiagnostic = hasCompatibilityWarning && needsAttention ? summary.detail : null;
   // Keep compatibility copy compact; the version popover carries the explanation.
   const inlineStatusDetail = hasCompatibilityWarning

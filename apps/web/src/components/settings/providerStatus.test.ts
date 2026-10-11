@@ -19,6 +19,36 @@ const provider: ServerProvider = {
 };
 
 describe("getProviderSummary", () => {
+  it("reports a missing provider as installing while its managed install runs", () => {
+    const missing: ServerProvider = {
+      ...provider,
+      installed: false,
+      status: "error",
+      auth: { status: "unknown" },
+      message: "Antigravity is not installed.",
+    };
+    const installation = {
+      driver: ProviderDriverKind.make("antigravity"),
+      operationId: null,
+      phase: "downloading",
+      downloadedBytes: 260_000_000,
+      totalBytes: 682_000_000,
+      version: null,
+      installedVersion: null,
+      canRemove: false,
+      message: null,
+    } as const;
+
+    expect(getProviderSummary(missing, installation)).toEqual({
+      headline: "Installing",
+      detail: null,
+    });
+    expect(getProviderSummary(missing, { ...installation, phase: "failed" })).toEqual({
+      headline: "Not found",
+      detail: "Antigravity is not installed.",
+    });
+  });
+
   it("reports ready providers with unknown authentication as available", () => {
     expect(getProviderSummary({ ...provider, auth: { status: "unknown" } })).toEqual({
       headline: "Available",

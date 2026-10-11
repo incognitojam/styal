@@ -1,4 +1,5 @@
 import type {
+  ProviderInstallState,
   ServerProvider,
   ServerProviderVersionAdvisory,
   ServerProviderCompatibilityAdvisory,
@@ -31,9 +32,13 @@ export type ProviderStatusKey = keyof typeof PROVIDER_STATUS_STYLES;
  * falls back to generic phrasing when the server has not yet reported any
  * state — which happens before the first probe or when an instance names a
  * driver this build does not ship. A ready provider without account metadata
- * remains available and does not imply an authentication failure.
+ * remains available and does not imply an authentication failure. A missing
+ * provider whose managed install is running reads as installing, not missing.
  */
-export function getProviderSummary(provider: ServerProvider | undefined) {
+export function getProviderSummary(
+  provider: ServerProvider | undefined,
+  installation?: ProviderInstallState | null,
+) {
   if (!provider) {
     return {
       headline: "Checking provider status",
@@ -46,6 +51,9 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
       detail:
         provider.message ?? "This provider is installed but disabled for new sessions in styal.",
     };
+  }
+  if (!provider.installed && isProviderInstallActive(installation)) {
+    return { headline: "Installing", detail: null };
   }
   if (!provider.installed) {
     return {
@@ -84,6 +92,15 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     headline: "Available",
     detail: provider.message ?? null,
   };
+}
+
+/** True while a managed install is downloading, extracting, or checking its runtime. */
+export function isProviderInstallActive(installation: ProviderInstallState | null | undefined) {
+  return (
+    installation?.phase === "downloading" ||
+    installation?.phase === "extracting" ||
+    installation?.phase === "verifying"
+  );
 }
 
 /**
