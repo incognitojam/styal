@@ -237,7 +237,8 @@ attention**, **Avanti**, or **None**, and use the speaker button to hear it. The
 defaults use T3 completion for finished threads and T3 attention for input and
 approval requests.
 
-Fresh installations start with notifications **Off**. Existing Resolve and Chime
+Fresh installations start with **Notification sounds** on and system and in-app
+notifications off. Existing Resolve and Chime
 preferences become T3 completion, and Avanti stays Avanti, with notifications and
 sound enabled. An existing None preference stays off. Any previously saved
 notification mode takes precedence over this migration.

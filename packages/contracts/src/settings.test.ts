@@ -246,8 +246,8 @@ describe("ClaudeSettings auto-compaction", () => {
 });
 
 describe("ClientSettings notifications", () => {
-  it("requires opt-in when existing settings omit notification preferences", () => {
-    expect(decodeClientSettings({}).notificationMode).toBe("off");
+  it("plays sounds but requires opt-in for notifications when settings omit preferences", () => {
+    expect(decodeClientSettings({}).notificationMode).toBe("sound");
     expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(false);
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("inAppNotificationsEnabled");
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationMode");
@@ -718,9 +718,9 @@ describe("ServerSettings thread settlement", () => {
 });
 
 describe("ClientSettings notification sound migration", () => {
-  it("keeps fresh settings off with upstream event sounds", () => {
+  it("starts fresh settings with upstream event sounds on", () => {
     expect(decodeClientSettings({})).toMatchObject({
-      notificationMode: "off",
+      notificationMode: "sound",
       completionSound: "t3-completion",
       inputSound: "t3-input",
       approvalSound: "t3-input",
