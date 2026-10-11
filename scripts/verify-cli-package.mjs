@@ -86,7 +86,7 @@ const preflight = (protocol) =>
     runCli(
       "__service-preflight",
       "--database-path",
-      NodePath.join(state, "userdata/state.sqlite"),
+      NodePath.join(state, "userdata/statev2.sqlite"),
       "--launcher-protocol",
       String(protocol),
     ),
@@ -101,7 +101,7 @@ const legacyPreflight = JSON.parse(
       NodePath.join(install, "node_modules/@styal/cli/dist/bin.mjs"),
       "__service-preflight",
       "--database-path",
-      NodePath.join(state, "userdata/state.sqlite"),
+      NodePath.join(state, "userdata/statev2.sqlite"),
       "--launcher-protocol",
       "3",
     ],
@@ -197,8 +197,9 @@ async function exerciseServer(iteration) {
       .map((entry) => entry.split(";")[0])
       .join("; ");
     NodeAssert.ok(cookie);
-    const snapshot = await fetch(`${origin}/api/orchestration/snapshot`, { headers: { cookie } });
+    const snapshot = await fetch(`${origin}/api/projects`, { headers: { cookie } });
     NodeAssert.equal(snapshot.status, 200);
+    NodeAssert.match(snapshot.headers.get("content-type") ?? "", /application\/json/i);
     const data = await snapshot.json();
     NodeAssert.ok(data.projects.some((entry) => entry.title === "CLI verification"));
     console.log(
@@ -212,7 +213,7 @@ async function exerciseServer(iteration) {
 }
 await exerciseServer(1);
 await exerciseServer(2);
-NodeAssert.ok(NodeFS.readFileSync(NodePath.join(state, "userdata/state.sqlite")).length > 0);
+NodeAssert.ok(NodeFS.readFileSync(NodePath.join(state, "userdata/statev2.sqlite")).length > 0);
 console.log(
   "CLI archive verified: install, executable, launcher compatibility, native terminal, pairing, and persistence across restart.",
 );
