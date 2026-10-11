@@ -6,6 +6,7 @@ import type {
   SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { resolveSettingsScope, validateSettingsScopeSearch } from "./settingsScope";
+import { selectSingleEnvironmentScope } from "./settingsScopeAxis";
 
 const laptopId = EnvironmentId.make("laptop");
 const serverId = EnvironmentId.make("server");
@@ -201,5 +202,38 @@ describe("settings scope resolution", () => {
       members: [],
       environmentIds: [],
     });
+  });
+});
+
+describe("provider environment scope", () => {
+  const candidates = environments.map((environment) => ({
+    ...environment,
+    connection: { phase: "connected" as const },
+  }));
+
+  it.each([
+    {
+      scenario: "opens a legacy checkout on its owning environment",
+      search: { project: "t3code", checkout: third.physicalProjectKey },
+      expected: { kind: "environment", environmentId: serverId, members: [] },
+    },
+    {
+      scenario: "ignores a stale project filter",
+      search: { project: "removed-project" },
+      expected: { kind: "environment", environmentId: laptopId, members: [] },
+    },
+    {
+      scenario: "keeps an explicitly removed environment unavailable",
+      search: { project: "removed-project", machine: "removed-environment" },
+      expected: { kind: "unavailable", reason: "environment-missing" },
+    },
+  ])("$scenario", ({ search, expected }) => {
+    const selected = selectSingleEnvironmentScope(
+      search,
+      resolveSettingsScope(search, groups, candidates),
+      candidates,
+      laptopId,
+    );
+    expect(resolveSettingsScope(selected, groups, candidates)).toMatchObject(expected);
   });
 });

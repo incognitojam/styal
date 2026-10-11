@@ -54,7 +54,7 @@ export function selectProjectAxis(search: SettingsScopeSearch, value: string): S
   return next;
 }
 
-/** Provider configuration always belongs to one environment, including project scopes. */
+/** Resolve inherited project/checkout targets to their environment without retaining project scope. */
 export function selectSingleEnvironmentScope(
   search: SettingsScopeSearch,
   scope: ResolvedSettingsScope,
@@ -64,14 +64,14 @@ export function selectSingleEnvironmentScope(
   }[],
   primaryEnvironmentId: string | null,
 ): SettingsScopeSearch {
-  if (search.machine || scope.kind === "unavailable") return search;
-  const selectedIds = new Set(scope.environmentIds);
-  const candidates = environments.filter((environment) =>
-    selectedIds.has(environment.environmentId),
+  if (search.machine) return { machine: search.machine };
+  const selectedIds = scope.kind === "unavailable" ? null : new Set(scope.environmentIds);
+  const candidates = environments.filter(
+    (environment) => selectedIds === null || selectedIds.has(environment.environmentId),
   );
   const selected =
     candidates.find((environment) => environment.environmentId === primaryEnvironmentId) ??
     candidates.find((environment) => environment.connection.phase === "connected") ??
     candidates[0];
-  return selected ? { ...search, machine: selected.environmentId } : search;
+  return selected ? { machine: selected.environmentId } : {};
 }
