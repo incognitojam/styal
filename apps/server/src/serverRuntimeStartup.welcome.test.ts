@@ -1,6 +1,14 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { DEFAULT_SERVER_SETTINGS, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  type ModelSelection,
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import * as HttpServer from "effect/http/HttpServer";
 import * as NetAddress from "effect/net/NetAddress";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -131,6 +139,100 @@ it.effect("admits commands after bootstrap and rejects them during shutdown", ()
       assert.isTrue(yield* Deferred.isDone(workerStopped));
       const rejected = yield* startup.enqueueCommand(Effect.succeed("too late")).pipe(Effect.exit);
       assert.isTrue(Exit.isFailure(rejected));
+    }).pipe(Effect.provide(Layer.merge(Lifecycle.layer, NodeServices.layer))),
+  ),
+);
+
+it.effect("starts the bootstrap thread on Codex when the environment turned Claude off", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const lifecycle = yield* Lifecycle.ServerLifecycleEvents;
+      const projectId = ProjectId.make("synthetic-bootstrap-project");
+      const threadId = ThreadId.make("synthetic-bootstrap-thread");
+      const launched: Array<ModelSelection> = [];
+      const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+        providerInstances: {
+          [ProviderInstanceId.make("claudeAgent")]: {
+            driver: ProviderDriverKind.make("claudeAgent"),
+            enabled: false,
+          },
+        },
+      });
+      const services = Layer.mergeAll(
+        Layer.mock(HttpServer.HttpServer)({
+          address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
+        }),
+        Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+        Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+        Layer.mock(EventSink.EventSinkV2)({}),
+        Layer.mock(Orchestrator.OrchestratorV2)({ recoverDelegatedTasks: Effect.void }),
+        Layer.mock(ServerConfig.ServerConfig)({
+          cwd: "/workspace/example",
+          mode: "desktop",
+          host: "127.0.0.1",
+          port: 3773,
+          noBrowser: true,
+          autoBootstrapProjectFromCwd: true,
+        } as never),
+        Layer.mock(Keybindings.Keybindings)({ start: Effect.void }),
+        Layer.mock(Settings.ServerSettingsService)({
+          start: Effect.void,
+          getSettings: Effect.succeed(settings),
+        }),
+        Layer.mock(LegacyImporter.LegacyV1ThreadImporter)({
+          pendingThreadCount: Effect.succeed(0),
+          reconcileShells: Effect.succeed({ importedThreadCount: 0 } as never),
+          importPendingTranscripts: Effect.succeed({ importedThreadCount: 0 } as never),
+        }),
+        Layer.mock(Recovery.ProviderRuntimeRecoveryService)({
+          recover: Effect.succeed({} as never),
+          prepareForShutdown: Effect.void,
+          reconcile: () => Effect.succeed({} as never),
+        }),
+        Layer.mock(Sessions.ProviderSessionManagerV2)({ shutdown: Effect.void }),
+        Layer.mock(Relay.AgentAwarenessRelay)({ start: () => Effect.void }),
+        Layer.mock(ProviderInstances.ProviderInstanceRegistry)({
+          getInstance: () => Effect.succeed(undefined),
+        }),
+        Layer.mock(Projects.ProjectService)({
+          bootstrap: () => Effect.succeed({ project: { id: projectId } } as never),
+          snapshot: Effect.succeed({ projects: [] } as never),
+        }),
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getShellSnapshot: () => Effect.succeed({ threads: [], archivedThreads: [] } as never),
+        }),
+        Layer.mock(ThreadLaunch.ThreadLaunchService)({
+          launch: (input) =>
+            Effect.sync(() => {
+              launched.push(input.modelSelection);
+              return { threadId } as never;
+            }),
+        }),
+        Layer.mock(ProjectStore.ProjectStoreV2)({ listShells: () => Effect.succeed([]) }),
+        Layer.mock(Environment.ServerEnvironment)({
+          getDescriptor: Effect.succeed({ environmentId: "synthetic-environment" } as never),
+        }),
+        Layer.mock(Launcher.ServiceLauncherClient)({
+          managed: false,
+          prepareTrial: Effect.succeed(undefined),
+        }),
+        Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
+        Layer.mock(Git.GitVcsDriver)({}),
+        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: Effect.never }),
+        Layer.succeed(Lifecycle.ServerLifecycleEvents, lifecycle),
+      );
+      const context = yield* Layer.build(
+        Startup.layerWithOptions().pipe(Layer.provide(services), Layer.provide(NodeServices.layer)),
+      );
+      const startup = Context.get(context, Startup.ServerRuntimeStartup);
+      yield* startup.markHttpListening;
+      yield* startup.awaitCommandReady;
+      assert.deepEqual(
+        launched.map((selection) => selection.instanceId),
+        [ProviderInstanceId.make("codex")],
+      );
+      const welcome = (yield* lifecycle.snapshot).events.find((event) => event.type === "welcome");
+      assert.equal(welcome?.payload.bootstrapThreadId, threadId);
     }).pipe(Effect.provide(Layer.merge(Lifecycle.layer, NodeServices.layer))),
   ),
 );

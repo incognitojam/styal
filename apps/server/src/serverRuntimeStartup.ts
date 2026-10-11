@@ -1,6 +1,7 @@
 import {
   CommandId,
   DEFAULT_CLAUDE_MODEL,
+  DEFAULT_MODEL,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
@@ -9,6 +10,7 @@ import {
   ProviderInstanceId,
   resolveNewThreadRuntimeMode,
   ThreadId,
+  resolveProjectProviderInstanceEnabled,
 } from "@t3tools/contracts";
 import { DriveMode, applyDriveScenario } from "./driveMode.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
@@ -186,6 +188,12 @@ export const getAutoBootstrapThreadModelSelection = (): ModelSelection => ({
   model: DEFAULT_CLAUDE_MODEL,
 });
 
+/** Used for the bootstrap thread when the environment turned Claude off. */
+const AUTO_BOOTSTRAP_FALLBACK_MODEL_SELECTION: ModelSelection = {
+  instanceId: ProviderInstanceId.make("codex"),
+  model: DEFAULT_MODEL,
+};
+
 interface AutoBootstrapWelcomeTargets {
   readonly bootstrapProjectId?: ProjectId;
   readonly bootstrapThreadId?: ThreadId;
@@ -293,7 +301,16 @@ const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const settings = yield* serverSettings.getSettings;
       const projectSettings = resolveProjectSettings(settings, project.id, project).settings;
-      const modelSelection = projectSettings.defaultModelSelection ?? threadModelSelection;
+      // Launching on a provider the project turned off fails, so the automatic choice takes
+      // the first enabled default and skips the thread when none is.
+      const modelSelection =
+        projectSettings.defaultModelSelection ??
+        [threadModelSelection, AUTO_BOOTSTRAP_FALLBACK_MODEL_SELECTION].find((selection) =>
+          resolveProjectProviderInstanceEnabled(settings, project.id, selection.instanceId),
+        );
+      if (modelSelection === undefined) {
+        return { bootstrapProjectId: project.id } satisfies AutoBootstrapWelcomeTargets;
+      }
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
       const providerInstance = yield* providerInstances.getInstance(modelSelection.instanceId);
       const provider =

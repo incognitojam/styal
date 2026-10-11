@@ -15,6 +15,8 @@ import * as ThreadManagement from "./ThreadManagementService.ts";
 
 // These dispatcher failures occur in receipt validation or planning, before
 // commitCommand. Generic dispatch errors can follow a commit and remain uncertain.
+// A disabled-instance refusal comes from ThreadManagementService.dispatch's
+// own enablement check, which also runs before any commit is attempted.
 export function dispatchWasNotAccepted(error: unknown) {
   if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
   switch (error._tag) {
@@ -25,12 +27,14 @@ export function dispatchWasNotAccepted(error: unknown) {
     case "OrchestratorCommandIdConflictError":
     case "OrchestratorSubagentThreadReadOnlyError":
     case "OrchestratorThreadAboveModeLimitError":
+    case "ThreadManagementProviderInstanceDisabledError":
       return true;
     default:
       return false;
   }
 }
 const isOrchestratorError = Schema.is(Orchestrator.OrchestratorV2Error);
+const isThreadManagementError = Schema.is(ThreadManagement.ThreadManagementError);
 
 const releaseUnusedClaims = Effect.fn("ThreadMessageIntake.releaseUnusedClaims")(function* (
   claimedPaths: ReadonlyArray<string>,
@@ -238,13 +242,19 @@ export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(functi
         ),
       ),
       Effect.tapError((error) => {
+        if (error._tag === "ThreadManagementProviderInstanceDisabledError") {
+          return AttachmentClaims.releaseClaimedAttachments(claimed.claimedPaths);
+        }
         // Project/receipt reads precede message dispatch. The create-thread error
         // also wraps post-message projection reads, so its tag alone is not proof.
+        // The initial message's own dispatch can still find the instance newly
+        // disabled, which wraps the same tag handled above instead of surfacing
+        // it directly, so the guard below also recognizes it.
         const notAccepted =
           error.operation === "resolve-project" ||
           error.operation === "read-receipt" ||
           ((error.operation === "create-thread" || error.operation === "dispatch-message") &&
-            isOrchestratorError(error.cause) &&
+            (isOrchestratorError(error.cause) || isThreadManagementError(error.cause)) &&
             // Projection errors under create-thread can occur after the message commit.
             (error.operation !== "create-thread" ||
               error.cause._tag !== "OrchestratorProjectionError") &&
