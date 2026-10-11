@@ -15,10 +15,11 @@ import {
 } from "../../providerInstances";
 import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils";
 
-// Claude Code writes its prompt cache with a one-hour TTL, so a resume after an
-// hour resends the whole history uncached. Claude Code's own prompt waits 70
+// Used when the provider did not report its cache TTL. Claude Code writes its
+// prompt cache with a one-hour TTL on a subscription, so a resume after an hour
+// resends the whole history uncached. Claude Code's own prompt waits 70
 // minutes; the banner offers compaction as soon as the cache has expired.
-const CLAUDE_PROMPT_CACHE_MINUTES = 60;
+const CLAUDE_PROMPT_CACHE_FALLBACK_MS = 60 * 60_000;
 // Below this, resending the history uncached costs too little to interrupt.
 const CLAUDE_LARGE_CONTEXT_TOKENS = 100_000;
 // Claude Code sends effort inside the conversation for these models, so an
@@ -79,10 +80,13 @@ export function hasDismissedResumeCompaction(
   });
 }
 
+/** True once a large Claude context's prompt cache has expired, so the next
+    turn would re-read all of it uncached. */
 export function shouldOfferResumeCompaction(input: {
   readonly provider: string | null | undefined;
   readonly usedTokens: number | null | undefined;
   readonly updatedAt: string | null | undefined;
+  readonly promptCacheTtlMs?: number | undefined;
   readonly now: string;
 }): boolean {
   if (input.provider !== "claudeAgent" || (input.usedTokens ?? 0) < CLAUDE_LARGE_CONTEXT_TOKENS) {
@@ -94,7 +98,7 @@ export function shouldOfferResumeCompaction(input: {
   return (
     Number.isFinite(updatedAt) &&
     Number.isFinite(now) &&
-    now - updatedAt >= CLAUDE_PROMPT_CACHE_MINUTES * 60_000
+    now - updatedAt >= (input.promptCacheTtlMs ?? CLAUDE_PROMPT_CACHE_FALLBACK_MS)
   );
 }
 
@@ -114,6 +118,7 @@ export function claudeSelectionCacheLoss(input: {
   readonly capabilities: ModelCapabilities | null | undefined;
   readonly usedTokens: number | null | undefined;
   readonly updatedAt: string | null | undefined;
+  readonly promptCacheTtlMs?: number | undefined;
   readonly now: string;
 }): ClaudeCacheLossChange | null {
   const { current, next } = input;
@@ -129,7 +134,7 @@ export function claudeSelectionCacheLoss(input: {
   if (
     !Number.isFinite(updatedAt) ||
     !Number.isFinite(now) ||
-    now - updatedAt >= CLAUDE_PROMPT_CACHE_MINUTES * 60_000
+    now - updatedAt >= (input.promptCacheTtlMs ?? CLAUDE_PROMPT_CACHE_FALLBACK_MS)
   ) {
     return null;
   }

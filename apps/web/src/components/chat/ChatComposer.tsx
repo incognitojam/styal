@@ -1626,6 +1626,8 @@ export interface ChatComposerProps {
 
   // Context window
   activeContextWindow: ContextWindowSnapshot | null;
+  /** Prompt cache lifetime the provider last reported, when it reported one. */
+  promptCacheTtlMs?: number | undefined;
   /** The thread's token total, shown here only while the context strip is hidden. */
   threadUsage?: TurnUsageView | null;
   /** The thread the total counts, so a cost figure rolls only within it. */
@@ -1777,6 +1779,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadModelSelection,
     reportedModelSelection,
     activeContextWindow,
+    promptCacheTtlMs,
     threadUsage,
     threadUsageKey,
     compactThreadUnavailable,
@@ -2470,6 +2473,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       )?.capabilities,
       usedTokens: activeContextWindow.usedTokens,
       updatedAt: activeContextWindow.updatedAt,
+      promptCacheTtlMs,
       now: `${nowMinute}:00.000Z`,
     });
     if (!change || !activeThreadModelSelection) return null;
@@ -2514,6 +2518,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerDraftTarget,
     dismissedCacheLossKeys,
     nowMinute,
+    promptCacheTtlMs,
     providerInstanceEntries,
     selectedModelSelection,
     selectedProvider,
