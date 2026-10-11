@@ -973,22 +973,6 @@ export function shouldCreateNewThreadInCurrentProject(input: {
   return input.shiftKey || input.hasProjectScope || input.projectGroupCount <= 1;
 }
 
-/**
- * Whether a project filter names a group that no longer exists and should be
- * cleared. An empty group list means projects have not arrived yet rather than
- * that the filter is stale, so the filter waits instead of healing — otherwise
- * every remount and reconnect would silently drop it.
- */
-export function shouldClearProjectScope(input: {
-  projectScopeKey: string | null;
-  scopedProjectGroup: unknown | null;
-  projectGroupCount: number;
-}): boolean {
-  if (input.projectScopeKey === null) return false;
-  if (input.projectGroupCount === 0) return false;
-  return input.scopedProjectGroup === null;
-}
-
 export function orderItemsByPreferredIds<TItem, TId>(input: {
   items: readonly TItem[];
   preferredIds: readonly TId[];
