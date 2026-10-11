@@ -22,6 +22,7 @@ import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
 import { Alert, Linking, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
+import { MaterialButton } from "../../components/MaterialButton";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
@@ -255,62 +256,65 @@ export function ResetCredits(props: {
     );
   };
 
-  const actions = (
-    <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
-      <Text className="text-xs tabular-nums text-foreground-tertiary">{summary}</Text>
-      {credits.availableCount > 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: busy }}
-          disabled={busy}
-          onPress={confirm}
-          className={
-            dense
-              ? "rounded-full bg-subtle-strong px-2.5 py-1"
-              : "min-h-[44px] justify-center rounded-full bg-subtle-strong px-3 py-1.5"
-          }
-        >
-          <Text
-            className={
-              dense
-                ? "text-xs font-t3-medium text-foreground"
-                : "text-sm font-t3-medium text-foreground"
-            }
+  if (dense) {
+    return (
+      <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
+        <Text className="text-xs tabular-nums text-foreground-tertiary">{summary}</Text>
+        {credits.availableCount > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
+            onPress={confirm}
+            className="rounded-full bg-subtle-strong px-2.5 py-1"
           >
-            {busy ? "Using…" : "Use reset"}
-          </Text>
-        </Pressable>
-      ) : null}
-      {status ? <Text className="text-sm text-foreground">{status}</Text> : null}
-    </View>
-  );
-  if (!expiries || expiries.length === 0) return actions;
+            <Text className="text-xs font-t3-medium text-foreground">
+              {busy ? "Using…" : "Use reset"}
+            </Text>
+          </Pressable>
+        ) : null}
+        {status ? <Text className="text-sm text-foreground">{status}</Text> : null}
+      </View>
+    );
+  }
   return (
     <View className="gap-3">
-      <View className="gap-2">
-        {expiries.map(({ expiresAt, count }) => (
-          <View
-            key={expiresAt ?? "never"}
-            className="flex-row items-baseline justify-between gap-3"
-          >
-            <Text selectable className="text-sm text-foreground">
-              {count > 1 ? `${count} × ` : ""}
-              {expiresAt
-                ? `Expires ${new Date(expiresAt).toLocaleString(undefined, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}`
-                : "Does not expire"}
-            </Text>
-            {expiresAt ? (
-              <Text className="text-xs tabular-nums text-foreground-muted">
-                in {formatDuration(Date.parse(expiresAt) - now)}
+      <Text className="text-sm tabular-nums text-foreground-muted">{summary}</Text>
+      {expiries && expiries.length > 0 ? (
+        <View className="gap-2">
+          {expiries.map(({ expiresAt, count }) => (
+            <View
+              key={expiresAt ?? "never"}
+              className="flex-row items-baseline justify-between gap-3"
+            >
+              <Text selectable className="text-sm text-foreground">
+                {count > 1 ? `${count} × ` : ""}
+                {expiresAt
+                  ? `Expires ${new Date(expiresAt).toLocaleString(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}`
+                  : "Does not expire"}
               </Text>
-            ) : null}
-          </View>
-        ))}
-      </View>
-      {actions}
+              {expiresAt ? (
+                <Text className="text-xs tabular-nums text-foreground-muted">
+                  in {formatDuration(Date.parse(expiresAt) - now)}
+                </Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {credits.availableCount > 0 ? (
+        <MaterialButton
+          label="Use reset"
+          tone="primary"
+          onPress={confirm}
+          loading={busy}
+          fullWidth
+        />
+      ) : null}
+      {status ? <Text className="text-sm text-foreground">{status}</Text> : null}
     </View>
   );
 }
