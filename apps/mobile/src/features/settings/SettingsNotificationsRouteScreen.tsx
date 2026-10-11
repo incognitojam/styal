@@ -475,7 +475,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
               (Platform.OS === "android"
                 ? alertsChannelOff
                   ? OFF_IN_ANDROID_SETTINGS
-                  : "When an agent finishes, fails, or needs you"
+                  : "When a thread finishes, fails, or needs input or approval"
                 : undefined)
             }
             // Only reads as on when this device is actually registered with the

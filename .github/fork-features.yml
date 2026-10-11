@@ -82,7 +82,7 @@ features:
     status: maintained
     prs: [749]
     invariants:
-      - Android groups the alert and ongoing activity channels under one Agents group, and styal's Notifications settings use the same names, Agent alerts and Ongoing agent activity, with a subtitle saying what each does.
+      - styal's Android Notifications settings use the same names as the Android channels, Agent alerts and Ongoing agent activity, and the alert row and channel describe the same events as web and desktop notifications.
       - A channel switched off in Android settings shows its styal switch as off with "Off in Android settings"; turning it on, or turning Agent alerts off, opens that channel's Android settings page.
       - A multi-thread activity card whose title already says "N working" does not repeat the active count in its subtext.
     rationale: Upstream's settings rows used names that did not match Android's channel names and reported alerts as on while Android had the alert channel switched off, so users stopped receiving alerts without any sign in the app.

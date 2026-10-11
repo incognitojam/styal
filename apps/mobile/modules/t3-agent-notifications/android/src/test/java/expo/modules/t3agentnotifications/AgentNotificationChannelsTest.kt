@@ -26,14 +26,10 @@ class AgentNotificationChannelsTest {
   }
 
   @Test
-  fun channelsShareOneGroupAndReportWhenAndroidTurnsThemOff() {
+  fun channelsReportWhenAndroidTurnsThemOff() {
     val allOn = mapOf("alerts" to true, "activity" to true)
     assertEquals(allOn, AgentNotifications.channelStates(context))
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-    assertEquals("Agents", manager.notificationChannelGroups.single { it.id == "agents" }.name)
-    for (id in listOf("agent-alerts", "agent-activity")) {
-      assertEquals("agents", manager.getNotificationChannel(id).group)
-    }
     // Stands in for the user switching the category off in Android settings.
     manager.deleteNotificationChannel("agent-alerts")
     manager.createNotificationChannel(
