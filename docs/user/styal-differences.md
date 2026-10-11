@@ -214,6 +214,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked September 28, 2026, which continues the thread without a record in the conversation.
   [Updating styal](./updating.md).
 
+- **Reopen in full screen on macOS.** If styal quits while its window is in full screen, including
+  when it restarts to update, it opens in full screen again. Compared with
+  [T3 Code revision 18656a3](https://github.com/pingdotgg/t3code/tree/18656a3402459d9d145bb3fa5767723531b27ac7),
+  checked October 11, 2026, which reopens a full-screen window at its normal size.
+
 [^import-comparison]: Setup compared with [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c), checked September 17, 2026.
 
 [^setup-comparison]: Hosted setup compared with [T3 Code revision dfbb11b](https://github.com/pingdotgg/t3code/tree/dfbb11bdd7c3f1a5575cb55d3e3abb12be025727), checked September 19, 2026.
