@@ -3299,6 +3299,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15272
       retire_when: Upstream chooses the text generation provider from install and sign-in status, preferring Claude Haiku 5.5 then GPT-6 Luna.
 
+  - id: thread-action-undo-shortcut
+    title: Undo thread actions from the focused composer
+    status: maintained
+    prs: [734]
+    invariants:
+      - A visible thread Undo notice claims the configured shortcut from focused text fields until another keypress or text edit; terminals and Settings keep their native behavior.
+      - Holding the shortcut undoes one action group without falling through to composer undo, even after the notice disappears.
+    rationale: Imported from upstream's closed, unmerged proposal at head 31fb063804eb12fc9469c964be933976ca56e177, with repeat suppression kept until key release.
+    implementation_paths:
+      - apps/web/src/components/AppSidebarLayout.tsx
+      - apps/web/src/components/sidebar/ThreadUndoShortcut.tsx
+      - apps/web/src/hooks/showThreadUndoNotice.ts
+    upstream_paths:
+      - apps/web/src/components/AppSidebarLayout.tsx
+      - apps/web/src/hooks/showThreadUndoNotice.ts
+      - apps/web/src/routes/_chat.tsx
+    tests:
+      - apps/web/src/components/sidebar/ThreadUndoShortcut.test.tsx
+      - apps/web/src/hooks/showThreadUndoNotice.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/16172
+      retire_when: Upstream undoes thread actions from focused text fields without taking text undo after edits or held-key repeats.
+
   - id: thread-lifecycle-analytics
     title: Record thread lifecycle analytics
     status: maintained
