@@ -63,6 +63,8 @@ export type T3McpToolSummaryAction =
   | "unwatch-pr"
   | "watch-run"
   | "unwatch-run"
+  | "write-pr-guides"
+  | "read-pr-guide"
   | "browser"
   | "device"
   | "hardware"
@@ -119,6 +121,16 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   unwatch_workflow_run: tool(
     ["Stop watching", "Stopping watching", "Stopped watching", "a workflow run"],
     "unwatch-run",
+  ),
+  write_pull_request_guides: tool(
+    ["Write", "Writing", "Started", "review guides"],
+    "write-pr-guides",
+    "pull-request",
+  ),
+  read_pull_request_guide: tool(
+    ["Read", "Reading", "Read", "a review guide"],
+    "read-pr-guide",
+    "pull-request",
   ),
   orchestrator_capabilities: tool(
     ["Get", "Getting", "Got", "orchestration capabilities"],
