@@ -1,6 +1,6 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
-  DEFAULT_TEXT_GENERATION_MODEL,
+  DEFAULT_CLAUDE_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   type ModelSelection,
@@ -17,6 +17,7 @@ import {
   readCustomModelEntries,
   resolveSelectableModel,
 } from "@t3tools/shared/model";
+import { resolveTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import * as Arr from "effect/Array";
@@ -36,7 +37,7 @@ import { sortModelsForProviderInstance } from "./modelOrdering";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
-const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("codex");
+const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("claudeAgent");
 
 /**
  * Resolve the custom-model list for a given instance, preferring the
@@ -395,14 +396,45 @@ export function resolvePlanAgentHealPatch(input: {
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
+/**
+ * The text generation selection the server will run: the stored selection, or
+ * the first usable provider's default when its provider is signed out or missing.
+ */
 export function resolveAppModelSelectionState(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
 ): ModelSelection {
-  const storedSelection = settings.textGenerationModelSelection ?? {
-    instanceId: DEFAULT_TEXT_GENERATION_INSTANCE_ID,
-    model: DEFAULT_TEXT_GENERATION_MODEL,
-  };
+  return normalizeAppModelSelection(
+    {
+      ...settings,
+      textGenerationModelSelection: resolveTextGenerationModelSelection(
+        { textGenerationModelSelection: storedTextGenerationSelection(settings) },
+        providers,
+      ),
+    },
+    providers,
+  );
+}
+
+function storedTextGenerationSelection(settings: UnifiedSettings): ModelSelection {
+  return (
+    settings.textGenerationModelSelection ?? {
+      instanceId: DEFAULT_TEXT_GENERATION_INSTANCE_ID,
+      model: DEFAULT_CLAUDE_TEXT_GENERATION_MODEL,
+    }
+  );
+}
+
+/**
+ * Normalizes the stored text generation selection against the providers in this
+ * build, without the signed-out fallback. Use when saving a user's pick, so the
+ * fallback is never persisted over it.
+ */
+export function normalizeAppModelSelection(
+  settings: UnifiedSettings,
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSelection {
+  const storedSelection = storedTextGenerationSelection(settings);
   const selectedProvider = providers.find(
     (provider) => provider.instanceId === storedSelection.instanceId,
   );

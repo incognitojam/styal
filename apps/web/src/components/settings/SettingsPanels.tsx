@@ -91,6 +91,7 @@ import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import {
   getCustomModelOptionsByInstance,
+  normalizeAppModelSelection,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
 import {
@@ -3424,7 +3425,7 @@ export function GeneralSettingsPanel() {
                       return;
                     }
                     updateSettings({
-                      textGenerationModelSelection: resolveAppModelSelectionState(
+                      textGenerationModelSelection: normalizeAppModelSelection(
                         {
                           ...settings,
                           textGenerationModelSelection: createModelSelection(instanceId, model),
@@ -3453,7 +3454,7 @@ export function GeneralSettingsPanel() {
                     triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                     onModelOptionsChange={(nextOptions) => {
                       updateSettings({
-                        textGenerationModelSelection: resolveAppModelSelectionState(
+                        textGenerationModelSelection: normalizeAppModelSelection(
                           {
                             ...settings,
                             textGenerationModelSelection: createModelSelection(

@@ -1,4 +1,7 @@
 import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
   isProviderDriverKind,
   isProviderAvailable,
   resolveProviderInstanceEnabled,
@@ -81,22 +84,88 @@ export function isModelSelectionProviderEnabled(
   );
 }
 
+/**
+ * Whether a provider snapshot can run text generation now. A provider that has
+ * not been checked yet counts as usable, so startup does not flip selections.
+ */
+export function canProviderGenerateText(provider: ServerProvider): boolean {
+  return (
+    provider.enabled &&
+    isProviderAvailable(provider) &&
+    provider.supportsTextGeneration !== false &&
+    provider.status !== "disabled" &&
+    provider.status !== "error" &&
+    provider.auth.status !== "unauthenticated"
+  );
+}
+
+/** Drivers preferred for text generation, ahead of other providers in registry order. */
+const TEXT_GENERATION_DRIVER_PREFERENCE: ReadonlyArray<string> = ["claudeAgent", "codex"];
+
+function textGenerationPreferenceRank(provider: ServerProvider): number {
+  const rank = TEXT_GENERATION_DRIVER_PREFERENCE.indexOf(provider.driver);
+  return rank === -1 ? TEXT_GENERATION_DRIVER_PREFERENCE.length : rank;
+}
+
+/** Low effort, matching what each adapter applies to text generation when none is selected. */
+const TEXT_GENERATION_EFFORT_OPTION_BY_DRIVER: Readonly<Record<string, string>> = {
+  claudeAgent: "effort",
+  codex: "reasoningEffort",
+};
+
+/**
+ * The text generation selection to run, decided from provider status before any
+ * call is made. Keeps the selection while its provider is usable; otherwise picks
+ * the first usable provider, Claude then Codex then the rest, with that
+ * provider's text generation default.
+ */
+export function resolveTextGenerationModelSelection(
+  settings: Pick<ServerSettings, "textGenerationModelSelection">,
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSelection {
+  const selection = settings.textGenerationModelSelection;
+  const selected = providers.find((provider) => provider.instanceId === selection.instanceId);
+  if (!selected || canProviderGenerateText(selected)) {
+    return selection;
+  }
+
+  // `.sort()` on a copy, not `.toSorted()`: mobile runs this on Hermes.
+  const candidates = providers
+    .filter(canProviderGenerateText)
+    .sort((a, b) => textGenerationPreferenceRank(a) - textGenerationPreferenceRank(b));
+  for (const provider of candidates) {
+    const model =
+      DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[provider.driver] ??
+      DEFAULT_MODEL_BY_PROVIDER[provider.driver];
+    if (!model) continue;
+    const effortOption = TEXT_GENERATION_EFFORT_OPTION_BY_DRIVER[provider.driver];
+    return createModelSelection(
+      provider.instanceId,
+      model,
+      effortOption ? [{ id: effortOption, value: DEFAULT_TEXT_GENERATION_REASONING_EFFORT }] : [],
+    );
+  }
+  return selection;
+}
+
 export function resolveSourceControlWriterModelSelection(
   settings: ServerSettings,
   providers?: ReadonlyArray<ServerProvider>,
 ): ModelSelection {
   const selection = settings.sourceControlWriterModelSelection;
+  const textGenerationSelection =
+    providers === undefined
+      ? settings.textGenerationModelSelection
+      : resolveTextGenerationModelSelection(settings, providers);
   if (!selection || !isModelSelectionProviderEnabled(settings, selection)) {
-    return settings.textGenerationModelSelection;
+    return textGenerationSelection;
   }
   if (providers === undefined) {
     return selection;
   }
 
   const provider = providers.find((candidate) => candidate.instanceId === selection.instanceId);
-  return provider?.enabled === true && isProviderAvailable(provider)
-    ? selection
-    : settings.textGenerationModelSelection;
+  return provider && canProviderGenerateText(provider) ? selection : textGenerationSelection;
 }
 
 export interface PersistedServerObservabilitySettings {

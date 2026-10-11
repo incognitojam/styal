@@ -3222,6 +3222,38 @@ features:
       tracking: []
       retire_when: Upstream's terminal returns a scrolled-back viewport to the live screen on typed input without moving it for output or mouse input.
 
+  - id: text-generation-provider-preference
+    title: Pick a signed-in provider for text generation
+    status: maintained
+    prs: []
+    invariants:
+      - Text generation defaults to Claude Haiku 5.5 at low effort.
+      - Thread titles, branch names, and commit and pull request text run on the selected text generation model while its provider is enabled, installed, and signed in; otherwise they run on the first usable provider in the order Claude, Codex, then the rest, with that provider's text generation default.
+      - The choice is made from the last provider status check before the request, with one call per request and no retry on another provider; a provider not yet checked counts as usable.
+      - Settings shows the model that will run, and the fallback is never saved over the user's selection.
+    rationale: Users bring their own subscriptions, so a fixed default provider fails for anyone without that subscription. Upstream falls back only when the selected provider is disabled in settings.
+    implementation_paths:
+      - apps/server/src/git/GitManager.ts
+      - apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/modelSelection.ts
+      - packages/contracts/src/settings.ts
+      - packages/shared/src/serverSettings.ts
+    upstream_paths:
+      - apps/server/src/git/GitManager.ts
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/modelSelection.ts
+      - packages/contracts/src/settings.ts
+      - packages/shared/src/serverSettings.ts
+    tests:
+      - apps/web/src/modelSelection.test.ts
+      - packages/shared/src/serverSettings.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15272
+      retire_when: Upstream chooses the text generation provider from install and sign-in status, preferring Claude Haiku 5.5 then GPT-6 Luna.
+
   - id: thread-lifecycle-analytics
     title: Record thread lifecycle analytics
     status: maintained
