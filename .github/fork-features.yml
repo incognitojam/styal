@@ -844,6 +844,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/5714
       retire_when: Upstream ships opt-in desktop presence with equivalent lifecycle counts and cleanup behavior.
 
+  - id: desktop-fullscreen-restore
+    title: Reopen the macOS main window in native fullscreen
+    status: maintained
+    prs: [730]
+    rationale: Native macOS apps reopen in fullscreen when they quit in fullscreen. Upstream closed both pull requests for scope and incomplete verification, not on the behavior.
+    invariants:
+      - On macOS, a main window that quits in native fullscreen, including through hold-to-quit and update restarts, reopens in native fullscreen; leaving fullscreen before quitting reopens it windowed.
+      - Fullscreen restoration keeps the saved normal bounds and maximized state, so leaving fullscreen returns to the previous window; startup transitions do not overwrite them.
+      - Windows and Linux ignore the saved fullscreen flag, and settings without it reopen windowed.
+    implementation_paths:
+      - apps/desktop/src/settings/DesktopAppSettings.ts
+      - apps/desktop/src/window/DesktopWindow.ts
+    upstream_paths:
+      - apps/desktop/src/settings/DesktopAppSettings.ts
+      - apps/desktop/src/window/DesktopWindow.ts
+    tests:
+      - apps/desktop/src/settings/DesktopAppSettings.test.ts
+      - apps/desktop/src/window/DesktopWindow.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/10817
+        - https://github.com/pingdotgg/t3code/pull/14682
+      retire_when: Upstream restores native macOS fullscreen when the main window reopens.
+
   - id: desktop-graceful-shutdown
     title: Bounded graceful desktop shutdown
     status: maintained
