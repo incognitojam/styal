@@ -222,6 +222,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-update-foreground: var(--update-foreground);
   --color-update: var(--update);
   --color-update-surface: var(--update-surface);
+  --color-update-surface-hover: color-mix(
+    in srgb,
+    var(--update-surface) 90%,
+    var(--update-foreground)
+  );
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
   --color-diff-addition: var(--diff-addition);

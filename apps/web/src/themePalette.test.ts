@@ -484,6 +484,32 @@ describe("theme files", () => {
     expect(themeAllowsSidebarArtwork("my-custom-theme")).toBe(false);
   });
 
+  it("keeps the update icon readable on its normal and hover surfaces", () => {
+    const palettes = [
+      getStandardThemeColors("light"),
+      getStandardThemeColors("dark"),
+      ...BUILT_IN_THEMES.flatMap((theme) => [theme.colors, theme.variants!.dark!]),
+      createVividThemeColors("light", "#fdf6ec", "#c2571b"),
+      createVividThemeColors("dark", "#111827", "#8ab4f8"),
+      createVividThemeColors("light", "#111827", "#8ab4f8"),
+      createVividThemeColors("dark", "#f5ecf5", "#a84370"),
+    ];
+    for (const colors of palettes) {
+      const foreground = asHex(colors.updateForeground);
+      const surface = asHex(colors.updateSurface);
+      const hoverChannels = [1, 3, 5].map(
+        (index) =>
+          Number.parseInt(surface.slice(index, index + 2), 16) * 0.9 +
+          Number.parseInt(foreground.slice(index, index + 2), 16) * 0.1,
+      );
+      const hoverSurface = `rgb(${hoverChannels.join(" ")})`;
+      expect(contrastRatio(foreground, surface)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(foreground, hoverSurface)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(foreground, colors.sidebar)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(colors.focus, colors.sidebar)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it("rejects a variant that repeats the base appearance", () => {
     expect(() =>
       parseThemeFile({
