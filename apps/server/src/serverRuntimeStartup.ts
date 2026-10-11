@@ -1,7 +1,7 @@
 import {
   CommandId,
   EventId,
-  DEFAULT_MODEL,
+  DEFAULT_CLAUDE_MODEL,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_SERVER_SETTINGS,
   type ServerSettings as ServerSettingsValue,
@@ -182,8 +182,8 @@ const recordStartupHeartbeat = Effect.gen(function* () {
 });
 
 const getAutoBootstrapThreadModelSelection = (): ModelSelection => ({
-  instanceId: ProviderInstanceId.make("codex"),
-  model: DEFAULT_MODEL,
+  instanceId: ProviderInstanceId.make("claudeAgent"),
+  model: DEFAULT_CLAUDE_MODEL,
 });
 
 export const resolveWelcomeBase = Effect.gen(function* () {

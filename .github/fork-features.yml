@@ -279,6 +279,30 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream preserves actively streaming synthetic Claude turns when a user sends a steer while retaining cleanup of idle synthetic turns.
 
+  - id: claude-default-provider
+    title: Prefer Claude for new threads
+    status: maintained
+    prs: [743]
+    invariants:
+      - Provider snapshots list Claude before Codex, so web, desktop, and mobile give a new thread with no saved, carried, or project selection the first usable provider, Claude, at Opus 5.5.
+      - A server that bootstraps a project from its working directory without a default model selection starts the thread on Claude Opus 5.5.
+      - A saved selection, a project default, or the model carried from the current thread still takes precedence.
+    rationale: styal treats Opus 5.5 as the better general default when both Claude and Codex are available. Upstream lists Codex first and bootstraps on Codex.
+    implementation_paths:
+      - apps/server/src/provider/providerStatusCache.ts
+      - apps/server/src/serverRuntimeStartup.ts
+      - packages/contracts/src/model.ts
+    upstream_paths:
+      - apps/server/src/provider/providerStatusCache.ts
+      - apps/server/src/serverRuntimeStartup.ts
+    tests:
+      - apps/server/src/provider/providerStatusCache.test.ts
+      - apps/server/src/serverRuntimeStartup.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream lists Claude before Codex and bootstraps new threads on Claude, or styal stops preferring Claude.
+
   - id: claude-exact-history-rewind
     title: Rewind Claude turns using the complete saved history
     status: review-needed

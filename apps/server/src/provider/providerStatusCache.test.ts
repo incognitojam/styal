@@ -14,6 +14,7 @@ import * as Logger from "effect/Logger";
 import {
   hydrateCachedProvider,
   isCachedProviderCorrelated,
+  orderProviderSnapshots,
   readProviderStatusCache,
   resolveProviderStatusCachePath,
   writeProviderStatusCache,
@@ -43,6 +44,19 @@ const makeProvider = (
 });
 
 it.layer(NodeServices.layer)("providerStatusCache", (it) => {
+  it("orders Claude ahead of Codex so fresh threads default to Claude", () => {
+    const ordered = orderProviderSnapshots([
+      makeProvider(OPENCODE_DRIVER),
+      makeProvider(CODEX_DRIVER),
+      makeProvider(CLAUDE_AGENT_DRIVER),
+    ]);
+
+    assert.deepStrictEqual(
+      ordered.map((provider) => provider.driver),
+      [CLAUDE_AGENT_DRIVER, CODEX_DRIVER, OPENCODE_DRIVER],
+    );
+  });
+
   it("keeps cached usage limits when the fallback snapshot has none", () => {
     const usageLimits = {
       checkedAt: "2026-04-11T00:00:00.000Z",
