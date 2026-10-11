@@ -282,7 +282,7 @@ features:
   - id: claude-default-provider
     title: Prefer Claude for new threads
     status: maintained
-    prs: []
+    prs: [743]
     invariants:
       - Provider snapshots list Claude before Codex, so web, desktop, and mobile give a new thread with no saved, carried, or project selection the first usable provider, Claude, at Opus 5.5.
       - A server that bootstraps a project from its working directory without a default model selection starts the thread on Claude Opus 5.5.
