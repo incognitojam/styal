@@ -3683,7 +3683,7 @@ features:
   - id: usage-limits-single-account
     title: Show a provider with one account like its own usage screen
     status: maintained
-    prs: []
+    prs: [753]
     invariants:
       - On Usage → Limits, a provider window backed by one account shows its percentage left, a bar, and when it resets, without pool segment numbers, the per-account row, or the pool refill line.
       - A single account's banked reset credits appear once beside the provider name instead of on every window; with several accounts, each account's segment and row keep their own credits.
@@ -3707,7 +3707,7 @@ features:
   - id: usage-reset-credit-expiries
     title: List when each banked reset credit expires
     status: maintained
-    prs: []
+    prs: [753]
     invariants:
       - Codex, Claude, and CLIProxyAPI hub reset credits report every banked credit's expiry, soonest first, alongside the existing next-expiry field.
       - The mobile account screen and the web account popover list banked credits by expiry, grouping credits that share one, and count credits that never expire.
