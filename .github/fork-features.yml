@@ -80,7 +80,7 @@ features:
   - id: android-notification-settings
     title: Android notification settings match Android's categories
     status: maintained
-    prs: []
+    prs: [749]
     invariants:
       - Android groups the alert and ongoing activity channels under one Agents group, and styal's Notifications settings use the same names, Agent alerts and Ongoing agent activity, with a subtitle saying what each does.
       - A channel switched off in Android settings shows its styal switch as off with "Off in Android settings"; turning it on, or turning Agent alerts off, opens that channel's Android settings page.
