@@ -912,6 +912,7 @@ features:
       - apps/server/src/device/AgentDeviceShim.ts
       - packages/shared/src/nodeRuntime.ts
     tests:
+      - .github/workflows/fork-ci.yml
       - apps/server/src/device/AgentDeviceTarget.test.ts
     upstream:
       status: tracking
