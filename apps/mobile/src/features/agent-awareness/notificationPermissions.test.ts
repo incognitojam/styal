@@ -5,7 +5,9 @@ import * as Notifications from "expo-notifications";
 import { requestAgentNotificationPermission } from "./notificationPermissions";
 
 const platform = vi.hoisted(() => ({ OS: "android" }));
+const createChannels = vi.hoisted(() => vi.fn(() => false));
 vi.mock("react-native", () => ({ Platform: platform }));
+vi.mock("./androidNotifications", () => ({ createAndroidAgentChannels: createChannels }));
 vi.mock("expo-notifications", () => ({
   AndroidImportance: { HIGH: 4 },
   setNotificationChannelAsync: vi.fn(() => Promise.resolve(null)),
@@ -18,6 +20,17 @@ describe("agent notification permission", () => {
     vi.clearAllMocks();
     platform.OS = "android";
   });
+
+  it.effect("creates the native channels instead of Expo's when the binary supports them", () =>
+    Effect.gen(function* () {
+      createChannels.mockReturnValueOnce(true);
+      expect(yield* requestAgentNotificationPermission).toEqual({ type: "granted" });
+      expect(Notifications.setNotificationChannelAsync).not.toHaveBeenCalled();
+      expect(createChannels.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(Notifications.requestPermissionsAsync).mock.invocationCallOrder[0]!,
+      );
+    }),
+  );
 
   it.effect("creates an Android channel before prompting for notification permission", () =>
     Effect.gen(function* () {

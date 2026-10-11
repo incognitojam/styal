@@ -478,7 +478,7 @@ class AgentNotificationsTest {
     val card = manager.activeNotifications.single().notification
     assertEquals("2 live", card.extras.getString(NotificationCompat.EXTRA_SHORT_CRITICAL_TEXT))
     assertEquals("2 working", card.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
-    assertEquals("Project · 2 active", card.extras.getString(Notification.EXTRA_SUB_TEXT))
+    assertEquals("Project", card.extras.getString(Notification.EXTRA_SUB_TEXT))
     assertEquals(
       "Working Build feature\nDone Write tests",
       card.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
@@ -505,6 +505,23 @@ class AgentNotificationsTest {
       finished.extras.getCharSequence(Notification.EXTRA_TITLE).toString()
     )
     assertEquals("Project · 2 threads", finished.extras.getString(Notification.EXTRA_SUB_TEXT))
+  }
+
+  @Test
+  fun workingCardsAcrossProjectsLeaveTheCountToTheTitle() {
+    lifecycle.currentState = Lifecycle.State.RESUMED
+    AgentNotifications.receive(
+      context,
+      update("multiple", true) + mapOf(
+        "activity_line_0" to "Working	Build feature	Project",
+        "activity_line_1" to "Working	Write tests	Other project",
+        "activity_phase" to "running",
+        "activity_active_count" to "2",
+      )
+    )
+    val card = manager.activeNotifications.single().notification
+    assertEquals("2 working", card.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+    assertEquals(null, card.extras.getString(Notification.EXTRA_SUB_TEXT))
   }
 
   private fun assertTimeout(card: Notification, expected: LongRange) {

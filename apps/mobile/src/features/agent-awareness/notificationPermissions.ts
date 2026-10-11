@@ -2,6 +2,7 @@ import * as Notifications from "expo-notifications";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Platform } from "react-native";
+import { createAndroidAgentChannels } from "./androidNotifications";
 
 export type NotificationPermissionResult =
   | { readonly type: "unsupported" }
@@ -38,7 +39,14 @@ export const requestAgentNotificationPermission: Effect.Effect<
     return { type: "unsupported" };
   }
 
-  if (Platform.OS === "android") {
+  const createdNatively =
+    Platform.OS === "android" &&
+    (yield* Effect.try({
+      try: createAndroidAgentChannels,
+      catch: (cause) => new NotificationPermissionRequestError({ cause }),
+    }));
+  // Binaries without the native channel setup create the alert channel through Expo.
+  if (Platform.OS === "android" && !createdNatively) {
     yield* Effect.tryPromise({
       try: () =>
         Notifications.setNotificationChannelAsync("agent-alerts", {

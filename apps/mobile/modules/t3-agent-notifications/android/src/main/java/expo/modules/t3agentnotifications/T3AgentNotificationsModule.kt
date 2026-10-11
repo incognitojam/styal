@@ -34,6 +34,35 @@ class T3AgentNotificationsModule : Module() {
       AgentNotifications.setThreadOnScreen(path)
     }
 
+    Function("createChannels") {
+      appContext.reactContext?.let { AgentNotifications.channels(it) }
+    }
+
+    Function("channelStates") {
+      appContext.reactContext?.let { AgentNotifications.channelStates(it) }
+    }
+
+    Function("openChannelSettings") { channel: String ->
+      val context = appContext.reactContext
+      val channelId = AgentNotifications.channelId(channel)
+      if (context == null || channelId == null || Build.VERSION.SDK_INT < 26) {
+        false
+      } else {
+        AgentNotifications.channels(context)
+        try {
+          context.startActivity(
+            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+              .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+              .putExtra(Settings.EXTRA_CHANNEL_ID, channelId)
+              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          )
+          true
+        } catch (_: ActivityNotFoundException) {
+          false
+        }
+      }
+    }
+
     Function("openLiveUpdateSettings") {
       val context = appContext.reactContext
       if (context == null || Build.VERSION.SDK_INT < 36) {

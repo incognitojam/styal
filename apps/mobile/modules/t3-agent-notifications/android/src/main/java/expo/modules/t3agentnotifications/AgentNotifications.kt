@@ -307,19 +307,40 @@ object AgentNotifications {
 
   private fun manager(context: Context) = context.getSystemService(NotificationManager::class.java)
 
-  private fun channels(context: Context) {
+  /** Creates both channels; also updates the names and descriptions of existing ones. */
+  fun channels(context: Context) {
     if (Build.VERSION.SDK_INT >= 26) {
       manager(context).createNotificationChannels(
         listOf(
-          NotificationChannel(ALERT_CHANNEL, "Agent alerts", NotificationManager.IMPORTANCE_HIGH),
+          NotificationChannel(ALERT_CHANNEL, "Agent alerts", NotificationManager.IMPORTANCE_HIGH)
+            .apply { description = "When a thread finishes, fails, or needs input or approval" },
           NotificationChannel(
             ACTIVITY_CHANNEL,
             "Ongoing agent activity",
             NotificationManager.IMPORTANCE_LOW
-          ),
+          ).apply { description = "Lists agents while they work" },
         )
       )
     }
+  }
+
+  /**
+   * Whether Android lets the alert and activity channels post, keyed "alerts" and
+   * "activity". App-wide permission is reported separately; a channel that does
+   * not exist yet is created enabled.
+   */
+  fun channelStates(context: Context): Map<String, Boolean> {
+    if (Build.VERSION.SDK_INT < 26) return mapOf("alerts" to true, "activity" to true)
+    val manager = manager(context)
+    fun enabled(id: String) =
+      manager.getNotificationChannel(id)?.importance != NotificationManager.IMPORTANCE_NONE
+    return mapOf("alerts" to enabled(ALERT_CHANNEL), "activity" to enabled(ACTIVITY_CHANNEL))
+  }
+
+  fun channelId(channel: String): String? = when (channel) {
+    "alerts" -> ALERT_CHANNEL
+    "activity" -> ACTIVITY_CHANNEL
+    else -> null
   }
 
   private fun base(context: Context, channel: String): NotificationCompat.Builder {
