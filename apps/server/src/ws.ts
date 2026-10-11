@@ -1,4 +1,5 @@
 import { OrchestrationGetCommandOutputError } from "@t3tools/contracts";
+import { readHistoryRewriteFence } from "./orchestration-v2/historyRewriteFence.ts";
 import { resolveAddProjectDefaultDirectory } from "./project/AddProjectDefaultDirectory.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -604,6 +605,9 @@ const canReplayPersistedRange = Effect.fnUntraced(function* (
   if (replayGap < 0 || replayGap > maxGap) {
     return false;
   }
+  if (afterSequence < (yield* readHistoryRewriteFence(yield* SqlClient.SqlClient))) {
+    return false;
+  }
   const stats = yield* applicationEvents.getReplayStats({
     afterSequence,
     throughSequence: headSequence,
@@ -773,7 +777,10 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
     // published during the replay window is lost; overlapping events are
     // deduped by sequence on the client.
     if (input.afterSequence !== undefined) {
-      const highWater = yield* applicationEvents.latestAgentSequence(input.threadId).pipe(
+      const [threadSequence, fence] = yield* Effect.all([
+        applicationEvents.latestAgentSequence(input.threadId),
+        readHistoryRewriteFence(yield* SqlClient.SqlClient),
+      ]).pipe(
         Effect.mapError(
           (cause) =>
             new OrchestrationV2GetThreadProjectionError({
@@ -783,7 +790,9 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
             }),
         ),
       );
-      if (input.afterSequence > highWater) {
+      // Thread snapshots report at least the fence; see historyRewriteFence.ts.
+      const highWater = Math.max(threadSequence, fence);
+      if (input.afterSequence > highWater || input.afterSequence < fence) {
         return yield* snapshotThenLive();
       }
       const stats = yield* applicationEvents

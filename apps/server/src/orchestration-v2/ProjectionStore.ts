@@ -56,6 +56,7 @@ import {
   TurnItemId,
   NodeId,
 } from "@t3tools/contracts";
+import { readHistoryRewriteFence } from "./historyRewriteFence.ts";
 import {
   createOrchestrationV2TurnItemVisibility,
   isOrchestrationV2SupersededInterrupt,
@@ -4631,7 +4632,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           `;
             return {
               schemaVersion: ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION,
-              snapshotSequence: rows[0]?.snapshot_sequence ?? 0,
+              snapshotSequence: Math.max(
+                rows[0]?.snapshot_sequence ?? 0,
+                yield* readHistoryRewriteFence(sql),
+              ),
               projection,
             };
           }),
@@ -4867,7 +4871,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             `;
             return {
               schemaVersion: ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION,
-              snapshotSequence: rows[0]?.snapshot_sequence ?? 0,
+              snapshotSequence: Math.max(
+                rows[0]?.snapshot_sequence ?? 0,
+                yield* readHistoryRewriteFence(sql),
+              ),
               projection,
             };
           }),
