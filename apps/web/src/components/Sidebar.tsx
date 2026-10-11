@@ -781,6 +781,7 @@ function SidebarProjectGroupHeader(props: {
   project: ProjectFaviconProject | null;
   label: string;
   draggable: boolean;
+  onContextMenu: (group: string, position: { x: number; y: number }) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: sidebarListItemId({ kind: "project-header", group: props.group }),
@@ -792,6 +793,11 @@ function SidebarProjectGroupHeader(props: {
       ref={setNodeRef}
       data-thread-selection-safe
       data-testid="sidebar-project-group-header"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        props.onContextMenu(props.group, { x: event.clientX, y: event.clientY });
+      }}
       className={cn("mx-0.5 list-none pt-2", isDragging && "relative z-20")}
       style={{
         transform: CSS.Translate.toString(transform),
@@ -802,8 +808,19 @@ function SidebarProjectGroupHeader(props: {
       <div
         {...attributes}
         {...listeners}
+        aria-label={props.label}
+        onKeyDown={(event) => {
+          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+            event.preventDefault();
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            props.onContextMenu(props.group, { x: rect.left, y: rect.bottom });
+            return;
+          }
+          listeners?.onKeyDown?.(event);
+        }}
         className={cn(
-          "flex h-6 min-w-0 items-center gap-2 rounded-md px-(--sidebar-row-content-inset) text-secondary-label text-xs font-medium outline-none",
+          "flex h-6 min-w-0 items-center gap-2 rounded-md px-(--sidebar-row-content-inset) text-secondary-label text-xs font-medium outline-none select-none focus-visible:ring-2 focus-visible:ring-ring",
           props.draggable && "cursor-grab",
           isDragging && "cursor-grabbing bg-sidebar-row-hover",
         )}
@@ -2739,6 +2756,86 @@ export default function Sidebar() {
       });
     },
     [isMobile, router, setOpenMobile],
+  );
+  const handleProjectGroupContextMenu = useCallback(
+    (groupKey: string, position: { x: number; y: number }) => {
+      void (async () => {
+        const api = readLocalApi();
+        const projectGroup =
+          projectGroupByLogicalKey.get(groupKey) ?? projectGroupByKey.get(groupKey);
+        if (!api || !projectGroup) return;
+        const isFiltered = projectScopeKey === projectGroup.projectKey;
+        const members = projectGroup.memberProjects;
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              { id: "new-thread", label: "New thread" },
+              {
+                id: "filter-project",
+                label: isFiltered ? "Show all projects" : `Filter by ${projectGroup.displayName}`,
+              },
+              {
+                id: "copy-path",
+                label: "Copy project path",
+                separatorBefore: true,
+                ...(members.length > 1
+                  ? {
+                      children: members.map((member, index) => ({
+                        id: `copy-path:${index}`,
+                        label: `${member.environmentLabel ?? "Environment"} — ${member.workspaceRoot}`,
+                      })),
+                    }
+                  : {}),
+              },
+              { id: "project-settings", label: "Project settings" },
+            ],
+            position,
+          ),
+        );
+        if (clicked._tag === "Failure" || !clicked.value) return;
+        if (clicked.value === "filter-project") {
+          setProjectScopeKey(isFiltered ? null : projectGroup.projectKey);
+        } else if (clicked.value === "project-settings") {
+          openProjectSettings(projectGroup);
+        } else if (clicked.value === "new-thread") {
+          const result = await settlePromise(() =>
+            startNewThreadFromContext(
+              {
+                ...newThreadContext,
+                activeThread: newThreadContext.activeThread ?? undefined,
+                scopedProjectGroup: projectGroup,
+              },
+              "sidebar",
+            ),
+          );
+          if (result._tag === "Failure") {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Could not create thread",
+                description: error instanceof Error ? error.message : "An error occurred.",
+              }),
+            );
+          }
+        } else if (clicked.value === "copy-path" || clicked.value.startsWith("copy-path:")) {
+          const member =
+            members[clicked.value === "copy-path" ? 0 : Number(clicked.value.slice(10))];
+          if (member) {
+            copyPathToClipboard(member.workspaceRoot, { path: member.workspaceRoot });
+          }
+        }
+      })();
+    },
+    [
+      copyPathToClipboard,
+      newThreadContext,
+      openProjectSettings,
+      projectGroupByKey,
+      projectGroupByLogicalKey,
+      projectScopeKey,
+      setProjectScopeKey,
+    ],
   );
   // Anchor for the scope popup: the header search field, not its icon trigger.
   const headerSearchRef = useRef<HTMLDivElement | null>(null);
@@ -5331,6 +5428,7 @@ export default function Sidebar() {
                               project={group ?? null}
                               label={group?.displayName ?? "Unknown project"}
                               draggable={optimisticDrop === null}
+                              onContextMenu={handleProjectGroupContextMenu}
                             />,
                           );
                           continue;
