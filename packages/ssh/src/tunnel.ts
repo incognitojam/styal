@@ -240,8 +240,7 @@ function applyScriptPlaceholders(
 ): string {
   let result = template;
   for (const [token, value] of Object.entries(replacements)) {
-    // Embedded shell scripts use $$ for their PID. A replacement string would
-    // interpret that as a single $, corrupting lock ownership and runner identity.
+    // A replacer function keeps `$$` and other `$` patterns in the value literal.
     result = result.replaceAll(`@@${token}@@`, () => value);
   }
   return result;
