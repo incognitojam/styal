@@ -1,7 +1,9 @@
 {
-  "serverRevision": "024d49520eadb24cc2f2cef0b0a82c33f0290813",
-  "generatedAt": "2026-10-11T11:59:16.108Z",
-  "root": "/tmp/t3-import-fixture",
+  "orchestrationVersion": 2,
+  "databaseFilename": "statev2.sqlite",
+  "serverRevision": "de343914273eceb852a1d1d739cd1d38df7796ee",
+  "generatedAt": "2026-10-11T14:49:43.916Z",
+  "root": "/workspace/fixture",
   "importedThreadIds": [
     "thread-completed",
     "thread-settled",
@@ -16,9 +18,9 @@
   "settings": {
     "defaultThreadEnvMode": "local",
     "newWorktreesStartFromOrigin": false,
-    "responseStreamingMode": "token",
+    "responseStreamingMode": "paragraph",
     "enableProviderUpdateChecks": false,
     "enableAgentBrowserAccess": false,
-    "addProjectBaseDirectory": "/tmp/t3-import-fixture/projects"
+    "addProjectBaseDirectory": "/workspace/fixture/projects"
   }
 }
