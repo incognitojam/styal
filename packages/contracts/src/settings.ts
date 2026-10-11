@@ -307,7 +307,7 @@ export type ChatWidth = typeof ChatWidth.Type;
 
 const ClientSettingsFields = Schema.Struct({
   notificationMode: NotificationMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed("off" as const)),
+    Schema.withDecodingDefault(Effect.succeed("sound" as const)),
   ),
   inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   diffColorScheme: DiffColorScheme.pipe(
@@ -555,7 +555,9 @@ export const ClientSettingsSchema = Schema.Struct({
           settings.completionSound === "chime" ||
           settings.completionSound === "avanti"
             ? "notifications-and-sound"
-            : "off"),
+            : settings.completionSound === "none"
+              ? "off"
+              : "sound"),
         completionSound:
           settings.completionSound === "resolve" || settings.completionSound === "chime"
             ? "t3-completion"
