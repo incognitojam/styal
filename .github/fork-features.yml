@@ -2875,7 +2875,7 @@ features:
   - id: server-restart-continuation-note
     title: Show where a thread continued after a server restart
     status: maintained
-    prs: [515]
+    prs: [515, 744]
     invariants:
       - When restart recovery sends a continuation, the thread records one server-restart.continued activity, timestamped before the send and attached to the turn the provider started for the continued work; background-work continuations record a separate server-restart.background-continued activity.
       - A failed continuation records no restart activity; the thread settles with the existing continuation error instead.
