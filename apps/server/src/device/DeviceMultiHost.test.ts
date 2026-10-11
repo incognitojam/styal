@@ -131,3 +131,140 @@ it.effect("keeps hosts independent when serials collide and another host fails",
     ),
   ),
 );
+
+it.effect("does not hold local device work behind a connected environment that is waiting", () =>
+  Effect.gen(function* () {
+    const peerStarted = yield* Deferred.make<void>();
+    const ready = {
+      nodePath: process.execPath,
+      hub: { origin: "http://local" },
+      agentDevice: { baseUrl: "http://local", token: "test", entryPath: "/agent-device" },
+      run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
+      helpers: { serveSimAxSettings: null, serveSimCli: null },
+    };
+    const host = (id: string, kind: "local" | "environment"): DeviceHost.DeviceHost["Service"] => {
+      // The environment never answers, like a peer that went to sleep mid-request.
+      const waiting = Deferred.succeed(peerStarted, undefined).pipe(Effect.andThen(Effect.never));
+      return {
+        id,
+        summary: Effect.succeed({
+          id,
+          label: id,
+          kind,
+          hubInstalled: true,
+          agentDeviceInstalled: true,
+          platforms: [{ platform: "android", available: true }],
+        }),
+        platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
+        ensureReady: () => (kind === "environment" ? waiting : Effect.succeed(ready)),
+        ensureAgentReady: () => (kind === "environment" ? waiting : Effect.succeed(ready)),
+        current: Effect.succeed(null),
+        stopAgent: Effect.void,
+        stop: Effect.void,
+      };
+    };
+    const service = yield* DeviceService.makeWithHosts(
+      new Map([
+        ["local", host("local", "local")],
+        ["peer", host("peer", "environment")],
+      ]),
+    ).pipe(
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({}))),
+        ),
+      ),
+    );
+    const waiting = yield* service.agentReadinessIfSupported("peer").pipe(Effect.forkChild);
+    yield* Deferred.await(peerStarted);
+    expect((yield* service.readiness("local")).hostId).toBe("local");
+    expect(yield* service.agentReadinessIfSupported("local")).not.toBeNull();
+    yield* Fiber.interrupt(waiting);
+  }).pipe(
+    Effect.provide(
+      ServerSettings.layerTest({ enableDeviceSupport: true, enableAgentDeviceAccess: true }),
+    ),
+  ),
+);
+
+it.effect(
+  "drops an environment agent credential when access is turned off while it is issued",
+  () =>
+    Effect.gen(function* () {
+      const requested = yield* Deferred.make<void>();
+      const issue = yield* Deferred.make<void>();
+      const stopped: string[] = [];
+      const written: string[] = [];
+      const ready = {
+        nodePath: process.execPath,
+        hub: { origin: "http://peer" },
+        run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
+        helpers: { serveSimAxSettings: null, serveSimCli: null },
+      };
+      const peer: DeviceHost.DeviceHost["Service"] = {
+        id: "peer",
+        summary: Effect.succeed({
+          id: "peer",
+          label: "Peer",
+          kind: "environment",
+          hubInstalled: true,
+          agentDeviceInstalled: true,
+          platforms: [{ platform: "android", available: true }],
+        }),
+        platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
+        ensureReady: () => Effect.succeed(ready),
+        // The device environment is still issuing the credential when access turns off.
+        ensureAgentReady: () =>
+          Deferred.succeed(requested, undefined).pipe(
+            Effect.andThen(Deferred.await(issue)),
+            Effect.as({
+              ...ready,
+              agentDevice: { baseUrl: "http://peer/agent", token: "issued", entryPath: "" },
+            }),
+          ),
+        current: Effect.succeed(ready),
+        stopAgent: Effect.sync(() => {
+          stopped.push("stop-agent");
+        }),
+        stop: Effect.void,
+      };
+      const service = yield* DeviceService.makeWithHosts(
+        new Map([["peer", peer]]),
+        undefined,
+        (_hostId, ready) =>
+          Effect.sync(() => {
+            written.push(ready.agentDevice.token);
+            return "/host-config.json";
+          }),
+      ).pipe(
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({}))),
+          ),
+        ),
+      );
+      const targeting = yield* service
+        .agentTarget({
+          threadId: ThreadId.make("thread"),
+          hostId: "peer",
+          deviceId: "emulator-5554",
+        })
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Deferred.await(requested);
+      yield* service.configure({ agentAccessEnabled: false });
+      yield* Deferred.succeed(issue, undefined);
+      const error = yield* Fiber.join(targeting);
+      expect(error).toMatchObject({ reason: "Agent device access was turned off." });
+      expect(written).toEqual([]);
+      expect(stopped).toEqual(["stop-agent", "stop-agent"]);
+    }).pipe(
+      Effect.provide(
+        ServerSettings.layerTest({
+          enableDeviceSupport: true,
+          enableAgentDeviceAccess: true,
+        }),
+      ),
+    ),
+);

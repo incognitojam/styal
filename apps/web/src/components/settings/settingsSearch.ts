@@ -682,9 +682,17 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "device-hosts",
-    title: "Device hosts",
+    title: "SSH device hosts",
     to: "/settings/integrations",
     searchTerms: ["ssh remote simulator emulator ios android mac mini identity key connection"],
+  },
+  {
+    id: "environment-device-hosts",
+    title: "Devices from connected environments",
+    to: "/settings/integrations",
+    searchTerms: [
+      "share sharing simulator emulator ios android another environment remote agent access revoke",
+    ],
   },
   {
     id: "agent-device-access",

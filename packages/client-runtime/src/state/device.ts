@@ -1,9 +1,13 @@
-import { type DeviceToolVersions, WS_METHODS } from "@t3tools/contracts";
+import { type DeviceToolVersions, type EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
 import { Atom } from "effect/unstable/reactivity";
 
-import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentRegistry } from "../connection/registry.ts";
+import { request } from "../rpc/client.ts";
 import {
   createAtomCommandScheduler,
+  createEnvironmentCommand,
   createEnvironmentRpcCommand,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
@@ -17,6 +21,53 @@ export function createDeviceEnvironmentAtoms<R, E>(
     key: ({ environmentId }: { environmentId: string }) => environmentId,
   };
   return {
+    connectEnvironment: createEnvironmentCommand(runtime, {
+      label: "environment-data:device:connect-environment",
+      scheduler,
+      concurrency,
+      execute: (
+        input: {
+          targetEnvironmentId: EnvironmentId;
+          targetLabel: string;
+          url: string;
+          sourceLabel: string;
+        },
+        _registry,
+        environmentId,
+      ) =>
+        Effect.gen(function* () {
+          const environments = yield* EnvironmentRegistry;
+          const onTarget = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+            environments.run(input.targetEnvironmentId, effect);
+          yield* onTarget(
+            request(WS_METHODS.deviceConfigure, { enabled: true, agentAccessEnabled: true }),
+          );
+          const grant = yield* onTarget(
+            request(WS_METHODS.deviceCreateHostGrant, {
+              sourceEnvironmentId: environmentId,
+              sourceLabel: input.sourceLabel,
+            }),
+          );
+          yield* request(WS_METHODS.deviceConnectEnvironment, {
+            label: input.targetLabel,
+            url: input.url,
+            grant,
+          }).pipe(
+            Effect.onError(() =>
+              onTarget(
+                request(WS_METHODS.deviceRevokeHostGrant, { sessionId: grant.sessionId }),
+              ).pipe(Effect.ignore),
+            ),
+          );
+          yield* request(WS_METHODS.deviceConfigure, { enabled: true, agentAccessEnabled: true });
+        }),
+    }),
+    disconnectEnvironment: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:device:disconnect-environment",
+      tag: WS_METHODS.deviceDisconnectEnvironment,
+      scheduler,
+      concurrency,
+    }),
     /** Server-pushed device hosts, devices, and open sessions for one environment. */
     state: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:device:state",
@@ -97,3 +148,19 @@ export function deviceToolUpdatePolicy(tools: DeviceToolVersions | undefined) {
 }
 export const deviceToolUpdateOwnership =
   "This environment's T3 server chooses device tool versions for itself and its SSH hosts. Update that server to receive newer tool versions; updating only your browser or mobile app does not update a remote server.";
+
+export function deviceSharingErrorMessage(cause: Cause.Cause<unknown>) {
+  const error = Cause.squash(cause);
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "DeviceHostUnavailableError" &&
+    "reason" in error &&
+    typeof error.reason === "string"
+  )
+    return error.reason;
+  return error instanceof Error
+    ? error.message
+    : "Device access could not be changed. Reconnect both environments and try again.";
+}

@@ -971,6 +971,41 @@ features:
         - https://github.com/pingdotgg/t3code/pull/13093
       retire_when: Upstream explicitly enables Node mode in both generated platform wrappers and direct launcher children, with equivalent behavioral coverage.
 
+  - id: device-environment-hosts
+    title: Share local devices between connected environments
+    status: maintained
+    prs: [746]
+    invariants:
+      - Web, desktop, and mobile clients can authorize an already connected environment as a device host without SSH configuration.
+      - Device-only credentials are stored in the source server's secret store and remain usable after client disconnects or server restarts.
+      - Peer access is limited to local devices and expires. Removing a host revokes access when the target is reachable; offline removal reports how to revoke the remaining grant. Ordinary client credentials cannot use peer endpoints.
+      - Thread and driver sessions are distinct across environments, and agents see other environments' device reservations.
+      - Agents get a separate credential that reaches only agent-device's remote routes, cannot issue peer commands, and stops working when agent access is turned off on either environment or the grant is revoked.
+      - Requests to a connected environment do not hold the local device lifecycle lock, so an unreachable environment cannot block local devices.
+    rationale: Connecting a machine to the client does not give an agent server access to it. An explicit device-only grant provides persistent access without copying a client credential or requiring redundant SSH setup.
+    implementation_paths:
+      - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
+      - apps/server/src/device/DeviceSharing.ts
+      - apps/server/src/device/DeviceSharingHttp.ts
+      - apps/server/src/device/EnvironmentDeviceHost.ts
+      - apps/web/src/components/settings/EnvironmentDeviceHostsSettings.tsx
+      - packages/client-runtime/src/state/device.ts
+      - packages/contracts/src/device.ts
+    upstream_paths:
+      - apps/server/src/device/DeviceHubProxy.ts
+      - apps/server/src/device/DeviceService.ts
+      - apps/server/src/mcp/toolkits/device/handlers.ts
+      - packages/contracts/src/device.ts
+    tests:
+      - apps/server/src/device/DeviceMultiHost.test.ts
+      - apps/server/src/device/DeviceSharing.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e
+        - https://github.com/pingdotgg/t3code/pull/10856
+      retire_when: Upstream supports persistent device-only access between existing environment servers through every client and isolates peer thread and driver sessions.
+
   - id: device-tool-thread-awareness
     title: Agents see devices other threads have open
     status: maintained

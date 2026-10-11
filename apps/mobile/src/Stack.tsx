@@ -108,6 +108,7 @@ import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { SettingsAboutRouteScreen } from "./features/settings/SettingsAboutRouteScreen";
 import { SettingsNotificationsRouteScreen } from "./features/settings/SettingsNotificationsRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
+import { SettingsDevicesRouteScreen } from "./features/settings/SettingsDevicesRouteScreen";
 import { SettingsThreadsRouteScreen } from "./features/settings/SettingsThreadsRouteScreen";
 import { SettingsEnvironmentFilterProvider } from "./features/settings/settings-environment-filter";
 import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
@@ -245,6 +246,11 @@ const SettingsContentStack = createNativeStackNavigator({
       screen: SettingsNotificationsRouteScreen,
       linking: "notifications",
       options: { title: "Notifications" },
+    }),
+    SettingsDevices: createNativeStackScreen({
+      screen: SettingsDevicesRouteScreen,
+      linking: "devices",
+      options: { title: "Devices" },
     }),
     SettingsThreads: createNativeStackScreen({
       screen: SettingsThreadsRouteScreen,

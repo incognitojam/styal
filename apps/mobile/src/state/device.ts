@@ -1,6 +1,6 @@
 import { createDeviceEnvironmentAtoms } from "@t3tools/client-runtime/state/device";
 import { resolveDeviceHubAccess } from "@t3tools/client-runtime/state/deviceHubAccess";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { DeviceServiceState, EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { Atom } from "effect/unstable/reactivity";
@@ -41,4 +41,23 @@ export function useDeviceHubAccess(environmentId: EnvironmentId, hostId: string)
     [query.data, query.error, prepared, hostId],
   );
   return { access, error: query.error, refresh: query.refresh };
+}
+
+const emptyDeviceState: DeviceServiceState = {
+  hosts: [],
+  hostStatus: "disabled",
+  hostStatuses: {},
+  devices: [],
+  sessions: [],
+  onboardingCompleted: false,
+  agentAccessEnabled: false,
+  hubBasePath: "/api/device-hub",
+  revision: 0,
+};
+
+export function useDeviceState(environmentId: EnvironmentId | null) {
+  const query = useEnvironmentQuery(
+    environmentId === null ? null : deviceEnvironment.state({ environmentId, input: {} }),
+  );
+  return { state: query.data ?? emptyDeviceState, loaded: query.data !== null };
 }

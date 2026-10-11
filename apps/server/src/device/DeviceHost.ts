@@ -1,13 +1,11 @@
 /**
  * A device host is a machine with simulators or emulators on it. The service
- * layer only ever talks to this interface, so a future SSH or cloud host slots
- * in beside `LocalDeviceHost` without touching discovery, the proxy, or the
- * MCP tools.
+ * layer talks to this interface for local, SSH, and connected-environment hosts.
  *
- * Every ready host presents a loopback origin where expo-device-hub answers.
+ * Every ready host presents an origin where expo-device-hub answers.
  * Hosts add an agent-device daemon endpoint only after agent access is granted.
- * For the local host both run on this machine; a remote host would forward
- * them here.
+ * SSH hosts forward local endpoints; connected environments expose authenticated
+ * proxies and execute typed device operations on the owning server.
  */
 import type {
   DeviceHostId,
@@ -19,6 +17,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
+import type { DeviceService } from "./DeviceService.ts";
+import type { DeviceEnvironmentInfo, DeviceError } from "@t3tools/contracts";
 
 export class DeviceHostError extends Schema.TaggedError<DeviceHostError>()("DeviceHostError", {
   hostId: Schema.String,
@@ -40,8 +40,9 @@ export class DeviceHostTimeoutError extends Schema.TaggedError<DeviceHostTimeout
 }
 
 export interface DeviceHubEndpoint {
-  /** Loopback origin of expo-device-hub, e.g. `http://127.0.0.1:3400`. */
+  /** Origin of expo-device-hub or an authenticated environment proxy. */
   readonly origin: string;
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 export interface AgentDeviceEndpoint {
@@ -52,6 +53,15 @@ export interface AgentDeviceEndpoint {
 }
 
 export interface DeviceHostReady {
+  /** Environment hosts execute typed operations on their owning server. */
+  readonly remote?: Pick<
+    DeviceService["Service"],
+    "open" | "close" | "shutdown" | "detail" | "action" | "screenshot"
+  > & {
+    readonly list: Effect.Effect<DeviceEnvironmentInfo, DeviceError>;
+  };
+  /** Keeps driver sessions distinct when different environments reuse a thread ID. */
+  readonly agentSessionNamespace?: string;
   readonly nodePath: string;
   readonly hub: DeviceHubEndpoint;
   /**
@@ -100,6 +110,8 @@ export class DeviceHost extends Context.Service<
     >;
     /** Current endpoints when already running, without starting anything. */
     readonly current: Effect.Effect<DeviceHostReady | null>;
+    /** The running agent-device endpoint, without starting anything. Local hosts only. */
+    readonly currentAgent?: Effect.Effect<AgentDeviceEndpoint | null>;
     /** Stops only agent-device. Manual viewing through the hub stays available. */
     readonly stopAgent: Effect.Effect<void>;
     /** Stops helpers. Devices themselves keep running; the user owns those. */

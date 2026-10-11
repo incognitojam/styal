@@ -9,6 +9,10 @@ styal is in active development. The hosted web app at [app.styal.build](https://
 live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences
 works. This overview focuses on desktop and web; the mobile app is a work in progress.
 
+## Devices
+
+- **Share devices between connected environments.** Choose another styal environment as a device host from web, desktop, or mobile settings without configuring SSH. Device access persists after the client closes and can be revoked. T3 Code still connects remote device hosts through SSH as of [revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e). [Use devices from another environment](./devices.md#devices-from-another-environment).
+
 ## Mobile
 
 - **Android updates inside the app.** styal offers APK updates in **Settings → About styal**,

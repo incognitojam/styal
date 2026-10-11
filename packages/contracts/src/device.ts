@@ -6,15 +6,13 @@
  * server-proxied stream, and agents reach devices through the `device_*` MCP
  * tools plus the `agent-device` CLI the server preconfigures for them.
  *
- * Devices live on a *host*. Only the local host (the machine the server runs
- * on) exists today; the host id is carried everywhere so SSH and cloud hosts
- * can be added without changing the client contract.
+ * Devices live on the local machine, an SSH host, or a connected environment.
  *
  * @module Device
  */
 import { Schema } from "effect";
 
-import { ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { AuthSessionId, EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const DevicePlatform = Schema.Literals(["ios", "android"]);
 export type DevicePlatform = typeof DevicePlatform.Type;
@@ -22,7 +20,7 @@ export type DevicePlatform = typeof DevicePlatform.Type;
 export const DeviceHostId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 export type DeviceHostId = typeof DeviceHostId.Type;
 
-/** The server machine. Always present; other host kinds are future work. */
+/** The server machine. Always present. */
 export const LOCAL_DEVICE_HOST_ID = "local" as DeviceHostId;
 
 /** SSH aliases and key paths are resolved on the environment server. */
@@ -45,6 +43,39 @@ export const SshDeviceHostConfigs = Schema.Array(SshDeviceHostConfig).check(
       "Device host ids must be unique.",
   ),
 );
+
+export const EnvironmentDeviceHostConfig = Schema.Struct({
+  id: DeviceHostId.check(Schema.isPattern(/^environment-[a-f0-9]{24}$/)),
+  label: TrimmedNonEmptyString,
+  environmentId: EnvironmentId,
+  url: TrimmedNonEmptyString.check(Schema.isPattern(/^https?:\/\//)),
+  sessionId: AuthSessionId,
+});
+export type EnvironmentDeviceHostConfig = typeof EnvironmentDeviceHostConfig.Type;
+export const EnvironmentDeviceHostConfigs = Schema.Array(EnvironmentDeviceHostConfig).check(
+  Schema.makeFilter(
+    (hosts) =>
+      new Set(hosts.map((host) => host.id)).size === hosts.length ||
+      "Device host ids must be unique.",
+  ),
+);
+export const DeviceHostGrantInput = Schema.Struct({
+  sourceEnvironmentId: EnvironmentId,
+  sourceLabel: TrimmedNonEmptyString,
+});
+export const DeviceHostGrant = Schema.Struct({
+  environmentId: EnvironmentId,
+  sourceEnvironmentId: EnvironmentId,
+  sessionId: AuthSessionId,
+  token: TrimmedNonEmptyString,
+});
+export type DeviceHostGrant = typeof DeviceHostGrant.Type;
+export const DeviceConnectEnvironmentInput = Schema.Struct({
+  label: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString.check(Schema.isPattern(/^https?:\/\//)),
+  grant: DeviceHostGrant,
+});
+export type DeviceConnectEnvironmentInput = typeof DeviceConnectEnvironmentInput.Type;
 
 /** Simulator udid or adb serial (an AVD name while it is not running). */
 export const DeviceId = TrimmedNonEmptyString.check(Schema.isMaxLength(256));
@@ -89,7 +120,7 @@ export type DeviceToolVersions = typeof DeviceToolVersions.Type;
 
 export const DeviceHostSummary = Schema.Struct({
   id: DeviceHostId,
-  kind: Schema.Literals(["local", "ssh"]),
+  kind: Schema.Literals(["local", "ssh", "environment"]),
   label: TrimmedNonEmptyString,
   platforms: Schema.Array(DevicePlatformAvailability),
   tools: Schema.optional(DeviceToolVersions),
@@ -128,6 +159,7 @@ export const DeviceSession = Schema.Struct({
 export type DeviceSession = typeof DeviceSession.Type;
 
 export const DeviceServiceState = Schema.Struct({
+  supportsEnvironmentHosts: Schema.optional(Schema.Boolean),
   supportsHostRetry: Schema.optional(Schema.Boolean),
   supportsToolUpdate: Schema.optional(Schema.Boolean),
   supportsToolInspection: Schema.optional(Schema.Boolean),
@@ -143,6 +175,7 @@ export const DeviceServiceState = Schema.Struct({
   ),
   devices: Schema.Array(DeviceSummary),
   sessions: Schema.Array(DeviceSession),
+  externalSessions: Schema.optional(Schema.Array(DeviceSession)),
   bootingDevices: Schema.optional(
     Schema.Array(Schema.Struct({ ...DeviceSummary.fields, threadId: ThreadId })),
   ),
@@ -359,6 +392,30 @@ export type DeviceActionType = DeviceActionInput["type"];
 
 export const DeviceDetailInput = Schema.Struct(DeviceTarget);
 export type DeviceDetailInput = typeof DeviceDetailInput.Type;
+
+export const DeviceEnvironmentInfo = Schema.Struct({
+  environmentId: EnvironmentId,
+  sourceEnvironmentId: EnvironmentId,
+  host: DeviceHostSummary,
+  devices: Schema.Array(DeviceSummary),
+  sessions: Schema.Array(DeviceSession),
+});
+export type DeviceEnvironmentInfo = typeof DeviceEnvironmentInfo.Type;
+export const DevicePeerCommand = Schema.Union([
+  Schema.Struct({
+    operation: Schema.Literals(["inspect", "list", "agent", "stop-agent", "release", "revoke"]),
+  }),
+  Schema.Struct({ operation: Schema.Literal("open"), input: DeviceOpenInput }),
+  Schema.Struct({ operation: Schema.Literal("close"), input: DeviceCloseInput }),
+  Schema.Struct({ operation: Schema.Literal("shutdown"), input: DeviceShutdownInput }),
+  Schema.Struct({ operation: Schema.Literal("detail"), input: DeviceDetailInput }),
+  Schema.Struct({ operation: Schema.Literal("action"), input: DeviceActionInput }),
+  Schema.Struct({ operation: Schema.Literal("screenshot"), input: DeviceDetailInput }),
+]);
+export type DevicePeerCommand = typeof DevicePeerCommand.Type;
+export const DevicePeerScreenshot = Schema.Struct({ device: DeviceSummary, png: Schema.String });
+/** Agent proxy credential, separate from the grant so agents cannot issue peer commands. */
+export const DevicePeerAgent = Schema.Struct({ token: TrimmedNonEmptyString });
 
 export class DeviceHostUnavailableError extends Schema.TaggedError<DeviceHostUnavailableError>()(
   "DeviceHostUnavailableError",

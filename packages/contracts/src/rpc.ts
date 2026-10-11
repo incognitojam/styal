@@ -14,7 +14,7 @@ import {
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { AuthSessionId, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   CodexAuthCallbackInput,
   CodexAuthCallbackState,
@@ -261,6 +261,10 @@ import {
   DeviceActionInput,
   DeviceCloseInput,
   DeviceConfigureInput,
+  DeviceHostGrantInput,
+  DeviceHostGrant,
+  DeviceConnectEnvironmentInput,
+  DeviceHostId,
   DeviceDetail,
   DeviceDetailInput,
   DeviceError,
@@ -456,6 +460,10 @@ export const WS_METHODS = {
 
   // Device methods
   deviceConfigure: "device.configure",
+  deviceCreateHostGrant: "device.createHostGrant",
+  deviceRevokeHostGrant: "device.revokeHostGrant",
+  deviceConnectEnvironment: "device.connectEnvironment",
+  deviceDisconnectEnvironment: "device.disconnectEnvironment",
   deviceList: "device.list",
   deviceTestHost: "device.testHost",
   deviceOpen: "device.open",
@@ -1568,6 +1576,24 @@ const WsDeviceTestHostRpc = Rpc.make(WS_METHODS.deviceTestHost, {
   error: Schema.Union([DeviceError, EnvironmentAuthorizationError]),
 });
 
+const WsDeviceCreateHostGrantRpc = Rpc.make(WS_METHODS.deviceCreateHostGrant, {
+  payload: DeviceHostGrantInput,
+  success: DeviceHostGrant,
+  error: Schema.Union([DeviceError, EnvironmentAuthorizationError]),
+});
+const WsDeviceRevokeHostGrantRpc = Rpc.make(WS_METHODS.deviceRevokeHostGrant, {
+  payload: Schema.Struct({ sessionId: AuthSessionId }),
+  error: Schema.Union([DeviceError, EnvironmentAuthorizationError]),
+});
+const WsDeviceConnectEnvironmentRpc = Rpc.make(WS_METHODS.deviceConnectEnvironment, {
+  payload: DeviceConnectEnvironmentInput,
+  error: Schema.Union([DeviceError, EnvironmentAuthorizationError]),
+});
+const WsDeviceDisconnectEnvironmentRpc = Rpc.make(WS_METHODS.deviceDisconnectEnvironment, {
+  payload: Schema.Struct({ hostId: DeviceHostId }),
+  error: Schema.Union([DeviceError, EnvironmentAuthorizationError]),
+});
+
 const WsDeviceListRpc = Rpc.make(WS_METHODS.deviceList, {
   payload: DeviceListInput,
   success: DeviceServiceState,
@@ -1972,6 +1998,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribePreviewEventsRpc,
   WsSubscribeDiscoveredLocalServersRpc,
   WsDeviceConfigureRpc,
+  WsDeviceCreateHostGrantRpc,
+  WsDeviceRevokeHostGrantRpc,
+  WsDeviceConnectEnvironmentRpc,
+  WsDeviceDisconnectEnvironmentRpc,
   WsDeviceListRpc,
   WsDeviceTestHostRpc,
   WsDeviceOpenRpc,

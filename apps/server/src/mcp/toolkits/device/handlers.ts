@@ -174,7 +174,10 @@ const handlers = {
           ? state.devices.filter((device) => device.hostId === hostId)
           : state.devices,
         open,
-        openInOtherThreads: devicesOpenInOtherThreads(state.sessions, scope.threadId),
+        openInOtherThreads: devicesOpenInOtherThreads(
+          [...state.sessions, ...(state.externalSessions ?? [])],
+          scope.threadId,
+        ),
       };
     }).pipe(Effect.mapError(toolError)),
   device_open: (input) =>
@@ -188,7 +191,10 @@ const handlers = {
             "Device support is off. Ask the user to enable it in the Device panel before installing or starting device tools.",
         });
       }
-      const openInOtherThreads = devicesOpenInOtherThreads(state.sessions, scope.threadId);
+      const openInOtherThreads = devicesOpenInOtherThreads(
+        [...state.sessions, ...(state.externalSessions ?? [])],
+        scope.threadId,
+      );
       const target = yield* pickDevice(state.devices, openInOtherThreads, input);
       // Resolve consent and agent connectivity before booting or registering a session.
       const agentArgs = yield* devices.agentTarget({
