@@ -49,6 +49,15 @@ const runtimeKinds = new Set([
   "user-input.requested",
   "user-input.resolved",
   "provider.approval.respond.failed",
+  // Bookkeeping the history importer skips unless grouped with a displayed activity.
+  "checkpoint.captured",
+  "task.started",
+  "task.updated",
+  "tool.progress",
+  "tool.started",
+  "turn.plan.updated",
+  "turn.usage",
+  "worktree-setup",
 ]);
 
 for (const fixture of fixtures) {

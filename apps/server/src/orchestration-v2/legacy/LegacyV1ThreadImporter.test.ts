@@ -117,6 +117,13 @@ it.layer(TestLayer)("LegacyV1ThreadImporter", (it) => {
         VALUES ('synthetic-command-activity', ${threadId}, 'turn:1', 'tool', 'tool.completed', 'Recorded command',
           ${encodeHistoryJson(historicalCommand)}, ${at}, 3)
       `;
+        // Runtime bookkeeping is not history; a background task outcome is.
+        yield* sql`
+        INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+        VALUES ('context-window', ${threadId}, 'turn:1', 'info', 'context-window.updated', 'Context window updated', '{"usedTokens":1}', ${at}, 4),
+          ('checkpoint-captured', ${threadId}, 'turn:1', 'info', 'checkpoint.captured', 'Checkpoint captured', '{}', ${at}, 5),
+          ('task-completed', ${threadId}, 'turn:1', 'info', 'task.completed', 'Task completed', '{"taskId":"synthetic-task","title":"Run tests"}', ${at}, 6)
+      `;
         yield* sql`
         UPDATE projection_turns SET checkpoint_turn_count = 1, checkpoint_ref = 'refs/styal/checkpoints/synthetic',
           checkpoint_status = 'ready', checkpoint_files_json = '[{"path":"synthetic.txt","kind":"modified","additions":2,"deletions":1}]',
@@ -143,6 +150,10 @@ it.layer(TestLayer)("LegacyV1ThreadImporter", (it) => {
         assert.equal(command?.type === "command_execution" && command.output, "Recorded output");
         assert.deepEqual(command?.legacyActivities?.[0]?.payload, historicalCommand);
         assert.equal(command?.legacyTurnId, "turn:1");
+        assert.deepEqual(
+          before.turnItems.flatMap((item) => (item.type === "system_notice" ? [item.title] : [])),
+          ["Run tests"],
+        );
         assert.equal(before.checkpoints[0]?.legacyTurnId, "turn:1");
         assert.equal(before.checkpoints[0]?.assistantMessageId, "message:usage");
         assert.equal(before.checkpoints[0]?.legacyCheckpointTurnCount, 1);

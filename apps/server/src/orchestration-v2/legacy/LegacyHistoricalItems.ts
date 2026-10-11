@@ -41,6 +41,24 @@ function historicalStatus(value: unknown, kind: string): OrchestrationV2TurnItem
   return "completed";
 }
 
+/**
+ * Runtime bookkeeping the V1 work log never displayed. Checkpoints import as their own
+ * records, usage as legacy turn usage, and agent spawns as subagent items, so a group made
+ * only of these kinds would surface as a warning-styled notice with nothing to show.
+ * Fork migration 007 removes the same groups from histories imported before this filter.
+ */
+const UNDISPLAYED_ACTIVITY_KINDS = new Set([
+  "checkpoint.captured",
+  "context-window.updated",
+  "task.started",
+  "task.updated",
+  "tool.progress",
+  "tool.started",
+  "turn.plan.updated",
+  "turn.usage",
+  "worktree-setup",
+]);
+
 /** Canonical, inert V2 records with lossless source metadata for older histories. */
 export function legacyHistoricalItems(input: {
   readonly legacy: Pick<OrchestrationThread, "activities" | "checkpoints">;
@@ -70,6 +88,7 @@ export function legacyHistoricalItems(input: {
   }
   let ordinal = 0;
   for (const [key, activities] of groups) {
+    if (activities.every((activity) => UNDISPLAYED_ACTIVITY_KINDS.has(activity.kind))) continue;
     const ordered = activities.toSorted((a, b) => a.createdAt.localeCompare(b.createdAt));
     const first = ordered[0];
     const last = ordered.at(-1);

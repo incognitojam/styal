@@ -55,6 +55,7 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 4, name: "ProjectionThreadLatestMessageAt" },
         { migration_id: 5, name: "ProjectionThreadTokenUsage" },
         { migration_id: 6, name: "LegacyTurnUsage" },
+        { migration_id: 7, name: "DropUndisplayedLegacyActivityItems" },
       ]);
     }),
   );
@@ -87,6 +88,7 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [4, "ProjectionThreadLatestMessageAt"],
     [5, "ProjectionThreadTokenUsage"],
     [6, "LegacyTurnUsage"],
+    [7, "DropUndisplayedLegacyActivityItems"],
   ]);
 });
 
@@ -142,14 +144,14 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
         const frozenHistory = yield* encodeJson({
           turns: [{ turnId: "turn-1", thread: threadUsage }],
         });
-        const executed = yield* runForkMigrations();
+        const executed = yield* runForkMigrations({ toMigrationInclusive: 6 });
         assert.deepEqual(
           executed.map(([id, name]) => [id, name]),
           [[6, "LegacyTurnUsage"]],
         );
         yield* sql`INSERT INTO styal_projection_legacy_turn_usage (thread_id, payload_json)
           VALUES ('thread-1', ${frozenHistory})`;
-        assert.deepEqual(yield* runForkMigrations(), []);
+        assert.deepEqual(yield* runForkMigrations({ toMigrationInclusive: 6 }), []);
 
         const totals = yield* sql<{ readonly token_usage_json: string }>`
           SELECT token_usage_json FROM projection_threads WHERE thread_id = 'thread-1'
