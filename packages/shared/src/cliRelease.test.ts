@@ -6,8 +6,7 @@ import {
   cliArchiveTarCommand,
   cliReleaseDownloadBaseUrl,
   cliReleaseChannelOf,
-  cliReleaseIndexPageUrl,
-  newestCliReleaseVersion,
+  cliReleaseVersionFromDistTags,
   parseChecksums,
 } from "./cliRelease.ts";
 
@@ -69,26 +68,42 @@ describe("cliRelease", () => {
     // A prerelease that is not one of our trains is not silently a nightly.
     expect(cliReleaseChannelOf("1.2.3-rc.1")).toBe("stable");
   });
+});
 
-  it("picks the newest non-draft release on the requested channel", () => {
-    const releases = [
-      { tag_name: "v1.2.4-preview.20260912.9", draft: true },
-      { tag_name: "v1.2.4-preview.20260912.8" },
-      { tag_name: "v1.2.4-nightly.20260912.7" },
-      { tag_name: "desktop-preview" },
-      { tag_name: "v1.2.3" },
-      { tag_name: "v1.2.3-nightly.20260911.2" },
-    ];
-    expect(newestCliReleaseVersion(releases, "preview")).toBe("1.2.4-preview.20260912.8");
-    expect(newestCliReleaseVersion(releases, "nightly")).toBe("1.2.4-nightly.20260912.7");
-    expect(newestCliReleaseVersion(releases, "stable")).toBe("1.2.3");
-    expect(newestCliReleaseVersion([{ tag_name: "v1.2.3" }], "preview")).toBeUndefined();
-  });
+describe("npm release channels", () => {
+  const tags = {
+    latest: "1.2.3",
+    nightly: "1.2.4-nightly.20261011.9",
+    preview: "1.2.4-preview.20261010.2",
+  };
 
-  it("pages through the release index at the largest page GitHub allows", () => {
-    expect(cliReleaseIndexPageUrl(1)).toBe(
-      "https://api.github.com/repos/incognitojam/styal/releases?per_page=100&page=1",
+  it.each(["stable", "nightly", "preview"] as const)("selects only %s", (channel) => {
+    expect(cliReleaseVersionFromDistTags(tags, channel)).toBe(
+      tags[channel === "stable" ? "latest" : channel],
     );
-    expect(cliReleaseIndexPageUrl(3)).toContain("page=3");
   });
+
+  it.each([
+    ["stable", { latest: tags.nightly }],
+    ["nightly", { nightly: tags.latest }],
+    ["nightly", { nightly: tags.preview }],
+    ["preview", { preview: tags.nightly }],
+  ] as const)("rejects a tag outside %s", (channel, input) => {
+    expect(() => cliReleaseVersionFromDistTags(input, channel)).toThrow(
+      `outside the ${channel} channel`,
+    );
+  });
+
+  it.each([undefined, null, [], "1.2.3", {}, { nightly: tags.nightly }, { latest: 1 }])(
+    "rejects malformed or missing stable tags",
+    (input) => expect(() => cliReleaseVersionFromDistTags(input, "stable")).toThrow(),
+  );
+
+  it.each(["", "v1.2.3", "01.2.3", "1.2.3-rc.1", "1.2.3+build", "1.2.3-nightly.20261011.01"])(
+    "rejects unsupported release version %s",
+    (version) =>
+      expect(() => cliReleaseVersionFromDistTags({ latest: version }, "stable")).toThrow(
+        "Unsupported release version",
+      ),
+  );
 });

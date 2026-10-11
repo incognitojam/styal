@@ -9,9 +9,11 @@ import {
 import {
   CLI_RELEASE_BASE_URL_ENV,
   CLI_RELEASE_CHANNELS,
-  cliReleaseIndexPageUrl,
+  CLI_NPM_DIST_TAGS_URL,
   cliReleaseChannelOf,
-  newestCliReleaseVersion,
+  cliReleaseChecksumsUrl,
+  cliReleasePendingMessage,
+  cliReleaseVersionFromDistTags,
   type CliReleaseChannel,
 } from "@t3tools/shared/cliRelease";
 import * as Console from "effect/Console";
@@ -23,12 +25,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Argument, Command, Flag, GlobalFlag, Prompt } from "effect/unstable/cli";
-import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientRequest,
-  HttpClientResponse,
-} from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
@@ -53,52 +50,40 @@ export class CliUpdateError extends Schema.TaggedError<CliUpdateError>()("CliUpd
   }
 }
 
-const ReleaseIndex = Schema.Array(
-  Schema.Struct({
-    tag_name: Schema.String,
-    draft: Schema.optional(Schema.Boolean),
-  }),
-);
-const decodeReleaseIndex = Schema.decodeUnknownEffect(Schema.fromJsonString(ReleaseIndex));
+const RELEASE_CHECK_TIMEOUT = Duration.seconds(30);
 
-const RELEASE_INDEX_TIMEOUT = Duration.seconds(30);
-// Enough to walk past a long run of nightlies without hammering the API when
-// a channel genuinely has nothing published.
-const RELEASE_INDEX_MAX_PAGES = 10;
-
-/** Asks GitHub for the newest published version on a channel, page by page. */
-const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(function* (
-  channel: CliReleaseChannel,
-) {
-  const httpClient = yield* HttpClient.HttpClient;
-  for (let page = 1; page <= RELEASE_INDEX_MAX_PAGES; page += 1) {
-    const body = yield* httpClient
-      .execute(
-        HttpClientRequest.get(cliReleaseIndexPageUrl(page)).pipe(
-          HttpClientRequest.setHeader("Accept", "application/vnd.github+json"),
-        ),
-      )
-      .pipe(
-        Effect.flatMap(HttpClientResponse.filterStatusOk),
-        Effect.flatMap((response) => response.text),
-        Effect.mapError(() => new CliUpdateError({ reason: "Could not list styal releases." })),
-        Effect.timeoutOrElse({
-          duration: RELEASE_INDEX_TIMEOUT,
-          orElse: () =>
-            Effect.fail(new CliUpdateError({ reason: "Timed out listing styal releases." })),
-        }),
-      );
-    const releases = yield* decodeReleaseIndex(body).pipe(
+/**
+ * Read the channel's npm tag once; missing or mismatched releases fail closed,
+ * and so does a version whose release archives are not downloadable yet.
+ */
+export const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(
+  function* (channel: CliReleaseChannel, releaseBaseUrl?: string) {
+    const httpClient = yield* HttpClient.HttpClient;
+    const tags = yield* httpClient.get(CLI_NPM_DIST_TAGS_URL).pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap((response) => response.json),
       Effect.mapError(
-        () => new CliUpdateError({ reason: "The styal release index had an unexpected shape." }),
+        () => new CliUpdateError({ reason: "Could not read styal npm release tags." }),
       ),
     );
-    const version = newestCliReleaseVersion(releases, channel);
-    if (version !== undefined) return version;
-    if (releases.length === 0) break;
-  }
-  return yield* new CliUpdateError({ reason: `No published ${channel} release was found.` });
-});
+    const version = yield* Effect.try({
+      try: () => cliReleaseVersionFromDistTags(tags, channel),
+      catch: (cause) =>
+        new CliUpdateError({
+          reason: cause instanceof Error ? cause.message : "Invalid styal npm release tags.",
+        }),
+    });
+    yield* httpClient.head(cliReleaseChecksumsUrl(version, releaseBaseUrl)).pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.mapError(() => new CliUpdateError({ reason: cliReleasePendingMessage(version) })),
+    );
+    return version;
+  },
+  Effect.timeoutOrElse({
+    duration: RELEASE_CHECK_TIMEOUT,
+    orElse: () => Effect.fail(new CliUpdateError({ reason: "Timed out checking styal releases." })),
+  }),
+);
 
 /** Whether a launcher target lives inside `<baseDir>/runtime/styal-executable/versions`. */
 export function launcherOwnsVersionsDir(
@@ -365,7 +350,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   progress.status("Checking for updates...");
   const targetVersion = yield* (
     input.requestedVersion === undefined
-      ? resolveNewestVersion(channel)
+      ? resolveNewestVersion(channel, environment[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined)
       : Effect.succeed(input.requestedVersion)
   ).pipe(Effect.ensuring(Effect.sync(progress.finish)));
   const targetChannel = cliReleaseChannelOf(targetVersion);

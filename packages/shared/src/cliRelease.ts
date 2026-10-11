@@ -5,7 +5,12 @@
  * platform key, so a rename here is a release-breaking change.
  */
 
+import * as Schema from "effect/Schema";
+import { CLI_PACKAGE_NAME } from "./cliPackage.ts";
+import { parseCliReleaseVersion } from "./cliReleaseVersion.ts";
+
 const CLI_RELEASE_REPOSITORY = "incognitojam/styal";
+export const CLI_NPM_DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${CLI_PACKAGE_NAME}/dist-tags`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 /** Overrides the download origin for mirrors and air-gapped installs. */
 export const CLI_RELEASE_BASE_URL_ENV = "STYAL_RELEASE_BASE_URL";
@@ -63,6 +68,19 @@ export function cliReleaseDownloadBaseUrl(
 }
 
 /**
+ * The checksums asset of a release. npm tags move before the GitHub release
+ * that hosts the archives is published, so update checks confirm this exists
+ * before offering a version.
+ */
+export function cliReleaseChecksumsUrl(version: string, baseUrl?: string): string {
+  return `${cliReleaseDownloadBaseUrl(version, baseUrl)}/${CLI_RELEASE_CHECKSUMS_FILE}`;
+}
+
+export function cliReleasePendingMessage(version: string): string {
+  return `styal ${version} is still being published. Try again in a few minutes.`;
+}
+
+/**
  * Parses the `sha256sum` style checksum file attached to each release.
  * Lines are `<hex>  <file>`; a leading `*` marks binary mode and is ignored.
  */
@@ -84,39 +102,27 @@ export const CLI_RELEASE_CHANNELS: ReadonlyArray<CliReleaseChannel> = [
   "preview",
 ];
 
+const decodeDistTags = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String));
+
+/** Resolve one channel without letting npm's initial latest tag cross release trains. */
+export function cliReleaseVersionFromDistTags(input: unknown, channel: CliReleaseChannel) {
+  let tags;
+  try {
+    tags = decodeDistTags(input);
+  } catch {
+    throw new Error("The npm dist-tags response had an unexpected shape.");
+  }
+  const tag = channel === "stable" ? "latest" : channel;
+  const version = tags[tag];
+  if (version === undefined) throw new Error(`No published ${channel} release was found.`);
+  if (parseCliReleaseVersion(version).channel !== channel) {
+    throw new Error(`npm tag ${tag} points to a release outside the ${channel} channel.`);
+  }
+  return version;
+}
+
 /** The release train a version was published on, derived from its prerelease tag. */
 export function cliReleaseChannelOf(version: string): CliReleaseChannel {
   const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
   return channel === "nightly" || channel === "preview" ? channel : "stable";
-}
-
-/**
- * One page of GitHub's list-releases endpoint, newest first. Callers walk pages
- * until a channel match turns up; a busy nightly train can push the newest
- * preview or stable release past any single page.
- */
-export function cliReleaseIndexPageUrl(page: number): string {
-  return `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}/releases?per_page=100&page=${page}`;
-}
-
-/**
- * Picks the newest version on a channel from the release index. Tags are
- * `v<version>`; the channel is decided by the same rule the runtime uses, so
- * a preview tag never satisfies a nightly lookup and vice versa. Drafts are
- * skipped because their assets are not downloadable.
- */
-export function newestCliReleaseVersion(
-  releases: ReadonlyArray<{
-    readonly tag_name: string;
-    readonly draft?: boolean | undefined;
-  }>,
-  channel: CliReleaseChannel,
-): string | undefined {
-  for (const release of releases) {
-    if (release.draft) continue;
-    const version = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(release.tag_name)?.[1];
-    if (version === undefined) continue;
-    if (cliReleaseChannelOf(version) === channel) return version;
-  }
-  return undefined;
 }
