@@ -1916,7 +1916,7 @@ features:
   - id: mobile-chat-literal-html
     title: Preserve HTML-looking text in mobile user messages
     status: maintained
-    prs: []
+    prs: [747]
     rationale: User messages must retain authored angle-bracket text just as web and desktop do, rather than treating it as HTML to discard.
     invariants:
       - Android and iOS user messages preserve literal HTML-looking text, including standalone tags, paired tags, and comments, in selectable display and copy text.
