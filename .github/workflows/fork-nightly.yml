@@ -5,8 +5,6 @@ on:
     workflows: [Fork CI]
     types: [completed]
     branches: [main]
-  schedule:
-    - cron: "23 */3 * * *"
   workflow_dispatch:
     inputs:
       force_notarization:
