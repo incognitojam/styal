@@ -901,7 +901,7 @@ features:
   - id: device-automation-node-mode
     title: Run desktop device automation in Node mode
     status: maintained
-    prs: []
+    prs: [739]
     invariants:
       - Generated POSIX and Windows agent-device wrappers run Electron in Node mode even when the calling provider has no Node-mode flag or sets a different value.
       - The generated JavaScript launcher also forces Node mode for the device CLI and its daemon when invoked directly, preserving host and session targeting.
