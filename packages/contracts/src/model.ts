@@ -163,6 +163,7 @@ export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
   "gpt-5.6-sol",
   "gpt-5.6-terra",
 ];
+export const DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";
 export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-6-luna";
 export const DEFAULT_CLAUDE_TEXT_GENERATION_MODEL = "claude-haiku-5-5";
 /** Keep the official Antigravity session's current model. Never send this ID to ACP. */
@@ -171,7 +172,7 @@ export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
-  [CLAUDE_DRIVER_KIND]: "claude-opus-5-5",
+  [CLAUDE_DRIVER_KIND]: DEFAULT_CLAUDE_MODEL,
   [CURSOR_DRIVER_KIND]: "auto",
   // Product slug, not an ACP model id. The Grok adapter treats it as "the session's current model".
   [GROK_DRIVER_KIND]: "grok-build",

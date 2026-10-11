@@ -39,6 +39,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be).
   [Antigravity](./providers-antigravity.md).
 
+- **New threads start on Claude.** When both Claude Code and Codex are available, a new thread
+  without a saved or project model uses Claude Code with Opus 5.5, and Claude is listed first in the
+  model picker. T3 Code prefers Codex as of
+  [revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e).
 - **Claude Code starts with Opus 5.5.** New Claude Code threads select Opus 5.5 when the installed
   CLI supports it; older installations use an available Claude model. T3 Code defaults to Fable 5.1
   as of [revision f5ef0dd](https://github.com/pingdotgg/t3code/tree/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618).

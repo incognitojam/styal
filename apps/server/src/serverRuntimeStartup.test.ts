@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_CLAUDE_MODEL,
   DEFAULT_MODEL,
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
@@ -363,8 +364,8 @@ it.effect.each([
       commands.at(-1)?.modelSelection,
       projectSelection ??
         machineSelection ?? {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: DEFAULT_MODEL,
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: DEFAULT_CLAUDE_MODEL,
         },
     );
   }),

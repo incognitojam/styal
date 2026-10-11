@@ -30,12 +30,13 @@ const mergeProviderModels = (
 };
 
 /**
- * Built-in drivers in presentation order. Codex and Claude lead, the opt-in
+ * Built-in drivers in presentation order. Claude and Codex lead, the opt-in
  * providers follow, and unknown or fork drivers sort after every built-in.
+ * Clients default a fresh thread to the first usable provider in this order.
  */
 const BUILT_IN_DRIVER_ORDER: ReadonlyArray<string> = [
-  "codex",
   "claudeAgent",
+  "codex",
   "cursor",
   "grok",
   "opencode",
