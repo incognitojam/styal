@@ -52,7 +52,7 @@ export interface Preferences {
   readonly turnUsageFigure?: "tokens" | "cost";
   /** Device-local counterpart of web's `sidebarWorkingShelfEnabled` beta. */
   readonly workingShelfEnabled?: boolean;
-  /** Model favorites belong to this device, like the web client setting. */
+  /** @deprecated Retained to migrate favorites to the connected environment. */
   readonly modelFavorites?: ReadonlyArray<{
     readonly provider: ProviderInstanceId;
     readonly model: string;
