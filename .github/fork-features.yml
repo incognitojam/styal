@@ -2246,8 +2246,6 @@ features:
       - apps/web/src/routes/settings.providers.tsx
     tests:
       - apps/web/src/components/settings/settingsScope.test.ts
-      - apps/web/src/components/settings/settingsScopeAxis.test.ts
-      - apps/web/src/components/settings/settingsScopeNavigation.test.ts
     upstream:
       status: unassessed
       tracking: []

@@ -90,30 +90,6 @@ describe("settings scope search", () => {
 });
 
 describe("settings scope resolution", () => {
-  it("opens a legacy checkout's providers on its environment without retaining the project filter", () => {
-    const search = { project: "t3code", checkout: third.physicalProjectKey };
-    const candidates = environments.map((environment) => ({
-      ...environment,
-      connection: { phase: "connected" as const },
-    }));
-    const selected = selectSingleEnvironmentScope(
-      search,
-      resolveSettingsScope(search, groups, candidates),
-      candidates,
-      laptopId,
-    );
-    expect(selected).toEqual({ machine: serverId });
-    expect(resolveSettingsScope(selected, groups, candidates)).toMatchObject({
-      kind: "environment",
-      environmentId: serverId,
-      members: [],
-    });
-    expect(resolveSettingsScope({ machine: laptopId }, groups, candidates)).toMatchObject({
-      kind: "environment",
-      environmentId: laptopId,
-    });
-  });
-
   it("defaults to every environment with no project", () => {
     expect(resolveSettingsScope({}, groups, environments)).toMatchObject({
       kind: "all",
@@ -226,5 +202,38 @@ describe("settings scope resolution", () => {
       members: [],
       environmentIds: [],
     });
+  });
+});
+
+describe("provider environment scope", () => {
+  const candidates = environments.map((environment) => ({
+    ...environment,
+    connection: { phase: "connected" as const },
+  }));
+
+  it.each([
+    {
+      scenario: "opens a legacy checkout on its owning environment",
+      search: { project: "t3code", checkout: third.physicalProjectKey },
+      expected: { kind: "environment", environmentId: serverId, members: [] },
+    },
+    {
+      scenario: "ignores a stale project filter",
+      search: { project: "removed-project" },
+      expected: { kind: "environment", environmentId: laptopId, members: [] },
+    },
+    {
+      scenario: "keeps an explicitly removed environment unavailable",
+      search: { project: "removed-project", machine: "removed-environment" },
+      expected: { kind: "unavailable", reason: "environment-missing" },
+    },
+  ])("$scenario", ({ search, expected }) => {
+    const selected = selectSingleEnvironmentScope(
+      search,
+      resolveSettingsScope(search, groups, candidates),
+      candidates,
+      laptopId,
+    );
+    expect(resolveSettingsScope(selected, groups, candidates)).toMatchObject(expected);
   });
 });
