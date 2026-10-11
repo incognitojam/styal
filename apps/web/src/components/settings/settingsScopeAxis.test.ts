@@ -6,8 +6,10 @@ import {
   projectAxisValue,
   selectEnvironmentAxis,
   selectProjectAxis,
+  selectSingleEnvironmentScope,
   settingsScopeEnvironmentLabel,
 } from "./settingsScopeAxis";
+import { resolveSettingsScope } from "./settingsScope";
 
 const first = {
   environmentId: EnvironmentId.make("first"),
@@ -84,5 +86,72 @@ describe("environmentAxisValue", () => {
     expect(environmentAxisValue({ project: "p", checkout: "c" }, "laptop")).toBe("laptop");
     expect(environmentAxisValue({ project: "p" }, null)).toBe("all");
     expect(environmentAxisValue({ machine: "desk" }, "laptop")).toBe("desk");
+  });
+});
+
+describe("provider environment scope", () => {
+  const environments = [first, second].map((environment) => ({
+    ...environment,
+    connection: { phase: "connected" as const },
+  }));
+
+  it("drops inherited project and checkout filters while retaining the selected environment", () => {
+    const search = { project: "removed-project", checkout: "old-checkout", machine: "second" };
+    const next = selectSingleEnvironmentScope(
+      search,
+      resolveSettingsScope(search, [], environments),
+      environments,
+      first.environmentId,
+    );
+    expect(next).toEqual({ machine: "second" });
+    expect(resolveSettingsScope(next, [], environments)).toMatchObject({
+      kind: "environment",
+      environmentId: second.environmentId,
+      members: [],
+    });
+  });
+
+  it("does not let an unavailable project prevent opening the primary environment's providers", () => {
+    const search = { project: "removed-project" };
+    const next = selectSingleEnvironmentScope(
+      search,
+      resolveSettingsScope(search, [], environments),
+      environments,
+      second.environmentId,
+    );
+    expect(next).toEqual({ machine: "second" });
+    expect(resolveSettingsScope(next, [], environments).kind).toBe("environment");
+  });
+
+  it("keeps a removed environment unavailable rather than choosing another machine", () => {
+    const search = { project: "old-project", machine: "removed-environment" };
+    const next = selectSingleEnvironmentScope(
+      search,
+      resolveSettingsScope(search, [], environments),
+      environments,
+      first.environmentId,
+    );
+    expect(next).toEqual({ machine: "removed-environment" });
+    expect(resolveSettingsScope(next, [], environments)).toMatchObject({
+      kind: "unavailable",
+      reason: "environment-missing",
+    });
+  });
+
+  it("chooses a connected environment when the primary environment is absent", () => {
+    const candidates = [
+      { ...environments[0]!, connection: { phase: "offline" as const } },
+      environments[1]!,
+    ];
+    expect(
+      selectSingleEnvironmentScope({}, resolveSettingsScope({}, [], candidates), candidates, null),
+    ).toEqual({ machine: "second" });
+  });
+
+  it("leaves the environment unselected when none are available", () => {
+    const search = { project: "old-project" };
+    expect(
+      selectSingleEnvironmentScope(search, resolveSettingsScope(search, [], []), [], null),
+    ).toEqual({});
   });
 });

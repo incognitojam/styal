@@ -2231,6 +2231,28 @@ features:
       tracking: []
       retire_when: Upstream withholds the server's own environment from provider processes with equivalent coverage of launcher context and per-session variables.
 
+  - id: provider-settings-environment-scope
+    title: Scope provider configuration only to its owning environment
+    status: maintained
+    prs: [727]
+    invariants:
+      - Settings → Providers offers one environment picker and no project picker because binaries, credentials, and provider instances belong to the environment.
+      - Inherited project and checkout selections resolve to one environment without retaining project filters; stale project selections cannot block provider configuration, while an explicitly unavailable environment never falls back to another machine.
+    implementation_paths:
+      - apps/web/src/components/settings/SettingsScopeSentence.tsx
+      - apps/web/src/components/settings/settingsScopeAxis.ts
+      - apps/web/src/routes/settings.providers.tsx
+    upstream_paths:
+      - apps/web/src/routes/settings.providers.tsx
+    tests:
+      - apps/web/src/components/settings/settingsScope.test.ts
+      - apps/web/src/components/settings/settingsScopeAxis.test.ts
+      - apps/web/src/components/settings/settingsScopeNavigation.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream retains environment-only provider configuration when adopting project-scoped settings.
+
   - id: provider-subscription-limits
     title: Keep provider usage limits across restarts and sign-out
     status: maintained
