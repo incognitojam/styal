@@ -559,18 +559,44 @@ function PullRequestDetailPanelBody({
     setChromeCondensed(chromeStateByTab.current[tab] ?? false);
   }, [tab]);
   const condensed = chromeCondensed;
-  const scrollerRef = useRef<HTMLElement | null>(null);
+  const scrollerByTab = useRef<Partial<Record<DetailTab, HTMLDivElement | null>>>({});
+  const scrollerRefs = useMemo(
+    () => ({
+      summary: (node: HTMLDivElement | null) => {
+        scrollerByTab.current.summary = node;
+      },
+      timeline: (node: HTMLDivElement | null) => {
+        scrollerByTab.current.timeline = node;
+      },
+      code: (node: HTMLDivElement | null) => {
+        scrollerByTab.current.code = node;
+      },
+    }),
+    [],
+  );
   const foldRef = useRef<HTMLDivElement | null>(null);
   const condensedRowRef = useRef<HTMLDivElement | null>(null);
   // Refund after the fold commits so the content under the reader does not jump with its height.
-  const compensationRef = useRef<number | null>(null);
+  const compensationRef = useRef<{
+    tab: DetailTab;
+    scroller: HTMLDivElement;
+    delta: number;
+  } | null>(null);
   useLayoutEffect(() => {
-    if (compensationRef.current === null) return;
-    const scroller = scrollerRef.current;
-    const delta = compensationRef.current;
+    const compensation = compensationRef.current;
+    if (compensation === null) return;
     compensationRef.current = null;
-    if (scroller) scroller.scrollTop = Math.max(0, scroller.scrollTop + delta);
-  }, [condensed]);
+    if (
+      !condensed ||
+      compensation.tab !== tab ||
+      scrollerByTab.current[tab] !== compensation.scroller
+    )
+      return;
+    compensation.scroller.scrollTop = Math.max(
+      0,
+      compensation.scroller.scrollTop + compensation.delta,
+    );
+  }, [condensed, tab]);
   const lastSelectedMergeMethod = useUiStateStore((state) => state.pullRequestMergeMethod);
   const setLastSelectedMergeMethod = useUiStateStore((state) => state.setPullRequestMergeMethod);
   const resolveProjectDefaultMergeMethod = usePullRequestDefaultMergeMethodResolver(
@@ -2807,8 +2833,8 @@ function PullRequestDetailPanelBody({
       <div
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
         onScrollCapture={(event) => {
-          const scroller = event.target as HTMLElement;
-          scrollerRef.current = scroller;
+          const scroller = scrollerByTab.current[tab];
+          if (event.target !== scroller || scroller === null || scroller === undefined) return;
           const top = scroller.scrollTop;
           setChromeCondensed((previous) => {
             let next = previous;
@@ -2823,7 +2849,7 @@ function PullRequestDetailPanelBody({
                 next = false;
               }
             } else if (foldHeight > 0 && top > foldHeight + 32) {
-              compensationRef.current = -chromeDelta;
+              compensationRef.current = { tab, scroller, delta: -chromeDelta };
               next = true;
             }
             chromeStateByTab.current[tab] = next;
@@ -2859,6 +2885,7 @@ function PullRequestDetailPanelBody({
             {mountedTabs.has("summary") ? (
               <div className={cn("absolute inset-0", tab !== "summary" && "invisible")}>
                 <PullRequestSummaryTab
+                  scrollerRef={scrollerRefs.summary}
                   environmentId={environmentId}
                   threadRef={threadRef}
                   reference={reference}
@@ -2900,6 +2927,7 @@ function PullRequestDetailPanelBody({
                   />
                 ) : (
                   <PullRequestTimelineTab
+                    scrollerRef={scrollerRefs.timeline}
                     environmentId={environmentId}
                     detail={detail}
                     threadRef={threadRef}
@@ -2915,6 +2943,7 @@ function PullRequestDetailPanelBody({
               <div className={cn("absolute inset-0", tab !== "code" && "invisible")}>
                 <Suspense fallback={<DiffPanelLoadingState label="Loading pull request diff..." />}>
                   <PullRequestCodeTab
+                    scrollerRef={scrollerRefs.code}
                     onAddToAgentSelection={addSelectionToAgent}
                     environmentId={environmentId}
                     reference={reference}
