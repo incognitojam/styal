@@ -985,9 +985,9 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
   it.effect("adds collab child threads' usage to the live turn as subagent usage", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
-      const completedFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.type === "turn.completed"),
-        Stream.runHead,
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
         Effect.forkChild,
       );
       // The session runtime re-emits a child's own usage notification under
@@ -1037,18 +1037,40 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       );
       yield* runtime.emit(codexTurnEvent("turn/completed", "turn-subagents"));
 
-      const completed = yield* Fiber.join(completedFiber);
-      NodeAssert.equal(completed._tag, "Some");
-      if (completed._tag === "Some" && completed.value.type === "turn.completed") {
-        NodeAssert.equal(completed.value.payload.tokenUsage?.inputTokens, 100);
-        NodeAssert.deepStrictEqual(completed.value.payload.tokenUsage?.subagents, {
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      // Each usage update reports the running turn's usage so far.
+      NodeAssert.deepStrictEqual(
+        events.flatMap((event) =>
+          event.type === "turn.usage.updated"
+            ? [
+                [
+                  event.turnId,
+                  event.payload.tokenUsage.usageStatus,
+                  event.payload.tokenUsage.inputTokens,
+                  event.payload.tokenUsage.subagents?.inputTokens,
+                ],
+              ]
+            : [],
+        ),
+        [
+          ["turn-subagents", "partial", 100, undefined],
+          ["turn-subagents", "partial", 100, 1_000],
+          ["turn-subagents", "partial", 100, 1_300],
+          ["turn-subagents", "partial", 100, 2_100],
+        ],
+      );
+      const completed = events.at(-1);
+      NodeAssert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        NodeAssert.equal(completed.payload.tokenUsage?.inputTokens, 100);
+        NodeAssert.deepStrictEqual(completed.payload.tokenUsage?.subagents, {
           inputTokens: 2_100,
           cachedInputTokens: 1_300,
           outputTokens: 100,
           reasoningTokens: 0,
         });
         // Priced by model: a child Codex named apart, the rest at the turn's model.
-        NodeAssert.deepStrictEqual(completed.value.payload.tokenUsage?.byModel, [
+        NodeAssert.deepStrictEqual(completed.payload.tokenUsage?.byModel, [
           {
             inputTokens: 1_900,
             cachedInputTokens: 1_340,

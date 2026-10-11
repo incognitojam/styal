@@ -42,6 +42,7 @@ import {
 } from "./Services/ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "./ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "./ThreadPlanProgress.ts";
+import * as ThreadLiveTurnUsage from "./ThreadLiveTurnUsage.ts";
 import * as ThreadPullRequestReactor from "./ThreadPullRequestReactor.ts";
 
 const NOW = "2026-09-01T12:00:00.000Z";
@@ -753,6 +754,7 @@ describe("ThreadPullRequestReactor", () => {
         OrchestrationProjectionSnapshotQueryLive.pipe(
           Layer.provide(ThreadBackgroundLiveness.layer),
           Layer.provide(ThreadPlanProgress.layer),
+          Layer.provide(ThreadLiveTurnUsage.layer),
           Layer.provide(
             Layer.succeed(RepositoryIdentityResolver, {
               resolve: () => Effect.succeed(project.repositoryIdentity),

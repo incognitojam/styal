@@ -32,6 +32,7 @@ import {
   type TurnTokenUsage,
   ProviderApprovalDecision,
   ThreadId,
+  TurnId,
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -714,6 +715,23 @@ function completeCodexTurnTokenUsage(
     };
   }
 
+  return codexTurnTokenUsage(usage, completed);
+}
+
+/** The live turn's usage so far, once it has used any tokens. */
+function peekCodexTurnTokenUsage(
+  state: CodexTurnTokenUsageState,
+): { readonly turnId: string; readonly usage: TurnTokenUsage } | undefined {
+  const turnId = state.activeTurnId;
+  const usage = turnId === undefined ? undefined : state.byTurnId.get(turnId);
+  if (turnId === undefined || !usage?.observed) return undefined;
+  return { turnId, usage: codexTurnTokenUsage(usage, false) };
+}
+
+function codexTurnTokenUsage(
+  usage: CodexTurnTokenUsageAccumulator,
+  completed: boolean,
+): TurnTokenUsage {
   const subagents = codexSubagentTokenUsage(usage.subagents);
   const byModel = codexTokensByModel(usage);
   // Codex counts cache reads and writes inside inputTokens. Clamp the
@@ -2510,6 +2528,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         const eventFiber = yield* Stream.runForEach(runtime.events, (event) =>
           Effect.gen(function* () {
             yield* writeNativeEvent(event);
+            let turnUsageChanged = false;
             if (event.method.startsWith("collabAgent/")) {
               const child = readPayload(CodexChildModel, event.payload);
               const model = child?.model.trim();
@@ -2528,10 +2547,14 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               );
               if (payload) {
                 accumulateCodexTurnTokenUsage(turnTokenUsage, payload.turnId, payload.tokenUsage);
+                turnUsageChanged = true;
               }
             } else if (event.method === "collabAgent/tokenUsage") {
               const child = readPayload(CodexChildTokenUsage, event.payload);
-              if (child) accumulateCodexSubagentTokenUsage(turnTokenUsage, child);
+              if (child) {
+                accumulateCodexSubagentTokenUsage(turnTokenUsage, child);
+                turnUsageChanged = true;
+              }
             } else if (turnTokenUsage.activeTurnId) {
               const collabPayload =
                 typeof event.payload === "object" && event.payload !== null
@@ -2661,9 +2684,24 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               }
               return runtimeEvent;
             });
-            const runtimeEvents = usageLimitError
-              ? [usageLimitError, ...mappedEvents]
-              : mappedEvents;
+            // Ahead of the context-window update, whose activity carries it to clients.
+            const liveTurnUsage = turnUsageChanged
+              ? peekCodexTurnTokenUsage(turnTokenUsage)
+              : undefined;
+            const runtimeEvents = [
+              ...(usageLimitError ? [usageLimitError] : []),
+              ...(liveTurnUsage
+                ? [
+                    {
+                      ...runtimeEventBase(event, event.threadId),
+                      turnId: TurnId.make(liveTurnUsage.turnId),
+                      type: "turn.usage.updated",
+                      payload: { tokenUsage: liveTurnUsage.usage },
+                    } satisfies ProviderRuntimeEvent,
+                  ]
+                : []),
+              ...mappedEvents,
+            ];
             if (runtimeEvents.length === 0) {
               yield* Effect.logDebug("ignoring unhandled Codex provider event", {
                 method: event.method,

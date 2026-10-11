@@ -60,6 +60,7 @@ import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
+import * as ThreadLiveTurnUsage from "../ThreadLiveTurnUsage.ts";
 import {
   ProviderRuntimeIngestionLive,
   runtimeEventToActivities,
@@ -357,6 +358,7 @@ describe("ProviderRuntimeIngestion", () => {
       // engine, and the snapshot query (reader).
       Layer.provideMerge(ThreadBackgroundLiveness.layer),
       Layer.provideMerge(ThreadPlanProgress.layer),
+      Layer.provideMerge(ThreadLiveTurnUsage.layer),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
@@ -615,6 +617,75 @@ describe("ProviderRuntimeIngestion", () => {
     expect(usage?.[2]?.payload).toMatchObject({
       thread: { costUsd: 2.7, pricedTurns: 2, countedTurns: 3 },
     });
+  });
+
+  it("adds a running turn's usage to the thread's total until its record lands", async () => {
+    const harness = await createHarness({
+      // $1 per million tokens.
+      priceTokens: (usage) =>
+        Effect.succeed(
+          usage.reduce((sum, entry) => sum + (entry.inputTokens + entry.outputTokens) / 1e6, 0),
+        ),
+    });
+    const base = {
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+    };
+    const usage = (inputTokens: number, outputTokens: number) =>
+      ({
+        usageScope: "main_agent",
+        usageStatus: "partial",
+        inputTokens,
+        outputTokens,
+        hasSubagents: false,
+      }) as const;
+    const event = (turnId: string, type: string, second: number, payload?: unknown) => ({
+      ...base,
+      turnId: asTurnId(turnId),
+      type,
+      eventId: asEventId(`evt-${turnId}-${type}-${second}`),
+      createdAt: `2026-01-01T00:00:0${second}.000Z`,
+      ...(payload !== undefined ? { payload } : {}),
+    });
+    const totals = async () => {
+      const total = (await harness.readThreadShell()).tokenUsage;
+      return total && [total.inputTokens + total.outputTokens, total.costUsd, total.countedTurns];
+    };
+
+    await harness.emitAndDrain([
+      event("turn-1", "turn.started", 1),
+      event("turn-1", "turn.completed", 2, {
+        state: "completed",
+        tokenUsage: { ...usage(900_000, 100_000), usageStatus: "complete" },
+        model: "gpt-test",
+      }),
+      event("turn-2", "turn.started", 3),
+      event("turn-2", "turn.usage.updated", 4, {
+        tokenUsage: usage(150_000, 50_000),
+        model: "gpt-test",
+      }),
+    ] as never);
+    expect(await totals()).toEqual([1_200_000, 1.2, 2]);
+
+    await harness.emitAndDrain([
+      event("turn-2", "turn.usage.updated", 5, {
+        tokenUsage: usage(400_000, 100_000),
+        model: "gpt-test",
+      }),
+    ] as never);
+    expect(await totals()).toEqual([1_500_000, 1.5, 2]);
+
+    await harness.emitAndDrain([
+      event("turn-2", "turn.completed", 6, {
+        state: "completed",
+        tokenUsage: { ...usage(450_000, 150_000), usageStatus: "complete" },
+        model: "gpt-test",
+      }),
+    ] as never);
+    // The record replaces the running figure rather than adding to it.
+    expect(await totals()).toEqual([1_600_000, 1.6, 2]);
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === "thread-1");
+    expect(thread?.activities.filter((activity) => activity.kind === "turn.usage")).toHaveLength(2);
   });
 
   it("totals the thread's usage across turns, noting turns that reported none", async () => {

@@ -53,6 +53,7 @@ import {
 } from "./Services/ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "./ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "./ThreadPlanProgress.ts";
+import * as ThreadLiveTurnUsage from "./ThreadLiveTurnUsage.ts";
 import * as ThreadSettlementReactor from "./ThreadSettlementReactor.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Path from "effect/Path";
@@ -1606,6 +1607,7 @@ describe("ThreadSettlementReactor", () => {
         OrchestrationProjectionSnapshotQueryLive.pipe(
           Layer.provide(ThreadBackgroundLiveness.layer),
           Layer.provide(ThreadPlanProgress.layer),
+          Layer.provide(ThreadLiveTurnUsage.layer),
           Layer.provide(
             Layer.succeed(RepositoryIdentityResolver, { resolve: () => Effect.succeed(null) }),
           ),

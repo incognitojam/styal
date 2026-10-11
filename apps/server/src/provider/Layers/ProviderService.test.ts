@@ -4733,7 +4733,7 @@ turnAnalytics.layer("ProviderServiceLive turn analytics", (it) => {
     }),
   );
 
-  it.effect("copies the model a turn started with onto its completion", () =>
+  it.effect("copies the model a turn started with onto its usage updates and completion", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
       const threadId = asThreadId("thread-turn-model");
@@ -4744,7 +4744,7 @@ turnAnalytics.layer("ProviderServiceLive turn analytics", (it) => {
         threadId,
         runtimeMode: "full-access",
       });
-      const runtimeEvents = yield* Stream.take(provider.streamEvents, 3).pipe(
+      const runtimeEvents = yield* Stream.take(provider.streamEvents, 4).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -4769,12 +4769,23 @@ turnAnalytics.layer("ProviderServiceLive turn analytics", (it) => {
       });
       primaryAnalyticsCodex.emit({
         ...base,
+        type: "turn.usage.updated",
+        eventId: asEventId("evt-turn-model-usage"),
+        payload: {
+          tokenUsage: { usageStatus: "partial", usageScope: "main_agent", hasSubagents: false },
+        },
+      });
+      primaryAnalyticsCodex.emit({
+        ...base,
         type: "turn.completed",
         eventId: asEventId("evt-turn-model-complete"),
         payload: { state: "completed" },
       });
 
-      const completed = [...(yield* Fiber.join(runtimeEvents))].at(-1);
+      const events = [...(yield* Fiber.join(runtimeEvents))];
+      const live = events.find((event) => event.type === "turn.usage.updated");
+      assert.equal(live?.type === "turn.usage.updated" && live.payload.model, "gpt-5.6-terra");
+      const completed = events.at(-1);
       assert.equal(completed?.type, "turn.completed");
       if (completed?.type === "turn.completed") {
         assert.equal(completed.payload.model, "gpt-5.6-terra");

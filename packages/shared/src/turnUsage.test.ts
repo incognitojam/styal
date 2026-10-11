@@ -17,6 +17,7 @@ import {
   threadUsageSummary,
   usageFigureShown,
   usageFigureText,
+  withLiveTurnUsage,
 } from "./turnUsage.ts";
 
 const usage = {
@@ -313,6 +314,32 @@ describe("usageFigureText", () => {
     ).toBe("3.12M tokens");
     expect(usageFigureShown(priced, "cost")).toBe("cost");
     expect(usageFigureShown(turnUsageView(usage), "cost")).toBe("tokens");
+  });
+});
+
+describe("withLiveTurnUsage", () => {
+  it("adds a running turn to the thread's total as one more counted turn", () => {
+    const live = { ...usage, costUsd: 0.5 };
+
+    expect(withLiveTurnUsage({ ...threadTotal, costUsd: 2, pricedTurns: 3 }, live)).toEqual({
+      ...threadTotal,
+      inputTokens: 4_000_000,
+      cachedInputTokens: 2_600_000,
+      outputTokens: 170_000,
+      reasoningTokens: 60_000,
+      countedTurns: 4,
+      turns: 4,
+      subagentTokens: 0,
+      costUsd: 2.5,
+      pricedTurns: 4,
+    });
+    // The first turn of a thread is its whole total.
+    expect(threadUsageView(withLiveTurnUsage(null, live)).headline).toBe("1.05M tokens");
+    expect(withLiveTurnUsage(null, { ...usage, usageStatus: "partial" })).toMatchObject({
+      countedTurns: 1,
+      partialTurns: 0,
+      pricedTurns: 0,
+    });
   });
 });
 

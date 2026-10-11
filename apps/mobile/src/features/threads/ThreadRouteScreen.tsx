@@ -81,7 +81,7 @@ import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-s
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
-import { useTurnSummaries } from "../../state/use-turn-usage";
+import { useTurnSummaries, useTurnUsageEnabled } from "../../state/use-turn-usage";
 import { threadEnvironment } from "../../state/threads";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -359,7 +359,14 @@ function ThreadRouteContent(
   }, [selectedThread, selectedThreadDetailState]);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
-  const selectedThreadUsage = composer.selectedTurnUsage.thread;
+  const turnUsageEnabled = useTurnUsageEnabled();
+  // The summary's total also counts a running turn; older servers leave it unset.
+  const shellTokenUsage = selectedThread?.tokenUsage;
+  const selectedThreadUsage = !turnUsageEnabled
+    ? null
+    : shellTokenUsage !== undefined
+      ? shellTokenUsage
+      : composer.selectedTurnUsage.thread;
   const threadUsage = useMemo(
     () => (selectedThreadUsage ? threadUsageView(selectedThreadUsage) : null),
     [selectedThreadUsage],

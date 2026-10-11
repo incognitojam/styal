@@ -165,6 +165,7 @@ const ThreadRealtimeClosedType = Schema.Literal("thread.realtime.closed");
 const TurnStartedType = Schema.Literal("turn.started");
 const TurnCompletedType = Schema.Literal("turn.completed");
 const TurnAbortedType = Schema.Literal("turn.aborted");
+const TurnUsageUpdatedType = Schema.Literal("turn.usage.updated");
 const TurnPlanUpdatedType = Schema.Literal("turn.plan.updated");
 const TurnProposedDeltaType = Schema.Literal("turn.proposed.delta");
 const TurnProposedCompletedType = Schema.Literal("turn.proposed.completed");
@@ -435,6 +436,14 @@ const TurnAbortedPayload = Schema.Struct({
   effort: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type TurnAbortedPayload = typeof TurnAbortedPayload.Type;
+
+/** A running turn's usage so far; its completion carries the final usage. */
+const TurnUsageUpdatedPayload = Schema.Struct({
+  tokenUsage: TurnTokenUsage,
+  /** Filled by the provider service from the turn's start. */
+  model: Schema.optional(TrimmedNonEmptyStringSchema),
+});
+export type TurnUsageUpdatedPayload = typeof TurnUsageUpdatedPayload.Type;
 
 const RuntimePlanStep = Schema.Struct({
   step: TrimmedNonEmptyStringSchema,
@@ -1019,6 +1028,13 @@ const ProviderRuntimeTurnAbortedEvent = Schema.Struct({
 });
 export type ProviderRuntimeTurnAbortedEvent = typeof ProviderRuntimeTurnAbortedEvent.Type;
 
+const ProviderRuntimeTurnUsageUpdatedEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: TurnUsageUpdatedType,
+  payload: TurnUsageUpdatedPayload,
+});
+export type ProviderRuntimeTurnUsageUpdatedEvent = typeof ProviderRuntimeTurnUsageUpdatedEvent.Type;
+
 const ProviderRuntimeTurnPlanUpdatedEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
   type: TurnPlanUpdatedType,
@@ -1282,6 +1298,7 @@ export const ProviderRuntimeEventV2 = Schema.Union([
   ProviderRuntimeTurnStartedEvent,
   ProviderRuntimeTurnCompletedEvent,
   ProviderRuntimeTurnAbortedEvent,
+  ProviderRuntimeTurnUsageUpdatedEvent,
   ProviderRuntimeTurnPlanUpdatedEvent,
   ProviderRuntimeTurnProposedDeltaEvent,
   ProviderRuntimeTurnProposedCompletedEvent,

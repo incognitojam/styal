@@ -2980,9 +2980,16 @@ export default function ChatView(props: ChatViewProps) {
   );
   const turnUsage = useTurnUsage(threadActivities, settings.turnUsageEnabled);
   const turnSummaries = useTurnSummaries(turnUsage.byTurnId, providerStatuses);
+  // The summary's total also counts a running turn; older servers leave it unset.
+  const shellTokenUsage = activeThreadShell?.tokenUsage;
+  const threadTokenUsage = !settings.turnUsageEnabled
+    ? null
+    : shellTokenUsage !== undefined
+      ? shellTokenUsage
+      : turnUsage.thread;
   const threadUsage = useMemo(
-    () => (turnUsage.thread ? threadUsageView(turnUsage.thread) : null),
-    [turnUsage.thread],
+    () => (threadTokenUsage ? threadUsageView(threadTokenUsage) : null),
+    [threadTokenUsage],
   );
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
   // Native subagent fold: memoized by activity-list identity, shared by the

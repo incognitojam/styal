@@ -261,6 +261,13 @@ interface ClaudeResumeState {
   readonly turnStartMessageIds?: ReadonlyArray<string | null>;
 }
 
+type ClaudeStreamedUsage = Partial<
+  Record<
+    "input_tokens" | "cache_read_input_tokens" | "cache_creation_input_tokens" | "output_tokens",
+    number | null
+  >
+>;
+
 interface ClaudeTurnState {
   readonly turnId: TurnId;
   readonly startedAt: string;
@@ -283,6 +290,9 @@ interface ClaudeTurnState {
   latestAssistantRateLimited: boolean;
   emittedThinkingText: boolean;
   readonly thinkingSnapshotIds: Set<string>;
+  /** Each streamed main-agent message's latest usage, summed for live turn usage. */
+  readonly streamedUsageByMessageId: Map<string, ClaudeStreamedUsage>;
+  streamingMessageId: string | undefined;
 }
 
 interface AssistantTextBlockState {
@@ -1105,6 +1115,34 @@ function normalizeClaudeTurnTokenUsage(
     usageStatus: "partial",
     ...(inputTokens !== undefined ? { inputTokens } : {}),
     ...(rawOutputTokens !== undefined ? { outputTokens: rawOutputTokens } : {}),
+  };
+}
+
+/**
+ * The main agent's usage so far in a running turn, from its streamed messages.
+ * The turn's result replaces it, adding subagents and Claude's own costs.
+ */
+function claudeStreamedTurnTokenUsage(turnState: ClaudeTurnState): TurnTokenUsage | undefined {
+  let uncachedInputTokens = 0;
+  let cachedInputTokens = 0;
+  let cacheCreationTokens = 0;
+  let outputTokens = 0;
+  for (const usage of turnState.streamedUsageByMessageId.values()) {
+    uncachedInputTokens += finiteNonNegativeInteger(usage.input_tokens) ?? 0;
+    cachedInputTokens += finiteNonNegativeInteger(usage.cache_read_input_tokens) ?? 0;
+    cacheCreationTokens += finiteNonNegativeInteger(usage.cache_creation_input_tokens) ?? 0;
+    outputTokens += finiteNonNegativeInteger(usage.output_tokens) ?? 0;
+  }
+  const inputTokens = uncachedInputTokens + cachedInputTokens + cacheCreationTokens;
+  if (inputTokens + outputTokens === 0) return undefined;
+  return {
+    usageStatus: "partial",
+    usageScope: "main_agent",
+    inputTokens,
+    cachedInputTokens,
+    cacheCreationTokens,
+    outputTokens,
+    hasSubagents: turnState.hasSubagents,
   };
 }
 
@@ -3170,11 +3208,43 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     if (event.type === "message_start" && context.turnState && !streamParentToolUseId) {
       context.turnState.emittedThinkingText = false;
+      context.turnState.streamingMessageId = event.message.id;
+      context.turnState.streamedUsageByMessageId.set(event.message.id, event.message.usage);
     }
 
     if (event.type === "message_delta") {
       if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
         return;
+      }
+
+      // A message's delta carries its usage so far; the turn sums its messages.
+      const turnState = context.turnState;
+      const messageId = turnState?.streamingMessageId;
+      if (turnState && messageId !== undefined) {
+        const started = turnState.streamedUsageByMessageId.get(messageId);
+        turnState.streamedUsageByMessageId.set(messageId, {
+          input_tokens: event.usage.input_tokens ?? started?.input_tokens ?? null,
+          cache_read_input_tokens:
+            event.usage.cache_read_input_tokens ?? started?.cache_read_input_tokens ?? null,
+          cache_creation_input_tokens:
+            event.usage.cache_creation_input_tokens ?? started?.cache_creation_input_tokens ?? null,
+          output_tokens: event.usage.output_tokens ?? started?.output_tokens ?? null,
+        });
+        const tokenUsage = claudeStreamedTurnTokenUsage(turnState);
+        if (tokenUsage) {
+          const stamp = yield* makeEventStamp();
+          // Ahead of the context-window update, whose activity carries it to clients.
+          yield* offerRuntimeEvent({
+            type: "turn.usage.updated",
+            eventId: stamp.eventId,
+            provider: PROVIDER,
+            createdAt: stamp.createdAt,
+            threadId: context.session.threadId,
+            turnId: turnState.turnId,
+            payload: { tokenUsage },
+            providerRefs: nativeProviderRefs(context),
+          });
+        }
       }
 
       const snapshot = normalizeClaudeActiveTokenUsage(
@@ -3699,6 +3769,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         latestAssistantRateLimited: false,
         emittedThinkingText: false,
         thinkingSnapshotIds: new Set(),
+        streamedUsageByMessageId: new Map(),
+        streamingMessageId: undefined,
       };
       context.session = {
         ...context.session,
@@ -5678,6 +5750,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         latestAssistantRateLimited: false,
         emittedThinkingText: false,
         thinkingSnapshotIds: new Set(),
+        streamedUsageByMessageId: new Map(),
+        streamingMessageId: undefined,
       };
 
       const updatedAt = yield* nowIso;
