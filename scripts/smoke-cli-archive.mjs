@@ -64,7 +64,7 @@ const preflight = (protocol) =>
     runCli(
       "__service-preflight",
       "--database-path",
-      NodePath.join(state, "userdata/state.sqlite"),
+      NodePath.join(state, "userdata/statev2.sqlite"),
       "--launcher-protocol",
       String(protocol),
     ),
@@ -204,8 +204,9 @@ async function exerciseServer(iteration, managed = false) {
       .map((entry) => entry.split(";")[0])
       .join("; ");
     NodeAssert.ok(cookie);
-    const snapshot = await fetch(`${origin}/api/orchestration/snapshot`, { headers: { cookie } });
+    const snapshot = await fetch(`${origin}/api/projects`, { headers: { cookie } });
     NodeAssert.equal(snapshot.status, 200);
+    NodeAssert.match(snapshot.headers.get("content-type") ?? "", /application\/json/i);
     const data = await snapshot.json();
     NodeAssert.ok(data.projects.some((entry) => entry.title === "CLI verification"));
     console.log(
@@ -236,7 +237,7 @@ if (platform !== "win32") {
   );
   await exerciseServer(3, true);
 }
-NodeAssert.ok(NodeFS.readFileSync(NodePath.join(state, "userdata/state.sqlite")).length > 0);
+NodeAssert.ok(NodeFS.readFileSync(NodePath.join(state, "userdata/statev2.sqlite")).length > 0);
 console.log(
   "CLI archive verified: install, executable, launcher compatibility, native terminal, pairing, and persistence across restart.",
 );
