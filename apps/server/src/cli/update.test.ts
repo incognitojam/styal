@@ -4,6 +4,9 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import {
   HostProcessEnvironment,
   HostProcessInvokedAs,
@@ -11,7 +14,84 @@ import {
   HostProcessWorkingDirectory,
 } from "@t3tools/shared/hostProcess";
 
-import { repointLauncher, resolveLauncherPath } from "./update.ts";
+import { repointLauncher, resolveLauncherPath, resolveNewestVersion } from "./update.ts";
+
+it.effect("resolves each CLI channel with one small npm request", () =>
+  Effect.gen(function* () {
+    const requests: string[] = [];
+    const http = HttpClient.make((request) =>
+      Effect.sync(() => {
+        requests.push(request.url);
+        return HttpClientResponse.fromWeb(
+          request,
+          Response.json({
+            latest: "1.2.3",
+            nightly: "1.2.4-nightly.20261011.9",
+            preview: "1.2.4-preview.20261010.2",
+          }),
+        );
+      }),
+    );
+    for (const [channel, version] of [
+      ["stable", "1.2.3"],
+      ["nightly", "1.2.4-nightly.20261011.9"],
+      ["preview", "1.2.4-preview.20261010.2"],
+    ] as const) {
+      assert.equal(
+        yield* resolveNewestVersion(channel).pipe(
+          Effect.provideService(HttpClient.HttpClient, http),
+        ),
+        version,
+      );
+    }
+    assert.deepEqual(
+      requests,
+      Array(3).fill("https://registry.npmjs.org/-/package/@styal/cli/dist-tags"),
+    );
+  }),
+);
+
+it.effect("fails CLI discovery without retries or a fallback", () =>
+  Effect.gen(function* () {
+    for (const response of [
+      new Response(null, { status: 429 }),
+      new Response("invalid json"),
+      Response.json({}),
+      Response.json({ latest: "1.2.3-nightly.20261011.9" }),
+      Response.json({ latest: "garbage" }),
+      Response.json({ latest: 123 }),
+    ]) {
+      let requests = 0;
+      const http = HttpClient.make((request) =>
+        Effect.sync(() => {
+          requests++;
+          return HttpClientResponse.fromWeb(request, response);
+        }),
+      );
+      const error = yield* resolveNewestVersion("stable").pipe(
+        Effect.provideService(HttpClient.HttpClient, http),
+        Effect.flip,
+      );
+      assert.equal(error._tag, "CliUpdateError");
+      assert.equal(requests, 1);
+    }
+  }),
+);
+
+it.effect("bounds a stalled CLI release response body", () =>
+  Effect.gen(function* () {
+    const http = HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, new Response(new ReadableStream()))),
+    );
+    const check = yield* resolveNewestVersion("nightly").pipe(
+      Effect.provideService(HttpClient.HttpClient, http),
+      Effect.flip,
+      Effect.forkChild,
+    );
+    yield* TestClock.adjust("30 seconds");
+    assert.equal((yield* Fiber.join(check)).message, "Timed out checking styal releases.");
+  }),
+);
 
 it.layer(NodeServices.layer)("styal update launcher", (it) => {
   it.effect("repoints a symlink that lives in a runtime versions tree", () =>

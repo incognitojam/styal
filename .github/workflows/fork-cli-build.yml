@@ -94,7 +94,9 @@ jobs:
       # Use the workflow revision, not an older release candidate's scripts.
       - uses: actions/checkout@v7
         with:
-          sparse-checkout: scripts/check-cli-release-freshness.ts
+          sparse-checkout: |
+            scripts/check-cli-release-freshness.ts
+            packages/shared/src/cliReleaseVersion.ts
           sparse-checkout-cone-mode: false
       - uses: actions/setup-node@v7
         with:

@@ -203,6 +203,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Desktop updates
 
+- **Environment update checks avoid GitHub's anonymous API quota.** Mobile environment checks and
+  CLI channel updates use npm's published channel version and reject releases from another channel.
+  Compared with [T3 Code revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e),
+  which discovers these releases through GitHub's API.
+  [Updating styal](./updating.md).
+
 - **Updates ready for your next launch.** styal downloads updates in the background and installs
   them when you quit. The sidebar shows an icon only when you can restart to update immediately;
   checks, download progress, and retries are available in Settings.

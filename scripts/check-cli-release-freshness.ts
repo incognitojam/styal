@@ -1,3 +1,5 @@
+import { parseCliReleaseVersion } from "../packages/shared/src/cliReleaseVersion.ts";
+
 const packages = [
   "@styal/cli",
   ...["darwin-arm64", "linux-x64", "linux-arm64", "win32-x64", "win32-arm64"].map(
@@ -5,29 +7,15 @@ const packages = [
   ),
 ];
 
-// These are the two version formats emitted by the fork release workflows.
-function releaseParts(version: string): bigint[] {
-  const match =
-    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-nightly\.(\d{8})\.(0|[1-9]\d*))?$/.exec(version);
-  if (!match) throw new Error(`Unsupported release version: ${version}`);
-  return [
-    BigInt(match[1]!),
-    BigInt(match[2]!),
-    BigInt(match[3]!),
-    match[4] === undefined ? 1n : 0n,
-    BigInt(match[4] ?? 0),
-    BigInt(match[5] ?? 0),
-  ];
-}
-
 export async function checkCliReleaseFreshness(
   version: string,
   tag: string,
   request: typeof fetch = fetch,
 ) {
   if (tag !== "latest" && tag !== "nightly") throw new Error(`Unsupported release tag: ${tag}`);
-  const target = releaseParts(version);
-  if ((tag === "nightly") !== version.includes("-nightly.")) {
+  const targetRelease = parseCliReleaseVersion(version);
+  const target = targetRelease.parts;
+  if (targetRelease.channel !== (tag === "latest" ? "stable" : "nightly")) {
     throw new Error(`Release version ${version} does not belong to ${tag}`);
   }
 
@@ -51,7 +39,7 @@ export async function checkCliReleaseFreshness(
     const current: unknown = tag in tags ? Reflect.get(tags, tag) : undefined;
     if (current === undefined) continue;
     if (typeof current !== "string") throw new Error(`Invalid ${tag} version for ${name}`);
-    const published = releaseParts(current);
+    const published = parseCliReleaseVersion(current).parts;
     const difference = target.findIndex((part, index) => part !== published[index]);
     if (difference !== -1 && target[difference]! < published[difference]!) {
       throw new Error(`Stale release: ${name}@${tag} is ${current}, newer than ${version}`);

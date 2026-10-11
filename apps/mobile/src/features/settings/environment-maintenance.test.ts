@@ -110,45 +110,51 @@ describe("environment maintenance access", () => {
 describe("environment release checks", () => {
   const signal = new AbortController().signal;
 
-  it("keeps stable hosts on stable releases and ignores drafts", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockImplementation(async () =>
-          Response.json([
-            { tag_name: "v2.0.0-nightly.20260923.1" },
-            { tag_name: "v1.2.0", draft: true },
-            { tag_name: "v1.1.0" },
-          ]),
-        ),
+  it.each([
+    ["1.0.0", { latest: "1.1.0", nightly: "2.0.0-nightly.20261011.1" }, "1.1.0"],
+    ["1.1.0", { latest: "1.1.0" }, null],
+    ["1.3.0", { latest: "1.1.0" }, null],
+    [
+      "1.0.0-nightly.20261010.9",
+      { nightly: "1.0.0-nightly.20261011.10" },
+      "1.0.0-nightly.20261011.10",
+    ],
+    [
+      "1.0.0-preview.20261010.1",
+      { preview: "1.0.0-preview.20261011.2" },
+      "1.0.0-preview.20261011.2",
+    ],
+    ["1.0.0-nightly.20261011.10", { nightly: "1.0.0-nightly.20261010.9" }, null],
+  ])("checks %s with one request and never offers a downgrade", async (current, tags, expected) => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json(tags));
+    vi.stubGlobal("fetch", request);
+    expect(await findEnvironmentUpdate(current, signal)).toBe(expected);
+    expect(request).toHaveBeenCalledExactlyOnceWith(
+      "https://registry.npmjs.org/-/package/@styal/cli/dist-tags",
+      { signal },
     );
-    expect(await findEnvironmentUpdate("1.0.0", signal)).toBe("1.1.0");
-    expect(await findEnvironmentUpdate("1.1.0", signal)).toBeNull();
-    expect(await findEnvironmentUpdate("1.3.0", signal)).toBeNull();
   });
 
-  it("walks release pages to find the host's channel", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        Response.json(Array.from({ length: 100 }, () => ({ tag_name: "v2.0.0" }))),
-      )
-      .mockResolvedValueOnce(Response.json([{ tag_name: "v1.0.0-preview.20260923.2" }]));
-    vi.stubGlobal("fetch", fetchMock);
-    expect(await findEnvironmentUpdate("1.0.0-preview.20260923.1", signal)).toBe(
-      "1.0.0-preview.20260923.2",
-    );
-    expect(fetchMock.mock.calls[1]?.[0]).toContain("page=2");
-    expect(fetchMock.mock.calls[1]?.[1]).toEqual({ signal });
+  it.each([
+    [new Response(null, { status: 429 }), "429"],
+    [Response.json({}), "No published stable release"],
+    [Response.json({ latest: "1.0.0-nightly.20261011.1" }), "outside the stable channel"],
+    [Response.json({ latest: "garbage" }), "Unsupported release version"],
+    [Response.json({ latest: 123 }), "unexpected shape"],
+    [new Response("invalid json"), ""],
+  ])("reports failed checks without another lookup", async (response, message) => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(response);
+    vi.stubGlobal("fetch", request);
+    await expect(findEnvironmentUpdate("1.0.0", signal)).rejects.toThrow(message);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
-  it("reports failed checks instead of claiming the server is current", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
-    await expect(findEnvironmentUpdate("1.0.0", signal)).rejects.toThrow("403");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json([])));
-    await expect(findEnvironmentUpdate("1.0.0", signal)).rejects.toThrow("No stable release");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "invalid" })));
-    await expect(findEnvironmentUpdate("1.0.0", signal)).rejects.toThrow();
+  it("propagates a cancelled request without reporting up to date", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new DOMException("Cancelled", "AbortError"));
+    vi.stubGlobal("fetch", request);
+    await expect(findEnvironmentUpdate("1.0.0", signal)).rejects.toThrow("Cancelled");
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });
