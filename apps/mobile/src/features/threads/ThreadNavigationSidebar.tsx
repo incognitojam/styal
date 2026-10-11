@@ -183,7 +183,8 @@ function ThreadNavigationSidebarPane(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],
   );
-  const { options, setSelectedEnvironmentId } = useHomeListOptions(availableEnvironmentIds);
+  const { options, setSelectedEnvironmentId, setSelectedProjectKey } =
+    useHomeListOptions(availableEnvironmentIds);
   const searchEnvironmentIds = useMemo(
     () =>
       options.selectedEnvironmentId === null
@@ -213,7 +214,7 @@ function ThreadNavigationSidebarPane(
     () => new Set(threadSearch.matches.map(threadSearchMatchKey)),
     [threadSearch.matches],
   );
-  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
+  const selectedProjectKey = options.selectedProjectKey;
   const projectScopes = useMemo(
     () =>
       buildHomeProjectScopes({
@@ -260,7 +261,7 @@ function ThreadNavigationSidebarPane(
     ) {
       setSelectedProjectKey(null);
     }
-  }, [projectFilterOptions, selectedProjectKey]);
+  }, [projectFilterOptions, selectedProjectKey, setSelectedProjectKey]);
   const selectedProjectRefs = useMemo(
     () =>
       selectedProjectScope === null
@@ -562,7 +563,7 @@ function ThreadNavigationSidebarPane(
         return;
       }
     },
-    [environments, projectFilterOptions, setSelectedEnvironmentId],
+    [environments, projectFilterOptions, setSelectedEnvironmentId, setSelectedProjectKey],
   );
 
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState<number | null>(null);
@@ -870,7 +871,14 @@ function ThreadNavigationSidebarPane(
         onEnvironmentChange: setSelectedEnvironmentId,
         onProjectChange: setSelectedProjectKey,
       }),
-    [environments, options, projectFilterOptions, selectedProjectKey, setSelectedEnvironmentId],
+    [
+      environments,
+      options,
+      projectFilterOptions,
+      selectedProjectKey,
+      setSelectedEnvironmentId,
+      setSelectedProjectKey,
+    ],
   );
   const nativeHeaderItems = useMemo(
     () =>
