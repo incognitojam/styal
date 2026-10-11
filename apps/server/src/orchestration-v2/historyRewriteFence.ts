@@ -2,11 +2,11 @@ import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
 
 /**
- * Migrations that rewrite stored history in place record the sequence they rewrote through,
- * because clients resume cached threads and shells by replaying only later events. Resumes
- * from before the fence get a snapshot, and thread snapshots report at least the fence as
- * their sequence so a refreshed cache resumes normally afterwards. Fork migration 8 shows
- * how to set it.
+ * Migrations that rewrite stored history in place reserve an event sequence as a fence,
+ * because clients resume cached threads by replaying only later events. Thread resumes from
+ * before the fence get a snapshot, and thread snapshots report at least the fence as their
+ * sequence so a refreshed cache resumes normally afterwards. Fork migration 8 shows how to
+ * set it.
  */
 export const HISTORY_REWRITE_FENCE = "history-rewrite-fence";
 

@@ -8,7 +8,7 @@ import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("008_HistoryRewriteFence", (it) => {
-  it.effect("fences every event stored before the migration", () =>
+  it.effect("fences every stored event and keeps later events after the fence", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations();
@@ -28,7 +28,20 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("008_HistoryRewriteFe
 
       yield* runForkMigrations({ toMigrationInclusive: 8 });
 
-      assert.equal(yield* readHistoryRewriteFence(sql), 3);
+      assert.equal(yield* readHistoryRewriteFence(sql), 4);
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+          actor_kind, payload_json, metadata_json, application_event_version
+        ) VALUES (
+          'event-after', 'thread', 'thread-1', 4, 'turn-item.updated',
+          '2026-01-01T00:00:00.000Z', 'server', '{}', '{}', 2
+        )
+      `;
+      const later = yield* sql<{ readonly sequence: number }>`
+        SELECT sequence FROM orchestration_events WHERE event_id = 'event-after'
+      `;
+      assert.deepEqual(later, [{ sequence: 5 }]);
     }),
   );
 });

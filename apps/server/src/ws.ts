@@ -605,9 +605,6 @@ const canReplayPersistedRange = Effect.fnUntraced(function* (
   if (replayGap < 0 || replayGap > maxGap) {
     return false;
   }
-  if (afterSequence < (yield* readHistoryRewriteFence(yield* SqlClient.SqlClient))) {
-    return false;
-  }
   const stats = yield* applicationEvents.getReplayStats({
     afterSequence,
     throughSequence: headSequence,
