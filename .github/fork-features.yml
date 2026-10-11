@@ -898,6 +898,29 @@ features:
         - https://github.com/pingdotgg/t3code/pull/6562
       retire_when: Upstream performs the same ordered, bounded, and observable graceful shutdown before destroying windows and terminating the backend.
 
+  - id: device-automation-node-mode
+    title: Run desktop device automation in Node mode
+    status: maintained
+    prs: []
+    invariants:
+      - Generated POSIX and Windows agent-device wrappers run Electron in Node mode even when the calling provider has no Node-mode flag or sets a different value.
+      - The generated JavaScript launcher also forces Node mode for the device CLI and its daemon when invoked directly, preserving host and session targeting.
+    rationale: Current upstream at ed0f7b908b still launches the desktop executable without explicitly enabling Node mode. Its proposed fixes were closed without merging, leaving device commands able to open duplicate desktop windows and backends.
+    implementation_paths:
+      - apps/server/src/device/AgentDeviceShim.ts
+    upstream_paths:
+      - apps/server/src/device/AgentDeviceShim.ts
+      - packages/shared/src/nodeRuntime.ts
+    tests:
+      - apps/server/src/device/AgentDeviceTarget.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/12926
+        - https://github.com/pingdotgg/t3code/pull/12241
+        - https://github.com/pingdotgg/t3code/pull/13093
+      retire_when: Upstream explicitly enables Node mode in both generated platform wrappers and direct launcher children, with equivalent behavioral coverage.
+
   - id: device-tool-thread-awareness
     title: Agents see devices other threads have open
     status: maintained
