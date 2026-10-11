@@ -236,9 +236,9 @@ describe("ssh tunnel scripts", () => {
   });
 
   it("embeds the runner in the launch script byte for byte", () => {
-    const runner = buildRemoteT3RunnerScript(ARCHIVE);
+    const runner = SshTunnel.buildRemoteT3RunnerScript(ARCHIVE);
     assert.include(runner, 'printf \'%s\\n\' "$$" > "$T3_LOCK/pid.tmp"');
-    assert.include(buildRemoteLaunchScript(ARCHIVE), runner);
+    assert.include(SshTunnel.buildRemoteLaunchScript(ARCHIVE), runner);
   });
 
   it("uses the remote styal runner for launch and pairing scripts", () => {
