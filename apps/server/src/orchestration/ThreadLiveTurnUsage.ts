@@ -34,7 +34,7 @@ export class ThreadLiveTurnUsageService extends Context.Service<
   }
 >()("@styal/cli/orchestration/ThreadLiveTurnUsage/ThreadLiveTurnUsageService") {}
 
-export function make(): ThreadLiveTurnUsageService["Service"] {
+function make(): ThreadLiveTurnUsageService["Service"] {
   const liveByThreadId = new Map<string, { turnId: string; usage: TurnTokenUsage }>();
 
   return {
