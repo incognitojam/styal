@@ -1,6 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import type { PullRequestAction, PullRequestDetail } from "@t3tools/contracts";
+import Animated from "react-native-reanimated";
+import { PR_ROW_LAYOUT, PR_DISCLOSURE_ENTER, PR_ROW_EXIT } from "./pullRequestAnimations";
 import { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
@@ -98,7 +100,7 @@ export function PullRequestChecksRow(props: RowProps) {
   const checks = pullRequestChecksSummary(props.pr);
   const action = usePullRequestAction(props.params, props.pr);
   return (
-    <>
+    <Animated.View layout={PR_ROW_LAYOUT}>
       <PullRequestCardRow
         title={checks.title}
         icon={checks.icon}
@@ -110,7 +112,12 @@ export function PullRequestChecksRow(props: RowProps) {
         onPress={() => setExpanded(!expanded)}
       />
       {expanded ? (
-        <View className="pl-8">
+        <Animated.View
+          layout={PR_ROW_LAYOUT}
+          entering={PR_DISCLOSURE_ENTER}
+          exiting={PR_ROW_EXIT}
+          className="pl-8"
+        >
           {props.pr.state === "open" &&
           props.pr.checks.some((check) => check.status === "failure") ? (
             <PullRequestAgentRow {...props} task="feedback" title="Fix failing checks" />
@@ -158,9 +165,9 @@ export function PullRequestChecksRow(props: RowProps) {
               )
             }
           />
-        </View>
+        </Animated.View>
       ) : null}
-    </>
+    </Animated.View>
   );
 }
 
@@ -237,7 +244,7 @@ export function PullRequestReviewersRow(props: RowProps) {
     props.pr.capabilities.reviewers.request &&
     props.pr.viewerPermissions.requestReviewers;
   return (
-    <>
+    <Animated.View layout={PR_ROW_LAYOUT}>
       <PullRequestCardRow
         title={summary.title}
         icon={summary.icon}
@@ -248,7 +255,12 @@ export function PullRequestReviewersRow(props: RowProps) {
         onPress={() => setExpanded(!expanded)}
       />
       {expanded ? (
-        <View className="pl-8">
+        <Animated.View
+          layout={PR_ROW_LAYOUT}
+          entering={PR_DISCLOSURE_ENTER}
+          exiting={PR_ROW_EXIT}
+          className="pl-8"
+        >
           {summary.reviews.map((review) => (
             <View
               key={review.id}
@@ -309,8 +321,8 @@ export function PullRequestReviewersRow(props: RowProps) {
               onPress={() => void Linking.openURL(props.pr.url)}
             />
           )}
-        </View>
+        </Animated.View>
       ) : null}
-    </>
+    </Animated.View>
   );
 }
