@@ -520,10 +520,30 @@ it.effect(
       expect(f.daemonRequests[1]?.body).not.toContain(agentToken);
       expect(f.daemonRequests[1]?.body).toContain('"command":"session_list"');
       expect(f.daemonRequests[1]?.headers.authorization).toBe("Bearer synthetic-daemon-token");
-      expect(f.daemonRequests).toHaveLength(2);
+      // agent-device streams uploads with chunked transfer encoding.
+      const upload = yield* call("agent/upload", agentToken, {
+        method: "POST",
+        headers: { "content-type": "application/octet-stream", "transfer-encoding": "chunked" },
+        body: "synthetic artifact",
+      });
+      expect(upload.status).toBe(200);
+      yield* Effect.promise(() => upload.text());
+      expect(f.daemonRequests[2]?.url).toBe("http://daemon.test/upload");
+      expect(f.daemonRequests[2]?.headers["transfer-encoding"]).toBeUndefined();
+      expect(f.daemonRequests).toHaveLength(3);
 
       yield* host.stopAgent;
       expect((yield* call("agent/health", agentToken)).status).toBe(401);
+      // agent-device only shows a rejected RPC's message when it is a JSON-RPC error.
+      const rejected = yield* call("agent/rpc", agentToken, {
+        method: "POST",
+        body: encodeJson({ jsonrpc: "2.0", id: 2, method: "agent_device.command", params: {} }),
+      });
+      expect(rejected.status).toBe(401);
+      expect(yield* Effect.promise(() => rejected.json())).toMatchObject({
+        jsonrpc: "2.0",
+        error: { code: -32001, message: expect.stringContaining("device_open") },
+      });
       const renewed = yield* host.ensureAgentReady(() => Effect.void);
       const renewedResponse = yield* call("agent/health", renewed.agentDevice.token);
       expect(renewedResponse.status).toBe(200);

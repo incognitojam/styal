@@ -75,6 +75,8 @@ const DROPPED_REQUEST_HEADERS = new Set([
   "authorization",
   "dpop",
   "content-length",
+  // Hop-by-hop: fetch frames the forwarded body itself and rejects this header.
+  "transfer-encoding",
   "accept-encoding",
 ]);
 

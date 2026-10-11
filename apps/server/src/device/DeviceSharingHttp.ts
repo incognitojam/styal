@@ -80,6 +80,16 @@ const isAllowedAgentRequest = (path: string, method: string) =>
         /^\/sessions\/[^/]+\/requests\/[^/]+\/diagnostics$/.test(path)
       ? method === "GET"
       : false;
+const AGENT_ACCESS_ENDED =
+  "Agent device access to this environment ended. Open the device again with device_open to renew it.";
+/** agent-device reads `/rpc` failures as JSON-RPC errors, as its own remote proxy sends them. */
+const agentAccessEnded = (path: string) =>
+  path === "/rpc"
+    ? HttpServerResponse.jsonUnsafe(
+        { jsonrpc: "2.0", id: null, error: { code: -32001, message: AGENT_ACCESS_ENDED } },
+        { status: 401 },
+      )
+    : HttpServerResponse.text(AGENT_ACCESS_ENDED, { status: 401 });
 const agentToken = (request: HttpServerRequest.HttpServerRequest) => {
   const authorization = request.headers.authorization ?? "";
   return authorization.toLowerCase().startsWith("bearer ")
@@ -102,11 +112,7 @@ const proxy = errors(
       // Agents hold a separate credential that reaches only this proxy, never peer commands.
       const token = agentToken(request);
       const resolved = token ? yield* sharing.agentTarget(token) : null;
-      if (!resolved)
-        return HttpServerResponse.text(
-          "Agent device access to this environment ended. Open the device again with device_open to renew it.",
-          { status: 401 },
-        );
+      if (!resolved) return agentAccessEnded(path);
       if (upgrade || !isAllowedAgentRequest(path, request.method))
         return HttpServerResponse.empty({ status: 404 });
       target = resolved;
