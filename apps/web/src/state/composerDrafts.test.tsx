@@ -81,6 +81,50 @@ afterEach(async () => {
 });
 
 describe("web composer draft sync", () => {
+  it("keeps a manually cleared draft empty across navigation and retries a failed save", async () => {
+    sync.snapshot = {
+      ...sync.snapshot!,
+      revision: 1,
+      common: {
+        text: "saved draft",
+        modelSelection: null,
+        runtimeMode: null,
+        interactionMode: null,
+      },
+    };
+    await act(() => {
+      renderer = create(<Probe />);
+    });
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt).toBe(
+      "saved draft",
+    );
+    await act(() => {
+      useComposerDraftStore.getState().setPrompt(threadRef, "");
+      renderer?.unmount();
+    });
+    expect(sync.update).toHaveBeenCalledOnce();
+    expect(sync.update.mock.calls[0]?.[1].input.common).toBeNull();
+    await act(() => {
+      renderer = create(<Probe />);
+    });
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt ?? "").toBe("");
+
+    sync.update.mockImplementation(async (_registry, { input }) => {
+      sync.snapshot = {
+        ...sync.snapshot!,
+        revision: 2,
+        common: input.common,
+        clientMutationId: input.clientMutationId,
+      };
+      return AsyncResult.success({ _tag: "accepted", snapshot: sync.snapshot });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1_200);
+    });
+    expect(sync.snapshot.common).toBeNull();
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt ?? "").toBe("");
+  });
+
   it.each([null, "full-access"] as const)(
     "does not autosave sent text before rendering the clear with %s preferences",
     async (runtimeMode) => {

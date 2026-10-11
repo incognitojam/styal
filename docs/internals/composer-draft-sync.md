@@ -8,6 +8,9 @@ a sent draft.
 Clients keep their local durable cache and subscribe to the server snapshot; mobile subscribes only
 after its persisted drafts hydrate. Updates use revision compare-and-swap. On first contact, an
 existing non-empty local cache is not automatically overwritten by an established server draft.
+Pending sync controllers belong to the thread rather than the open composer: navigation flushes
+the live local state and retains the controller until acknowledgment. Reopening reuses pending
+state, including a local clear, and rejects subscription snapshots older than an acknowledged revision.
 
 The shared section contains text, model selection, runtime mode, and interaction mode. Attachment
 bytes and surface-specific context never cross this channel. A client projects a draft containing

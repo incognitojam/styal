@@ -66,7 +66,56 @@ export interface ComposerDraftSyncController {
   readonly observeSnapshot: (snapshot: ComposerDraftSnapshot) => void;
   readonly observeLocalChange: () => void;
   readonly revision: () => number;
+  readonly flush: () => void;
+  readonly hasPendingChanges: () => boolean;
   readonly dispose: () => void;
+}
+
+/** Pending writes belong to the thread, including while its composer is closed. */
+export function createComposerDraftSyncControllerPool() {
+  const entries = new Map<string, { controller: ComposerDraftSyncController; users: number }>();
+  // Subscription atoms can briefly replay a cached snapshot after reopening.
+  const revisions = new Map<string, number>();
+  return {
+    acquire: (key: string, options: Parameters<typeof createComposerDraftSyncController>[0]) => {
+      const existing = entries.get(key);
+      if (existing) {
+        existing.users += 1;
+        return existing.controller;
+      }
+      const controller = createComposerDraftSyncController({
+        ...options,
+        initialRevision: revisions.get(key) ?? 0,
+        onRevisionChange: (snapshot) => {
+          revisions.set(key, snapshot.revision);
+          options.onRevisionChange?.(snapshot);
+        },
+        onSettled: () => {
+          const entry = entries.get(key);
+          if (entry?.controller === controller && entry.users === 0) {
+            entries.delete(key);
+            controller.dispose();
+          }
+          options.onSettled?.();
+        },
+      });
+      entries.set(key, { controller, users: 1 });
+      return controller;
+    },
+    release: (key: string, controller: ComposerDraftSyncController) => {
+      const entry = entries.get(key);
+      if (entry?.controller !== controller || entry.users === 0) return;
+      entry.users -= 1;
+      if (entry.users > 0) return;
+      // React may not have rendered the last synchronous store edit before unmounting.
+      controller.observeLocalChange();
+      if (controller.hasPendingChanges()) controller.flush();
+      else {
+        entries.delete(key);
+        controller.dispose();
+      }
+    },
+  };
 }
 
 /**
@@ -89,17 +138,28 @@ export function createComposerDraftSyncController(options: {
   readonly createMutationId: () => string;
   readonly scheduleTask: (task: () => void, delayMs: number) => () => void;
   readonly onRevisionChange?: (snapshot: ComposerDraftSnapshot) => void;
+  readonly onSettled?: () => void;
+  readonly initialRevision?: number;
   readonly debounceMs?: number;
 }): ComposerDraftSyncController {
   const debounceMs = options.debounceMs ?? 1_200;
   let disposed = false;
   let initialized = false;
-  let currentRevision = 0;
+  let currentRevision = options.initialRevision ?? 0;
   let lastSynced: ComposerDraftCommon | null = null;
   let cancelScheduledTask: (() => void) | null = null;
   let inFlight = false;
   let lastIssuedMutationId: string | null = null;
   let pendingAfterFlight = false;
+  let lastObservedLocal = canonicalComposerDraftCommon(options.readLocal());
+  let hasLocalEdit = false;
+
+  const hasPendingChanges = () =>
+    inFlight ||
+    (hasLocalEdit && (!initialized || !composerDraftCommonEquals(options.readLocal(), lastSynced)));
+  const settled = () => {
+    if (!hasPendingChanges()) options.onSettled?.();
+  };
 
   const cancelTimer = () => {
     if (cancelScheduledTask !== null) {
@@ -110,6 +170,7 @@ export function createComposerDraftSyncController(options: {
 
   const schedule = (delay = debounceMs) => {
     if (disposed || !initialized) return;
+    hasLocalEdit = true;
     cancelTimer();
     cancelScheduledTask = options.scheduleTask(() => {
       cancelScheduledTask = null;
@@ -132,7 +193,10 @@ export function createComposerDraftSyncController(options: {
       return;
     }
     const sent = canonicalComposerDraftCommon(options.readLocal());
-    if (composerDraftCommonEquals(sent, lastSynced)) return;
+    if (composerDraftCommonEquals(sent, lastSynced)) {
+      settled();
+      return;
+    }
 
     const baseRevision = currentRevision;
     const clientMutationId = options.createMutationId();
@@ -149,6 +213,7 @@ export function createComposerDraftSyncController(options: {
 
     if (result === null) {
       // The subscription/reconnect path will call observeLocalChange again.
+      settled();
       return;
     }
 
@@ -166,6 +231,7 @@ export function createComposerDraftSyncController(options: {
       pendingAfterFlight = false;
       if (!composerDraftCommonEquals(options.readLocal(), lastSynced)) schedule();
     }
+    settled();
   };
 
   const observeSnapshot = (snapshot: ComposerDraftSnapshot) => {
@@ -176,8 +242,14 @@ export function createComposerDraftSyncController(options: {
     const local = canonicalComposerDraftCommon(options.readLocal());
 
     if (!initialized) {
+      if (!composerDraftCommonEquals(local, lastObservedLocal)) hasLocalEdit = true;
       initialized = true;
       acceptSnapshotMetadata(snapshot);
+      if (hasLocalEdit) {
+        if (!composerDraftCommonEquals(local, remote)) schedule();
+        else settled();
+        return;
+      }
       if (snapshot.revision === 0) {
         if (!composerDraftCommonEquals(local, remote)) schedule();
         return;
@@ -191,6 +263,7 @@ export function createComposerDraftSyncController(options: {
       if (local === null || composerDraftCommonEquals(local, remote)) {
         if (!composerDraftCommonEquals(local, remote)) options.applyRemote(remote);
       }
+      lastObservedLocal = canonicalComposerDraftCommon(options.readLocal());
       // Preserve a non-empty local cache on first contact. It is uploaded only
       // after the user edits it, avoiding an automatic migration-time overwrite.
       return;
@@ -209,6 +282,8 @@ export function createComposerDraftSyncController(options: {
     acceptSnapshotMetadata(snapshot);
     if (wasClean && options.canApplyRemote() && !options.shouldIgnoreRemote?.(snapshot)) {
       options.applyRemote(remote);
+      lastObservedLocal = canonicalComposerDraftCommon(options.readLocal());
+      settled();
       return;
     }
     // Local typing (or a client-local attachment) wins after the idle window.
@@ -218,11 +293,22 @@ export function createComposerDraftSyncController(options: {
   return {
     observeSnapshot,
     observeLocalChange: () => {
-      if (!initialized || disposed) return;
-      if (composerDraftCommonEquals(options.readLocal(), lastSynced)) cancelTimer();
-      else schedule();
+      if (disposed) return;
+      const local = canonicalComposerDraftCommon(options.readLocal());
+      if (!composerDraftCommonEquals(local, lastObservedLocal)) hasLocalEdit = true;
+      lastObservedLocal = local;
+      if (!initialized) return;
+      if (composerDraftCommonEquals(local, lastSynced)) {
+        cancelTimer();
+        settled();
+      } else if (hasLocalEdit) schedule();
     },
     revision: () => currentRevision,
+    flush: () => {
+      cancelTimer();
+      void flush();
+    },
+    hasPendingChanges,
     dispose: () => {
       disposed = true;
       cancelTimer();
