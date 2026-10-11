@@ -1,13 +1,13 @@
 {
   "defaultThreadEnvMode": "local",
   "newWorktreesStartFromOrigin": false,
-  "responseStreamingMode": "token",
+  "responseStreamingMode": "paragraph",
   "enableProviderUpdateChecks": false,
   "enableAgentBrowserAccess": false,
-  "addProjectBaseDirectory": "/tmp/t3-import-fixture/projects",
+  "addProjectBaseDirectory": "/workspace/fixture/projects",
   "providers": {
     "codex": {
-      "binaryPath": "/tmp/t3-import-fixture/bin/codex"
+      "binaryPath": "/workspace/fixture/bin/codex"
     },
     "claudeAgent": {
       "enabled": false
