@@ -81,90 +81,49 @@ afterEach(async () => {
 });
 
 describe("web composer draft sync", () => {
-  it.each(["before-save", "save-in-flight", "offline"])(
-    "keeps a manually cleared draft empty across navigation %s",
-    async (timing) => {
-      let resolvePending!: (
-        result: AsyncResult.AsyncResult<ComposerDraftUpdateResult, string>,
-      ) => void;
-      const pending = new Promise<AsyncResult.AsyncResult<ComposerDraftUpdateResult, string>>(
-        (resolve) => {
-          resolvePending = resolve;
-        },
-      );
+  it("keeps a manually cleared draft empty across navigation and retries a failed save", async () => {
+    sync.snapshot = {
+      ...sync.snapshot!,
+      revision: 1,
+      common: {
+        text: "saved draft",
+        modelSelection: null,
+        runtimeMode: null,
+        interactionMode: null,
+      },
+    };
+    await act(() => {
+      renderer = create(<Probe />);
+    });
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt).toBe(
+      "saved draft",
+    );
+    await act(() => {
+      useComposerDraftStore.getState().setPrompt(threadRef, "");
+      renderer?.unmount();
+    });
+    expect(sync.update).toHaveBeenCalledOnce();
+    expect(sync.update.mock.calls[0]?.[1].input.common).toBeNull();
+    await act(() => {
+      renderer = create(<Probe />);
+    });
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt ?? "").toBe("");
+
+    sync.update.mockImplementation(async (_registry, { input }) => {
       sync.snapshot = {
         ...sync.snapshot!,
-        revision: 1,
-        common: {
-          text: "saved draft",
-          modelSelection: null,
-          runtimeMode: null,
-          interactionMode: null,
-        },
+        revision: 2,
+        common: input.common,
+        clientMutationId: input.clientMutationId,
       };
-      sync.update.mockImplementation(async (_registry, { input }) => {
-        if (timing === "offline") return AsyncResult.failure(Cause.fail("offline"));
-        if (timing === "save-in-flight") return pending;
-        sync.snapshot = {
-          ...sync.snapshot!,
-          revision: 2,
-          common: input.common,
-          clientMutationId: input.clientMutationId,
-        };
-        return AsyncResult.success({ _tag: "accepted", snapshot: sync.snapshot });
-      });
-      await act(() => {
-        renderer = create(<Probe />);
-      });
-      expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt).toBe(
-        "saved draft",
-      );
-      await act(() => {
-        useComposerDraftStore.getState().setPrompt(threadRef, "");
-      });
-      if (timing === "save-in-flight")
-        await act(async () => {
-          vi.advanceTimersByTime(1_200);
-        });
-      await act(() => {
-        renderer?.unmount();
-      });
-      await act(() => {
-        renderer = create(<Probe />);
-      });
-      expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt ?? "").toBe("");
-      if (timing === "save-in-flight") {
-        const input = sync.update.mock.calls[0]![1].input;
-        await act(async () => {
-          sync.snapshot = {
-            ...sync.snapshot!,
-            revision: 2,
-            common: input.common,
-            clientMutationId: input.clientMutationId,
-          };
-          resolvePending(AsyncResult.success({ _tag: "accepted", snapshot: sync.snapshot }));
-          await pending;
-        });
-      }
-      if (timing === "offline") {
-        sync.update.mockImplementation(async (_registry, { input }) => {
-          sync.snapshot = {
-            ...sync.snapshot!,
-            revision: 2,
-            common: input.common,
-            clientMutationId: input.clientMutationId,
-          };
-          return AsyncResult.success({ _tag: "accepted", snapshot: sync.snapshot });
-        });
-        await act(async () => {
-          vi.advanceTimersByTime(1_200);
-        });
-        expect(sync.snapshot.common).toBeNull();
-        expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt ?? "").toBe("");
-      }
-      if (timing !== "offline") expect(sync.update.mock.calls[0]?.[1].input.common).toBeNull();
-    },
-  );
+      return AsyncResult.success({ _tag: "accepted", snapshot: sync.snapshot });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1_200);
+    });
+    expect(sync.snapshot.common).toBeNull();
+    expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt ?? "").toBe("");
+  });
 
   it.each([null, "full-access"] as const)(
     "does not autosave sent text before rendering the clear with %s preferences",

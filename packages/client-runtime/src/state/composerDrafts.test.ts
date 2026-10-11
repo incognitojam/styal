@@ -213,36 +213,6 @@ describe("composer draft sync controller", () => {
     expect(local).toEqual(REMOTE);
   });
 
-  it("does not overwrite a non-empty local cache on first contact", async () => {
-    let local: ComposerDraftCommon | null = LOCAL;
-    const writes: Array<{ baseRevision: number; common: ComposerDraftCommon | null }> = [];
-    const scheduler = makeScheduler();
-    const controller = createComposerDraftSyncController({
-      threadId: THREAD_ID,
-      readLocal: () => local,
-      canApplyRemote: () => true,
-      applyRemote: (common) => {
-        local = common;
-      },
-      update: async (input) => {
-        writes.push({ baseRevision: input.baseRevision, common: input.common });
-        return { _tag: "accepted", snapshot: snapshot(2, input.common, input.clientMutationId) };
-      },
-      createMutationId: () => "mutation-1",
-      scheduleTask: scheduler.scheduleTask,
-    });
-
-    controller.observeSnapshot(snapshot(1, REMOTE));
-    expect(local).toEqual(LOCAL);
-    expect(scheduler.hasTask()).toBe(false);
-
-    local = { ...LOCAL, text: "actively edited" };
-    controller.observeLocalChange();
-    await scheduler.run();
-
-    expect(writes).toEqual([{ baseRevision: 1, common: local }]);
-  });
-
   it("retries an active local edit against the revision returned by a conflict", async () => {
     let local: ComposerDraftCommon | null = null;
     const bases: number[] = [];
@@ -339,27 +309,17 @@ describe("composer draft sync controller pool", () => {
     };
   }
 
-  it("flushes the live edit on navigation before its render or debounce", async () => {
-    const test = setup(REMOTE);
-    const controller = test.pool.acquire("environment-1/thread-1", test.options);
-    controller.observeSnapshot(test.server());
-    test.edit(null);
-    test.pool.release("environment-1/thread-1", controller);
-    await test.scheduler.run();
-
-    expect(test.writes).toEqual([{ baseRevision: 1, common: null }]);
-    expect(test.server().common).toBeNull();
-    expect(test.scheduler.hasTask()).toBe(false);
-  });
-
-  it("ignores cached snapshots older than an acknowledged clear on reopening", async () => {
+  it("flushes a live clear on navigation and rejects stale snapshots after reopening", async () => {
     const test = setup(REMOTE);
     const stale = test.server();
     const controller = test.pool.acquire("environment-1/thread-1", test.options);
     controller.observeSnapshot(stale);
     test.edit(null);
     test.pool.release("environment-1/thread-1", controller);
+    expect(test.writes).toEqual([{ baseRevision: 1, common: null }]);
     await test.scheduler.run();
+    expect(test.server().common).toBeNull();
+    expect(test.scheduler.hasTask()).toBe(false);
 
     const reopened = test.pool.acquire("environment-1/thread-1", test.options);
     reopened.observeSnapshot(stale);
@@ -367,7 +327,10 @@ describe("composer draft sync controller pool", () => {
     reopened.observeSnapshot(test.server());
     reopened.observeSnapshot(snapshot(3, LOCAL));
     expect(test.readLocal()).toEqual(LOCAL);
+    test.pool.release("environment-1/thread-1", reopened);
+    await test.scheduler.run();
     expect(test.writes).toHaveLength(1);
+    expect(test.scheduler.hasTask()).toBe(false);
   });
 
   it("preserves a clear made before the first subscription snapshot", async () => {
@@ -410,24 +373,24 @@ describe("composer draft sync controller pool", () => {
     expect(test.scheduler.hasTask()).toBe(false);
   });
 
-  it("does not write when navigating away from an unchanged draft", async () => {
-    const test = setup(REMOTE);
-    const controller = test.pool.acquire("environment-1/thread-1", test.options);
-    controller.observeSnapshot(test.server());
-    test.pool.release("environment-1/thread-1", controller);
-    await test.scheduler.run();
-    expect(test.writes).toEqual([]);
-    expect(test.scheduler.hasTask()).toBe(false);
-  });
-
-  it("does not upload an untouched local cache over an established remote draft", async () => {
+  it("preserves an untouched local cache across navigation and uploads only active edits", async () => {
     const test = setup(LOCAL);
     const controller = test.pool.acquire("environment-1/thread-1", test.options);
-    controller.observeSnapshot(snapshot(2, REMOTE));
+    const remote = snapshot(2, REMOTE);
+    controller.observeSnapshot(remote);
     test.pool.release("environment-1/thread-1", controller);
     await test.scheduler.run();
     expect(test.readLocal()).toEqual(LOCAL);
     expect(test.writes).toEqual([]);
     expect(test.scheduler.hasTask()).toBe(false);
+
+    const reopened = test.pool.acquire("environment-1/thread-1", test.options);
+    reopened.observeSnapshot(remote);
+    expect(test.readLocal()).toEqual(LOCAL);
+    const edited = { ...LOCAL, text: "actively edited" };
+    test.edit(edited);
+    reopened.observeLocalChange();
+    await test.scheduler.run();
+    expect(test.writes).toEqual([{ baseRevision: 2, common: edited }]);
   });
 });
