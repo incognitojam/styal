@@ -3,6 +3,7 @@ import { Atom } from "effect/reactivity";
 import { ThreadContextDivider } from "./thread-context-divider";
 import { ThreadHandoffRow } from "./thread-handoff-row";
 import { SecretRequestCard } from "./SecretRequestCard";
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import {
   WorktreeWorkingHeader,
   WorktreeSetupCard,
@@ -94,7 +95,6 @@ import {
 } from "react-native-nitro-markdown";
 import { getTextContent } from "react-native-nitro-markdown/headless";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Platform,
@@ -403,7 +403,7 @@ function AssistantForkButton(props: {
       className="h-7 w-7 items-center justify-center disabled:opacity-40"
     >
       {busy ? (
-        <ActivityIndicator size="small" />
+        <AppActivityIndicator size="small" />
       ) : (
         <SymbolView
           name="arrow.triangle.branch"
@@ -441,7 +441,7 @@ function MessageAttachmentImage(props: {
   if (uri === null) {
     return (
       <View className={`${props.className} items-center justify-center`}>
-        <ActivityIndicator />
+        <AppActivityIndicator />
       </View>
     );
   }
@@ -655,7 +655,7 @@ function MessageAttachmentFile(props: {
         >
           <View className="h-12 w-10 shrink-0 items-center justify-center rounded-lg bg-subtle">
             {opening ? (
-              <ActivityIndicator size="small" />
+              <AppActivityIndicator size="small" />
             ) : (
               <PierreEntryIcon path={attachment.name} kind="file" size={26} />
             )}
@@ -3477,7 +3477,7 @@ function ThreadFeedLoadEarlierControl(props: ThreadFeedHistoryControls) {
           className="min-h-9 flex-row items-center justify-center gap-2 rounded-full border border-border/60 bg-surface/80 px-4 py-2 disabled:opacity-50"
         >
           {props.loading ? (
-            <ActivityIndicator size="small" color={accentColor} />
+            <AppActivityIndicator size="small" color={accentColor} />
           ) : (
             <SymbolView name="chevron.up" size={12} tintColor={accentColor} type="monochrome" />
           )}
