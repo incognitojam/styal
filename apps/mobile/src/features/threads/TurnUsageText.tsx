@@ -1,4 +1,4 @@
-import { usageFigureText, type TurnUsageView } from "@t3tools/shared/turnUsage";
+import { usageFigureShown, usageFigureText, type TurnUsageView } from "@t3tools/shared/turnUsage";
 import { Alert, Pressable } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
@@ -7,7 +7,7 @@ import { MeterText } from "./MeterText";
 
 /**
  * Tokens or cost, as the device prefers; tapping it shows the breakdown. With
- * `meterKey`, a changing cost rolls like a meter.
+ * `meterKey`, a changing figure rolls like a meter.
  */
 export function TurnUsageText(props: {
   readonly view: TurnUsageView;
@@ -40,8 +40,12 @@ export function TurnUsageText(props: {
         )
       }
     >
-      {meterKey !== undefined && figure === "cost" ? (
-        <MeterText text={text} meterKey={meterKey} className={className} />
+      {meterKey !== undefined ? (
+        <MeterText
+          text={text}
+          meterKey={`${meterKey}:${usageFigureShown(view, figure)}`}
+          className={className}
+        />
       ) : (
         <Text className={className}>{text}</Text>
       )}

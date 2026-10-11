@@ -14,6 +14,7 @@ import {
   turnModelLabel,
   meterWheels,
   turnUsageView,
+  usageFigureShown,
   usageFigureText,
 } from "./turnUsage.ts";
 
@@ -309,23 +310,38 @@ describe("usageFigureText", () => {
     expect(
       usageFigureText(threadUsageView({ ...threadTotal, costUsd: 0, pricedTurns: 0 }), "cost"),
     ).toBe("3.12M tokens");
+    expect(usageFigureShown(priced, "cost")).toBe("cost");
+    expect(usageFigureShown(turnUsageView(usage), "cost")).toBe("tokens");
   });
 });
 
 describe("meterWheels", () => {
-  it("rolls only the digits that changed, lining readings up from the right", () => {
-    const rolling = (previous: string, text: string) =>
-      meterWheels(previous, text)
-        .filter((wheel) => wheel.rolls)
-        .map((wheel) => `${wheel.before ?? "_"}>${wheel.char}@${wheel.position}`);
+  const rolling = (previous: string, text: string) =>
+    meterWheels(previous, text)
+      .filter((wheel) => wheel.rolls)
+      .map((wheel) => `${wheel.before ?? "_"}>${wheel.text}@${wheel.position}#${wheel.order}`);
 
-    expect(rolling("$0.84", "$0.97")).toEqual(["8>9@1", "4>7@0"]);
-    // A longer reading shifts the symbol left; the wheel it left rolls up.
-    expect(rolling("$9.99", "$10.01")).toEqual(["$>1@4", "9>0@3", "9>0@1", "9>1@0"]);
-    expect(rolling("$0.01", "$10.01")).toEqual(["$>1@4"]);
-    // Symbols never roll, so "<$0.01" becoming a cost only rolls its digits.
-    expect(rolling("<$0.01", "$0.02")).toEqual(["1>2@0"]);
+  it("rolls each changed digit, lined up from the right, rightmost first", () => {
+    expect(rolling("$0.84", "$0.97")).toEqual(["8>9@1#1", "4>7@0#0"]);
+    expect(rolling("4.64M tokens", "4.71M tokens")).toEqual(["6>7@9#1", "4>1@8#0"]);
     expect(rolling("$1.23", "$1.23")).toEqual([]);
+  });
+
+  it("rolls a new leading digit in from blank and leaves symbols in place", () => {
+    expect(rolling("$9.99", "$10.01")).toEqual(["_>1@4#3", "9>0@3#2", "9>0@1#1", "9>1@0#0"]);
+    expect(rolling("$0.01", "$10.01")).toEqual(["_>1@4#0"]);
+    // A symbol that goes away just goes; only the digit rolls.
+    expect(rolling("<$0.01", "$0.02")).toEqual(["1>2@0#0"]);
+  });
+
+  it("rolls the number and unit together when the reading changes shape", () => {
+    expect(rolling("998K tokens", "1.00M tokens")).toEqual(["998K>1.00M@7#0"]);
+    expect(rolling("98.9K tokens", "103K tokens")).toEqual(["98.9>103@8#0"]);
+    expect(
+      meterWheels("998K tokens", "1.00M tokens")
+        .map((wheel) => wheel.text)
+        .join(""),
+    ).toBe("1.00M tokens");
   });
 });
 

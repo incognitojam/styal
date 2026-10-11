@@ -211,31 +211,95 @@ function usageView(
   };
 }
 
-/** One character of a meter reading, on the wheel `position` from the right. */
+/** A run of a meter reading that shows or rolls as one wheel. */
 export interface MeterWheel {
+  /** Where the wheel ends, counted from the reading's right; keys it. */
   readonly position: number;
-  readonly char: string;
-  /** The wheel's previous character, when the old reading reached it. */
+  readonly text: string;
+  /** What the wheel showed before, when it rolls. */
   readonly before: string | undefined;
-  /** Only a digit that changed rolls; everything else just shows. */
   readonly rolls: boolean;
+  /** Rolling wheels turn in this order, rightmost first. */
+  readonly order: number;
 }
 
-/** Lines a new reading up against the previous one from the right, as wheels are. */
+const METER_READING = /^(\D*)(\d(?:.*\d)?)(\D*)$/;
+
+function commonTail(a: string, b: string): string {
+  let length = 0;
+  while (length < a.length && length < b.length && a.at(-1 - length) === b.at(-1 - length)) {
+    length += 1;
+  }
+  return length === 0 ? "" : a.slice(-length);
+}
+
+/** Whether two numbers line up from the right with their separators in place. */
+function sameShape(previous: string, next: string): boolean {
+  const [shorter, longer] = previous.length <= next.length ? [previous, next] : [next, previous];
+  const extra = longer.length - shorter.length;
+  if (!/^\d*$/.test(longer.slice(0, extra))) return false;
+  return [...shorter].every((char, index) => /\d/.test(char) === /\d/.test(longer[extra + index]!));
+}
+
+/**
+ * Splits a new reading into wheels against the previous one. When the number
+ * keeps its shape, each changed digit rolls on its own, lined up from the right
+ * as meter wheels are, and a new leading digit rolls in from blank. When the
+ * shape or unit changes, such as "998K" becoming "1.00M", the number and unit
+ * roll together. Symbols around the number never roll.
+ */
 export function meterWheels(previous: string, text: string): ReadonlyArray<MeterWheel> {
-  return [...text].map((char, index) => {
-    const position = text.length - 1 - index;
-    const before = previous[previous.length - 1 - position];
-    return { position, char, before, rolls: before !== char && /\d/.test(char) };
-  });
+  const was = METER_READING.exec(previous);
+  const now = METER_READING.exec(text);
+  if (!was || !now) {
+    const rolls = previous !== text;
+    return [{ position: 0, text, before: rolls ? previous : undefined, rolls, order: 0 }];
+  }
+  const [, prefix = "", number = "", suffix = ""] = now;
+  const [, , wasNumber = "", wasSuffix = ""] = was;
+  const wheels: Array<Omit<MeterWheel, "order">> = [];
+  const still = (chars: string, end: number) =>
+    [...chars].forEach((char, index) =>
+      wheels.push({
+        position: end + chars.length - 1 - index,
+        text: char,
+        before: undefined,
+        rolls: false,
+      }),
+    );
+  if (suffix === wasSuffix && sameShape(wasNumber, number)) {
+    still(prefix, suffix.length + number.length);
+    [...number].forEach((char, index) => {
+      const fromRight = number.length - 1 - index;
+      const before = wasNumber[wasNumber.length - 1 - fromRight];
+      const rolls = before !== char;
+      wheels.push({ position: suffix.length + fromRight, text: char, before, rolls });
+    });
+    still(suffix, 0);
+  } else {
+    const tail = commonTail(suffix, wasSuffix);
+    const head = number + suffix.slice(0, suffix.length - tail.length);
+    const wasHead = wasNumber + wasSuffix.slice(0, wasSuffix.length - tail.length);
+    still(prefix, tail.length + head.length);
+    wheels.push({ position: tail.length, text: head, before: wasHead, rolls: true });
+    still(tail, 0);
+  }
+  let order = wheels.filter((wheel) => wheel.rolls).length;
+  return wheels.map((wheel) => ({ ...wheel, order: wheel.rolls ? --order : 0 }));
 }
 
 /** Which figure turn and thread usage lead with. */
 export type TurnUsageFigure = "tokens" | "cost";
 
 /** The figure a view leads with: its cost when chosen and known, else its tokens. */
+export function usageFigureShown(view: TurnUsageView, figure: TurnUsageFigure): TurnUsageFigure {
+  return figure === "cost" && view.costUsd !== null ? "cost" : "tokens";
+}
+
 export function usageFigureText(view: TurnUsageView, figure: TurnUsageFigure): string {
-  return figure === "cost" && view.costUsd !== null ? formatCost(view.costUsd) : view.headline;
+  return view.costUsd !== null && usageFigureShown(view, figure) === "cost"
+    ? formatCost(view.costUsd)
+    : view.headline;
 }
 
 export function turnUsageView(usage: TurnTokenUsage): TurnUsageView {

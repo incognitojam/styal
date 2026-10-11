@@ -66,27 +66,28 @@ export function MeterText(props: {
 
   return (
     <View className="flex-row">
-      {meterWheels(previous, text).map(({ position, char, before, rolls }) => {
+      {meterWheels(previous, text).map(({ position, text: shownText, before, rolls, order }) => {
         if (!rolls) {
           return (
             <Text key={position} className={className}>
-              {char}
+              {shownText}
             </Text>
           );
         }
-        // The rightmost wheel turns first.
-        const delay = position * 40;
+        const delay = order * 40;
         return (
           <View key={`${shown.roll}:${position}`} className="overflow-hidden">
             <Animated.View entering={rollIn(delay)}>
-              <Text className={className}>{char}</Text>
+              <Text className={className}>{shownText}</Text>
             </Animated.View>
             {before !== undefined ? (
               <Animated.View
                 entering={rollOut(delay)}
                 style={{ position: "absolute", top: 0, left: 0, right: 0 }}
               >
-                <Text className={className}>{before}</Text>
+                <Text className={className} numberOfLines={1}>
+                  {before}
+                </Text>
               </Animated.View>
             ) : null}
           </View>
