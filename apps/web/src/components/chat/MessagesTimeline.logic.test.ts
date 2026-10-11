@@ -89,7 +89,11 @@ describe("continued response timing", () => {
     completedAt: null,
     assistantMessageId: MessageId.make("answer"),
   };
-  const compare = (messages: ChatMessage[], activities: OrchestrationThreadActivity[]) => {
+  const compare = (
+    messages: ChatMessage[],
+    activities: OrchestrationThreadActivity[],
+    state: "completed" | "interrupted" | null = "completed",
+  ) => {
     const startedAt = continuedResponseWorkStartedAt({
       startedAt: iso(20),
       latestTurn,
@@ -98,7 +102,7 @@ describe("continued response timing", () => {
     });
     const rows = deriveMessagesTimelineRows({
       timelineEntries: deriveTimelineEntries(messages, [], deriveWorkLogEntries(activities)),
-      latestTurn: { ...latestTurn, state: "completed", completedAt: iso(25) },
+      latestTurn: state === null ? null : { ...latestTurn, state, completedAt: iso(25) },
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaries: [],
@@ -106,6 +110,55 @@ describe("continued response timing", () => {
     });
     return { liveMinutes: (Date.parse(iso(25)) - Date.parse(startedAt!)) / 60_000, rows };
   };
+
+  it.each([
+    "trailing-tool",
+    "overlapping-tools",
+    "later-message",
+    "quiet-tail",
+    "historical",
+  ] as const)("retains the final duration when a resumed response settles with %s", (layout) => {
+    const result = compare(
+      [
+        message("user", null, "user", 0),
+        message("old", original, "assistant", 1, 10),
+        message("resumed", continued, "assistant", 21),
+        ...(layout === "later-message" || layout === "historical"
+          ? [message("progress", continued, "assistant", 24)]
+          : []),
+      ],
+      [
+        activity("restart", continued, "server-restart.continued", 20),
+        activity("start", continued, "tool.started", 22, {
+          toolCallId: "resumed-tool",
+          status: "inProgress",
+        }),
+        activity("end", continued, "tool.completed", layout === "quiet-tail" ? 23 : 25, {
+          toolCallId: "resumed-tool",
+          status: "stopped",
+        }),
+        ...(layout === "overlapping-tools" || layout === "historical"
+          ? [
+              activity("other-end", continued, "tool.completed", 24, {
+                toolCallId: "other-tool",
+                status: "completed",
+                startedAt: iso(23),
+              }),
+            ]
+          : []),
+      ],
+      layout === "historical" ? null : "interrupted",
+    );
+    expect(result.liveMinutes).toBe(15);
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "turn-fold",
+          label: layout === "historical" ? "Worked for 15m" : "You stopped after 15m",
+        }),
+      ]),
+    );
+  });
 
   it.each(["lifecycle", "snapshot", "overlapping"] as const)(
     "keeps tool completion time after %s rows are moved to their start",

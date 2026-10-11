@@ -2727,6 +2727,7 @@ describe("buildThreadFeed", () => {
     const compare = (
       messages: OrchestrationThread["messages"],
       activities: OrchestrationThreadActivity[],
+      state: "completed" | "interrupted" | null = "completed",
     ) => {
       const latestTurn = {
         turnId: continuedTurnId,
@@ -2746,7 +2747,7 @@ describe("buildThreadFeed", () => {
         id: ThreadId.make("timer-thread"),
         projectId: ProjectId.make("timer-project"),
         title: "Synthetic timer fixture",
-        latestTurn: { ...latestTurn, state: "completed", completedAt: iso(25) },
+        latestTurn: state === null ? null : { ...latestTurn, state, completedAt: iso(25) },
         messages,
         activities,
       });
@@ -2757,6 +2758,66 @@ describe("buildThreadFeed", () => {
       );
       return { liveMinutes: (Date.parse(iso(25)) - Date.parse(startedAt!)) / 60_000, rows };
     };
+
+    it.each([
+      "trailing-tool",
+      "overlapping-tools",
+      "later-message",
+      "quiet-tail",
+      "historical",
+    ] as const)("retains the final duration when a resumed response settles with %s", (layout) => {
+      const old = message("old", "assistant", firstTurnId, iso(1));
+      const activity = (id: string, kind: string, minute: number, payload = {}) =>
+        makeActivity({
+          id: EventId.make(id),
+          turnId: continuedTurnId,
+          kind,
+          createdAt: iso(minute),
+          tone: "tool",
+          summary: "Synthetic timer fixture",
+          payload,
+        });
+      const result = compare(
+        [
+          message("user", "user", null, iso(0)),
+          { ...old, updatedAt: iso(10) },
+          message("resumed", "assistant", continuedTurnId, iso(21)),
+          ...(layout === "later-message" || layout === "historical"
+            ? [message("progress", "assistant", continuedTurnId, iso(24))]
+            : []),
+        ],
+        [
+          activity("restart", "server-restart.continued", 20),
+          activity("start", "tool.started", 22, {
+            toolCallId: "resumed-tool",
+            status: "inProgress",
+          }),
+          activity("end", "tool.completed", layout === "quiet-tail" ? 23 : 25, {
+            toolCallId: "resumed-tool",
+            status: "stopped",
+          }),
+          ...(layout === "overlapping-tools" || layout === "historical"
+            ? [
+                activity("other-end", "tool.completed", 24, {
+                  toolCallId: "other-tool",
+                  status: "completed",
+                  startedAt: iso(23),
+                }),
+              ]
+            : []),
+        ],
+        layout === "historical" ? null : "interrupted",
+      );
+      expect(result.liveMinutes).toBe(15);
+      expect(result.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "turn-fold",
+            label: layout === "historical" ? "Worked for 15m" : "You stopped after 15m",
+          }),
+        ]),
+      );
+    });
 
     it.each(["lifecycle", "snapshot", "overlapping"] as const)(
       "keeps tool completion time after %s rows are moved to their start",

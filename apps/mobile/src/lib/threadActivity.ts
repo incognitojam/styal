@@ -1992,6 +1992,17 @@ function threadFeedEntryTurnId(entry: ThreadFeedEntry): TurnId | null {
   return entry.type === "activity-group" ? entry.turnId : null;
 }
 
+function threadFeedEntryEndedAt(entry: ThreadFeedEntry): string {
+  if (entry.type === "message") return entry.message.updatedAt;
+  return entry.type === "activity-group"
+    ? entry.activities.reduce(
+        (end, activity) =>
+          maxIsoTimestamp(end, activity.workEntry.endedAt ?? activity.createdAt) ?? end,
+        entry.createdAt,
+      )
+    : entry.createdAt;
+}
+
 /** Keep promptless replacement turns in the active response until work settles. */
 export function deriveThreadFeedActiveTurnIds(
   feed: ReadonlyArray<ThreadFeedEntry>,
@@ -2126,29 +2137,22 @@ function deriveThreadFeedTurnFolds(
 
     const firstEntry = entries[0];
     const firstHiddenEntry = entries.find((entry) => hiddenEntryIds.has(entry.id));
-    const lastEntry = entries.at(-1);
-    if (!firstEntry || !firstHiddenEntry || !lastEntry) {
+    if (!firstEntry || !firstHiddenEntry) {
       continue;
     }
-    const terminalEntry = terminalAssistantMessageId
-      ? entries.find((entry) => entry.id === terminalAssistantMessageId)
-      : null;
     const latestTurnMatches = latestTurn !== null && group.turnIds.has(latestTurn.turnId);
-    const lastEntryEnd =
-      lastEntry.type === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
+    // Tool rows are ordered by start, so the last row need not finish last.
+    const responseEndedAt = entries.reduce(
+      (end, entry) => maxIsoTimestamp(end, threadFeedEntryEndedAt(entry)) ?? end,
+      (latestTurnMatches ? latestTurn.completedAt : null) ?? firstEntry.createdAt,
+    );
     const elapsedMs =
       latestTurnMatches &&
       group.turnIds.size === 1 &&
       latestTurn.startedAt &&
       latestTurn.completedAt
         ? computeElapsedMs(latestTurn.startedAt, latestTurn.completedAt)
-        : computeElapsedMs(
-            group.startBoundary ?? firstEntry.createdAt,
-            maxIsoTimestamp(
-              terminalEntry?.type === "message" ? terminalEntry.message.updatedAt : null,
-              lastEntryEnd,
-            ) ?? lastEntryEnd,
-          );
+        : computeElapsedMs(group.startBoundary ?? firstEntry.createdAt, responseEndedAt);
     const workedMs =
       elapsedMs !== null && group.turnIds.size > 1
         ? Math.max(
@@ -2157,19 +2161,7 @@ function deriveThreadFeedTurnFolds(
               restartDowntimeMs(entries, (entry) => ({
                 turnId: threadFeedEntryTurnId(entry) ?? turnId,
                 startedAt: entry.createdAt,
-                endedAt:
-                  entry.type === "message"
-                    ? entry.message.updatedAt
-                    : entry.type === "activity-group"
-                      ? entry.activities.reduce(
-                          (end, activity) =>
-                            maxIsoTimestamp(
-                              end,
-                              activity.workEntry.endedAt ?? activity.createdAt,
-                            ) ?? end,
-                          entry.createdAt,
-                        )
-                      : entry.createdAt,
+                endedAt: threadFeedEntryEndedAt(entry),
               })),
           )
         : elapsedMs;
