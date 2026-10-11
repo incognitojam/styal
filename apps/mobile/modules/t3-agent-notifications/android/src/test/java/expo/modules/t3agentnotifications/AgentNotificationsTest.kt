@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlarmManager
 import android.app.Application
 import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
@@ -478,7 +479,7 @@ class AgentNotificationsTest {
     val card = manager.activeNotifications.single().notification
     assertEquals("2 live", card.extras.getString(NotificationCompat.EXTRA_SHORT_CRITICAL_TEXT))
     assertEquals("2 working", card.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
-    assertEquals("Project · 2 active", card.extras.getString(Notification.EXTRA_SUB_TEXT))
+    assertEquals("Project", card.extras.getString(Notification.EXTRA_SUB_TEXT))
     assertEquals(
       "Working Build feature\nDone Write tests",
       card.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
@@ -505,6 +506,43 @@ class AgentNotificationsTest {
       finished.extras.getCharSequence(Notification.EXTRA_TITLE).toString()
     )
     assertEquals("Project · 2 threads", finished.extras.getString(Notification.EXTRA_SUB_TEXT))
+  }
+
+  @Test
+  fun workingCardsAcrossProjectsLeaveTheCountToTheTitle() {
+    lifecycle.currentState = Lifecycle.State.RESUMED
+    AgentNotifications.receive(
+      context,
+      update("multiple", true) + mapOf(
+        "activity_line_0" to "Working	Build feature	Project",
+        "activity_line_1" to "Working	Write tests	Other project",
+        "activity_phase" to "running",
+        "activity_active_count" to "2",
+      )
+    )
+    val card = manager.activeNotifications.single().notification
+    assertEquals("2 working", card.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+    assertEquals(null, card.extras.getString(Notification.EXTRA_SUB_TEXT))
+  }
+
+  @Test
+  fun channelsShareOneGroupAndReportWhenAndroidTurnsThemOff() {
+    val allOn = mapOf("alerts" to true, "activity" to true)
+    assertEquals(allOn, AgentNotifications.channelStates(context))
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    assertEquals("Agents", manager.notificationChannelGroups.single { it.id == "agents" }.name)
+    for (id in listOf("agent-alerts", "agent-activity")) {
+      assertEquals("agents", manager.getNotificationChannel(id).group)
+    }
+    // Stands in for the user switching the category off in Android settings.
+    manager.deleteNotificationChannel("agent-alerts")
+    manager.createNotificationChannel(
+      NotificationChannel("agent-alerts", "Agent alerts", NotificationManager.IMPORTANCE_NONE)
+    )
+    assertEquals(
+      mapOf("alerts" to false, "activity" to true),
+      AgentNotifications.channelStates(context)
+    )
   }
 
   private fun assertTimeout(card: Notification, expected: LongRange) {

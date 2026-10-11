@@ -109,6 +109,10 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
   val threadCount =
     activeCount + rows.count { ActivityPhase.forStatus(it.status)?.finished == true }
   private val singleProject = rows.map { it.project }.distinct().size == 1
+
+  // "N working" already gives the active count, so the subtext leaves it out.
+  private val titleCountsActive =
+    rows.size > 1 && attentionCount == 0 && failedCount == 0 && activeCount > 0
   private val legacyBody = (0..4).mapNotNull { data["activity_line_$it"]?.take(300) }
     .takeIf { it.isNotEmpty() }?.joinToString("\n")
     ?: data["activity_body"].orEmpty().take(240)
@@ -120,7 +124,7 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
     attentionCount == 1 -> "1 needs you"
     attentionCount > 1 -> "$attentionCount need you"
     activeCount > 0 && failedCount > 0 -> "$failedCount failed"
-    activeCount > 0 -> "$activeCount working"
+    titleCountsActive -> "$activeCount working"
     failedCount > 0 -> "Finished, $failedCount failed"
     else -> "All finished"
   }
@@ -148,8 +152,12 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
       builder.setSubText(
         listOfNotNull(
           hero!!.project.takeIf { singleProject && it.isNotBlank() },
-          if (activeCount > 0) "$activeCount active" else "$threadCount threads"
-        ).joinToString(" · ")
+          when {
+            titleCountsActive -> null
+            activeCount > 0 -> "$activeCount active"
+            else -> "$threadCount threads"
+          }
+        ).joinToString(" · ").ifEmpty { null }
       )
     }
     val body = body(context)

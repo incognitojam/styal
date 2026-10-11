@@ -1,6 +1,7 @@
 package expo.modules.t3agentnotifications
 
 import android.app.NotificationChannel
+import android.app.NotificationChannelGroup
 import android.app.Notification
 import android.app.AlarmManager
 import android.app.NotificationManager
@@ -45,6 +46,7 @@ object AgentNotifications {
   private const val STORE = "t3-agent-notifications"
   private const val ACTIVITY_CHANNEL = "agent-activity"
   private const val ALERT_CHANNEL = "agent-alerts"
+  private const val CHANNEL_GROUP = "agents"
   private const val ACTIVITY_TAG = "t3-agent-activity"
   private const val ALERT_TAG = "t3-agent-alert"
   private const val ACTIVITY_ID = 73001
@@ -307,19 +309,51 @@ object AgentNotifications {
 
   private fun manager(context: Context) = context.getSystemService(NotificationManager::class.java)
 
-  private fun channels(context: Context) {
+  /** Creates both channels under one group; also renames and regroups older installs' channels. */
+  fun channels(context: Context) {
     if (Build.VERSION.SDK_INT >= 26) {
-      manager(context).createNotificationChannels(
+      val manager = manager(context)
+      manager.createNotificationChannelGroup(NotificationChannelGroup(CHANNEL_GROUP, "Agents"))
+      manager.createNotificationChannels(
         listOf(
-          NotificationChannel(ALERT_CHANNEL, "Agent alerts", NotificationManager.IMPORTANCE_HIGH),
+          NotificationChannel(ALERT_CHANNEL, "Agent alerts", NotificationManager.IMPORTANCE_HIGH)
+            .apply {
+              description = "When an agent finishes, fails, or needs you"
+              group = CHANNEL_GROUP
+            },
           NotificationChannel(
             ACTIVITY_CHANNEL,
             "Ongoing agent activity",
             NotificationManager.IMPORTANCE_LOW
-          ),
+          ).apply {
+            description = "Lists agents while they work"
+            group = CHANNEL_GROUP
+          },
         )
       )
     }
+  }
+
+  /**
+   * Whether Android lets the alert and activity channels post, keyed "alerts" and
+   * "activity". App-wide permission is reported separately; this covers the
+   * per-channel and per-group switches in Android settings.
+   */
+  fun channelStates(context: Context): Map<String, Boolean> {
+    if (Build.VERSION.SDK_INT < 26) return mapOf("alerts" to true, "activity" to true)
+    val manager = manager(context)
+    val groupBlocked = Build.VERSION.SDK_INT >= 28 &&
+      manager.getNotificationChannelGroup(CHANNEL_GROUP)?.isBlocked == true
+    // A channel that does not exist yet is created enabled.
+    fun enabled(id: String) = !groupBlocked &&
+      manager.getNotificationChannel(id)?.importance != NotificationManager.IMPORTANCE_NONE
+    return mapOf("alerts" to enabled(ALERT_CHANNEL), "activity" to enabled(ACTIVITY_CHANNEL))
+  }
+
+  fun channelId(channel: String): String? = when (channel) {
+    "alerts" -> ALERT_CHANNEL
+    "activity" -> ACTIVITY_CHANNEL
+    else -> null
   }
 
   private fun base(context: Context, channel: String): NotificationCompat.Builder {

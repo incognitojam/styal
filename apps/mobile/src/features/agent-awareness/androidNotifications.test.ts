@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     configure?: ReturnType<typeof vi.fn>;
     clear?: ReturnType<typeof vi.fn>;
     openLiveUpdateSettings?: ReturnType<typeof vi.fn>;
+    openChannelSettings?: ReturnType<typeof vi.fn>;
   } | null,
   config: { scheme: ["t3code-preview"], extra: { iosPersonalTeamBuild: false } },
   requireModule: vi.fn(),
@@ -62,6 +63,17 @@ describe("Android native notification capability", () => {
       expect(mocks.openSettings).toHaveBeenCalledOnce();
     },
   );
+
+  it("opens a channel's Android settings, or app settings on binaries without it", async () => {
+    mocks.native!.openChannelSettings = vi.fn(() => true);
+    const { openAndroidAgentChannelSettings } = await import("./androidNotifications");
+    await openAndroidAgentChannelSettings("alerts");
+    expect(mocks.native!.openChannelSettings).toHaveBeenCalledWith("alerts");
+    expect(mocks.openSettings).not.toHaveBeenCalled();
+    delete mocks.native!.openChannelSettings;
+    await openAndroidAgentChannelSettings("activity");
+    expect(mocks.openSettings).toHaveBeenCalledOnce();
+  });
 
   it("uses the installed module and the build variant's deep-link scheme", async () => {
     const { configureAndroidAgentNotifications, clearAndroidAgentNotifications } =
