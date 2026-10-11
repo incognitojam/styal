@@ -99,6 +99,9 @@ export interface OrchestrationEventStoreShape {
 
   readonly latestApplicationSequence: Effect.Effect<number, OrchestrationEventStoreError>;
 
+  /** Thread resumes from before this sequence need a snapshot; see historyRewriteFence.ts. */
+  readonly historyRewriteFence: Effect.Effect<number, OrchestrationEventStoreError>;
+
   /** Read the finite retained application-event range `(afterSequence, throughSequence]`. */
   readonly readApplicationEvents: (input: {
     readonly afterSequence: number;

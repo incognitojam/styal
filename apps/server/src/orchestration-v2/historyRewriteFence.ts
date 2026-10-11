@@ -8,7 +8,7 @@ import type * as SqlClient from "effect/unstable/sql/SqlClient";
  * sequence so a refreshed cache resumes normally afterwards. Fork migration 8 shows how to
  * set it.
  */
-export const HISTORY_REWRITE_FENCE = "history-rewrite-fence";
+const HISTORY_REWRITE_FENCE = "history-rewrite-fence";
 
 export const readHistoryRewriteFence = (sql: SqlClient.SqlClient) =>
   sql<{ readonly last_sequence: number }>`

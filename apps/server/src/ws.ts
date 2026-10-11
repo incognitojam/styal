@@ -1,5 +1,4 @@
 import { OrchestrationGetCommandOutputError } from "@t3tools/contracts";
-import { readHistoryRewriteFence } from "./orchestration-v2/historyRewriteFence.ts";
 import { resolveAddProjectDefaultDirectory } from "./project/AddProjectDefaultDirectory.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
@@ -776,7 +775,7 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
     if (input.afterSequence !== undefined) {
       const [threadSequence, fence] = yield* Effect.all([
         applicationEvents.latestAgentSequence(input.threadId),
-        readHistoryRewriteFence(yield* SqlClient.SqlClient),
+        applicationEvents.historyRewriteFence,
       ]).pipe(
         Effect.mapError(
           (cause) =>

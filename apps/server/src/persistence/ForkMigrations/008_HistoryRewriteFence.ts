@@ -9,11 +9,11 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  yield* sql`
-    INSERT INTO sqlite_sequence (name, seq)
-    SELECT 'orchestration_events', 0
-    WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'orchestration_events')
+  // A database without events has no cached clients to refresh.
+  const stored = yield* sql<{ readonly count: number }>`
+    SELECT COUNT(*) AS count FROM (SELECT 1 FROM orchestration_events LIMIT 1)
   `;
+  if ((stored[0]?.count ?? 0) === 0) return;
   yield* sql`
     UPDATE sqlite_sequence
     SET seq = MAX(seq, (SELECT COALESCE(MAX(sequence), 0) FROM orchestration_events)) + 1
