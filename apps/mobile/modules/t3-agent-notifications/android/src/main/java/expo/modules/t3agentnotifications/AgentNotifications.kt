@@ -344,6 +344,7 @@ object AgentNotifications {
     val manager = manager(context)
     val groupBlocked = Build.VERSION.SDK_INT >= 28 &&
       manager.getNotificationChannelGroup(CHANNEL_GROUP)?.isBlocked == true
+
     // A channel that does not exist yet is created enabled.
     fun enabled(id: String) = !groupBlocked &&
       manager.getNotificationChannel(id)?.importance != NotificationManager.IMPORTANCE_NONE

@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.AlarmManager
 import android.app.Application
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
@@ -523,26 +522,6 @@ class AgentNotificationsTest {
     val card = manager.activeNotifications.single().notification
     assertEquals("2 working", card.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
     assertEquals(null, card.extras.getString(Notification.EXTRA_SUB_TEXT))
-  }
-
-  @Test
-  fun channelsShareOneGroupAndReportWhenAndroidTurnsThemOff() {
-    val allOn = mapOf("alerts" to true, "activity" to true)
-    assertEquals(allOn, AgentNotifications.channelStates(context))
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-    assertEquals("Agents", manager.notificationChannelGroups.single { it.id == "agents" }.name)
-    for (id in listOf("agent-alerts", "agent-activity")) {
-      assertEquals("agents", manager.getNotificationChannel(id).group)
-    }
-    // Stands in for the user switching the category off in Android settings.
-    manager.deleteNotificationChannel("agent-alerts")
-    manager.createNotificationChannel(
-      NotificationChannel("agent-alerts", "Agent alerts", NotificationManager.IMPORTANCE_NONE)
-    )
-    assertEquals(
-      mapOf("alerts" to false, "activity" to true),
-      AgentNotifications.channelStates(context)
-    )
   }
 
   private fun assertTimeout(card: Notification, expected: LongRange) {

@@ -101,6 +101,7 @@ features:
       - apps/mobile/src/features/agent-awareness/notificationPermissions.ts
       - apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx
     tests:
+      - apps/mobile/modules/t3-agent-notifications/android/src/test/java/expo/modules/t3agentnotifications/AgentNotificationChannelsTest.kt
       - apps/mobile/modules/t3-agent-notifications/android/src/test/java/expo/modules/t3agentnotifications/AgentNotificationsTest.kt
       - apps/mobile/src/features/agent-awareness/androidNotifications.test.ts
       - apps/mobile/src/features/agent-awareness/notificationPermissions.test.ts
