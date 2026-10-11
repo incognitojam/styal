@@ -272,6 +272,9 @@ export const makeCliproxyApi = Effect.gen(function* () {
                     ? {
                         nextCreditId: next.id,
                         nextExpiresAt: DateTime.formatIso(DateTime.makeUnsafe(next.expires_at)),
+                        expiries: available.map((credit) =>
+                          DateTime.formatIso(DateTime.makeUnsafe(credit.expires_at)),
+                        ),
                       }
                     : {}),
                 },

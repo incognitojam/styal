@@ -6,12 +6,15 @@ import {
   collectLimitPools,
   cursorUsageWindowDetails,
   displayLimitWindows,
+  formatDuration,
   formatResetsIn,
   type LimitAccount,
   type LimitPool,
   type LimitPoolMember,
   type LimitPoolWindow,
   remainingPercent,
+  resetCreditExpiries,
+  singleAccountResetCredits,
 } from "@t3tools/shared/usageLimits";
 import { AlertTriangleIcon, ExternalLinkIcon, TicketIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
@@ -160,6 +163,7 @@ function SegmentPopover({
       : account.sourceLabel;
   const credits =
     redeem && account.limits.resetCredits?.availableCount ? account.limits.resetCredits : null;
+  const expiries = credits ? resetCreditExpiries(credits) : null;
   return (
     <div className="flex w-72 max-w-[calc(100vw-3rem)] flex-col gap-2.5 text-xs">
       <div className="flex min-w-0 flex-col gap-0.5">
@@ -200,7 +204,11 @@ function SegmentPopover({
       {credits && redeem ? (
         <div className="border-t border-border/60 pt-2.5 text-muted-foreground">
           <span className="flex items-center gap-3">
-            <span className="tabular-nums">{resetCreditsSummary(credits, now, true)}</span>
+            <span className="tabular-nums">
+              {expiries
+                ? `${credits.availableCount} reset ${credits.availableCount === 1 ? "credit" : "credits"} banked`
+                : resetCreditsSummary(credits, now, true)}
+            </span>
             <Button
               size="xs"
               variant="outline"
@@ -211,6 +219,21 @@ function SegmentPopover({
               {redeem.busy ? "Using…" : "Use reset"}
             </Button>
           </span>
+          {expiries ? (
+            <div className="mt-2 flex flex-col gap-1">
+              {expiries.map(({ expiresAt, count }) => (
+                <Row
+                  key={expiresAt ?? "never"}
+                  label={expiresAt === expiries[0]?.expiresAt ? "Expires" : ""}
+                >
+                  {count > 1 ? `${count} × ` : ""}
+                  {expiresAt
+                    ? `${formatUpcomingTimestamp(expiresAt, timestampFormat, now)} · in ${formatDuration(Date.parse(expiresAt) - now)}`
+                    : "Never"}
+                </Row>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -229,7 +252,7 @@ function PoolSegment({
   color,
   now,
   index,
-  showAccountName,
+  pooled,
 }: {
   readonly account: LimitAccount;
   readonly window: LimitPoolMember["window"];
@@ -238,12 +261,14 @@ function PoolSegment({
   readonly now: number;
   /** 1-based position in the bar, shown on the strip and its legend row to tie them together. */
   readonly index: number;
-  readonly showAccountName: boolean;
+  /** More than one account: segments carry the account name and its own credits. */
+  readonly pooled: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
-  const credits = account.limits.resetCredits?.availableCount ?? 0;
+  // A lone account's credits show once beside the provider instead.
+  const credits = pooled ? (account.limits.resetCredits?.availableCount ?? 0) : 0;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -281,7 +306,7 @@ function PoolSegment({
           {index}
         </span>
         <div className="relative hidden h-full min-w-0 items-center gap-1.5 px-2 text-xs @2xl/pool:flex">
-          {showAccountName ? (
+          {pooled ? (
             <AccountName
               account={account}
               className="min-w-0 truncate font-medium text-foreground"
@@ -307,7 +332,14 @@ function PoolSegment({
           </span>
         </div>
       </PopoverTrigger>
-      <LegendRow account={account} window={window} color={color} now={now} index={index} />
+      <LegendRow
+        account={account}
+        window={window}
+        color={color}
+        now={now}
+        index={index}
+        pooled={pooled}
+      />
       {account.redeem ? (
         <RedeemableSegmentPopup
           account={account}
@@ -344,16 +376,18 @@ function LegendRow({
   color,
   now,
   index,
+  pooled,
 }: {
   readonly account: LimitAccount;
   readonly window: LimitPoolMember["window"];
   readonly color: string;
   readonly now: number;
   readonly index: number;
+  readonly pooled: boolean;
 }) {
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
-  const credits = account.limits.resetCredits?.availableCount ?? 0;
+  const credits = pooled ? (account.limits.resetCredits?.availableCount ?? 0) : 0;
   return (
     <PopoverTrigger
       style={{ gridColumn: "1 / -1", gridRow: index + 1 }}
@@ -475,7 +509,7 @@ function PoolBar({
               color={color}
               now={now}
               index={position + 1}
-              showAccountName={pool.columns.length > 1}
+              pooled={pool.columns.length > 1}
             />
           ) : null,
         )}
@@ -532,6 +566,7 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   const color = barColor(pool.driver);
   const label = getDriverOption(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
+  const credits = singleAccountResetCredits(pool)?.count ?? 0;
   return (
     <section className="flex flex-col gap-3">
       <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -543,6 +578,12 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
           iconClassName="size-4 text-foreground/80"
         />
         {label}
+        {credits ? (
+          <span className="ms-auto inline-flex items-center gap-1 text-xs font-normal text-muted-foreground tabular-nums">
+            <TicketIcon className="size-3.5" aria-hidden />
+            {credits} reset {credits === 1 ? "credit" : "credits"}
+          </span>
+        ) : null}
       </h2>
       {windows.map((window) => {
         const details = pool.driver === "cursor" ? cursorUsageWindowDetails(window.id) : undefined;

@@ -127,12 +127,20 @@ export function claudeResetCreditsToContract(
     );
   const next = live.find((grant) => grant.id === parsed.value.next_grant_id);
   const nextExpiresAt = next?.ends_at ? DateTime.make(next.ends_at) : Option.none();
+  // A grant can hold several resets that share its `ends_at`.
+  const expiries = live
+    .flatMap((grant) =>
+      grant.ends_at ? Array.from({ length: grant.resets_left }, () => grant.ends_at!) : [],
+    )
+    .toSorted((a, b) => Date.parse(a) - Date.parse(b))
+    .flatMap((value) => Option.toArray(Option.map(DateTime.make(value), DateTime.formatIso)));
   return {
     availableCount: next ? live.reduce((sum, grant) => sum + grant.resets_left, 0) : 0,
     ...(Option.isSome(nextExpiresAt)
       ? { nextExpiresAt: DateTime.formatIso(nextExpiresAt.value) }
       : {}),
     ...(next ? { nextCreditId: next.id } : {}),
+    ...(next && expiries.length > 0 ? { expiries } : {}),
   };
 }
 
