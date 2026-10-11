@@ -7,6 +7,8 @@ import {
 import {
   CLI_NPM_DIST_TAGS_URL,
   cliReleaseChannelOf,
+  cliReleaseChecksumsUrl,
+  cliReleasePendingMessage,
   cliReleaseVersionFromDistTags,
 } from "@t3tools/shared/cliRelease";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -49,5 +51,8 @@ export async function findEnvironmentUpdate(currentVersion: string, signal: Abor
   const response = await fetch(CLI_NPM_DIST_TAGS_URL, { signal });
   if (!response.ok) throw new Error(`Could not check releases (${response.status}). Try again.`);
   const version = cliReleaseVersionFromDistTags(await response.json(), channel);
-  return compareSemverVersions(version, currentVersion) > 0 ? version : null;
+  if (compareSemverVersions(version, currentVersion) <= 0) return null;
+  const assets = await fetch(cliReleaseChecksumsUrl(version), { method: "HEAD", signal });
+  if (!assets.ok) throw new Error(cliReleasePendingMessage(version));
+  return version;
 }

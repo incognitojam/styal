@@ -44,9 +44,45 @@ it.effect("resolves each CLI channel with one small npm request", () =>
         version,
       );
     }
-    assert.deepEqual(
-      requests,
-      Array(3).fill("https://registry.npmjs.org/-/package/@styal/cli/dist-tags"),
+    const tagsUrl = "https://registry.npmjs.org/-/package/@styal/cli/dist-tags";
+    const checksumsUrl = (version: string) =>
+      `https://github.com/incognitojam/styal/releases/download/v${version}/SHA256SUMS`;
+    assert.deepEqual(requests, [
+      tagsUrl,
+      checksumsUrl("1.2.3"),
+      tagsUrl,
+      checksumsUrl("1.2.4-nightly.20261011.9"),
+      tagsUrl,
+      checksumsUrl("1.2.4-preview.20261010.2"),
+    ]);
+  }),
+);
+
+it.effect("does not offer a version whose release archives are not published yet", () =>
+  Effect.gen(function* () {
+    const requests: string[] = [];
+    const http = HttpClient.make((request) =>
+      Effect.sync(() => {
+        requests.push(`${request.method} ${request.url}`);
+        return HttpClientResponse.fromWeb(
+          request,
+          request.method === "HEAD"
+            ? new Response(null, { status: 404 })
+            : Response.json({ nightly: "1.2.4-nightly.20261011.9" }),
+        );
+      }),
+    );
+    const error = yield* resolveNewestVersion("nightly", "https://mirror.example/styal").pipe(
+      Effect.provideService(HttpClient.HttpClient, http),
+      Effect.flip,
+    );
+    assert.equal(
+      error.message,
+      "styal 1.2.4-nightly.20261011.9 is still being published. Try again in a few minutes.",
+    );
+    assert.equal(
+      requests[1],
+      "HEAD https://mirror.example/styal/v1.2.4-nightly.20261011.9/SHA256SUMS",
     );
   }),
 );

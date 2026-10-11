@@ -125,13 +125,40 @@ describe("environment release checks", () => {
       "1.0.0-preview.20261011.2",
     ],
     ["1.0.0-nightly.20261011.10", { nightly: "1.0.0-nightly.20261010.9" }, null],
-  ])("checks %s with one request and never offers a downgrade", async (current, tags, expected) => {
-    const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json(tags));
+  ])("checks %s and never offers a downgrade", async (current, tags, expected) => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (url) =>
+        String(url).startsWith("https://registry.npmjs.org/")
+          ? Response.json(tags)
+          : new Response(),
+      );
     vi.stubGlobal("fetch", request);
     expect(await findEnvironmentUpdate(current, signal)).toBe(expected);
-    expect(request).toHaveBeenCalledExactlyOnceWith(
+    expect(request).toHaveBeenNthCalledWith(
+      1,
       "https://registry.npmjs.org/-/package/@styal/cli/dist-tags",
       { signal },
+    );
+    if (expected === null) {
+      expect(request).toHaveBeenCalledTimes(1);
+    } else {
+      expect(request).toHaveBeenNthCalledWith(
+        2,
+        `https://github.com/incognitojam/styal/releases/download/v${expected}/SHA256SUMS`,
+        { method: "HEAD", signal },
+      );
+    }
+  });
+
+  it("does not offer a version whose release archives are not published yet", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ latest: "1.1.0" }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    vi.stubGlobal("fetch", request);
+    await expect(findEnvironmentUpdate("1.0.0", signal)).rejects.toThrow(
+      "styal 1.1.0 is still being published",
     );
   });
 

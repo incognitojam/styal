@@ -30,6 +30,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   ([#10411](https://github.com/pingdotgg/t3code/pull/10411)) as of
   [September 24, 2026](https://github.com/pingdotgg/t3code/tree/b2b43bef73447c483ceae486890cb79f01c369cb).
   [Drive styal from an agent](./drive.md).
+- **Update checks avoid GitHub's anonymous API quota.** `styal update` and mobile environment
+  checks read npm's published version for the host's release channel and reject releases from
+  another channel. T3 Code discovers these releases through GitHub's API as of
+  [revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e);
+  an open pull request ([#17900](https://github.com/pingdotgg/t3code/pull/17900)) moves only the
+  mobile check to GitHub's release pages. [Updating styal](./updating.md).
 
 ## Workspaces and agent sessions
 
@@ -202,12 +208,6 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [Import T3 Code data](./importing-t3-code-data.md).
 
 ## Desktop updates
-
-- **Environment update checks avoid GitHub's anonymous API quota.** Mobile environment checks and
-  CLI channel updates use npm's published channel version and reject releases from another channel.
-  Compared with [T3 Code revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e),
-  which discovers these releases through GitHub's API.
-  [Updating styal](./updating.md).
 
 - **Updates ready for your next launch.** styal downloads updates in the background and installs
   them when you quit. The sidebar shows an icon only when you can restart to update immediately;

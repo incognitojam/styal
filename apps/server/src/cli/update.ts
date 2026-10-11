@@ -11,6 +11,8 @@ import {
   CLI_RELEASE_CHANNELS,
   CLI_NPM_DIST_TAGS_URL,
   cliReleaseChannelOf,
+  cliReleaseChecksumsUrl,
+  cliReleasePendingMessage,
   cliReleaseVersionFromDistTags,
   type CliReleaseChannel,
 } from "@t3tools/shared/cliRelease";
@@ -50,9 +52,12 @@ export class CliUpdateError extends Schema.TaggedError<CliUpdateError>()("CliUpd
 
 const RELEASE_CHECK_TIMEOUT = Duration.seconds(30);
 
-/** Read the channel's npm tag once; missing or mismatched releases fail closed. */
+/**
+ * Read the channel's npm tag once; missing or mismatched releases fail closed,
+ * and so does a version whose release archives are not downloadable yet.
+ */
 export const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(
-  function* (channel: CliReleaseChannel) {
+  function* (channel: CliReleaseChannel, releaseBaseUrl?: string) {
     const httpClient = yield* HttpClient.HttpClient;
     const tags = yield* httpClient.get(CLI_NPM_DIST_TAGS_URL).pipe(
       Effect.flatMap(HttpClientResponse.filterStatusOk),
@@ -61,13 +66,18 @@ export const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(
         () => new CliUpdateError({ reason: "Could not read styal npm release tags." }),
       ),
     );
-    return yield* Effect.try({
+    const version = yield* Effect.try({
       try: () => cliReleaseVersionFromDistTags(tags, channel),
       catch: (cause) =>
         new CliUpdateError({
           reason: cause instanceof Error ? cause.message : "Invalid styal npm release tags.",
         }),
     });
+    yield* httpClient.head(cliReleaseChecksumsUrl(version, releaseBaseUrl)).pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.mapError(() => new CliUpdateError({ reason: cliReleasePendingMessage(version) })),
+    );
+    return version;
   },
   Effect.timeoutOrElse({
     duration: RELEASE_CHECK_TIMEOUT,
@@ -340,7 +350,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   progress.status("Checking for updates...");
   const targetVersion = yield* (
     input.requestedVersion === undefined
-      ? resolveNewestVersion(channel)
+      ? resolveNewestVersion(channel, environment[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined)
       : Effect.succeed(input.requestedVersion)
   ).pipe(Effect.ensuring(Effect.sync(progress.finish)));
   const targetChannel = cliReleaseChannelOf(targetVersion);

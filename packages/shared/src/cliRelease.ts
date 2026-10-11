@@ -68,6 +68,19 @@ export function cliReleaseDownloadBaseUrl(
 }
 
 /**
+ * The checksums asset of a release. npm tags move before the GitHub release
+ * that hosts the archives is published, so update checks confirm this exists
+ * before offering a version.
+ */
+export function cliReleaseChecksumsUrl(version: string, baseUrl?: string): string {
+  return `${cliReleaseDownloadBaseUrl(version, baseUrl)}/${CLI_RELEASE_CHECKSUMS_FILE}`;
+}
+
+export function cliReleasePendingMessage(version: string): string {
+  return `styal ${version} is still being published. Try again in a few minutes.`;
+}
+
+/**
  * Parses the `sha256sum` style checksum file attached to each release.
  * Lines are `<hex>  <file>`; a leading `*` marks binary mode and is ignored.
  */
