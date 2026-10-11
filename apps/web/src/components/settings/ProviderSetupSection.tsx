@@ -52,23 +52,17 @@ export function ProviderSetupSection(props: ProviderSetupSectionProps) {
       aria-label="Antigravity setup"
       className="@container/setup divide-y divide-border/50 text-xs"
     >
-      <SettingsRow
-        className="@max-lg/setup:[&>div:first-child]:flex @max-lg/setup:[&>div:first-child]:items-stretch @max-lg/setup:[&>div:first-child]:gap-3"
-        title="Environment"
-        description="Device that runs this provider."
-        control={
-          <div className="flex min-w-0 flex-col gap-2 sm:items-end">
-            <span className="text-muted-foreground [overflow-wrap:anywhere]">
-              {props.environmentLabel}
-            </span>
-            {!props.enabled && !props.readOnly ? (
-              <Button size="sm" variant="outline" onClick={props.onEnable}>
-                Enable Antigravity
-              </Button>
-            ) : null}
-          </div>
-        }
-      />
+      {!props.enabled && !props.readOnly ? (
+        <SettingsRow
+          title="Disabled"
+          description="Antigravity is off for new threads."
+          control={
+            <Button size="sm" variant="outline" onClick={props.onEnable}>
+              Enable Antigravity
+            </Button>
+          }
+        />
+      ) : null}
       {props.readOnly ? (
         <SettingsRow title="Setup unavailable" description="Provider setup is read-only." />
       ) : props.provider?.setup === undefined ? (
