@@ -781,6 +781,11 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
   return entry.kind === "work" ? (entry.entry.turnId ?? null) : null;
 }
 
+function timelineEntryEndedAt(entry: TimelineEntry): string {
+  if (entry.kind === "message") return entry.message.updatedAt;
+  return entry.kind === "work" ? (entry.entry.endedAt ?? entry.createdAt) : entry.createdAt;
+}
+
 /**
  * A promptless provider restart replaces the native turn without adding a
  * user message. Keep every provider turn since the latest user message in one
@@ -976,30 +981,25 @@ function deriveTurnFolds(input: {
 
     const firstEntry = group.entries[0];
     const firstHiddenEntry = group.entries.find((entry) => hiddenEntryIds.has(entry.id));
-    const lastEntry = group.entries.at(-1);
-    if (!firstEntry || !firstHiddenEntry || !lastEntry) {
+    if (!firstEntry || !firstHiddenEntry) {
       continue;
     }
 
-    const isLatestInterruptedTurn =
-      input.latestTurn !== null &&
-      group.turnIds.has(input.latestTurn.turnId) &&
-      input.latestTurn.state === "interrupted";
-    // A turn cut short by a steer leaves trailing work entries behind its
-    // terminal message — take whichever ended last.
-    const lastEntryEnd =
-      lastEntry.kind === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
+    const latestTurn = input.latestTurn;
+    const latestTurnMatches = latestTurn !== null && group.turnIds.has(latestTurn.turnId);
+    const isLatestInterruptedTurn = latestTurnMatches && latestTurn.state === "interrupted";
+    // Tool rows are ordered by start, so the last row need not finish last.
+    const responseEndedAt = group.entries.reduce(
+      (end, entry) => maxIsoTimestamp(end, timelineEntryEndedAt(entry)) ?? end,
+      (latestTurnMatches ? latestTurn.completedAt : null) ?? firstEntry.createdAt,
+    );
     const elapsedMs =
       group.turnIds.size === 1 &&
-      input.latestTurn?.turnId === turnId &&
-      input.latestTurn.startedAt &&
-      input.latestTurn.completedAt
-        ? computeElapsedMs(input.latestTurn.startedAt, input.latestTurn.completedAt)
-        : computeElapsedMs(
-            group.startBoundary ?? firstEntry.createdAt,
-            maxIsoTimestamp(group.terminalEntry?.message.updatedAt ?? null, lastEntryEnd) ??
-              lastEntryEnd,
-          );
+      latestTurn?.turnId === turnId &&
+      latestTurn.startedAt &&
+      latestTurn.completedAt
+        ? computeElapsedMs(latestTurn.startedAt, latestTurn.completedAt)
+        : computeElapsedMs(group.startBoundary ?? firstEntry.createdAt, responseEndedAt);
     const workedMs =
       elapsedMs !== null && group.turnIds.size > 1
         ? Math.max(
@@ -1008,7 +1008,7 @@ function deriveTurnFolds(input: {
               restartDowntimeMs(group.entries, (entry) => ({
                 turnId: timelineEntryTurnId(entry) ?? turnId,
                 startedAt: entry.createdAt,
-                endedAt: entry.kind === "message" ? entry.message.updatedAt : entry.createdAt,
+                endedAt: timelineEntryEndedAt(entry),
               })),
           )
         : elapsedMs;
@@ -1318,17 +1318,10 @@ export function deriveMessagesTimelineRows(input: {
     activeWorkRow !== null || latestToolFailed ? activeToolEntries.map((entry) => entry.id) : [],
   );
   const appendWorkingRow = () => {
-    const latestUserMessage = input.timelineEntries[lastUserMessageIndex(input.timelineEntries)];
-    const visualResponseStartedAt =
-      activeVisualResponseTurnIds.size > 1 &&
-      latestUserMessage?.kind === "message" &&
-      latestUserMessage.message.role === "user"
-        ? latestUserMessage.message.createdAt
-        : input.activeTurnStartedAt;
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
-      createdAt: visualResponseStartedAt,
+      createdAt: input.activeTurnStartedAt,
     });
   };
   let hasActivityRow = false;

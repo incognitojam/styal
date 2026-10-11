@@ -23,7 +23,13 @@ function toolStartKey(turnId: string | null | undefined, toolCallId: string): st
  * message. Returns the start for a row's turn and tool call id, if earlier
  * than `createdAt`.
  */
-export function makeToolStartLookup(activities: ReadonlyArray<OrchestrationThreadActivity>) {
+export function makeToolStartLookup(
+  activities: ReadonlyArray<
+    Pick<OrchestrationThreadActivity, "kind" | "turnId" | "createdAt"> & {
+      readonly payload?: unknown;
+    }
+  >,
+) {
   const startByKey = new Map<string, string>();
   for (const activity of activities) {
     if (!activity.kind.startsWith("tool.")) continue;
@@ -46,9 +52,15 @@ export function makeToolStartLookup(activities: ReadonlyArray<OrchestrationThrea
     readonly turnId?: string | null | undefined;
     readonly toolCallId?: string | undefined;
     readonly createdAt: string;
+    readonly payload?: unknown;
   }): string | undefined => {
-    if (!entry.toolCallId) return undefined;
-    const startedAt = startByKey.get(toolStartKey(entry.turnId, entry.toolCallId));
+    const payload = record(entry.payload);
+    const toolCallId =
+      entry.toolCallId ??
+      nonEmptyString(payload?.toolCallId) ??
+      nonEmptyString(record(payload?.data)?.toolCallId);
+    if (!toolCallId) return undefined;
+    const startedAt = startByKey.get(toolStartKey(entry.turnId, toolCallId));
     return startedAt !== undefined && startedAt < entry.createdAt ? startedAt : undefined;
   };
 }

@@ -26,6 +26,7 @@ import {
   type CodexFeedbackSubmission,
 } from "@t3tools/client-runtime/state/threads";
 import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
+import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
 import { composerContextSendBlockReason, reidentifyComposerContext } from "../lib/composerContext";
 import { useTurnUsage } from "./use-turn-usage";
@@ -332,11 +333,16 @@ export function useThreadComposerState() {
       return null;
     }
 
-    return deriveActiveWorkStartedAt(
-      selectedThread.latestTurn,
-      selectedThreadSessionActivity,
-      null,
-    );
+    return continuedResponseWorkStartedAt({
+      startedAt: deriveActiveWorkStartedAt(
+        selectedThread.latestTurn,
+        selectedThreadSessionActivity,
+        null,
+      ),
+      latestTurn: selectedThread.latestTurn,
+      messages: selectedThreadDetail?.messages ?? [],
+      activities: selectedThreadDetail?.activities ?? [],
+    });
   }, [selectedThreadDetail, selectedThreadSessionActivity, selectedThreadShell]);
 
   const onSendMessage = useCallback(async () => {

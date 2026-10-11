@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId, TurnId, SERVER_RESTART_CONTINUED_ACTIVITY_KIND } from "@t3tools/contracts";
+import { deriveActiveWorkStartedAt } from "@t3tools/shared/orchestrationTiming";
 
 import {
   commandDetailRepeatsCommand,
+  continuedResponseWorkStartedAt,
   extractCommandOutputText,
   omitRetriedFindingsReports,
   resolveViewedImageAsset,
@@ -17,6 +19,129 @@ import {
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
 } from "./presentation.js";
+
+describe("continuedResponseWorkStartedAt", () => {
+  const original = TurnId.make("original");
+  const continued = TurnId.make("continued");
+  const iso = (minute: number) => `2026-10-11T10:${String(minute).padStart(2, "0")}:00.000Z`;
+  const message = (turnId: TurnId, role: "user" | "assistant", start: number, end = start) => ({
+    turnId,
+    role,
+    createdAt: iso(start),
+    updatedAt: iso(end),
+  });
+  const input = {
+    startedAt: iso(20),
+    latestTurn: { turnId: continued, requestedAt: iso(20), startedAt: iso(20) },
+    messages: [message(original, "user", 0), message(original, "assistant", 1, 10)],
+    activities: [
+      { kind: SERVER_RESTART_CONTINUED_ACTIVITY_KIND, turnId: continued, createdAt: iso(20) },
+    ],
+  };
+
+  it("includes earlier work and excludes the outage before any new provider output", () => {
+    const startedAt = continuedResponseWorkStartedAt(input);
+    // At 10:25, ten minutes of original work plus five resumed minutes.
+    expect(Date.parse(iso(25)) - Date.parse(startedAt!)).toBe(15 * 60_000);
+  });
+
+  it("keeps the same clock after another restart and after loading persisted history", () => {
+    const third = TurnId.make("third");
+    const restarted = {
+      startedAt: iso(40),
+      latestTurn: { turnId: third, requestedAt: iso(40), startedAt: iso(40) },
+      messages: [...input.messages, message(continued, "assistant", 21, 30)],
+      activities: [
+        ...input.activities,
+        { kind: SERVER_RESTART_CONTINUED_ACTIVITY_KIND, turnId: third, createdAt: iso(40) },
+      ],
+    };
+    const startedAt = continuedResponseWorkStartedAt(structuredClone(restarted));
+    expect(Date.parse(iso(45)) - Date.parse(startedAt!)).toBe(25 * 60_000);
+  });
+
+  it("uses the latest activity boundary when work outlasted the assistant message", () => {
+    expect(
+      continuedResponseWorkStartedAt({
+        ...input,
+        activities: [
+          ...input.activities,
+          { kind: "tool.completed", turnId: original, createdAt: iso(15) },
+        ],
+      }),
+    ).toBe(iso(5));
+  });
+
+  it("does not carry earlier work into a new user response", () => {
+    expect(
+      continuedResponseWorkStartedAt({
+        ...input,
+        messages: [...input.messages, message(continued, "user", 19)],
+      }),
+    ).toBe(input.startedAt);
+  });
+
+  it("does not reuse a prompt boundary already consumed by an earlier response", () => {
+    const background = TurnId.make("background");
+    const startedAt = continuedResponseWorkStartedAt({
+      ...input,
+      messages: [
+        message(original, "user", 0),
+        message(original, "assistant", 1, 2),
+        message(background, "assistant", 10, 15),
+      ],
+    });
+    // Five minutes of background work plus five resumed minutes, without
+    // carrying the earlier response or the idle interval into this response.
+    expect(Date.parse(iso(25)) - Date.parse(startedAt!)).toBe(10 * 60_000);
+  });
+
+  it("does not merge background-work continuations", () => {
+    expect(
+      continuedResponseWorkStartedAt({
+        ...input,
+        activities: [{ ...input.activities[0]!, kind: "server-restart.background-continued" }],
+      }),
+    ).toBe(input.startedAt);
+  });
+
+  it("leaves ordinary turns, local sends, and stopped clocks unchanged", () => {
+    expect(continuedResponseWorkStartedAt({ ...input, activities: [] })).toBe(input.startedAt);
+    expect(continuedResponseWorkStartedAt({ ...input, startedAt: iso(35) })).toBe(iso(35));
+    expect(continuedResponseWorkStartedAt({ ...input, startedAt: null })).toBeNull();
+    expect(continuedResponseWorkStartedAt({ ...input, latestTurn: null })).toBe(input.startedAt);
+  });
+
+  it("keeps the current clock when only the continuation is available", () => {
+    expect(continuedResponseWorkStartedAt({ ...input, messages: [] })).toBe(input.startedAt);
+  });
+
+  it("stops the continued clock on completion and starts fresh for the next prompt", () => {
+    const settled = { ...input.latestTurn, completedAt: iso(25) };
+    expect(
+      continuedResponseWorkStartedAt({
+        ...input,
+        latestTurn: settled,
+        startedAt: deriveActiveWorkStartedAt(settled, { orchestrationStatus: "ready" }, null),
+      }),
+    ).toBeNull();
+
+    const next = {
+      turnId: TurnId.make("next"),
+      requestedAt: iso(30),
+      startedAt: null,
+      completedAt: null,
+    };
+    expect(
+      continuedResponseWorkStartedAt({
+        ...input,
+        latestTurn: next,
+        messages: [...input.messages, message(next.turnId, "user", 30)],
+        startedAt: deriveActiveWorkStartedAt(next, { orchestrationStatus: "starting" }, null),
+      }),
+    ).toBe(iso(30));
+  });
+});
 
 describe("workEntryIndicatesToolFailure", () => {
   const base = {

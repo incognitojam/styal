@@ -7,6 +7,7 @@ import {
   MessageId,
   ProjectId,
   ProviderInstanceId,
+  type OrchestrationThreadActivity,
   ThreadId,
   TurnId,
   type OrchestrationThread,
@@ -39,10 +40,217 @@ import {
   createMessageAttachmentPreviewProjector,
   deriveTimelineEntries,
   deriveTimelineEntriesWithState,
+  deriveWorkLogEntries,
   type WorkLogEntry,
   type TimelineEntriesProjection,
 } from "../../session-logic";
 import { isImageAttachment, type ChatMessage, type TurnDiffSummary } from "../../types";
+import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
+
+describe("continued response timing", () => {
+  const original = TurnId.make("original");
+  const continued = TurnId.make("continued");
+  const iso = (minute: number) => `2026-10-11T10:${String(minute).padStart(2, "0")}:00.000Z`;
+  const message = (
+    id: string,
+    turnId: TurnId | null,
+    role: ChatMessage["role"],
+    start: number,
+    end = start,
+  ): ChatMessage => ({
+    id: MessageId.make(id),
+    turnId,
+    role,
+    text: "Synthetic timer fixture",
+    streaming: false,
+    createdAt: iso(start),
+    updatedAt: iso(end),
+  });
+  const activity = (
+    id: string,
+    turnId: TurnId,
+    kind: string,
+    minute: number,
+    payload = {},
+  ): OrchestrationThreadActivity => ({
+    id: EventId.make(id),
+    turnId,
+    kind,
+    createdAt: iso(minute),
+    tone: "tool",
+    summary: "Synthetic timer fixture",
+    payload,
+  });
+  const latestTurn = {
+    turnId: continued,
+    state: "running" as const,
+    requestedAt: iso(20),
+    startedAt: iso(20),
+    completedAt: null,
+    assistantMessageId: MessageId.make("answer"),
+  };
+  const compare = (
+    messages: ChatMessage[],
+    activities: OrchestrationThreadActivity[],
+    state: "completed" | "interrupted" | null = "completed",
+  ) => {
+    const startedAt = continuedResponseWorkStartedAt({
+      startedAt: iso(20),
+      latestTurn,
+      messages,
+      activities,
+    });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: deriveTimelineEntries(messages, [], deriveWorkLogEntries(activities)),
+      latestTurn: state === null ? null : { ...latestTurn, state, completedAt: iso(25) },
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    return { liveMinutes: (Date.parse(iso(25)) - Date.parse(startedAt!)) / 60_000, rows };
+  };
+
+  it.each([
+    "trailing-tool",
+    "overlapping-tools",
+    "later-message",
+    "quiet-tail",
+    "historical",
+  ] as const)("retains the final duration when a resumed response settles with %s", (layout) => {
+    const result = compare(
+      [
+        message("user", null, "user", 0),
+        message("old", original, "assistant", 1, 10),
+        message("resumed", continued, "assistant", 21),
+        ...(layout === "later-message" || layout === "historical"
+          ? [message("progress", continued, "assistant", 24)]
+          : []),
+      ],
+      [
+        activity("restart", continued, "server-restart.continued", 20),
+        activity("start", continued, "tool.started", 22, {
+          toolCallId: "resumed-tool",
+          status: "inProgress",
+        }),
+        activity("end", continued, "tool.completed", layout === "quiet-tail" ? 23 : 25, {
+          toolCallId: "resumed-tool",
+          status: "stopped",
+        }),
+        ...(layout === "overlapping-tools" || layout === "historical"
+          ? [
+              activity("other-end", continued, "tool.completed", 24, {
+                toolCallId: "other-tool",
+                status: "completed",
+                startedAt: iso(23),
+              }),
+            ]
+          : []),
+      ],
+      layout === "historical" ? null : "interrupted",
+    );
+    expect(result.liveMinutes).toBe(15);
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "turn-fold",
+          label: layout === "historical" ? "Worked for 15m" : "You stopped after 15m",
+        }),
+      ]),
+    );
+  });
+
+  it.each(["lifecycle", "snapshot", "overlapping"] as const)(
+    "keeps tool completion time after %s rows are moved to their start",
+    (source) => {
+      const messages = [
+        message("user", null, "user", 0),
+        message("old", original, "assistant", 1, 2),
+        message("answer", continued, "assistant", 25),
+      ];
+      const activities = [
+        ...(source !== "snapshot"
+          ? [
+              activity("start", original, "tool.started", 3, {
+                toolCallId: "tool",
+                status: "inProgress",
+              }),
+              activity("update", original, "tool.updated", 4, {
+                toolCallId: "tool",
+                status: "inProgress",
+              }),
+            ]
+          : []),
+        activity("end", original, "tool.completed", 10, {
+          toolCallId: "tool",
+          status: "completed",
+          ...(source === "snapshot" ? { startedAt: iso(3) } : {}),
+        }),
+        ...(source === "overlapping"
+          ? [
+              activity("other-end", original, "tool.completed", 5, {
+                toolCallId: "other-tool",
+                status: "completed",
+                startedAt: iso(4),
+              }),
+            ]
+          : []),
+        activity("restart", continued, "server-restart.continued", 20),
+      ];
+      const result = compare(messages, activities);
+      expect(result.liveMinutes).toBe(15);
+      expect(result.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "turn-fold", label: "Worked for 15m" }),
+        ]),
+      );
+    },
+  );
+
+  it("does not reuse an earlier prompt after a separate background response restarts", () => {
+    const background = TurnId.make("background");
+    const result = compare(
+      [
+        message("user", null, "user", 0),
+        message("old", original, "assistant", 1, 2),
+        message("wake", background, "assistant", 10, 15),
+        message("answer", continued, "assistant", 25),
+      ],
+      [activity("restart", continued, "server-restart.continued", 20)],
+    );
+    expect(result.liveMinutes).toBe(10);
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "turn-fold", label: "Worked for 10m" }),
+      ]),
+    );
+  });
+
+  it("uses a retained tool start when a separate response has no assistant text before restart", () => {
+    const background = TurnId.make("background");
+    const result = compare(
+      [
+        message("user", null, "user", 0),
+        message("old", original, "assistant", 1, 2),
+        message("answer", continued, "assistant", 25),
+      ],
+      [
+        activity("tool", background, "tool.completed", 10, {
+          toolCallId: "background-tool",
+          status: "completed",
+          startedAt: iso(3),
+        }),
+        activity("restart", continued, "server-restart.continued", 20),
+      ],
+    );
+    expect(result.liveMinutes).toBe(12);
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "turn-fold", label: "Worked for 12m" }),
+      ]),
+    );
+  });
+});
 
 describe("streaming row projection", () => {
   function fixture(text = "") {
@@ -2990,7 +3198,7 @@ describe("deriveMessagesTimelineRows", () => {
         completedAt: null,
       },
       isWorking: true,
-      activeTurnStartedAt: "2026-01-01T00:01:00Z",
+      activeTurnStartedAt: "2026-01-01T00:00:40Z",
       turnDiffSummaries: [],
       supportsConversationRollback: false,
     });
@@ -3001,7 +3209,7 @@ describe("deriveMessagesTimelineRows", () => {
       rows.findIndex((row) => row.id === "old-work-entry"),
     );
     expect(rows.find((row) => row.id === "working-indicator-row")).toMatchObject({
-      createdAt: "2026-01-01T00:00:00Z",
+      createdAt: "2026-01-01T00:00:40Z",
     });
     expect(rows.find((row) => row.id === "old-commentary-entry")).toMatchObject({
       showAssistantMeta: false,

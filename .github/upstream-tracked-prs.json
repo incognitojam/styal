@@ -45,6 +45,10 @@
       "reason": "Replaces #13914, which upstream closed after the fork imported it early from its unmerged commits: puts keyboard focus back in the app after an agent click in a preview tab. Same host-side approach; it also restores focus when the click fails and hands focus between overlapping clicks. When the queue reaches it, reconcile the #13914 import with it and take upstream's version. Known gap from that import to recheck then: a person clicking into the page during an agent click gets focus moved back to the composer, because the interruption check reads an error tag that desktop IPC does not carry."
     },
     {
+      "pr": 15029,
+      "reason": "Working timers retain the original work start across background wakes and restart continuations in orchestration V2. Wait for normal intake with V2; the current fork's V1 conversation timer combines restart-note responses and excludes outage gaps (ledger server-restart-continuation-note). Preserve those gaps and verify live/completed duration continuity when replacing its client calculation with the V2 work-start field."
+    },
+    {
       "pr": 15057,
       "reason": "Agents can watch a pull request and are woken when checks fail, required checks pass, someone else comments or reviews, or the branch conflicts. Covers fork #191 (autofix CI and address PR reviews). Waiting for intake; an early import conflicts with orchestration V2 and needs earlier pending PRs. Its follow-ups land after it."
     },

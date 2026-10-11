@@ -1,4 +1,5 @@
 import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
@@ -2719,6 +2720,234 @@ describe("buildThreadFeed", () => {
       );
       expect(ids).toEqual(
         expect.arrayContaining(["turn-fold:turn-1", "progress", "turn-fold:turn-2"]),
+      );
+    });
+
+    const iso = (minute: number) => `2026-10-11T10:${String(minute).padStart(2, "0")}:00.000Z`;
+    const compare = (
+      messages: OrchestrationThread["messages"],
+      activities: OrchestrationThreadActivity[],
+      state: "completed" | "interrupted" | null = "completed",
+    ) => {
+      const latestTurn = {
+        turnId: continuedTurnId,
+        state: "running" as const,
+        requestedAt: iso(20),
+        startedAt: iso(20),
+        completedAt: null,
+        assistantMessageId: MessageId.make("answer"),
+      };
+      const startedAt = continuedResponseWorkStartedAt({
+        startedAt: iso(20),
+        latestTurn,
+        messages,
+        activities,
+      });
+      const thread = makeThread({
+        id: ThreadId.make("timer-thread"),
+        projectId: ProjectId.make("timer-project"),
+        title: "Synthetic timer fixture",
+        latestTurn: state === null ? null : { ...latestTurn, state, completedAt: iso(25) },
+        messages,
+        activities,
+      });
+      const rows = deriveThreadFeedPresentation(
+        buildThreadFeed(thread),
+        thread.latestTurn,
+        new Set(),
+      );
+      return { liveMinutes: (Date.parse(iso(25)) - Date.parse(startedAt!)) / 60_000, rows };
+    };
+
+    it.each([
+      "trailing-tool",
+      "overlapping-tools",
+      "later-message",
+      "quiet-tail",
+      "historical",
+    ] as const)("retains the final duration when a resumed response settles with %s", (layout) => {
+      const old = message("old", "assistant", firstTurnId, iso(1));
+      const activity = (id: string, kind: string, minute: number, payload = {}) =>
+        makeActivity({
+          id: EventId.make(id),
+          turnId: continuedTurnId,
+          kind,
+          createdAt: iso(minute),
+          tone: "tool",
+          summary: "Synthetic timer fixture",
+          payload,
+        });
+      const result = compare(
+        [
+          message("user", "user", null, iso(0)),
+          { ...old, updatedAt: iso(10) },
+          message("resumed", "assistant", continuedTurnId, iso(21)),
+          ...(layout === "later-message" || layout === "historical"
+            ? [message("progress", "assistant", continuedTurnId, iso(24))]
+            : []),
+        ],
+        [
+          activity("restart", "server-restart.continued", 20),
+          activity("start", "tool.started", 22, {
+            toolCallId: "resumed-tool",
+            status: "inProgress",
+          }),
+          activity("end", "tool.completed", layout === "quiet-tail" ? 23 : 25, {
+            toolCallId: "resumed-tool",
+            status: "stopped",
+          }),
+          ...(layout === "overlapping-tools" || layout === "historical"
+            ? [
+                activity("other-end", "tool.completed", 24, {
+                  toolCallId: "other-tool",
+                  status: "completed",
+                  startedAt: iso(23),
+                }),
+              ]
+            : []),
+        ],
+        layout === "historical" ? null : "interrupted",
+      );
+      expect(result.liveMinutes).toBe(15);
+      expect(result.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "turn-fold",
+            label: layout === "historical" ? "Worked for 15m" : "You stopped after 15m",
+          }),
+        ]),
+      );
+    });
+
+    it.each(["lifecycle", "snapshot", "overlapping"] as const)(
+      "keeps tool completion time after %s rows are moved to their start",
+      (source) => {
+        const old = message("old", "assistant", firstTurnId, iso(1));
+        const messages = [
+          message("user", "user", null, iso(0)),
+          { ...old, updatedAt: iso(2) },
+          message("answer", "assistant", continuedTurnId, iso(25)),
+        ];
+        const activity = (id: string, kind: string, minute: number, payload = {}) =>
+          makeActivity({
+            id: EventId.make(id),
+            turnId: firstTurnId,
+            kind,
+            createdAt: iso(minute),
+            tone: "tool",
+            summary: "Synthetic timer fixture",
+            payload,
+          });
+        const activities = [
+          ...(source !== "snapshot"
+            ? [
+                activity("start", "tool.started", 3, { toolCallId: "tool", status: "inProgress" }),
+                activity("update", "tool.updated", 4, { toolCallId: "tool", status: "inProgress" }),
+              ]
+            : []),
+          activity("end", "tool.completed", 10, {
+            toolCallId: "tool",
+            status: "completed",
+            ...(source === "snapshot" ? { startedAt: iso(3) } : {}),
+          }),
+          ...(source === "overlapping"
+            ? [
+                activity("other-end", "tool.completed", 5, {
+                  toolCallId: "other-tool",
+                  status: "completed",
+                  startedAt: iso(4),
+                }),
+              ]
+            : []),
+          makeActivity({
+            id: EventId.make("restart"),
+            turnId: continuedTurnId,
+            kind: "server-restart.continued",
+            createdAt: iso(20),
+            summary: "Continued after server restart",
+          }),
+        ];
+        const result = compare(messages, activities);
+        expect(result.liveMinutes).toBe(15);
+        expect(result.rows).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ type: "turn-fold", label: "Worked for 15m" }),
+          ]),
+        );
+      },
+    );
+
+    it("does not reuse an earlier prompt after a separate background response restarts", () => {
+      const background = TurnId.make("background");
+      const old = message("old", "assistant", firstTurnId, iso(1));
+      const wake = message("wake", "assistant", background, iso(10));
+      const result = compare(
+        [
+          message("user", "user", null, iso(0)),
+          { ...old, updatedAt: iso(2) },
+          { ...wake, updatedAt: iso(15) },
+          message("answer", "assistant", continuedTurnId, iso(25)),
+        ],
+        [
+          makeActivity({
+            id: EventId.make("background-tool"),
+            turnId: background,
+            kind: "tool.completed",
+            createdAt: iso(12),
+            summary: "Read files",
+            tone: "tool",
+            payload: { toolCallId: "background-tool", status: "completed" },
+          }),
+          makeActivity({
+            id: EventId.make("restart"),
+            turnId: continuedTurnId,
+            kind: "server-restart.continued",
+            createdAt: iso(20),
+            summary: "Continued after server restart",
+          }),
+        ],
+      );
+      expect(result.liveMinutes).toBe(10);
+      expect(result.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "turn-fold", label: "Worked for 10m" }),
+        ]),
+      );
+    });
+
+    it("uses a retained tool start when a separate response has no assistant text before restart", () => {
+      const background = TurnId.make("background");
+      const old = message("old", "assistant", firstTurnId, iso(1));
+      const result = compare(
+        [
+          message("user", "user", null, iso(0)),
+          { ...old, updatedAt: iso(2) },
+          message("answer", "assistant", continuedTurnId, iso(25)),
+        ],
+        [
+          makeActivity({
+            id: EventId.make("tool"),
+            turnId: background,
+            kind: "tool.completed",
+            createdAt: iso(10),
+            summary: "Synthetic verification",
+            tone: "tool",
+            payload: { toolCallId: "background-tool", status: "completed", startedAt: iso(3) },
+          }),
+          makeActivity({
+            id: EventId.make("restart"),
+            turnId: continuedTurnId,
+            kind: "server-restart.continued",
+            createdAt: iso(20),
+            summary: "Continued after server restart",
+          }),
+        ],
+      );
+      expect(result.liveMinutes).toBe(12);
+      expect(result.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "turn-fold", label: "Worked for 12m" }),
+        ]),
       );
     });
   });
