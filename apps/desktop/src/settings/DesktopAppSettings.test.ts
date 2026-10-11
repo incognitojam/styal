@@ -24,6 +24,7 @@ const DesktopSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  mainWindowFullscreen: Schema.optionalKey(Schema.Boolean),
   mainWindowMaximized: Schema.optionalKey(Schema.Boolean),
   serverExposureMode: Schema.optionalKey(Schema.Literals(["local-only", "network-accessible"])),
   tailscaleServeEnabled: Schema.optionalKey(Schema.Boolean),
@@ -126,6 +127,7 @@ describe("DesktopSettings", () => {
         linuxPasswordStore: "auto",
         localEnvironmentEnabled: true,
         mainWindowBounds: null,
+        mainWindowFullscreen: false,
         mainWindowMaximized: false,
         serverExposureMode: "local-only",
         tailscaleServeEnabled: false,
@@ -156,6 +158,7 @@ describe("DesktopSettings", () => {
           linuxPasswordStore: "gnome-libsecret",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
+          mainWindowFullscreen: false,
           mainWindowMaximized: false,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
@@ -264,6 +267,7 @@ describe("DesktopSettings", () => {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
+          mainWindowFullscreen: false,
           mainWindowMaximized: false,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
@@ -284,12 +288,14 @@ describe("DesktopSettings", () => {
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
         yield* writeSettingsPatch({
           mainWindowBounds: { x: 10.5, y: 20, width: 839, height: 620 },
+          mainWindowFullscreen: true,
           mainWindowMaximized: true,
           serverExposureMode: "network-accessible",
         });
 
         const loaded = yield* settings.load;
         assert.isNull(loaded.mainWindowBounds);
+        assert.isFalse(loaded.mainWindowFullscreen);
         assert.isFalse(loaded.mainWindowMaximized);
         assert.equal(loaded.serverExposureMode, "network-accessible");
       }),
@@ -321,6 +327,7 @@ describe("DesktopSettings", () => {
             linuxPasswordStore: "auto",
             localEnvironmentEnabled: true,
             mainWindowBounds: null,
+            mainWindowFullscreen: false,
             mainWindowMaximized: false,
             serverExposureMode: "network-accessible",
             tailscaleServeEnabled: true,
@@ -342,7 +349,11 @@ describe("DesktopSettings", () => {
         const fileSystem = yield* FileSystem.FileSystem;
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
 
-        yield* settings.setMainWindowBounds({ x: -1200, y: 40, width: 1440, height: 960 }, true);
+        yield* settings.setMainWindowBounds(
+          { x: -1200, y: 40, width: 1440, height: 960 },
+          true,
+          true,
+        );
         yield* settings.setServerExposureMode("network-accessible");
 
         const persisted = yield* decodeDesktopSettingsPatch(
@@ -350,9 +361,28 @@ describe("DesktopSettings", () => {
         );
         assert.deepEqual(persisted, {
           mainWindowBounds: { x: -1200, y: 40, width: 1440, height: 960 },
+          mainWindowFullscreen: true,
           mainWindowMaximized: true,
           serverExposureMode: "network-accessible",
         } satisfies typeof DesktopSettingsPatch.Type);
+      }),
+    ),
+  );
+
+  it.effect("persists fullscreen-only changes and clears the saved flag on exit", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        const bounds = { x: 120, y: 80, width: 1320, height: 880 };
+        yield* settings.setMainWindowBounds(bounds, false, false);
+        assert.isTrue((yield* settings.setMainWindowBounds(bounds, false, true)).changed);
+        assert.isTrue((yield* settings.load).mainWindowFullscreen);
+        assert.isFalse((yield* settings.setMainWindowBounds(bounds, false, true)).changed);
+        assert.isTrue((yield* settings.setMainWindowBounds(bounds, false, false)).changed);
+        const loaded = yield* settings.load;
+        assert.isFalse(loaded.mainWindowFullscreen);
+        assert.deepEqual(loaded.mainWindowBounds, bounds);
+        assert.isFalse(loaded.mainWindowMaximized);
       }),
     ),
   );
@@ -370,6 +400,7 @@ describe("DesktopSettings", () => {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
+          mainWindowFullscreen: false,
           mainWindowMaximized: false,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
@@ -399,6 +430,7 @@ describe("DesktopSettings", () => {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
+          mainWindowFullscreen: false,
           mainWindowMaximized: false,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
@@ -427,6 +459,7 @@ describe("DesktopSettings", () => {
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
+          mainWindowFullscreen: false,
           mainWindowMaximized: false,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: true,

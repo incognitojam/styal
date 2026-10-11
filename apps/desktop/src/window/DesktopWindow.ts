@@ -426,6 +426,8 @@ export const make = Effect.gen(function* () {
           }).pipe(Effect.as<readonly Electron.Rectangle[]>([]));
     const initialBounds = resolveInitialMainWindowBounds(persistedBounds, displayBounds);
     const restoredPersistedBounds = persistedBounds !== null && initialBounds === persistedBounds;
+    const restoreFullscreen =
+      persistedSettings.mainWindowFullscreen && environment.platform === "darwin";
     if (persistedBounds !== null && initialBounds === DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE) {
       yield* logWindowWarning("saved main window bounds could not be restored; using defaults");
     }
@@ -434,6 +436,7 @@ export const make = Effect.gen(function* () {
       minWidth: 840,
       minHeight: 620,
       show: false,
+      ...(restoreFullscreen ? { fullscreen: true } : {}),
       autoHideMenuBar: true,
       ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
       backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
@@ -460,6 +463,8 @@ export const make = Effect.gen(function* () {
     }
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
+    let fullscreenRestorePending = restoreFullscreen;
+    let quitWindowConcealed = false;
     let boundsPersistenceEnabled = persistedBounds === null || restoredPersistedBounds;
     const readPersistableBounds = (): DesktopAppSettings.DesktopWindowBounds | null => {
       if (window.isDestroyed()) {
@@ -477,35 +482,56 @@ export const make = Effect.gen(function* () {
       });
     };
     const fallbackWindowBounds = boundsPersistenceEnabled ? null : readPersistableBounds();
+    const fallbackWindowFullscreen = persistedSettings.mainWindowFullscreen;
     const fallbackWindowMaximized = persistedSettings.mainWindowMaximized;
+    // Fullscreen restoration skips maximize(), so retain the normal window's zoom state.
+    let lastWindowMaximized = persistedSettings.mainWindowMaximized;
+    const readPersistableMaximized = () =>
+      environment.platform === "darwin" && window.isFullScreen()
+        ? lastWindowMaximized
+        : window.isMaximized();
     const persistCurrentBounds = (): Fiber.Fiber<void, never> | undefined => {
-      if (!boundsPersistenceEnabled) {
+      if (!boundsPersistenceEnabled || fullscreenRestorePending || quitWindowConcealed) {
         return pendingBoundsPersistFiber;
       }
       const bounds = readPersistableBounds();
       if (bounds === null) {
         return pendingBoundsPersistFiber;
       }
+      lastWindowMaximized = readPersistableMaximized();
       pendingBoundsPersistFiber = runFork(
-        desktopSettings.setMainWindowBounds(bounds, window.isMaximized()).pipe(
-          Effect.asVoid,
-          Effect.catch((error) =>
-            logWindowWarning("failed to persist main window bounds", {
-              message: error.message,
-            }),
+        desktopSettings
+          .setMainWindowBounds(
+            bounds,
+            lastWindowMaximized,
+            environment.platform === "darwin" && window.isFullScreen(),
+          )
+          .pipe(
+            Effect.asVoid,
+            Effect.catch((error) =>
+              logWindowWarning("failed to persist main window bounds", {
+                message: error.message,
+              }),
+            ),
           ),
-        ),
       );
       return pendingBoundsPersistFiber;
     };
     const scheduleBoundsPersist = () => {
+      // Native startup transitions do not replace the saved normal window bounds.
+      if (fullscreenRestorePending || quitWindowConcealed) {
+        return;
+      }
+      lastWindowMaximized = readPersistableMaximized();
       if (!boundsPersistenceEnabled) {
         const currentBounds = readPersistableBounds();
         if (
           currentBounds === null ||
           (fallbackWindowBounds !== null &&
             windowBoundsEqual(currentBounds, fallbackWindowBounds) &&
-            window.isMaximized() === fallbackWindowMaximized)
+            readPersistableMaximized() === fallbackWindowMaximized &&
+            (environment.platform !== "darwin" ||
+              window.isFullScreen() === fallbackWindowFullscreen))
         ) {
           return;
         }
@@ -684,7 +710,13 @@ export const make = Effect.gen(function* () {
       },
       // Keep the transparent window focused until the physical shortcut is
       // released so its remaining repeats cannot reach the next app.
-      concealWindow: () => concealPendingQuitWindow(window),
+      concealWindow: () => {
+        // Preserve the visible window state before quit concealment leaves fullscreen.
+        clearBoundsPersist();
+        void persistCurrentBounds();
+        quitWindowConcealed = true;
+        concealPendingQuitWindow(window);
+      },
       quit: () => {
         void runPromise(electronApp.quit);
       },
@@ -734,11 +766,15 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "darwin") {
       window.on("enter-full-screen", () => {
+        fullscreenRestorePending = false;
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
+        scheduleBoundsPersist();
       });
       window.on("leave-full-screen", () => {
+        fullscreenRestorePending = false;
         syncMacosWindowButtons(window);
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
+        scheduleBoundsPersist();
       });
     }
 
@@ -877,7 +913,7 @@ export const make = Effect.gen(function* () {
       }
       // Reveal the real window, then close the connecting splash (if any) so the
       // two don't overlap and there's no blank gap between them.
-      if (persistedSettings.mainWindowMaximized) {
+      if (!restoreFullscreen && persistedSettings.mainWindowMaximized) {
         window.maximize();
       }
       void runPromise(Effect.andThen(electronWindow.reveal(window), dismissConnectingSplash));
