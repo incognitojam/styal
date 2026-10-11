@@ -31,6 +31,8 @@ import {
   type DeviceShutdownInput,
   type DeviceSummary,
   type SshDeviceHostConfig,
+  type EnvironmentDeviceHostConfig,
+  type ServerSettings as ServerSettingsValue,
   type DeviceHostSummary,
   LOCAL_DEVICE_HOST_ID,
   type ThreadId,
@@ -65,6 +67,7 @@ import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
+import * as EnvironmentDeviceHost from "./EnvironmentDeviceHost.ts";
 import * as Exit from "effect/Exit";
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
 
@@ -126,6 +129,7 @@ export class DeviceService extends Context.Service<
     ) => Effect.Effect<DeviceServiceState, DeviceError>;
     /** Refreshes devices only after device support has been enabled. */
     readonly list: Effect.Effect<DeviceServiceState, DeviceError>;
+    readonly listHost: (hostId: DeviceHostId) => Effect.Effect<DeviceServiceState, DeviceError>;
     readonly updateTool: (tool: "hub" | "agent") => Effect.Effect<DeviceServiceState, DeviceError>;
     readonly inspect: Effect.Effect<DeviceServiceState>;
     readonly retryHost: (hostId: DeviceHostId) => Effect.Effect<DeviceServiceState, DeviceError>;
@@ -206,6 +210,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   let publishedHosts = new Map(hosts);
   const stateRef = yield* SynchronizedRef.make<ServiceState>({
     state: {
+      supportsEnvironmentHosts: true,
       supportsHostRetry: true,
       supportsToolUpdate: installTool !== undefined,
       supportsToolInspection: true,
@@ -378,6 +383,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     );
 
   const fetchDevices = Effect.fn("DeviceService.fetchDevices")(function* (ready: DeviceReadiness) {
+    if (ready.remote) {
+      const info = yield* ready.remote.list;
+      return { devices: info.devices, externalSessions: info.sessions, detail: undefined };
+    }
     const list = yield* hubJson(
       HttpClientRequest.get(`${ready.hub.origin}/api/devices`),
       HubDeviceList,
@@ -421,12 +430,16 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         }
       }
     }
-    return { devices, detail: list.errors?.map((error) => error.message).join("\n") || undefined };
+    return {
+      devices,
+      externalSessions: [],
+      detail: list.errors?.map((error) => error.message).join("\n") || undefined,
+    };
   });
 
   const refresh = Effect.fn("DeviceService.refresh")(function* (ready: DeviceReadiness) {
     const host = hosts.get(ready.hostId);
-    const { devices, detail } = yield* fetchDevices(ready);
+    const { devices, detail, externalSessions } = yield* fetchDevices(ready);
     const hostSummaries = yield* Effect.forEach(hosts.values(), (host) => host.summary);
     return yield* lifecycleLock.withPermit(
       Effect.gen(function* () {
@@ -439,6 +452,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           devices: [
             ...state.devices.filter((device) => device.hostId !== ready.hostId),
             ...devices,
+          ],
+          externalSessions: [
+            ...(state.externalSessions ?? []).filter((session) => session.hostId !== ready.hostId),
+            ...externalSessions,
           ],
           hostStatuses: {
             ...state.hostStatuses,
@@ -654,7 +671,13 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     if (!device) {
       return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: input.deviceId });
     }
-    if (!device.booted && input.boot !== false) {
+    if (ready.remote) {
+      const opened = yield* ready.remote.open(input);
+      state = yield* refresh(ready);
+      device = findDevice(state, host.id, opened.deviceId);
+      if (!device)
+        return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: opened.deviceId });
+    } else if (!device.booted && input.boot !== false) {
       const booting = { ...device, threadId: input.threadId };
       yield* publish((current) => ({
         ...current,
@@ -765,19 +788,21 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     // across a reboot. serve-sim runs simctl bare, though, so a simulator that is
     // already off fails there. Accept that failure only when the hub confirms
     // the simulator is off; a failure on a running one still surfaces.
-    yield* platform === "ios"
-      ? postShutdown(`${vendorPrefix("ios")}/grid/api/shutdown`, { udid: deviceId }).pipe(
-          Effect.catch((cause) =>
-            fetchDevices(ready).pipe(
-              Effect.flatMap(({ devices }) =>
-                devices.find((device) => device.id === deviceId)?.booted === false
-                  ? Effect.logInfo("iOS simulator was already shut down", { deviceId })
-                  : Effect.fail(cause),
+    if (ready.remote) yield* ready.remote.shutdown({ deviceId, platform });
+    else
+      yield* platform === "ios"
+        ? postShutdown(`${vendorPrefix("ios")}/grid/api/shutdown`, { udid: deviceId }).pipe(
+            Effect.catch((cause) =>
+              fetchDevices(ready).pipe(
+                Effect.flatMap(({ devices }) =>
+                  devices.find((device) => device.id === deviceId)?.booted === false
+                    ? Effect.logInfo("iOS simulator was already shut down", { deviceId })
+                    : Effect.fail(cause),
+                ),
               ),
             ),
-          ),
-        )
-      : postShutdown("/api/devices/shutdown", { platform, id: deviceId });
+          )
+        : postShutdown("/api/devices/shutdown", { platform, id: deviceId });
     yield* publish((state) => ({
       ...state,
       devices: state.devices.map((device) =>
@@ -808,6 +833,16 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           (input.deviceId === undefined || session.deviceId === input.deviceId),
       );
       if (closing.length === 0) return;
+      yield* Effect.forEach(
+        closing,
+        (session) =>
+          Effect.gen(function* () {
+            const ready = yield* currentReadiness(session.hostId);
+            if (ready?.remote)
+              yield* ready.remote.close({ threadId: input.threadId, deviceId: session.deviceId });
+          }),
+        { discard: true },
+      );
       yield* publish((current) => ({
         ...current,
         sessions: current.sessions.filter((session) => !closing.includes(session)),
@@ -839,6 +874,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const screenshot: DeviceService["Service"]["screenshot"] = Effect.fn("DeviceService.screenshot")(
     function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
+      if (ready.remote) return yield* ready.remote.screenshot(input);
       const url = `${ready.hub.origin}${vendorPrefix(device.platform)}/api/screenshot?device=${encodeURIComponent(device.id)}`;
       const png = yield* httpClient.execute(HttpClientRequest.post(url)).pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),
@@ -875,6 +911,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const detail: DeviceService["Service"]["detail"] = Effect.fn("DeviceService.detail")(
     function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
+      if (ready.remote) return { ...(yield* ready.remote.detail(input)), hostId: ready.hostId };
       const read = yield* readDeviceDetail(ready, device.platform, device.id);
       return {
         hostId: ready.hostId,
@@ -889,6 +926,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const action: DeviceService["Service"]["action"] = Effect.fn("DeviceService.action")(
     function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
+      if (ready.remote) return { ...(yield* ready.remote.action(input)), hostId: ready.hostId };
       yield* runDeviceAction(ready, device.platform, input);
       return yield* detail({ hostId: ready.hostId, deviceId: device.id });
     },
@@ -902,6 +940,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   return {
     ...DeviceService.of({
       testHost,
+      listHost: (hostId) => readiness(hostId).pipe(Effect.flatMap(refresh)),
       updateTool: (tool) =>
         lifecycleLock.withPermit(
           Effect.gen(function* () {
@@ -947,7 +986,13 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
             "--config",
             configPath,
             "--session",
-            agentDeviceSession(input.threadId, input.hostId, input.deviceId),
+            agentDeviceSession(
+              ready.agentSessionNamespace
+                ? `${ready.agentSessionNamespace}:${input.threadId}`
+                : input.threadId,
+              input.hostId,
+              input.deviceId,
+            ),
           ];
         }),
       state: SynchronizedRef.get(stateRef).pipe(Effect.map(({ state }) => state)),
@@ -980,6 +1025,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         ),
         devices: state.devices.filter((device) => unchanged(device.hostId)),
         sessions: state.sessions.filter((session) => unchanged(session.hostId)),
+        externalSessions: state.externalSessions?.filter((session) => unchanged(session.hostId)),
       }));
       publishedHosts = new Map(hosts);
     }),
@@ -1054,12 +1100,16 @@ export const make = Effect.gen(function* () {
   );
   const hostContext =
     yield* Effect.context<Effect.Services<ReturnType<typeof SshDeviceHost.make>>>();
-  const configured = new Map<string, { config: SshDeviceHostConfig; scope: Scope.Closeable }>();
-  const reconcile = (configuredHosts: ReadonlyArray<SshDeviceHostConfig>) =>
+  const configured = new Map<
+    string,
+    { config: SshDeviceHostConfig | EnvironmentDeviceHostConfig; scope: Scope.Closeable }
+  >();
+  const reconcile = (value: ServerSettingsValue) =>
     Effect.gen(function* () {
-      const next = yield* remoteSshDeviceHosts(configuredHosts).pipe(
+      const sshHosts = yield* remoteSshDeviceHosts(value.deviceHosts).pipe(
         Effect.provide(localTargetContext),
       );
+      const next = [...sshHosts, ...value.environmentDeviceHosts];
       const removed = yield* service.withLifecycleLock(
         Effect.gen(function* () {
           const removed: Array<{ id: string; scope: Scope.Closeable }> = [];
@@ -1067,11 +1117,7 @@ export const make = Effect.gen(function* () {
             if (
               next.some(
                 (host) =>
-                  host.id === id &&
-                  host.label === previous.config.label &&
-                  host.target === previous.config.target &&
-                  host.port === previous.config.port &&
-                  host.identityFile === previous.config.identityFile,
+                  host.id === id && JSON.stringify(host) === JSON.stringify(previous.config),
               )
             )
               continue;
@@ -1100,25 +1146,29 @@ export const make = Effect.gen(function* () {
           for (const host of next) {
             if (configured.has(host.id)) continue;
             const hostScope = yield* Scope.fork(scope);
-            const instance = yield* SshDeviceHost.make(
-              host,
-              (ready) =>
-                configureAgent(host.id, ready).pipe(
-                  Effect.asVoid,
-                  Effect.mapError(
-                    (error) =>
-                      new DeviceHost.DeviceHostError({
-                        hostId: host.id,
-                        step: "configuring agent access",
-                        cause: error,
-                      }),
-                  ),
-                ),
-              (status, detail) =>
-                service
-                  .setHostStatus(host.id, { status, ...(detail ? { detail } : {}) })
-                  .pipe(Effect.asVoid),
-            ).pipe(Effect.provideService(Scope.Scope, hostScope), Effect.provide(hostContext));
+            const instance = yield* (
+              "environmentId" in host
+                ? EnvironmentDeviceHost.make(host)
+                : SshDeviceHost.make(
+                    host,
+                    (ready) =>
+                      configureAgent(host.id, ready).pipe(
+                        Effect.asVoid,
+                        Effect.mapError(
+                          (error) =>
+                            new DeviceHost.DeviceHostError({
+                              hostId: host.id,
+                              step: "configuring agent access",
+                              cause: error,
+                            }),
+                        ),
+                      ),
+                    (status, detail) =>
+                      service
+                        .setHostStatus(host.id, { status, ...(detail ? { detail } : {}) })
+                        .pipe(Effect.asVoid),
+                  ).pipe(Effect.provide(hostContext))
+            ).pipe(Effect.provideService(Scope.Scope, hostScope));
             hosts.set(host.id, instance);
             configured.set(host.id, { config: host, scope: hostScope });
           }
@@ -1127,11 +1177,8 @@ export const make = Effect.gen(function* () {
       );
     });
   const changes = yield* settings.subscribeChanges;
-  yield* reconcile((yield* settings.getSettings).deviceHosts);
-  yield* changes.pipe(
-    Stream.runForEach((value) => reconcile(value.deviceHosts)),
-    Effect.forkIn(scope),
-  );
+  yield* reconcile(yield* settings.getSettings);
+  yield* changes.pipe(Stream.runForEach(reconcile), Effect.forkIn(scope));
   yield* Effect.addFinalizer(() =>
     Effect.forEach(configured.values(), (value) => Scope.close(value.scope, Exit.void), {
       discard: true,

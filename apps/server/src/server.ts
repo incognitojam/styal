@@ -70,6 +70,12 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";
+import * as DeviceSharing from "./device/DeviceSharing.ts";
+import {
+  deviceSharingRouteLayer,
+  deviceSharingProxyRouteLayer,
+  deviceSharingAgentRouteLayer,
+} from "./device/DeviceSharingHttp.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as TerminalBrowserOpen from "./preview/TerminalBrowserOpen.ts";
@@ -426,6 +432,8 @@ const PreviewLayerLive = Layer.empty.pipe(
 );
 
 const DeviceLayerLive = DeviceService.layer.pipe(
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provide(ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provide(ServerSettingsLayerLive),
   Layer.provide(ProcessRunner.layer),
   Layer.provide(NetService.layer),
@@ -635,6 +643,7 @@ const RuntimeCoreDependenciesLive = RuntimeCoreDependenciesBaseLive.pipe(
 );
 
 const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
+  Layer.provideMerge(DeviceSharing.layer.pipe(Layer.provide(RuntimeCoreDependenciesLive))),
   // Misc.
   Layer.provideMerge(BackgroundLayerLive.pipe(traceShutdown("background"))),
   Layer.provideMerge(ResourceDiagnosticsLayerLive.pipe(traceShutdown("resource-diagnostics"))),
@@ -672,6 +681,9 @@ const makeRoutesLayer = Layer.mergeAll(
     assetRouteLayer,
     attachmentUploadRouteLayer,
     deviceHubProxyRouteLayer,
+    deviceSharingRouteLayer,
+    deviceSharingProxyRouteLayer,
+    deviceSharingAgentRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),

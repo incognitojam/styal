@@ -63,6 +63,7 @@ const ALLOWED_WS_PATHS: ReadonlyArray<RegExp> = [
 
 /** Hop-by-hop and origin headers that must not cross the proxy. */
 const DROPPED_REQUEST_HEADERS = new Set([
+  "x-agent-device-token",
   "host",
   "connection",
   "upgrade",
@@ -124,14 +125,20 @@ const forwardHeaders = (request: HttpServerRequest.HttpServerRequest, origin: st
  * Pipe a client WebSocket to the hub's with no framing changes. Frames are
  * opaque: H.264 access units one way, input packets the other.
  */
-const proxyWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(function* (
+export const proxyDeviceWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(function* (
   request: HttpServerRequest.HttpServerRequest,
   upstreamUrl: string,
+  headers?: Readonly<Record<string, string>>,
 ) {
   const client = yield* request.upgrade;
+  const constructor = yield* Socket.WebSocketConstructor;
   const upstream = yield* Socket.makeWebSocket(upstreamUrl, {
     openTimeout: "10 seconds",
-  }).pipe(Effect.provide(NodeSocket.layerWebSocketConstructor));
+  }).pipe(
+    Effect.provideService(Socket.WebSocketConstructor, (url, options) =>
+      constructor(url, headers ? { headers } : options),
+    ),
+  );
   yield* Effect.scoped(
     Effect.gen(function* () {
       const writeToClient = yield* client.writer;
@@ -145,7 +152,7 @@ const proxyWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(function* (
     }),
   ).pipe(Effect.ignoreCause);
   return HttpServerResponse.empty();
-});
+}, Effect.provide(NodeSocket.layerWebSocketConstructor));
 
 const pumpFrames = (source: Socket.Socket, sink: Socket.Writer) =>
   Effect.gen(function* () {
@@ -155,20 +162,25 @@ const pumpFrames = (source: Socket.Socket, sink: Socket.Writer) =>
     }
   });
 
-const proxyHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
+export const proxyDeviceHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
   request: HttpServerRequest.HttpServerRequest,
   upstreamUrl: string,
   hubOrigin: string,
+  upstreamHeaders?: Readonly<Record<string, string>>,
+  jsonBody?: unknown,
 ) {
   const httpClient = HttpClient.withScope(yield* HttpClient.HttpClient);
   const method = request.method;
   const upstreamRequest = HttpClientRequest.make(method)(upstreamUrl).pipe(
-    HttpClientRequest.setHeaders(forwardHeaders(request, hubOrigin)),
-    method === "GET" || method === "HEAD"
-      ? (self) => self
-      : HttpClientRequest.bodyStream(request.stream),
+    HttpClientRequest.setHeaders({ ...forwardHeaders(request, hubOrigin), ...upstreamHeaders }),
   );
-  const response = yield* httpClient.execute(upstreamRequest);
+  const bodyRequest =
+    jsonBody === undefined
+      ? method === "GET" || method === "HEAD"
+        ? upstreamRequest
+        : upstreamRequest.pipe(HttpClientRequest.bodyStream(request.stream))
+      : yield* HttpClientRequest.bodyJson(upstreamRequest, jsonBody);
+  const response = yield* httpClient.execute(bodyRequest);
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(response.headers)) {
     if (name === "content-encoding" || name === "transfer-encoding" || name === "connection") {
@@ -184,6 +196,16 @@ const proxyHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
     ...(headers["content-type"] ? { contentType: headers["content-type"] } : {}),
   });
 });
+
+export function isAllowedDeviceHubRequest(path: string, method: string, upgrade: boolean) {
+  return (
+    (upgrade ? ALLOWED_WS_PATHS : ALLOWED_PATHS).some((pattern) => pattern.test(path)) &&
+    (upgrade ||
+      method === "GET" ||
+      method === "HEAD" ||
+      MUTABLE_PATHS.some((pattern) => pattern.test(path)))
+  );
+}
 
 const handler = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
@@ -222,12 +244,18 @@ const handler = Effect.gen(function* () {
   const search = upstreamSearch.size > 0 ? `?${upstreamSearch.toString()}` : "";
   const upstreamPath = `${hubPath}${search}`;
   if (upgrade) {
-    return yield* proxyWebSocket(
+    return yield* proxyDeviceWebSocket(
       request,
       `${ready.hub.origin.replace(/^http/, "ws")}${upstreamPath}`,
+      ready.hub.headers,
     );
   }
-  return yield* proxyHttp(request, `${ready.hub.origin}${upstreamPath}`, ready.hub.origin);
+  return yield* proxyDeviceHttp(
+    request,
+    `${ready.hub.origin}${upstreamPath}`,
+    ready.hub.origin,
+    ready.hub.headers,
+  );
 });
 
 export const deviceHubProxyRouteLayer = HttpRouter.add(

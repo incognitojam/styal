@@ -184,6 +184,7 @@ import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
+import * as DeviceSharing from "./device/DeviceSharing.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { attachmentRelativePath, createDeterministicAttachmentId } from "./attachmentStore.ts";
@@ -1128,6 +1129,7 @@ const makeWsRpcLayer = (
       const pullRequests = yield* PullRequestService.PullRequestService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
+      const deviceSharing = yield* DeviceSharing.DeviceSharing;
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
       const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
@@ -3597,6 +3599,26 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.deviceConfigure, deviceService.configure(input), {
             "rpc.aggregate": "device",
           }),
+        [WS_METHODS.deviceCreateHostGrant]: (input) =>
+          observeRpcEffect(WS_METHODS.deviceCreateHostGrant, deviceSharing.createGrant(input), {
+            "rpc.aggregate": "device",
+          }),
+        [WS_METHODS.deviceRevokeHostGrant]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.deviceRevokeHostGrant,
+            deviceSharing.revokeGrant(input.sessionId),
+            { "rpc.aggregate": "device" },
+          ),
+        [WS_METHODS.deviceConnectEnvironment]: (input) =>
+          observeRpcEffect(WS_METHODS.deviceConnectEnvironment, deviceSharing.connect(input), {
+            "rpc.aggregate": "device",
+          }),
+        [WS_METHODS.deviceDisconnectEnvironment]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.deviceDisconnectEnvironment,
+            deviceSharing.disconnect(input.hostId),
+            { "rpc.aggregate": "device" },
+          ),
         [WS_METHODS.deviceTestHost]: (input) =>
           observeRpcEffect(WS_METHODS.deviceTestHost, deviceService.testHost(input), {
             "rpc.aggregate": "device",

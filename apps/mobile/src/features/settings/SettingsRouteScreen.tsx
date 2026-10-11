@@ -180,6 +180,12 @@ function SettingsIndexSections() {
           disabled={noServerTargets}
         />
         <SettingsRow
+          icon="desktopcomputer"
+          label="Devices"
+          target="SettingsDevices"
+          disabled={noServerTargets}
+        />
+        <SettingsRow
           icon="text.bubble"
           label="New threads"
           target="SettingsEnvironmentNewThreads"

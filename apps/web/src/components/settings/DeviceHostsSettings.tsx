@@ -16,6 +16,7 @@ import { SettingsRow } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { toastManager } from "../ui/toast";
 import { updateDeviceHosts } from "./deviceHostsSettings.logic";
+import { EnvironmentDeviceHostsSettings } from "./EnvironmentDeviceHostsSettings";
 import { DeviceHostEditor } from "./DeviceHostEditor";
 import { useHostConnectionChecks } from "./useHostConnectionChecks";
 import { deviceHostConnectionKey } from "./deviceHostConnectionChecks";
@@ -75,86 +76,89 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
     }
   };
   return (
-    <SettingsRow
-      id="device-hosts"
-      title="Device hosts"
-      serverScoped
-      settingKeys={["deviceHosts"]}
-      description="Add remote machines with simulator or emulator runtimes installed, and the selected environments will connect over SSH and set up device tools automatically."
-      control={
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={projectScope || busy || !props.environmentId || editing !== null}
-          onClick={() => {
-            setOriginalHost(null);
-            setEditing({ id: randomUUID(), label: "", target: "" });
-          }}
-        >
-          <PlusIcon className="size-3.5" /> Add host
-        </Button>
-      }
-    >
-      <div className="pt-3 pb-2">
-        {!props.environmentId ? (
-          <p className="text-sm text-muted-foreground">
-            Connect a selected environment to manage device hosts.
-          </p>
-        ) : (
-          <>
-            {connectedEnvironments.map((environment) => (
-              <div key={environment.environmentId}>
-                {connectedEnvironments.length > 1 ? (
-                  <p className="pt-3 pb-1 text-xs font-medium text-muted-foreground">
-                    {environment.label}
-                  </p>
-                ) : null}
-                <DeviceHostList
-                  environmentLabel={environment.label}
-                  environmentId={environment.environmentId}
-                  hosts={environment.serverConfig?.settings.deviceHosts ?? []}
-                  busy={projectScope || busy}
-                  checks={checks}
-                  testConnection={async (host) => {
-                    const results = await testConnection(host);
-                    if (!results) return;
-                    const failed = targets.filter(
-                      (target) => results[target.environmentId]?.status === "failed",
-                    );
-                    toastManager.add({
-                      type: failed.length ? "error" : "success",
-                      title: failed.length
-                        ? `${host.label}: ${failed.length} of ${targets.length} environments failed`
-                        : `${host.label}: connection checks passed`,
-                      description: failed.length
-                        ? `Could not connect from ${failed.map((target) => target.label).join(", ")}.`
-                        : "Connected or already available locally on each selected environment.",
-                    });
-                    return results;
-                  }}
-                  onEdit={(host) => {
-                    setOriginalHost(host);
-                    setEditing(host);
-                  }}
-                  onRemove={(host) => void save(host, true)}
+    <>
+      <EnvironmentDeviceHostsSettings />
+      <SettingsRow
+        id="device-hosts"
+        title="SSH device hosts"
+        serverScoped
+        settingKeys={["deviceHosts"]}
+        description="Add remote machines with simulator or emulator runtimes installed, and the selected environments will connect over SSH and set up device tools automatically."
+        control={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={projectScope || busy || !props.environmentId || editing !== null}
+            onClick={() => {
+              setOriginalHost(null);
+              setEditing({ id: randomUUID(), label: "", target: "" });
+            }}
+          >
+            <PlusIcon className="size-3.5" /> Add SSH host
+          </Button>
+        }
+      >
+        <div className="pt-3 pb-2">
+          {!props.environmentId ? (
+            <p className="text-sm text-muted-foreground">
+              Connect a selected environment to manage device hosts.
+            </p>
+          ) : (
+            <>
+              {connectedEnvironments.map((environment) => (
+                <div key={environment.environmentId}>
+                  {connectedEnvironments.length > 1 ? (
+                    <p className="pt-3 pb-1 text-xs font-medium text-muted-foreground">
+                      {environment.label}
+                    </p>
+                  ) : null}
+                  <DeviceHostList
+                    environmentLabel={environment.label}
+                    environmentId={environment.environmentId}
+                    hosts={environment.serverConfig?.settings.deviceHosts ?? []}
+                    busy={projectScope || busy}
+                    checks={checks}
+                    testConnection={async (host) => {
+                      const results = await testConnection(host);
+                      if (!results) return;
+                      const failed = targets.filter(
+                        (target) => results[target.environmentId]?.status === "failed",
+                      );
+                      toastManager.add({
+                        type: failed.length ? "error" : "success",
+                        title: failed.length
+                          ? `${host.label}: ${failed.length} of ${targets.length} environments failed`
+                          : `${host.label}: connection checks passed`,
+                        description: failed.length
+                          ? `Could not connect from ${failed.map((target) => target.label).join(", ")}.`
+                          : "Connected or already available locally on each selected environment.",
+                      });
+                      return results;
+                    }}
+                    onEdit={(host) => {
+                      setOriginalHost(host);
+                      setEditing(host);
+                    }}
+                    onRemove={(host) => void save(host, true)}
+                  />
+                </div>
+              ))}
+              {editing ? (
+                <DeviceHostEditor
+                  key={editing.id}
+                  host={editing}
+                  isNew={originalHost === null}
+                  targets={targets}
+                  busy={busy}
+                  onSave={(host) => void save(host, false, originalHost ?? host)}
+                  onClose={() => setEditing(null)}
                 />
-              </div>
-            ))}
-            {editing ? (
-              <DeviceHostEditor
-                key={editing.id}
-                host={editing}
-                isNew={originalHost === null}
-                targets={targets}
-                busy={busy}
-                onSave={(host) => void save(host, false, originalHost ?? host)}
-                onClose={() => setEditing(null)}
-              />
-            ) : null}
-          </>
-        )}
-      </div>
-    </SettingsRow>
+              ) : null}
+            </>
+          )}
+        </div>
+      </SettingsRow>
+    </>
   );
 }
 
