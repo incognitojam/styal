@@ -5,7 +5,7 @@ import {
   EnvironmentHttpApi,
 } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
-import { injectMcpAppThemeBootstrap } from "@t3tools/shared/mcpApp";
+import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@t3tools/shared/mcpApp";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import * as Data from "effect/Data";
@@ -211,7 +211,7 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
       return HttpServerResponse.text("MCP app is too large to preview.", { status: 413 });
     }
     const body = new TextEncoder().encode(
-      injectMcpAppThemeBootstrap(new TextDecoder().decode(bytes)),
+      injectMcpAppCookieBootstrap(injectMcpAppThemeBootstrap(new TextDecoder().decode(bytes))),
     );
     headers["Content-Length"] = String(body.byteLength);
     return method === "HEAD"
