@@ -69,8 +69,20 @@
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
     },
     {
+      "pr": 17586,
+      "reason": "Background-service installs check their channel hourly and install when nothing is running, reusing `cli/update.ts` release discovery. The fork's discovery reads npm dist-tags and confirms the release checksums are downloadable (fork #741), so keep the fork's `resolveNewestVersion` rather than upstream's GitHub API paging when this is taken in; hourly checks from many hosts would exhaust GitHub's anonymous API quota. Depends on #17585."
+    },
+    {
       "pr": 17711,
-      "reason": "Supersedes #10845, which upstream closed: Usage → Limits keeps one email signed in to two workspaces, such as a ChatGPT Plus plan and a Business workspace or a Claude login in two orgs, as two accounts instead of merging their quotas. Follow-up to #10300."
+      "reason": "Supersedes #10845, which upstream closed: Usage \u2192 Limits keeps one email signed in to two workspaces, such as a ChatGPT Plus plan and a Business workspace or a Claude login in two orgs, as two accounts instead of merging their quotas. Follow-up to #10300."
+    },
+    {
+      "pr": 17900,
+      "reason": "Moves the mobile environment update check from GitHub's API to github.com release pages to avoid the anonymous quota. The fork already fixed this for the mobile check and `styal update` through npm dist-tags (fork #741, ledger fork-distribution-identity). Expect conflicts in `packages/shared/src/cliRelease.ts` and `apps/mobile/src/features/settings/environment-maintenance.ts`; keep the fork's lookup."
+    },
+    {
+      "pr": 18053,
+      "reason": "One sidebar action updates outdated providers on every connected environment, then servers behind the target version, then this desktop app. Not imported early: it needs #9786's environment maintenance scope, and its sidebar and server-update changes are built on the manual download and check animation that fork #358 and #754 removed (ledger desktop-background-updates, server-update-guidance). When taken in: route servers through the fork's `useServerUpdates` host-activity confirmation without a second dialog, and replace its `registry.npmjs.org/t3/<version>` availability check with the fork's `@styal/cli` lookup in `packages/shared/src/cliRelease.ts`, which also confirms the release checksums are downloadable (fork #741)."
     }
   ]
 }
