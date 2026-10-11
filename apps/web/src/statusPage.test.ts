@@ -29,12 +29,31 @@ describe("status page component naming", () => {
       resolveStatusPageNotice(summary([[name, "degraded_performance"]]), "Claude")?.label;
 
     // Generic: the icon already says whose API it is, and the hostname goes too.
-    expect(label("Claude API (api.anthropic.com)")).toBe("Outage: API");
-    expect(label("Claude Console (platform.claude.com)")).toBe("Outage: Console");
+    expect(label("Claude API (api.anthropic.com)")).toBe("Degraded: API");
+    expect(label("Claude Console (platform.claude.com)")).toBe("Degraded: Console");
     // Product names keep the vendor word; "Code" alone is not a product.
-    expect(label("Claude Code")).toBe("Outage: Claude Code");
-    expect(label("Claude Cowork")).toBe("Outage: Claude Cowork");
-    expect(label("claude.ai")).toBe("Outage: claude.ai");
+    expect(label("Claude Code")).toBe("Degraded: Claude Code");
+    expect(label("Claude Cowork")).toBe("Degraded: Claude Cowork");
+    expect(label("claude.ai")).toBe("Degraded: claude.ai");
+  });
+
+  it("names the worst disruption among the affected components", () => {
+    const label = (components: ReadonlyArray<readonly [string, string]>) =>
+      resolveStatusPageNotice(summary(components), "Example")?.label;
+
+    expect(
+      label([
+        ["Engine", "degraded_performance"],
+        ["Gearbox", "partial_outage"],
+      ]),
+    ).toBe("Outage: Engine, Gearbox");
+    expect(
+      label([
+        ["Engine", "under_maintenance"],
+        ["Gearbox", "degraded_performance"],
+      ]),
+    ).toBe("Degraded: Engine, Gearbox");
+    expect(label([["Engine", "under_maintenance"]])).toBe("Maintenance: Engine");
   });
 });
 
@@ -60,7 +79,7 @@ describe("status page relevance", () => {
       ),
     ).toMatchObject({
       affectedComponents: [{ name: "Engine", status: "degraded_performance" }],
-      label: "Outage: Engine",
+      label: "Degraded: Engine",
       tone: "warning",
     });
   });

@@ -89,8 +89,8 @@ describe("GitHub status notice", () => {
       }),
     );
 
-    expect(notice?.label).toBe("Outage: 3 services");
-    expect(notice?.accessibleLabel).toBe("GitHub Outage: 3 services");
+    expect(notice?.label).toBe("Degraded: 3 services");
+    expect(notice?.accessibleLabel).toBe("GitHub Degraded: 3 services");
     expect(notice?.tone).toBe("warning");
   });
 
@@ -127,7 +127,7 @@ describe("GitHub status notice", () => {
         ...copilot,
         { name: "Pull Requests", status: "degraded_performance", showcase: true },
       ]),
-    ).toBe("Outage: Pull Requests");
+    ).toBe("Degraded: Pull Requests");
   });
 
   it("ignores malformed responses", () => {

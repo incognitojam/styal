@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ComponentType, type SVGProps } f
 import { cn } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
 import {
+  isOutageComponentStatus,
   isStatusPageSummary,
   type StatusPageNotice as StatusPageNoticeView,
 } from "../../statusPage";
@@ -114,7 +115,7 @@ function StatusPageTooltip({
   const hasDetail = incidents.length > 0 || notice.affectedComponents.length > 0;
 
   return (
-    <div className="w-80 max-w-[calc(100vw-2rem)] overflow-hidden p-(--floating-content-inset) text-left">
+    <div className="w-80 max-w-[calc(100vw-2rem)] overflow-hidden p-(--floating-content-inset) text-left text-pretty">
       <div className="flex min-w-0 items-start gap-2 font-medium text-foreground">
         <StatusIcon aria-hidden className="mt-px size-3.5 shrink-0" />
         <span className="min-w-0 flex-1 break-words">
@@ -127,7 +128,7 @@ function StatusPageTooltip({
             <div className="grid min-w-0 gap-1" key={incident.name}>
               <div className="flex min-w-0 items-baseline justify-between gap-3">
                 <span className="min-w-0 flex-1 break-words text-foreground">{incident.name}</span>
-                <span className="max-w-[45%] shrink-0 break-words text-right text-muted-foreground">
+                <span className="shrink-0 text-right text-muted-foreground">
                   {incident.statusLabel}
                 </span>
               </div>
@@ -149,10 +150,17 @@ function StatusPageTooltip({
                   className="flex min-w-0 items-baseline justify-between gap-3"
                   key={component.name}
                 >
-                  <span className="min-w-0 flex-1 break-words text-muted-foreground">
+                  <span className="min-w-0 flex-1 break-words text-foreground">
                     {component.name}
                   </span>
-                  <span className="max-w-[45%] shrink-0 break-words text-right text-foreground/80">
+                  <span
+                    className={cn(
+                      "shrink-0 text-right",
+                      isOutageComponentStatus(component.status)
+                        ? "text-destructive-foreground"
+                        : "text-warning-foreground",
+                    )}
+                  >
                     {component.statusLabel}
                   </span>
                 </li>
