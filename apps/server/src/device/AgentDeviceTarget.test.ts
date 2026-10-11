@@ -99,7 +99,8 @@ exec ${quote(process.execPath)} "$@"
           env: {
             ...process.env,
             ELECTRON_RUN_AS_NODE: "0",
-            NODE_OPTIONS: `--require "${guard}"`,
+            // NODE_OPTIONS treats backslashes as escapes, including in quoted paths.
+            NODE_OPTIONS: `--require "${guard.replaceAll("\\", "/")}"`,
           },
         }),
       );

@@ -310,14 +310,43 @@ jobs:
         if: matrix.shard == 1
         run: vp run --filter ./apps/server test:nightly-upgrade -- origin/nightly
 
+  test_device_windows:
+    name: Fork Test (Device Windows)
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup test dependencies
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+
+      - name: Test device commands
+        shell: pwsh
+        working-directory: apps/server
+        run: vp test run src/device/AgentDeviceTarget.test.ts
+
   test_server_required:
     name: Fork Test (Server)
-    needs: [changes, test_server]
+    needs: [changes, test_server, test_device_windows]
     if: ${{ !cancelled() && needs.changes.outputs.run_ci == 'true' }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Require every server shard to pass
-        run: test '${{ needs.test_server.result }}' = success
+      - name: Require server shards and Windows device tests to pass
+        run: |
+          test '${{ needs.test_server.result }}' = success
+          test '${{ needs.test_device_windows.result }}' = success
 
   test_workspace:
     name: Fork Test (Workspace ${{ matrix.suite }})
