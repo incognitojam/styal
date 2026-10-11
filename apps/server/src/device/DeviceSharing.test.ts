@@ -78,6 +78,8 @@ const settingsFixture = () => {
       }),
     subscribeChanges: Effect.succeed(Stream.empty),
     streamChanges: Stream.empty,
+    updateProviderInstance: () => Effect.die(new Error("Provider instances are unused here.")),
+    withSettingsSnapshot: (use) => Effect.suspend(() => use(value)),
   });
   return {
     service,

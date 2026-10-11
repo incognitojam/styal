@@ -2,7 +2,6 @@ import * as NodeCrypto from "node:crypto";
 import {
   AuthDeviceOperateScope,
   DeviceHostUnavailableError,
-  DeviceOperationError,
   LOCAL_DEVICE_HOST_ID,
   type DeviceHostGrant,
   type DeviceHostGrantInput,

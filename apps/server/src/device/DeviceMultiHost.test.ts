@@ -142,7 +142,7 @@ it.effect("does not hold local device work behind a connected environment that i
       run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
       helpers: { serveSimAxSettings: null, serveSimCli: null },
     };
-    const host = (id: string, kind: "local" | "environment"): DeviceHost["Service"] => {
+    const host = (id: string, kind: "local" | "environment"): DeviceHost.DeviceHost["Service"] => {
       // The environment never answers, like a peer that went to sleep mid-request.
       const waiting = Deferred.succeed(peerStarted, undefined).pipe(Effect.andThen(Effect.never));
       return {
@@ -163,7 +163,7 @@ it.effect("does not hold local device work behind a connected environment that i
         stop: Effect.void,
       };
     };
-    const service = yield* makeWithHosts(
+    const service = yield* DeviceService.makeWithHosts(
       new Map([
         ["local", host("local", "local")],
         ["peer", host("peer", "environment")],
@@ -183,7 +183,7 @@ it.effect("does not hold local device work behind a connected environment that i
     yield* Fiber.interrupt(waiting);
   }).pipe(
     Effect.provide(
-      ServerSettingsService.layerTest({ enableDeviceSupport: true, enableAgentDeviceAccess: true }),
+      ServerSettings.layerTest({ enableDeviceSupport: true, enableAgentDeviceAccess: true }),
     ),
   ),
 );
@@ -202,7 +202,7 @@ it.effect(
         run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
         helpers: { serveSimAxSettings: null, serveSimCli: null },
       };
-      const peer: DeviceHost["Service"] = {
+      const peer: DeviceHost.DeviceHost["Service"] = {
         id: "peer",
         summary: Effect.succeed({
           id: "peer",
@@ -229,11 +229,14 @@ it.effect(
         }),
         stop: Effect.void,
       };
-      const service = yield* makeWithHosts(new Map([["peer", peer]]), undefined, (_hostId, ready) =>
-        Effect.sync(() => {
-          written.push(ready.agentDevice.token);
-          return "/host-config.json";
-        }),
+      const service = yield* DeviceService.makeWithHosts(
+        new Map([["peer", peer]]),
+        undefined,
+        (_hostId, ready) =>
+          Effect.sync(() => {
+            written.push(ready.agentDevice.token);
+            return "/host-config.json";
+          }),
       ).pipe(
         Effect.provideService(
           HttpClient.HttpClient,
@@ -258,7 +261,7 @@ it.effect(
       expect(stopped).toEqual(["stop-agent", "stop-agent"]);
     }).pipe(
       Effect.provide(
-        ServerSettingsService.layerTest({
+        ServerSettings.layerTest({
           enableDeviceSupport: true,
           enableAgentDeviceAccess: true,
         }),
