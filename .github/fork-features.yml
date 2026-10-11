@@ -3680,6 +3680,65 @@ features:
         - https://github.com/pingdotgg/t3code/pull/7147
       retire_when: Upstream presents an equivalent cross-client operational carbon estimate with transparent methodology and appropriately qualified comparisons.
 
+  - id: usage-limits-single-account
+    title: Show a provider with one account like its own usage screen
+    status: maintained
+    prs: []
+    invariants:
+      - On Usage → Limits, a provider window backed by one account shows its percentage left, a bar, and when it resets, without pool segment numbers, the per-account row, or the pool refill line.
+      - A single account's banked reset credits appear once beside the provider name instead of on every window; with several accounts, each account's segment and row keep their own credits.
+      - On mobile, both the single-account window and the provider's credit count open that account's detail screen, where credits are redeemed.
+    implementation_paths:
+      - apps/mobile/src/features/usage/UsageLimitsPooled.tsx
+      - apps/web/src/components/usage/UsageLimitsPooled.tsx
+      - packages/shared/src/usageLimits.ts
+    upstream_paths:
+      - apps/mobile/src/features/usage/UsageLimitsPooled.tsx
+      - apps/web/src/components/usage/UsageLimitsPooled.tsx
+      - packages/shared/src/usageLimits.ts
+    tests:
+      - packages/shared/src/usageLimits.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/f23d0084b6e023ffb1af9e332d8666affc99d542/apps/mobile/src/features/usage/UsageLimitsPooled.tsx
+      retire_when: Upstream drops pool segment labels, account rows, and repeated reset-credit badges for a provider with one account on both clients.
+
+  - id: usage-reset-credit-expiries
+    title: List when each banked reset credit expires
+    status: maintained
+    prs: []
+    invariants:
+      - Codex, Claude, and CLIProxyAPI hub reset credits report every banked credit's expiry, soonest first, alongside the existing next-expiry field.
+      - The mobile account screen and the web account popover list banked credits by expiry, grouping credits that share one, and count credits that never expire.
+      - Clients connected to a server that reports only the next expiry keep showing the next-expiry summary.
+    implementation_paths:
+      - apps/mobile/src/features/usage/UsageLimitsSection.tsx
+      - apps/server/src/provider/Layers/claudeResetCredits.ts
+      - apps/server/src/provider/Layers/codexUsageLimits.ts
+      - apps/server/src/usage/cliproxyApi.ts
+      - apps/web/src/components/usage/UsageLimitsPooled.tsx
+      - packages/contracts/src/providerUsageLimits.ts
+      - packages/shared/src/usageLimits.ts
+    upstream_paths:
+      - apps/mobile/src/features/usage/UsageLimitsSection.tsx
+      - apps/server/src/provider/Layers/claudeResetCredits.ts
+      - apps/server/src/provider/Layers/codexUsageLimits.ts
+      - apps/server/src/usage/cliproxyApi.ts
+      - apps/web/src/components/usage/UsageLimitsPooled.tsx
+      - packages/contracts/src/providerUsageLimits.ts
+      - packages/shared/src/usageLimits.ts
+    tests:
+      - apps/server/src/provider/Layers/claudeResetCredits.test.ts
+      - apps/server/src/provider/Layers/codexUsageLimits.test.ts
+      - apps/server/src/usage/cliproxyApi.test.ts
+      - packages/shared/src/usageLimits.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/f23d0084b6e023ffb1af9e332d8666affc99d542/packages/contracts/src/providerUsageLimits.ts
+      retire_when: Upstream reports and shows every banked reset credit's expiry instead of only the next one.
+
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable
     status: review-needed

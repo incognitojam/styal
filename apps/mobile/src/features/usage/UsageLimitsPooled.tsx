@@ -11,7 +11,9 @@ import {
   formatDuration,
   formatResetsIn,
   remainingPercent,
+  singleAccountResetCredits,
   type LimitAccount,
+  type LimitPool,
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
 import { Fragment, type ReactNode, useId, useState } from "react";
@@ -85,6 +87,8 @@ function PoolWindowCard({
 }) {
   const navigation = useNavigation();
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  // One account has nothing to pool, so the card reads like the provider's own app.
+  const single = pool.columns.length === 1;
   const openAccount = (account: LimitAccount) =>
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
@@ -116,12 +120,75 @@ function PoolWindowCard({
         ) : null}
       </View>
       {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
-      {nextRefill ? (
+      {nextRefill && !single ? (
         <Text className="text-xs tabular-nums text-foreground-muted">
           ↻ +{nextRefill.restoresPercent}%{" "}
           {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
         </Text>
       ) : null}
+      {single ? (
+        <SingleAccountBar pool={pool} color={color} now={now} onPress={openAccount} />
+      ) : (
+        <AccountSegments pool={pool} color={color} now={now} onPress={openAccount} />
+      )}
+    </View>
+  );
+}
+
+function SingleAccountBar({
+  pool,
+  color,
+  now,
+  onPress,
+}: {
+  readonly pool: LimitPoolWindow;
+  readonly color: string;
+  readonly now: number;
+  readonly onPress: (account: LimitAccount) => void;
+}) {
+  const column = pool.columns[0];
+  if (!column?.window) return null;
+  const { account, window } = column;
+  const resetsIn = formatResetsIn(window, now);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${remainingPercent(window)}% left${resetsIn ? `, ${resetsIn}` : ""}`}
+      accessibilityHint="Show account details"
+      onPress={() => onPress(account)}
+      className="gap-3 active:opacity-60"
+    >
+      <View className="h-2.5 overflow-hidden rounded-full bg-subtle">
+        <AccountSegment
+          remaining={remainingPercent(window)}
+          color={color}
+          pending={Boolean(window.resetsAt)}
+        />
+      </View>
+      <View className="min-h-[24px] flex-row items-center gap-2">
+        <Text className="min-w-0 flex-1 text-sm tabular-nums text-foreground-muted">
+          {resetsIn?.replace("resets", "Resets")}
+        </Text>
+        <SymbolView name="chevron.right" size={12} tintColorClassName="accent-icon-subtle" />
+      </View>
+    </Pressable>
+  );
+}
+
+/** One segment per account, keeping each account's position across windows. */
+function AccountSegments({
+  pool,
+  color,
+  now,
+  onPress: openAccount,
+}: {
+  readonly pool: LimitPoolWindow;
+  readonly color: string;
+  readonly now: number;
+  readonly onPress: (account: LimitAccount) => void;
+}) {
+  return (
+    <>
       <View className="flex-row gap-1">
         {pool.columns.map(({ account, window }, index) => {
           if (!window) return <View key={account.key} className="h-7 min-w-0 flex-1" />;
@@ -196,7 +263,54 @@ function PoolWindowCard({
           );
         })}
       </View>
-    </View>
+    </>
+  );
+}
+
+/**
+ * Reset credits belong to the account, not to a window. With one account they
+ * show once beside the provider; with several, each account row keeps its own.
+ */
+function SingleAccountCredits({
+  pool,
+  now,
+  environmentIds,
+}: {
+  readonly pool: LimitPool;
+  readonly now: number;
+  readonly environmentIds: readonly string[] | null;
+}) {
+  const navigation = useNavigation();
+  const lone = singleAccountResetCredits(pool);
+  const window = pool.windows[0];
+  if (!lone || !window) return null;
+  const { account, count } = lone;
+  const label = `${count} reset ${count === 1 ? "credit" : "credits"}`;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label} banked`}
+      accessibilityHint="Show account details"
+      onPress={() =>
+        navigation.navigate("SettingsSheet", {
+          screen: "SettingsContent",
+          params: {
+            screen: "SettingsUsageAccount",
+            params: {
+              accountKey: account.key,
+              windowId: window.id,
+              windowKind: window.kind,
+              environmentIds,
+              now,
+            },
+          },
+        })
+      }
+      className="min-h-[44px] flex-row items-center gap-1 active:opacity-60"
+    >
+      <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
+      <Text className="text-sm tabular-nums text-foreground-muted">{label}</Text>
+    </Pressable>
   );
 }
 
@@ -246,9 +360,16 @@ export function UsageLimitsSection({
             <View className="gap-3">
               <View className="flex-row items-center gap-2 px-1">
                 <ProviderIcon provider={pool.driver} size={18} />
-                <Text className="text-base font-t3-medium text-foreground">
+                <Text className="flex-1 text-base font-t3-medium text-foreground">
                   {DRIVER_LABEL[pool.driver] ?? pool.driver}
                 </Text>
+                <SingleAccountCredits
+                  pool={pool}
+                  now={now}
+                  environmentIds={
+                    selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
+                  }
+                />
               </View>
               {windows.map((window) => {
                 const details =

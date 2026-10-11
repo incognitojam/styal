@@ -10,6 +10,7 @@ import {
   type UsageLimitsReport,
   type ProviderInstanceId,
   type ProviderConsumeResetCreditInput,
+  type ServerProviderResetCredits,
   type ServerProviderSlashCommand,
   isProviderAvailable,
   type ServerProvider,
@@ -540,6 +541,36 @@ export function formatResetsIn(window: ServerProviderUsageWindow, now: number): 
   const resetsAt = resetMillis(window);
   if (resetsAt === null) return null;
   return resetsAt <= now ? "resets now" : `resets in ${formatDuration(resetsAt - now)}`;
+}
+
+/**
+ * Reset credits belong to an account, not to a window. A pool with one account
+ * shows them once beside the provider; with several, each account shows its own.
+ */
+export function singleAccountResetCredits(
+  pool: LimitPool,
+): { readonly account: LimitAccount; readonly count: number } | null {
+  const [account] = pool.accounts;
+  const count = account?.limits.resetCredits?.availableCount ?? 0;
+  return pool.accounts.length === 1 && account && count > 0 ? { account, count } : null;
+}
+
+/**
+ * Banked credits grouped by expiry, soonest first; `expiresAt: null` counts the
+ * credits that never expire. Returns null when the server did not report
+ * per-credit expiries.
+ */
+export function resetCreditExpiries(
+  credits: ServerProviderResetCredits,
+): ReadonlyArray<{ readonly expiresAt: string | null; readonly count: number }> | null {
+  if (!credits.expiries) return null;
+  const known = credits.expiries.slice(0, credits.availableCount);
+  const groups = new Map<string | null, number>();
+  for (const expiresAt of known) groups.set(expiresAt, (groups.get(expiresAt) ?? 0) + 1);
+  if (credits.availableCount > known.length) {
+    groups.set(null, credits.availableCount - known.length);
+  }
+  return [...groups].map(([expiresAt, count]) => ({ expiresAt, count }));
 }
 
 /** Limit commands are served by T3 from the same snapshots as Usage → Limits. */

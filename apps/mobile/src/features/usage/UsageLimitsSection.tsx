@@ -15,6 +15,7 @@ import {
   limitsNotice,
   paceOf,
   remainingPercent,
+  resetCreditExpiries,
 } from "@t3tools/shared/usageLimits";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
@@ -214,9 +215,12 @@ export function ResetCredits(props: {
   const [status, setStatus] = useState<string | null>(null);
   if (dense && credits.availableCount === 0 && status === null) return null;
 
-  const expiresIn = credits.nextExpiresAt
-    ? formatDuration(Date.parse(credits.nextExpiresAt) - now)
-    : null;
+  // The full screen lists every credit's expiry; the composer pill keeps the soonest.
+  const expiries = dense ? null : resetCreditExpiries(credits);
+  const expiresIn =
+    credits.nextExpiresAt && !expiries
+      ? formatDuration(Date.parse(credits.nextExpiresAt) - now)
+      : null;
   const summary =
     credits.availableCount === 0
       ? "No reset credits banked"
@@ -251,7 +255,7 @@ export function ResetCredits(props: {
     );
   };
 
-  return (
+  const actions = (
     <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
       <Text className="text-xs tabular-nums text-foreground-tertiary">{summary}</Text>
       {credits.availableCount > 0 ? (
@@ -278,6 +282,35 @@ export function ResetCredits(props: {
         </Pressable>
       ) : null}
       {status ? <Text className="text-sm text-foreground">{status}</Text> : null}
+    </View>
+  );
+  if (!expiries || expiries.length === 0) return actions;
+  return (
+    <View className="gap-3">
+      <View className="gap-2">
+        {expiries.map(({ expiresAt, count }) => (
+          <View
+            key={expiresAt ?? "never"}
+            className="flex-row items-baseline justify-between gap-3"
+          >
+            <Text selectable className="text-sm text-foreground">
+              {count > 1 ? `${count} × ` : ""}
+              {expiresAt
+                ? `Expires ${new Date(expiresAt).toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}`
+                : "Does not expire"}
+            </Text>
+            {expiresAt ? (
+              <Text className="text-xs tabular-nums text-foreground-muted">
+                in {formatDuration(Date.parse(expiresAt) - now)}
+              </Text>
+            ) : null}
+          </View>
+        ))}
+      </View>
+      {actions}
     </View>
   );
 }

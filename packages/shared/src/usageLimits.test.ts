@@ -21,6 +21,8 @@ import {
   elapsedShare,
   formatResetsIn,
   limitsNotice,
+  resetCreditExpiries,
+  singleAccountResetCredits,
   paceOf,
   providersWithLimits,
   remainingPercent,
@@ -77,6 +79,31 @@ describe("pace", () => {
     expect(formatResetsIn({ ...window, resetsAt: "2026-09-03T11:00:00.000Z" }, now)).toBe(
       "resets now",
     );
+  });
+});
+
+describe("resetCreditExpiries", () => {
+  it("groups banked credits by expiry and counts those without one", () => {
+    expect(
+      resetCreditExpiries({
+        availableCount: 4,
+        expiries: [
+          "2026-10-22T09:00:00.000Z",
+          "2026-10-22T09:00:00.000Z",
+          "2026-10-29T09:00:00.000Z",
+        ],
+      }),
+    ).toEqual([
+      { expiresAt: "2026-10-22T09:00:00.000Z", count: 2 },
+      { expiresAt: "2026-10-29T09:00:00.000Z", count: 1 },
+      { expiresAt: null, count: 1 },
+    ]);
+  });
+
+  it("is null when the server reports only the next expiry", () => {
+    expect(
+      resetCreditExpiries({ availableCount: 2, nextExpiresAt: "2026-10-22T09:00:00.000Z" }),
+    ).toBeNull();
   });
 });
 
@@ -202,6 +229,35 @@ describe("pools", () => {
     });
     // The fresher native snapshot wins; the hub row is pre-filtered by email.
     expect(accounts[0]?.limits.windows[0]?.usedPercent).toBe(55);
+  });
+
+  it("shows a lone account's reset credits once for the provider, but not a pool's", () => {
+    const signedIn = (email: string) =>
+      provider({
+        driver: claude,
+        instanceId: ProviderInstanceId.make("claude"),
+        auth: { status: "authenticated", email },
+        usageLimits: { checkedAt, windows: [window], resetCredits: { availableCount: 2 } },
+      });
+    const pools = (emails: readonly string[]) =>
+      collectLimitPools(
+        collectLimitAccounts(
+          new Map(
+            emails.map((email, index) => [
+              EnvironmentId.make(`env-${index}`),
+              { ...laptop, serverConfig: { providers: [signedIn(email)] } },
+            ]),
+          ),
+        ),
+        Date.parse(checkedAt),
+      );
+    const [lone] = pools(["one@example.com"]);
+    expect(lone && singleAccountResetCredits(lone)).toMatchObject({
+      account: { email: "one@example.com" },
+      count: 2,
+    });
+    const [pooled] = pools(["one@example.com", "two@example.com"]);
+    expect(pooled && singleAccountResetCredits(pooled)).toBeNull();
   });
 
   it("merges OpenCode Go limits from machines with the same API key", () => {
