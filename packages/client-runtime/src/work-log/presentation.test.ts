@@ -81,6 +81,21 @@ describe("continuedResponseWorkStartedAt", () => {
     ).toBe(input.startedAt);
   });
 
+  it("does not reuse a prompt boundary already consumed by an earlier response", () => {
+    const background = TurnId.make("background");
+    const startedAt = continuedResponseWorkStartedAt({
+      ...input,
+      messages: [
+        message(original, "user", 0),
+        message(original, "assistant", 1, 2),
+        message(background, "assistant", 10, 15),
+      ],
+    });
+    // Five minutes of background work plus five resumed minutes, without
+    // carrying the earlier response or the idle interval into this response.
+    expect(Date.parse(iso(25)) - Date.parse(startedAt!)).toBe(10 * 60_000);
+  });
+
   it("does not merge background-work continuations", () => {
     expect(
       continuedResponseWorkStartedAt({

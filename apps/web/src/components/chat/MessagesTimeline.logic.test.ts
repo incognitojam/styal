@@ -7,6 +7,7 @@ import {
   MessageId,
   ProjectId,
   ProviderInstanceId,
+  type OrchestrationThreadActivity,
   ThreadId,
   TurnId,
   type OrchestrationThread,
@@ -39,10 +40,164 @@ import {
   createMessageAttachmentPreviewProjector,
   deriveTimelineEntries,
   deriveTimelineEntriesWithState,
+  deriveWorkLogEntries,
   type WorkLogEntry,
   type TimelineEntriesProjection,
 } from "../../session-logic";
 import { isImageAttachment, type ChatMessage, type TurnDiffSummary } from "../../types";
+import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
+
+describe("continued response timing", () => {
+  const original = TurnId.make("original");
+  const continued = TurnId.make("continued");
+  const iso = (minute: number) => `2026-10-11T10:${String(minute).padStart(2, "0")}:00.000Z`;
+  const message = (
+    id: string,
+    turnId: TurnId | null,
+    role: ChatMessage["role"],
+    start: number,
+    end = start,
+  ): ChatMessage => ({
+    id: MessageId.make(id),
+    turnId,
+    role,
+    text: "Synthetic timer fixture",
+    streaming: false,
+    createdAt: iso(start),
+    updatedAt: iso(end),
+  });
+  const activity = (
+    id: string,
+    turnId: TurnId,
+    kind: string,
+    minute: number,
+    payload = {},
+  ): OrchestrationThreadActivity => ({
+    id: EventId.make(id),
+    turnId,
+    kind,
+    createdAt: iso(minute),
+    tone: "tool",
+    summary: "Synthetic timer fixture",
+    payload,
+  });
+  const latestTurn = {
+    turnId: continued,
+    state: "running" as const,
+    requestedAt: iso(20),
+    startedAt: iso(20),
+    completedAt: null,
+    assistantMessageId: MessageId.make("answer"),
+  };
+  const compare = (messages: ChatMessage[], activities: OrchestrationThreadActivity[]) => {
+    const startedAt = continuedResponseWorkStartedAt({
+      startedAt: iso(20),
+      latestTurn,
+      messages,
+      activities,
+    });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: deriveTimelineEntries(messages, [], deriveWorkLogEntries(activities)),
+      latestTurn: { ...latestTurn, state: "completed", completedAt: iso(25) },
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    return { liveMinutes: (Date.parse(iso(25)) - Date.parse(startedAt!)) / 60_000, rows };
+  };
+
+  it.each(["lifecycle", "snapshot", "overlapping"] as const)(
+    "keeps tool completion time after %s rows are moved to their start",
+    (source) => {
+      const messages = [
+        message("user", null, "user", 0),
+        message("old", original, "assistant", 1, 2),
+        message("answer", continued, "assistant", 25),
+      ];
+      const activities = [
+        ...(source !== "snapshot"
+          ? [
+              activity("start", original, "tool.started", 3, {
+                toolCallId: "tool",
+                status: "inProgress",
+              }),
+              activity("update", original, "tool.updated", 4, {
+                toolCallId: "tool",
+                status: "inProgress",
+              }),
+            ]
+          : []),
+        activity("end", original, "tool.completed", 10, {
+          toolCallId: "tool",
+          status: "completed",
+          ...(source === "snapshot" ? { startedAt: iso(3) } : {}),
+        }),
+        ...(source === "overlapping"
+          ? [
+              activity("other-end", original, "tool.completed", 5, {
+                toolCallId: "other-tool",
+                status: "completed",
+                startedAt: iso(4),
+              }),
+            ]
+          : []),
+        activity("restart", continued, "server-restart.continued", 20),
+      ];
+      const result = compare(messages, activities);
+      expect(result.liveMinutes).toBe(15);
+      expect(result.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "turn-fold", label: "Worked for 15m" }),
+        ]),
+      );
+    },
+  );
+
+  it("does not reuse an earlier prompt after a separate background response restarts", () => {
+    const background = TurnId.make("background");
+    const result = compare(
+      [
+        message("user", null, "user", 0),
+        message("old", original, "assistant", 1, 2),
+        message("wake", background, "assistant", 10, 15),
+        message("answer", continued, "assistant", 25),
+      ],
+      [activity("restart", continued, "server-restart.continued", 20)],
+    );
+    expect(result.liveMinutes).toBe(10);
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "turn-fold", label: "Worked for 10m" }),
+      ]),
+    );
+  });
+
+  it("uses a retained tool start when a separate response has no assistant text before restart", () => {
+    const background = TurnId.make("background");
+    const result = compare(
+      [
+        message("user", null, "user", 0),
+        message("old", original, "assistant", 1, 2),
+        message("answer", continued, "assistant", 25),
+      ],
+      [
+        activity("tool", background, "tool.completed", 10, {
+          toolCallId: "background-tool",
+          status: "completed",
+          startedAt: iso(3),
+        }),
+        activity("restart", continued, "server-restart.continued", 20),
+      ],
+    );
+    expect(result.liveMinutes).toBe(12);
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "turn-fold", label: "Worked for 12m" }),
+      ]),
+    );
+  });
+});
 
 describe("streaming row projection", () => {
   function fixture(text = "") {

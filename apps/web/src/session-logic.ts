@@ -73,6 +73,8 @@ export interface WorkLogEntry {
   questionAnswer?: UserInputAttachmentAnswerPayload;
   id: string;
   createdAt: string;
+  /** Last lifecycle timestamp, retained when the row is collapsed or moved to its start. */
+  endedAt?: string;
   turnId?: TurnId | null;
   /** Stable provider identity across in-progress and completed lifecycle updates. */
   toolCallId?: string;
@@ -559,7 +561,9 @@ export function deriveWorkLogEntries(
       collapsed.sourceActivityKind === "tool.completed"
         ? toolStartedAt(collapsed)
         : undefined;
-    const entry = startedAt ? { ...collapsed, createdAt: startedAt } : collapsed;
+    const entry = startedAt
+      ? { ...collapsed, createdAt: startedAt, endedAt: collapsed.endedAt ?? collapsed.createdAt }
+      : collapsed;
     if (entry.setupRunId === undefined) return entry;
     const { setupRunId: _setupRunId, ...rest } = entry;
     return rest;
@@ -1038,6 +1042,7 @@ function mergeDerivedWorkLogEntries(
     // final message or a later user message (dev servers, providers that
     // batch completions), and must not drag the row there.
     createdAt: previous.createdAt,
+    endedAt: next.endedAt ?? next.createdAt,
     ...(detail ? { detail } : {}),
     ...(viewedImagePath ? { viewedImagePath } : {}),
     ...(command ? { command } : {}),

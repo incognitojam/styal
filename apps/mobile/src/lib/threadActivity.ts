@@ -130,6 +130,8 @@ export interface WorkLogEntry {
   readonly questionAnswer?: UserInputAttachmentAnswerPayload;
   id: string;
   createdAt: string;
+  /** Last lifecycle timestamp, retained when the row is collapsed or moved to its start. */
+  endedAt?: string;
   turnId: TurnId | null;
   label: string;
   detail?: string;
@@ -557,7 +559,9 @@ function deriveWorkLogEntries(
       entry.sourceActivityKind === "tool.updated" || entry.sourceActivityKind === "tool.completed"
         ? toolStartedAt(entry)
         : undefined;
-    return startedAt ? { ...entry, createdAt: startedAt } : entry;
+    return startedAt
+      ? { ...entry, createdAt: startedAt, endedAt: entry.endedAt ?? entry.createdAt }
+      : entry;
   });
 }
 
@@ -1109,6 +1113,7 @@ function mergeDerivedWorkLogEntries(
     ...next,
     id: previous.id,
     createdAt: previous.createdAt,
+    endedAt: next.endedAt ?? next.createdAt,
     ...(detail ? { detail } : {}),
     ...(viewedImagePath ? { viewedImagePath } : {}),
     ...(command ? { command } : {}),
@@ -2156,7 +2161,14 @@ function deriveThreadFeedTurnFolds(
                   entry.type === "message"
                     ? entry.message.updatedAt
                     : entry.type === "activity-group"
-                      ? (entry.activities.at(-1)?.createdAt ?? entry.createdAt)
+                      ? entry.activities.reduce(
+                          (end, activity) =>
+                            maxIsoTimestamp(
+                              end,
+                              activity.workEntry.endedAt ?? activity.createdAt,
+                            ) ?? end,
+                          entry.createdAt,
+                        )
                       : entry.createdAt,
               })),
           )

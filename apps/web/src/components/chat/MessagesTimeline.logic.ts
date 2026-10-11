@@ -1008,7 +1008,12 @@ function deriveTurnFolds(input: {
               restartDowntimeMs(group.entries, (entry) => ({
                 turnId: timelineEntryTurnId(entry) ?? turnId,
                 startedAt: entry.createdAt,
-                endedAt: entry.kind === "message" ? entry.message.updatedAt : entry.createdAt,
+                endedAt:
+                  entry.kind === "message"
+                    ? entry.message.updatedAt
+                    : entry.kind === "work"
+                      ? (entry.entry.endedAt ?? entry.createdAt)
+                      : entry.createdAt,
               })),
           )
         : elapsedMs;

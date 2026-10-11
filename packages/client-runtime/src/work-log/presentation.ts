@@ -14,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
+import { makeToolStartLookup } from "./toolStart.js";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import * as DateTime from "effect/DateTime";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
@@ -153,7 +154,9 @@ export function continuedResponseWorkStartedAt(input: {
     Pick<OrchestrationMessage, "role" | "turnId" | "createdAt" | "updatedAt">
   >;
   readonly activities: ReadonlyArray<
-    Pick<OrchestrationThreadActivity, "kind" | "turnId" | "createdAt">
+    Pick<OrchestrationThreadActivity, "kind" | "turnId" | "createdAt"> & {
+      readonly payload?: unknown;
+    }
   >;
 }): string | null {
   const { startedAt, latestTurn } = input;
@@ -176,6 +179,7 @@ export function continuedResponseWorkStartedAt(input: {
     return startedAt;
   }
 
+  const toolStartedAt = makeToolStartLookup(responseActivities);
   const entries = [
     ...input.messages
       .filter(
@@ -193,7 +197,10 @@ export function continuedResponseWorkStartedAt(input: {
       turnId: activity.turnId,
       isUserMessage: false,
       activityKind: activity.kind,
-      startedAt: activity.createdAt,
+      startedAt:
+        activity.kind === "tool.updated" || activity.kind === "tool.completed"
+          ? (toolStartedAt(activity) ?? activity.createdAt)
+          : activity.createdAt,
       endedAt: activity.createdAt,
     })),
   ].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
@@ -206,10 +213,27 @@ export function continuedResponseWorkStartedAt(input: {
   );
   const firstEntry = responseEntries[0];
   if (firstEntry === undefined) return startedAt;
-  const userBoundary = entries.findLast(
-    (entry) => entry.isUserMessage && entry.startedAt <= firstEntry.startedAt,
-  );
-  const startMs = Date.parse(userBoundary?.startedAt ?? firstEntry.startedAt);
+  let pendingUserBoundary: string | null = null;
+  let responseStartedAt = firstEntry.startedAt;
+  const seenRoots = new Set<TurnId>();
+  for (const entry of entries) {
+    if (entry.isUserMessage) {
+      pendingUserBoundary = entry.startedAt;
+      continue;
+    }
+    if (entry.turnId === null) continue;
+    const entryRoot = roots.get(entry.turnId) ?? entry.turnId;
+    if (seenRoots.has(entryRoot)) continue;
+    seenRoots.add(entryRoot);
+    // Like settled folds, each prompt starts at most one response.
+    const boundary = pendingUserBoundary ?? entry.startedAt;
+    pendingUserBoundary = null;
+    if (entryRoot === root) {
+      responseStartedAt = boundary;
+      break;
+    }
+  }
+  const startMs = Date.parse(responseStartedAt);
   if (!Number.isFinite(startMs)) return startedAt;
   const downtimeMs = restartDowntimeMs(responseEntries, (entry) => ({
     turnId: entry.turnId ?? root,
