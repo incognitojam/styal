@@ -2227,7 +2227,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           )}
         </p>
       ) : null}
-      {row.message.inputIntent && row.message.inputIntent !== "turn_start" ? (
+      {row.message.inputIntent === "queued_turn" ||
+      row.message.inputIntent === "promoted_queued_to_steer" ? (
         <UserMessageIntentMarker intent={row.message.inputIntent} />
       ) : null}
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
@@ -2406,7 +2407,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 function UserMessageIntentMarker({
   intent,
 }: {
-  readonly intent: NonNullable<ChatMessage["inputIntent"]>;
+  readonly intent: Extract<ChatMessage["inputIntent"], "queued_turn" | "promoted_queued_to_steer">;
 }) {
   const presentation =
     intent === "queued_turn"
@@ -2414,15 +2415,10 @@ function UserMessageIntentMarker({
           label: "Queued",
           icon: null,
         }
-      : intent === "promoted_queued_to_steer"
-        ? {
-            label: "Steer",
-            icon: Redo2Icon,
-          }
-        : {
-            label: "Steer",
-            icon: Redo2Icon,
-          };
+      : {
+          label: "Steer",
+          icon: Redo2Icon,
+        };
   const IntentIcon = presentation.icon;
   return (
     <Tooltip>
@@ -2440,9 +2436,7 @@ function UserMessageIntentMarker({
       <TooltipPopup side="top">
         {intent === "queued_turn"
           ? "Queued behind the active turn"
-          : intent === "promoted_queued_to_steer"
-            ? "Originally queued, then promoted to steer the active turn"
-            : "Steered the active turn"}
+          : "Originally queued, then promoted to steer the active turn"}
       </TooltipPopup>
     </Tooltip>
   );

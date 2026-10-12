@@ -3,9 +3,10 @@ import { describe, expect, it } from "@effect/vitest";
 import { resolveUserMessageIntentBadge } from "./userMessageIntentBadge";
 
 describe("user message intent badge", () => {
-  it("does not label ordinary turn-start messages", () => {
+  it("does not label ordinary turn-start or steered messages", () => {
     expect(resolveUserMessageIntentBadge(undefined)).toBeNull();
     expect(resolveUserMessageIntentBadge("turn_start")).toBeNull();
+    expect(resolveUserMessageIntentBadge("steer")).toBeNull();
   });
 
   it("labels messages waiting behind the active turn", () => {
@@ -13,14 +14,6 @@ describe("user message intent badge", () => {
       label: "queued",
       accessibilityLabel: "Queued behind the active turn",
       tone: "queued",
-    });
-  });
-
-  it("labels messages that steer the active turn", () => {
-    expect(resolveUserMessageIntentBadge("steer")).toEqual({
-      label: "steer",
-      accessibilityLabel: "Steered the active turn",
-      tone: "steer",
     });
   });
 

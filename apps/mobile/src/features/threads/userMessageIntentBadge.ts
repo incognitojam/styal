@@ -16,12 +16,6 @@ export function resolveUserMessageIntentBadge(
         accessibilityLabel: "Queued behind the active turn",
         tone: "queued",
       };
-    case "steer":
-      return {
-        label: "steer",
-        accessibilityLabel: "Steered the active turn",
-        tone: "steer",
-      };
     case "promoted_queued_to_steer":
       return {
         label: "queued → steer",
@@ -29,6 +23,7 @@ export function resolveUserMessageIntentBadge(
         tone: "steer",
       };
     case "turn_start":
+    case "steer":
     case undefined:
       return null;
   }

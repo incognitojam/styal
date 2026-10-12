@@ -1276,26 +1276,6 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("Send a message to start the conversation");
   });
 
-  it("keeps steer intent visible on committed user messages", async () => {
-    const { MessagesTimeline } = await import("./MessagesTimeline");
-    const entry = buildUserTimelineEntry("Adjust the current turn");
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          { ...entry, message: { ...entry.message, inputIntent: "steer" as const } },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("data-base-ui-tooltip-trigger");
-    expect(markup).toContain("lucide-redo-2");
-    expect(markup).toContain('data-user-message-intent="steer"');
-    expect(markup).toContain("items-center justify-end gap-1");
-    expect(markup).toContain("gap-1 text-xs leading-none text-muted-foreground");
-    expect(markup.indexOf("Steer")).toBeLessThan(markup.indexOf("Adjust the current turn"));
-  });
-
   it("keeps compact spacing below a collapsed turn divider", () => {
     const runId = RunId.make("run-collapsed-spacing");
     const markup = renderToStaticMarkup(
