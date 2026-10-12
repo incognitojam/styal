@@ -7092,6 +7092,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               {!isComposerCollapsedMobile &&
                 !isComposerApprovalState &&
                 pendingUserInputs.length === 0 &&
+                composerIssueContexts.length > 0 && (
+                  <ComposerPendingIssueContexts
+                    contexts={composerIssueContexts}
+                    onRemove={(contextId) =>
+                      removeComposerDraftIssueContext(composerDraftTarget, contextId)
+                    }
+                    className="mb-3"
+                  />
+                )}
+
+              {!isComposerCollapsedMobile &&
+                !isComposerApprovalState &&
+                pendingUserInputs.length === 0 &&
                 editingQueuedAttachments !== null &&
                 editingQueuedAttachments.length > 0 && (
                   <div className="mb-3 flex flex-wrap gap-2">

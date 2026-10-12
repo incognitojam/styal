@@ -1676,6 +1676,7 @@ features:
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/ComposerPendingIssueContexts.tsx
       - apps/web/src/components/chat/QueuedRunsControl.tsx
       - apps/web/src/components/chat/queuedMessageEdit.ts
@@ -1688,6 +1689,7 @@ features:
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/QueuedRunsControl.tsx
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/sourceControl.ts
