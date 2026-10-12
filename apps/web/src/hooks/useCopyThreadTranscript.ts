@@ -85,7 +85,7 @@ export function useCopyThreadTranscript() {
         transcriptFailureToast("Could not load the conversation from the server.");
         return;
       }
-      const transcript = buildThreadTranscript(thread.title, snapshot.messages);
+      const transcript = buildThreadTranscript(thread.title, snapshot.visibleTurnItems);
       if (transcript.messageCount === 0) {
         toastManager.add(
           stackedThreadToast({
