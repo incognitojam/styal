@@ -112,6 +112,12 @@ function summarizeDynamicValue(value: unknown): unknown {
 }
 
 export function projectTurnItemForWire(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
+  // Imported V1 activity stays in persistence as source evidence. Clients render the
+  // canonical item fields, and the retained payloads can be far larger than the item.
+  if (item.legacyActivities !== undefined) {
+    const { legacyActivities: _legacyActivities, ...projected } = item;
+    return projectTurnItemForWire(projected);
+  }
   switch (item.type) {
     case "handoff": {
       const { summary: _summary, ...projected } = item;

@@ -36,7 +36,7 @@ import {
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { buildActiveShellSnapshot } from "./ShellStream.ts";
-import { projectThreadProjectionForWire } from "./WireProjection.ts";
+import { projectThreadProjectionForWire, projectTurnItemForWire } from "./WireProjection.ts";
 
 function isThreadNotFound(error: unknown): boolean {
   return (
@@ -288,7 +288,10 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
           }
           return {
             snapshotSequence: snapshot.snapshotSequence,
-            items: pageOrError.page.items,
+            items: pageOrError.page.items.map((row) => ({
+              ...row,
+              item: projectTurnItemForWire(row.item),
+            })),
             nextCursor: pageOrError.page.nextCursor,
             hasMoreHistory: pageOrError.page.hasMoreHistory,
           };
