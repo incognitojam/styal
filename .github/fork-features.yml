@@ -1271,6 +1271,34 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9363
       retire_when: Upstream preserves focus ownership across panel menus and launchers and keeps remaining tabs in place after a close.
 
+  - id: follow-up-steering-default
+    title: Steer active turns by default
+    status: maintained
+    prs: [775]
+    invariants:
+      - Web, desktop, and mobile default to steering follow-ups into the active turn instead of queueing a new turn.
+      - Explicit Queue preferences remain unchanged, and Queue remains available as the alternate action.
+      - Mobile queues when the active provider cannot steer; web/desktop use the existing interrupt-and-restart fallback for providers without active steering. Provider execution and Claude message priority remain unchanged.
+      - Web and desktop preserve the existing delivery labels, icons, and tooltips, placing them beside the timestamp beneath the message in the hover/focus metadata row; mobile presentation remains unchanged.
+    rationale: Ordinary follow-ups should reach ongoing work without waiting for the whole turn to finish. Retain the closed upstream proposal as a deliberate styal default.
+    implementation_paths:
+      - apps/mobile/src/lib/followUpBehavior.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - packages/contracts/src/settings.ts
+    upstream_paths:
+      - apps/mobile/src/lib/followUpBehavior.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/mobile/src/features/threads/composerSendPresentation.test.ts
+      - packages/client-runtime/src/state/composerDispatch.test.ts
+      - packages/contracts/src/settings.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/18226
+      retire_when: Upstream defaults to steering follow-ups across clients while preserving explicit Queue preferences and shows delivery labels beside the timestamp instead of above-message badges.
+
   - id: fork-agent-integration-identity
     title: Identify styal to agents and MCP clients
     status: review-needed

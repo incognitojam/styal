@@ -43,6 +43,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Workspaces and agent sessions
 
+- **Follow-ups steer by default.** Messages sent while an agent is working join
+  the active turn. Choose Queue in Follow-up behavior to wait for the turn to finish;
+  saved Queue preferences are preserved. T3 Code defaults to Queue as of
+  [revision 5753207](https://github.com/pingdotgg/t3code/tree/5753207d53362608f281738eda3a9faf4e13b6be).
+  [Send while the agent is working](./composer.md#send-while-the-agent-is-working).
+
 - **Separate Gemini model and reasoning choices.** Antigravity lists each Gemini generation once,
   with a separate reasoning effort control. Existing threads retain their selected effort.
   T3 Code lists thinking variants as separate models as of
