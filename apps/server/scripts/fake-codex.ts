@@ -6,7 +6,7 @@
  * provider's binary path at a launcher from `install` and the server runs
  * real sessions against it without an OpenAI account:
  *
- *   node apps/server/scripts/fake-codex.ts install <dir> [--scenario <file>]
+ *   node apps/server/scripts/fake-codex.ts install <dir> [--scenario <file>] [--request-log <file>]
  *
  * `app-server` answers the provider status check (signed in with an API key,
  * one `fake-codex` model) and runs turns. `exec` answers text generation with
@@ -41,6 +41,9 @@
  * instantly would already be in that baseline and the turn diff would be
  * empty. Set `"stepDelayMs"` on the scenario to change the spacing.
  *
+ * With `--request-log`, every turn appends one JSON line with its thread id and
+ * the turn's input items, so a test can check what the provider received.
+ *
  * This file only imports Node built-ins so it can run from any checkout,
  * including an upstream T3 Code checkout that generates import fixtures.
  */
@@ -50,6 +53,7 @@ import * as NodePath from "node:path";
 import * as NodeReadline from "node:readline";
 
 const SCENARIO_ENV = "STYAL_FAKE_CODEX_SCENARIO";
+const REQUEST_LOG_ENV = "STYAL_FAKE_CODEX_REQUEST_LOG";
 const MODEL = "fake-codex";
 
 type Step =
@@ -315,6 +319,14 @@ function runAppServer(): void {
               )
               .join("\n")
           : "";
+        const requestLog = process.env[REQUEST_LOG_ENV];
+        if (requestLog) {
+          NodeFS.appendFileSync(
+            requestLog,
+            `${JSON.stringify({ threadId, input: params.input ?? [] })}\n`,
+            "utf8",
+          );
+        }
         send({ id, result: { turn: { id: turnId, items: [], status: "inProgress" } } });
         activeTurn = makeActiveTurn(turnId);
         void runTurn(threadId, activeTurn, prompt);
@@ -502,10 +514,13 @@ function runExec(argv: ReadonlyArray<string>): void {
 function runInstall(argv: ReadonlyArray<string>): void {
   const directory = argv[0];
   if (!directory) {
-    process.stderr.write("usage: fake-codex.ts install <dir> [--scenario <file>]\n");
+    process.stderr.write(
+      "usage: fake-codex.ts install <dir> [--scenario <file>] [--request-log <file>]\n",
+    );
     process.exit(2);
   }
   const scenario = flagValue(argv, "--scenario");
+  const requestLog = flagValue(argv, "--request-log");
   const script = NodePath.resolve(import.meta.filename);
   NodeFS.mkdirSync(directory, { recursive: true });
   if (process.platform === "win32") {
@@ -515,6 +530,7 @@ function runInstall(argv: ReadonlyArray<string>): void {
       [
         "@echo off",
         ...(scenario ? [`set "${SCENARIO_ENV}=${NodePath.resolve(scenario)}"`] : []),
+        ...(requestLog ? [`set "${REQUEST_LOG_ENV}=${NodePath.resolve(requestLog)}"`] : []),
         `node "${script}" %*`,
         "exit /b %ERRORLEVEL%",
         "",
@@ -531,6 +547,7 @@ function runInstall(argv: ReadonlyArray<string>): void {
     [
       "#!/bin/sh",
       ...(scenario ? [`export ${SCENARIO_ENV}=${quote(NodePath.resolve(scenario))}`] : []),
+      ...(requestLog ? [`export ${REQUEST_LOG_ENV}=${quote(NodePath.resolve(requestLog))}`] : []),
       `exec node ${quote(script)} "$@"`,
       "",
     ].join("\n"),

@@ -130,6 +130,26 @@ export check's workspace selectors as more workspaces become clean. Review calle
 deleting code; production mode can also report development scripts and test fixtures.
 Runtime-discovered entrypoints and dependency exceptions belong in [knip.jsonc](../../knip.jsonc).
 
+### End-to-end tests
+
+`e2e/` drives the real web client in headless Chromium against a real server. Each test file
+starts its own server on a free port with temporary state, an allowlisted environment, and a
+throwaway home, so it never reads `~/.styal`, provider credentials, or your `gh` login. Codex is
+[fake-codex](../../apps/server/scripts/fake-codex.ts), the other providers are off, and `gh` is a
+[fake](../../e2e/fixtures/fake-gh.ts) that serves fixture issues. Tests can assert what the
+provider received through fake-codex's request log.
+
+```sh
+vp run --filter @t3tools/e2e install:browser   # once per Playwright version
+vp run --filter @t3tools/web build             # the server serves apps/web/dist
+vp run --filter @t3tools/e2e test:e2e
+```
+
+Rebuild the web client after changing it; the server runs from source. Set `E2E_KEEP_STATE=1`
+to keep each environment's directory, which holds the server log, the provider and `gh` call
+logs, and a screenshot when the app fails to load. CI runs the suite as the `E2E` shard of
+`Fork Test (Workspace)`. Upstream intakes that break a covered fork flow fail there.
+
 ## Desktop artifacts
 
 Local artifact builds are unsigned by default and write to `release/`:

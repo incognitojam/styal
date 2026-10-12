@@ -1,0 +1,16 @@
+{
+  "name": "@t3tools/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "vp test run",
+    "install:browser": "playwright-core install --only-shell chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "playwright-core": "1.60.0",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
