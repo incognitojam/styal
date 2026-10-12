@@ -23,7 +23,7 @@ import { serverEnvironment } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { SettingsControlRow } from "./components/SettingsControlRow";
+import { ListRowLayout } from "../../components/ListRowLayout";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -247,31 +247,32 @@ function IdleShutdownRow(props: {
 }) {
   const label = deviceIdleShutdownLabel(props.minutes);
   return (
-    <SettingsControlRow
+    <ListRowLayout
       icon={{ ios: "moon.zzz", android: "smartphone" }}
       label="Shut down idle devices"
-      subtitle="Devices styal started stop once no agent or viewer uses them."
+      description="Devices styal started stop once no agent or viewer uses them."
       disabled={props.disabled}
-    >
-      <ControlPillMenu
-        actions={DEVICE_IDLE_SHUTDOWN_CHOICES.map((choice) => ({
-          id: String(choice),
-          title: deviceIdleShutdownLabel(choice),
-          state: choice === props.minutes ? "on" : "off",
-        }))}
-        onPressAction={({ nativeEvent }) =>
-          props.onSelect(nativeEvent.event === "null" ? null : Number(nativeEvent.event))
-        }
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Shut down idle devices, ${label}`}
-          disabled={props.disabled}
+      accessory={
+        <ControlPillMenu
+          actions={DEVICE_IDLE_SHUTDOWN_CHOICES.map((choice) => ({
+            id: String(choice),
+            title: deviceIdleShutdownLabel(choice),
+            state: choice === props.minutes ? "on" : "off",
+          }))}
+          onPressAction={({ nativeEvent }) =>
+            props.onSelect(nativeEvent.event === "null" ? null : Number(nativeEvent.event))
+          }
         >
-          <AppText className="text-base text-foreground-muted">{label}</AppText>
-        </Pressable>
-      </ControlPillMenu>
-    </SettingsControlRow>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Shut down idle devices, ${label}`}
+            disabled={props.disabled}
+          >
+            <AppText className="text-base text-foreground-muted">{label}</AppText>
+          </Pressable>
+        </ControlPillMenu>
+      }
+    />
   );
 }
 
