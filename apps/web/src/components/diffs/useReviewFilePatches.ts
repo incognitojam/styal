@@ -19,6 +19,11 @@ import {
 import { getRenderablePatch, resolveFileDiffPath, type RenderablePatch } from "~/lib/diffRendering";
 import { reviewEnvironment } from "~/state/review";
 
+const filePathCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
 export function useReviewFilePatches({
   environmentId,
   cwd,
@@ -59,9 +64,7 @@ export function useReviewFilePatches({
   );
   const files = useMemo(() => {
     const sorted =
-      source?.files?.toSorted((a, b) =>
-        a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }),
-      ) ?? [];
+      source?.files?.toSorted((a, b) => filePathCollator.compare(a.path, b.path)) ?? [];
     return orderFiles ? orderFiles(sorted) : sorted;
   }, [source?.files, orderFiles]);
   const queries = useMemo(
@@ -200,10 +203,7 @@ export function useReviewFilePatches({
             };
           })
         : (preview?.kind === "files" ? preview.files : []).toSorted((a, b) =>
-            resolveFileDiffPath(a).localeCompare(resolveFileDiffPath(b), undefined, {
-              numeric: true,
-              sensitivity: "base",
-            }),
+            filePathCollator.compare(resolveFileDiffPath(a), resolveFileDiffPath(b)),
           ),
     [source, files, patches, scope, preview],
   );
