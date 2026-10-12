@@ -1,4 +1,4 @@
-import type { DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import { type ComponentProps, useCallback, useEffect, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -10,6 +10,7 @@ import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateDownloadedVersion,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
   shouldShowDesktopUpdateButton,
@@ -22,6 +23,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { DesktopUpdateStatusIcon } from "./DesktopUpdateStatusIcon";
 import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
 import { SidebarWebUpdatePill } from "./SidebarWebUpdatePill";
+import { UpdateEverythingDialog } from "./UpdateEverythingDialog";
+import { useUpdateEverything } from "./useUpdateEverything";
 
 type SidebarUpdatePopoverChangeDetails = Parameters<
   NonNullable<ComponentProps<typeof Popover>["onOpenChange"]>
@@ -73,21 +76,78 @@ function SidebarUpdateArchitectureWarningContent() {
   );
 }
 
+/** Installs this app's downloaded update, which relaunches the app. Failures toast. */
+async function installLocalUpdate(bridge: DesktopBridge): Promise<void> {
+  try {
+    const result = await bridge.installUpdate();
+    if (!shouldToastDesktopUpdateActionResult(result)) return;
+    const actionError = getDesktopUpdateActionError(result);
+    if (!actionError) return;
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: "Could not install update",
+        description: actionError,
+      }),
+    );
+  } catch (error) {
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: "Could not install update",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      }),
+    );
+  }
+}
+
+/**
+ * The sidebar update button. Desktop updates download in the background, so with
+ * only a local update the button restarts into it. When other machines' servers
+ * or any providers are behind, one click updates everything: providers, then
+ * servers, then this app last. Web shows its build refresh notice beside it.
+ */
 export function SidebarUpdatePill() {
-  return isElectron ? <SidebarUpdateControl /> : <SidebarWebUpdatePill />;
+  return isElectron ? (
+    <SidebarUpdateControl />
+  ) : (
+    <>
+      <SidebarWebUpdatePill />
+      <SidebarUpdateControl />
+    </>
+  );
 }
 
 function SidebarUpdateControl() {
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
+  const [isUpdatingEverything, setIsUpdatingEverything] = useState(false);
+  const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
-  const tooltip = state ? getDesktopUpdateButtonTooltip(state) : "Restart to update";
-  const isInteractionDisabled = isActionPending || state?.status === "checking";
+  const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
+  // Remote servers follow this app to the version it is about to install.
+  const localUpdateVersion =
+    state && action === "install" ? getDesktopUpdateDownloadedVersion(state) : null;
+  const everything = useUpdateEverything(localUpdateVersion);
+  const isDownloading = state?.status === "downloading";
+  const runsEverything = everything.hasUpdates && !isDownloading;
+  // Providers leave the list once queued, so the run keeps its own state.
+  const isRunningEverything = isUpdatingEverything && !isDownloading;
+  const showsEverything = runsEverything || isRunningEverything;
+  const tooltip = isRunningEverything
+    ? "Updating…"
+    : runsEverything
+      ? everything.summary
+      : state
+        ? getDesktopUpdateButtonTooltip(state)
+        : "Restart to update";
+  const isInteractionDisabled =
+    isActionPending || isRunningEverything || (!runsEverything && state?.status === "checking");
   const [releaseNotesPopoverHandle] = useState(() => PopoverCreateHandle());
   const suppressReleaseNotesFocusOpen = useRef(false);
   const releaseNotesPopupRef = useRef<HTMLDivElement>(null);
   const releaseNotesTriggerId = useId();
-  const showUpdateDetails = shouldShowDesktopUpdateButton(state);
+  const showUpdateDetails = showsLocalUpdate && !showsEverything;
   const showReleaseNotesPopover = shouldUseSidebarUpdateReleaseNotesPopover(
     showUpdateDetails,
     state,
@@ -105,39 +165,41 @@ function SidebarUpdateControl() {
   }, [releaseNotesPopoverHandle, releaseNotesTriggerId, showReleaseNotesPopover]);
 
   const handleAction = useCallback(async () => {
+    if (isInteractionDisabled) return;
+    if (runsEverything) {
+      setIsConfirmingEverything(true);
+      return;
+    }
     const bridge = window.desktopBridge;
-    if (!bridge || !state) return;
-    if (isInteractionDisabled || action !== "install") return;
-
+    if (!bridge || !state || action !== "install") return;
     setIsActionPending(true);
+    void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
+  }, [action, isInteractionDisabled, runsEverything, state]);
 
-    void bridge
-      .installUpdate()
-      .then((result) => {
-        if (!shouldToastDesktopUpdateActionResult(result)) return;
-        const actionError = getDesktopUpdateActionError(result);
-        if (!actionError) return;
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not install update",
-            description: actionError,
-          }),
-        );
-      })
-      .catch((error) => {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not install update",
-            description: error instanceof Error ? error.message : "An unexpected error occurred.",
-          }),
-        );
-      })
-      .finally(() => setIsActionPending(false));
-  }, [action, isInteractionDisabled, state]);
+  const runEverything = useCallback(async () => {
+    const bridge = window.desktopBridge;
+    setIsConfirmingEverything(false);
+    setIsActionPending(true);
+    setIsUpdatingEverything(true);
+    try {
+      await everything.run(
+        bridge && action === "install" ? { installLocal: () => installLocalUpdate(bridge) } : {},
+      );
+    } catch (error) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not update everything",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        }),
+      );
+    } finally {
+      setIsUpdatingEverything(false);
+      setIsActionPending(false);
+    }
+  }, [action, everything]);
 
-  if (!state || !shouldShowDesktopUpdateButton(state)) return null;
+  if (!showsLocalUpdate && !showsEverything) return null;
 
   const updateButton = (
     <button
@@ -172,7 +234,10 @@ function SidebarUpdateControl() {
         );
       }}
     >
-      <DesktopUpdateStatusIcon status="downloaded" downloadPercent={null} />
+      <DesktopUpdateStatusIcon
+        status={showsEverything ? "everything" : "downloaded"}
+        downloadPercent={null}
+      />
     </button>
   );
 
@@ -243,6 +308,14 @@ function SidebarUpdateControl() {
           </PopoverPopup>
         ) : null}
       </Popover>
+      <UpdateEverythingDialog
+        open={isConfirmingEverything}
+        onOpenChange={setIsConfirmingEverything}
+        summary={everything.summary}
+        lines={everything.lines}
+        restarts={everything.restarts}
+        onConfirm={() => void runEverything()}
+      />
     </SidebarMenuItem>
   );
 }

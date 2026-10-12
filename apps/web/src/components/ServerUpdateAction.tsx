@@ -94,9 +94,9 @@ function continuesRunningThreads(target: ServerUpdateTarget): boolean {
 /**
  * Updates servers after one confirmation covering all of them. Servers with an
  * update already in flight are skipped; each remaining server reports its own
- * result.
+ * result. The returned promise settles once every update has finished.
  */
-function useServerUpdates() {
+export function useServerUpdates() {
   const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
   const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, {
     reportFailure: false,
@@ -225,7 +225,9 @@ export function ServerUpdatesAction({
   );
 }
 
-function canUpdateServer(result: AsyncResult.AsyncResult<AuthSessionState, unknown>): boolean {
+export function canUpdateServer(
+  result: AsyncResult.AsyncResult<AuthSessionState, unknown>,
+): boolean {
   if (result._tag !== "Success" || !result.value.authenticated) return false;
   return sessionGrantsScope(result.value, AuthEnvironmentMaintainScope);
 }
