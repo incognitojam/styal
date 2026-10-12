@@ -2020,7 +2020,7 @@ export function describeShippedNativeRuntime(
   if (headAndroid === shipped.runtimeVersion) {
     return `Installed apps: the batch matches ${shipped.tag}'s fingerprint, so OTA updates from main reach the latest production build.`;
   }
-  return `Installed apps: the batch's Android fingerprint (${headAndroid.slice(0, 10)}) differs from ${shipped.tag}'s (${shipped.runtimeVersion.slice(0, 10)}), so after promotion OTA updates from main do not reach installed apps, even if this batch did not move it. Bump the app version in apps/mobile/app.config.ts so Mobile EAS Production builds both platforms.`;
+  return `Installed apps: the batch's Android fingerprint (${headAndroid.slice(0, 10)}) differs from ${shipped.tag}'s (${shipped.runtimeVersion.slice(0, 10)}), so after promotion OTA updates from main do not reach installed apps, even if this batch did not move it, until Mobile EAS Production finishes the builds it starts for that fingerprint.`;
 }
 
 /** `unknown` when the comparison failed; promotion treats it like `moved`. */
@@ -2046,7 +2046,7 @@ export function describeNativeFingerprint(comparison: NativeFingerprintCompariso
     return "Native fingerprint: unchanged on iOS and Android, so OTA updates reach the same builds as before.";
   }
   const platforms = moved.map((entry) => PLATFORM_NAMES[entry.platform]).join(" and ");
-  return `Native fingerprint: moved on ${platforms} (${moved.map((entry) => `${entry.base.slice(0, 10)} → ${entry.head.slice(0, 10)}`).join(", ")}). After promotion, OTA updates no longer reach installed ${platforms} apps; they need a production build (Mobile EAS Production, mode=build).`;
+  return `Native fingerprint: moved on ${platforms} (${moved.map((entry) => `${entry.base.slice(0, 10)} → ${entry.head.slice(0, 10)}`).join(", ")}). After promotion, OTA updates no longer reach installed ${platforms} apps until the production builds Mobile EAS Production starts for the new fingerprint finish.`;
 }
 
 // ---------------------------------------------------------------------------------------------

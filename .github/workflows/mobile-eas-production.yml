@@ -7,10 +7,11 @@ name: Mobile EAS Production
 # runner, with corepack using package.json's pnpm version, local == build.
 #
 # Every merge to main that touches the mobile app reconciles, per platform:
-#   1. Distribution builds: if the latest production build's version differs from
+#   1. Distribution builds: when no production build matches the current
+#      native fingerprint, or the latest build's version differs from
 #      app.config.ts, cut a new build (TestFlight for iOS, installable APK for
-#      Android). Bumping `version` is therefore all it takes to
-#      start the next release train — the first build of a version enters
+#      Android). Native changes therefore ship a binary on merge, and bumping
+#      `version` is all it takes to start the next release train — the first build of a version enters
 #      external-TestFlight beta review immediately, and later builds of the
 #      same version auto-approve until that version is released. After App
 #      Store approval, Apple closes the release train and `version` must be
@@ -21,11 +22,12 @@ name: Mobile EAS Production
 #      fingerprint. Older binaries of the same major version with a matching
 #      fingerprint receive it too; the major version is part of the
 #      fingerprint (apps/mobile/fingerprint.config.js), so a new major never
-#      reaches the previous major's store binaries over the air. When native
-#      drift means no binary could install the update,
-#      it is skipped and flagged in the job summary instead of published
-#      into the void, and an open "mobile-ota-blocked" issue says so until
-#      every platform publishes again.
+#      reaches the previous major's store binaries over the air. Until a
+#      build for the new fingerprint finishes, the OTA is skipped rather than
+#      published into the void, and an open "mobile-ota-blocked" issue says so
+#      until every platform publishes again.
+# Hold native-change PRs (the "📱 Native Change" label) and merge them as a
+# batch to avoid a store build per PR.
 # workflow_dispatch remains as a manual override for both modes (e.g. to
 # retry an errored build or force an OTA).
 # Manual v2-preview builds keep the production app identity and disable OTA.
@@ -311,87 +313,107 @@ jobs:
             --message "${{ inputs.message || format('Production OTA ({0})', github.sha) }}" \
             --non-interactive
 
-      # No --status filter on build:list: an in-queue/in-progress build must
-      # count as existing, or every merge during the build window would cut a
-      # duplicate. After an errored build, retry via workflow_dispatch
-      # mode=build — pushes won't re-trigger it until the app version changes.
-      - id: distribution_builds
-        name: Ensure distribution builds exist for the current app version
-        if: steps.expo-token.outputs.present == 'true' && github.event_name == 'push'
-        continue-on-error: true
-        working-directory: apps/mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          failed=0
-          version="$(npx expo config --json --type public | jq -r '.version')"
-          for platform in ios android; do
-            latest="$(eas build:list --platform "$platform" --build-profile production --limit 1 --json --non-interactive | jq -r '.[0].appVersion // "none"')"
-            if [ "$latest" = "$version" ]; then
-              echo "$platform: production build for $version already exists (or is in progress)"
-              continue
-            fi
-            echo "$platform: latest production build is $latest, app.config.ts says $version — building"
-            submit_args=()
-            if [ "$platform" = ios ]; then
-              submit_args=(--auto-submit)
-            fi
-            if eas build --platform "$platform" --profile production "${submit_args[@]}" --non-interactive --no-wait; then
-              echo ":building_construction: $platform: scheduled production build for $version" >> "$GITHUB_STEP_SUMMARY"
-            else
-              failed=1
-              echo ":x: $platform: production build scheduling failed for $version" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          done
-          exit "$failed"
-
+      # One pass per platform. The fingerprint decides OTA vs distribution build:
+      #   - a finished build matches → publish the OTA;
+      #   - a queued/in-progress build matches → wait, the next merge after it
+      #     finishes publishes the OTA (no duplicate build per merge);
+      #   - no build matches → native drift, so cut a new build.
+      # A version bump also cuts a build even when native code is unchanged,
+      # because only the major version is part of the fingerprint.
+      # An errored build for this fingerprint is not retried on push (it would
+      # rebuild on every merge); retry via workflow_dispatch mode=build.
       # EAS builders give app.config.ts the Google services file variable, and
       # the file is part of the Android fingerprint. The pull step writes it to
       # apps/mobile/.eas/.env/, but loadRepoEnv only reads the repository
       # root's env files, so pass the path explicitly. Without it the Android
       # hash never matches a build and Android OTAs are always skipped.
-      - id: ota
-        name: Publish fingerprint-gated OTA
+      - id: reconcile
+        name: Publish OTA or cut distribution build
         if: steps.expo-token.outputs.present == 'true' && github.event_name == 'push'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/apps/mobile/.eas/.env/T3CODE_ANDROID_GOOGLE_SERVICES_FILE
         run: |
-          message="$(git log -1 --pretty=%s | head -c 120) ($(git rev-parse --short=9 HEAD))"
+          failed=0
           skipped=()
+          version="$(npx expo config --json --type public | jq -r '.version')"
+          message="$(git log -1 --pretty=%s | head -c 120) ($(git rev-parse --short=9 HEAD))"
           for platform in ios android; do
             # eas-cli prints an environment-loaded notice to stdout before the
             # JSON even with --json, so discard everything before the document.
             hash="$(eas fingerprint:generate --platform "$platform" --environment production --json --non-interactive | sed -n '/^{/,$p' | jq -er '.hash | select(type == "string" and length > 0)')"
-            matching="$(eas build:list --platform "$platform" --build-profile production --status finished --fingerprint-hash "$hash" --limit 1 --json --non-interactive | jq 'length')"
-            if [ "$matching" -gt 0 ]; then
-              eas update \
+            matches="$(eas build:list --platform "$platform" --build-profile production --fingerprint-hash "$hash" --limit 20 --json --non-interactive)"
+            finished="$(jq '[.[] | select(.status == "FINISHED")] | length' <<<"$matches")"
+            active="$(jq '[.[] | select(.status == "NEW" or .status == "IN_QUEUE" or .status == "IN_PROGRESS")] | length' <<<"$matches")"
+            errored="$(jq '[.[] | select(.status == "ERRORED")] | length' <<<"$matches")"
+            latest_version="$(eas build:list --platform "$platform" --build-profile production --limit 1 --json --non-interactive | jq -r '.[0].appVersion // "none"')"
+
+            if [ "$finished" -gt 0 ]; then
+              if eas update \
                 --channel production \
                 --environment production \
                 --platform "$platform" \
                 --message "$message" \
-                --non-interactive
-              echo ":white_check_mark: $platform: OTA published to production (fingerprint \`$hash\`)" >> "$GITHUB_STEP_SUMMARY"
+                --non-interactive; then
+                echo ":white_check_mark: $platform: OTA published to production (fingerprint \`$hash\`)" >> "$GITHUB_STEP_SUMMARY"
+              else
+                failed=1
+                echo ":x: $platform: OTA publish failed (fingerprint \`$hash\`)" >> "$GITHUB_STEP_SUMMARY"
+              fi
             else
-              echo ":warning: $platform: no finished production build matches fingerprint \`$hash\` — OTA skipped; JS changes reach $platform only once a matching build ships" >> "$GITHUB_STEP_SUMMARY"
               skipped+=("$platform \`$hash\`")
             fi
+
+            reason=""
+            if [ "$finished" -eq 0 ] && [ "$active" -eq 0 ]; then
+              if [ "$errored" -gt 0 ]; then
+                echo ":x: $platform: the production build for fingerprint \`$hash\` errored — retry with workflow_dispatch mode=build" >> "$GITHUB_STEP_SUMMARY"
+                failed=1
+                continue
+              fi
+              reason="native fingerprint \`$hash\` has no build"
+            elif [ "$latest_version" != "$version" ] && [ "$active" -eq 0 ]; then
+              reason="latest production build is $latest_version, app.config.ts says $version"
+            fi
+
+            if [ -z "$reason" ]; then
+              if [ "$finished" -eq 0 ]; then
+                echo ":hourglass: $platform: production build for fingerprint \`$hash\` is in progress — OTA resumes on the next merge after it finishes" >> "$GITHUB_STEP_SUMMARY"
+              fi
+              continue
+            fi
+
+            echo "$platform: $reason — building"
+            submit_args=()
+            if [ "$platform" = ios ]; then
+              submit_args=(--auto-submit)
+            fi
+            if eas build --platform "$platform" --profile production "${submit_args[@]}" --non-interactive --no-wait; then
+              echo ":building_construction: $platform: scheduled production build for $version ($reason)" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failed=1
+              echo ":x: $platform: production build scheduling failed for $version" >> "$GITHUB_STEP_SUMMARY"
+            fi
           done
+          # `checked` marks a pass that looked at both platforms, so the issue
+          # step never closes the issue after an early failure.
           {
+            echo "checked=true"
             echo "skipped<<EOF"
             if [ "${#skipped[@]}" -gt 0 ]; then printf '%s\n' "${skipped[@]}"; fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+          exit "$failed"
 
       # One open issue stands for "main cannot send OTA updates". It opens on the
       # first skipped OTA, later skips edit its body without notifying anyone, and
       # it closes once every platform publishes again.
       - name: Update the OTA blocked issue
-        if: steps.ota.outcome == 'success'
+        if: ${{ !cancelled() && steps.reconcile.outputs.checked == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          SKIPPED: ${{ steps.ota.outputs.skipped }}
+          SKIPPED: ${{ steps.reconcile.outputs.skipped }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           title="Mobile OTA updates are blocked by native changes"
@@ -408,14 +430,10 @@ jobs:
             "Main's native fingerprint matches no finished production build, so Mobile EAS Production skips the OTA update on every push for the platforms below. Installed apps receive no JavaScript changes until a matching build ships." \
             "$fingerprints" \
             "Latest skipped run: $RUN_URL at $commit." \
-            "To ship a matching build, bump \`version\` in \`apps/mobile/app.config.ts\`; merging the bump to main starts production builds for both platforms. Right after a bump this stays open until those builds finish. It closes when an OTA update publishes for every platform again.")"
+            "Mobile EAS Production starts a build for a fingerprint that has none, and the next push after it finishes publishes the OTA update. The run summary says whether a build is in progress or errored; retry an errored build with workflow_dispatch mode=build. This closes when an OTA update publishes for every platform again.")"
           if [ -n "$issue" ]; then
             gh issue edit "$issue" --body "$body"
           else
             gh label create mobile-ota-blocked --color FBCA04 --description "Main cannot send mobile OTA updates" 2>/dev/null || true
             gh issue create --title "$title" --label mobile-ota-blocked --body "$body"
           fi
-
-      - name: Propagate distribution build failure
-        if: steps.distribution_builds.outcome == 'failure'
-        run: exit 1

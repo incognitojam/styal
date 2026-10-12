@@ -487,7 +487,7 @@ describe("describeNativeFingerprint", () => {
     ]);
     assert.match(description, /moved on iOS \(aaaaaaaaaa → cccccccccc\)/u);
     assert.match(description, /installed iOS apps/u);
-    assert.match(description, /mode=build/u);
+    assert.match(description, /production builds Mobile EAS Production starts/u);
     assert.notInclude(description, "Android");
   });
 
@@ -520,11 +520,11 @@ describe("describeShippedNativeRuntime", () => {
     assert.match(describeShippedNativeRuntime(shipped, "a".repeat(40)), /reach the latest/u);
   });
 
-  it("asks for a version bump when main no longer matches the release", () => {
+  it("says OTA updates wait for new builds when main no longer matches the release", () => {
     const description = describeShippedNativeRuntime(shipped, "b".repeat(40));
     assert.match(description, /\(bbbbbbbbbb\) differs from android-2\.2\.0-24's \(aaaaaaaaaa\)/u);
     assert.match(description, /even if this batch did not move it/u);
-    assert.match(description, /Bump the app version/u);
+    assert.match(description, /until Mobile EAS Production finishes the builds/u);
   });
 
   it("asks for a manual comparison when either side is missing", () => {
