@@ -798,9 +798,9 @@ features:
       - apps/server/src/orchestration-v2/legacy/LegacyHistoricalItems.ts
       - apps/server/src/orchestration-v2/legacy/legacyPayloadEncoding.ts
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.ts
+      - apps/server/src/orchestration-v2/legacy/slimImportedHistory.ts
       - apps/server/src/persistence/ForkMigrations/007_DropUndisplayedLegacyActivityItems.ts
       - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.ts
-      - apps/server/src/orchestration-v2/legacy/slimImportedHistory.ts
       - apps/web/src/components/import/DataImportPanel.tsx
       - apps/web/src/components/import/ImportComputer.tsx
       - apps/web/src/components/import/ImportDataView.tsx
