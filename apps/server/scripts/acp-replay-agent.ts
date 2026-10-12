@@ -56,17 +56,23 @@ let nextAgentRequestId = 1;
 const pendingClientRequestIds = new Map<string, string | number>();
 const pendingAgentRequestMethods = new Map<string, string>();
 
-function writeStatus(failure?: unknown): void {
+/**
+ * The client may stop this process as soon as it reads a frame, so status is replaced
+ * atomically: a reader sees the previous or the next status, never a partial file.
+ */
+function writeStatus(failure?: unknown, consumed = cursor): void {
+  const temporaryPath = `${replayStatusPath}.${process.pid}.tmp`;
   NodeFS.writeFileSync(
-    replayStatusPath,
+    temporaryPath,
     JSON.stringify({
       scenario: transcript.scenario,
-      cursor,
+      cursor: consumed,
       total: transcript.entries.length,
       ...(failure === undefined ? {} : { failure }),
     }),
     "utf8",
   );
+  NodeFS.renameSync(temporaryPath, replayStatusPath);
 }
 
 function stableStringify(value: unknown): string {
@@ -246,9 +252,11 @@ function flushInbound(): void {
       stopWithFailure("Invalid emit_inbound logical ACP frame", entry.frame);
       return;
     }
+    // Record the frame before the client can read it and close this process.
+    writeStatus(undefined, cursor + 1);
     emitInbound(frame);
     if (stopped) return;
-    advance();
+    cursor += 1;
   }
 }
 
