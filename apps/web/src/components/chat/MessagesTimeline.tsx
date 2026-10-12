@@ -4,7 +4,7 @@ import {
   workEntryIndicatesToolFailure,
   workEntryIsStoppedToolCall,
 } from "@t3tools/client-runtime/work-log/presentation";
-import { FlaskConicalIcon, ImageIcon, CircleDotIcon, RotateCwIcon, Redo2Icon } from "lucide-react";
+import { FlaskConicalIcon, ImageIcon, CircleDotIcon, RotateCwIcon } from "lucide-react";
 import { useCommandOutput } from "~/state/queries";
 import { ComputerUseAppIcon } from "~/components/Icons";
 import { useChatCanvas } from "./ChatCanvasContext";
@@ -153,6 +153,7 @@ import {
   MousePointerClickIcon,
   PaintbrushIcon,
   MinusIcon,
+  Redo2Icon,
   Minimize2Icon,
   SearchIcon,
   SmartphoneIcon,
@@ -2365,9 +2366,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             <UserMessageIntentMarker intent={row.message.inputIntent} />
           ) : null}
           <Tooltip>
-            <TooltipTrigger
-              render={<p tabIndex={0} className="text-muted-foreground text-xs tabular-nums" />}
-            >
+            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
               {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
             </TooltipTrigger>
             <TooltipPopup>
