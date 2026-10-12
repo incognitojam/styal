@@ -1,23 +1,4 @@
-import {
-  type OrchestrationV2Actor,
-  type OrchestrationV2UserMessageInputIntent,
-  ScheduledTaskId,
-} from "@t3tools/contracts";
-
-/** Delivery labels for the metadata line beneath a user message. */
-export function userMessageIntentLabel(intent: OrchestrationV2UserMessageInputIntent | undefined) {
-  switch (intent) {
-    case "steer":
-      return "Steer";
-    case "queued_turn":
-      return "Queued";
-    case "promoted_queued_to_steer":
-      return "Queued → Steer";
-    case "turn_start":
-    case undefined:
-      return null;
-  }
-}
+import { type OrchestrationV2Actor, ScheduledTaskId } from "@t3tools/contracts";
 
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;

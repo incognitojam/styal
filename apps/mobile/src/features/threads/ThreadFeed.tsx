@@ -11,10 +11,7 @@ import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { useViewabilityAmount, type LegendListRef } from "@legendapp/list/react-native";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import {
-  userMessageIntentLabel,
-  resolveUserMessagePresentation,
-} from "@t3tools/client-runtime/user-message";
+import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import {
   type OrchestrationMessageContext,
@@ -224,6 +221,7 @@ import {
   resolveWorkspaceRelativeFilePath,
 } from "../files/filePath";
 import { waitForThreadShellReady } from "./threadForkNavigation";
+import { resolveUserMessageIntentBadge } from "./userMessageIntentBadge";
 import { fileChipMenu, resolveFileChipTarget, type FileChipAction } from "./fileChipMenu";
 import { useFileChipShare } from "./useFileChipShare";
 import {
@@ -1744,9 +1742,7 @@ function renderFeedEntry(
 
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
-      const intentLabel = userMessageIntentLabel(message.inputIntent);
-      const userTimestampLabel =
-        entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel;
+      const intentBadge = resolveUserMessageIntentBadge(message.inputIntent);
       const referenceIds = new Set(
         collectComposerContextReferences(message.text).map((reference) => reference.contextId),
       );
@@ -1859,13 +1855,32 @@ function renderFeedEntry(
             ) : null}
           </View>
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
-            {intentLabel ? (
-              <Text className="font-t3-medium text-xs text-foreground-secondary">
-                {intentLabel}
-              </Text>
+            {intentBadge ? (
+              <View
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={intentBadge.accessibilityLabel}
+                className={cn(
+                  "rounded-full border px-1.5 py-0.5",
+                  intentBadge.tone === "queued"
+                    ? "border-adaptive-amber-500-a25-400-a25 bg-adaptive-amber-500-a10-400-a10"
+                    : "border-adaptive-sky-500-a25-400-a25 bg-adaptive-sky-500-a10-400-a10",
+                )}
+              >
+                <Text
+                  className={cn(
+                    "font-t3-medium text-2xs tracking-wide",
+                    intentBadge.tone === "queued"
+                      ? "text-adaptive-amber-700-300"
+                      : "text-adaptive-sky-700-300",
+                  )}
+                >
+                  {intentBadge.label}
+                </Text>
+              </View>
             ) : null}
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
-              {userTimestampLabel}
+              {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
             </Text>
             {props.onEditPendingMessage !== null &&
             entry.pendingMessage &&
