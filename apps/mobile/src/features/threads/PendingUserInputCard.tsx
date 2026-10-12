@@ -1,6 +1,7 @@
 import { RequestActionButton } from "./RequestActionButton";
 import { QuestionAttachments } from "./QuestionAttachments";
-import type { RuntimeRequestId } from "@t3tools/contracts";
+import { PendingQuestionText } from "./PendingQuestionText";
+import type { RuntimeRequestId, ScopedThreadRef } from "@t3tools/contracts";
 import type { ThreadUserInputQuestion } from "@t3tools/client-runtime/state/thread-requests";
 import { useCallback, useRef } from "react";
 import { Platform, Pressable, ScrollView, View, type LayoutChangeEvent } from "react-native";
@@ -28,6 +29,8 @@ import {
 } from "../../lib/threadActivity";
 
 export interface PendingUserInputCardProps {
+  readonly threadRef: ScopedThreadRef;
+  readonly workspaceRoot: string | null;
   readonly pendingUserInput: PendingUserInput;
   /**
    * Constant while a request is pending (it reserves keyboard space), so the
@@ -275,9 +278,11 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
               <Text className="font-t3-bold text-xs uppercase tracking-[1px] text-foreground-muted">
                 {question.header}
               </Text>
-              <Text className="font-sans text-base leading-snug text-foreground">
-                {question.question}
-              </Text>
+              <PendingQuestionText
+                text={question.question}
+                threadRef={props.threadRef}
+                workspaceRoot={props.workspaceRoot}
+              />
               <View className="gap-2">
                 {question.options.map((option) => {
                   const optionValue = option.value ?? option.label.trim();

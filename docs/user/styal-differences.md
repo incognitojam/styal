@@ -128,6 +128,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Open links in agent questions.** URLs and Markdown links in pending questions open on web,
+  desktop, and mobile without sending an answer. Compared with
+  [T3 Code revision 701fc83](https://github.com/pingdotgg/t3code/tree/701fc83169611473139c441bc27d5ded9612dc8d),
+  checked October 12, 2026, which displays question bodies as plain text.
 - **Unpinning restores settlement immediately.** Pins keep threads active after inactivity or
   a merged review. Unpinning immediately checks whether the thread is finished, while an explicit
   **Un-settle** still keeps it active until new activity. T3 Code also protects pinned threads

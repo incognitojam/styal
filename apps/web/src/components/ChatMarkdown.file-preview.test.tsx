@@ -1,13 +1,24 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+// @vitest-environment jsdom
+
+import { EnvironmentId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
 import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer, type ReactTestRendererJSON } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+const serverConfigAtom = vi.hoisted(() => ({}));
 vi.mock("@effect/atom-react", () => ({
   useAtomRefresh: () => vi.fn(),
-  useAtomValue: () => ({ _tag: "Initial", waiting: false }),
+  useAtomValue: (atom: unknown) =>
+    atom === serverConfigAtom ? null : { _tag: "Initial", waiting: false },
 }));
+vi.mock("../state/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../state/server")>();
+  return {
+    ...actual,
+    serverEnvironment: { ...actual.serverEnvironment, configValueAtom: () => serverConfigAtom },
+  };
+});
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
@@ -30,6 +41,7 @@ vi.mock("../editorPreferences", () => ({
 vi.mock("~/lib/openPullRequestLink", () => ({
   findProjectOnChangeRequestHost: () => undefined,
   parseChangeRequestUrl: () => null,
+  resolvePullRequestPreviewTarget: () => null,
   useOpenChangeRequestLink: vi.fn(() => vi.fn()),
 }));
 
@@ -41,6 +53,7 @@ vi.mock("./ui/tooltip", () => ({
 
 import ChatMarkdown from "./ChatMarkdown";
 import { FileMarkdownPreview } from "./files/FileMarkdownPreview";
+import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
 import { useRightPanelStore } from "../rightPanelStore";
 
 const threadRef = {
@@ -139,5 +152,64 @@ describe.each(["chat", "preview"])("Markdown file links in %s", (surface) => {
       renderer!.update(renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12)"));
     });
     expect(visibleText(renderer!.toJSON()).trim()).toBe("settings.ts · L12");
+  });
+});
+
+describe("links in pending questions", () => {
+  it("opens a project file without selecting, advancing, or dismissing the question", async () => {
+    const onToggleOption = vi.fn();
+    const onAdvance = vi.fn();
+    const onDismiss = vi.fn();
+    await act(async () => {
+      renderer = create(
+        <ComposerPendingUserInputPanel
+          cwd="/workspace/project"
+          threadRef={threadRef}
+          pendingUserInputs={[
+            {
+              requestId: RuntimeRequestId.make("question-links-request"),
+              createdAt: "2026-10-11T00:00:00.000Z",
+              responseCapability: "live",
+              dismissible: true,
+              questions: [
+                {
+                  id: "review",
+                  header: "Review",
+                  question:
+                    "Review https://example.com/approval?request=demo_token and [the guide](docs/settings.ts:12).",
+                  options: [{ label: "Approved", description: "Continue the request" }],
+                  multiSelect: false,
+                },
+              ],
+            },
+          ]}
+          respondingRequestIds={[]}
+          answers={{ review: { selectedOptionValues: [], customAnswer: "Keep this draft" } }}
+          questionIndex={0}
+          onToggleOption={onToggleOption}
+          onAdvance={onAdvance}
+          onDismiss={onDismiss}
+        />,
+      );
+    });
+    const links = renderer!.root.findAllByType("a");
+    const external = links.find((link) => link.props.href?.startsWith("https://example.com"));
+    expect(external?.props.href).toBe("https://example.com/approval?request=demo_token");
+    expect(visibleText(renderer!.toJSON())).toContain("the guide");
+    await act(async () => {
+      links
+        .find((link) => link !== external)!
+        .props.onClick({
+          preventDefault() {},
+          stopPropagation() {},
+        });
+    });
+    expect(useRightPanelStore.getState().byThreadKey[scopedThreadKey(threadRef)]).toMatchObject({
+      activeSurfaceId: "file:docs/settings.ts",
+      surfaces: [{ kind: "file", relativePath: "docs/settings.ts", revealLine: 12 }],
+    });
+    expect(onToggleOption).not.toHaveBeenCalled();
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 });
