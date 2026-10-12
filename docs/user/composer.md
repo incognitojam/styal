@@ -40,7 +40,9 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 
 ## Send while the agent is working
 
-Follow-ups steer the running turn by default. On web and desktop, choose
+Follow-ups steer the running turn by default. On web and desktop, providers that
+steer by restarting interrupt the current turn and start it again with your
+follow-up. Choose
 **Settings → General → Follow-up behavior** to queue new messages for a later turn
 instead. The setting applies to this client; already queued messages keep their
 place. Queued messages are saved on the server and can be edited, reordered, or
