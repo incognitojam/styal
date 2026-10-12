@@ -435,6 +435,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
   },
   {
+    id: "composer-typing-streak",
+    title: "Typing streak",
+    to: "/settings/general",
+    searchTerms: ["composer typing fast speed sparks glow animation effects power mode"],
+  },
+  {
     id: "input-sound",
     title: "Input sound",
     to: "/settings/general",
