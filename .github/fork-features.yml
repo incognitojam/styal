@@ -1891,7 +1891,7 @@ features:
       - Collapsed web tool groups expand into their individual named calls, with failure, exit-code, diff, and disclosure signals remaining independently visible.
       - Meaningful running-command interactions are shown with fixed sanitized summaries while empty polls and raw terminal input remain hidden.
       - Claude, Codex, and OpenCode file edits retain structured paths, line statistics, lifecycle state, and provider-independent presentation without eagerly sending full diffs to clients.
-      - Folded completed turns summarize the categories of tools used with recognizable icons.
+      - Folded completed turns summarize the categories of tools used with recognizable icons; web and desktop keep the activity counts and disclosure chevron aligned to the end of the row.
       - Folded turn rows show no hover timestamp of their own, since the user message that starts the turn already reveals the same time.
       - Claude project memory writes and index updates form a distinct work-log category on web and mobile; similarly named repository files remain ordinary edits.
       - Page fetches read as "Fetched page" with their URL for Claude and ACP providers, and ACP workspace searches read and count as code searches rather than web lookups, including in historical threads.
@@ -1899,8 +1899,10 @@ features:
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/server/src/orchestration-v2/CommandOutputQuery.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
     upstream_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/orchestration-v2/CommandOutputQuery.test.ts
