@@ -355,15 +355,9 @@ it.layer(testLayer)("LegacyHistoryWriter", (it) => {
         command?.legacyActivities?.map((activity) => activity.id),
         ["command-start", "command-end"],
       );
-      assert.deepEqual(command?.legacyActivities?.[1]?.payload, {
-        toolCallId: "same-command",
-        itemType: "command_execution",
-        status: "completed",
-        data: {
-          item: { command: "cat synthetic.txt", aggregatedOutput: "Synthetic output", exitCode: 0 },
-        },
-        preservedUnknownField: { nested: ["exact", 42] },
-      });
+      // Items keep a reference to each V1 activity; the canonical fields carry its content.
+      assert.isTrue(command?.legacyActivities?.every((activity) => activity.payload === undefined));
+      assert.equal(command?.type === "command_execution" && command.exitCode, 0);
       const file = before.turnItems.find((item) => item.type === "file_change");
       assert.equal(file?.type === "file_change" && file.fileName, "synthetic.ts");
       assert.equal(file?.type === "file_change" && file.diffStr, "synthetic diff");

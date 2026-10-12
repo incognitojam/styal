@@ -1260,13 +1260,17 @@ export const OrchestrationV2UserMessageInputIntent = Schema.Literals([
 export type OrchestrationV2UserMessageInputIntent =
   typeof OrchestrationV2UserMessageInputIntent.Type;
 
-/** Frozen import evidence; canonical item fields drive V2 behavior. */
+/**
+ * The V1 activity a converted item came from; canonical item fields drive V2 behavior.
+ * Current imports keep only this reference. Payloads remain on items imported before
+ * styal's fork migration 10, which stripped them from persisted history.
+ */
 export const OrchestrationV2LegacyActivity = Schema.Struct({
   id: EventId,
   tone: Schema.Literals(["info", "tool", "approval", "error"]),
   kind: TrimmedNonEmptyString,
   summary: TrimmedNonEmptyString,
-  payload: Schema.Unknown,
+  payload: Schema.optional(Schema.Unknown),
   turnId: Schema.NullOr(TurnId),
   sequence: Schema.optional(NonNegativeInt),
   createdAt: IsoDateTime,

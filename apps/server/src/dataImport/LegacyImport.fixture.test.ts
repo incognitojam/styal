@@ -250,11 +250,12 @@ for (const fixture of fixtures) {
               )) {
                 const imported = activities.find((record) => record.id === activity.id);
                 assert.isDefined(imported, `${id}.activity:${activity.id}`);
-                assert.deepEqual(
-                  imported?.payload,
+                // The V1 source keeps the payload; the converted item keeps a reference.
+                assert.isDefined(
                   sourceActivities.get(String(activity.id)),
-                  `${id}.activity:${activity.id}.payload`,
+                  `${id}.source:${activity.id}`,
                 );
+                assert.isUndefined(imported?.payload, `${id}.activity:${activity.id}.payload`);
               }
               const expectedCheckpoints = expected.checkpoints as Json[];
               assert.equal(

@@ -43,8 +43,8 @@ import * as ServerRuntimeStartup from "../src/serverRuntimeStartup.ts";
 import { measureHttpGet } from "./NetworkTransferMeasurement.integration.ts";
 
 /**
- * Threads converted from V1 history keep every recorded activity, including full command
- * output, as persisted evidence. Clients render only the canonical items, so an imported
+ * Threads converted from V1 history keep every command's full recorded output in
+ * persistence. Clients render only the canonical items, so an imported
  * thread must cost about as much on the wire as its conversation. The upstream transfer
  * report measures native threads only; this guards the imported path.
  */
@@ -53,7 +53,7 @@ const TURNS = 10;
 const COMMANDS_PER_TURN = 5;
 const OUTPUT_BYTES_PER_COMMAND = 200_000;
 // Measured at 5.1 KB on the wire and 87 KB decoded, about 35% under these caps. Shipping
-// the 13 MB of retained activity again exceeds them by orders of magnitude.
+// the 6.7 MB of retained output exceeds them by orders of magnitude.
 const BUDGET = {
   snapshotWireBytes: 7_000,
   snapshotDecodedBytes: 115_000,
@@ -172,15 +172,14 @@ it.live(
       yield* importer.reconcileShells;
       yield* importer.ensureTranscript(THREAD_ID);
 
-      // Persistence keeps the full recorded output as evidence.
+      // Persistence keeps every command's full recorded output on the converted item.
       const projections = yield* ProjectionStore.ProjectionStoreV2;
       const durable = yield* projections.getThreadProjection(THREAD_ID);
-      const commands = durable.turnItems.filter((item) => item.type === "command_execution");
-      assert.equal(commands.length, TURNS * COMMANDS_PER_TURN);
-      assert.isAbove(
-        encodeJson(durable.turnItems).length,
-        TURNS * COMMANDS_PER_TURN * OUTPUT_BYTES_PER_COMMAND,
+      const outputs = durable.turnItems.flatMap((item) =>
+        item.type === "command_execution" ? [item.output?.length ?? 0] : [],
       );
+      assert.equal(outputs.length, TURNS * COMMANDS_PER_TURN);
+      assert.isTrue(outputs.every((length) => length >= OUTPUT_BYTES_PER_COMMAND * 0.6));
 
       const context = yield* Effect.context<Layer.Success<typeof services>>();
       const server = yield* Layer.build(
