@@ -22,6 +22,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
+import { readHistoryRewriteFence } from "../../orchestration-v2/historyRewriteFence.ts";
 import { replayAndBufferProjectedLiveEvents } from "../../orchestration-v2/LiveStreamBudget.ts";
 
 import {
@@ -599,6 +600,9 @@ const makeEventStore = Effect.gen(function* () {
     getReplayStats,
     latestAgentSequence,
     latestApplicationSequence,
+    historyRewriteFence: readHistoryRewriteFence(sql).pipe(
+      Effect.mapError(toPersistenceSqlError("OrchestrationEventStore.historyRewriteFence:query")),
+    ),
     readApplicationEvents: catchUpApplicationEvents,
     publishCommitted: (events) => PubSub.publishAll(committedEvents, events).pipe(Effect.asVoid),
     streamApplicationEvents,

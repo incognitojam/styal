@@ -82,7 +82,7 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
           `;
         }
 
-        yield* runForkMigrations();
+        yield* runForkMigrations({ toMigrationInclusive: 7 });
 
         const kept = [
           "import:v1:activity:thread-1:running",
