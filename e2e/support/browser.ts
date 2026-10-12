@@ -16,29 +16,34 @@ export interface App {
  * test fails, the page is saved to `test-failure.png` in the environment's directory.
  */
 export async function openApp(environment: Environment): Promise<App> {
-  const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  // A returning user: the first-run wizard is already done. The workspace holds only the
-  // bootstrap project, which would otherwise count as a first run.
-  await context.addInitScript(() => {
-    if (window.localStorage.getItem("styal:client-settings:v1") === null) {
-      window.localStorage.setItem(
-        "styal:client-settings:v1",
-        JSON.stringify({ onboardingCompletedAt: "2026-01-01T00:00:00.000Z" }),
-      );
-    }
+  let page: Page | undefined;
+  const browser = await chromium.launch().catch((error: unknown) => {
+    markFailed();
+    throw error;
   });
-  const page = await context.newPage();
   try {
+    const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    // A returning user: the first-run wizard is already done. The workspace holds only the
+    // bootstrap project, which would otherwise count as a first run.
+    await context.addInitScript(() => {
+      if (window.localStorage.getItem("styal:client-settings:v1") === null) {
+        window.localStorage.setItem(
+          "styal:client-settings:v1",
+          JSON.stringify({ onboardingCompletedAt: "2026-01-01T00:00:00.000Z" }),
+        );
+      }
+    });
+    page = await context.newPage();
     await page.goto(environment.pairingUrl);
     const composer = page.locator("[contenteditable=true]").first();
     await composer.waitFor({ timeout: 60_000 });
+    const openedPage = page;
     const removeFailureHandler = onTestFailure(async () => {
-      await page.screenshot({ path: `${environment.root}/test-failure.png` });
+      await openedPage.screenshot({ path: `${environment.root}/test-failure.png` });
     });
     return {
       browser,
-      page,
+      page: openedPage,
       composer,
       close: async () => {
         removeFailureHandler();
@@ -47,7 +52,7 @@ export async function openApp(environment: Environment): Promise<App> {
     };
   } catch (error) {
     markFailed();
-    await page.screenshot({ path: `${environment.root}/open-app-failure.png` }).catch(() => {});
+    await page?.screenshot({ path: `${environment.root}/open-app-failure.png` }).catch(() => {});
     await browser.close();
     throw error;
   }

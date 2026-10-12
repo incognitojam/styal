@@ -510,7 +510,11 @@ function runExec(argv: ReadonlyArray<string>): void {
   });
 }
 
-/** Writes a `codex` launcher for this script into a directory and prints its path. */
+/**
+ * Writes a `codex` launcher for this script into a directory and prints its path. The launcher
+ * runs the Node binary that ran `install`, so it works under a different HOME or PATH, where a
+ * version manager's `node` shim may be missing or need to download a runtime.
+ */
 function runInstall(argv: ReadonlyArray<string>): void {
   const directory = argv[0];
   if (!directory) {
@@ -531,7 +535,7 @@ function runInstall(argv: ReadonlyArray<string>): void {
         "@echo off",
         ...(scenario ? [`set "${SCENARIO_ENV}=${NodePath.resolve(scenario)}"`] : []),
         ...(requestLog ? [`set "${REQUEST_LOG_ENV}=${NodePath.resolve(requestLog)}"`] : []),
-        `node "${script}" %*`,
+        `"${process.execPath}" "${script}" %*`,
         "exit /b %ERRORLEVEL%",
         "",
       ].join("\r\n"),
@@ -548,7 +552,7 @@ function runInstall(argv: ReadonlyArray<string>): void {
       "#!/bin/sh",
       ...(scenario ? [`export ${SCENARIO_ENV}=${quote(NodePath.resolve(scenario))}`] : []),
       ...(requestLog ? [`export ${REQUEST_LOG_ENV}=${quote(NodePath.resolve(requestLog))}`] : []),
-      `exec node ${quote(script)} "$@"`,
+      `exec ${quote(process.execPath)} ${quote(script)} "$@"`,
       "",
     ].join("\n"),
     "utf8",
