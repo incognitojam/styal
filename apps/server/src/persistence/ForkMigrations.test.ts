@@ -58,7 +58,6 @@ upstreamLayer("ForkMigrations canonical upstream upgrade", (it) => {
         { migration_id: 7, name: "DropUndisplayedLegacyActivityItems" },
         { migration_id: 8, name: "HistoryRewriteFence" },
         { migration_id: 9, name: "RederiveLegacyActivityItems" },
-        { migration_id: 10, name: "SlimImportedLegacyActivity" },
       ]);
     }),
   );
@@ -94,7 +93,6 @@ it("keeps fork migrations out of the upstream manifest", () => {
     [7, "DropUndisplayedLegacyActivityItems"],
     [8, "HistoryRewriteFence"],
     [9, "RederiveLegacyActivityItems"],
-    [10, "SlimImportedLegacyActivity"],
   ]);
 });
 

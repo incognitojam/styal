@@ -3,10 +3,10 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import { readHistoryRewriteFence } from "../../orchestration-v2/historyRewriteFence.ts";
-import { runForkMigrations } from "../ForkMigrations.ts";
-import { runMigrations } from "../Migrations.ts";
+import { runAllMigrations } from "../../persistence/ForkMigrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import { readHistoryRewriteFence } from "../historyRewriteFence.ts";
+import { slimImportedHistory } from "./slimImportedHistory.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -60,22 +60,19 @@ const items = [
   },
 ];
 
-it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
-  "010_SlimImportedLegacyActivity",
-  (it) => {
-    it.effect("folds recorded command output into items and keeps only activity references", () =>
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        yield* runMigrations();
-        yield* runForkMigrations({ toMigrationInclusive: 9 });
-        for (const [index, item] of items.entries()) {
-          const payload = yield* encodeJson(item);
-          yield* sql`
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("slimImportedHistory", (it) => {
+  it.effect("folds recorded command output into items and keeps only activity references", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runAllMigrations();
+      for (const [index, item] of items.entries()) {
+        const payload = yield* encodeJson(item);
+        yield* sql`
             INSERT INTO orchestration_v2_projection_turn_items
               (turn_item_id, thread_id, ordinal, type, status, updated_at, payload_json)
             VALUES (${item.id}, 'thread-1', ${index + 1}, ${item.type}, 'completed', ${at}, ${payload})
           `;
-          yield* sql`
+        yield* sql`
             INSERT INTO orchestration_events (
               event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
               actor_kind, payload_json, metadata_json, application_event_version
@@ -84,47 +81,47 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
               'turn-item.updated', ${at}, 'server', ${payload}, '{}', 2
             )
           `;
-        }
-        const fenceBefore = yield* readHistoryRewriteFence(sql);
+      }
+      const fenceBefore = yield* readHistoryRewriteFence(sql);
 
-        yield* runForkMigrations();
+      assert.deepEqual(yield* slimImportedHistory(sql), { threads: 1, rows: items.length * 2 });
+      const fenceAfter = yield* readHistoryRewriteFence(sql);
+      // Later startups find the pass recorded as done.
+      assert.deepEqual(yield* slimImportedHistory(sql), { threads: 0, rows: 0 });
+      assert.equal(yield* readHistoryRewriteFence(sql), fenceAfter);
 
-        const projected = yield* sql<{ readonly payload_json: string }>`
+      const projected = yield* sql<{ readonly payload_json: string }>`
           SELECT payload_json FROM orchestration_v2_projection_turn_items ORDER BY ordinal
         `;
-        const events = yield* sql<{ readonly payload_json: string }>`
+      const events = yield* sql<{ readonly payload_json: string }>`
           SELECT payload_json FROM orchestration_events ORDER BY stream_version
         `;
-        assert.deepEqual(
-          events.map((row) => row.payload_json),
-          projected.map((row) => row.payload_json),
-        );
-        const [folded, kept, tool] = (yield* Effect.forEach(projected, (row) =>
-          decodeJson(row.payload_json),
-        )) as ReadonlyArray<{
-          readonly output?: string;
-          readonly exitCode?: number;
-          readonly legacyActivities: ReadonlyArray<Record<string, unknown>>;
-        }>;
-        assert.deepEqual([folded?.output, folded?.exitCode], ["3 passed", 0]);
-        assert.deepEqual([kept?.output, kept?.exitCode], ["canonical", 2]);
-        assert.notProperty(tool, "output");
-        assert.deepEqual(
-          [folded, kept, tool].flatMap((item) =>
-            (item?.legacyActivities ?? []).map((reference) => [
-              reference.id,
-              "payload" in reference,
-            ]),
-          ),
-          [
-            ["folded-start", false],
-            ["folded-end", false],
-            ["kept-end", false],
-            ["tool-end", false],
-          ],
-        );
-        assert.isAbove(yield* readHistoryRewriteFence(sql), Math.max(fenceBefore, items.length));
-      }),
-    );
-  },
-);
+      assert.deepEqual(
+        events.map((row) => row.payload_json),
+        projected.map((row) => row.payload_json),
+      );
+      const [folded, kept, tool] = (yield* Effect.forEach(projected, (row) =>
+        decodeJson(row.payload_json),
+      )) as ReadonlyArray<{
+        readonly output?: string;
+        readonly exitCode?: number;
+        readonly legacyActivities: ReadonlyArray<Record<string, unknown>>;
+      }>;
+      assert.deepEqual([folded?.output, folded?.exitCode], ["3 passed", 0]);
+      assert.deepEqual([kept?.output, kept?.exitCode], ["canonical", 2]);
+      assert.notProperty(tool, "output");
+      assert.deepEqual(
+        [folded, kept, tool].flatMap((item) =>
+          (item?.legacyActivities ?? []).map((reference) => [reference.id, "payload" in reference]),
+        ),
+        [
+          ["folded-start", false],
+          ["folded-end", false],
+          ["kept-end", false],
+          ["tool-end", false],
+        ],
+      );
+      assert.isAbove(yield* readHistoryRewriteFence(sql), Math.max(fenceBefore, items.length));
+    }),
+  );
+});

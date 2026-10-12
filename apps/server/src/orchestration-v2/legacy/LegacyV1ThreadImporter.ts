@@ -43,6 +43,7 @@ import { makeKeyedSerialExecutor } from "../KeyedSerialExecutor.ts";
 import { randomUuidV4 } from "../RandomUuid.ts";
 import { legacyHistoricalItems } from "./LegacyHistoricalItems.ts";
 import { orderLegacyHistory } from "./orderLegacyHistory.ts";
+import { slimImportedHistory } from "./slimImportedHistory.ts";
 import {
   OrchestrationThreadActivity,
   OrchestrationCheckpointSummary,
@@ -1015,6 +1016,14 @@ const make = Effect.gen(function* () {
       importedMessageCount += result.importedMessageCount;
       yield* Effect.yieldNow;
     }
+    const slimmed = yield* slimImportedHistory(sql).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Slimming imported v1 history stopped", { cause }).pipe(
+          Effect.as({ threads: 0, rows: 0 }),
+        ),
+      ),
+    );
+    if (slimmed.rows > 0) yield* Effect.logInfo("Slimmed imported v1 history", slimmed);
     return { importedThreadCount, importedMessageCount };
   }).pipe(
     Effect.catchCause((cause) =>

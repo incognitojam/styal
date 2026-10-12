@@ -102,8 +102,8 @@ export function normalizeCommandOutput(
   if (row === null || !Predicate.isObject(row.payload)) return emptyResult("unavailable");
   const payload = row.payload;
   if (row.kind === "command_execution") {
-    // Imported history from before fork migration 10 may still carry the original V1
-    // payloads; current imports fold their output into the canonical item.
+    // Imported history may still carry its original V1 payloads until the startup pass in
+    // legacy/slimImportedHistory.ts folds their output into the canonical item.
     const retained = Array.isArray(payload.legacyActivities)
       ? payload.legacyActivities.toReversed().flatMap((activity) => {
           if (!Predicate.isObject(activity) || typeof activity.kind !== "string") return [];
@@ -235,8 +235,8 @@ export const layer = Layer.effect(CommandOutputQuery, make);
 
 /**
  * The complete output and exit code a converted V1 command recorded, read from its canonical
- * fields or, failing those, from the V1 payloads it was converted from. Imports and fork
- * migration 10 fold this into the item so the V1 payloads need not be kept on it.
+ * fields or, failing those, from the V1 payloads it was converted from. Imports and
+ * legacy/slimImportedHistory.ts fold this into the item so the V1 payloads need not be kept.
  */
 export function recordedCommandOutput(payload: Record<string, unknown>): {
   readonly output: string | null;
