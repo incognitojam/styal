@@ -804,6 +804,7 @@ features:
       - packages/contracts/src/index.ts
       - packages/contracts/src/rpc.ts
     tests:
+      - apps/server/integration/importedThreadTransferBudget.integration.test.ts
       - apps/server/src/dataImport/LegacyHistoryWriter.test.ts
       - apps/server/src/dataImport/LegacyImport.fixture.test.ts
       - apps/server/src/dataImport/LegacyImport.test.ts
