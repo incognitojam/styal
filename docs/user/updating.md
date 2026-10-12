@@ -14,8 +14,8 @@ running terminal commands, and provider updates being installed, including work
 started from other devices. If
 work is running or the check fails, styal lists it and asks you to confirm.
 
-**Settings → General → Continue threads after restarts** is off by default.
-Enable it to resume supported active threads after an update, crash, or machine
+**Settings → General → Continue threads after restarts** is on by default.
+It resumes supported active threads after an update, crash, or machine
 restart. Changes are saved to connected environments that support this setting;
 update older servers first. If a supported environment was offline or has a
 different value, use **Apply to all** in Settings after it connects.
@@ -27,8 +27,9 @@ a monitor or subagent, are asked to restart the work they still need.
 A thread whose turn continues shows **Continued after server restart** where
 the agent picked up again, and a thread asked to restart background work shows
 **Asked to restart background work after server restart**.
-If you previously enabled continuation for updates, enable this setting once
-to allow recovery without a connected client.
+A thread is not resumed while it waits for your approval, answer, or secret, or
+while it is archived, snoozed, or settled. After three automatic resumes in a row,
+the thread waits for your next message.
 
 Updates from the previous orchestration system preserve conversation transcripts but cannot carry
 every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)

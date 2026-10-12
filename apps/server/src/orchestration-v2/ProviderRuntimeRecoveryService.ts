@@ -100,7 +100,11 @@ export const listContinuableThreadIds = Effect.fn(
     if (
       resolveProjectSettings(current, projection.thread.projectId).settings
         .continueThreadsAfterServerUpdate &&
-      restartContinuationRun(projection, providerThreadsWithOpenBackgroundWork(projection))
+      restartContinuationRun(
+        projection,
+        yield* DateTime.now,
+        providerThreadsWithOpenBackgroundWork(projection),
+      )
     ) {
       eligible.add(threadId);
     }
@@ -640,7 +644,7 @@ export const make = Effect.gen(function* () {
       }
       const continuationRun =
         continueAfterRestart && trigger === "startup"
-          ? restartContinuationRun(projection, new Set(cancelledBackgroundWork.keys()))
+          ? restartContinuationRun(projection, now, new Set(cancelledBackgroundWork.keys()))
           : undefined;
       const effects: Array<EffectOutbox.PendingOrchestrationEffectV2> = continuationRun
         ? [
@@ -780,6 +784,7 @@ export const make = Effect.gen(function* () {
         // settled thread's continuation must be captured while it is still open.
         const run = restartContinuationRun(
           projection,
+          yield* DateTime.now,
           providerThreadsWithOpenBackgroundWork(projection),
         );
         if (!run) return;

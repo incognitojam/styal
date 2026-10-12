@@ -14,7 +14,7 @@ const defaultSnapshot = {
   defaultThreadEnvMode: null,
   defaultModelSelectionSet: false,
   responseStreamingMode: "paragraph",
-  continueThreadsAfterServerUpdate: false,
+  continueThreadsAfterServerUpdate: true,
   newWorktreesStartFromOrigin: true,
   worktreeSubmodules: null,
   worktreesDirectoryCustomized: false,
