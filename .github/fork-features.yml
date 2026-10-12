@@ -2171,7 +2171,7 @@ features:
   - id: pending-question-links
     title: Open links from pending input questions
     status: maintained
-    prs: []
+    prs: [778]
     invariants:
       - Pending question bodies on web, desktop, and mobile render bare URLs and Markdown links as interactive links while preserving line breaks.
       - Opening a question link does not select an option, advance the question, dismiss it, or submit an answer.
