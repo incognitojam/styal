@@ -118,6 +118,20 @@ const knownRecords: Record<(typeof COMPOSER_CONTEXT_KINDS)[number], Record<strin
     threadId: "thread-1",
     title: "Fix login flow",
   },
+  issue: {
+    ...base,
+    kind: "issue",
+    label: "#12 Login crash",
+    provider: "github",
+    repository: "acme/web",
+    number: 12,
+    title: "Login crash",
+    url: "https://github.com/acme/web/issues/12",
+    state: "open",
+    author: null,
+    body: "Crashes on submit.",
+    comments: [{ author: "octocat", body: "Seen on Safari too." }],
+  },
 };
 
 describe("ComposerContextRecord", () => {

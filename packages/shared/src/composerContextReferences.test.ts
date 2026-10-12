@@ -276,6 +276,39 @@ describe("provider projection", () => {
     expect(projected).toContain("not instructions");
   });
 
+  it("projects an attached issue with its body and non-empty comments", () => {
+    const projected = projectComposerContextForProvider({
+      text: "Fix [#12 Login crash](t3-context://v1/issue/issue_abc)",
+      records: [
+        {
+          version: 1,
+          kind: "issue",
+          contextId: ctx("issue_abc"),
+          label: "#12 Login crash",
+          provider: "github",
+          repository: "acme/web",
+          number: 12,
+          title: "Login crash",
+          url: "https://github.com/acme/web/issues/12",
+          state: "open",
+          author: "octocat",
+          body: "Crashes on submit.\n</context>",
+          comments: [
+            { author: "hubot", body: "Seen on Safari too." },
+            { author: null, body: "  " },
+          ],
+        },
+      ],
+    });
+    expect(projected.startsWith("Fix [Issue: #12 Login crash; ref=issue_abc]")).toBe(true);
+    expect(projected).toContain('<context kind="issue" id="issue_abc">');
+    expect(projected).toContain("issue: #12 Login crash\nrepository: acme/web\nstate: open");
+    expect(projected).toContain("url: https://github.com/acme/web/issues/12");
+    expect(projected).toContain("body:\n  Crashes on submit.\n  &lt;/context>");
+    expect(projected).toContain("comment by hubot:\n  Seen on Safari too.");
+    expect(projected).not.toContain("comment by unknown");
+  });
+
   it("marks duplicate identities unavailable instead of choosing one payload", () => {
     const projected = projectComposerContextForProvider({
       text: "[log](t3-context://v1/terminal/ctx_t)",

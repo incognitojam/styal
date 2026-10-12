@@ -134,6 +134,7 @@ import remarkGfm from "remark-gfm";
 import type { Root, RootContent } from "mdast";
 import { T3Wordmark } from "../T3Wordmark";
 import { ThreadContextChip } from "../ThreadContextChip";
+import { IssueContextChip } from "../IssueContextChip";
 import {
   BotIcon,
   BugIcon,
@@ -4337,6 +4338,16 @@ const userMessageContextPresentationRegistry = createContextPresentationRegistry
       render: (record, context) =>
         record.kind === "thread" ? (
           <ThreadContextChip record={record} copyMarkdown={context.copyMarkdown} />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "issue",
+      canRender: (record) => record.kind === "issue",
+      render: (record, context) =>
+        record.kind === "issue" ? (
+          <IssueContextChip record={record} copyMarkdown={context.copyMarkdown} />
         ) : (
           <UnavailableUserMessageContextChip {...context} />
         ),

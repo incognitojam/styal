@@ -137,9 +137,6 @@ export function resolveQueuedEditPayload(input: {
   );
   return {
     attachments,
-    context:
-      records.length > 0 || (rebound.issueContexts?.length ?? 0) > 0
-        ? { ...rebound, records }
-        : undefined,
+    context: records.length > 0 ? { version: 1, records } : undefined,
   };
 }

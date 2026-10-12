@@ -8,6 +8,7 @@ import type {
   EnvironmentId,
   FileContextRecord,
   ImageContextRecord,
+  IssueContextRecord,
   KnownComposerContextRecord,
   MessageId,
   OrchestrationMessageContext,
@@ -320,6 +321,7 @@ export function buildMessageContext(input: {
   reviewComments: ReadonlyArray<ReviewCommentContext>;
   previewAnnotations: ReadonlyArray<PreviewAnnotationPayload>;
   threadContexts?: ReadonlyArray<ThreadContextRecord>;
+  issueContexts?: ReadonlyArray<IssueContextRecord>;
   attachments?: ReadonlyArray<BoundComposerAttachment>;
 }): OrchestrationMessageContext | undefined {
   // An annotation's screenshot travels as the image attachment that reuses its id.
@@ -332,6 +334,7 @@ export function buildMessageContext(input: {
     ...input.terminalContexts.map(terminalContextRecord),
     ...input.reviewComments.map(reviewCommentContextRecord),
     ...(input.threadContexts ?? []),
+    ...(input.issueContexts ?? []),
     ...input.previewAnnotations.map((annotation) =>
       previewAnnotationContextRecord(annotation, {
         screenshotContextId: screenshotAttachmentIds.has(annotation.id) ? annotation.id : undefined,

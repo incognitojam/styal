@@ -1,26 +1,23 @@
-import { ThreadId, OrchestrationMessageContext, type SourceControlIssue } from "@t3tools/contracts";
+import {
+  COMPOSER_CONTEXT_ISSUE_BODY_MAX_CHARS,
+  COMPOSER_CONTEXT_ISSUE_MAX_COMMENTS,
+  IssueContextRecord,
+  type SourceControlIssue,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  recoverQueuedIssueContext,
-  appendIssueContextsToPrompt,
-  buildIssueContextBlock,
-  extractTrailingIssueContexts,
-  formatIssueContextLabel,
-  type IssueContextSelection,
-  issueContextDedupKey,
-  newIssueContextId,
-  normalizeIssueContextSelection,
-} from "./issueContext";
+import { extractTrailingIssueContexts, issueContextRecord } from "./issueContext";
+
+const isIssueContextRecord = Schema.is(IssueContextRecord);
 
 function makeIssue(overrides?: Partial<SourceControlIssue>): SourceControlIssue {
   return {
     provider: "github",
-    repository: "pingdotgg/codething-mvp",
+    repository: "acme/web",
     number: 123,
     title: "Fix login crash",
-    url: "https://github.com/pingdotgg/codething-mvp/issues/123",
+    url: "https://github.com/acme/web/issues/123",
     state: "open",
     author: "octocat",
     body: "Steps to reproduce",
@@ -29,151 +26,83 @@ function makeIssue(overrides?: Partial<SourceControlIssue>): SourceControlIssue 
   } as SourceControlIssue;
 }
 
-function makeSelection(overrides?: Partial<IssueContextSelection>): IssueContextSelection {
-  return {
-    ...(normalizeIssueContextSelection(makeIssue()) as IssueContextSelection),
-    ...overrides,
-  };
-}
-
-describe("normalizeIssueContextSelection", () => {
+describe("issueContextRecord", () => {
   it("trims strings and normalizes line endings", () => {
-    const selection = normalizeIssueContextSelection(
+    const record = issueContextRecord(
       makeIssue({
         title: "  Fix login crash  ",
-        url: "  https://github.com/pingdotgg/codething-mvp/issues/123  ",
+        url: "  https://github.com/acme/web/issues/123  ",
         author: "  octocat  ",
         body: "\r\nStep one\r\nStep two\n\n",
         comments: [{ author: "  hubot  ", body: "\n Repros here \n" }],
       }),
     );
-
-    expect(selection).toEqual({
-      provider: "github",
-      repository: "pingdotgg/codething-mvp",
-      number: 123,
+    expect(record).toMatchObject({
+      kind: "issue",
+      label: "#123 Fix login crash",
       title: "Fix login crash",
-      url: "https://github.com/pingdotgg/codething-mvp/issues/123",
-      state: "open",
+      url: "https://github.com/acme/web/issues/123",
       author: "octocat",
       body: "Step one\nStep two",
       comments: [{ author: "hubot", body: "Repros here" }],
     });
   });
 
-  it("truncates a pathologically large body", () => {
-    const selection = normalizeIssueContextSelection(makeIssue({ body: "x".repeat(30_000) }));
-    expect(selection?.body.length).toBe(24_000);
-    expect(selection?.body.endsWith("…")).toBe(true);
-  });
-
-  it("caps the number of retained comments", () => {
-    const selection = normalizeIssueContextSelection(
+  it("clamps an oversized issue to what the record schema accepts", () => {
+    const record = issueContextRecord(
       makeIssue({
-        comments: Array.from({ length: 80 }, (_unused, index) => ({
-          author: `user-${index}`,
-          body: `comment ${index}`,
+        body: "x".repeat(COMPOSER_CONTEXT_ISSUE_BODY_MAX_CHARS + 500),
+        comments: Array.from({ length: COMPOSER_CONTEXT_ISSUE_MAX_COMMENTS + 5 }, () => ({
+          author: null,
+          body: "comment",
         })),
       }),
     );
-    expect(selection?.comments.length).toBe(50);
+    expect(record?.body.length).toBe(COMPOSER_CONTEXT_ISSUE_BODY_MAX_CHARS);
+    expect(record?.comments).toHaveLength(COMPOSER_CONTEXT_ISSUE_MAX_COMMENTS);
+    expect(isIssueContextRecord(record)).toBe(true);
   });
 
-  it("returns null when the issue has no usable title or number", () => {
-    expect(normalizeIssueContextSelection(makeIssue({ title: "   " }))).toBeNull();
-    expect(normalizeIssueContextSelection(makeIssue({ number: 0 }))).toBeNull();
+  it("truncates a long title in the label but keeps it whole in the payload", () => {
+    const title = "A".repeat(80);
+    const record = issueContextRecord(makeIssue({ title }));
+    expect(record?.title).toBe(title);
+    expect(record?.label.length).toBeLessThan(title.length);
+    expect(record?.label.endsWith("…")).toBe(true);
   });
 
-  it("keeps a null repository when the provider did not report one", () => {
-    expect(normalizeIssueContextSelection(makeIssue({ repository: null }))?.repository).toBeNull();
+  it("gives the same issue the same context id and different issues different ids", () => {
+    const first = issueContextRecord(makeIssue());
+    const again = issueContextRecord(makeIssue({ title: "Renamed", body: "Edited" }));
+    const otherRepo = issueContextRecord(makeIssue({ repository: "acme/api" }));
+    const otherNumber = issueContextRecord(makeIssue({ number: 124 }));
+    expect(again?.contextId).toBe(first?.contextId);
+    expect(otherRepo?.contextId).not.toBe(first?.contextId);
+    expect(otherNumber?.contextId).not.toBe(first?.contextId);
+  });
+
+  it("rejects an issue without a usable number or title", () => {
+    expect(issueContextRecord(makeIssue({ number: 0 }))).toBeNull();
+    expect(issueContextRecord(makeIssue({ title: "   " }))).toBeNull();
   });
 });
 
-describe("issueContextDedupKey", () => {
-  it("matches the same issue and separates different ones", () => {
-    const left = makeSelection();
-    expect(issueContextDedupKey(left)).toBe(issueContextDedupKey(makeSelection()));
-    expect(issueContextDedupKey(left)).not.toBe(
-      issueContextDedupKey(makeSelection({ number: 124 })),
-    );
-  });
-});
-
-describe("formatIssueContextLabel", () => {
-  it("renders the issue number and title", () => {
-    expect(formatIssueContextLabel(makeSelection())).toBe("#123 Fix login crash");
-  });
-
-  it("truncates very long titles", () => {
-    const label = formatIssueContextLabel(makeSelection({ title: "y".repeat(200) }));
-    expect(label.length).toBe("#123 ".length + 60);
-    expect(label.endsWith("…")).toBe(true);
-  });
-});
-
-describe("buildIssueContextBlock", () => {
-  it("returns an empty string when there is nothing to serialize", () => {
-    expect(buildIssueContextBlock([])).toBe("");
-  });
-
-  it("serializes repository, state, author, url, body, and comments", () => {
-    expect(buildIssueContextBlock([makeSelection()])).toBe(
-      [
-        "<issue_context>",
-        "- #123 Fix login crash:",
-        "  repository: pingdotgg/codething-mvp",
-        "  state: open",
-        "  author: octocat",
-        "  url: https://github.com/pingdotgg/codething-mvp/issues/123",
-        "  body:",
-        "  Steps to reproduce",
-        "  comment by hubot:",
-        "  Repros here",
-        "</issue_context>",
-      ].join("\n"),
-    );
-  });
-
-  it("keeps the full title in the block header even when the chip label truncates", () => {
-    const title = "t".repeat(200);
-    const block = buildIssueContextBlock([makeSelection({ title })]);
-    expect(block).toContain(`- #123 ${title}:`);
-    expect(block).not.toContain("…");
-  });
-
-  it("separates multiple issues with a blank line", () => {
-    const block = buildIssueContextBlock([
-      makeSelection(),
-      makeSelection({ number: 124, title: "Second", body: "", comments: [] }),
-    ]);
-    expect(block).toContain("\n\n- #124 Second:");
-  });
-});
-
-describe("appendIssueContextsToPrompt", () => {
-  it("leaves the prompt untouched when there are no contexts", () => {
-    expect(appendIssueContextsToPrompt("Investigate this", [])).toBe("Investigate this");
-  });
-
-  it("appends the block after the trimmed prompt", () => {
-    const prompt = appendIssueContextsToPrompt("  Investigate this  ", [makeSelection()]);
-    expect(prompt.startsWith("Investigate this\n\n<issue_context>")).toBe(true);
-  });
-
-  it("emits only the block when the prompt is empty", () => {
-    expect(
-      appendIssueContextsToPrompt("   ", [makeSelection()]).startsWith("<issue_context>"),
-    ).toBe(true);
-  });
-});
+const LEGACY_ISSUE_BLOCK = [
+  "<issue_context>",
+  "- #123 Fix login crash:",
+  "  repository: acme/web",
+  "  state: open",
+  "  body:",
+  "    Steps to reproduce",
+  "</issue_context>",
+].join("\n");
 
 describe("extractTrailingIssueContexts", () => {
-  it("round-trips the appended block", () => {
-    const prompt = appendIssueContextsToPrompt("Investigate this", [makeSelection()]);
-    const extracted = extractTrailingIssueContexts(prompt);
+  it("splits the block off a message sent before issues became context records", () => {
+    const extracted = extractTrailingIssueContexts(`Investigate this\n\n${LEGACY_ISSUE_BLOCK}`);
     expect(extracted.promptText).toBe("Investigate this");
-    expect(extracted.contextCount).toBe(1);
-    expect(extracted.contexts[0]?.header).toBe("#123 Fix login crash");
+    expect(extracted.contexts.map((entry) => entry.header)).toEqual(["#123 Fix login crash"]);
+    expect(extracted.contexts[0]?.body).toContain("state: open");
   });
 
   it("preserves prompt text when no trailing block exists", () => {
@@ -183,61 +112,22 @@ describe("extractTrailingIssueContexts", () => {
       contexts: [],
     });
   });
-});
 
-describe("extractTrailingIssueContexts with legacy context blocks", () => {
   it("strips an issue block followed by blocks from before inline context references", () => {
     const terminalBlock =
       "<terminal_context>\n- Terminal 1 line 3:\n  3 | failed\n</terminal_context>";
-    const prompt = `${appendIssueContextsToPrompt("Investigate this", [makeSelection()])}\n\n${terminalBlock}`;
+    const prompt = `Investigate this\n\n${LEGACY_ISSUE_BLOCK}\n\n${terminalBlock}`;
     const extracted = extractTrailingIssueContexts(prompt);
     expect(extracted.promptText).toBe(`Investigate this\n\n${terminalBlock}`);
     expect(extracted.contexts.map((entry) => entry.header)).toEqual(["#123 Fix login crash"]);
   });
 
   it("leaves an issue block alone when prose follows it", () => {
-    const prompt = `${appendIssueContextsToPrompt("Investigate this", [makeSelection()])}\n\nMore text`;
+    const prompt = `Investigate this\n\n${LEGACY_ISSUE_BLOCK}\n\nMore text`;
     expect(extractTrailingIssueContexts(prompt)).toEqual({
       promptText: prompt,
       contextCount: 0,
       contexts: [],
     });
-  });
-});
-
-describe("newIssueContextId", () => {
-  it("mints unique prefixed ids", () => {
-    const ids = new Set(Array.from({ length: 10 }, () => newIssueContextId()));
-    expect(ids.size).toBe(10);
-    for (const id of ids) expect(id.startsWith("issue_")).toBe(true);
-  });
-});
-
-describe("recoverQueuedIssueContext", () => {
-  it("round trips typed issue payloads through canonical message context and restores editable chips without duplicate blocks", () => {
-    const issue = {
-      ...makeSelection({ body: "A body with comment by synthetic: inside it" }),
-      id: "issue-queued",
-      threadId: ThreadId.make("synthetic-thread"),
-      attachedAt: "2026-10-01T00:00:00Z",
-    };
-    const wire = Schema.encodeSync(Schema.fromJsonString(OrchestrationMessageContext))({
-      version: 1,
-      records: [],
-      issueContexts: [issue],
-    });
-    const context = Schema.decodeUnknownSync(Schema.fromJsonString(OrchestrationMessageContext))(
-      wire,
-    );
-    const text = appendIssueContextsToPrompt("Fix this queued issue", [issue]);
-    const recovered = recoverQueuedIssueContext(text, context);
-    expect(recovered.prompt).toBe("Fix this queued issue");
-    expect(recovered.issueContexts).toEqual([issue]);
-    expect(appendIssueContextsToPrompt(recovered.prompt, recovered.issueContexts)).toBe(text);
-    expect(recovered.issueContexts[0]?.comments).not.toBe(context.issueContexts?.[0]?.comments);
-  });
-  it("keeps older queued issue blocks intact when structured metadata was not recorded", () => {
-    const text = appendIssueContextsToPrompt("Keep this", [makeSelection()]);
-    expect(recoverQueuedIssueContext(text, undefined)).toEqual({ prompt: text, issueContexts: [] });
   });
 });

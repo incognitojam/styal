@@ -1665,41 +1665,51 @@ features:
   - id: github-issue-thread-context
     title: Start a thread from a GitHub issue
     status: review-needed
-    prs: [31]
+    prs: [31, 773]
     invariants:
-      - The command palette lists the current project's open GitHub issues through the GitHub CLI, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as a removable context chip.
-      - The attached issue persists with the draft across reloads without another CLI call and is appended to the outgoing prompt as an issue context block after the prose.
-      - A message queued while the agent is working keeps its issue context, sends it when the queued message goes out, and returns it to the composer when the queued message is cancelled or the turn is stopped.
-    rationale: Queued V2 messages carry exact issue drafts in optional typed message context as well as the existing provider prompt block. Edit and successful cancellation recover chips; Stop cancels issue-backed queued runs durably before returning their drafts, avoiding duplicate sends. Older messages without structured metadata retain their serialized issue blocks intact.
+      - The command palette lists the current project's open GitHub issues through the GitHub CLI, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as an inline context chip.
+      - The attached issue is an `issue` composer context record carrying the issue's title, body, and comments, so drafts, queued-message edits, copy and paste, sent-message chips, and the provider prompt handle it like any other context kind.
+      - The same issue always gets the same context id, so attaching it again does not add a second chip.
+      - Messages sent before issues became context records keep showing their trailing issue block as a chip in the web timeline and stay out of copied transcripts.
+    rationale: Issues ride upstream's composer context records rather than a parallel draft field and prompt block, so upstream changes to drafts, queues, and sending carry them along. The fork owns only the record kind, its provider projection case, its chips, and the palette entry.
     implementation_paths:
-      - apps/mobile/src/lib/composerContext.ts
-      - apps/mobile/src/state/queued-run-edit.ts
+      - apps/mobile/src/components/ComposerContextSheet.tsx
       - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/IssueContextChip.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
-      - apps/web/src/components/chat/ComposerPendingIssueContexts.tsx
-      - apps/web/src/components/chat/QueuedRunsControl.tsx
-      - apps/web/src/components/chat/queuedMessageEdit.ts
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/composerContextPresentation.tsx
+      - apps/web/src/components/contextPresentationRegistry.ts
       - apps/web/src/composerDraftStore.ts
+      - apps/web/src/lib/composerContextRecords.ts
       - apps/web/src/lib/issueContext.ts
+      - apps/web/src/lib/threadTranscript.ts
       - packages/contracts/src/composerContext.ts
       - packages/contracts/src/sourceControl.ts
+      - packages/shared/src/composerContextReferences.ts
     upstream_paths:
+      - apps/mobile/src/components/ComposerContextSheet.tsx
       - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
-      - apps/web/src/components/chat/QueuedRunsControl.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/composerContextPresentation.tsx
+      - apps/web/src/components/contextPresentationRegistry.ts
       - apps/web/src/composerDraftStore.ts
+      - apps/web/src/lib/composerContextRecords.ts
+      - packages/contracts/src/composerContext.ts
       - packages/contracts/src/sourceControl.ts
+      - packages/shared/src/composerContextReferences.ts
     tests:
-      - apps/mobile/src/state/queued-run-edit.test.ts
-      - apps/web/src/components/chat/queuedMessageEdit.test.ts
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/issueContext.test.ts
+      - packages/contracts/src/composerContext.test.ts
+      - packages/shared/src/composerContextReferences.test.ts
     upstream:
       status: tracking
       tracking:

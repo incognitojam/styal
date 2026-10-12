@@ -1,9 +1,4 @@
-import {
-  SourceControlIssue,
-  type ChatAttachment,
-  type OrchestrationMessageContext,
-} from "@t3tools/contracts";
-import * as Schema from "effect/Schema";
+import type { ChatAttachment } from "@t3tools/contracts";
 import {
   composerDraftHasUserContent,
   useComposerDraftStore,
@@ -12,27 +7,19 @@ import {
   type ComposerThreadTarget,
 } from "../../composerDraftStore";
 
-const encodeIssues = Schema.encodeSync(Schema.fromJsonString(Schema.Array(SourceControlIssue)));
-
 /** Keep an unsaved edit when its queued run starts or is removed remotely. */
 export function recoverQueuedMessageEdit(input: {
   readonly editTarget: ComposerThreadTarget;
   readonly threadTarget: ComposerThreadTarget;
   readonly originalText: string;
-  readonly originalIssueContexts?: OrchestrationMessageContext["issueContexts"];
 }): "kept" | "discarded" | "clean" {
   const store = useComposerDraftStore.getState();
   const draft = store.getComposerDraft(input.editTarget);
   const dirty =
     draft !== null &&
-    (draft.prompt !== input.originalText ||
-      draft.images.length > 0 ||
-      draft.files.length > 0 ||
-      encodeIssues(draft.issueContexts) !== encodeIssues(input.originalIssueContexts ?? []));
+    (draft.prompt !== input.originalText || draft.images.length > 0 || draft.files.length > 0);
   if (dirty && !composerDraftHasUserContent(store.getComposerDraft(input.threadTarget))) {
     store.moveComposerPromptAndImages(input.editTarget, input.threadTarget);
-    store.setIssueContexts(input.threadTarget, draft.issueContexts);
-    store.setIssueContexts(input.editTarget, []);
     return "kept";
   }
   store.clearComposerContent(input.editTarget);
