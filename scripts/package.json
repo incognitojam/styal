@@ -6,7 +6,7 @@
     "intake:check": "node upstream/check-intake.ts",
     "ledger:check": "node check-fork-feature-ledger.ts",
     "migrations:check": "node upstream/check-migrations.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-rs --noEmit",
     "test": "vp test run --config ../vite.config.ts --dir ."
   },
   "dependencies": {
