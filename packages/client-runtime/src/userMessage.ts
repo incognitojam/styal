@@ -8,8 +8,8 @@ export function resolveUserMessagePresentation(message: {
   readonly id?: string;
   readonly role: string;
   readonly text: string;
-  readonly createdBy?: OrchestrationV2Actor;
-  readonly scheduledTaskId?: ScheduledTaskId;
+  readonly createdBy?: OrchestrationV2Actor | undefined;
+  readonly scheduledTaskId?: ScheduledTaskId | undefined;
 }) {
   if (message.role !== "user") {
     return { text: message.text, isAutomation: false, scheduledTaskId: undefined };
