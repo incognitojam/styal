@@ -367,6 +367,8 @@ jobs:
             native: true
           - suite: Clients
             filters: --filter './apps/desktop' --filter './apps/mobile'
+          - suite: E2E
+            e2e: true
           - suite: Other
             # Keep the remainder open-ended so new workspaces are tested too.
             filters: >-
@@ -404,6 +406,41 @@ jobs:
       - name: Install browser secret helper build libraries
         if: matrix.suite == 'Clients'
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
+      - name: Cache headless Chromium
+        if: matrix.e2e
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package.json') }}
+
+      - name: Install headless Chromium
+        if: matrix.e2e
+        run: vp run --filter @t3tools/e2e install:browser
+
+      - name: Build web client for e2e
+        if: matrix.e2e
+        run: vp run --filter @t3tools/web build
+
+      - name: Test end to end
+        if: matrix.e2e
+        env:
+          # Environments live under TMPDIR; a failed test keeps its directory for upload.
+          TMPDIR: ${{ runner.temp }}/e2e
+        run: |
+          mkdir -p "$TMPDIR"
+          vp run --filter @t3tools/e2e test:e2e \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
+
+      - name: Upload end to end state
+        if: failure() && matrix.e2e
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-state
+          path: ${{ runner.temp }}/e2e/styal-e2e-*
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Test web shard
         if: matrix.shard

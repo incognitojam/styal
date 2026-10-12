@@ -1709,6 +1709,7 @@ features:
     tests:
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/issueContext.test.ts
+      - e2e/tests/github-issue-thread.e2e.ts
       - packages/contracts/src/composerContext.test.ts
       - packages/shared/src/composerContextReferences.test.ts
     upstream:

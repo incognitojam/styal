@@ -23,6 +23,10 @@
         "vitest-ci-exit-reporter.ts",
       ],
     },
+    "e2e": {
+      // Installed as the `gh` binary of each e2e environment.
+      "entry": ["fixtures/fake-gh.ts"],
+    },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
       "entry": [
@@ -32,7 +36,7 @@
         "scripts/cli.ts",
         "scripts/evaluate-thread-titles.ts",
         "scripts/measure-pr-preview.ts",
-        // Installed as the Codex binary by its test and the T3 import fixture generator.
+        // Installed as the Codex binary by its test, the T3 import fixture generator, and e2e.
         "scripts/fake-codex.ts",
         "scripts/probe-claude-fork-local-rollback-replay.ts",
         "scripts/update-test-shard-weights.ts",
