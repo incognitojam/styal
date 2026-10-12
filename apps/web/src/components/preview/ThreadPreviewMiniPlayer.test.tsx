@@ -1,0 +1,159 @@
+// @vitest-environment jsdom
+
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { act, type ReactElement, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+import { ChatCanvasContext } from "../chat/ChatCanvasContext";
+import { resolveChatCanvasLayout } from "../chat/chatCanvasLayout";
+import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
+
+vi.mock("~/previewStateStore", () => ({
+  useThreadPreviewState: () => ({
+    sessions: { "tab-1": { viewport: { _tag: "freeform", width: 1600, height: 1000 } } },
+    serverEpoch: null,
+    desktopByTabId: {},
+  }),
+}));
+vi.mock("~/browser/browserRecording", () => ({
+  useActiveBrowserRecordingTabIds: () => new Set(),
+  findActiveBrowserRecordingRuntimeTabId: () => null,
+}));
+vi.mock("~/browser/BrowserSurfaceSlot", () => ({ BrowserSurfaceSlot: () => null }));
+vi.mock("../device/DeviceStreamView", () => ({ DeviceStreamView: () => null }));
+vi.mock("~/state/device", () => ({ useDeviceState: () => null }));
+vi.mock("~/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ render }: { render: ReactElement }) => render,
+  TooltipPopup: () => null,
+}));
+
+import { ThreadPreviewMiniPlayer } from "./ThreadPreviewMiniPlayer";
+
+const threadRef = {
+  environmentId: EnvironmentId.make("preview-test"),
+  threadId: ThreadId.make("thread-test"),
+};
+const container = { width: 900, height: 700 };
+const source = { width: 1600, height: 1000 };
+
+function Player() {
+  const miniPlayer = usePreviewMiniPlayerStore((state) =>
+    selectThreadPreviewMiniPlayer(state.byThreadKey, threadRef),
+  );
+  if (!miniPlayer) return null;
+  return (
+    <ChatCanvasContext
+      value={{
+        container,
+        previewKey: "browser:tab-1",
+        layout: resolveChatCanvasLayout({
+          container,
+          preview: { ...miniPlayer, key: "browser:tab-1", source },
+        }),
+        reportPreview: () => {},
+        clearPreview: () => {},
+        registerTimeline: () => {},
+        reportDetailsCard: () => {},
+      }}
+    >
+      <ThreadPreviewMiniPlayer threadRef={threadRef} miniPlayer={miniPlayer} />
+    </ChatCanvasContext>
+  );
+}
+
+let root: Root;
+let host: HTMLDivElement;
+let captured: Set<number>;
+
+beforeEach(async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  captured = new Set();
+});
+
+afterEach(async () => {
+  await act(() => root?.unmount());
+  host?.remove();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+async function mount() {
+  usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
+  usePreviewMiniPlayerStore.getState().open(threadRef, { kind: "browser", tabId: "tab-1" });
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(() => root.render(<Player />));
+}
+
+function frame() {
+  const element = host.querySelector<HTMLElement>("section")!;
+  return {
+    x: Number.parseFloat(element.style.left),
+    y: Number.parseFloat(element.style.top),
+    width: Number.parseFloat(element.style.width),
+    height: Number.parseFloat(element.style.height),
+  };
+}
+
+function shield() {
+  return host.querySelector<HTMLElement>("section > div[aria-hidden='true']")!;
+}
+
+async function pointer(element: Element, type: string, x: number, y: number) {
+  // jsdom does not implement native pointer capture.
+  Object.assign(element, {
+    setPointerCapture: (id: number) => captured.add(id),
+    hasPointerCapture: (id: number) => captured.has(id),
+    releasePointerCapture: (id: number) => captured.delete(id),
+  });
+  await act(() => {
+    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    element.dispatchEvent(event);
+  });
+}
+
+describe("floating browser preview gestures", () => {
+  it("moves from its page surface on a narrow canvas, retains size, and stops on release", async () => {
+    await mount();
+    const start = frame();
+    const surface = shield();
+    await pointer(surface, "pointerdown", 700, 550);
+    await pointer(surface, "pointermove", 450, 450);
+    expect(frame()).toEqual({ ...start, x: start.x - 250, y: start.y - 100 });
+    await pointer(surface, "pointerup", 450, 450);
+    expect(captured.size).toBe(0);
+    const released = frame();
+    await pointer(surface, "pointermove", 300, 300);
+    expect(frame()).toEqual(released);
+  });
+
+  it("keeps anchored edge resizing usable and stops a cancelled gesture", async () => {
+    await mount();
+    const start = frame();
+    const edge = host.querySelector("[data-preview-mini-player-resize='west']")!;
+    await pointer(edge, "pointerdown", 580, 550);
+    await pointer(edge, "pointermove", 540, 550);
+    expect(frame().width).toBe(start.width + 40);
+    expect(frame().x + frame().width).toBe(start.x + start.width);
+    await pointer(edge, "pointercancel", 540, 550);
+    const cancelled = frame();
+    await pointer(edge, "pointermove", 400, 550);
+    expect(frame()).toEqual(cancelled);
+    expect(captured.size).toBe(0);
+  });
+
+  it("closes through its toolbar without moving the preview", async () => {
+    await mount();
+    const start = frame();
+    const close = host.querySelector("button[aria-label='Close floating preview']")!;
+    await pointer(close, "pointerdown", 870, 500);
+    await pointer(close, "pointermove", 600, 300);
+    expect(frame()).toEqual(start);
+    await act(() => close.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(host.querySelector("section")).toBeNull();
+  });
+});

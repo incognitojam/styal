@@ -280,7 +280,7 @@ function MiniPlayerShell({
   readonly miniPlayer: PreviewMiniPlayerState;
   readonly sourceSize: PreviewMiniPlayerSize;
   readonly label: string;
-  /** Shields the source from pointer input; the pill and resize handles stay usable. */
+  /** Uses the source's input shield as a drag surface. */
   readonly viewOnly?: boolean;
   readonly onOpenInPanel: () => void;
   readonly pillActions?: ReactNode;
@@ -395,10 +395,14 @@ function MiniPlayerShell({
           }}
         >
           {viewOnly ? (
-            // Keep the live webview visible without sending input to the page.
+            // The view-only page stays visible while its full surface moves the frame.
             <div
               aria-hidden="true"
-              className="pointer-events-auto absolute inset-0 z-[49] rounded-[inherit]"
+              className="pointer-events-auto absolute inset-0 z-[49] touch-none cursor-grab rounded-[inherit] active:cursor-grabbing"
+              onPointerDown={(event) => beginGesture(event, null)}
+              onPointerMove={handlePointerMove}
+              onPointerUp={endGesture}
+              onPointerCancel={endGesture}
             />
           ) : null}
           <div
