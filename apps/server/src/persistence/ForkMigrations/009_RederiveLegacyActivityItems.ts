@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { legacyActivityTurnItem } from "../../orchestration-v2/legacy/LegacyHistoricalItems.ts";
+import { orderLegacyHistory } from "../../orchestration-v2/legacy/orderLegacyHistory.ts";
 
 const decodeItem = Schema.decodeUnknownEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson));
 const encodeItem = Schema.encodeEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson));
@@ -17,8 +18,9 @@ const PAGE_SIZE = 200;
  * tool's status from an in-progress update logged alongside its completion. Re-derive those
  * items through the current converter from the V1 activity each one retains: rewrite changed
  * items in their event and projection, and drop ones the converter now skips. Events and
- * projection rows store the same encoded item, so both take the same payload. The rewrite
- * moves the history fence as fork migration 8 does, so cached threads refresh.
+ * projection rows store the same encoded item, so both take the same payload. Imported
+ * history is then ordered by time rather than after the thread's messages. The rewrite moves
+ * the history fence as fork migration 8 does, so cached threads refresh.
  */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -118,7 +120,17 @@ export default Effect.gen(function* () {
   `;
   yield* sql`DROP TABLE rederived_legacy_events`;
   yield* sql`DROP TABLE rederived_legacy_items`;
-  if ((rewritten[0]?.count ?? 0) === 0) return;
+  const imported = yield* sql<{ readonly thread_id: string }>`
+    SELECT DISTINCT thread_id
+    FROM orchestration_v2_projection_turn_items
+    WHERE turn_item_id LIKE 'import:v1:%' OR turn_item_id LIKE 'migration:v1:%'
+  `;
+  let moved = 0;
+  for (let start = 0; start < imported.length; start += 100) {
+    const threadIds = imported.slice(start, start + 100).map((row) => row.thread_id);
+    moved += yield* orderLegacyHistory(sql, threadIds);
+  }
+  if ((rewritten[0]?.count ?? 0) === 0 && moved === 0) return;
   yield* sql`
     UPDATE sqlite_sequence
     SET seq = MAX(seq, (SELECT COALESCE(MAX(sequence), 0) FROM orchestration_events)) + 1

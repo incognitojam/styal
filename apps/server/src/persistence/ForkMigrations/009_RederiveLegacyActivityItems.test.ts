@@ -140,12 +140,13 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
           events.map((row) => row.payload_json),
           projected.map((row) => row.payload_json),
         );
+        // Ordering imported history by time also closes the dropped item's gap.
         const positions = yield* sql<{ readonly ordinal: number }>`
           SELECT ordinal FROM orchestration_v2_turn_item_positions ORDER BY ordinal
         `;
         assert.deepEqual(
           positions.map((row) => row.ordinal),
-          [1, 3, 4],
+          [1, 2, 3],
         );
         assert.deepEqual(
           projected.map((row) => [row.type, row.status]),

@@ -30,6 +30,7 @@ import {
   messageEvents,
 } from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import { legacyHistoricalItems } from "../orchestration-v2/legacy/LegacyHistoricalItems.ts";
+import { orderLegacyHistory } from "../orchestration-v2/legacy/orderLegacyHistory.ts";
 import { legacyProviderContinuation } from "../orchestration-v2/legacy/LegacyProviderContinuation.ts";
 import { createEmptyReadModel, projectEvent } from "./LegacyEventProjection.ts";
 
@@ -436,6 +437,7 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
           });
           importSequences.set(threadId, result.receipt.resultSequence);
         }
+        yield* orderLegacyHistory(sql, [...importSequences.keys()]);
         // Receipts survive event compaction and prevent offering the same repair again.
         for (const event of source) {
           if (event.type !== "thread.turn-prompt-linked") continue;
