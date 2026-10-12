@@ -1,9 +1,10 @@
+import { NodeId, RunId, ScheduledTaskId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildThreadTranscript, type TranscriptMessage } from "./threadTranscript";
 
 function message(overrides: Partial<TranscriptMessage>): TranscriptMessage {
-  return { role: "user", text: "hello", streaming: false, ...overrides };
+  return { role: "user", createdBy: "user", text: "hello", streaming: false, ...overrides };
 }
 
 describe("buildThreadTranscript", () => {
@@ -34,6 +35,55 @@ describe("buildThreadTranscript", () => {
     expect(transcript.messageCount).toBe(1);
     expect(transcript.text).not.toContain("internal setup");
     expect(transcript.text).not.toContain("half an ans");
+  });
+
+  it("omits completion notifications that woke the agent", () => {
+    const transcript = buildThreadTranscript("Title", [
+      message({ text: "Investigate the hang" }),
+      message({
+        text: "<task-notification>Subagent finished: found the root cause</task-notification>",
+        notification: {
+          source: { kind: "subagent" },
+          outcome: "completed",
+          summary: "Subagent finished",
+        },
+      }),
+      message({
+        text: "Delegated task finished: ran the tests",
+        delegatedCompletion: {
+          parentRunId: RunId.make("run-1"),
+          generation: 1,
+          taskIds: [NodeId.make("node-1")],
+        },
+      }),
+      message({ role: "assistant", text: "The subagent found the root cause." }),
+    ]);
+    expect(transcript.messageCount).toBe(2);
+    expect(transcript.text).not.toContain("found the root cause</task-notification>");
+    expect(transcript.text).not.toContain("ran the tests");
+  });
+
+  it("attributes messages sent by another agent or an automation", () => {
+    const transcript = buildThreadTranscript("Title", [
+      message({ text: "Rebase onto main", createdBy: "agent" }),
+      message({ text: "Run the nightly audit", scheduledTaskId: ScheduledTaskId.make("task-1") }),
+      message({
+        id: "scheduled-task-message:task-2:3:scheduled",
+        text: "[Triggered by schedule task: Audit]\n\nCheck the queue",
+        createdBy: "agent",
+      }),
+    ]);
+    expect(transcript.text).toBe(
+      [
+        "# Title",
+        "## Another agent",
+        "Rebase onto main",
+        "## Automation",
+        "Run the nightly audit",
+        "## Automation",
+        "Check the queue",
+      ].join("\n\n"),
+    );
   });
 
   it("strips injected trailing context blocks from user prompts", () => {

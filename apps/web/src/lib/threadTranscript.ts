@@ -1,10 +1,15 @@
+import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import type { OrchestrationV2ConversationMessage } from "@t3tools/contracts";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 import { extractTrailingIssueContexts } from "./issueContext";
 
-export type TranscriptMessage = Pick<OrchestrationV2ConversationMessage, "text" | "streaming"> & {
+export type TranscriptMessage = Pick<
+  OrchestrationV2ConversationMessage,
+  "text" | "streaming" | "notification" | "delegatedCompletion" | "createdBy" | "scheduledTaskId"
+> & {
+  readonly id?: string;
   readonly role: "user" | "assistant" | "system" | "reasoning";
   readonly attachments?: OrchestrationV2ConversationMessage["attachments"];
 };
@@ -36,14 +41,22 @@ function visibleUserText(text: string): string {
   ).trim();
 }
 
-function messageBody(message: TranscriptMessage): string | null {
+function messageBody(message: TranscriptMessage, userText: string): string | null {
   // User prompts can end with an issue block the composer appended at send time, and messages
   // sent before inline context references end with terminal and element blocks. The transcript
   // takes the text the user actually wrote, as the timeline renders it.
-  const text = message.role === "user" ? visibleUserText(message.text) : message.text.trim();
+  const text = message.role === "user" ? visibleUserText(userText) : message.text.trim();
   const attachments = attachmentSummary(message);
   const body = [text, attachments].filter((part) => part !== null && part.length > 0).join("\n\n");
   return body.length === 0 ? null : body;
+}
+
+/** Who wrote the message, matching the attribution the timeline shows above it. */
+function messageAuthor(message: TranscriptMessage, isAutomation: boolean): string {
+  if (message.role !== "user") return "Assistant";
+  if (isAutomation) return "Automation";
+  if (message.createdBy === "agent") return "Another agent";
+  return "User";
 }
 
 /**
@@ -51,6 +64,9 @@ function messageBody(message: TranscriptMessage): string | null {
  * new chat as context. Only user and assistant messages are included — tool
  * calls and reasoning live in thread activities, which are deliberately left
  * out — and a message still streaming is skipped rather than copied half-done.
+ * Background task and delegated task completions are stored as user-role
+ * messages that wake the agent, but the user did not write them and the
+ * timeline shows them as notifications, so they are left out too.
  */
 export function buildThreadTranscript(
   title: string,
@@ -58,14 +74,20 @@ export function buildThreadTranscript(
 ): ThreadTranscript {
   const sections: string[] = [];
   for (const message of messages) {
-    if (message.role === "system" || message.streaming) {
+    if (
+      message.role === "system" ||
+      message.streaming ||
+      message.notification !== undefined ||
+      message.delegatedCompletion !== undefined
+    ) {
       continue;
     }
-    const body = messageBody(message);
+    const presentation = resolveUserMessagePresentation(message);
+    const body = messageBody(message, presentation.text);
     if (body === null) {
       continue;
     }
-    sections.push(`## ${message.role === "user" ? "User" : "Assistant"}\n\n${body}`);
+    sections.push(`## ${messageAuthor(message, presentation.isAutomation)}\n\n${body}`);
   }
   const trimmedTitle = title.trim();
   const parts = trimmedTitle.length > 0 ? [`# ${trimmedTitle}`, ...sections] : sections;
