@@ -1,3 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off
+// Byte-preserving JSON edits require checking the encoded representation as well as decoded values.
+// @effect-diagnostics preferSchemaOverJson:off
+import * as NodeFS from "node:fs";
+import * as NodeURL from "node:url";
+
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -46,7 +52,7 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("orderLegacyHistory",
             actor_kind, payload_json, metadata_json, application_event_version
           ) VALUES (
             ${`event-${item.id}`}, 'thread', 'thread-1', ${index}, 'turn-item.updated',
-            ${item.startedAt}, 'server', ${payload}, '{}', 2
+            ${item.startedAt}, 'server', ${JSON.stringify({ ...JSON.parse(payload), historical: true })}, '{}', 2
           )
         `;
       }
@@ -84,8 +90,67 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("orderLegacyHistory",
           expected,
         );
       }
+      assert.ok(events.every((row) => JSON.parse(row.payload_json).historical === true));
+      assert.ok(projected.every((row) => JSON.parse(row.payload_json).historical === undefined));
       // Already ordered history is left alone.
       assert.equal(yield* orderLegacyHistory(sql, ["thread-1"]), 0);
     }),
+  );
+});
+
+it.effect("reorders large payloads without rewriting their unchanged overflow pages", () => {
+  const scratch = new URL("../../../../../.scratch/", import.meta.url);
+  NodeFS.mkdirSync(scratch, { recursive: true });
+  const directory = NodeFS.mkdtempSync(
+    NodeURL.fileURLToPath(new URL("server-update-order-wal-", scratch)),
+  );
+  const filename = `${directory}/state.sqlite`;
+  const body = "x".repeat(4 * 1024 * 1024);
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`PRAGMA journal_mode = WAL`;
+    yield* sql`PRAGMA wal_autocheckpoint = 0`;
+    yield* runAllMigrations();
+    const payload = JSON.stringify({
+      id: "answer",
+      ordinal: 100,
+      body,
+      startedAt: "2026-01-01T00:00:00.000Z",
+    });
+    yield* sql`
+            INSERT INTO orchestration_v2_projection_turn_items
+              (turn_item_id, thread_id, run_id, ordinal, type, status, updated_at, payload_json)
+            VALUES ('answer', 'thread-1', NULL, 100, 'system_notice', 'completed',
+              '2026-01-01T00:00:00.000Z', ${payload})
+          `;
+    yield* sql`
+            INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+            VALUES ('thread-1', 'answer', 100)
+          `;
+    yield* sql`
+            INSERT INTO orchestration_events (
+              event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+              actor_kind, payload_json, metadata_json, application_event_version
+            ) VALUES ('event-answer', 'thread', 'thread-1', 1, 'turn-item.updated',
+              '2026-01-01T00:00:00.000Z', 'server', ${payload}, '{}', 2)
+          `;
+    yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
+    assert.equal(yield* sql.withTransaction(orderLegacyHistory(sql, ["thread-1"])), 1);
+    assert.ok(NodeFS.statSync(`${filename}-wal`).size < 128 * 1024);
+    const rows = yield* sql<{ readonly payload_json: string }>`
+            SELECT payload_json FROM orchestration_v2_projection_turn_items
+            UNION ALL SELECT payload_json FROM orchestration_events
+          `;
+    for (const row of rows) {
+      assert.deepEqual(JSON.parse(row.payload_json), { ...JSON.parse(payload), ordinal: 1 });
+      assert.ok(Buffer.byteLength(row.payload_json) >= Buffer.byteLength(payload));
+    }
+    const positions = yield* sql<{ readonly ordinal: number }>`
+            SELECT ordinal FROM orchestration_v2_turn_item_positions WHERE turn_item_id = 'answer'
+          `;
+    assert.equal(positions[0]?.ordinal, 1);
+  }).pipe(
+    Effect.provide(NodeSqliteClient.layer({ filename })),
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true }))),
   );
 });

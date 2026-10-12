@@ -137,8 +137,8 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
         `;
         // Event and projection keep the same stored item.
         assert.deepEqual(
-          events.map((row) => row.payload_json),
-          projected.map((row) => row.payload_json),
+          yield* Effect.forEach(events, (row) => decodeItem(row.payload_json)),
+          yield* Effect.forEach(projected, (row) => decodeItem(row.payload_json)),
         );
         // Ordering imported history by time also closes the dropped item's gap.
         const positions = yield* sql<{ readonly ordinal: number }>`
@@ -161,6 +161,69 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
           task.type === "notification" && [task.source, task.outcome, task.summary],
           [{ kind: "command" }, "completed", "Run tests"],
         );
+      }),
+    );
+  },
+);
+
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
+  "009_RederiveLegacyActivityItems batches",
+  (it) => {
+    it.effect("repairs multiple pages without changing unrelated events", () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations();
+        yield* runForkMigrations({ toMigrationInclusive: 8 });
+        const payload = yield* encodeItem(items[0]!);
+        const count = 401;
+        yield* sql`
+          WITH RECURSIVE batch(ordinal) AS (
+            SELECT 1 UNION ALL SELECT ordinal + 1 FROM batch WHERE ordinal < ${count}
+          )
+          INSERT INTO orchestration_v2_projection_turn_items
+            (turn_item_id, thread_id, ordinal, type, status, updated_at, payload_json)
+          SELECT
+            'import:v1:activity:thread-1:batch-' || ordinal,
+            ${threadId}, ordinal, 'system_notice', 'completed', ${at},
+            json_set(${payload}, '$.id', 'import:v1:activity:thread-1:batch-' || ordinal, '$.ordinal', ordinal)
+          FROM batch
+        `;
+        yield* sql`
+          INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+          SELECT thread_id, turn_item_id, ordinal FROM orchestration_v2_projection_turn_items
+        `;
+        yield* sql`
+          INSERT INTO orchestration_events (
+            event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+            actor_kind, payload_json, metadata_json, application_event_version
+          )
+          SELECT 'migration:v1:history:thread-1:item:' || turn_item_id, 'thread', thread_id,
+            ordinal, 'turn-item.updated', ${at}, 'server', payload_json, '{}', 2
+          FROM orchestration_v2_projection_turn_items
+        `;
+        yield* sql`
+          INSERT INTO orchestration_events (
+            event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+            actor_kind, payload_json, metadata_json, application_event_version
+          ) VALUES ('unrelated-event', 'thread', ${threadId}, ${count + 1}, 'turn-item.updated',
+            ${at}, 'server', ${payload}, '{}', 2)
+        `;
+
+        yield* runForkMigrations();
+        const repaired = yield* sql<{ readonly count: number }>`
+          SELECT COUNT(*) AS count
+          FROM orchestration_events AS event
+          JOIN orchestration_v2_projection_turn_items AS item
+            ON event.event_id = 'migration:v1:history:thread-1:item:' || item.turn_item_id
+          WHERE item.type = 'notification' AND item.status = 'completed'
+            AND json(event.payload_json) = json(item.payload_json)
+        `;
+        assert.equal(repaired[0]?.count, count);
+        const unrelated = yield* sql<{ readonly payload_json: string }>`
+          SELECT payload_json FROM orchestration_events WHERE event_id = 'unrelated-event'
+        `;
+        assert.equal(unrelated[0]?.payload_json, payload);
+        assert.deepEqual(yield* runForkMigrations(), []);
       }),
     );
   },

@@ -1,6 +1,13 @@
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import {
+  legacyPayloadWithOrdinal,
+  legacyProjectionPayloadWithOrdinal,
+} from "./legacyPayloadEncoding.ts";
+
+const PAYLOAD_PAGE_SIZE = 20;
+
 /**
  * V1 imports write a thread's messages before its activity, so every imported tool call and
  * notice would follow the thread's last message. Re-ranks the thread's run-less items, which
@@ -15,18 +22,20 @@ export const orderLegacyHistory = (sql: SqlClient.SqlClient, threadIds: Readonly
       CREATE TEMP TABLE IF NOT EXISTS legacy_history_order (
         thread_id TEXT NOT NULL,
         turn_item_id TEXT NOT NULL,
+        projection_rowid INTEGER NOT NULL UNIQUE,
         ordinal INTEGER NOT NULL,
         PRIMARY KEY (thread_id, turn_item_id)
       )
     `;
     yield* sql`DELETE FROM legacy_history_order`;
     yield* sql`
-      INSERT INTO legacy_history_order (thread_id, turn_item_id, ordinal)
-      SELECT thread_id, turn_item_id, ordinal
+      INSERT INTO legacy_history_order (thread_id, turn_item_id, projection_rowid, ordinal)
+      SELECT thread_id, turn_item_id, projection_rowid, ordinal
       FROM (
         SELECT
           thread_id,
           turn_item_id,
+          rowid AS projection_rowid,
           ordinal AS previous,
           ROW_NUMBER() OVER (
             PARTITION BY thread_id
@@ -40,6 +49,7 @@ export const orderLegacyHistory = (sql: SqlClient.SqlClient, threadIds: Readonly
     const moved = yield* sql<{ readonly count: number }>`
       SELECT COUNT(*) AS count FROM legacy_history_order
     `;
+    if ((moved[0]?.count ?? 0) === 0) return 0;
     // Ranks are a permutation, so freeing the moved items' positions first avoids collisions.
     yield* sql`
       DELETE FROM orchestration_v2_turn_item_positions
@@ -53,24 +63,78 @@ export const orderLegacyHistory = (sql: SqlClient.SqlClient, threadIds: Readonly
       INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
       SELECT thread_id, turn_item_id, ordinal FROM legacy_history_order
     `;
+    let afterProjection = 0;
+    while (true) {
+      const rows = yield* sql<{
+        readonly projection_rowid: number;
+        readonly turn_item_id: string;
+        readonly ordinal: number;
+        readonly previous_ordinal: number;
+        readonly payload_json: string;
+      }>`
+        SELECT moved.projection_rowid, moved.turn_item_id, moved.ordinal, item.ordinal AS previous_ordinal, item.payload_json
+        FROM legacy_history_order AS moved
+        JOIN orchestration_v2_projection_turn_items AS item ON item.rowid = moved.projection_rowid
+        WHERE moved.projection_rowid > ${afterProjection}
+        ORDER BY moved.projection_rowid
+        LIMIT ${PAYLOAD_PAGE_SIZE}
+      `;
+      for (const row of rows) {
+        yield* sql`
+          UPDATE orchestration_v2_projection_turn_items
+          SET ordinal = ${row.ordinal}, payload_json = ${legacyProjectionPayloadWithOrdinal(row.payload_json, row.previous_ordinal, row.ordinal)}
+          WHERE rowid = ${row.projection_rowid}
+        `;
+      }
+      const last = rows.at(-1);
+      if (last === undefined || rows.length < PAYLOAD_PAGE_SIZE) break;
+      afterProjection = last.projection_rowid;
+    }
     yield* sql`
-      UPDATE orchestration_v2_projection_turn_items
-      SET ordinal = moved.ordinal, payload_json = json_set(payload_json, '$.ordinal', moved.ordinal)
-      FROM legacy_history_order AS moved
-      WHERE moved.thread_id = orchestration_v2_projection_turn_items.thread_id
-        AND moved.turn_item_id = orchestration_v2_projection_turn_items.turn_item_id
+      CREATE TEMP TABLE IF NOT EXISTS legacy_history_events (
+        sequence INTEGER PRIMARY KEY,
+        ordinal INTEGER NOT NULL
+      )
     `;
+    yield* sql`DELETE FROM legacy_history_events`;
     yield* sql`
-      UPDATE orchestration_events
-      SET payload_json = json_set(orchestration_events.payload_json, '$.ordinal', moved.ordinal)
-      FROM legacy_history_order AS moved
-      WHERE orchestration_events.application_event_version = 2
-        AND orchestration_events.aggregate_kind = 'thread'
-        AND orchestration_events.event_type = 'turn-item.updated'
-        AND orchestration_events.stream_id IN ${sql.in(threadIds)}
-        AND moved.thread_id = orchestration_events.stream_id
-        AND moved.turn_item_id = json_extract(orchestration_events.payload_json, '$.id')
+      INSERT INTO legacy_history_events (sequence, ordinal)
+      SELECT event.sequence, moved.ordinal
+      FROM orchestration_events AS event
+      JOIN legacy_history_order AS moved
+        ON moved.thread_id = event.stream_id
+          AND moved.turn_item_id = json_extract(event.payload_json, '$.id')
+      WHERE event.application_event_version = 2
+        AND event.aggregate_kind = 'thread'
+        AND event.event_type = 'turn-item.updated'
+        AND event.stream_id IN ${sql.in(threadIds)}
     `;
+    let afterEvent = 0;
+    while (true) {
+      const rows = yield* sql<{
+        readonly sequence: number;
+        readonly ordinal: number;
+        readonly payload_json: string;
+      }>`
+        SELECT moved.sequence, moved.ordinal, event.payload_json
+        FROM legacy_history_events AS moved
+        JOIN orchestration_events AS event ON event.sequence = moved.sequence
+        WHERE moved.sequence > ${afterEvent}
+        ORDER BY moved.sequence
+        LIMIT ${PAYLOAD_PAGE_SIZE}
+      `;
+      for (const row of rows) {
+        yield* sql`
+          UPDATE orchestration_events
+          SET payload_json = ${legacyPayloadWithOrdinal(row.payload_json, row.ordinal)}
+          WHERE sequence = ${row.sequence}
+        `;
+      }
+      const last = rows.at(-1);
+      if (last === undefined || rows.length < PAYLOAD_PAGE_SIZE) break;
+      afterEvent = last.sequence;
+    }
+    yield* sql`DELETE FROM legacy_history_events`;
     yield* sql`DELETE FROM legacy_history_order`;
     return moved[0]?.count ?? 0;
   });
