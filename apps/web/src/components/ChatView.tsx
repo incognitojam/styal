@@ -4935,6 +4935,16 @@ export default function ChatView(props: ChatViewProps) {
       !hasTerminalWriteAccess()
     )
       return;
+    // Server-created setup terminals exist before this client's drawer mounts. Show one that is
+    // still running so its install stays visible; otherwise open a usable shell.
+    const runningSetupTerminalId =
+      nextOpen && hasTerminalWriteAccess() && terminalUiState.terminalIds.length === 0
+        ? runningTerminalIds.find((id) => !panelTerminalIds.has(id))
+        : undefined;
+    if (runningSetupTerminalId !== undefined) {
+      storeEnsureTerminal(activeThreadRef, runningSetupTerminalId, { open: true, active: true });
+      return;
+    }
     if (
       !nextOpen ||
       !hasTerminalWriteAccess() ||
@@ -4975,6 +4985,8 @@ export default function ChatView(props: ChatViewProps) {
     environmentId,
     gitCwd,
     openTerminal,
+    panelTerminalIds,
+    runningTerminalIds,
     hasTerminalWriteAccess,
     setTerminalOpen,
     storeEnsureTerminal,
