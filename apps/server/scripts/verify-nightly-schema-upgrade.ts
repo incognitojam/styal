@@ -128,7 +128,7 @@ const runChecked = (
 ): Buffer => {
   const result = NodeChildProcess.spawnSync(executable, args, {
     cwd: repoRoot,
-    maxBuffer: 20 * 1024 * 1024,
+    maxBuffer: 128 * 1024 * 1024,
     ...(input === undefined ? {} : { input }),
   });
   if (result.status !== 0) {
@@ -148,7 +148,9 @@ try {
     "--format=tar",
     previousRef,
     "--",
-    "apps/server/src/persistence",
+    // Migrations may reuse server code, such as the V1 history conversion fork migration 9
+    // re-derives imports with, so the previous nightly's whole server source comes along.
+    "apps/server/src",
   ]);
   runChecked("tar", ["-xf", "-", "-C", tempRoot], archive);
   NodeFS.symlinkSync(
