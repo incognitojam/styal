@@ -42,6 +42,7 @@ import * as EventSink from "../EventSink.ts";
 import { makeKeyedSerialExecutor } from "../KeyedSerialExecutor.ts";
 import { randomUuidV4 } from "../RandomUuid.ts";
 import { legacyHistoricalItems } from "./LegacyHistoricalItems.ts";
+import { orderLegacyHistory } from "./orderLegacyHistory.ts";
 import {
   OrchestrationThreadActivity,
   OrchestrationCheckpointSummary,
@@ -943,6 +944,7 @@ const make = Effect.gen(function* () {
             yield* sql.withTransaction(
               Effect.gen(function* () {
                 yield* eventSink.write({ events: historicalEvents });
+                yield* orderLegacyHistory(sql, [threadId]);
               }),
             );
           }

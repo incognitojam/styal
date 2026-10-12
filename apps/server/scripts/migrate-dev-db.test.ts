@@ -230,6 +230,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { migration_id: 6, name: "LegacyTurnUsage" },
         { migration_id: 7, name: "DropUndisplayedLegacyActivityItems" },
         { migration_id: 8, name: "HistoryRewriteFence" },
+        { migration_id: 9, name: "RederiveLegacyActivityItems" },
       ]);
       assert.deepStrictEqual(migrated.drafts, [{ thread_id: "stopped-thread" }]);
       assert.deepStrictEqual(migrated.usage, [{ payload_json: migrated.recordedUsage }]);

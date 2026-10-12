@@ -122,8 +122,22 @@ it.layer(TestLayer)("LegacyV1ThreadImporter", (it) => {
         INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
         VALUES ('context-window', ${threadId}, 'turn:1', 'info', 'context-window.updated', 'Context window updated', '{"usedTokens":1}', ${at}, 4),
           ('checkpoint-captured', ${threadId}, 'turn:1', 'info', 'checkpoint.captured', 'Checkpoint captured', '{}', ${at}, 5),
-          ('task-completed', ${threadId}, 'turn:1', 'info', 'task.completed', 'Task completed', '{"taskId":"synthetic-task","title":"Run tests"}', ${at}, 6)
+          ('task-completed', ${threadId}, 'turn:1', 'info', 'task.completed', 'Task completed', '{"taskId":"synthetic-task","title":"Run tests","taskType":"local_bash"}', ${at}, 6),
+          ('compaction', ${threadId}, 'turn:1', 'info', 'context-compaction', 'Context compacted', '{"detail":{"compact_metadata":{"pre_tokens":1200,"post_tokens":300}}}', ${at}, 7)
       `;
+        // V1 could record a last in-progress update at the completion's own timestamp.
+        for (const [id, kind, status, sequence] of [
+          ["tool-started", "tool.started", "inProgress", 8],
+          ["tool-completed", "tool.completed", "completed", 9],
+          ["tool-late-update", "tool.updated", "inProgress", 10],
+        ] as const) {
+          yield* sql`
+          INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+          VALUES (${id}, ${threadId}, 'turn:1', 'tool', ${kind}, 'MCP tool call',
+            ${encodeHistoryJson({ itemType: "mcp_tool_call", toolCallId: "synthetic-mcp", status, data: { toolName: "synthetic_tool" } })},
+            ${sequence === 8 ? at : "2026-01-01T00:00:01.000Z"}, ${sequence})
+        `;
+        }
         yield* sql`
         UPDATE projection_turns SET checkpoint_turn_count = 1, checkpoint_ref = 'refs/styal/checkpoints/synthetic',
           checkpoint_status = 'ready', checkpoint_files_json = '[{"path":"synthetic.txt","kind":"modified","additions":2,"deletions":1}]',
@@ -150,10 +164,26 @@ it.layer(TestLayer)("LegacyV1ThreadImporter", (it) => {
         assert.equal(command?.type === "command_execution" && command.output, "Recorded output");
         assert.deepEqual(command?.legacyActivities?.[0]?.payload, historicalCommand);
         assert.equal(command?.legacyTurnId, "turn:1");
+        assert.isFalse(before.turnItems.some((item) => item.type === "system_notice"));
+        const notification = before.turnItems.find((item) => item.type === "notification");
         assert.deepEqual(
-          before.turnItems.flatMap((item) => (item.type === "system_notice" ? [item.title] : [])),
-          ["Run tests"],
+          notification?.type === "notification" && {
+            source: notification.source,
+            outcome: notification.outcome,
+            summary: notification.summary,
+          },
+          { source: { kind: "command" }, outcome: "completed", summary: "Run tests" },
         );
+        const compaction = before.turnItems.find((item) => item.type === "compaction");
+        assert.deepEqual(
+          compaction?.type === "compaction" && [
+            compaction.beforeTokenCount,
+            compaction.afterTokenCount,
+          ],
+          [1200, 300],
+        );
+        const tool = before.turnItems.find((item) => item.type === "dynamic_tool");
+        assert.equal(tool?.status, "completed");
         assert.equal(before.checkpoints[0]?.legacyTurnId, "turn:1");
         assert.equal(before.checkpoints[0]?.assistantMessageId, "message:usage");
         assert.equal(before.checkpoints[0]?.legacyCheckpointTurnCount, 1);
