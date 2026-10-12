@@ -23,11 +23,9 @@ web-build/
 # TypeScript
 *.tsbuildinfo
 
-# t3-markdown-text links on iOS through its podspec, so the fingerprint hashes
-# the whole module directory. Its JavaScript and bundled assets ship in OTA
-# updates; only the codegen specs generate native code.
-modules/t3-markdown-text/index.ts
-modules/t3-markdown-text/assets/**
-modules/t3-markdown-text/scripts/**
-modules/t3-markdown-text/src/**
-!modules/t3-markdown-text/src/*NativeComponent.ts
+# t3-source-text links on iOS through its podspec, so the fingerprint hashes
+# the whole module directory. Its JavaScript ships in OTA updates; only the
+# codegen specs generate native code.
+modules/t3-source-text/index.ts
+modules/t3-source-text/src/**
+!modules/t3-source-text/src/*NativeComponent.ts

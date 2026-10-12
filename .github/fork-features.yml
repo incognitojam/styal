@@ -2523,17 +2523,17 @@ features:
       - Android and iOS user messages preserve literal HTML-looking text, including standalone tags, paired tags, and comments, in selectable display and copy text.
       - Plain messages and text beside legacy review comments use the same literal HTML policy; agent prose retains its existing HTML handling.
     implementation_paths:
-      - apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx
-      - apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.types.ts
-      - apps/mobile/modules/t3-markdown-text/src/nativeMarkdownText.ts
       - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/markdownDocument.ts
+      - apps/mobile/src/native/EnrichedMarkdownText.tsx
+      - apps/mobile/src/native/SelectableMarkdownText.types.ts
     upstream_paths:
-      - apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.tsx
-      - apps/mobile/modules/t3-markdown-text/src/SelectableMarkdownText.types.ts
-      - apps/mobile/modules/t3-markdown-text/src/nativeMarkdownText.ts
       - apps/mobile/src/features/threads/ThreadFeed.tsx
+      - apps/mobile/src/lib/markdownDocument.ts
+      - apps/mobile/src/native/EnrichedMarkdownText.tsx
+      - apps/mobile/src/native/SelectableMarkdownText.types.ts
     tests:
-      - apps/mobile/src/lib/nativeMarkdownText.test.ts
+      - apps/mobile/src/lib/markdownHtml.test.ts
     upstream:
       status: partial
       # Compared against ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e.
@@ -2828,7 +2828,6 @@ features:
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
     tests:
       - apps/mobile/src/lib/markdownLinks.test.ts
-      - apps/mobile/src/lib/nativeMarkdownText.test.ts
       - apps/web/src/components/ChatMarkdown.file-preview.test.tsx
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.test.tsx
     upstream:
@@ -5263,12 +5262,9 @@ features:
       - Scoped tool activity and Markdown file chips on web and mobile omit generated worktree directory names and display workspace-relative paths, while paths outside the workspace remain absolute. This includes ACP file reads (Antigravity, Cursor, Grok), which report no tool name and carry their path only as the row detail.
       - Opening a file still uses its full resolved target, while visible labels and Copy relative path actions retain the scoped path.
       - Open-in-editor menus can copy their resolved project, worktree, or file target and report clipboard success or failure.
-      - Descriptive Markdown file-link labels retain their authored text and formatting without an appended filename chip; labels naming the destination file retain compact chips, including line references, throughout chat and previews where file chips are supported.
+      - On web and desktop, descriptive Markdown file-link labels retain their authored text and formatting without an appended filename chip; labels naming the destination file retain compact chips, including line references, throughout chat and previews. Mobile follows upstream's Enriched renderer, which shows the filename chip for every file link.
       - Both file-link presentations retain the resolved destination and file-opening actions, including a visible interactive affordance when only file-options actions are available, and copying a rendered web link preserves its authored Markdown label without an added filename.
     implementation_paths:
-      - apps/mobile/modules/t3-markdown-text/src/NativeMarkdownSelectableText.tsx
-      - apps/mobile/modules/t3-markdown-text/src/markdownLinks.ts
-      - apps/mobile/modules/t3-markdown-text/src/nativeMarkdownText.ts
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatMarkdown.tsx
@@ -5294,7 +5290,6 @@ features:
       - apps/web/src/markdown-links.ts
     tests:
       - apps/mobile/src/lib/markdownLinks.test.ts
-      - apps/mobile/src/lib/nativeMarkdownText.test.ts
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/web/src/components/ChatMarkdown.file-preview.test.tsx
       - apps/web/src/components/ChatMarkdown.test.tsx

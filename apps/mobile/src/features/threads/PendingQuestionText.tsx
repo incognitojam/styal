@@ -1,6 +1,6 @@
 import { useNavigation } from "@react-navigation/native";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { resolveMarkdownLinkPresentation } from "@t3tools/mobile-markdown-text/links";
+import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
 import { useCallback, useMemo } from "react";
 
 import { fileRoutePathSegments, resolveWorkspaceRelativeFilePath } from "../files/filePath";
