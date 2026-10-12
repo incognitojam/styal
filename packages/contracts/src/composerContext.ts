@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { SourceControlIssue } from "./sourceControl.ts";
+import { SourceControlIssueState, SourceControlProviderKind } from "./sourceControl.ts";
 
 import {
   EnvironmentId,
@@ -29,6 +29,7 @@ export const COMPOSER_CONTEXT_KINDS = [
   "mention",
   "skill",
   "thread",
+  "issue",
 ] as const;
 export type KnownComposerContextKind = (typeof COMPOSER_CONTEXT_KINDS)[number];
 
@@ -46,6 +47,10 @@ const COMPOSER_CONTEXT_ELEMENT_STYLES_MAX_CHARS = 8_000;
 export const COMPOSER_CONTEXT_REVIEW_TEXT_MAX_CHARS = 16_000;
 export const COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS = 32_000;
 const COMPOSER_CONTEXT_PREVIEW_COMMENT_MAX_CHARS = 8_000;
+/** Exported so producers can clamp an issue snapshot to what the schema accepts. */
+export const COMPOSER_CONTEXT_ISSUE_BODY_MAX_CHARS = 24_000;
+export const COMPOSER_CONTEXT_ISSUE_COMMENT_MAX_CHARS = 8_000;
+export const COMPOSER_CONTEXT_ISSUE_MAX_COMMENTS = 50;
 
 /** Durable identity of one payload. Shared by every chip that points at it. */
 export const ComposerContextId = TrimmedNonEmptyString.check(
@@ -233,6 +238,30 @@ export const ThreadContextRecord = Schema.Struct({
 export type ThreadContextRecord = typeof ThreadContextRecord.Type;
 
 /**
+ * A source-control issue snapshot, taken when the user attaches it. The provider reads the
+ * body and comments from this record rather than fetching the issue again.
+ */
+export const IssueContextRecord = Schema.Struct({
+  ...recordBase,
+  kind: Schema.Literal("issue"),
+  provider: SourceControlProviderKind,
+  repository: NullableShortString,
+  number: PositiveInt,
+  title: ShortString,
+  url: ShortString,
+  state: SourceControlIssueState,
+  author: NullableShortString,
+  body: BoundedString(COMPOSER_CONTEXT_ISSUE_BODY_MAX_CHARS),
+  comments: Schema.Array(
+    Schema.Struct({
+      author: NullableShortString,
+      body: BoundedString(COMPOSER_CONTEXT_ISSUE_COMMENT_MAX_CHARS),
+    }),
+  ).check(Schema.isMaxLength(COMPOSER_CONTEXT_ISSUE_MAX_COMMENTS)),
+});
+export type IssueContextRecord = typeof IssueContextRecord.Type;
+
+/**
  * Catch-all for kinds this build does not know. Known discriminators are excluded so a
  * malformed known record fails its own schema instead of sliding through unchecked.
  * Mirrors `ChatUnknownAttachment`.
@@ -263,6 +292,7 @@ export const KnownComposerContextRecord = Schema.Union([
   MentionContextRecord,
   SkillContextRecord,
   ThreadContextRecord,
+  IssueContextRecord,
 ]);
 export type KnownComposerContextRecord = typeof KnownComposerContextRecord.Type;
 
@@ -278,16 +308,6 @@ const COMPOSER_CONTEXT_MAX_SERIALIZED_CHARS = 16_000_000;
 /** Structured context riding on a user message. Undecodable records are dropped, not fatal. */
 export const OrchestrationMessageContext = Schema.Struct({
   version: Schema.Literal(1),
-  issueContexts: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        ...SourceControlIssue.fields,
-        id: TrimmedNonEmptyString,
-        threadId: ThreadId,
-        attachedAt: Schema.String,
-      }),
-    ).check(Schema.isMaxLength(200)),
-  ),
   records: Schema.Array(Schema.Unknown)
     .check(
       Schema.isMaxLength(COMPOSER_CONTEXT_MAX_RECORDS),

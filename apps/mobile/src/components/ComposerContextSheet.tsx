@@ -369,6 +369,25 @@ export function ComposerContextSheet(props: {
                     ) : null}
                   </View>
                 ) : null}
+                {record.kind === "issue" ? (
+                  <>
+                    <ContextField
+                      label={`#${record.number} · ${record.state}`}
+                      value={record.title}
+                    />
+                    <ContextField label="Repository" value={record.repository} />
+                    <ContextField label="Author" value={record.author} />
+                    <ContextField label="URL" value={record.url} />
+                    <ContextField label="Body" value={record.body} />
+                    <ContextField
+                      label="Comments"
+                      value={record.comments
+                        .filter((comment) => comment.body.trim())
+                        .map((comment) => `${comment.author ?? "unknown"}:\n${comment.body.trim()}`)
+                        .join("\n\n")}
+                    />
+                  </>
+                ) : null}
                 {record.kind === "skill" ? (
                   <View className="gap-3">
                     <ContextField label="Skill" value={record.name} />

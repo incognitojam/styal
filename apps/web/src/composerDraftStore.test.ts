@@ -14,6 +14,7 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ThreadId,
+  type SourceControlIssue,
   type ModelSelection,
   type PreviewAnnotationPayload,
   type ProviderOptionSelection,
@@ -89,7 +90,7 @@ import {
   formatTerminalContextReference,
   type TerminalContextDraft,
 } from "./lib/terminalContext";
-import type { IssueContextSelection } from "./lib/issueContext";
+import { issueContextRecord } from "./lib/issueContext";
 import { createDeferredStorage } from "./lib/storage";
 
 function makeImage(input: {
@@ -1216,140 +1217,87 @@ describe("composerDraftStore context persistence", () => {
 describe("composerDraftStore issue contexts", () => {
   const threadId = ThreadId.make("thread-issue");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
-  const baseSelection = {
+  const issue = {
     provider: "github",
-    repository: "pingdotgg/codething-mvp",
+    repository: "acme/web",
     number: 18,
     title: "Fix login crash",
-    url: "https://github.com/pingdotgg/codething-mvp/issues/18",
+    url: "https://github.com/acme/web/issues/18",
     state: "open",
     author: "octocat",
     body: "Steps to reproduce",
     comments: [{ author: "hubot", body: "Repros here" }],
-  } as const satisfies IssueContextSelection;
+  } as SourceControlIssue;
+  const record = issueContextRecord(issue)!;
+  const otherRecord = issueContextRecord({ ...issue, number: 19, title: "Other bug" })!;
+  const persistApi = useComposerDraftStore.persist as unknown as {
+    getOptions: () => {
+      merge: (
+        persistedState: unknown,
+        currentState: ReturnType<typeof useComposerDraftStore.getState>,
+      ) => ReturnType<typeof useComposerDraftStore.getState>;
+    };
+  };
 
   beforeEach(() => {
     resetComposerDraftStore();
   });
 
-  it("adds an issue context and stamps id + threadId + attachedAt", () => {
-    expect(useComposerDraftStore.getState().addIssueContext(threadRef, baseSelection)).toBe(true);
-    const entry = draftFor(threadId, TEST_ENVIRONMENT_ID)?.issueContexts[0]!;
-    expect(entry.id.startsWith("issue_")).toBe(true);
-    expect(entry.threadId).toBe(threadId);
-    expect(entry.attachedAt.length).toBeGreaterThan(0);
-    expect(entry.number).toBe(18);
-  });
-
-  it("dedupes by provider + repository + number", () => {
+  it("attaches an issue as an inline reference and skips one already attached", () => {
     const store = useComposerDraftStore.getState();
-    expect(store.addIssueContext(threadRef, baseSelection)).toBe(true);
-    expect(store.addIssueContext(threadRef, { ...baseSelection, title: "Renamed" })).toBe(false);
-    expect(store.addIssueContext(threadRef, { ...baseSelection, number: 19 })).toBe(true);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.issueContexts).toHaveLength(2);
-  });
-
-  it("removeIssueContext drops by id and clearComposerContent wipes the slice", () => {
-    const store = useComposerDraftStore.getState();
-    store.addIssueContext(threadRef, baseSelection);
-    store.addIssueContext(threadRef, { ...baseSelection, number: 19 });
-    const ids = draftFor(threadId, TEST_ENVIRONMENT_ID)!.issueContexts.map((entry) => entry.id);
-    store.removeIssueContext(threadRef, ids[0]!);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.issueContexts.map((entry) => entry.id)).toEqual(
-      [ids[1]],
+    store.addIssueContexts(threadRef, [record]);
+    store.addIssueContexts(threadRef, [issueContextRecord({ ...issue, title: "Renamed" })!]);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.issueContexts).toEqual([record]);
+    expect(draft?.prompt.trim()).toBe(
+      `[#18 Fix login crash](t3-context://v1/issue/${record.contextId})`,
     );
-
-    store.clearComposerContent(threadRef);
-    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });
 
-  // Regression: an issue attached from the command palette is the only content
-  // in the draft until the user types. The partializer used to treat that as an
-  // empty draft and skip it, so a reload silently dropped the issue.
-  it("persists a draft whose only content is an issue context", () => {
-    useComposerDraftStore.getState().addIssueContext(threadRef, baseSelection);
-    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
-    const persistedDraft =
-      persisted.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)];
-
-    expect(persistedDraft, "Expected the issue-only draft to be persisted.").toBeDefined();
-    expect(persistedDraft?.prompt).toBe("");
-    expect(persistedDraft?.issueContexts).toMatchObject([
-      {
-        threadId,
-        provider: "github",
-        repository: "pingdotgg/codething-mvp",
-        number: 18,
-        title: "Fix login crash",
-        state: "open",
-        author: "octocat",
-        body: "Steps to reproduce",
-        comments: [{ author: "hubot", body: "Repros here" }],
-      },
-    ]);
+  it("removes the inline reference of an issue that is no longer attached", () => {
+    const store = useComposerDraftStore.getState();
+    store.addIssueContexts(threadRef, [record, otherRecord]);
+    store.setIssueContexts(threadRef, [otherRecord]);
+    const draft = draftFor(threadId, TEST_ENVIRONMENT_ID);
+    expect(draft?.issueContexts).toEqual([otherRecord]);
+    expect(draft?.prompt).not.toContain(record.contextId);
+    expect(draft?.prompt).toContain(otherRecord.contextId);
   });
 
-  it("hydrates an issue-only draft back out of persisted storage", () => {
-    const persistApi = useComposerDraftStore.persist as unknown as {
-      getOptions: () => {
-        merge: (
-          persistedState: unknown,
-          currentState: ReturnType<typeof useComposerDraftStore.getState>,
-        ) => ReturnType<typeof useComposerDraftStore.getState>;
-      };
-    };
-    useComposerDraftStore.getState().addIssueContext(threadRef, baseSelection);
+  it("restores an issue-only draft with its record and reference after a reload", () => {
+    useComposerDraftStore.getState().addIssueContexts(threadRef, [record]);
     const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
-
     resetComposerDraftStore();
     const merged = persistApi
       .getOptions()
       .merge(persisted, useComposerDraftStore.getInitialState());
-
-    expect(
-      merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.issueContexts,
-    ).toMatchObject([
-      {
-        threadId,
-        provider: "github",
-        repository: "pingdotgg/codething-mvp",
-        number: 18,
-        title: "Fix login crash",
-        url: "https://github.com/pingdotgg/codething-mvp/issues/18",
-        state: "open",
-        author: "octocat",
-        body: "Steps to reproduce",
-        comments: [{ author: "hubot", body: "Repros here" }],
-      },
-    ]);
+    const draft = merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)];
+    expect(draft?.issueContexts).toEqual([record]);
+    expect(draft?.prompt).toContain(`t3-context://v1/issue/${record.contextId}`);
   });
 
-  it("drops malformed persisted issue contexts during merge", () => {
-    const persistApi = useComposerDraftStore.persist as unknown as {
-      getOptions: () => {
-        merge: (
-          persistedState: unknown,
-          currentState: ReturnType<typeof useComposerDraftStore.getState>,
-        ) => ReturnType<typeof useComposerDraftStore.getState>;
-      };
+  // Drafts saved before issues became context records stored a different shape. Those issues
+  // are discarded; the rest of the draft must survive.
+  it("drops issues saved in the previous draft shape and keeps the draft's text", () => {
+    const legacyIssue = {
+      id: "issue_1",
+      threadId,
+      attachedAt: "2026-10-01T00:00:00Z",
+      ...issue,
     };
+    const otherThreadId = ThreadId.make("thread-issue-only");
     const merged = persistApi.getOptions().merge(
       {
         draftsByThreadKey: {
           [threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]: {
+            prompt: "Look into this",
+            attachments: [],
+            issueContexts: [legacyIssue],
+          },
+          [threadKeyFor(otherThreadId, TEST_ENVIRONMENT_ID)]: {
             prompt: "",
             attachments: [],
-            issueContexts: [
-              { id: "issue_bad", threadId, attachedAt: "now", provider: "github", number: 0 },
-              {
-                id: "issue_ok",
-                threadId,
-                attachedAt: "now",
-                provider: "github",
-                number: 7,
-                title: "Kept",
-              },
-            ],
+            issueContexts: [legacyIssue],
           },
         },
         draftThreadsByThreadKey: {},
@@ -1357,10 +1305,12 @@ describe("composerDraftStore issue contexts", () => {
       },
       useComposerDraftStore.getInitialState(),
     );
-
-    expect(
-      merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.issueContexts,
-    ).toMatchObject([{ id: "issue_ok", number: 7, title: "Kept", state: "open", comments: [] }]);
+    const draft = merged.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)];
+    expect(draft?.prompt).toBe("Look into this");
+    expect(draft?.issueContexts).toEqual([]);
+    expect(merged.draftsByThreadKey[threadKeyFor(otherThreadId, TEST_ENVIRONMENT_ID)]).toBe(
+      undefined,
+    );
   });
 });
 
@@ -2972,10 +2922,7 @@ describe("composerDraftStore model seed migration", () => {
               prompt: "",
               attachments: [],
               issueContexts: [
-                {
-                  id: "issue_migration_context",
-                  threadId: issueThreadId,
-                  attachedAt: "2026-08-01T00:00:00.000Z",
+                issueContextRecord({
                   provider: "github",
                   repository: "example/project",
                   number: 42,
@@ -2985,7 +2932,7 @@ describe("composerDraftStore model seed migration", () => {
                   author: "example-user",
                   body: "Synthetic migration context",
                   comments: [],
-                },
+                } as SourceControlIssue),
               ],
               modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
               activeProvider: CODEX_INSTANCE,
@@ -3038,7 +2985,7 @@ describe("composerDraftStore model seed migration", () => {
         activeProvider: CODEX_INSTANCE,
       });
       expect(draftByKey(issueDraftId)).toMatchObject({
-        issueContexts: [{ id: "issue_migration_context", number: 42 }],
+        issueContexts: [{ kind: "issue", number: 42 }],
         modelSelectionByProvider: { [CODEX_INSTANCE]: staleSelection },
         activeProvider: CODEX_INSTANCE,
       });

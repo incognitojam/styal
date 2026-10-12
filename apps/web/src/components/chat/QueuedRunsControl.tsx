@@ -5,7 +5,6 @@ import type {
   ChatAttachment as ContractChatAttachment,
   EnvironmentId,
   MessageId,
-  OrchestrationMessageContext,
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -33,7 +32,6 @@ export interface EditQueuedRunRequest {
   readonly messageId: MessageId;
   readonly text: string;
   readonly attachments: ReadonlyArray<ContractChatAttachment>;
-  readonly context?: OrchestrationMessageContext | undefined;
 }
 
 interface QueuedRowThumbnail {
@@ -65,7 +63,6 @@ export function QueuedRunsControl({
   readonly editingRunId: RunId | null;
   readonly onEditQueuedRun: (request: EditQueuedRunRequest) => void;
   readonly onCancelEdit: () => void;
-  readonly onRestoreCancelledRun?: (request: EditQueuedRunRequest) => void;
 }) {
   const projection = useThreadProjection(
     scopeThreadRef(props.environmentId, props.threadId),
@@ -224,8 +221,6 @@ export function QueuedRunsControl({
         props.onEditQueuedRun({
           runId: latest.run.id,
           messageId: latest.run.userMessageId,
-          context: projection?.messages.find((message) => message.id === latest.run.userMessageId)
-            ?.context,
           text: latest.text,
           attachments: latest.attachments,
         });
@@ -239,22 +234,10 @@ export function QueuedRunsControl({
   const remove = async (runId: RunId) => {
     setBusyRunId(runId);
     try {
-      const source = queued.find(({ run }) => run.id === runId);
-      const context = projection?.messages.find(
-        (message) => message.id === source?.run.userMessageId,
-      )?.context;
-      const result = await cancel({
+      await cancel({
         environmentId: props.environmentId,
         input: { threadId: props.threadId, runId },
       });
-      if (result._tag === "Success" && source)
-        props.onRestoreCancelledRun?.({
-          runId,
-          messageId: source.run.userMessageId,
-          text: source.text,
-          attachments: source.attachments,
-          ...(context === undefined ? {} : { context }),
-        });
     } finally {
       setBusyRunId(null);
     }
@@ -445,9 +428,6 @@ export function QueuedRunsControl({
                                     props.onEditQueuedRun({
                                       runId: item.runId,
                                       messageId: item.messageId,
-                                      context: projection?.messages.find(
-                                        (message) => message.id === item.messageId,
-                                      )?.context,
                                       text: item.text,
                                       attachments: item.attachments,
                                     });

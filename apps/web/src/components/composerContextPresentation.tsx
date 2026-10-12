@@ -1,6 +1,10 @@
 import ChatMarkdown from "./ChatMarkdown";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
-import type { PreviewAnnotationPayload, ThreadContextRecord } from "@t3tools/contracts";
+import type {
+  IssueContextRecord,
+  PreviewAnnotationPayload,
+  ThreadContextRecord,
+} from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
 import { MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
@@ -32,6 +36,7 @@ import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import { ThreadContextChip } from "./ThreadContextChip";
+import { IssueContextChip } from "./IssueContextChip";
 import {
   createContextPresentationRegistry,
   type ContextPresentationCapability,
@@ -58,7 +63,8 @@ export type ComposerDraftContextRecord =
   | { kind: "preview-annotation"; record: PreviewAnnotationPayload }
   | { kind: "image"; record: ComposerImageAttachment; upload?: AttachmentUploadState | undefined }
   | { kind: "file"; record: ComposerFileAttachment; upload?: AttachmentUploadState | undefined }
-  | { kind: "thread"; record: ThreadContextRecord };
+  | { kind: "thread"; record: ThreadContextRecord }
+  | { kind: "issue"; record: IssueContextRecord };
 
 /** What a chip can do beyond showing itself; the composer supplies the handlers. */
 export interface ComposerContextActions {
@@ -99,6 +105,7 @@ export function composerContextRecordsFromDraft(input: {
   reviewComments?: ReadonlyArray<ReviewCommentContext>;
   previewAnnotations?: ReadonlyArray<PreviewAnnotationPayload>;
   threadContexts?: ReadonlyArray<ThreadContextRecord>;
+  issueContexts?: ReadonlyArray<IssueContextRecord>;
   images?: ReadonlyArray<ComposerImageAttachment>;
   files?: ReadonlyArray<ComposerFileAttachment>;
   uploadsByImageId?: Readonly<Record<string, AttachmentUploadState>>;
@@ -129,6 +136,9 @@ export function composerContextRecordsFromDraft(input: {
   }
   for (const record of input.threadContexts ?? []) {
     records.set(record.contextId, { kind: "thread", record });
+  }
+  for (const record of input.issueContexts ?? []) {
+    records.set(record.contextId, { kind: "issue", record });
   }
   return records;
 }
@@ -336,7 +346,15 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
   ComposerContextRenderContext,
   ReactElement
 >({
-  requiredKinds: ["image", "file", "terminal", "review-comment", "preview-annotation", "thread"],
+  requiredKinds: [
+    "image",
+    "file",
+    "terminal",
+    "review-comment",
+    "preview-annotation",
+    "thread",
+    "issue",
+  ],
   handlers: [
     {
       kind: "terminal",
@@ -423,6 +441,16 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
       render: (entry, context) =>
         entry.kind === "thread" ? (
           <ThreadContextChip record={entry.record} />
+        ) : (
+          <UnresolvedContextChip label={context.label} />
+        ),
+    },
+    {
+      kind: "issue",
+      canRender: (entry) => entry.kind === "issue",
+      render: (entry, context) =>
+        entry.kind === "issue" ? (
+          <IssueContextChip record={entry.record} />
         ) : (
           <UnresolvedContextChip label={context.label} />
         ),

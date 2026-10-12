@@ -289,17 +289,17 @@ it.effect(
           messageId: "synthetic-queued-message",
           createdBy: "user",
           creationSource: "server",
-          text: "Review this issue",
+          text: "Review [#42 Synthetic issue](t3-context://v1/issue/issue_synthetic)",
           attachments: [],
           dispatchMode: { type: "queue_after_active" },
           context: {
             version: 1,
-            records: [],
-            issueContexts: [
+            records: [
               {
-                id: "synthetic-issue",
-                threadId: "drive-completed",
-                attachedAt: "2026-10-01T00:00:00Z",
+                version: 1,
+                kind: "issue",
+                contextId: "issue_synthetic",
+                label: "#42 Synthetic issue",
                 provider: "github",
                 repository: "synthetic/demo",
                 number: 42,
@@ -324,8 +324,12 @@ it.effect(
         type: "message.dispatch",
         dispatchMode: { type: "queue_after_active" },
         context: {
-          issueContexts: [
-            { body: "Exact queued issue body", comments: [{ body: "Exact comment" }] },
+          records: [
+            {
+              kind: "issue",
+              body: "Exact queued issue body",
+              comments: [{ body: "Exact comment" }],
+            },
           ],
         },
       });

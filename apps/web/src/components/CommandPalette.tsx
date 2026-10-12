@@ -118,7 +118,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { normalizeIssueContextSelection } from "../lib/issueContext";
+import { issueContextRecord } from "../lib/issueContext";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
@@ -845,7 +845,7 @@ function OpenCommandPaletteDialog(props: {
     reportFailure: false,
     reportDefect: false,
   });
-  const addComposerDraftIssueContext = useComposerDraftStore((store) => store.addIssueContext);
+  const addComposerDraftIssueContexts = useComposerDraftStore((store) => store.addIssueContexts);
   const { scratchEnvironmentId, scratchWorkspaceRootFor, startScratchThread } = useScratchProject();
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
     reportFailure: false,
@@ -1974,8 +1974,8 @@ function OpenCommandPaletteDialog(props: {
         }
         return;
       }
-      const selection = normalizeIssueContextSelection(issueResult.value);
-      if (selection === null) {
+      const record = issueContextRecord(issueResult.value);
+      if (record === null) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -1989,10 +1989,10 @@ function OpenCommandPaletteDialog(props: {
       if (opened === null) {
         return;
       }
-      addComposerDraftIssueContext(opened.draftId, selection);
+      addComposerDraftIssueContexts(opened.draftId, [record]);
     },
     [
-      addComposerDraftIssueContext,
+      addComposerDraftIssueContexts,
       contextualProjectCwd,
       contextualProjectRef,
       handleNewThread,

@@ -1,51 +1,24 @@
-import { type OrchestrationMessageContext, type ThreadId } from "@t3tools/contracts";
-import type { SourceControlIssue, SourceControlProviderKind } from "@t3tools/contracts";
+import {
+  COMPOSER_CONTEXT_ISSUE_BODY_MAX_CHARS,
+  COMPOSER_CONTEXT_ISSUE_COMMENT_MAX_CHARS,
+  COMPOSER_CONTEXT_ISSUE_MAX_COMMENTS,
+  type IssueContextRecord,
+  type SourceControlIssue,
+} from "@t3tools/contracts";
+import { sanitizeComposerContextLabel } from "@t3tools/shared/composerContextReferences";
 
-/**
- * Issue bodies and comment threads can be enormous. We prefer including
- * everything, so these caps sit well above a realistic issue and only exist so
- * one pathological thread can't blow up the draft store or the prompt.
- */
-const ISSUE_CONTEXT_BODY_LIMIT = 24_000;
-const ISSUE_CONTEXT_COMMENT_LIMIT = 8_000;
-const ISSUE_CONTEXT_MAX_COMMENTS = 50;
+import {
+  type ComposerContextReference,
+  toKindScopedComposerContextId,
+} from "./composerContextReferences";
+
 const ISSUE_CONTEXT_TITLE_LABEL_MAX = 60;
+const ISSUE_CONTEXT_SHORT_FIELD_MAX = 2_048;
 
 // Messages sent before inline context references appended terminal, element and preview blocks
 // after the issue block; those stay in place for the legacy context upgrade to peel.
 const TRAILING_ISSUE_CONTEXT_BLOCK_PATTERN =
   /\n*<issue_context>\n([\s\S]*?)\n<\/issue_context>(?=((?:\s*<(terminal_context|element_context|preview_annotation)>\n[\s\S]*?\n<\/\3>)*)\s*$)/;
-
-export interface IssueContextComment {
-  author: string | null;
-  body: string;
-}
-
-/**
- * A source-control issue attached to a composer draft. The full payload is
- * persisted inline — there is no live session to re-fetch it from when a draft
- * is restored, and re-hitting `gh` on hydration would be both slow and racy.
- */
-export interface IssueContextSelection {
-  provider: SourceControlProviderKind;
-  /** `owner/repo`, or null when the provider didn't report one. */
-  repository: string | null;
-  number: number;
-  title: string;
-  url: string;
-  state: "open" | "closed";
-  author: string | null;
-  body: string;
-  comments: IssueContextComment[];
-}
-
-export interface IssueContextDraft extends IssueContextSelection {
-  /** Stable composer-side id used for keyed rendering + dedupe. */
-  id: string;
-  threadId: ThreadId;
-  /** ISO-8601 wall clock attach time. */
-  attachedAt: string;
-}
 
 export interface ParsedIssueContextEntry {
   header: string;
@@ -67,116 +40,51 @@ function normalizeText(value: string): string {
   return value.replace(/\r\n/g, "\n").trim();
 }
 
+function shortField(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? truncateString(trimmed, ISSUE_CONTEXT_SHORT_FIELD_MAX) : null;
+}
+
 /**
- * Clamp a freshly fetched issue before it lands in a persisted draft. Returns
- * `null` for issues we can't render a useful chip for.
+ * Snapshot a fetched issue as a context record, clamped to what the record schema accepts.
+ * The same issue always gets the same context id, so attaching it twice reuses the chip.
+ * Returns `null` for an issue without a usable number or title.
  */
-export function normalizeIssueContextSelection(
-  raw: SourceControlIssue,
-): IssueContextSelection | null {
-  const title = raw.title.trim();
-  if (!Number.isSafeInteger(raw.number) || raw.number <= 0 || title.length === 0) {
-    return null;
-  }
+export function issueContextRecord(raw: SourceControlIssue): IssueContextRecord | null {
+  const title = shortField(raw.title);
+  if (!Number.isSafeInteger(raw.number) || raw.number <= 0 || title === null) return null;
+  const repository = shortField(raw.repository);
+  const identity = [raw.provider, repository ?? "", String(raw.number)].join("|").toLowerCase();
   return {
+    version: 1,
+    kind: "issue",
+    contextId: toKindScopedComposerContextId("issue", identity),
+    label: sanitizeComposerContextLabel(
+      `#${raw.number} ${truncateString(title, ISSUE_CONTEXT_TITLE_LABEL_MAX)}`,
+      "issue",
+    ),
     provider: raw.provider,
-    repository: raw.repository?.trim() || null,
+    repository,
     number: raw.number,
     title,
-    url: raw.url.trim(),
+    url: shortField(raw.url) ?? "",
     state: raw.state,
-    author: raw.author?.trim() || null,
-    body: truncateString(normalizeText(raw.body), ISSUE_CONTEXT_BODY_LIMIT),
-    comments: raw.comments.slice(0, ISSUE_CONTEXT_MAX_COMMENTS).map((comment) => ({
-      author: comment.author?.trim() || null,
-      body: truncateString(normalizeText(comment.body), ISSUE_CONTEXT_COMMENT_LIMIT),
+    author: shortField(raw.author),
+    body: truncateString(normalizeText(raw.body), COMPOSER_CONTEXT_ISSUE_BODY_MAX_CHARS),
+    comments: raw.comments.slice(0, COMPOSER_CONTEXT_ISSUE_MAX_COMMENTS).map((comment) => ({
+      author: shortField(comment.author),
+      body: truncateString(normalizeText(comment.body), COMPOSER_CONTEXT_ISSUE_COMMENT_MAX_CHARS),
     })),
   };
 }
 
-/**
- * Two attaches of the same issue produce the same key, so re-running the
- * command for an already-attached issue is a no-op instead of a duplicate chip.
- */
-export function issueContextDedupKey(context: IssueContextSelection): string {
-  return [context.provider, context.repository ?? "", String(context.number)]
-    .join("|")
-    .toLowerCase();
-}
-
-/** Compact chip label — `#123 Fix login crash`. */
-export function formatIssueContextLabel(context: IssueContextSelection): string {
-  return `#${context.number} ${truncateString(context.title, ISSUE_CONTEXT_TITLE_LABEL_MAX)}`;
-}
-
-function indentLines(value: string): string[] {
-  return value.split("\n").map((line) => `  ${line}`);
-}
-
-function buildSingleContextLines(context: IssueContextSelection): string[] {
-  const lines: string[] = [];
-  lines.push(`- #${context.number} ${context.title}:`);
-  if (context.repository) {
-    lines.push(`  repository: ${context.repository}`);
-  }
-  lines.push(`  state: ${context.state}`);
-  if (context.author) {
-    lines.push(`  author: ${context.author}`);
-  }
-  if (context.url.length > 0) {
-    lines.push(`  url: ${context.url}`);
-  }
-  const body = context.body.trim();
-  if (body.length > 0) {
-    lines.push("  body:");
-    lines.push(...indentLines(body));
-  }
-  for (const comment of context.comments) {
-    const commentBody = comment.body.trim();
-    if (commentBody.length === 0) continue;
-    lines.push(`  comment by ${comment.author ?? "unknown"}:`);
-    lines.push(...indentLines(commentBody));
-  }
-  return lines;
+export function issueContextReference(record: IssueContextRecord): ComposerContextReference {
+  return { kind: "issue", contextId: record.contextId, label: record.label };
 }
 
 /**
- * Serialize issue-context drafts into the `<issue_context>` block we append to
- * the user's outgoing message text. Mirrors the `<terminal_context>` and
- * `<element_context>` block formats so all three compose cleanly.
- */
-export function buildIssueContextBlock(contexts: ReadonlyArray<IssueContextSelection>): string {
-  if (contexts.length === 0) return "";
-  const lines: string[] = [];
-  for (let index = 0; index < contexts.length; index += 1) {
-    const context = contexts[index]!;
-    lines.push(...buildSingleContextLines(context));
-    if (index < contexts.length - 1) lines.push("");
-  }
-  return ["<issue_context>", ...lines, "</issue_context>"].join("\n");
-}
-
-export function appendIssueContextsToPrompt(
-  prompt: string,
-  contexts: ReadonlyArray<IssueContextSelection>,
-): string {
-  const block = buildIssueContextBlock(contexts);
-  if (block.length === 0) return prompt;
-  const trimmed = prompt.trim();
-  return trimmed.length > 0 ? `${trimmed}\n\n${block}` : block;
-}
-
-const ISSUE_CONTEXT_ID_PREFIX = "issue_";
-let nextIssueContextSequence = 0;
-
-export function newIssueContextId(): string {
-  nextIssueContextSequence += 1;
-  return `${ISSUE_CONTEXT_ID_PREFIX}${nextIssueContextSequence.toString(36)}`;
-}
-
-/**
- * Mirror image of `appendIssueContextsToPrompt` for transcript display. Legacy
- * context blocks that followed the issue block remain in `promptText`.
+ * Splits the `<issue_context>` block off a message sent before issues became context
+ * records, for display. Legacy context blocks that followed it remain in `promptText`.
  */
 export function extractTrailingIssueContexts(prompt: string): ExtractedIssueContexts {
   const match = TRAILING_ISSUE_CONTEXT_BLOCK_PATTERN.exec(prompt);
@@ -209,19 +117,4 @@ function parseIssueContextEntries(block: string): ParsedIssueContextEntry[] {
   }
   commit();
   return entries;
-}
-
-/** Recover typed queue context while keeping older serialized prompts intact. */
-export function recoverQueuedIssueContext(
-  text: string,
-  context: OrchestrationMessageContext | undefined,
-): { prompt: string; issueContexts: IssueContextDraft[] } {
-  const issueContexts = (context?.issueContexts ?? []).map((issue) => ({
-    ...issue,
-    comments: issue.comments.map((comment) => ({ ...comment })),
-  }));
-  return {
-    prompt: issueContexts.length === 0 ? text : extractTrailingIssueContexts(text).promptText,
-    issueContexts,
-  };
 }

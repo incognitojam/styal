@@ -132,7 +132,8 @@ uses the project's instructions and recent commit subjects.
 
 Run **New thread from GitHub issue…** from the command palette and search the current project's
 open issues by number or title. The issue's title, body, and comments are attached to a new thread
-draft as removable context. Nothing is sent until you write your instructions and send them.
+draft as a context chip, which you can delete like any other. Nothing is sent until you send the
+message.
 
 ## Review and merge
 

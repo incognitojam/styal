@@ -4,7 +4,6 @@ import {
   ComposerContextId,
   MessageId,
   RunId,
-  ThreadId,
   type ChatAttachment,
   type OrchestrationMessageContext,
 } from "@t3tools/contracts";
@@ -104,28 +103,5 @@ describe("resolveQueuedEditPayload", () => {
 
     expect(payload.attachments).toEqual([]);
     expect(payload.context).toBeUndefined();
-  });
-  it("preserves issue-only canonical context when editing a queue created on web", () => {
-    const issue = {
-      id: "synthetic-issue",
-      threadId: ThreadId.make("synthetic-thread"),
-      attachedAt: "2026-10-01T00:00:00Z",
-      provider: "github" as const,
-      repository: "synthetic/demo",
-      number: 42,
-      title: "Synthetic issue",
-      url: "https://github.com/synthetic/demo/issues/42",
-      state: "open" as const,
-      author: null,
-      body: "Exact issue",
-      comments: [],
-    };
-    const payload = resolveQueuedEditPayload({
-      edit: edit([]),
-      draftContext: { version: 1, records: [], issueContexts: [issue] },
-      draftAttachments: [],
-      uploaded: [],
-    });
-    expect(payload.context).toEqual({ version: 1, records: [], issueContexts: [issue] });
   });
 });

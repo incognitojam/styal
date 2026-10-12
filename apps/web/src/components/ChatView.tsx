@@ -1,11 +1,4 @@
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
-import {
-  recoverQueuedIssueContext,
-  issueContextDedupKey,
-  appendIssueContextsToPrompt,
-  formatIssueContextLabel,
-  type IssueContextDraft,
-} from "../lib/issueContext";
 import { attachmentBatchLimitError } from "@t3tools/client-runtime/state/attachments";
 import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
@@ -1785,7 +1778,6 @@ export default function ChatView(props: ChatViewProps) {
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
   const composerFilesRef = useRef<ComposerFileAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
-  const composerIssueContextsRef = useRef<IssueContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const branchToolbarRef = useRef<BranchToolbarHandle>(null);
@@ -4403,59 +4395,12 @@ export default function ChatView(props: ChatViewProps) {
     activeThread !== undefined,
     activeRuntime,
   );
-  const restoreCancelledQueuedRun = useCallback(
-    (request: EditQueuedRunRequest) => {
-      const recovered = recoverQueuedIssueContext(request.text, request.context);
-      const draft = useComposerDraftStore.getState().getComposerDraft(baseComposerDraftTarget);
-      const existing = draft?.issueContexts ?? [];
-      const keys = new Set(existing.map(issueContextDedupKey));
-      setComposerDraftIssueContexts(baseComposerDraftTarget, [
-        ...existing,
-        ...recovered.issueContexts.filter((issue) => !keys.has(issueContextDedupKey(issue))),
-      ]);
-      setComposerDraftPrompt(
-        baseComposerDraftTarget,
-        [draft?.prompt ?? "", recovered.prompt].filter(Boolean).join("\n\n"),
-      );
-      focusComposer();
-    },
-    [baseComposerDraftTarget, focusComposer, setComposerDraftIssueContexts, setComposerDraftPrompt],
-  );
-  const cancelQueuedRunForRestore = useAtomCommand(threadEnvironment.cancelQueuedRun);
   const onInterrupt = useCallback(async () => {
     if (!activeThread) return;
     const result = await interruptThreadTurn({
       environmentId,
       input: { threadId: activeThread.id },
     });
-    if (result._tag === "Success") {
-      // Stop holds the native queue. Issue-backed drafts return to the composer
-      // only after their own durable cancellation, so they cannot send twice.
-      for (const run of serverProjection?.runs ?? []) {
-        if (run.status !== "queued") continue;
-        const message = serverProjection?.messages.find(
-          (candidate) => candidate.id === run.userMessageId,
-        );
-        if (
-          !message ||
-          ((message.context?.issueContexts?.length ?? 0) === 0 &&
-            !message.text.includes("<issue_context>"))
-        )
-          continue;
-        const cancelled = await cancelQueuedRunForRestore({
-          environmentId,
-          input: { threadId: activeThread.id, runId: run.id },
-        });
-        if (cancelled._tag === "Success")
-          restoreCancelledQueuedRun({
-            runId: run.id,
-            messageId: message.id,
-            text: message.text,
-            attachments: message.attachments,
-            ...(message.context === undefined ? {} : { context: message.context }),
-          });
-      }
-    }
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       setThreadError(
@@ -4463,15 +4408,7 @@ export default function ChatView(props: ChatViewProps) {
         error instanceof Error ? error.message : "Failed to interrupt the current turn.",
       );
     }
-  }, [
-    activeThread,
-    environmentId,
-    interruptThreadTurn,
-    setThreadError,
-    serverProjection,
-    cancelQueuedRunForRestore,
-    restoreCancelledQueuedRun,
-  ]);
+  }, [activeThread, environmentId, interruptThreadTurn, setThreadError]);
   useEffect(() => subscribeSnapShotComposerFocus(focusComposer), [focusComposer]);
   const scheduleComposerFocus = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -4532,14 +4469,12 @@ export default function ChatView(props: ChatViewProps) {
       }
       const target = queuedEditDraftTargetFor(request.runId);
       clearComposerDraftContent(target);
-      const issueDraft = recoverQueuedIssueContext(request.text, request.context);
-      setComposerDraftPrompt(target, issueDraft.prompt);
-      setComposerDraftIssueContexts(target, issueDraft.issueContexts);
+      setComposerDraftPrompt(target, request.text);
       setEditingQueuedRun({
         threadId: activeThread.id,
         runId: request.runId,
         messageId: request.messageId,
-        originalText: issueDraft.prompt,
+        originalText: request.text,
         existingAttachments: request.attachments,
         context: serverProjection?.messages.find((message) => message.id === request.messageId)
           ?.context,
@@ -4554,7 +4489,6 @@ export default function ChatView(props: ChatViewProps) {
       serverProjection,
       scheduleComposerFocus,
       setComposerDraftPrompt,
-      setComposerDraftIssueContexts,
     ],
   );
   const cancelEditingQueuedRun = useCallback(() => {
@@ -4596,7 +4530,6 @@ export default function ChatView(props: ChatViewProps) {
       editTarget: queuedEditDraftTargetFor(editingQueuedRun.runId),
       threadTarget: baseComposerDraftTarget,
       originalText: editingQueuedRun.originalText,
-      originalIssueContexts: editingQueuedRun.context?.issueContexts,
     });
     if (recovery === "kept") {
       toastManager.add(
@@ -8514,15 +8447,12 @@ export default function ChatView(props: ChatViewProps) {
           input: {
             threadId: editingQueuedRun.threadId,
             runId: editingQueuedRun.runId,
-            text:
-              appendIssueContextsToPrompt(editText, composerIssueContexts) ||
-              ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+            text: editText || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
             edit: {
               messageId: editingQueuedRun.messageId,
               attachments: uploads,
               context: {
                 version: 1,
-                issueContexts: composerIssueContexts,
                 records: [
                   ...new Map(
                     [
@@ -8540,6 +8470,7 @@ export default function ChatView(props: ChatViewProps) {
                         reviewComments: composerReviewComments,
                         previewAnnotations: composerPreviewAnnotations,
                         threadContexts: composerThreadContexts,
+                        issueContexts: composerIssueContexts,
                         attachments: newEditAttachments.map((attachment, index) => ({
                           attachment,
                           attachmentId:
@@ -8588,7 +8519,8 @@ export default function ChatView(props: ChatViewProps) {
       elementContextCount:
         composerPreviewAnnotations.length +
         composerReviewComments.length +
-        composerThreadContexts.length,
+        composerThreadContexts.length +
+        composerIssueContexts.length,
     });
     const feedbackCommand =
       ctxSelectedProvider === "codex" &&
@@ -8597,7 +8529,8 @@ export default function ChatView(props: ChatViewProps) {
       sendableComposerTerminalContexts.length === 0 &&
       composerPreviewAnnotations.length === 0 &&
       composerReviewComments.length === 0 &&
-      composerThreadContexts.length === 0
+      composerThreadContexts.length === 0 &&
+      composerIssueContexts.length === 0
         ? parseCodexFeedbackCommand(trimmed)
         : null;
     if (feedbackCommand && multipleModelSelections === null) {
@@ -8676,6 +8609,7 @@ export default function ChatView(props: ChatViewProps) {
       const followUpReviewComments = [...composerReviewComments];
       const followUpPreviewAnnotations = [...composerPreviewAnnotations];
       const followUpThreadContexts = [...composerThreadContexts];
+      const followUpIssueContexts = [...composerIssueContexts];
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
@@ -8686,6 +8620,7 @@ export default function ChatView(props: ChatViewProps) {
           reviewComments: composerReviewComments,
           previewAnnotations: composerPreviewAnnotations,
           threadContexts: composerThreadContexts,
+          issueContexts: composerIssueContexts,
         }),
         interactionMode: followUp.interactionMode,
       });
@@ -8711,6 +8646,7 @@ export default function ChatView(props: ChatViewProps) {
             setComposerDraftThreadContexts(composerDraftTarget, [...records]),
           resetCursor: (options) => composerRef.current?.resetCursorState(options),
         });
+        setComposerDraftIssueContexts(composerDraftTarget, followUpIssueContexts);
       }
       return;
     }
@@ -8804,17 +8740,13 @@ export default function ChatView(props: ChatViewProps) {
         reviewComments: composerReviewCommentsSnapshot,
         previewAnnotations: composerPreviewAnnotationsSnapshot,
         threadContexts: composerThreadContextsSnapshot,
+        issueContexts: composerIssueContextsSnapshot,
         attachments: composerAttachmentsSnapshot.map((attachment, index) => ({
           attachment,
           attachmentId: attachmentIds[index] ?? attachment.id,
         })),
       });
-      return composerIssueContextsSnapshot.length === 0
-        ? context
-        : {
-            ...(context ?? { version: 1 as const, records: [] }),
-            issueContexts: composerIssueContextsSnapshot,
-          };
+      return context;
     };
     const outgoingMessageContext = buildOutgoingMessageContext(
       composerAttachmentsSnapshot.map((attachment) => attachment.id),
@@ -8827,10 +8759,7 @@ export default function ChatView(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      // The fork's GitHub issue context still travels as a trailing block after the prose.
-      text:
-        appendIssueContextsToPrompt(messageTextForSend, composerIssueContextsSnapshot) ||
-        ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
@@ -8879,9 +8808,7 @@ export default function ChatView(props: ChatViewProps) {
         model: selection.model,
         models: provider.models,
         effort: providerState.promptEffort,
-        text:
-          appendIssueContextsToPrompt(messageTextForSend, composerIssueContextsSnapshot) ||
-          ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+        text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
       });
       if (composerRef.current?.validateProviderInput(text) === false) return;
       multipleTargets.push({
@@ -9199,6 +9126,7 @@ export default function ChatView(props: ChatViewProps) {
             );
             setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
             setComposerDraftThreadContexts(composerDraftTarget, composerThreadContextsSnapshot);
+            setComposerDraftIssueContexts(composerDraftTarget, composerIssueContextsSnapshot);
             if (composerRef.current && currentRouteThreadKeyRef.current === routeThreadKey) {
               promptRef.current = messageTextForSend;
               composerRef.current.resetCursorState({
@@ -9352,7 +9280,7 @@ export default function ChatView(props: ChatViewProps) {
       } else if (composerPreviewAnnotationsSnapshot.length > 0) {
         titleSeed = previewAnnotationContextLabel(composerPreviewAnnotationsSnapshot[0]!);
       } else if (composerIssueContextsSnapshot.length > 0) {
-        titleSeed = formatIssueContextLabel(composerIssueContextsSnapshot[0]!);
+        titleSeed = composerIssueContextsSnapshot[0]!.label;
       } else {
         titleSeed = "New thread";
       }
@@ -9570,14 +9498,13 @@ export default function ChatView(props: ChatViewProps) {
         backgroundDraftOpened
           ? !composerDraftHasUserContent(
               useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
-            ) &&
-            (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.issueContexts
-              .length ?? 0) === 0
+            )
           : promptRef.current.length === 0 &&
             composerImagesRef.current.length === 0 &&
             composerFilesRef.current.length === 0 &&
             composerTerminalContextsRef.current.length === 0 &&
-            composerIssueContextsRef.current.length === 0 &&
+            (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.issueContexts
+              .length ?? 0) === 0 &&
             (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)
               ?.previewAnnotations.length ?? 0) === 0 &&
             (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
@@ -9598,7 +9525,6 @@ export default function ChatView(props: ChatViewProps) {
         composerImagesRef.current = retryComposerImages;
         composerFilesRef.current = composerFilesSnapshot;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
-        composerIssueContextsRef.current = composerIssueContextsSnapshot;
         setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
         addComposerDraftImages(composerDraftTarget, retryComposerImages);
         addComposerDraftFiles(composerDraftTarget, composerFilesSnapshot);
@@ -11076,7 +11002,6 @@ export default function ChatView(props: ChatViewProps) {
                           ) : null}
                           {!composerMounted ? null : (
                             <ChatComposer
-                              composerIssueContextsRef={composerIssueContextsRef}
                               multipleModelSelections={multipleModelSelections}
                               supportsMultipleModels={
                                 serverConfig?.environment.capabilities.requiredWorktreeBootstrap ===
@@ -11143,7 +11068,6 @@ export default function ChatView(props: ChatViewProps) {
                                     optimisticMessages={optimisticUserMessages}
                                     editingRunId={editingQueuedRun?.runId ?? null}
                                     onEditQueuedRun={beginEditingQueuedRun}
-                                    onRestoreCancelledRun={restoreCancelledQueuedRun}
                                     onCancelEdit={cancelEditingQueuedRun}
                                   />
                                 ) : null

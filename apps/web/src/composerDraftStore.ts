@@ -20,8 +20,7 @@ import {
   PastedTextAttachmentSource,
   type PreviewAnnotationPayload,
   RuntimeMode,
-  SourceControlIssueState,
-  SourceControlProviderKind,
+  IssueContextRecord,
   ThreadContextRecord,
   type ServerProvider,
   type ScopedProjectRef,
@@ -61,12 +60,7 @@ import {
   migrateLegacyTerminalContextPlaceholders,
   normalizeTerminalContextText,
 } from "./lib/terminalContext";
-import {
-  type IssueContextDraft,
-  type IssueContextSelection,
-  issueContextDedupKey,
-  newIssueContextId,
-} from "./lib/issueContext";
+import { issueContextReference } from "./lib/issueContext";
 import {
   appendInlineContextReference,
   type ComposerContextReference,
@@ -96,8 +90,8 @@ import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewC
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
-const isSourceControlProviderKind = Schema.is(SourceControlProviderKind);
 const isThreadContextRecord = Schema.is(ThreadContextRecord);
+const isIssueContextRecord = Schema.is(IssueContextRecord);
 const isSnapShotSource = Schema.is(SnapShotSource);
 const isPreviewAnnotationPayload = Schema.is(PreviewAnnotationPayloadSchema);
 
@@ -268,33 +262,12 @@ const PersistedTerminalContextDraft = Schema.Struct({
 });
 type PersistedTerminalContextDraft = typeof PersistedTerminalContextDraft.Type;
 
-const PersistedIssueContextComment = Schema.Struct({
-  author: Schema.NullOr(Schema.String),
-  body: Schema.String,
-});
-
-const PersistedIssueContextDraft = Schema.Struct({
-  id: Schema.String,
-  threadId: ThreadId,
-  attachedAt: Schema.String,
-  provider: SourceControlProviderKind,
-  repository: Schema.NullOr(Schema.String),
-  number: Schema.Number,
-  title: Schema.String,
-  url: Schema.String,
-  state: SourceControlIssueState,
-  author: Schema.NullOr(Schema.String),
-  body: Schema.String,
-  comments: Schema.Array(PersistedIssueContextComment),
-});
-type PersistedIssueContextDraft = typeof PersistedIssueContextDraft.Type;
-
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerAttachment),
   files: Schema.optionalKey(Schema.Array(PersistedComposerDraftFileAttachment)),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
-  issueContexts: Schema.optionalKey(Schema.Array(PersistedIssueContextDraft)),
+  issueContexts: Schema.optionalKey(Schema.Array(IssueContextRecord)),
   previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
   reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
   threadContexts: Schema.optionalKey(Schema.Array(ThreadContextRecord)),
@@ -451,11 +424,10 @@ export interface ComposerThreadDraftState {
   persistedAttachments: PersistedComposerAttachment[];
   terminalContexts: TerminalContextDraft[];
   /**
-   * GitHub issues attached from the command palette. Persisted in full: there
-   * is no live session to re-fetch the issue body and comments from when a
-   * draft is restored.
+   * Source-control issues attached from the command palette. Each record carries the issue
+   * body and comments, so a restored draft does not fetch the issue again.
    */
-  issueContexts: IssueContextDraft[];
+  issueContexts: IssueContextRecord[];
   previewAnnotations: PreviewAnnotationPayload[];
   reviewComments: ReviewCommentContext[];
   threadContexts: ThreadContextRecord[];
@@ -749,21 +721,16 @@ interface ComposerDraftStoreState {
   ) => void;
   removeTerminalContext: (threadRef: ComposerThreadTarget, contextId: string) => void;
   clearTerminalContexts: (threadRef: ComposerThreadTarget) => void;
-  /**
-   * Attach a fetched issue to the draft. Returns true when accepted, false when
-   * the same issue is already attached.
-   */
-  addIssueContext: (threadRef: ComposerThreadTarget, selection: IssueContextSelection) => boolean;
-  /**
-   * Replace the entire issue-contexts list (used by send-failure retry to
-   * restore the pre-send snapshot).
-   */
+  /** Attaches issues as context; already-attached issues are skipped. */
+  addIssueContexts: (
+    threadRef: ComposerThreadTarget,
+    records: ReadonlyArray<IssueContextRecord>,
+    options?: ComposerContextAddOptions,
+  ) => void;
   setIssueContexts: (
     threadRef: ComposerThreadTarget,
-    contexts: ReadonlyArray<IssueContextDraft>,
+    records: ReadonlyArray<IssueContextRecord>,
   ) => void;
-  removeIssueContext: (threadRef: ComposerThreadTarget, contextId: string) => void;
-  clearIssueContexts: (threadRef: ComposerThreadTarget) => void;
   addPreviewAnnotation: (
     threadRef: ComposerThreadTarget,
     annotation: PreviewAnnotationPayload,
@@ -925,7 +892,7 @@ const EMPTY_FILES: ComposerFileAttachment[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
-const EMPTY_ISSUE_CONTEXTS: IssueContextDraft[] = [];
+const EMPTY_ISSUE_CONTEXTS: IssueContextRecord[] = [];
 const EMPTY_PREVIEW_ANNOTATIONS: PreviewAnnotationPayload[] = [];
 const EMPTY_REVIEW_COMMENTS: ReviewCommentContext[] = [];
 const EMPTY_THREAD_CONTEXTS: ThreadContextRecord[] = [];
@@ -1500,62 +1467,6 @@ function normalizePersistedAttachment(value: unknown): PersistedComposerAttachme
   };
 }
 
-function normalizePersistedIssueContextDraft(
-  value: unknown,
-): DeepMutable<PersistedIssueContextDraft> | null {
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Record<string, unknown>;
-  const id = candidate.id;
-  const threadId = candidate.threadId;
-  const attachedAt = candidate.attachedAt;
-  const provider = candidate.provider;
-  const title = candidate.title;
-  const number = candidate.number;
-  const state = candidate.state;
-  if (
-    typeof id !== "string" ||
-    id.length === 0 ||
-    typeof threadId !== "string" ||
-    threadId.length === 0 ||
-    typeof attachedAt !== "string" ||
-    attachedAt.length === 0 ||
-    !isSourceControlProviderKind(provider) ||
-    typeof title !== "string" ||
-    title.length === 0 ||
-    typeof number !== "number" ||
-    !Number.isSafeInteger(number) ||
-    number <= 0
-  ) {
-    return null;
-  }
-  const comments = Array.isArray(candidate.comments)
-    ? candidate.comments.flatMap((entry) => {
-        if (!entry || typeof entry !== "object") return [];
-        const comment = entry as Record<string, unknown>;
-        return [
-          {
-            author: typeof comment.author === "string" ? comment.author : null,
-            body: typeof comment.body === "string" ? comment.body : "",
-          },
-        ];
-      })
-    : [];
-  return {
-    id,
-    threadId: threadId as ThreadId,
-    attachedAt,
-    provider,
-    repository: typeof candidate.repository === "string" ? candidate.repository : null,
-    number,
-    title,
-    url: typeof candidate.url === "string" ? candidate.url : "",
-    state: state === "closed" ? "closed" : "open",
-    author: typeof candidate.author === "string" ? candidate.author : null,
-    body: typeof candidate.body === "string" ? candidate.body : "",
-    comments,
-  };
-}
-
 function normalizePersistedTerminalContextDraft(
   value: unknown,
 ): PersistedTerminalContextDraft | null {
@@ -2120,11 +2031,9 @@ function normalizePersistedDraftsByThreadId(
           return normalized ? [normalized] : [];
         })
       : [];
+    // Drafts saved before issues became context records fail this check and lose the issue.
     const issueContexts = Array.isArray(draftCandidate.issueContexts)
-      ? draftCandidate.issueContexts.flatMap((entry) => {
-          const normalized = normalizePersistedIssueContextDraft(entry);
-          return normalized ? [normalized] : [];
-        })
+      ? draftCandidate.issueContexts.filter(isIssueContextRecord)
       : [];
     const reviewComments = Array.isArray(draftCandidate.reviewComments)
       ? draftCandidate.reviewComments.filter(isReviewCommentContext)
@@ -2446,22 +2355,9 @@ export function partializeComposerDraftStoreState(
         : {}),
       ...(draft.issueContexts.length > 0
         ? {
-            issueContexts: draft.issueContexts.map((context) => ({
-              id: context.id,
-              threadId: context.threadId,
-              attachedAt: context.attachedAt,
-              provider: context.provider,
-              repository: context.repository,
-              number: context.number,
-              title: context.title,
-              url: context.url,
-              state: context.state,
-              author: context.author,
-              body: context.body,
-              comments: context.comments.map((comment) => ({
-                author: comment.author,
-                body: comment.body,
-              })),
+            issueContexts: draft.issueContexts.map((record) => ({
+              ...record,
+              comments: record.comments.map((comment) => ({ ...comment })),
             })),
           }
         : {}),
@@ -2779,6 +2675,7 @@ function toHydratedThreadDraft(
       ...(persistedDraft.reviewComments ?? []).map(reviewCommentContextReference),
       ...(persistedDraft.previewAnnotations ?? []).map(previewAnnotationContextReference),
       ...(persistedDraft.threadContexts ?? []).map(threadContextReference),
+      ...(persistedDraft.issueContexts ?? []).map(issueContextReference),
       ...files.map(fileContextReference),
     ]),
     images: legacyAttachments.filter(
@@ -2792,11 +2689,7 @@ function toHydratedThreadDraft(
         ...context,
         text: context.text ?? "",
       })) ?? [],
-    issueContexts:
-      persistedDraft.issueContexts?.map((context) => ({
-        ...context,
-        comments: context.comments.map((comment) => ({ ...comment })),
-      })) ?? [],
+    issueContexts: persistedDraft.issueContexts?.map((record) => ({ ...record })) ?? [],
     previewAnnotations:
       persistedDraft.previewAnnotations?.map((annotation) => ({ ...annotation })) ?? [],
     reviewComments: persistedDraft.reviewComments?.map((comment) => ({ ...comment })) ?? [],
@@ -3248,10 +3141,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               ? {
                   ...existingDraft,
                   terminalContexts: existingDraft.terminalContexts.map((context) => ({
-                    ...context,
-                    threadId: nextThreadId,
-                  })),
-                  issueContexts: existingDraft.issueContexts.map((context) => ({
                     ...context,
                     threadId: nextThreadId,
                   })),
@@ -4256,96 +4145,70 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
-        addIssueContext: (threadRef, selection) => {
+        addIssueContexts: (threadRef, records, options) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
-          const threadId = resolveComposerThreadId(get(), threadRef);
-          if (!threadKey || !threadId) return false;
-          let accepted = false;
+          if (!threadKey) return;
+          const existingIds = new Set(
+            (get().draftsByThreadKey[threadKey]?.issueContexts ?? []).map(
+              (record) => record.contextId,
+            ),
+          );
+          const incoming = records.filter((record) => {
+            if (existingIds.has(record.contextId)) return false;
+            existingIds.add(record.contextId);
+            return true;
+          });
+          if (incoming.length === 0) return;
+          const placedAtCaret =
+            options?.appendReference !== false &&
+            options?.insertAtCaret !== false &&
+            (contextInsertionHandlers.get(threadKey)?.(incoming.map(issueContextReference)) ??
+              false);
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
-            const dedupKey = issueContextDedupKey(selection);
-            if (existing.issueContexts.some((entry) => issueContextDedupKey(entry) === dedupKey)) {
-              return state;
-            }
-            accepted = true;
-            const draft: IssueContextDraft = {
-              ...selection,
-              id: newIssueContextId(),
-              threadId,
-              attachedAt: new Date().toISOString(),
-            };
+            const known = new Set(existing.issueContexts.map((record) => record.contextId));
+            const accepted = incoming.filter((record) => !known.has(record.contextId));
+            if (accepted.length === 0) return state;
             return {
               draftsByThreadKey: {
                 ...state.draftsByThreadKey,
                 [threadKey]: {
                   ...existing,
-                  issueContexts: [...existing.issueContexts, draft],
+                  prompt:
+                    placedAtCaret || options?.appendReference === false
+                      ? existing.prompt
+                      : ensureInlineContextReferences(
+                          existing.prompt,
+                          accepted.map(issueContextReference),
+                        ),
+                  issueContexts: [...existing.issueContexts, ...accepted],
                 },
               },
             };
           });
-          return accepted;
         },
-        setIssueContexts: (threadRef, contexts) => {
+        setIssueContexts: (threadRef, records) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
-          // Queue edit targets are draft IDs, rather than routed thread refs.
-          const threadId =
-            resolveComposerThreadId(get(), threadRef) ??
-            contexts[0]?.threadId ??
-            get().draftsByThreadKey[threadKey ?? ""]?.issueContexts[0]?.threadId;
-          if (!threadKey || !threadId) return;
+          if (!threadKey) return;
+          const issueContexts = records
+            .filter(isIssueContextRecord)
+            .map((record) => ({ ...record }));
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
-            const nextDraft: ComposerThreadDraftState = {
-              ...existing,
-              issueContexts: contexts.map((context) => ({ ...context, threadId })),
-            };
-            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete nextDraftsByThreadKey[threadKey];
-            } else {
-              nextDraftsByThreadKey[threadKey] = nextDraft;
+            const retainedIds = new Set(issueContexts.map((record) => record.contextId));
+            let prompt = existing.prompt;
+            for (const previous of existing.issueContexts) {
+              if (retainedIds.has(previous.contextId)) continue;
+              prompt = removeInlineContextReference(prompt, previous.contextId).prompt;
             }
-            return { draftsByThreadKey: nextDraftsByThreadKey };
-          });
-        },
-        removeIssueContext: (threadRef, contextId) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0 || contextId.length === 0) return;
-          set((state) => {
-            const current = state.draftsByThreadKey[threadKey];
-            if (!current) return state;
-            const filtered = current.issueContexts.filter((entry) => entry.id !== contextId);
-            if (filtered.length === current.issueContexts.length) return state;
-            const nextDraft: ComposerThreadDraftState = {
-              ...current,
-              issueContexts: filtered,
-            };
+            prompt = ensureInlineContextReferences(
+              prompt,
+              issueContexts.map(issueContextReference),
+            );
+            const nextDraft = { ...existing, prompt, issueContexts };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete nextDraftsByThreadKey[threadKey];
-            } else {
-              nextDraftsByThreadKey[threadKey] = nextDraft;
-            }
-            return { draftsByThreadKey: nextDraftsByThreadKey };
-          });
-        },
-        clearIssueContexts: (threadRef) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0) return;
-          set((state) => {
-            const current = state.draftsByThreadKey[threadKey];
-            if (!current || current.issueContexts.length === 0) return state;
-            const nextDraft: ComposerThreadDraftState = {
-              ...current,
-              issueContexts: [],
-            };
-            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete nextDraftsByThreadKey[threadKey];
-            } else {
-              nextDraftsByThreadKey[threadKey] = nextDraft;
-            }
+            if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
+            else nextDraftsByThreadKey[threadKey] = nextDraft;
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
@@ -4722,6 +4585,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 ...current.terminalContexts.map(terminalContextReference),
                 ...current.reviewComments.map(reviewCommentContextReference),
                 ...current.threadContexts.map(threadContextReference),
+                ...current.issueContexts.map(issueContextReference),
                 ...current.previewAnnotations.map(previewAnnotationContextReference),
               ]),
               images: [],
