@@ -1242,7 +1242,7 @@ features:
       - Web, desktop, and mobile default to steering follow-ups into the active turn instead of queueing a new turn.
       - Explicit Queue preferences remain unchanged, and Queue remains available as the alternate action.
       - Mobile queues when the active provider cannot steer; provider steering execution and Claude message priority remain unchanged.
-      - Sent messages render without delivery-intent badges on web, desktop, and mobile; delivery history is available in the timestamp tooltip on web/desktop and by tapping the timestamp on mobile.
+      - Sent messages render without delivery-intent badges on web, desktop, and mobile; delivery labels sit beside the timestamp beneath the message, revealed on hover or focus on web/desktop and visible with metadata on mobile.
     rationale: Ordinary follow-ups should reach ongoing work without waiting for the whole turn to finish. Retain the closed upstream proposal as a deliberate styal default.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
@@ -1264,7 +1264,7 @@ features:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/pull/18226
-      retire_when: Upstream defaults to steering follow-ups across clients while preserving explicit Queue preferences and shows delivery history in timestamp details instead of message badges.
+      retire_when: Upstream defaults to steering follow-ups across clients while preserving explicit Queue preferences and shows delivery labels beside the timestamp instead of above-message badges.
 
   - id: fork-agent-integration-identity
     title: Identify styal to agents and MCP clients

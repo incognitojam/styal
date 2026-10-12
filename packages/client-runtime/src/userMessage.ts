@@ -4,17 +4,15 @@ import {
   ScheduledTaskId,
 } from "@t3tools/contracts";
 
-/** Delivery history shown in message timestamp details rather than on the bubble. */
-export function describeUserMessageIntent(
-  intent: OrchestrationV2UserMessageInputIntent | undefined,
-) {
+/** Delivery labels for the metadata line beneath a user message. */
+export function userMessageIntentLabel(intent: OrchestrationV2UserMessageInputIntent | undefined) {
   switch (intent) {
     case "steer":
-      return "Steered the active turn";
+      return "Steer";
     case "queued_turn":
-      return "Queued behind the active turn";
+      return "Queued";
     case "promoted_queued_to_steer":
-      return "Originally queued, then promoted to steer the active turn";
+      return "Queued → Steer";
     case "turn_start":
     case undefined:
       return null;

@@ -44,7 +44,7 @@ import { parseScopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/en
 import { useAtomValue } from "@effect/atom-react";
 import { environmentThreadDetails } from "../../state/threads";
 import {
-  describeUserMessageIntent,
+  userMessageIntentLabel,
   resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
@@ -2063,7 +2063,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const userMessage = resolveUserMessagePresentation(row.message);
-  const intentDescription = describeUserMessageIntent(row.message.inputIntent);
+  const intentLabel = userMessageIntentLabel(row.message.inputIntent);
   const rawResolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
   const issueContextState = useMemo(
     () => extractTrailingIssueContexts(rawResolvedContext.text),
@@ -2365,6 +2365,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
+          {intentLabel ? <span className="text-muted-foreground">{intentLabel}</span> : null}
           <Tooltip>
             <TooltipTrigger
               render={<p tabIndex={0} className="text-muted-foreground text-xs tabular-nums" />}
@@ -2372,12 +2373,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
             </TooltipTrigger>
             <TooltipPopup>
-              <div className="flex flex-col gap-1">
-                <span>
-                  {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
-                </span>
-                {intentDescription ? <span>{intentDescription}</span> : null}
-              </div>
+              {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
             </TooltipPopup>
           </Tooltip>
           <div className="flex items-center gap-0.5">

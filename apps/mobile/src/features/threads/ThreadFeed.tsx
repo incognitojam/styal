@@ -12,7 +12,7 @@ import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { useViewabilityAmount, type LegendListRef } from "@legendapp/list/react-native";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
-  describeUserMessageIntent,
+  userMessageIntentLabel,
   resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
@@ -1744,7 +1744,7 @@ function renderFeedEntry(
 
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
-      const intentDescription = describeUserMessageIntent(message.inputIntent);
+      const intentLabel = userMessageIntentLabel(message.inputIntent);
       const userTimestampLabel =
         entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel;
       const referenceIds = new Set(
@@ -1859,25 +1859,14 @@ function renderFeedEntry(
             ) : null}
           </View>
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
-            {intentDescription ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${userTimestampLabel}. ${intentDescription}`}
-                accessibilityHint="Show message delivery details"
-                hitSlop={8}
-                onPress={() =>
-                  Alert.alert("Message details", `${userTimestampLabel}\n\n${intentDescription}`)
-                }
-              >
-                <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
-                  {userTimestampLabel}
-                </Text>
-              </Pressable>
-            ) : (
-              <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
-                {userTimestampLabel}
+            {intentLabel ? (
+              <Text className="font-t3-medium text-xs text-foreground-secondary">
+                {intentLabel}
               </Text>
-            )}
+            ) : null}
+            <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
+              {userTimestampLabel}
+            </Text>
             {props.onEditPendingMessage !== null &&
             entry.pendingMessage &&
             !entry.acknowledged &&
