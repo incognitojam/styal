@@ -1237,7 +1237,7 @@ features:
   - id: follow-up-steering-default
     title: Steer active turns by default
     status: maintained
-    prs: []
+    prs: [775]
     invariants:
       - Web, desktop, and mobile default to steering follow-ups into the active turn instead of queueing a new turn.
       - Explicit Queue preferences remain unchanged, and Queue remains available as the alternate action.
