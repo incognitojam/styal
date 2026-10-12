@@ -69,6 +69,10 @@
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
     },
     {
+      "pr": 17118,
+      "reason": "A thread snoozed during its own run, such as an agent snoozing its thread through `t3_thread_organize` before its final reply, wakes as soon as that run completes. The fix only wakes for runs requested after the snooze. Not imported early: it builds on #16782 (`isSnoozed`), which conflicts with a chain of pending MCP changes. Take it at chronological intake; #15135 (an agent archiving its own thread fails its turn) is a related open issue it does not cover."
+    },
+    {
       "pr": 17586,
       "reason": "Background-service installs check their channel hourly and install when nothing is running, reusing `cli/update.ts` release discovery. The fork's discovery reads npm dist-tags and confirms the release checksums are downloadable (fork #741), so keep the fork's `resolveNewestVersion` rather than upstream's GitHub API paging when this is taken in; hourly checks from many hosts would exhaust GitHub's anonymous API quota. Depends on #17585."
     },
