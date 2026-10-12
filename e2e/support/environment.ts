@@ -6,6 +6,8 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
+import { hasTestFailed, markFailed } from "./failures.ts";
+
 const REPO_ROOT = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
   "../..",
@@ -44,7 +46,10 @@ export interface CodexTurnRequest {
 }
 
 export interface Environment {
-  /** Temporary directory holding this environment's state, logs, and failure screenshots. */
+  /**
+   * Temporary directory holding this environment's state, logs, and failure screenshots. It is
+   * kept when a test fails or `E2E_KEEP_STATE` is set.
+   */
   readonly root: string;
   readonly origin: string;
   /** One-time pairing URL printed at startup. */
@@ -163,7 +168,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
       clearTimeout(killTimer);
     }
     NodeFS.closeSync(serverLog);
-    if (process.env.E2E_KEEP_STATE) {
+    if (process.env.E2E_KEEP_STATE || hasTestFailed()) {
       process.stderr.write(`e2e state kept at ${root}\n`);
     } else {
       NodeFS.rmSync(root, { recursive: true, force: true });
@@ -177,6 +182,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
       return /(?:Pairing URL|pairingUrl): (\S+)/.exec(readServerLog())?.[1];
     });
   } catch (error) {
+    markFailed();
     await stop();
     throw error;
   }

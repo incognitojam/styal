@@ -1,6 +1,7 @@
 import { type Browser, type Locator, type Page, chromium } from "playwright-core";
 
 import type { Environment } from "./environment.ts";
+import { markFailed, onTestFailure } from "./failures.ts";
 
 export interface App {
   readonly browser: Browser;
@@ -10,7 +11,10 @@ export interface App {
   readonly close: () => Promise<void>;
 }
 
-/** Opens headless Chromium, pairs it with the environment, and waits for the composer. */
+/**
+ * Opens headless Chromium, pairs it with the environment, and waits for the composer. When a
+ * test fails, the page is saved to `test-failure.png` in the environment's directory.
+ */
 export async function openApp(environment: Environment): Promise<App> {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
@@ -29,8 +33,20 @@ export async function openApp(environment: Environment): Promise<App> {
     await page.goto(environment.pairingUrl);
     const composer = page.locator("[contenteditable=true]").first();
     await composer.waitFor({ timeout: 60_000 });
-    return { browser, page, composer, close: () => browser.close() };
+    const removeFailureHandler = onTestFailure(async () => {
+      await page.screenshot({ path: `${environment.root}/test-failure.png` });
+    });
+    return {
+      browser,
+      page,
+      composer,
+      close: async () => {
+        removeFailureHandler();
+        await browser.close();
+      },
+    };
   } catch (error) {
+    markFailed();
     await page.screenshot({ path: `${environment.root}/open-app-failure.png` }).catch(() => {});
     await browser.close();
     throw error;

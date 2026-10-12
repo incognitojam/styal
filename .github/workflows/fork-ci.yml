@@ -424,10 +424,23 @@ jobs:
 
       - name: Test end to end
         if: matrix.e2e
+        env:
+          # Environments live under TMPDIR; a failed test keeps its directory for upload.
+          TMPDIR: ${{ runner.temp }}/e2e
         run: |
+          mkdir -p "$TMPDIR"
           vp run --filter @t3tools/e2e test:e2e \
             --reporter=default \
             --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
+
+      - name: Upload end to end state
+        if: failure() && matrix.e2e
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-state
+          path: ${{ runner.temp }}/e2e/styal-e2e-*
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Test web shard
         if: matrix.shard

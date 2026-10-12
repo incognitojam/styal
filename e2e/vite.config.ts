@@ -10,6 +10,7 @@ export default mergeConfig(
   defineConfig({
     test: {
       include: ["tests/**/*.e2e.ts"],
+      setupFiles: ["support/setup.ts"],
       hookTimeout: 120_000,
       testTimeout: 90_000,
     },
