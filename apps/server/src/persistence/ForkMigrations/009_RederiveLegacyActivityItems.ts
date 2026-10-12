@@ -137,10 +137,20 @@ export default Effect.gen(function* () {
     WHERE name = 'orchestration_events'
   `;
   yield* sql`
-    UPDATE orchestration_v2_projection_metadata
-    SET
-      last_sequence = (SELECT seq FROM sqlite_sequence WHERE name = 'orchestration_events'),
-      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-    WHERE projection_name = 'history-rewrite-fence'
+    INSERT INTO orchestration_v2_projection_metadata (
+      projection_name,
+      schema_version,
+      last_sequence,
+      updated_at
+    )
+    VALUES (
+      'history-rewrite-fence',
+      1,
+      (SELECT seq FROM sqlite_sequence WHERE name = 'orchestration_events'),
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    )
+    ON CONFLICT(projection_name) DO UPDATE SET
+      last_sequence = excluded.last_sequence,
+      updated_at = excluded.updated_at
   `;
 });
