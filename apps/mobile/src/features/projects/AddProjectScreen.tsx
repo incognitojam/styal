@@ -105,6 +105,11 @@ import {
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
 import { resolveAddProjectEnvironment } from "./AddProjectScreen.logic";
+import {
+  createNewTaskDraft,
+  setComposerDraftText,
+  waitForComposerDraftsLoaded,
+} from "../../state/use-composer-drafts";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -800,11 +805,29 @@ export function AddProjectSourceScreen() {
 
 function openNewTaskDraft(
   navigation: { dispatch: (action: ReturnType<typeof CommonActions.reset>) => void },
-  params: { environmentId: EnvironmentId; projectId: ProjectId; title: string; cloning?: "1" },
+  params: {
+    environmentId: EnvironmentId;
+    projectId: ProjectId;
+    title: string;
+    cloning?: "1";
+    draftId?: string;
+  },
 ) {
   navigation.dispatch(
     CommonActions.reset({ index: 0, routes: [{ name: "NewTaskDraft", params }] }),
   );
+}
+
+/** A new task draft in the project, holding a prompt link's prompt. */
+async function draftWithPrompt(
+  environmentId: EnvironmentId,
+  projectId: ProjectId,
+  prompt: string,
+): Promise<string> {
+  await waitForComposerDraftsLoaded();
+  const draftId = createNewTaskDraft({ environmentId, projectId });
+  setComposerDraftText(draftId, prompt);
+  return draftId;
 }
 
 function useCreateProject(environment: EnvironmentOption | null) {
@@ -1550,6 +1573,7 @@ export function AddProjectDestinationScreen(props: {
   readonly repositoryTitle?: string | string[];
   readonly repositoryName?: string | string[];
   readonly parentRepository?: string | string[];
+  readonly prompt?: string | string[];
 }) {
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
     reportFailure: false,
@@ -1573,6 +1597,7 @@ export function AddProjectDestinationScreen(props: {
   const provider = addProjectRemoteSourceProvider(sourceFromParam(props.source));
   const repository = stringParam(props.repository);
   const repositoryTitle = stringParam(props.repositoryTitle);
+  const prompt = stringParam(props.prompt);
   // A lookup derives this from "owner/repo", a pasted clone URL from its own
   // last segment. Older links without the param keep the browsed folder.
   // Trim once here: the path input and the folder-list filter must compare the
@@ -1655,6 +1680,13 @@ export function AddProjectDestinationScreen(props: {
             projectId,
             title,
             cloning: "1",
+            ...(prompt
+              ? // Without its prompt the draft still opens on the cloned project.
+                await draftWithPrompt(environment.environmentId, projectId, prompt).then(
+                  (draftId) => ({ draftId }),
+                  () => ({}),
+                )
+              : {}),
           });
         }
       }
@@ -1702,6 +1734,7 @@ export function AddProjectDestinationScreen(props: {
     parentRepository,
     pathInput,
     provider,
+    prompt,
     remoteUrl,
     repository,
     startProjectClone,
