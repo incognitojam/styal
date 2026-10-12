@@ -43,7 +43,10 @@ import {
 import { parseScopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentThreadDetails } from "../../state/threads";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import {
+  describeUserMessageIntent,
+  resolveUserMessagePresentation,
+} from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
@@ -153,7 +156,6 @@ import {
   MousePointerClickIcon,
   PaintbrushIcon,
   MinusIcon,
-  Redo2Icon,
   Minimize2Icon,
   SearchIcon,
   SmartphoneIcon,
@@ -2061,6 +2063,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const userMessage = resolveUserMessagePresentation(row.message);
+  const intentDescription = describeUserMessageIntent(row.message.inputIntent);
   const rawResolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
   const issueContextState = useMemo(
     () => extractTrailingIssueContexts(rawResolvedContext.text),
@@ -2227,10 +2230,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           )}
         </p>
       ) : null}
-      {row.message.inputIntent === "queued_turn" ||
-      row.message.inputIntent === "promoted_queued_to_steer" ? (
-        <UserMessageIntentMarker intent={row.message.inputIntent} />
-      ) : null}
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
         <MessageAuthorHeading>You</MessageAuthorHeading>
         {(regularImages.length > 0 || userVideos.length > 0) && (
@@ -2367,11 +2366,18 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
           <Tooltip>
-            <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
+            <TooltipTrigger
+              render={<p tabIndex={0} className="text-muted-foreground text-xs tabular-nums" />}
+            >
               {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
             </TooltipTrigger>
             <TooltipPopup>
-              {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+              <div className="flex flex-col gap-1">
+                <span>
+                  {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+                </span>
+                {intentDescription ? <span>{intentDescription}</span> : null}
+              </div>
             </TooltipPopup>
           </Tooltip>
           <div className="flex items-center gap-0.5">
@@ -2401,44 +2407,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         </div>
       </div>
     </div>
-  );
-}
-
-function UserMessageIntentMarker({
-  intent,
-}: {
-  readonly intent: Extract<ChatMessage["inputIntent"], "queued_turn" | "promoted_queued_to_steer">;
-}) {
-  const presentation =
-    intent === "queued_turn"
-      ? {
-          label: "Queued",
-          icon: null,
-        }
-      : {
-          label: "Steer",
-          icon: Redo2Icon,
-        };
-  const IntentIcon = presentation.icon;
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <div
-            className="me-1 flex items-center justify-end gap-1 text-xs leading-none text-muted-foreground"
-            data-user-message-intent={intent}
-          />
-        }
-      >
-        {IntentIcon ? <IntentIcon aria-hidden="true" className="size-3" /> : null}
-        {presentation.label}
-      </TooltipTrigger>
-      <TooltipPopup side="top">
-        {intent === "queued_turn"
-          ? "Queued behind the active turn"
-          : "Originally queued, then promoted to steer the active turn"}
-      </TooltipPopup>
-    </Tooltip>
   );
 }
 

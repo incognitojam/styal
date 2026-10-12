@@ -1,4 +1,25 @@
-import { type OrchestrationV2Actor, ScheduledTaskId } from "@t3tools/contracts";
+import {
+  type OrchestrationV2Actor,
+  type OrchestrationV2UserMessageInputIntent,
+  ScheduledTaskId,
+} from "@t3tools/contracts";
+
+/** Delivery history shown in message timestamp details rather than on the bubble. */
+export function describeUserMessageIntent(
+  intent: OrchestrationV2UserMessageInputIntent | undefined,
+) {
+  switch (intent) {
+    case "steer":
+      return "Steered the active turn";
+    case "queued_turn":
+      return "Queued behind the active turn";
+    case "promoted_queued_to_steer":
+      return "Originally queued, then promoted to steer the active turn";
+    case "turn_start":
+    case undefined:
+      return null;
+  }
+}
 
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;
