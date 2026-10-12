@@ -1,4 +1,8 @@
-import type { VcsStatusRemoteResult, VcsStatusResult } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  type VcsStatusRemoteResult,
+  type VcsStatusResult,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -385,6 +389,15 @@ describe("parseGitRemoteConfig", () => {
 });
 
 describe("formatGeneratedBranchName", () => {
+  it("uses styal for the default static naming settings", () => {
+    expect(
+      formatGeneratedBranchName("Add Search", {
+        mode: DEFAULT_SERVER_SETTINGS.branchNamingMode,
+        prefix: DEFAULT_SERVER_SETTINGS.branchNamePrefix,
+        instructions: DEFAULT_SERVER_SETTINGS.branchNameInstructions,
+      }),
+    ).toBe("styal/add-search");
+  });
   it.each(["t3code", "t3code/"])("joins static prefix %s with one slash", (prefix) => {
     expect(
       formatGeneratedBranchName("Add Search", { mode: "static", prefix, instructions: "" }),

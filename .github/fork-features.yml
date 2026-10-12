@@ -1330,6 +1330,7 @@ features:
     status: maintained
     prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335, 344, 378, 728, 741]
     invariants:
+      - The default static worktree branch prefix is styal across clients; explicit environment and project prefixes, including an empty prefix, are preserved.
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
       - Electron's application name is a stable identity slug rather than a display string, so OS credential storage keys stay in the same namespace as the user-data directory they protect.
       - styal owns its base directory, user-data directory, and URL scheme, so it installs and runs alongside upstream T3 Code without sharing state; SSH device hosts keep their helpers under ~/.styal/device.
@@ -1394,6 +1395,7 @@ features:
       - apps/mobile/modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3NativeControlsModule.kt
       - apps/mobile/src/features/connection/GitHubRoutingSettings.tsx
       - apps/mobile/src/features/settings/appearance/components/AppearancePreviews.tsx
+      - apps/mobile/src/features/settings/components/BranchNamingSettings.tsx
       - apps/mobile/src/features/settings/components/NativeAppUpdateRow.tsx
       - apps/mobile/src/features/settings/environment-maintenance.ts
       - apps/mobile/src/features/updates/native-app-update-download.ts
@@ -1417,12 +1419,14 @@ features:
       - apps/web/src/components/StyalWordmark.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/settings/BranchNamingSettings.tsx
       - apps/web/src/components/settings/SettingsFontPreviews.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/sidebar/SidebarChrome.tsx
       - apps/web/src/fork-theme.css
       - packages/client-runtime/src/connection/compatibility.ts
       - packages/client-runtime/src/state/pullRequestDiffHttp.ts
+      - packages/contracts/src/settings.ts
       - packages/shared/src/brandAssets.ts
       - packages/shared/src/cliRelease.ts
       - packages/shared/src/cliReleaseVersion.ts
@@ -1442,11 +1446,14 @@ features:
       - apps/desktop/src/app/DesktopAssets.ts
       - apps/desktop/src/app/DesktopEnvironment.ts
       - apps/mobile/app.config.ts
+      - apps/mobile/src/features/settings/components/BranchNamingSettings.tsx
       - apps/server/src/device/sshDeviceScript.ts
       - apps/web/src/branding.logic.ts
       - apps/web/src/branding.ts
       - apps/web/src/components/SidebarStageBackdrop.tsx
+      - apps/web/src/components/settings/BranchNamingSettings.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/contracts/src/settings.ts
       - scripts/build-desktop-artifact.ts
       - scripts/export-brand-icons.ts
       - scripts/lib/brand-assets.ts
@@ -1470,8 +1477,10 @@ features:
       - apps/web/src/components/SidebarStageBackdrop.test.tsx
       - packages/client-runtime/src/connection/compatibility.test.ts
       - packages/client-runtime/src/state/pullRequestDiffHttp.test.ts
+      - packages/contracts/src/settings.test.ts
       - packages/shared/src/cliRelease.test.ts
       - packages/shared/src/cliReleaseVersion.test.ts
+      - packages/shared/src/git.test.ts
       - packages/ssh/src/runnerProcess.test.ts
       - scripts/build-desktop-artifact.test.ts
       - scripts/check-cli-release-freshness.test.ts

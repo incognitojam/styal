@@ -1185,12 +1185,16 @@ it("validates remote device hosts and rejects ambiguous host ids", () => {
 });
 
 describe("branch naming settings", () => {
-  it("defaults existing settings to the t3code static prefix", () => {
+  it("defaults existing settings to the styal static prefix", () => {
     expect(decodeServerSettings({})).toMatchObject({
       branchNamingMode: "static",
-      branchNamePrefix: "t3code",
+      branchNamePrefix: "styal",
       branchNameInstructions: "",
     });
+  });
+  it.each(["t3code", "team/", ""])("preserves an explicit prefix %j", (branchNamePrefix) => {
+    const input = { branchNamePrefix, projectSettingsOverrides: { project: { branchNamePrefix } } };
+    expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
   });
   it.each(["static", "semantic", "custom"])(
     "round-trips %s and project overrides",
