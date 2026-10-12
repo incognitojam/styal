@@ -149,7 +149,7 @@ export function WizardSteps({
     // Let long labels such as Preferences use more of the available width.
     <ol
       ref={stepsRef}
-      className="grid auto-cols-auto grid-flow-col gap-1 rounded-xl bg-zinc-25 p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
+      className="grid auto-cols-auto grid-flow-col gap-1 rounded-xl bg-background p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
       role="list"
       aria-label="Setup progress"
     >
@@ -214,7 +214,7 @@ export function WizardPanel({
     <div
       data-slot="dialog-panel"
       className={cn(
-        "min-w-0 space-y-4 bg-zinc-25/80 px-6 py-5 ring-1 ring-black/5 dark:bg-white/2 dark:ring-white/5",
+        "min-w-0 space-y-4 bg-background/80 px-6 py-5 ring-1 ring-black/5 dark:bg-white/2 dark:ring-white/5",
         className,
       )}
       {...props}
