@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { legacyActivityTurnItem } from "../../orchestration-v2/legacy/LegacyHistoricalItems.ts";
+import { preserveLegacyPayloadSize } from "../../orchestration-v2/legacy/legacyPayloadEncoding.ts";
 import { orderLegacyHistory } from "../../orchestration-v2/legacy/orderLegacyHistory.ts";
 
 const decodeItem = Schema.decodeUnknownEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson));
@@ -30,13 +31,20 @@ export default Effect.gen(function* () {
       type TEXT,
       status TEXT,
       updated_at TEXT,
+      projection_padding INTEGER,
       payload_json TEXT
     )
   `;
   let after = "";
   while (true) {
-    const rows = yield* sql<{ readonly turn_item_id: string; readonly payload_json: string }>`
-      SELECT turn_item_id, payload_json
+    const rows = yield* sql<{
+      readonly turn_item_id: string;
+      readonly payload_json: string;
+      readonly type: string;
+      readonly status: string;
+      readonly updated_at: string;
+    }>`
+      SELECT turn_item_id, payload_json, type, status, updated_at
       FROM orchestration_v2_projection_turn_items
       WHERE turn_item_id LIKE 'import:v1:activity:%'
         AND turn_item_id > ${after}
@@ -56,11 +64,20 @@ export default Effect.gen(function* () {
         yield* sql`INSERT INTO rederived_legacy_items (turn_item_id) VALUES (${item.id})`;
         continue;
       }
-      const payloadJson = yield* encodeItem(rederived);
-      if (payloadJson === row.payload_json) continue;
+      const encoded = yield* encodeItem(rederived);
+      if (encoded === row.payload_json) continue;
+      const payloadJson = preserveLegacyPayloadSize(row.payload_json, encoded);
+      const updatedAt = DateTime.formatIso(rederived.updatedAt);
+      // These columns precede payload_json in the SQLite record. Compensate for shrinking
+      // metadata so the unchanged activity array also stays at the same record offset.
+      const projectionPadding = Math.max(
+        0,
+        Buffer.byteLength(row.type + row.status + row.updated_at) -
+          Buffer.byteLength(rederived.type + rederived.status + updatedAt),
+      );
       yield* sql`
-        INSERT INTO rederived_legacy_items (turn_item_id, type, status, updated_at, payload_json)
-        VALUES (${item.id}, ${rederived.type}, ${rederived.status}, ${DateTime.formatIso(rederived.updatedAt)}, ${payloadJson})
+        INSERT INTO rederived_legacy_items (turn_item_id, type, status, updated_at, projection_padding, payload_json)
+        VALUES (${item.id}, ${rederived.type}, ${rederived.status}, ${updatedAt}, ${projectionPadding}, ${payloadJson})
       `;
     }
     const last = rows.at(-1);
@@ -79,6 +96,10 @@ export default Effect.gen(function* () {
     WHERE event.application_event_version = 2
       AND event.event_type = 'turn-item.updated'
       AND instr(event.event_id, ${ITEM_EVENT_MARKER}) > 0
+  `;
+  // The correlated event update below must look up one repair rather than scan all repairs.
+  yield* sql`
+    CREATE UNIQUE INDEX rederived_legacy_events_sequence_idx ON rederived_legacy_events(sequence)
   `;
   yield* sql`
     DELETE FROM orchestration_events
@@ -110,7 +131,7 @@ export default Effect.gen(function* () {
       type = repair.type,
       status = repair.status,
       updated_at = repair.updated_at,
-      payload_json = repair.payload_json
+      payload_json = printf('%*s', repair.projection_padding, '') || repair.payload_json
     FROM rederived_legacy_items AS repair
     WHERE repair.turn_item_id = orchestration_v2_projection_turn_items.turn_item_id
       AND repair.payload_json IS NOT NULL
