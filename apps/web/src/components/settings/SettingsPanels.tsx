@@ -2320,6 +2320,32 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          {...searchableSetting("group-threads-by-project")}
+          description="Show active threads under a header for each project."
+          resetAction={
+            settings.sidebarThreadGrouping !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadGrouping ? (
+              <SettingResetButton
+                label="thread grouping"
+                onClick={() =>
+                  updateSettings({
+                    sidebarThreadGrouping: DEFAULT_UNIFIED_SETTINGS.sidebarThreadGrouping,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarThreadGrouping === "project"}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarThreadGrouping: checked ? "project" : "none" })
+              }
+              aria-label="Group threads by project"
+            />
+          }
+        />
+
+        <SettingsRow
           serverScoped
           {...searchableSetting("auto-resume-limited-threads")}
           description="Resume usage-limit stops at the reported reset time. Each thread can cancel its scheduled continuation."
