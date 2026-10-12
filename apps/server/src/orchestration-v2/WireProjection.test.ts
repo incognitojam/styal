@@ -291,6 +291,33 @@ describe("orchestration V2 wire projection", () => {
     });
   });
 
+  it("keeps imported V1 activity in persistence but off the wire", () => {
+    const item = {
+      ...base,
+      type: "command_execution" as const,
+      input: "vp test run",
+      output: "ok",
+      exitCode: 0,
+      legacyTurnId: "turn-1",
+      legacyActivities: [
+        {
+          id: EventId.make("activity-1"),
+          tone: "tool" as const,
+          kind: "tool.completed",
+          summary: "Ran command",
+          payload: { data: { item: { aggregatedOutput: "x".repeat(100_000) } } },
+          turnId: null,
+          createdAt: "2026-08-13T00:00:01.000Z",
+        },
+      ],
+    };
+    const projected = projectTurnItemForWire(item);
+    expect(projected).not.toHaveProperty("legacyActivities");
+    expect(projected).not.toHaveProperty("output");
+    expect(projected).toMatchObject({ legacyTurnId: "turn-1", input: "vp test run", exitCode: 0 });
+    expect(item.legacyActivities).toHaveLength(1);
+  });
+
   it("omits inline file bodies but preserves file identity and change counts", () => {
     const item = {
       ...base,
