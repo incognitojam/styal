@@ -9,3 +9,10 @@ export const browserApiCorsAllowedHeaders = [
   "dpop",
   ORCHESTRATION_PROTOCOL_HEADER,
 ] as const;
+
+/** Origins of the Electron renderer: packaged, preview, and dev. */
+export const DESKTOP_RENDERER_ORIGINS = [
+  "styal://app",
+  "styal-preview://app",
+  "styal-dev://app",
+] as const;
