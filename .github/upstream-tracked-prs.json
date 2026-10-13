@@ -33,6 +33,10 @@
       "reason": "Fix for #10875: GitHub Enterprise hosts without the stacks API lose the merge button."
     },
     {
+      "pr": 12824,
+      "reason": "Fixes the V2 regression where messages sent during context compaction are rejected as steering instead of queued across web, mobile and server. Wait for upstream to merge it, then take it at chronological intake; an early import conflicts with pending upstream orchestration and composer changes."
+    },
+    {
       "pr": 14291,
       "reason": "Makes upstream's repository identity honour gh repo set-default, which the fork's resolver has done since fork #123, including `owner/repo` values. When it merges, take upstream's version and keep the fork's rule that the branch's tracking remote does not count (ledger pull-request-association-continuity)."
     },
