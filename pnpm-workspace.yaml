@@ -247,6 +247,8 @@ patchedDependencies:
   expo-blur@58.0.3: patches/expo-blur@58.0.3.patch
   expo-audio@58.0.4: patches/expo-audio@58.0.4.patch
   "@clerk/expo@4.6.8": patches/@clerk__expo@4.6.8.patch
+  # Staple retries never ran: the promise-retry callback ignored `retry`. Fixed in @electron/notarize 3.x, but electron-builder pins 2.5.0.
+  "@electron/notarize@2.5.0": patches/@electron__notarize@2.5.0.patch
   "@effect/vitest@4.0.0-rc.115": patches/@effect__vitest@4.0.0-rc.115.patch
   "@expo/metro-config@58.0.6": patches/@expo__metro-config@58.0.6.patch
   expo-sharing@58.0.13: patches/expo-sharing@58.0.13.patch
