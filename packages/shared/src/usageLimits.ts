@@ -1,6 +1,6 @@
 /**
  * Selection and pace maths for the provider limits view, shared by web and
- * mobile so both agree on which providers show, what "ahead of pace" means,
+ * mobile so both agree on which providers show, what "above pace" means,
  * and how a reset is phrased.
  *
  * @module usageLimits
@@ -340,7 +340,7 @@ export interface LimitPoolWindow {
   }>;
   readonly remainingPercent: number;
   readonly usedPercent: number;
-  readonly pace: LimitPace | null;
+  readonly pace: LimitPacePresentation | null;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
@@ -468,7 +468,16 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       ),
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
-      pace: meanElapsed === null ? null : paceOfShares(timedUsed, meanElapsed),
+      pace:
+        meanElapsed === null
+          ? null
+          : pacePresentationOfShares(
+              timedUsed,
+              meanElapsed,
+              timed.length > 1 || timed.length < members.length
+                ? `Average across ${timed.length} ${timed.length === 1 ? "account" : "accounts"} with known window times: `
+                : "",
+            ),
       resets,
     };
   });
@@ -516,6 +525,38 @@ export function paceRemainingPercent(
 }
 
 export type LimitPace = "ahead" | "on" | "under";
+
+const PACE_LABEL = { ahead: "Above pace", on: "On pace", under: "Below pace" } as const;
+
+export interface LimitPacePresentation {
+  readonly label: (typeof PACE_LABEL)[LimitPace];
+  readonly description: string;
+}
+
+/** Explain consumed quota against elapsed time, using the same tolerance on every client. */
+export function pacePresentation(
+  window: ServerProviderUsageWindow,
+  now: number,
+): LimitPacePresentation | null {
+  const elapsed = elapsedShare(window, now);
+  return elapsed === null ? null : pacePresentationOfShares(window.usedPercent, elapsed);
+}
+
+function pacePresentationOfShares(
+  usedPercent: number,
+  elapsed: number,
+  scope = "",
+): LimitPacePresentation {
+  const pace = paceOfShares(usedPercent, elapsed);
+  const comparison = `${Math.round(usedPercent)}% of quota consumed · ${Math.round(elapsed * 100)}% of window time elapsed.`;
+  const explanation =
+    pace === "ahead"
+      ? "Quota is being consumed faster than time elapses."
+      : pace === "under"
+        ? "Quota is being consumed slower than time elapses."
+        : "Consumption is within 5 percentage points of elapsed time.";
+  return { label: PACE_LABEL[pace], description: `${scope}${comparison} ${explanation}` };
+}
 
 /**
  * Usage against the clock. Spending evenly leaves the same share of quota as

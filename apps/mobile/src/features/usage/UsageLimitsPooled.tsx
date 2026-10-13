@@ -10,6 +10,7 @@ import {
   displayLimitWindows,
   formatDuration,
   formatResetsIn,
+  pacePresentation,
   remainingPercent,
   singleAccountResetCredits,
   type LimitAccount,
@@ -28,9 +29,9 @@ import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
 import { useProviderColors } from "./usageProviders";
+import { PaceIndicator } from "./UsagePace";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
-const PACE_LABEL = { ahead: "Ahead of pace", on: "On pace", under: "Under pace" } as const;
 
 function accountName(account: LimitAccount) {
   if (account.displayName) return account.displayName;
@@ -115,9 +116,7 @@ function PoolWindowCard({
             <Text className="text-sm text-foreground-muted">left</Text>
           </View>
         </View>
-        {pool.pace ? (
-          <Text className="text-xs text-foreground-tertiary">{PACE_LABEL[pool.pace]}</Text>
-        ) : null}
+        <PaceIndicator pace={pool.pace} />
       </View>
       {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
       {nextRefill && !single ? (
@@ -509,6 +508,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
                 {remainingPercent(window)}% left
               </Text>
+              <PaceIndicator pace={pacePresentation(window, now)} expanded />
               {window.resetsAt ? (
                 <Text selectable className="text-sm text-foreground-muted">
                   Resets{" "}

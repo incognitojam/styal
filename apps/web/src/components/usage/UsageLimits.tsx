@@ -9,14 +9,13 @@ import {
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  elapsedShare,
   formatDuration,
   formatResetsIn,
-  type LimitPace,
-  paceOf,
+  type LimitPacePresentation,
+  pacePresentation,
+  paceRemainingPercent,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
-import { GaugeIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
@@ -38,12 +37,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
 
-const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof GaugeIcon }> = {
-  ahead: { label: "Ahead of pace: spending faster than the window elapses", icon: TrendingUpIcon },
-  on: { label: "On pace with the window", icon: GaugeIcon },
-  under: { label: "Under pace: headroom left for the rest of the window", icon: TrendingDownIcon },
-};
-
 /** The series colour the cost chart uses for this driver, so the two views read as one. */
 export function barColor(driver: ServerProvider["driver"]): string {
   const kind: UsageProviderKind | undefined =
@@ -51,23 +44,23 @@ export function barColor(driver: ServerProvider["driver"]): string {
   return kind ? PROVIDER_PRESENTATION[kind].color : "var(--foreground)";
 }
 
-/** Pace as a glyph with the words on hover. */
-export function PaceIcon({ pace }: { readonly pace: LimitPace }) {
-  const Icon = PACE[pace].icon;
+/** Visible pace text; keyboard focus exposes the quota and time comparison. */
+export function PaceIndicator({ pace }: { readonly pace: LimitPacePresentation | null }) {
+  if (pace === null) return null;
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <span
-            role="img"
-            aria-label={PACE[pace].label}
-            className="inline-flex text-muted-foreground"
+            tabIndex={0}
+            aria-label={`${pace.label}. ${pace.description}`}
+            className="inline-flex shrink-0 rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         }
       >
-        <Icon className="size-3.5" aria-hidden />
+        {pace.label}
       </TooltipTrigger>
-      <TooltipPopup side="top">{PACE[pace].label}</TooltipPopup>
+      <TooltipPopup side="top">{pace.description}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -85,9 +78,8 @@ function tickGap(percent: number): string {
 
 /**
  * One window as a full-width bar from the moment it opened to its reset.
- * The fill is the share of quota spent; the tick is how far into the
- * window the clock is, which is also where even spending would have put the
- * fill. Hover for the exact figures and reset time.
+ * The fill is quota left; the tick is what even spending would leave by now.
+ * Hover for the exact figures and reset time.
  */
 function WindowBar({
   color,
@@ -100,9 +92,7 @@ function WindowBar({
 }) {
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
-  const elapsed = elapsedShare(window, now);
-  // The fill is quota left, so the even-spending mark is the time left.
-  const timeLeft = elapsed === null ? null : Math.round((1 - elapsed) * 100);
+  const timeLeft = paceRemainingPercent(window, now);
   const resetsIn = formatResetsIn(window, now);
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
@@ -190,7 +180,7 @@ export function LimitWindows({
       }
     >
       {windows.map((window) => {
-        const pace = paceOf(window, now);
+        const pace = pacePresentation(window, now);
         const resetsIn = formatResetsIn(window, now);
         return (
           <Fragment key={window.id}>
@@ -202,7 +192,7 @@ export function LimitWindows({
             </span>
             <WindowBar color={color} window={window} now={now} />
             <span className="flex items-center gap-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-              {pace ? <PaceIcon pace={pace} /> : null}
+              <PaceIndicator pace={pace} />
               <span className="ms-auto shrink-0">{resetsIn ?? ""}</span>
             </span>
           </Fragment>

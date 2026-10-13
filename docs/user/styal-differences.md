@@ -13,6 +13,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Share devices between connected environments.** Choose another styal environment as a device host from web, desktop, or mobile settings without configuring SSH. Device access persists after the client closes and can be revoked. T3 Code still connects remote device hosts through SSH as of [revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e). [Use devices from another environment](./devices.md#devices-from-another-environment).
 
+## Usage limits
+
+- **Readable consumption pace.** Usage Limits and `/usage-limits` show **Above pace**, **On pace**,
+  or **Below pace**, with an explanation comparing quota consumed with elapsed window time.
+  Mobile account details show the same comparison. T3 Code still uses pace icons on web and
+  “Ahead of pace” on mobile as of [revision 42160f2](https://github.com/pingdotgg/t3code/tree/42160f2925daa3c0d4ef2b95f68a87858972e6a3).
+
 ## Mobile
 
 - **Android updates inside the app.** styal offers APK updates in **Settings → About styal**,

@@ -3922,6 +3922,37 @@ features:
         - https://github.com/pingdotgg/t3code/pull/7147
       retire_when: Upstream presents an equivalent cross-client operational carbon estimate with transparent methodology and appropriately qualified comparisons.
 
+  - id: usage-limits-pace-labels
+    title: Explain consumption pace consistently across clients
+    status: maintained
+    prs: []
+    invariants:
+      - Usage Limits, the /usage-limits composer result and mobile account details show Above pace, On pace or Below pace by comparing quota consumed with elapsed window time; unavailable clocks hide pace.
+      - Pace keeps the inclusive five-percentage-point tolerance and pooled comparisons include only accounts with known window times.
+      - Explanations are keyboard and screen-reader accessible on web and readable on mobile; existing even-usage ticks remain visible over fills and at window boundaries.
+      - Pace changes preserve single-account simplification, reset credits and card layout.
+    implementation_paths:
+      - apps/mobile/src/features/usage/UsageLimitsPooled.tsx
+      - apps/mobile/src/features/usage/UsageLimitsSection.tsx
+      - apps/mobile/src/features/usage/UsagePace.tsx
+      - apps/web/src/components/usage/UsageLimits.tsx
+      - apps/web/src/components/usage/UsageLimitsPooled.tsx
+      - packages/shared/src/usageLimits.ts
+    upstream_paths:
+      - apps/mobile/src/features/usage/UsageLimitsPooled.tsx
+      - apps/mobile/src/features/usage/UsageLimitsSection.tsx
+      - apps/web/src/components/usage/UsageLimits.tsx
+      - apps/web/src/components/usage/UsageLimitsPooled.tsx
+      - packages/shared/src/usageLimits.ts
+    tests:
+      - packages/shared/src/usageLimits.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/14477
+        - https://github.com/pingdotgg/t3code/pull/16937
+      retire_when: Upstream uses unambiguous cross-client consumption pace labels with quota/time explanations, the five-point tolerance and visible even-usage ticks while preserving the fork's single-account and reset-credit behavior.
+
   - id: usage-limits-single-account
     title: Show a provider with one account like its own usage screen
     status: maintained

@@ -9,11 +9,11 @@ import type {
   UsageProviderKind,
 } from "@t3tools/contracts";
 import {
-  elapsedShare,
   formatDuration,
   formatResetsIn,
   limitsNotice,
-  paceOf,
+  pacePresentation,
+  paceRemainingPercent,
   remainingPercent,
   resetCreditExpiries,
 } from "@t3tools/shared/usageLimits";
@@ -28,8 +28,7 @@ import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useProviderColors } from "./usageProviders";
-
-const PACE_LABEL = { ahead: "ahead of pace", on: "on pace", under: "under pace" } as const;
+import { PaceIndicator } from "./UsagePace";
 
 type Driver = ServerProvider["driver"];
 
@@ -54,9 +53,8 @@ function WindowRow(props: {
 }) {
   const { window, now } = props;
   const remaining = remainingPercent(window);
-  const elapsed = elapsedShare(window, now);
-  const timeLeft = elapsed === null ? null : Math.round((1 - elapsed) * 100);
-  const pace = paceOf(window, now);
+  const timeLeft = paceRemainingPercent(window, now);
+  const pace = pacePresentation(window, now);
   const resetsIn = formatResetsIn(window, now);
   // The tick sits in a gap cut 3px either side through the bar, so it reads over
   // any fill; it stays 3px inside the ends so a fresh or spent window keeps its caps.
@@ -103,6 +101,8 @@ function WindowRow(props: {
       </View>
       <View
         className="h-3 justify-center"
+        accessible
+        accessibilityLabel={`${remaining}% of quota left${timeLeft === null ? "" : `; even usage would leave ${timeLeft}% by now, shown by the tick`}`}
         onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       >
         {tickX === null ? (
@@ -129,7 +129,7 @@ function WindowRow(props: {
       </View>
       {pace || resetsIn ? (
         <View className="flex-row justify-between gap-3">
-          <Text className="text-xs text-foreground-tertiary">{pace ? PACE_LABEL[pace] : ""}</Text>
+          <PaceIndicator pace={pace} />
           <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn ?? ""}</Text>
         </View>
       ) : null}

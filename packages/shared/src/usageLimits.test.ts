@@ -24,6 +24,8 @@ import {
   resetCreditExpiries,
   singleAccountResetCredits,
   paceOf,
+  pacePresentation,
+  paceRemainingPercent,
   providersWithLimits,
   remainingPercent,
   usesChatGptSharing,
@@ -60,6 +62,7 @@ function provider(overrides: Partial<ServerProvider>): ServerProvider {
 describe("pace", () => {
   it("places the clock three fifths through a five-hour window with two hours left", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
+    expect(paceRemainingPercent(window, now)).toBe(40);
     expect(paceOf(window, now)).toBe("under");
     expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("on");
     expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
@@ -69,6 +72,44 @@ describe("pace", () => {
     expect(paceOf({ ...window, resetsAt: undefined }, now)).toBeNull();
     expect(paceOf({ ...window, windowDurationMins: undefined }, now)).toBeNull();
     expect(formatResetsIn({ ...window, resetsAt: undefined }, now)).toBeNull();
+  });
+
+  it.each([
+    [80, "Above pace", "faster"],
+    [62, "On pace", "within 5 percentage points"],
+    [40, "Below pace", "slower"],
+  ] as const)("explains %s%% consumed against 60%% elapsed", (usedPercent, label, explanation) => {
+    expect(pacePresentation({ ...window, usedPercent }, now)).toEqual({
+      label,
+      description: expect.stringContaining(
+        `${usedPercent}% of quota consumed · 60% of window time elapsed.`,
+      ),
+    });
+    expect(pacePresentation({ ...window, usedPercent }, now)?.description).toContain(explanation);
+  });
+
+  it.each([
+    [55, "On pace"],
+    [65, "On pace"],
+    [54.99, "Below pace"],
+    [65.01, "Above pace"],
+  ] as const)("keeps the five-point tolerance before rounding %s%%", (usedPercent, label) => {
+    expect(pacePresentation({ ...window, usedPercent }, now)?.label).toBe(label);
+  });
+
+  it.each([
+    { resetsAt: undefined },
+    { resetsAt: "invalid" },
+    { windowDurationMins: undefined },
+    { windowDurationMins: 0 },
+  ])("hides pace without a usable clock: %j", (overrides) => {
+    expect(pacePresentation({ ...window, ...overrides }, now)).toBeNull();
+    expect(paceRemainingPercent({ ...window, ...overrides }, now)).toBeNull();
+  });
+
+  it("keeps the even-usage marker within a fresh or expired window", () => {
+    expect(paceRemainingPercent(window, now - 4 * 60 * 60_000)).toBe(100);
+    expect(paceRemainingPercent(window, now + 4 * 60 * 60_000)).toBe(0);
   });
 
   it("phrases the reset as a countdown", () => {
@@ -666,13 +707,21 @@ describe("pools", () => {
       now,
     );
     // Only a votes: 80% used, 80% elapsed.
-    expect(untimed[0]?.windows[0]?.pace).toBe("on");
+    expect(untimed[0]?.windows[0]?.pace).toEqual({
+      label: "On pace",
+      description:
+        "Average across 1 account with known window times: 80% of quota consumed · 80% of window time elapsed. Consumption is within 5 percentage points of elapsed time.",
+    });
     // a is 80% through its window and b 60%: the pool is 70% elapsed, 60% used.
     expect(session).toMatchObject({
       id: "five_hour",
       remainingPercent: 40,
       usedPercent: 60,
-      pace: "under",
+      pace: {
+        label: "Below pace",
+        description:
+          "Average across 2 accounts with known window times: 60% of quota consumed · 70% of window time elapsed. Quota is being consumed slower than time elapses.",
+      },
     });
     expect(
       session?.resets.map((reset) => [reset.member.account.key, reset.restoresPercent]),
