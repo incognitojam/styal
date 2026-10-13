@@ -12,6 +12,8 @@ import type { AppRouter } from "./router";
  * Owns renderer-wide providers. The Electron browser host intentionally sits
  * outside the router so its webviews survive route transitions, but it must
  * share the same atom registry as routed UI.
+ * Confirmation dialogs also have one host here, including on recovery screens;
+ * a second host would queue each desktop shutdown request twice.
  */
 export function AppRoot({ router }: { readonly router: AppRouter }) {
   return (
