@@ -47,7 +47,6 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
-import * as ProviderRuntimeRecoveryService from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ResetCreditCoordinator from "./provider/Layers/resetCreditCoordinator.ts";
 import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
@@ -176,7 +175,6 @@ import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestS
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
-import { DriveMode } from "./driveMode.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -1075,10 +1073,9 @@ const makeServerLayer = Layer.unwrap(
     const providerShutdownLayer = Layer.effectDiscard(
       Effect.gen(function* () {
         const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
-        const recovery = yield* ProviderRuntimeRecoveryService.ProviderRuntimeRecoveryService;
-        const driveScenario = yield* DriveMode;
+        const runtime = yield* ServerRuntimeStartup.ServerRuntimeStartup;
         yield* Effect.addFinalizer(() =>
-          (driveScenario === undefined ? recovery.prepareForShutdown : Effect.void).pipe(
+          runtime.prepareForShutdown.pipe(
             Effect.ignoreCause({ log: true }),
             Effect.ensuring(providerSessions.shutdown),
           ),

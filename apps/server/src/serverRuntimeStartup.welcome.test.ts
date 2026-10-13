@@ -9,6 +9,7 @@ import * as EventSink from "./orchestration-v2/EventSink.ts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -30,12 +31,14 @@ import * as Launcher from "./cloud/serviceLauncherClient.ts";
 import * as Analytics from "./telemetry/AnalyticsService.ts";
 import * as Git from "./vcs/GitVcsDriver.ts";
 
-it.effect("publishes completed bootstrap targets before accepting commands", () =>
+it.effect("admits commands after bootstrap and rejects them during shutdown", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const lifecycle = yield* Lifecycle.ServerLifecycleEvents;
       const bootstrapStarted = yield* Deferred.make<void>();
       const finishBootstrap = yield* Deferred.make<void>();
+      const workerStarted = yield* Deferred.make<void>();
+      const workerStopped = yield* Deferred.make<void>();
       const projectId = ProjectId.make("synthetic-bootstrap-project");
       const threadId = ThreadId.make("synthetic-bootstrap-thread");
       const services = Layer.mergeAll(
@@ -49,6 +52,7 @@ it.effect("publishes completed bootstrap targets before accepting commands", () 
         Layer.mock(ServerConfig.ServerConfig)({
           cwd: "/workspace/example",
           mode: "desktop",
+          host: "127.0.0.1",
           port: 3773,
           noBrowser: true,
           autoBootstrapProjectFromCwd: true,
@@ -96,7 +100,12 @@ it.effect("publishes completed bootstrap targets before accepting commands", () 
         }),
         Layer.mock(Analytics.AnalyticsService)({ record: () => Effect.void }),
         Layer.mock(Git.GitVcsDriver)({}),
-        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: Effect.never }),
+        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({
+          runOnce: Deferred.succeed(workerStarted, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Deferred.succeed(workerStopped, undefined)),
+          ),
+        }),
         Layer.succeed(Lifecycle.ServerLifecycleEvents, lifecycle),
       );
       const context = yield* Layer.build(
@@ -112,6 +121,12 @@ it.effect("publishes completed bootstrap targets before accepting commands", () 
       assert.equal(welcome?.payload.bootstrapStatus, "complete");
       assert.equal(welcome?.payload.bootstrapProjectId, projectId);
       assert.equal(welcome?.payload.bootstrapThreadId, threadId);
+      yield* Deferred.await(workerStarted);
+      assert.equal(yield* startup.enqueueCommand(Effect.succeed("accepted")), "accepted");
+      yield* startup.prepareForShutdown;
+      assert.isTrue(yield* Deferred.isDone(workerStopped));
+      const rejected = yield* startup.enqueueCommand(Effect.succeed("too late")).pipe(Effect.exit);
+      assert.isTrue(Exit.isFailure(rejected));
     }).pipe(Effect.provide(Layer.merge(Lifecycle.layer, NodeServices.layer))),
   ),
 );
