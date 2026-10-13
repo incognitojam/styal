@@ -24,7 +24,7 @@ import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
-import { useThreadPreviewState } from "~/previewStateStore";
+import { setActivePreviewTab, useThreadPreviewState } from "~/previewStateStore";
 import {
   type PreviewMiniPlayerSize,
   type PreviewMiniPlayerSource,
@@ -123,6 +123,8 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
   const openInPanel = () => {
     usePreviewMiniPlayerStore.getState().close(threadRef);
     useRightPanelStore.getState().openBrowser(threadRef, tabId);
+    // Match choosing the tab in the panel, so agent tools and the Browser toggle follow it.
+    setActivePreviewTab(threadRef, tabId);
   };
 
   const toggleNativePictureInPicture = () => {

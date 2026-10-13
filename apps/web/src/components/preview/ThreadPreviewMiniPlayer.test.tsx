@@ -8,8 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { ChatCanvasContext } from "../chat/ChatCanvasContext";
 import { resolveChatCanvasLayout } from "../chat/chatCanvasLayout";
 import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
+import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 
+const setActivePreviewTab = vi.fn();
 vi.mock("~/previewStateStore", () => ({
+  setActivePreviewTab: (...args: unknown[]) => setActivePreviewTab(...args),
   useThreadPreviewState: () => ({
     sessions: { "tab-1": { viewport: { _tag: "freeform", width: 1600, height: 1000 } } },
     serverEpoch: null,
@@ -155,5 +158,17 @@ describe("floating browser preview gestures", () => {
     expect(frame()).toEqual(start);
     await act(() => close.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(host.querySelector("section")).toBeNull();
+  });
+
+  it("opens in the right panel as the thread's active browser tab", async () => {
+    await mount();
+    useRightPanelStore.setState({ byThreadKey: {} });
+    const open = host.querySelector("button[aria-label='Open preview in right panel']")!;
+    await act(() => open.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(host.querySelector("section")).toBeNull();
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
+    ).toMatchObject({ kind: "preview", resourceId: "tab-1" });
+    expect(setActivePreviewTab).toHaveBeenCalledWith(threadRef, "tab-1");
   });
 });
