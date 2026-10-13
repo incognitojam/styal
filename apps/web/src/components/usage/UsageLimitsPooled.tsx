@@ -561,17 +561,15 @@ function PoolWindowCard({
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
   return (
     <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
-          <span className="flex items-baseline gap-2">
-            <span className="text-3xl font-semibold text-foreground tabular-nums">
-              {pool.remainingPercent}%
-            </span>
-            <span className="text-sm text-muted-foreground">left</span>
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-3xl font-semibold text-foreground tabular-nums">
+            {pool.remainingPercent}%
           </span>
-        </div>
-        {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
+          <span className="text-sm text-muted-foreground">left</span>
+          {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
+        </span>
       </div>
       {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
       {nextRefill && pool.columns.length > 1 ? (
