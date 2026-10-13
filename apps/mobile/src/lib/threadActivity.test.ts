@@ -1959,14 +1959,14 @@ describe("pending user input answers", () => {
     });
   });
 
-  it("clears selected options while a custom answer is active", () => {
+  it("clears single-select options while a custom answer is active", () => {
     expect(
       setPendingUserInputCustomAnswer(
-        multiSelectQuestion,
-        { selectedOptionValues: ["Orders", "Listings"] },
-        "Orders first",
+        singleSelectQuestion,
+        { selectedOptionValues: ["Go"] },
+        "Rust instead",
       ),
-    ).toEqual({ customAnswer: "Orders first" });
+    ).toEqual({ customAnswer: "Rust instead" });
   });
 
   it("matches selected chips against normalized option labels", () => {
@@ -1983,7 +1983,7 @@ describe("pending user input answers", () => {
         { selectedOptionValues: ["Orders"], customAnswer: "Orders first" },
         "  Orders  ",
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 

@@ -46,7 +46,7 @@ export function resolvePendingUserInputAnswer(
   if (draft?.attachmentsBlocked) return null;
   const customAnswer =
     question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
-  if (customAnswer) {
+  if (customAnswer && !question.multiSelect) {
     return customAnswer;
   }
 
@@ -54,6 +54,9 @@ export function resolvePendingUserInputAnswer(
     (value) => question.options.some((option) => (option.value ?? option.label) === value),
   );
   if (question.multiSelect) {
+    if (customAnswer && !selectedOptionValues.includes(customAnswer)) {
+      return [...selectedOptionValues, customAnswer];
+    }
     return selectedOptionValues.length > 0
       ? selectedOptionValues
       : question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0
@@ -70,9 +73,10 @@ export function resolvePendingUserInputAnswer(
 export function setPendingUserInputCustomAnswer(
   draft: PendingUserInputDraftAnswer | undefined,
   customAnswer: string,
+  multiSelect = false,
 ): PendingUserInputDraftAnswer {
   const selectedOptionValues =
-    customAnswer.trim().length > 0
+    !multiSelect && customAnswer.trim().length > 0
       ? undefined
       : normalizeSelectedOptionValues(draft?.selectedOptionValues);
 
@@ -116,7 +120,7 @@ export function togglePendingUserInputOptionSelection(
       : [...selectedOptionValues, optionValue];
 
     return {
-      customAnswer: "",
+      customAnswer: draft?.customAnswer ?? "",
       ...(nextSelectedOptionValues.length > 0
         ? { selectedOptionValues: nextSelectedOptionValues }
         : {}),

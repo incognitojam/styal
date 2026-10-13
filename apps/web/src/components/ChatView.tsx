@@ -9770,6 +9770,16 @@ export default function ChatView(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
+      // A multi-select option is added alongside the custom answer.
+      const multiSelectQuestion = activePendingUserInput.questions.find(
+        (entry) => entry.id === questionId && entry.multiSelect,
+      );
+      if (multiSelectQuestion) {
+        updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
+          togglePendingUserInputOptionSelection(multiSelectQuestion, draft, optionValue),
+        );
+        return;
+      }
       // The option replaces the custom answer. Anything typed there is the
       // user's text, so it goes back to the thread draft instead of vanishing.
       const displacedAnswer =
@@ -9821,7 +9831,7 @@ export default function ChatView(props: ChatViewProps) {
       }
       promptRef.current = value;
       updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-        setPendingUserInputCustomAnswer(draft, value),
+        setPendingUserInputCustomAnswer(draft, value, question.multiSelect),
       );
       const snapshot = composerRef.current?.readSnapshot();
       if (
