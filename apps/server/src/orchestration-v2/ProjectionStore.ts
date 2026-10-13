@@ -910,7 +910,6 @@ type ShellThreadRow = {
   readonly thread_id: string;
   readonly payload_json: string;
   readonly forked_from_run_source_thread_id: string | null;
-  readonly checkpoint_diff_stats_json: string | null;
   readonly thread_token_usage_json: string | null;
   readonly latest_run_id: string | null;
   readonly latest_run_status: string | null;
@@ -1313,39 +1312,6 @@ function buildVisibleTurnItems(input: {
   ]);
 }
 
-function latestCheckpointDiffStats(projection: OrchestrationV2ThreadProjection) {
-  const completed = new Set(
-    projection.runs.filter((run) => run.status === "completed").map((run) => run.id),
-  );
-  const checkpoint = projection.checkpoints
-    .filter(
-      (checkpoint) =>
-        checkpoint.status === "ready" &&
-        (checkpoint.legacyCheckpointTurnCount !== undefined ||
-          (checkpoint.runId !== null &&
-            completed.has(checkpoint.runId) &&
-            projection.checkpointScopes.some(
-              (scope) => scope.id === checkpoint.scopeId && scope.kind === "root_run",
-            ))),
-    )
-    .toSorted(
-      (left, right) =>
-        Number(right.runId !== null) - Number(left.runId !== null) ||
-        (right.appRunOrdinal ?? -1) - (left.appRunOrdinal ?? -1) ||
-        DateTime.toEpochMillis(right.capturedAt) - DateTime.toEpochMillis(left.capturedAt) ||
-        right.ordinalWithinScope - left.ordinalWithinScope,
-    )[0];
-  return checkpoint === undefined
-    ? null
-    : checkpoint.files.reduce(
-        (stats, file) => ({
-          insertions: stats.insertions + file.additions,
-          deletions: stats.deletions + file.deletions,
-        }),
-        { insertions: 0, deletions: 0 },
-      );
-}
-
 function threadTokenUsageForShell(projection: OrchestrationV2ThreadProjection) {
   const runs = new Map(projection.runs.map((run) => [run.id, run]));
   const nodes = new Map(projection.nodes.map((node) => [node.id, node]));
@@ -1441,7 +1407,6 @@ export function threadShellFromProjection(
       ? {}
       : { historyOrigin: projection.thread.historyOrigin }),
     ...(tokenUsage === undefined ? {} : { tokenUsage }),
-    latestCheckpointDiffStats: latestCheckpointDiffStats(projection),
     latestRunId: latestRun?.id ?? null,
     latestRunRequestedAt: latestRun?.requestedAt ?? null,
     latestRunStartedAt: latestRun?.startedAt ?? null,
@@ -1547,7 +1512,6 @@ function isActivityRunForShell(
 type ShellThreadState = {
   readonly thread: OrchestrationV2ThreadProjection["thread"];
   readonly tokenUsage: OrchestrationV2ThreadShell["tokenUsage"];
-  readonly latestCheckpointDiffStats: OrchestrationV2ThreadShell["latestCheckpointDiffStats"];
   readonly latestRunId: RunId | null;
   readonly latestRunStatus: OrchestrationV2ShellThreadStatus;
   readonly latestRunRequestedAt: DateTime.Utc | null;
@@ -1690,7 +1654,6 @@ function shellFromState(input: {
       ? {}
       : { historyOrigin: input.state.thread.historyOrigin }),
     ...(input.state.tokenUsage === undefined ? {} : { tokenUsage: input.state.tokenUsage }),
-    latestCheckpointDiffStats: input.state.latestCheckpointDiffStats,
     latestRunId: input.state.latestRunId,
     latestRunRequestedAt: input.state.latestRunRequestedAt,
     latestRunStartedAt: input.state.latestRunStartedAt,
@@ -4904,21 +4867,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   THEN json_extract(t.payload_json, '$.forkedFrom.threadId')
                 ELSE NULL
               END AS forked_from_run_source_thread_id,
-              (
-                SELECT json_object(
-                  'insertions', (SELECT COALESCE(SUM(json_extract(f.value, '$.additions')), 0) FROM json_each(CASE WHEN json_type(c.payload_json, '$.files') = 'array' THEN json_extract(c.payload_json, '$.files') ELSE '[]' END) f WHERE f.type = 'object'),
-                  'deletions', (SELECT COALESCE(SUM(json_extract(f.value, '$.deletions')), 0) FROM json_each(CASE WHEN json_type(c.payload_json, '$.files') = 'array' THEN json_extract(c.payload_json, '$.files') ELSE '[]' END) f WHERE f.type = 'object')
-                )
-                FROM (SELECT c.payload_json
-                FROM orchestration_v2_projection_checkpoints c
-                WHERE c.thread_id = t.thread_id AND c.status = 'ready'
-                  AND (json_extract(c.payload_json, '$.legacyCheckpointTurnCount') IS NOT NULL OR
-                    EXISTS (SELECT 1 FROM orchestration_v2_projection_runs r
-                      INNER JOIN orchestration_v2_projection_checkpoint_scopes scope ON scope.scope_id = c.scope_id
-                      WHERE r.run_id = c.run_id AND r.status = 'completed' AND scope.kind = 'root_run'))
-                ORDER BY (c.run_id IS NOT NULL) DESC, c.app_run_ordinal DESC, c.captured_at DESC, c.ordinal_within_scope DESC
-                LIMIT 1) c
-              ) AS checkpoint_diff_stats_json,
               COALESCE(
                 (SELECT json_extract(p.payload_json, '$.threadTokenUsage')
                  FROM orchestration_v2_projection_provider_turns p
@@ -5331,10 +5279,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       Schema.fromJsonString(ThreadTokenUsage),
     );
 
-    const decodeCheckpointDiffStats = Schema.decodeUnknownEffect(
-      Schema.fromJsonString(Schema.Struct({ insertions: Schema.Number, deletions: Schema.Number })),
-    );
-
     const shellThreadStateFromRow = (input: {
       readonly row: ShellThreadRow;
       readonly runOrdinalsByThreadId: ReadonlyMap<ThreadId, Map<RunId, number>>;
@@ -5428,10 +5372,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             row.thread_token_usage_json === null
               ? undefined
               : yield* decodeThreadTokenUsage(row.thread_token_usage_json),
-          latestCheckpointDiffStats:
-            row.checkpoint_diff_stats_json === null
-              ? null
-              : yield* decodeCheckpointDiffStats(row.checkpoint_diff_stats_json),
           latestRunId,
           latestRunStatus,
           latestRunRequestedAt,

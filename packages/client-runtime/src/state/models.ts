@@ -100,7 +100,6 @@ export interface EnvironmentThreadShell {
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
   readonly activeProviderThreadId: OrchestrationV2ThreadShell["activeProviderThreadId"];
   readonly tokenUsage?: OrchestrationV2ThreadShell["tokenUsage"];
-  readonly latestCheckpointDiffStats?: OrchestrationV2ThreadShell["latestCheckpointDiffStats"];
   readonly latestRun: ThreadRunSummary | null;
   readonly runtime: ThreadRuntimeSummary | null;
   readonly latestUserMessageAt: string | null;
@@ -242,7 +241,6 @@ export function presentThreadShell(
     forkedFrom: thread.forkedFrom,
     activeProviderThreadId: thread.activeProviderThreadId,
     ...(thread.tokenUsage === undefined ? {} : { tokenUsage: thread.tokenUsage }),
-    latestCheckpointDiffStats: thread.latestCheckpointDiffStats ?? null,
     latestRun,
     runtime: shellRuntime(thread),
     latestUserMessageAt: nullableIso(thread.latestUserMessageAt),

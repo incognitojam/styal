@@ -2299,7 +2299,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
 function latestRunDiff(
   thread: SidebarThreadSummary,
 ): { insertions: number; deletions: number } | null {
-  return thread.latestCheckpointDiffStats ?? null;
+  // Shells don't carry checkpoint summaries; diff stats render only when the
+  // shell projection grows them. Kept as a seam so the row layout is ready.
+  void thread;
+  return null;
 }
 
 const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {

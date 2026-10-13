@@ -20,7 +20,6 @@ import {
   RunId,
   ThreadId,
   TurnItemId,
-  TurnId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -2672,52 +2671,10 @@ it.layer(TestLayer)("ProjectionStoreV2", (it) => {
             appRunOrdinal: 1,
             ref,
             status: "ready",
-            files: [
-              { path: "one.ts", kind: "modified", additions: 3, deletions: 1 },
-              { path: "two.ts", kind: "added", additions: 4, deletions: 0 },
-            ],
+            files: [],
             capturedAt: now,
           },
         });
-        const historicalId = CheckpointId.make("checkpoint:historical-stats");
-        yield* projectionStore.apply({
-          id: EventId.make("event:historical-stats"),
-          type: "checkpoint.captured",
-          threadId,
-          occurredAt: now,
-          payload: {
-            id: historicalId,
-            threadId,
-            scopeId: CheckpointScopeId.make("scope:historical-stats"),
-            runId: null,
-            nodeId,
-            parentCheckpointId: null,
-            ordinalWithinScope: 1,
-            appRunOrdinal: null,
-            legacyCheckpointTurnCount: 1,
-            legacyTurnId: TurnId.make("historical-turn"),
-            ref: CheckpointRef.make("refs/t3/checkpoints/original/turn/1"),
-            status: "ready",
-            files: [{ path: "old.ts", kind: "modified", additions: 9, deletions: 2 }],
-            capturedAt: now,
-          },
-        });
-        const shellStats = () =>
-          projectionStore
-            .getThreadShell(threadId)
-            .pipe(Effect.map((shell) => shell?.latestCheckpointDiffStats));
-        assert.deepEqual(yield* shellStats(), { insertions: 7, deletions: 1 });
-        assert.deepEqual(
-          (yield* projectionStore.getShellSnapshot()).threads.find(
-            (thread) => thread.id === threadId,
-          )?.latestCheckpointDiffStats,
-          { insertions: 7, deletions: 1 },
-        );
-        yield* sql`UPDATE orchestration_v2_projection_checkpoints SET status = 'missing' WHERE checkpoint_id = ${checkpointId}`;
-        assert.deepEqual(yield* shellStats(), { insertions: 9, deletions: 2 });
-        yield* sql`DELETE FROM orchestration_v2_projection_checkpoints WHERE checkpoint_id = ${historicalId}`;
-        assert.isNull(yield* shellStats());
-        yield* sql`UPDATE orchestration_v2_projection_checkpoints SET status = 'ready' WHERE checkpoint_id = ${checkpointId}`;
         // Old transcript shapes must not make a metadata-only diff unreadable.
         yield* sql`
         INSERT INTO orchestration_v2_projection_turn_items (
