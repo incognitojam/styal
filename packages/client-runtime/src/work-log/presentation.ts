@@ -203,7 +203,7 @@ function workEntryToolName(
   if (entry.toolName) return entry.toolName;
   const data = asRecord(entry.toolData);
   if (typeof data?.server === "string" && typeof data.tool === "string") {
-    return `${data.server}.${data.tool}`;
+    return `mcp__${data.server}__${data.tool}`;
   }
   if (typeof data?.toolName === "string") return data.toolName;
   return resolveT3McpToolDefinition(entry.toolTitle) ? entry.toolTitle : entry.label;

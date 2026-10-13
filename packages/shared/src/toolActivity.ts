@@ -33,7 +33,10 @@ export function dynamicToolTitle(
   toolName: string | null | undefined,
   input: unknown,
 ): string | undefined {
-  if (toolName === "cua_repl.js") return asTrimmedString(asRecord(input)?.title);
+  // Codex named MCP calls `server.tool` before adopting `mcp__server__tool`.
+  if (toolName === "mcp__cua_repl__js" || toolName === "cua_repl.js") {
+    return asTrimmedString(asRecord(input)?.title);
+  }
   const skill = claudeSkillInvocation(toolName, input);
   return skill === undefined ? undefined : `Skill: ${skill.name}`;
 }

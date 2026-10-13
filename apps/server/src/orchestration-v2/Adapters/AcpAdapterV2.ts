@@ -3283,11 +3283,11 @@ export function makeAcpAdapterV2(
           } else if (mcpIdentity !== undefined) {
             turnItem = {
               ...base,
-              // Identity lives in toolName, like native Codex MCP items; the
-              // agent's own title (e.g. "Ran command") would shadow it.
+              // Identity lives in toolName, like native MCP items; the agent's
+              // own title (e.g. "Ran command") would shadow it.
               title: null,
               type: "dynamic_tool",
-              toolName: `${mcpIdentity.server}.${mcpIdentity.tool}`,
+              toolName: `mcp__${mcpIdentity.server}__${mcpIdentity.tool}`,
               input:
                 mcpIdentity.input ??
                 unknownRecord(rawInputRecord?.arguments) ??

@@ -6,6 +6,7 @@ import * as Stream from "effect/Stream";
 import type * as AcpSchema from "effect-acp/compat";
 
 import { responsePayloads } from "./AcpMcpStdioBridge.ts";
+import { ACTIVE_MCP_SERVER_NAME, LEGACY_MCP_SERVER_NAME } from "./McpProviderSession.ts";
 
 const MAX_CONNECTIONS = 16;
 const MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
@@ -181,7 +182,10 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
   return {
     connect: (request) =>
       Effect.gen(function* () {
-        if (request.serverId !== "t3-code") {
+        if (
+          request.serverId !== ACTIVE_MCP_SERVER_NAME &&
+          request.serverId !== LEGACY_MCP_SERVER_NAME
+        ) {
           return yield* Effect.fail(
             new AcpMcpOverAcpError(`Unknown ACP MCP server "${request.serverId}".`),
           );

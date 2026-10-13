@@ -49,6 +49,7 @@ import {
   OPENCODE_PROVIDER,
   reconcileOpenCodePromptAdmissionStatus,
 } from "./OpenCodeAdapterV2.ts";
+import { openCodeToolTurnItem } from "./OpenCodeToolItems.ts";
 import { ProviderAdapterV2RuntimePolicy } from "../ProviderAdapter.ts";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -2264,6 +2265,30 @@ describe("OpenCodeAdapterV2", () => {
     assert.equal(openCodeToolProjectionKind("codesearch"), "web_search");
     assert.equal(openCodeToolProjectionKind("todowrite"), "dynamic_tool");
     assert.equal(openCodeToolProjectionKind("custom_tool"), "dynamic_tool");
+  });
+
+  it("names styal's MCP tools like other providers instead of guessing from keywords", () => {
+    const base = {} as Parameters<typeof openCodeToolTurnItem>[0];
+    const item = (name: string) =>
+      openCodeToolTurnItem(base, {
+        name,
+        input: { query: "x" },
+        output: undefined,
+        completedMetadata: undefined,
+      });
+    assert.deepInclude(item("styal_t3_thread_search"), {
+      type: "dynamic_tool",
+      toolName: "mcp__styal__t3_thread_search",
+    });
+    assert.deepInclude(item("t3-code_preview_open"), {
+      type: "dynamic_tool",
+      toolName: "mcp__t3-code__preview_open",
+    });
+    // Another server's tools keep OpenCode's name.
+    assert.deepInclude(item("styal_not_a_real_tool"), {
+      type: "dynamic_tool",
+      toolName: "styal_not_a_real_tool",
+    });
   });
 
   it("maps runtime modes to safe OpenCode permission rules", () => {

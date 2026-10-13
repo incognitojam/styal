@@ -4,6 +4,7 @@
  * metadata; only how they deliver those differs.
  */
 import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
+import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
 import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
 
 type ToolItemBase = Omit<
@@ -69,6 +70,19 @@ function stableJson(value: unknown): string {
 }
 
 /**
+ * OpenCode registers MCP tools as `<server>_<tool>`. For styal's own server,
+ * whose tools are known, report the `mcp__<server>__<tool>` name every other
+ * adapter uses. Other servers stay as reported: their names cannot be split
+ * reliably at the underscore.
+ */
+function openCodeProductMcpToolName(name: string): string | undefined {
+  const match = /^(?<server>styal|t3-code)_(?<tool>.+)$/u.exec(name);
+  const server = match?.groups?.server;
+  const tool = match?.groups?.tool;
+  return server && tool && T3_MCP_TOOL_NAMES.has(tool) ? `mcp__${server}__${tool}` : undefined;
+}
+
+/**
  * The turn item for one tool call. `completedMetadata` is the tool's metadata
  * once it succeeded: exit codes and diffs are only trusted from a finished call.
  */
@@ -82,6 +96,17 @@ export function openCodeToolTurnItem(
   },
 ): OrchestrationV2TurnItem {
   const { input, output } = tool;
+  // Keyword matching would read `t3_thread_search` as a file search.
+  const mcpToolName = openCodeProductMcpToolName(tool.name);
+  if (mcpToolName !== undefined) {
+    return {
+      ...base,
+      type: "dynamic_tool",
+      toolName: mcpToolName,
+      input,
+      ...(output === undefined ? {} : { output }),
+    };
+  }
   switch (openCodeToolProjectionKind(tool.name)) {
     case "command_execution": {
       const exitCode = recordNumber(tool.completedMetadata, "exit", "exitCode");

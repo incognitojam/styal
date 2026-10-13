@@ -143,13 +143,34 @@ export function memoryFileToolKind(
   return slug === "MEMORY" ? "index" : slug ? "memory" : undefined;
 }
 
-/** `mcp__styal__preview_snapshot` → `styal · preview_snapshot`. */
-function mcpHeading(toolName: string): string | undefined {
-  const match = /^mcp__(?<server>[^_]+(?:_[^_]+)*?)__(?<tool>.+)$/u.exec(toolName);
+/** styal's own MCP server, under its current and pre-rename names. */
+const PRODUCT_MCP_SERVERS: ReadonlySet<string> = new Set(["styal", "t3-code"]);
+
+/**
+ * Adapters name MCP calls `mcp__<server>__<tool>`. Persisted activity also
+ * holds V1's `server · tool` and, for styal's own server only, Codex's
+ * `server.tool`; a bare dotted name is too ambiguous to split generally.
+ */
+function mcpToolNameParts(
+  toolName: string,
+): { readonly server: string; readonly tool: string } | undefined {
+  const match =
+    /^mcp__(?<server>[^_]+(?:_[^_]+)*?)__(?<tool>.+)$/u.exec(toolName) ??
+    /^(?<server>[^\s·]+) · (?<tool>\S+)$/u.exec(toolName) ??
+    /^(?<server>styal|t3-code)\.(?<tool>[^.\s]+)$/u.exec(toolName);
   const server = match?.groups?.server;
   const tool = match?.groups?.tool;
-  const displayServer = server === "t3-code" ? "styal" : server;
-  return displayServer && tool ? `${displayServer} · ${tool}` : undefined;
+  return server && tool ? { server, tool } : undefined;
+}
+
+/** `mcp__styal__preview_snapshot` → `styal · preview_snapshot`. */
+function mcpHeading(toolName: string): string | undefined {
+  const parts = mcpToolNameParts(toolName);
+  if (!parts) {
+    return undefined;
+  }
+  const server = PRODUCT_MCP_SERVERS.has(parts.server) ? "styal" : parts.server;
+  return `${server} · ${parts.tool}`;
 }
 
 function previewNavigateArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
@@ -329,24 +350,15 @@ const PREVIEW_TOOL_SPECS: Readonly<Record<string, PreviewToolSpec>> = {
 const PREVIEW_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(PREVIEW_TOOL_SPECS));
 
 /**
- * Every adapter registers this MCP server as `styal`, and the payload
- * projection gives providers that carry identity on the item a synthesized
- * `mcp__<server>__<tool>`, so the qualified name is the one form that reaches
- * presentation. Requiring it is what keeps this vocabulary — which describes
- * styal's browser specifically — off an unrelated server's `preview_*` tool.
- * The former prefix remains readable so persisted activity keeps its curated
- * presentation throughout the compatibility window.
+ * Requiring the server qualifier is what keeps this vocabulary — which
+ * describes styal's browser specifically — off an unrelated server's
+ * `preview_*` tool.
  */
-const QUALIFIED_PREVIEW_PREFIXES = ["mcp__styal__", "mcp__t3-code__"] as const;
-
 function previewToolNameOf(value: string): string | undefined {
-  const trimmed = value.trim();
-  const prefix = QUALIFIED_PREVIEW_PREFIXES.find((candidate) => trimmed.startsWith(candidate));
-  if (!prefix) {
-    return undefined;
-  }
-  const tool = trimmed.slice(prefix.length);
-  return PREVIEW_TOOL_NAMES.has(tool) ? tool : undefined;
+  const parts = mcpToolNameParts(value.trim());
+  return parts && PRODUCT_MCP_SERVERS.has(parts.server) && PREVIEW_TOOL_NAMES.has(parts.tool)
+    ? parts.tool
+    : undefined;
 }
 
 export function isPreviewToolName(value: string): boolean {

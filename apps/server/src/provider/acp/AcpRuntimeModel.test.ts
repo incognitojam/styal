@@ -1382,7 +1382,7 @@ describe("extractMcpToolCallIdentity", () => {
           '/usr/bin/node /srv/t3/bin.ts acp-mcp-call delegate_task {"task":"x"}',
         ],
       }),
-    ).toEqual({ server: "t3-code", tool: "delegate_task", input: { task: "x" } });
+    ).toEqual({ server: "styal", tool: "delegate_task", input: { task: "x" } });
   });
 
   it("recovers T3 identity from pi-acp title-only fallback execs", () => {
@@ -1407,7 +1407,7 @@ describe("extractMcpToolCallIdentity", () => {
 
     expect(toolCall.title).toBe("Ran command");
     expect(extractMcpToolCallIdentity(toolCall)).toEqual({
-      server: "t3-code",
+      server: "styal",
       tool: "orchestrator_capabilities",
       input: {},
     });
@@ -1436,7 +1436,7 @@ describe("extractMcpToolCallIdentity", () => {
     const merged = mergeToolCallState(created, completed);
 
     expect(extractMcpToolCallIdentity(merged)).toEqual({
-      server: "t3-code",
+      server: "styal",
       tool: "orchestrator_capabilities",
     });
   });
@@ -1461,10 +1461,10 @@ describe("extractMcpToolCallIdentity", () => {
     });
 
     expect(extractMcpToolCallIdentity(gemini)).toEqual({
-      server: "t3-code",
+      server: "styal",
       tool: "delegate_task",
     });
-    expect(extractMcpToolCallIdentity(qwen)).toEqual({ server: "t3-code", tool: "task_status" });
+    expect(extractMcpToolCallIdentity(qwen)).toEqual({ server: "styal", tool: "task_status" });
   });
 
   it("recovers T3 identity across the registry agents' naming conventions", () => {
@@ -1483,6 +1483,10 @@ describe("extractMcpToolCallIdentity", () => {
       "delegate_task_t3-code",
       "t3-code/delegate_task",
       'delegate_task: {"mode":"async"}',
+      // The same conventions under the server's current name.
+      "styal_delegate_task",
+      "mcp__styal__delegate_task",
+      "delegate_task (styal MCP Server)",
     ]) {
       const toolCall = toolCallFromUpdate({
         sessionUpdate: "tool_call",
@@ -1492,7 +1496,7 @@ describe("extractMcpToolCallIdentity", () => {
         status: "pending",
       });
       expect(extractMcpToolCallIdentity(toolCall), title).toEqual({
-        server: "t3-code",
+        server: "styal",
         tool: "delegate_task",
       });
     }
@@ -1515,7 +1519,7 @@ describe("extractMcpToolCallIdentity", () => {
     });
 
     expect(extractMcpToolCallIdentity(toolCall)).toEqual({
-      server: "t3-code",
+      server: "styal",
       tool: "task_status",
     });
   });
@@ -1534,7 +1538,7 @@ describe("extractMcpToolCallIdentity", () => {
     });
 
     expect(extractMcpToolCallIdentity(toolCall)).toEqual({
-      server: "t3-code",
+      server: "styal",
       tool: "t3_thread_send",
     });
   });

@@ -245,6 +245,19 @@ describe("deriveToolRowPresentation", () => {
     ).toBe("linear · create_issue");
   });
 
+  it("names styal's server the same way under its pre-rename name", () => {
+    expect(deriveToolRowPresentation({ toolName: "mcp__t3-code__t3_thread_read" })?.heading).toBe(
+      "styal · t3_thread_read",
+    );
+    expect(deriveToolRowPresentation({ toolName: "styal.t3_thread_read" })?.heading).toBe(
+      "styal · t3_thread_read",
+    );
+  });
+
+  it("does not split dotted names that are not styal's server", () => {
+    expect(deriveToolRowPresentation({ toolName: "cua_repl.js" })?.heading).toBe("cua_repl.js");
+  });
+
   describe("styal preview tools", () => {
     const PREVIEW_HEADINGS = [
       ["preview_status", "Checked preview status"],
@@ -414,6 +427,19 @@ describe("deriveToolRowPresentation", () => {
       // has only a tool name, so a heading ending in a preposition breaks both.
       for (const [, heading] of PREVIEW_HEADINGS) {
         expect(heading).not.toMatch(/\b(?:to|for|with|in|at|from|into)$/u);
+      }
+    });
+
+    it("names the action for every form providers have persisted", () => {
+      // Current adapters, pre-rename sessions, Codex before it adopted the
+      // `mcp__` form, and activity imported from V1.
+      for (const toolName of [
+        "mcp__styal__preview_open",
+        "mcp__t3-code__preview_open",
+        "styal.preview_open",
+        "styal · preview_open",
+      ]) {
+        expect(deriveToolRowPresentation({ toolName })?.heading, toolName).toBe("Opened preview");
       }
     });
 

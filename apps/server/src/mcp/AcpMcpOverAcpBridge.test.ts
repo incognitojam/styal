@@ -45,7 +45,7 @@ describe("AcpMcpOverAcpBridge", () => {
         },
       });
 
-      const connected = yield* bridge.connect({ serverId: "t3-code" });
+      const connected = yield* bridge.connect({ serverId: "styal" });
       expect(connected).toEqual({ connectionId: "connection-1" });
       expect(
         yield* bridge.message({ connectionId: connected.connectionId, method: "initialize" }),
