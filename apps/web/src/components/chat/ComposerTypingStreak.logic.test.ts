@@ -50,8 +50,8 @@ describe("createTypingSpeedMeter", () => {
   it("needs fast typing to last before the glow starts and the fire colours follow", () => {
     // 150 WPM is a keystroke every 80ms.
     expect(typingStreakHeat(wpmAt(80, 12)).intensity).toBe(0);
-    expect(typingStreakHeat(wpmAt(80, 20)).intensity).toBeGreaterThan(0);
-    expect(typingStreakHeat(wpmAt(80, 20)).fire).toBe(0);
+    expect(typingStreakHeat(wpmAt(80, 24)).intensity).toBeGreaterThan(0);
+    expect(typingStreakHeat(wpmAt(80, 24)).fire).toBe(0);
     expect(typingStreakHeat(wpmAt(80, 37)).fire).toBeGreaterThan(0);
   });
 
@@ -67,29 +67,29 @@ describe("createTypingSpeedMeter", () => {
 });
 
 describe("typingStreakHeat", () => {
-  it("stays cold at a relaxed pace and warms to a full theme glow by 120 WPM", () => {
-    expect(typingStreakHeat(60).intensity).toBe(0);
-    const warming = typingStreakHeat(90);
+  it("stays cold at a relaxed pace and warms to a full theme glow by 140 WPM", () => {
+    expect(typingStreakHeat(80).intensity).toBe(0);
+    const warming = typingStreakHeat(110);
     expect(warming.intensity).toBeGreaterThan(0);
     expect(warming.intensity).toBeLessThan(1);
-    expect(typingStreakHeat(120)).toMatchObject({ intensity: 1, fire: 0, from: 0, blend: 0 });
+    expect(typingStreakHeat(140)).toMatchObject({ intensity: 1, fire: 0, from: 0, blend: 0 });
   });
 
-  it("turns to fire above 120 WPM, from orange through yellow and white to blue", () => {
-    const colorAt = (wpm: number) => {
+  it("turns to fire above 140 WPM, then grows the fire as the pace rises", () => {
+    const stopAt = (wpm: number) => {
       const heat = typingStreakHeat(wpm);
-      return TYPING_STREAK_STOPS[heat.blend > 0.5 ? heat.to : heat.from]?.color;
+      return TYPING_STREAK_STOPS[heat.blend > 0.5 ? heat.to : heat.from];
     };
-    expect(colorAt(132)).toBe("#ff7a1a");
-    expect(colorAt(146)).toBe("#ffc93c");
-    expect(colorAt(160)).toBe("#fff3d6");
-    expect(colorAt(200)).toBe("#4aa8ff");
-    expect(typingStreakHeat(153)).toMatchObject({ from: 2, to: 3, blend: 0.5 });
+    expect(stopAt(140)?.fire).toBe(false);
+    expect(stopAt(155)?.fire).toBe(true);
+    expect(stopAt(170)!.blur).toBeGreaterThan(stopAt(155)!.blur);
+    expect(stopAt(220)).toBe(TYPING_STREAK_STOPS[TYPING_STREAK_STOPS.length - 1]);
+    expect(typingStreakHeat(147.5)).toMatchObject({ from: 0, to: 1, blend: 0.5 });
   });
 
-  it("measures fire from 120 WPM up to the hottest colour", () => {
-    expect(typingStreakHeat(120).fire).toBe(0);
-    expect(typingStreakHeat(147.5).fire).toBe(0.5);
-    expect(typingStreakHeat(240).fire).toBe(1);
+  it("measures fire growth from 140 WPM up to the largest fire", () => {
+    expect(typingStreakHeat(140).fire).toBe(0);
+    expect(typingStreakHeat(162.5).fire).toBe(0.5);
+    expect(typingStreakHeat(260).fire).toBe(1);
   });
 });

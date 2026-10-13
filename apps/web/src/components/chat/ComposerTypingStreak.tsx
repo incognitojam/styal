@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 import {
   createTypingSpeedMeter,
   isTypingKeystroke,
+  TYPING_STREAK_FIRE,
+  TYPING_STREAK_FIRE_CORE,
   TYPING_STREAK_IDLE_MS,
   TYPING_STREAK_STOPS,
   typingStreakHeat,
@@ -35,19 +37,31 @@ function caretPoint(editor: HTMLElement): { x: number; y: number } | null {
   return { x: rect.left, y: rect.top + rect.height / 2 };
 }
 
-function heatColor({ from, to, blend }: TypingStreakHeat): string {
-  const lower = TYPING_STREAK_STOPS[from]!.color;
-  if (from === to) return lower;
-  return `color-mix(in oklab, ${TYPING_STREAK_STOPS[to]!.color} ${Math.round(blend * 100)}%, ${lower})`;
+/** Theme-coloured below fire; fire sparks vary toward the core colour as the fire grows. */
+function sparkColor({ fire, from, to, blend }: TypingStreakHeat): string {
+  if (to === 0) return "var(--primary)";
+  const core = Math.round(Math.random() * (30 + fire * 70));
+  const flame = `color-mix(in oklab, ${TYPING_STREAK_FIRE_CORE} ${core}%, ${TYPING_STREAK_FIRE})`;
+  // The theme glow is the only stop below fire, so blending from it is the turn to fire.
+  if (from === 0)
+    return `color-mix(in oklab, ${flame} ${Math.round(blend * 100)}%, var(--primary))`;
+  return flame;
+}
+
+function glowShadow({ fire, blur, spread }: (typeof TYPING_STREAK_STOPS)[number]): string {
+  if (!fire) {
+    return `0 0 0 1px color-mix(in oklab, var(--primary) 55%, transparent), 0 0 ${blur}px ${spread}px color-mix(in oklab, var(--primary) 70%, transparent)`;
+  }
+  return `0 0 0 1px color-mix(in oklab, ${TYPING_STREAK_FIRE_CORE} 60%, transparent), 0 0 ${blur / 2}px ${spread}px color-mix(in oklab, ${TYPING_STREAK_FIRE_CORE} 45%, transparent), 0 0 ${blur}px ${spread}px color-mix(in oklab, ${TYPING_STREAK_FIRE} 70%, transparent)`;
 }
 
 /**
  * Animates transform and opacity only, so sparks stay on the compositor.
- * Past 120 WPM they turn to embers: bigger, more of them, and still rising.
+ * Past 140 WPM they turn to embers that grow bigger, more numerous, and rise higher
+ * as the fire grows.
  */
 function throwSparks(origin: { x: number; y: number }, count: number, heat: TypingStreakHeat) {
   const layer = getSparkLayer();
-  const color = heatColor(heat);
   const { intensity, fire } = heat;
   for (let index = 0; index < count && liveSparks < MAX_LIVE_SPARKS; index += 1) {
     const size = 2 + Math.random() * (2 + intensity * 2 + fire * 3);
@@ -59,7 +73,7 @@ function throwSparks(origin: { x: number; y: number }, count: number, heat: Typi
     const x = origin.x - size / 2;
     const y = origin.y - size / 2;
     const spark = document.createElement("div");
-    spark.style.cssText = `position:absolute;left:0;top:0;width:${size}px;height:${size}px;border-radius:9999px;background:color-mix(in oklab, ${color} ${Math.round(60 + Math.random() * 40)}%, white)`;
+    spark.style.cssText = `position:absolute;left:0;top:0;width:${size}px;height:${size}px;border-radius:9999px;background:color-mix(in oklab, ${sparkColor(heat)} ${Math.round(60 + Math.random() * 40)}%, white)`;
     layer.append(spark);
     liveSparks += 1;
     const animation = spark.animate(
@@ -88,8 +102,9 @@ function throwSparks(origin: { x: number; y: number }, count: number, heat: Typi
 
 /**
  * Warms the composer's edge and throws sparks from the caret while the user
- * types quickly, turning to fire past 120 WPM. Render it inside the composer
- * surface; it listens to keystrokes from editors in its parent.
+ * types quickly, turning to fire past 140 WPM and growing as the pace rises.
+ * Render it inside the composer surface; it listens to keystrokes from
+ * editors in its parent.
  */
 export function ComposerTypingStreak({ enabled }: { enabled: boolean }) {
   const glowRef = useRef<HTMLDivElement>(null);
@@ -98,7 +113,7 @@ export function ComposerTypingStreak({ enabled }: { enabled: boolean }) {
     const glow = glowRef.current;
     const surface = glow?.parentElement;
     if (!enabled || !glow || !surface) return;
-    // One glow per colour, cross-faded by opacity: colour changes would repaint.
+    // One glow per stop, cross-faded by opacity: colour and size changes would repaint.
     const layers = Array.from(glow.children, (layer) => layer as HTMLElement);
     const opacities = layers.map(() => 0);
     const meter = createTypingSpeedMeter();
@@ -144,7 +159,7 @@ export function ComposerTypingStreak({ enabled }: { enabled: boolean }) {
       setGlow(next.intensity > 0 ? next : null);
       if (next.intensity === 0) return;
       // The character lands after keydown; read the caret once it has moved.
-      pendingSparks += 1 + Math.round(next.intensity * 2 + next.fire * 3);
+      pendingSparks += 1 + Math.round(next.intensity * 2 + next.fire * 4);
       frame ??= requestAnimationFrame(flushSparks);
     };
 
@@ -164,13 +179,11 @@ export function ComposerTypingStreak({ enabled }: { enabled: boolean }) {
       aria-hidden="true"
       className="pointer-events-none absolute inset-0 rounded-[inherit]"
     >
-      {TYPING_STREAK_STOPS.map((stop, index) => (
+      {TYPING_STREAK_STOPS.map((stop) => (
         <div
-          key={stop.color}
+          key={stop.wpm}
           className="absolute inset-0 rounded-[inherit] opacity-0 transition-opacity ease-out"
-          style={{
-            boxShadow: `0 0 0 1px color-mix(in oklab, ${stop.color} 55%, transparent), 0 0 ${22 + index * 4}px ${index === 0 ? -4 : index - 2}px color-mix(in oklab, ${stop.color} 70%, transparent)`,
-          }}
+          style={{ boxShadow: glowShadow(stop) }}
         />
       ))}
     </div>
