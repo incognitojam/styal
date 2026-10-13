@@ -5527,6 +5527,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...providerTraitsPickerInput,
     size: composerControlsCollapsed ? "xs" : "sm",
     hidden: composerControlsHidden || restingHiddenBlockCount > 1,
+    shortcutLabel: shortcutLabelForCommand(keybindings, "composer.effort"),
+    // Traits is the first of the two resting blocks, so it collapses last.
+    iconOnly: iconOnlyBlockCount > 1,
   });
   const restingBlockDefs = [
     ...(providerTraitsPicker
