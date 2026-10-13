@@ -171,4 +171,14 @@ describe("floating browser preview gestures", () => {
     ).toMatchObject({ kind: "preview", resourceId: "tab-1" });
     expect(setActivePreviewTab).toHaveBeenCalledWith(threadRef, "tab-1");
   });
+
+  it("opens the floating tab in the right panel on double-click", async () => {
+    await mount();
+    useRightPanelStore.setState({ byThreadKey: {} });
+    await act(() => shield().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(host.querySelector("section")).toBeNull();
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
+    ).toMatchObject({ kind: "preview", resourceId: "tab-1" });
+  });
 });
