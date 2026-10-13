@@ -1722,6 +1722,26 @@ export function isPendingUserInputOptionSelected(
   );
 }
 
+/**
+ * Picking an option can replace the custom answer typed for a question. That
+ * text moves into the thread draft, after whatever was already waiting there.
+ */
+export function carryDisplacedCustomAnswerIntoDraft(
+  draftText: string,
+  previous: PendingUserInputDraftAnswer | undefined,
+  next: PendingUserInputDraftAnswer,
+): string {
+  const displaced =
+    next.customAnswer === previous?.customAnswer ? "" : (previous?.customAnswer?.trim() ?? "");
+  if (displaced.length === 0) {
+    return draftText;
+  }
+  if (draftText.trim().length === 0) {
+    return displaced;
+  }
+  return `${draftText.trimEnd()}\n\n${displaced}`;
+}
+
 export function togglePendingUserInputOptionSelection(
   question: ThreadUserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
