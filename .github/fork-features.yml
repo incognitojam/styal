@@ -3871,6 +3871,25 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15800
       retire_when: Upstream exposes automatic merge intent in thread badges without replacing the pull request's state or requiring an active agent monitor.
 
+  - id: pull-request-number-search-url
+    title: Search pull requests by number from the URL
+    status: maintained
+    prs: [504]
+    invariants:
+      - A Pull Requests page URL whose search is only digits or `true`, such as `/pull-requests?q=13565`, opens with that text in the search box and searches for it instead of dropping it.
+    rationale: The router parses `?q=13565` as a number, which is the URL for a search by pull request number. Upstream fixed the same crash by dropping a `q` that is not a string; the fork keeps it as the typed text.
+    implementation_paths:
+      - apps/web/src/routes/_chat.pull-requests.tsx
+    upstream_paths:
+      - apps/web/src/routes/_chat.pull-requests.tsx
+    tests:
+      - apps/web/src/components/pullRequest/pullRequestsRouteSearch.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/18666
+      retire_when: Upstream keeps a numeric or boolean `q` in the Pull Requests URL as search text.
+
   - id: pull-request-open-entry-points
     title: Open associated pull requests from every workflow
     status: maintained
