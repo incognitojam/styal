@@ -95,6 +95,7 @@ packageExtensionsChecksum: sha256-34mvKz5PLlrn2Tt9jUJC1SbK5hRE+oxwqyC1J6r09oE=
 patchedDependencies:
   '@clerk/expo@4.6.8': b8b22ab733de5bea846ad9e88046c10582352fe9ad86f314f368b2a823f0f281
   '@effect/vitest@4.0.0-rc.115': 172bd95ef73a13d322888984415d5d18d9d2aa8e13fa529eac235efac837e902
+  '@electron/notarize@2.5.0': 75baf70d9bbc3a44306a85fc3feaa0d20f298ff073e41cc066494b4079e752ce
   '@expo/metro-config@58.0.6': 90fa980e8b6480631fb2fbb04559834e3c612db40c550cd828f11be297d8d760
   '@ff-labs/fff-node@0.9.4': c4e3cc2420ceb9dc650f9d189e9c24baf7e83f342998bacda5f459a4ce7927a8
   '@legendapp/list@3.3.5': 10abae7dbd73d4b8e79e40d741a83b1664c82938543881f960adfabd465ae941
@@ -12918,7 +12919,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/notarize@2.5.0':
+  '@electron/notarize@2.5.0(patch_hash=75baf70d9bbc3a44306a85fc3feaa0d20f298ff073e41cc066494b4079e752ce)':
     dependencies:
       debug: 4.4.3
       fs-extra: 9.1.0
@@ -16476,7 +16477,7 @@ snapshots:
       '@electron/asar': 3.4.1
       '@electron/fuses': 1.8.0
       '@electron/get': 3.1.0
-      '@electron/notarize': 2.5.0
+      '@electron/notarize': 2.5.0(patch_hash=75baf70d9bbc3a44306a85fc3feaa0d20f298ff073e41cc066494b4079e752ce)
       '@electron/osx-sign': 1.3.3
       '@electron/rebuild': 4.0.4
       '@electron/universal': 2.0.3
