@@ -71,12 +71,18 @@ for (const fixture of fixtures) {
           const config = yield* ServerConfig;
           const manifest = readJson<Manifest>(fixtureDir, "manifest.json");
           const view = readJson<View>(fixtureDir, "t3-view.json");
-          const sourceSettings = readJson<{ providers: { codex: { binaryPath: string } } }>(
-            fixtureDir,
-            "settings.json",
-          );
-          const destinationProviderSettings = (yield* (yield* ServerSettingsService).getSettings)
-            .providers;
+          // Older upstream settings store the Codex binary under `providers`.
+          // Newer ones dropped that map and store it under `providerInstances`.
+          const sourceSettings = readJson<{
+            readonly providers?: { readonly codex?: { readonly binaryPath?: string } };
+            readonly providerInstances?: {
+              readonly codex?: { readonly config?: { readonly binaryPath?: string } };
+            };
+          }>(fixtureDir, "settings.json");
+          const sourceCodexBinaryPath =
+            sourceSettings.providers?.codex?.binaryPath ??
+            sourceSettings.providerInstances?.codex?.config?.binaryPath;
+          const destinationSettingsBefore = yield* (yield* ServerSettingsService).getSettings;
           const sourceDir = NodePath.join(config.baseDir, "fixture-source");
           NodeFS.mkdirSync(sourceDir);
           const database = new NodeSqlite.DatabaseSync(
@@ -298,12 +304,10 @@ for (const fixture of fixtures) {
               key === "responseStreamingMode" && value === "token" ? "paragraph" : value,
               key,
             );
-          assert.isNotEmpty(sourceSettings.providers.codex.binaryPath);
-          assert.notEqual(
-            settings.providers.codex.binaryPath,
-            sourceSettings.providers.codex.binaryPath,
-          );
-          assert.deepEqual(settings.providers, destinationProviderSettings);
+          assert.isNotEmpty(sourceCodexBinaryPath);
+          assert.notEqual(settings.providers.codex.binaryPath, sourceCodexBinaryPath);
+          assert.deepEqual(settings.providers, destinationSettingsBefore.providers);
+          assert.deepEqual(settings.providerInstances, destinationSettingsBefore.providerInstances);
           const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
           yield* maintenance.compactEventStore;
           assert.isTrue((yield* maintenance.rebuild).valid);
