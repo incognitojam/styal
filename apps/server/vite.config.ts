@@ -1,4 +1,5 @@
 import "vite-plus/test/config";
+import posthogSourcemaps from "@posthog/rollup-plugin";
 import { defineConfig, mergeConfig } from "vite-plus";
 
 import baseConfig from "../../vite.config.ts";
@@ -26,6 +27,32 @@ const cliBuildChannel = packageJson.version.includes("-nightly.") ? "nightly" : 
 
 const packExecutable = process.env.STYAL_PACK_EXE === "1";
 
+// Release CI uploads source maps so PostHog error tracking can resolve server
+// stack frames. The plugin stamps each chunk with a stable chunk id, which the
+// error reporter attaches to frames at runtime. Other builds set none of these.
+const posthogUpload = {
+  apiKey: process.env.POSTHOG_SOURCEMAPS_API_KEY?.trim(),
+  projectId: process.env.POSTHOG_SOURCEMAPS_PROJECT_ID?.trim(),
+  cliPath: process.env.POSTHOG_CLI_PATH?.trim(),
+};
+const posthogPlugins =
+  posthogUpload.apiKey && posthogUpload.projectId && posthogUpload.cliPath
+    ? [
+        posthogSourcemaps({
+          personalApiKey: posthogUpload.apiKey,
+          projectId: posthogUpload.projectId,
+          host: process.env.POSTHOG_SOURCEMAPS_HOST?.trim() || "https://eu.posthog.com",
+          cliBinaryPath: posthogUpload.cliPath,
+          sourcemaps: {
+            releaseName: "styal-server",
+            releaseVersion: packageJson.version,
+            // The executable embeds its script, so its maps have no other use.
+            deleteAfterUpload: packExecutable,
+          },
+        }),
+      ]
+    : [];
+
 export default mergeConfig(
   baseConfig,
   defineConfig({
@@ -42,6 +69,7 @@ export default mergeConfig(
       entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claudeHistoryWorker.ts"],
       outDir: packExecutable ? "dist-exe" : "dist",
       sourcemap: !packExecutable,
+      plugins: posthogPlugins,
       ...(packExecutable
         ? { exe: { fileName: "styal", outDir: "dist-exe", seaConfig: { useCodeCache: false } } }
         : {}),

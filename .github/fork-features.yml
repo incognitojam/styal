@@ -1713,15 +1713,21 @@ features:
       - Reports carry only the thrown value and log message, scrubbed of home directories, user names, emails, URL credentials and queries, and token-like strings; log annotations are never sent.
       - Operators can disable reports alone with `T3CODE_ERROR_REPORTING_ENABLED=false`; development servers do not report unless it is set to true.
       - Reports are rate limited per issue and per hour so a repeating error cannot flood delivery.
+      - Release and nightly server bundles, including each platform's executable, upload source maps to PostHog when `POSTHOG_SOURCEMAPS_API_KEY` is configured, and their reports carry the chunk ids that resolve frames to source; builds without the key are unchanged.
     rationale: Maintainers need symbolicated, grouped server errors from real installations to triage and fix fork bugs, and upstream has no error reporting.
     implementation_paths:
+      - .github/actions/setup-posthog-cli/action.yml
+      - .github/workflows/fork-cli-archives.yml
+      - .github/workflows/fork-js-bundle.yml
       - apps/server/src/observability/RpcInstrumentation.ts
       - apps/server/src/serverLogger.ts
       - apps/server/src/telemetry/ErrorReporting.ts
+      - apps/server/vite.config.ts
     upstream_paths:
       - apps/server/src/observability/RpcInstrumentation.ts
       - apps/server/src/server.ts
       - apps/server/src/serverLogger.ts
+      - apps/server/vite.config.ts
     tests:
       - apps/server/src/observability/RpcInstrumentation.test.ts
       - apps/server/src/telemetry/ErrorReporting.test.ts

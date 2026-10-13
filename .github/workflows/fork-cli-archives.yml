@@ -34,6 +34,8 @@ on:
         required: false
       APPLE_API_ISSUER:
         required: false
+      POSTHOG_SOURCEMAPS_API_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -98,9 +100,17 @@ jobs:
         with:
           name: js-bundle
           path: apps
+      - name: Set up posthog-cli
+        if: hashFiles('.github/actions/setup-posthog-cli/action.yml') != ''
+        uses: ./.github/actions/setup-posthog-cli
+        env:
+          POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
+      # Each platform rebuilds the bundle it embeds, so each uploads its own maps.
       - name: Build executable on its native architecture
         env:
           VP_NODE_VERSION: "26.8.2"
+          POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
+          POSTHOG_SOURCEMAPS_PROJECT_ID: ${{ vars.POSTHOG_SOURCEMAPS_PROJECT_ID }}
         run: node apps/server/scripts/cli.ts build-exe --verbose
       - name: Build resource monitor
         if: steps.resource_monitor_cache.outputs.cache-hit != 'true'

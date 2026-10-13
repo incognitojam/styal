@@ -140,6 +140,38 @@ describe("ErrorReporting scrubbing", () => {
     assert.isTrue(frames.every((frame) => !("abs_path" in frame)));
   });
 
+  it("tags frames from a chunk stamped by the source map upload with its chunk id", () => {
+    // The upload plugin registers each chunk's stack, keyed by the stack string.
+    const registry = globalThis as { _posthogChunkIds?: Record<string, string> | undefined };
+    const previous = registry._posthogChunkIds;
+    registry._posthogChunkIds = {
+      "Error\n    at /opt/styal/dist/binCli-AbC123.mjs:2:120":
+        "1619eb4b-b4ec-5017-a3f1-f90e3b71be09",
+    };
+    try {
+      const error = new Error("boom");
+      error.stack = [
+        "Error: boom",
+        "    at handle (/opt/styal/dist/binCli-AbC123.mjs:5000:7)",
+        "    at run (/opt/styal/dist/Effect-XyZ.mjs:10:3)",
+      ].join("\n");
+
+      const frames =
+        firstException({ level: "error", message: [], cause: Cause.die(error), span: undefined })
+          .stacktrace?.frames ?? [];
+
+      assert.deepStrictEqual(
+        frames.map((frame) => [frame.filename, frame.chunk_id]),
+        [
+          ["dist/Effect-XyZ.mjs", undefined],
+          ["dist/binCli-AbC123.mjs", "1619eb4b-b4ec-5017-a3f1-f90e3b71be09"],
+        ],
+      );
+    } finally {
+      registry._posthogChunkIds = previous;
+    }
+  });
+
   it("removes personal and secret values from text", () => {
     assert.strictEqual(
       scrub.text("ENOENT: open '/Users/alex/work/notes.md'"),

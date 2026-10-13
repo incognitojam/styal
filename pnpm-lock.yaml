@@ -27,6 +27,9 @@ catalogs:
     '@posthog/core':
       specifier: 1.57.4
       version: 1.57.4
+    '@posthog/rollup-plugin':
+      specifier: 1.6.1
+      version: 1.6.1
     jose:
       specifier: 6.2.2
       version: 6.2.2
@@ -52,6 +55,8 @@ overrides:
   '@alchemy.run/sigil>react': '-'
   '@alchemy.run/sigil>react-reconciler': '-'
   '@alchemy.run/sigil>scheduler': '-'
+  '@posthog/rollup-plugin>@posthog/cli': '-'
+  '@posthog/rollup-plugin>rollup': '-'
   alchemy>@prisma/dev: '-'
   '@clerk/backend': 3.18.1
   '@clerk/clerk-js': 6.32.1
@@ -590,6 +595,9 @@ importers:
       '@effect/vitest':
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115(patch_hash=172bd95ef73a13d322888984415d5d18d9d2aa8e13fa529eac235efac837e902)(effect@4.0.0-rc.115(patch_hash=e7f58877e87996e73e44f697dd39ec71b3a05dcfd00047253c11eb9ee47d84ec))
+      '@posthog/rollup-plugin':
+        specifier: 'catalog:'
+        version: 1.6.1
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -4485,6 +4493,12 @@ packages:
 
   '@posthog/core@1.57.4':
     resolution: {integrity: sha512-JM2r3ab7D8HvxquB06jesAM7EBLf3pXIwYIOj/wwq59cML0aicSoJRZdDREruhbIHzc7iFgSgAqTqJQZxxvq9w==}
+
+  '@posthog/plugin-utils@2.0.1':
+    resolution: {integrity: sha512-ZiQfUcgY65EjF2vkqL4Aau6sx0aqvSWoXaGSGu9Solnmv6e6VRjQbAU0SCKbxpJxcEsCJof9vmvnrFTQIEOUAQ==}
+
+  '@posthog/rollup-plugin@1.6.1':
+    resolution: {integrity: sha512-oVViFAZnIT3YVPahXzvvZtsPHISWikoYpqF+Hb4YMvufeVmTeljhFeg/hH5Y7b9UYhYbbv0JE7UQRfeSZZ6R+A==}
 
   '@posthog/types@1.415.2':
     resolution: {integrity: sha512-BIIHPyXcPZuNTImrR1qLqLKFw7j9o8co6LG/9OpLtpWJ3RT0y89Lx6VCtd37N9/dkr/qW7y0uPjJxAxjsALHtw==}
@@ -15115,6 +15129,15 @@ snapshots:
   '@posthog/core@1.57.4':
     dependencies:
       '@posthog/types': 1.415.2
+
+  '@posthog/plugin-utils@2.0.1':
+    dependencies:
+      cross-spawn: 7.0.6
+
+  '@posthog/rollup-plugin@1.6.1':
+    dependencies:
+      '@posthog/plugin-utils': 2.0.1
+      magic-string: 0.30.21
 
   '@posthog/types@1.415.2': {}
 

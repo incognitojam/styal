@@ -234,6 +234,9 @@ export function exceptionProperties(entry: LoggedError, scrub: Scrubber) {
     })),
     logMessage: message === undefined ? undefined : scrub.text(message),
     span: entry.span,
+    // Set by the source map upload in release builds, so PostHog knows which
+    // uploaded symbol sets resolve these frames.
+    $release_id: ErrorTracking.getInjectedReleaseId(),
   };
 }
 

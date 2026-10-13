@@ -14,6 +14,9 @@ on:
       version:
         required: true
         type: string
+    secrets:
+      POSTHOG_SOURCEMAPS_API_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -70,10 +73,22 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
 
+      # Builds without the key, such as dispatched test builds, skip the upload.
+      - name: Set up posthog-cli
+        if: hashFiles('.github/actions/setup-posthog-cli/action.yml') != ''
+        uses: ./.github/actions/setup-posthog-cli
+        env:
+          POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
+
       # Without T3CODE_COMMIT_HASH the web build falls back to GITHUB_SHA, which
       # is the dispatching branch head rather than the release candidate.
+      # The server bundle uploads its source maps to PostHog when the key and
+      # posthog-cli are present.
       - name: Build server, web client, and Electron main
         shell: bash
+        env:
+          POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
+          POSTHOG_SOURCEMAPS_PROJECT_ID: ${{ vars.POSTHOG_SOURCEMAPS_PROJECT_ID }}
         run: |
           set -euo pipefail
           T3CODE_COMMIT_HASH="$(git rev-parse HEAD)" vp run build:desktop
