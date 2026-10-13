@@ -1706,9 +1706,11 @@ function renderFeedEntry(
 
   if (entry.type === "restart-note")
     return (
-      <View className="flex-row items-center gap-2 px-1 py-1">
-        <Text className="text-sm text-muted-foreground">{entry.label}</Text>
-      </View>
+      <ThreadContextDivider
+        label={entry.label}
+        icon="arrow.clockwise"
+        iconColor={iconSubtleColor}
+      />
     );
 
   if (entry.type === "message") {

@@ -1849,6 +1849,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                   !row.showAssistantMeta) ||
                 row.kind === "worktree-setup" ||
                 row.kind === "event" ||
+                row.kind === "standalone-activity" ||
                 row.kind === "attempt-fold"
               ? "pb-2"
               : "pb-4",
@@ -1935,16 +1936,7 @@ function ContextCompactionTimelineRow({
 }: {
   row: Extract<TimelineRow, { kind: "standalone-activity" }>;
 }) {
-  if (row.style === "restart-note") {
-    return (
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-0.5 py-0.5">
-        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-          <RotateCwIcon aria-hidden="true" className="block size-4 stroke-2 opacity-70" />
-        </span>
-        <p className="text-secondary-label text-sm leading-relaxed">{row.label}</p>
-      </div>
-    );
-  }
+  const Icon = row.style === "restart-note" ? RotateCwIcon : Minimize2Icon;
   return (
     <div
       role="separator"
@@ -1957,13 +1949,13 @@ function ContextCompactionTimelineRow({
         className="relative shrink-0 overflow-hidden"
       >
         <span className="flex items-center gap-1.5">
-          <Minimize2Icon aria-hidden="true" className="size-3" />
+          <Icon aria-hidden="true" className="size-3" />
           {row.label}
         </span>
         {row.active ? (
           <ActivityShimmerOverlay>
             <span className="flex items-center gap-1.5">
-              <Minimize2Icon aria-hidden="true" className="size-3" />
+              <Icon aria-hidden="true" className="size-3" />
               {row.label}
             </span>
           </ActivityShimmerOverlay>
