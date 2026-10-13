@@ -1317,10 +1317,10 @@ features:
       - Device instructions use the session's MCP namespace and only appear with device access, while provider subprocesses retain their per-session environment overrides.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
+      - apps/server/scripts/seed-tool-presentation-fixture.ts
       - apps/server/src/mcp/AcpMcpOverAcpBridge.ts
       - apps/server/src/mcp/McpHttpServer.ts
       - apps/server/src/mcp/McpProviderSession.ts
-      - apps/server/scripts/seed-tool-presentation-fixture.ts
       - apps/server/src/mcp/toolkits/testing/toolPresentationFixtures.ts
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
@@ -1335,9 +1335,9 @@ features:
       - apps/server/src/provider/RuntimeInstructions.ts
       - apps/server/src/provider/T3OrchestrationInstructions.ts
       - apps/server/src/provider/acp/AcpRuntimeModel.ts
-      - packages/shared/src/t3McpToolPresentation.ts
-      - packages/shared/src/styalToolWording.ts
       - packages/client-runtime/src/work-log/presentation.ts
+      - packages/shared/src/styalToolWording.ts
+      - packages/shared/src/t3McpToolPresentation.ts
       - packages/shared/src/toolActivity.ts
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
@@ -1366,9 +1366,9 @@ features:
       - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
       - apps/server/src/provider/T3OrchestrationInstructions.test.ts
       - apps/server/src/provider/acp/AcpRuntimeModel.test.ts
+      - packages/client-runtime/src/work-log/presentation.test.ts
       - packages/shared/src/t3McpToolPresentation.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
-      - packages/client-runtime/src/work-log/presentation.test.ts
     upstream:
       status: tracking
       tracking:
