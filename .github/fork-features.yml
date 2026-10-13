@@ -1714,6 +1714,7 @@ features:
       - Operators can disable reports alone with `T3CODE_ERROR_REPORTING_ENABLED=false`; development servers do not report unless it is set to true.
       - Reports are rate limited per issue and per hour so a repeating error cannot flood delivery.
       - Release and nightly server bundles, including each platform's executable, upload source maps to PostHog when `POSTHOG_SOURCEMAPS_API_KEY` is configured, and their reports carry the chunk ids that resolve frames to source; builds without the key are unchanged.
+      - Executable builds remove uploaded map assets from disk and the returned bundle before single-chunk validation; the upload must complete first.
     rationale: Maintainers need symbolicated, grouped server errors from real installations to triage and fix fork bugs, and upstream has no error reporting.
     implementation_paths:
       - .github/actions/setup-posthog-cli/action.yml

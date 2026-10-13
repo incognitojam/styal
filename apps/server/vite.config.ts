@@ -69,7 +69,25 @@ export default mergeConfig(
       entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claudeHistoryWorker.ts"],
       outDir: packExecutable ? "dist-exe" : "dist",
       sourcemap: !packExecutable,
-      plugins: posthogPlugins,
+      plugins: [
+        ...posthogPlugins,
+        packExecutable &&
+          posthogPlugins.length > 0 && {
+            name: "server-executable-sourcemaps",
+            writeBundle: {
+              order: "post",
+              sequential: true,
+              handler(_options, bundle) {
+                // tsdown counts assets as chunks when validating an executable.
+                // PostHog deletes uploaded maps from disk; remove their bundle
+                // entries too, after the upload, leaving the embedded script.
+                for (const [name, output] of Object.entries(bundle)) {
+                  if (output.type === "asset" && name.endsWith(".map")) delete bundle[name];
+                }
+              },
+            },
+          },
+      ],
       ...(packExecutable
         ? { exe: { fileName: "styal", outDir: "dist-exe", seaConfig: { useCodeCache: false } } }
         : {}),
