@@ -53,6 +53,9 @@ import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
+import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
+import * as ThreadManagement from "./ThreadManagementService.ts";
+import { continueRestartedRun } from "./RestartContinuation.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 const isLiveStreamBufferError = Schema.is(LiveStreamBufferError);
@@ -2608,7 +2611,7 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
   );
 
   it.effect(
-    "persists shutdown continuation intent through the real event sink without domain events",
+    "stops the live worker before saving shutdown intent and replays it once after cancellation",
     () =>
       Effect.gen(function* () {
         const outbox = yield* EffectOutbox.EffectOutboxV2;
@@ -2618,7 +2621,7 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
         const providerThreadId = ProviderThreadId.make("provider-thread:shutdown-prepare");
         const sessionId = ProviderSessionId.make("session:shutdown-prepare");
         const attemptId = RunAttemptId.make("attempt:shutdown-prepare");
-        const projection = {
+        let projection = {
           thread: makeThread(threadId, now),
           runs: [
             {
@@ -2628,6 +2631,8 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
               providerInstanceId,
               providerThreadId,
               activeAttemptId: attemptId,
+              modelSelection,
+              userMessageId: MessageId.make("message:shutdown-prepare"),
             },
           ],
           providerThreads: [
@@ -2650,6 +2655,9 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
             { id: sessionId, driver: "codex", providerInstanceId, status: "running" },
           ],
           providerTurns: [{ providerThreadId, runAttemptId: attemptId, status: "running" }],
+          messages: [],
+          attempts: [],
+          turnItems: [],
         } as unknown as OrchestrationV2ThreadProjection;
         const recovery = yield* ProviderRuntimeRecovery.make.pipe(
           Effect.provide(
@@ -2663,8 +2671,72 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
             ),
           ),
         );
-        yield* recovery.prepareForShutdown;
-        yield* recovery.prepareForShutdown;
+        const continuations: Array<
+          Parameters<ThreadManagement.ThreadManagementService["Service"]["dispatch"]>[0]
+        > = [];
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2.pipe(
+          Effect.provide(
+            EffectWorker.layerWithOptions({ workerId: "shutdown-prepare-worker" }).pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  Layer.succeed(EffectOutbox.EffectOutboxV2, outbox),
+                  Layer.succeed(EffectWorker.OrchestrationEffectExecutorV2, {
+                    execute: (effect) =>
+                      effect.request.type === "provider-runtime.continue"
+                        ? continueRestartedRun({
+                            threadId: effect.threadId,
+                            sourceRunId: effect.request.sourceRunId,
+                          }).pipe(
+                            Effect.provide(
+                              Layer.mergeAll(
+                                ServerSettings.layerTest({
+                                  continueThreadsAfterServerUpdate: true,
+                                }),
+                                Layer.mock(ThreadManagement.ThreadManagementService)({
+                                  getThreadRecords: () => Effect.sync(() => projection),
+                                  recoverDelegatedTask: () => Effect.void,
+                                  dispatch: (command) => {
+                                    continuations.push(command);
+                                    return Effect.succeed({} as never);
+                                  },
+                                }),
+                              ),
+                            ),
+                            Effect.orDie,
+                          )
+                        : Effect.die("Unexpected effect in shutdown preparation fixture"),
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+        const workerReady = yield* Deferred.make<void>();
+        const workerStopped = yield* Deferred.make<void>();
+        const workerFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null);
+        yield* ServerRuntimeStartup.startEffectWorkerWithRelay({
+          runWorker: EffectWorker.runDaemonWithOptions({ concurrency: 1 }).pipe(
+            Effect.provideService(EffectWorker.OrchestrationEffectWorkerV2, {
+              ...worker,
+              awaitWork: Deferred.succeed(workerReady, undefined).pipe(
+                Effect.andThen(worker.awaitWork),
+              ),
+            }),
+            Effect.ensuring(Deferred.succeed(workerStopped, undefined)),
+          ),
+          startRelay: Effect.void,
+          workerFiberRef,
+        });
+        yield* Deferred.await(workerReady);
+        const prepare = ServerRuntimeStartup.prepareForShutdown({
+          workerFiberRef,
+          captureContinuations: recovery.prepareForShutdown,
+        });
+        yield* prepare;
+        yield* prepare;
+        assert.isTrue(yield* Deferred.isDone(workerStopped));
+        assert.isNull(yield* Ref.get(workerFiberRef));
+        assert.equal(projection.runs[0]?.status, "running");
         const effects = yield* outbox.listByCommandId(
           CommandId.make(`command:restart-prepare:${runId}`),
         );
@@ -2674,12 +2746,24 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
           type: "provider-runtime.continue",
           sourceRunId: runId,
         });
-        // This fixture shares the database; settle its intent before later claim tests.
-        yield* outbox.cancelUnsettled({
-          threadId,
-          effectTypes: ["provider-runtime.continue"],
-          reason: "fixture complete",
-        });
+        assert.lengthOf(continuations, 0);
+        // Shutdown reconciliation cancels the source before the new process claims intent.
+        projection = {
+          ...projection,
+          runs: [{ ...projection.runs[0]!, status: "cancelled", completedAt: now }],
+          providerTurns: [
+            { ...projection.providerTurns[0]!, status: "cancelled", completedAt: now },
+          ],
+        };
+        assert.equal(yield* worker.drain(), 1);
+        assert.equal(yield* worker.drain(), 0);
+        assert.lengthOf(continuations, 1);
+        const continuation = continuations[0]!;
+        assert.equal(continuation.type, "message.dispatch");
+        if (continuation.type === "message.dispatch") {
+          assert.equal(continuation.restartContinuationOfRunId, runId);
+          assert.equal(continuation.text, "Continue where you left off.");
+        }
       }),
   );
 

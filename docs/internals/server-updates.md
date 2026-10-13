@@ -117,9 +117,11 @@ its continuation tells the provider what will not report back.
 Recovery retires effects tied to the lost process and records continuation intent
 in the durable outbox. That intent survives another restart before provider startup.
 Continuation effects wait for activation; a slow provider must not delay the server's
-readiness or the launcher's commit boundary. Graceful shutdown captures intent before
-closing providers, then reconciles after ingestion has stopped so a late completion
-cannot be overwritten by a stale cancellation.
+readiness or the launcher's commit boundary. The early graceful shutdown step closes
+command admission and stops the effect worker before capturing intent and closing
+providers; otherwise the stopping process can consume intent meant for its successor.
+Reconciliation runs after ingestion has stopped so a late completion cannot be
+overwritten by a stale cancellation.
 
 The [continuation handler](../../apps/server/src/orchestration-v2/RestartContinuation.ts)
 rechecks the preference, archive state, provider selection, newer user work, a stop

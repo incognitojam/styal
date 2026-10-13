@@ -3265,18 +3265,22 @@ features:
     prs: [529, 530, 558]
     invariants:
       - Server shutdown stops provider sessions before any other shutdown step, so a launcher kill after a stalled step cannot leave a provider CLI working on its own.
+      - The early shutdown step closes command admission and stops the effect worker before saving restart continuation intent, so the stopping process cannot consume intent meant for its successor.
       - Shutdown logs when it starts and, while it is still running at 1.5, 3, and 4.5 seconds, lists the open spans with their ages, newest first.
       - Each runtime layer group tears down inside a shutdown.<group> span, so a report names the group that is still tearing down even when its own finalizers are untraced.
     implementation_paths:
       - apps/server/src/observability/OpenSpans.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/server.ts
+      - apps/server/src/serverRuntimeStartup.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/server.ts
     tests:
       - apps/server/src/observability/OpenSpans.test.ts
+      - apps/server/src/orchestration-v2/FoundationPersistence.test.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
+      - apps/server/src/serverRuntimeStartup.welcome.test.ts
     upstream:
       status: tracking
       tracking:

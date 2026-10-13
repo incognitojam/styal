@@ -77,6 +77,10 @@ export class ServerRuntimeStartup extends Context.Service<
     readonly enqueueCommand: <A, E>(
       effect: Effect.Effect<A, E>,
     ) => Effect.Effect<A, E | ServerRuntimeStartupError>;
+    readonly prepareForShutdown: Effect.Effect<
+      void,
+      ProviderRuntimeRecovery.ProviderRuntimeRecoveryError
+    >;
   }
 >()("@styal/cli/serverRuntimeStartup") {}
 
@@ -382,6 +386,21 @@ export const startEffectWorkerWithRelay = Effect.fn(
   );
 });
 
+/** Leaves captured continuations for the next process, before providers stop. */
+export const prepareForShutdown = Effect.fn("ServerRuntimeStartup.prepareForShutdown")(function* <
+  E,
+  R,
+>(input: {
+  readonly workerFiberRef: Ref.Ref<Fiber.Fiber<void, never> | null>;
+  readonly captureContinuations: Effect.Effect<void, E, R>;
+}) {
+  const workerFiber = yield* Ref.getAndSet(input.workerFiberRef, null);
+  if (workerFiber !== null) {
+    yield* Fiber.interrupt(workerFiber).pipe(Effect.ignore);
+  }
+  yield* input.captureContinuations;
+});
+
 export function runOrderedV2StartupPhases<
   Import,
   Recovery,
@@ -436,24 +455,31 @@ const make = (options?: StartupOptions) =>
     const httpListening = yield* Deferred.make<void>();
     const effectWorkerFiber = yield* Ref.make<Fiber.Fiber<void, never> | null>(null);
 
+    const shutdownPreparation = commandGate
+      .failCommandReady(
+        new ServerRuntimeStartupError({
+          mode: serverConfig.mode,
+          host: serverConfig.host ?? null,
+          port: serverConfig.port,
+          cause: "Server runtime is shutting down.",
+        }),
+      )
+      .pipe(
+        Effect.andThen(
+          prepareForShutdown({
+            workerFiberRef: effectWorkerFiber,
+            captureContinuations:
+              driveCommands === undefined
+                ? providerRuntimeRecovery.prepareForShutdown
+                : Effect.void,
+          }),
+        ),
+      );
+
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
-        yield* commandGate.failCommandReady(
-          new ServerRuntimeStartupError({
-            mode: serverConfig.mode,
-            host: serverConfig.host ?? null,
-            port: serverConfig.port,
-            cause: "Server runtime is shutting down.",
-          }),
-        );
-        const workerFiber = yield* Ref.getAndSet(effectWorkerFiber, null);
-        if (workerFiber !== null) {
-          yield* Fiber.interrupt(workerFiber).pipe(Effect.ignore);
-        }
+        yield* shutdownPreparation.pipe(Effect.ensuring(providerSessions.shutdown));
         if (driveCommands !== undefined) return;
-        yield* providerRuntimeRecovery.prepareForShutdown.pipe(
-          Effect.ensuring(providerSessions.shutdown),
-        );
         const reconciliation = yield* providerRuntimeRecovery.reconcile("shutdown");
         yield* Effect.logInfo("V2 orchestration shutdown reconciliation completed", reconciliation);
       }).pipe(
@@ -710,6 +736,7 @@ const make = (options?: StartupOptions) =>
       awaitCommandReady: commandGate.awaitCommandReady,
       markHttpListening: Deferred.succeed(httpListening, undefined),
       enqueueCommand: commandGate.enqueueCommand,
+      prepareForShutdown: shutdownPreparation,
     } satisfies ServerRuntimeStartup["Service"];
   });
 
