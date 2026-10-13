@@ -569,11 +569,16 @@ export const TraitsPicker = memo(function TraitsPicker({
   isComposerOwned,
   size = "sm",
   hidden = false,
+  shortcutLabel,
+  iconOnly = false,
   ...persistence
 }: TraitsMenuContentProps &
   TraitsPersistence & {
     size?: ComposerControlSize;
     hidden?: boolean;
+    shortcutLabel?: string;
+    /** The composer has collapsed the trigger to its icon, so the tooltip shows the values. */
+    iconOnly?: boolean;
   }) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden);
@@ -611,6 +616,8 @@ export const TraitsPicker = memo(function TraitsPicker({
   });
   const speedLabel = speedIcon === "ultrafast" ? "Ultrafast mode on" : "Fast mode on";
   const accessibleLabel = speedIcon ? `${triggerLabel}, ${speedLabel}` : triggerLabel;
+  const tooltipTitle = iconOnly ? accessibleLabel : "Effort and options";
+  const tooltipContent = shortcutLabel ? `${tooltipTitle} · ${shortcutLabel}` : tooltipTitle;
   const fastModeIcon = speedIcon ? (
     <>
       <ComposerControlIcon
@@ -695,7 +702,7 @@ export const TraitsPicker = memo(function TraitsPicker({
             </>
           )}
         </TooltipTrigger>
-        <TooltipPopup side="top">{accessibleLabel}</TooltipPopup>
+        <TooltipPopup side="top">{tooltipContent}</TooltipPopup>
       </Tooltip>
       <MenuPopup align="start" {...(isComposerOwned ? composerFloatingLayerProps : {})}>
         <TraitsMenuContent
