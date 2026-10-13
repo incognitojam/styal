@@ -1769,9 +1769,6 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
-  latestCheckpointDiffStats: Schema.optional(
-    Schema.NullOr(Schema.Struct({ insertions: NonNegativeInt, deletions: NonNegativeInt })),
-  ),
   tokenUsage: Schema.optional(ThreadTokenUsage),
   latestRunId: Schema.NullOr(RunId),
   latestRunRequestedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
