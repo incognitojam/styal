@@ -24,6 +24,9 @@ catalogs:
     '@pierre/diffs':
       specifier: 1.3.0-beta.10
       version: 1.3.0-beta.10
+    '@posthog/core':
+      specifier: 1.57.4
+      version: 1.57.4
     jose:
       specifier: 6.2.2
       version: 6.2.2
@@ -553,6 +556,9 @@ importers:
       '@opencode/schema':
         specifier: 2.0.18
         version: 2.0.18
+      '@posthog/core':
+        specifier: 'catalog:'
+        version: 1.57.4
       diff:
         specifier: 8.0.3
         version: 8.0.3
@@ -4476,6 +4482,12 @@ packages:
 
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
+
+  '@posthog/core@1.57.4':
+    resolution: {integrity: sha512-JM2r3ab7D8HvxquB06jesAM7EBLf3pXIwYIOj/wwq59cML0aicSoJRZdDREruhbIHzc7iFgSgAqTqJQZxxvq9w==}
+
+  '@posthog/types@1.415.2':
+    resolution: {integrity: sha512-BIIHPyXcPZuNTImrR1qLqLKFw7j9o8co6LG/9OpLtpWJ3RT0y89Lx6VCtd37N9/dkr/qW7y0uPjJxAxjsALHtw==}
 
   '@puppeteer/browsers@3.2.3':
     resolution: {integrity: sha512-2Bt3m6dDAJqmZehn0wiXSYyQmuhyiHHZ7FjvrVaS1W2RoFGV6eCK71UvKYkNJjkwC1Q9nobjhvTMhLQztFVINA==}
@@ -15099,6 +15111,12 @@ snapshots:
       react-dom: 19.3.0(react@19.3.0)
 
   '@polka/url@1.0.0-next.29': {}
+
+  '@posthog/core@1.57.4':
+    dependencies:
+      '@posthog/types': 1.415.2
+
+  '@posthog/types@1.415.2': {}
 
   '@puppeteer/browsers@3.2.3(yauzl@3.4.0)':
     dependencies:

@@ -1704,6 +1704,32 @@ features:
       tracking: []
       retire_when: The fork stops shipping as a separately installable application or adopts a shared downstream-namespacing mechanism that preserves the same isolation and hosted-origin cleanup boundary.
 
+  - id: fork-server-error-reporting
+    title: Report server errors to PostHog error tracking
+    status: maintained
+    prs: []
+    invariants:
+      - Release server builds report every Error or Fatal log entry, and every RPC handler defect, as a PostHog `$exception` event through the analytics delivery path, sharing its identity and opt-out.
+      - Reports carry only the thrown value and log message, scrubbed of home directories, user names, emails, URL credentials and queries, and token-like strings; log annotations are never sent.
+      - Operators can disable reports alone with `T3CODE_ERROR_REPORTING_ENABLED=false`; development servers do not report unless it is set to true.
+      - Reports are rate limited per issue and per hour so a repeating error cannot flood delivery.
+    rationale: Maintainers need symbolicated, grouped server errors from real installations to triage and fix fork bugs, and upstream has no error reporting.
+    implementation_paths:
+      - apps/server/src/observability/RpcInstrumentation.ts
+      - apps/server/src/serverLogger.ts
+      - apps/server/src/telemetry/ErrorReporting.ts
+    upstream_paths:
+      - apps/server/src/observability/RpcInstrumentation.ts
+      - apps/server/src/server.ts
+      - apps/server/src/serverLogger.ts
+    tests:
+      - apps/server/src/observability/RpcInstrumentation.test.ts
+      - apps/server/src/telemetry/ErrorReporting.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream ships equivalent server error reporting that the fork can direct to its own project.
+
   - id: fork-upstream-intake-provenance
     title: Reconcile provisional upstream imports explicitly
     status: maintained

@@ -4,6 +4,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Logger from "effect/Logger";
 import * as Metric from "effect/Metric";
 import * as Stream from "effect/Stream";
 import * as Tracer from "effect/Tracer";
@@ -308,6 +309,31 @@ describe("RpcInstrumentation", () => {
       );
 
       assert.deepStrictEqual(spanNames, []);
+    }),
+  );
+
+  it.effect("logs handler defects as errors, but not expected failures", () =>
+    Effect.gen(function* () {
+      const logged: Array<{ readonly level: string; readonly defects: number }> = [];
+      const logger = Logger.make(({ logLevel, cause }) => {
+        logged.push({
+          level: logLevel,
+          defects: cause.reasons.filter((reason) => reason._tag === "Die").length,
+        });
+      });
+
+      yield* Effect.gen(function* () {
+        yield* Effect.exit(observeRpcEffect("rpc.instrumentation.fail", Effect.fail("expected")));
+        yield* Effect.exit(observeRpcEffect("rpc.instrumentation.die", Effect.die("bug")));
+        yield* Stream.runDrain(
+          observeRpcStream("rpc.instrumentation.stream-die", Stream.die("stream bug")),
+        ).pipe(Effect.exit);
+      }).pipe(Effect.provide(Logger.layer([logger])));
+
+      assert.deepStrictEqual(logged, [
+        { level: "Error", defects: 1 },
+        { level: "Error", defects: 1 },
+      ]);
     }),
   );
 });

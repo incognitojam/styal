@@ -58,6 +58,22 @@ A send can fail after PostHog has stored the batch, so every retry is a copy.
 uuid when it is recorded, backs off after a failed send, and drops a batch after a
 few tries. Without these limits, one stuck batch was sent every second for days.
 
+## Error reports
+
+[Error reporting](../../apps/server/src/telemetry/ErrorReporting.ts) turns every Error
+or Fatal log entry into a `$exception` event and sends it through the analytics
+delivery path, so it shares identity, opt-out, and retries. Logging at Error level
+is therefore a report to maintainers: use it for states that indicate a bug, and
+log expected failures, such as a missing binary or a user's invalid input, at
+Warning or below. Effect does not log fibers that fail unhandled, so a defect is
+reported only where something logs it; RPC handler defects are logged by
+[RPC instrumentation](../../apps/server/src/observability/RpcInstrumentation.ts).
+
+Reports carry only the thrown value and the log message. Log annotations and
+message objects stay local because they often hold prompts, paths, or
+configuration. Only release builds report by default; development servers set
+`T3CODE_ERROR_REPORTING_ENABLED=true` to test delivery.
+
 ## Collection boundary
 
 Keep analytics payloads to product metadata and normalized measurements. Do not
