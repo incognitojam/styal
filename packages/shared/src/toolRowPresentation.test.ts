@@ -247,10 +247,10 @@ describe("deriveToolRowPresentation", () => {
 
   it("names styal's server the same way under its pre-rename name", () => {
     expect(deriveToolRowPresentation({ toolName: "mcp__t3-code__t3_thread_read" })?.heading).toBe(
-      "styal · t3_thread_read",
+      "Read a thread",
     );
     expect(deriveToolRowPresentation({ toolName: "styal.t3_thread_read" })?.heading).toBe(
-      "styal · t3_thread_read",
+      "Read a thread",
     );
   });
 
@@ -477,7 +477,7 @@ describe("deriveToolRowPresentation", () => {
         argument: { kind: "text", value: "role=button" },
       });
       expect(preview("preview_navigate", { url: "https://t3.chat" }, true)?.heading).toBe(
-        "Failed to navigate",
+        "Failed to navigate preview",
       );
     });
   });

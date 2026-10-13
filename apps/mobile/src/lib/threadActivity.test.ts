@@ -20,7 +20,12 @@ import {
   type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
-import { summarizeToolGroup } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  resolveWorkEntryToolPresentation,
+  resolveWorkEntryToolRowPresentation,
+  summarizeToolGroup,
+} from "@t3tools/client-runtime/work-log/presentation";
+import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -40,6 +45,34 @@ import {
 } from "./threadActivity";
 
 const threadId = ThreadId.make("thread-1");
+
+it("matches the web row wording for every shared tool and lifecycle state", () => {
+  // The server catalog guard covers the published inventory and provider mappings;
+  // this exercises mobile's actual row-label consumer, including historical tools.
+  for (const tool of T3_MCP_TOOL_NAMES) {
+    for (const server of ["styal", "t3-code"]) {
+      for (const toolLifecycleStatus of [
+        "inProgress",
+        "completed",
+        "failed",
+        "declined",
+        "stopped",
+      ] as const) {
+        const entry = {
+          id: tool,
+          createdAt: "2026-01-01T00:00:00Z",
+          tone: "tool" as const,
+          label: "Provider-specific title",
+          toolName: `mcp__${server}__${tool}`,
+          toolLifecycleStatus,
+        };
+        const label = resolveWorkEntryToolPresentation(entry)?.displayName;
+        expect(workEntryRowLabel(entry), tool).toBe(label);
+        expect(resolveWorkEntryToolRowPresentation(entry)?.heading, tool).toBe(label);
+      }
+    }
+  }
+});
 const sourceThreadId = ThreadId.make("thread-source");
 const runId = RunId.make("run-1");
 
@@ -1329,9 +1362,9 @@ describe("buildThreadFeed", () => {
     const feed = buildThreadFeed([projected(toolItem, 0)]);
     const activity = feed[0]?.type === "activity-group" ? feed[0].activities[0] : null;
 
-    expect(activity?.summary).toBe("Read a T3 thread");
+    expect(activity?.summary).toBe("Read a thread");
     expect(activity?.logo).toBe("t3-code");
-    expect(activity?.getCopyText().split("\n")[0]).toBe("Read a T3 thread");
+    expect(activity?.getCopyText().split("\n")[0]).toBe("Read a thread");
   });
 
   it("uses the CUA action title in the mobile feed", () => {
@@ -1672,8 +1705,8 @@ describe("retained v2 feed presentation", () => {
   });
 
   it.each([
-    ["failed", "Failed to click in the preview browser", true],
-    ["cancelled", "Stopped clicking in the preview browser", false],
+    ["failed", "Failed to click", true],
+    ["cancelled", "Stopped clicking", false],
   ] as const)(
     "keeps %s calls terminal while the parent run remains live",
     (status, summary, hasFailure) => {

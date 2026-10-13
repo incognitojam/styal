@@ -384,7 +384,7 @@ function cursorToolOutputText(toolCall: ToolCall): string {
   return typeof output === "string" ? output : stableJson(output);
 }
 
-function cursorToolName(toolCall: ToolCall): string {
+export function cursorToolName(toolCall: ToolCall): string {
   if (toolCall.type !== "mcp") {
     return toolCall.type;
   }

@@ -1312,12 +1312,16 @@ features:
       - Provider ingestion and shared client presentation recognize both namespaces so historical tool calls remain readable across web and mobile.
       - Every adapter reports MCP calls as `mcp__<server>__<tool>`, so styal's tools present identically for every provider; presentation still reads the `server.tool` and `server · tool` forms already persisted.
       - ACP identity recovery and the MCP-over-ACP bridge accept the `styal` server name as well as `t3-code`.
+      - Web tool rows, mobile rows, and group previews take lifecycle wording and icons from the shared tool inventory, with short preview labels and no T3 product name in thread labels; preview arguments stay separate from their headings.
+      - The published-tool guard exercises provider mappings and both namespaces through client presentation; new preview tools require wording review, retired customizations fail, and intake uses a synthetic catalog fixture for real-client comparison.
       - Device instructions use the session's MCP namespace and only appear with device access, while provider subprocesses retain their per-session environment overrides.
     implementation_paths:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/mcp/AcpMcpOverAcpBridge.ts
       - apps/server/src/mcp/McpHttpServer.ts
       - apps/server/src/mcp/McpProviderSession.ts
+      - apps/server/scripts/seed-tool-presentation-fixture.ts
+      - apps/server/src/mcp/toolkits/testing/toolPresentationFixtures.ts
       - apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts
@@ -1332,6 +1336,8 @@ features:
       - apps/server/src/provider/T3OrchestrationInstructions.ts
       - apps/server/src/provider/acp/AcpRuntimeModel.ts
       - packages/shared/src/t3McpToolPresentation.ts
+      - packages/shared/src/styalToolWording.ts
+      - packages/client-runtime/src/work-log/presentation.ts
       - packages/shared/src/toolActivity.ts
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
@@ -1352,6 +1358,8 @@ features:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/mcp/AcpMcpOverAcpBridge.test.ts
       - apps/server/src/mcp/McpProviderSession.test.ts
+      - apps/server/src/mcp/toolkits/core.test.ts
+      - apps/server/src/mcp/toolkits/toolPresentation.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
@@ -1360,6 +1368,7 @@ features:
       - apps/server/src/provider/acp/AcpRuntimeModel.test.ts
       - packages/shared/src/t3McpToolPresentation.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
+      - packages/client-runtime/src/work-log/presentation.test.ts
     upstream:
       status: tracking
       tracking:

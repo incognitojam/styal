@@ -17,18 +17,9 @@ import { OrchestratorProjectionError } from "../../orchestration-v2/Orchestrator
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as McpHttpServer from "../McpHttpServer.ts";
 import * as McpInvocationContext from "../McpInvocationContext.ts";
-import { OrchestratorToolkit } from "./orchestrator/tools.ts";
-import { PreviewToolkit } from "./preview/tools.ts";
-import { PreviewControlsToolkit } from "./previewControls/tools.ts";
-import { EnvironmentToolkit } from "./environment/tools.ts";
 import * as EnvironmentHandlers from "./environment/handlers.ts";
-import { ProjectToolkit } from "./project/tools.ts";
-import { AttachmentToolkit } from "./attachment/tools.ts";
 import * as AttachmentHandlers from "./attachment/handlers.ts";
-import { ThreadToolkit } from "./thread/tools.ts";
-import { WorktreeToolkit } from "./worktree/tools.ts";
-import { DeviceToolkit } from "./device/tools.ts";
-import { PullRequestsToolkit } from "./pullRequests/tools.ts";
+import { publishedToolkits } from "./testing/toolPresentationFixtures.ts";
 import {
   resolveT3McpToolDefinition,
   resolveT3McpToolPresentation,
@@ -39,18 +30,7 @@ const decodeMcpAttachmentInput = Schema.decodeUnknownEffect(McpAttachmentInput);
 
 it("publishes unique tool names with reference-free object-root inputs", () => {
   const names = new Set<string>();
-  for (const toolkit of [
-    OrchestratorToolkit,
-    PreviewToolkit,
-    WorktreeToolkit,
-    ThreadToolkit,
-    AttachmentToolkit,
-    ProjectToolkit,
-    EnvironmentToolkit,
-    PreviewControlsToolkit,
-    DeviceToolkit,
-    PullRequestsToolkit,
-  ]) {
+  for (const toolkit of publishedToolkits) {
     for (const tool of Object.values(toolkit.tools)) {
       expect(names.has(tool.name)).toBe(false);
       names.add(tool.name);
@@ -62,7 +42,7 @@ it("publishes unique tool names with reference-free object-root inputs", () => {
       const definition = resolveT3McpToolDefinition(tool.name);
       expect(definition, tool.name).not.toBeNull();
       expect(
-        definition?.labels.every((label) => label.trim().length > 0),
+        definition?.labels.slice(0, 3).every((label) => label.trim().length > 0),
         tool.name,
       ).toBe(true);
       for (const name of [tool.name, `mcp__t3-code__${tool.name}`, `T3-code.${tool.name}`]) {

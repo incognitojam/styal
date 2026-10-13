@@ -129,11 +129,11 @@ describe("work entry labels", () => {
   });
 
   it.each([
-    ["inProgress", "Clicking in the preview browser"],
-    ["completed", "Clicked in the preview browser"],
-    ["failed", "Failed to click in the preview browser"],
-    ["declined", "Declined to click in the preview browser"],
-    ["stopped", "Stopped clicking in the preview browser"],
+    ["inProgress", "Clicking"],
+    ["completed", "Clicked"],
+    ["failed", "Failed to click"],
+    ["declined", "Declined to click"],
+    ["stopped", "Stopped clicking"],
   ] as const)("uses the same friendly %s label in both views", (toolLifecycleStatus, label) => {
     const browserEntry = {
       ...entry,
@@ -149,12 +149,8 @@ describe("work entry labels", () => {
 
   it("uses the active summary state for legacy tools without a lifecycle status", () => {
     const browserEntry = { ...entry, toolTitle: "T3-code.preview_click" };
-    expect(liveWorkEntryLabel(browserEntry, undefined, true)).toBe(
-      "Clicking in the preview browser",
-    );
-    expect(liveWorkEntryLabel(browserEntry, undefined, false)).toBe(
-      "Clicked in the preview browser",
-    );
+    expect(liveWorkEntryLabel(browserEntry, undefined, true)).toBe("Clicking");
+    expect(liveWorkEntryLabel(browserEntry, undefined, false)).toBe("Clicked");
   });
 
   it("keeps the latest live activity in the present tense after the call completes", () => {
@@ -163,12 +159,8 @@ describe("work entry labels", () => {
       toolTitle: "T3-code.preview_click",
       toolLifecycleStatus: "completed" as const,
     };
-    expect(liveWorkEntryLabel(browserEntry, undefined, true)).toBe(
-      "Clicking in the preview browser",
-    );
-    expect(liveWorkEntryLabel(browserEntry, undefined, false)).toBe(
-      "Clicked in the preview browser",
-    );
+    expect(liveWorkEntryLabel(browserEntry, undefined, true)).toBe("Clicking");
+    expect(liveWorkEntryLabel(browserEntry, undefined, false)).toBe("Clicked");
   });
 
   it("labels file reads with the path and never the file body", () => {
@@ -311,7 +303,7 @@ describe("work entry labels", () => {
   );
 
   it.each([
-    ["preview_click", "Clicked in the preview browser"],
+    ["preview_click", "Clicked"],
     ["task_status", "Got delegated task status"],
   ] as const)(
     "renders a settled legacy %s call directly with its completed presentation",
@@ -3716,14 +3708,14 @@ describe("computeStableMessagesTimelineRows", () => {
 describe("resolveTimelineToolPresentation", () => {
   it("pretty prints Claude and Cursor T3 MCP tool names", () => {
     expect(resolveTimelineToolPresentation("mcp__t3-code__t3_thread_read")).toEqual({
-      displayName: "Read a T3 thread",
+      displayName: "Read a thread",
       logo: "t3-code",
     });
   });
 
   it("pretty prints Codex T3 MCP tool names", () => {
     expect(resolveTimelineToolPresentation("t3-code.create_threads")).toEqual({
-      displayName: "Create T3 threads",
+      displayName: "Create threads",
       logo: "t3-code",
     });
   });

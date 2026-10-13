@@ -1,3 +1,5 @@
+import { styalToolDefinition } from "./styalToolWording.ts";
+
 export type T3McpToolLogo = "t3-code";
 
 export interface T3McpToolPresentation {
@@ -287,6 +289,14 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_thread_send_attachments: tool(["Send", "Sending", "Sent", "attachments"], "attachment-send"),
 };
 
+// styal's wording, applied once so lookups stay allocation-free.
+const STYAL_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = Object.fromEntries(
+  Object.entries(T3_MCP_TOOLS).map(([name, definition]) => [
+    name,
+    styalToolDefinition(name, definition),
+  ]),
+);
+
 /**
  * The T3 orchestration tool inventory, used to gate loose name matching on
  * both the server (ACP MCP identity recovery) and the client (logo branding).
@@ -333,7 +343,7 @@ export function resolveT3McpToolDefinition(
   toolName: string | null | undefined,
 ): T3McpToolDefinition | null {
   const name = toolName == null ? null : resolveT3McpToolName(toolName);
-  return name !== null && Object.hasOwn(T3_MCP_TOOLS, name) ? T3_MCP_TOOLS[name]! : null;
+  return name !== null && Object.hasOwn(STYAL_MCP_TOOLS, name) ? STYAL_MCP_TOOLS[name]! : null;
 }
 
 export function resolveT3McpToolPresentation(

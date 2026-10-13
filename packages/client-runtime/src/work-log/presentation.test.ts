@@ -11,6 +11,7 @@ import {
   omitRetriedFindingsReports,
   resolveViewedImageAsset,
   resolveWorkEntryToolPresentation,
+  resolveWorkEntryToolRowPresentation,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
@@ -295,6 +296,58 @@ describe("summarizeToolGroup", () => {
   });
 });
 
+describe("resolveWorkEntryToolRowPresentation", () => {
+  const base = { id: "row", createdAt: "2026-01-01T00:00:00Z", tone: "tool" as const };
+
+  it("retains preview arguments while using the shared lifecycle heading", () => {
+    expect(
+      resolveWorkEntryToolRowPresentation({
+        ...base,
+        label: "MCP tool call",
+        toolName: "mcp__styal__preview_navigate",
+        toolInput: { url: "https://example.com/demo", tabId: "synthetic-tab" },
+        toolLifecycleStatus: "inProgress",
+      }),
+    ).toEqual({
+      heading: "Navigating preview",
+      argument: { kind: "text", value: "https://example.com/demo" },
+    });
+  });
+
+  it("keeps ACP's unnamed page fetches and workspace searches distinct", () => {
+    expect(
+      resolveWorkEntryToolRowPresentation({
+        ...base,
+        itemType: "web_search",
+        label: "Searched files",
+        toolInput: { url: "https://example.com/docs" },
+      }),
+    ).toEqual({
+      heading: "Fetched page",
+      argument: { kind: "text", value: "https://example.com/docs" },
+    });
+    expect(
+      resolveWorkEntryToolRowPresentation({
+        ...base,
+        itemType: "web_search",
+        label: "Searched files",
+        detail: "example",
+        toolInput: { directory_path: "/synthetic", query: "example" },
+      }),
+    ).toEqual({ heading: "Searched code", argument: { kind: "text", value: "example" } });
+  });
+
+  it("respects another server's identity when its tool shares a product name", () => {
+    expect(
+      resolveWorkEntryToolRowPresentation({
+        ...base,
+        label: "preview_click",
+        toolData: { server: "playwright", tool: "preview_click" },
+      })?.heading,
+    ).toBe("playwright · preview_click");
+  });
+});
+
 describe("resolveWorkEntryToolPresentation", () => {
   it("presents and summarizes every T3 tool using the same structured identity", () => {
     for (const tool of T3_MCP_TOOL_NAMES) {
@@ -422,7 +475,7 @@ describe("resolveWorkEntryToolPresentation", () => {
     "preview_click",
   ])("recognizes browser tool names across providers: %s", (label) => {
     expect(resolveWorkEntryToolPresentation({ label })).toEqual({
-      displayName: "Clicking in the preview browser",
+      displayName: "Clicking",
       icon: "browser",
     });
   });
@@ -447,16 +500,16 @@ describe("resolveWorkEntryToolPresentation", () => {
         toolTitle: "Inspect the current page",
         toolData: { server: "t3-code", tool: "preview_snapshot", result: { title: "Example" } },
       }),
-    ).toEqual({ displayName: "Taking a snapshot of the preview page", icon: "browser" });
+    ).toEqual({ displayName: "Inspecting page", icon: "browser" });
   });
 
   it.each([
-    ["inProgress", "Clicking in the preview browser"],
-    ["completed", "Clicked in the preview browser"],
-    ["failed", "Failed to click in the preview browser"],
-    ["declined", "Declined to click in the preview browser"],
-    ["stopped", "Stopped clicking in the preview browser"],
-    ["unknown", "Clicking in the preview browser"],
+    ["inProgress", "Clicking"],
+    ["completed", "Clicked"],
+    ["failed", "Failed to click"],
+    ["declined", "Declined to click"],
+    ["stopped", "Stopped clicking"],
+    ["unknown", "Clicking"],
   ] as const)("describes the tool's own %s state", (toolLifecycleStatus, displayName) => {
     expect(
       resolveWorkEntryToolPresentation({
@@ -468,41 +521,25 @@ describe("resolveWorkEntryToolPresentation", () => {
 
   it("uses the summary's state only when the provider omitted a lifecycle status", () => {
     const entry = { label: "T3-code.preview_click" };
-    expect(resolveWorkEntryToolPresentation(entry, "inProgress")?.displayName).toBe(
-      "Clicking in the preview browser",
-    );
-    expect(resolveWorkEntryToolPresentation(entry, "completed")?.displayName).toBe(
-      "Clicked in the preview browser",
-    );
+    expect(resolveWorkEntryToolPresentation(entry, "inProgress")?.displayName).toBe("Clicking");
+    expect(resolveWorkEntryToolPresentation(entry, "completed")?.displayName).toBe("Clicked");
     expect(
       resolveWorkEntryToolPresentation({ ...entry, toolLifecycleStatus: "completed" }, "inProgress")
         ?.displayName,
-    ).toBe("Clicked in the preview browser");
+    ).toBe("Clicked");
     expect(
       resolveWorkEntryToolPresentation({ ...entry, toolLifecycleStatus: "failed" }, "completed")
         ?.displayName,
-    ).toBe("Failed to click in the preview browser");
+    ).toBe("Failed to click");
   });
 
   it.each([
-    ["preview_type", "Typing in the preview browser", "Typed in the preview browser"],
-    [
-      "preview_set_appearance",
-      "Setting preview browser appearance",
-      "Set preview browser appearance",
-    ],
-    [
-      "preview_snapshot",
-      "Taking a snapshot of the preview page",
-      "Took a snapshot of the preview page",
-    ],
-    [
-      "preview_recording_stop",
-      "Stopping recording the preview browser",
-      "Stopped recording the preview browser",
-    ],
-    ["t3_thread_read", "Reading a T3 thread", "Read a T3 thread"],
-    ["t3_thread_send", "Sending to a T3 thread", "Sent to a T3 thread"],
+    ["preview_type", "Typing", "Typed"],
+    ["preview_set_appearance", "Setting preview appearance", "Set preview appearance"],
+    ["preview_snapshot", "Inspecting page", "Inspected page"],
+    ["preview_recording_stop", "Stopping recording preview", "Stopped recording preview"],
+    ["t3_thread_read", "Reading a thread", "Read a thread"],
+    ["t3_thread_send", "Sending to a thread", "Sent to a thread"],
     [
       "t3_worktree_handoff",
       "Handing off thread to a git worktree",

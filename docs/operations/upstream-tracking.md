@@ -83,6 +83,18 @@ A cherry-pick that applies cleanly can still break fork code it does not touch: 
 
 Also run the test files the batch adds or changes. Upstream's new tests describe upstream's behavior, so a failure can show a fork difference that no conflict touched; trace it as you would a conflict before choosing between the fork's code and the test. Fold each fix into the commit that introduced the break, with a `Fork adaptation:` note, rather than adding a commit of its own.
 
+When a batch changes MCP toolkits, provider tool identity, or `t3McpToolPresentation`, run `vp test run apps/server/src/mcp/toolkits/core.test.ts apps/server/src/mcp/toolkits/toolPresentation.test.ts`. These checks start from the published catalog, exercise provider mappings for both session namespaces, and compare web and mobile wording through completed, running, failed, declined, and stopped states. A new preview tool requires a short label in `styalToolWording`; retired wording and argument customizations fail the guard.
+
+Also inspect the catalog in real clients. Start an isolated dev server once to run migrations, then stop it and seed synthetic projection data:
+
+```bash
+mkdir -p .scratch/tool-wording-workspace
+node apps/server/scripts/seed-tool-presentation-fixture.ts --base-dir .styal --workspace-root .scratch/tool-wording-workspace
+vp run dev
+```
+
+Open the **Tool wording fixtures** project using `test-styal-app` and `test-styal-mobile`. Compare the provider and namespace threads, expanded tool rows, collapsed summaries, browser/device icons, interaction arguments, and failed/stopped examples. Retain screenshots with the intake evidence. The fixture never executes tools and is for visual verification only; its projection writes do not establish backend behavior.
+
 ```bash
 node scripts/upstream/queue.ts status --fork-ref intake/<batch>
 vp run --filter @t3tools/scripts intake:check -- --base origin/main --head intake/<batch>

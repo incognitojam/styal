@@ -385,6 +385,10 @@
       "types": "./src/orchestrationV2Timeline.ts",
       "import": "./src/orchestrationV2Timeline.ts"
     },
+    "./styalToolWording": {
+      "types": "./src/styalToolWording.ts",
+      "import": "./src/styalToolWording.ts"
+    },
     "./t3McpToolPresentation": {
       "types": "./src/t3McpToolPresentation.ts",
       "import": "./src/t3McpToolPresentation.ts"
