@@ -1,31 +1,35 @@
 /**
  * Pace is averaged over this window and counts from zero while it fills, so
  * the glow needs a second or two of fast typing to start, and a short burst
- * of quick words cannot sweep through the fire colours.
+ * of quick words cannot set it on fire.
  */
 const WINDOW_MS = 3000;
 /** A pause this long ends the streak. */
 export const TYPING_STREAK_IDLE_MS = 350;
 // Speeds are words per minute, counting five characters as a word.
-const GLOW_START_WPM = 65;
-const GLOW_FULL_WPM = 120;
+const GLOW_START_WPM = 85;
+const GLOW_FULL_WPM = 140;
+
+/** Fire's outer colour, and the hotter colour at its core. */
+export const TYPING_STREAK_FIRE = "#ff7a1a";
+export const TYPING_STREAK_FIRE_CORE = "#ffc93c";
 
 /**
- * Glow colours from the calm theme glow to the hottest fire, each fully
- * shown at its speed and blended between neighbours.
+ * Glows from the theme glow to the largest fire, each fully shown at its
+ * speed and blended between neighbours. Past 140 WPM the glow turns to fire
+ * and then only grows.
  */
 export const TYPING_STREAK_STOPS = [
-  { wpm: 120, color: "var(--primary)" },
-  { wpm: 132, color: "#ff7a1a" },
-  { wpm: 146, color: "#ffc93c" },
-  { wpm: 160, color: "#fff3d6" },
-  { wpm: 175, color: "#4aa8ff" },
+  { wpm: 140, fire: false, blur: 22, spread: -4 },
+  { wpm: 155, fire: true, blur: 26, spread: -1 },
+  { wpm: 170, fire: true, blur: 34, spread: 1 },
+  { wpm: 185, fire: true, blur: 42, spread: 3 },
 ] as const;
 
 export interface TypingStreakHeat {
-  /** 0–1 glow strength, full from 120 WPM. */
+  /** 0–1 glow strength, full from 140 WPM. */
   intensity: number;
-  /** 0–1 progress through the fire colours above 120 WPM. */
+  /** 0–1 growth of the fire from 140 WPM to the largest fire. */
   fire: number;
   /** Stop indexes to blend between, and how far toward `to`. */
   from: number;

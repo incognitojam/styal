@@ -2911,7 +2911,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("composer-typing-streak")}
-          description="Light up the composer and throw sparks from the caret while you type quickly. Past 120 WPM it turns to fire."
+          description="Light up the composer and throw sparks from the caret while you type quickly. Past 140 WPM it turns to fire."
           resetAction={
             settings.composerTypingStreak !== DEFAULT_UNIFIED_SETTINGS.composerTypingStreak ? (
               <SettingResetButton
