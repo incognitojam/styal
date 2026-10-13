@@ -13,6 +13,7 @@ import { WorkLogRow } from "./WorkLog";
 import {
   resolveHandoffEndpoints,
   shouldShowHandoff,
+  type HandoffEndpoints,
   type HandoffTimelineRun,
 } from "@t3tools/client-runtime/handoff";
 import { Fragment } from "react";
@@ -126,39 +127,11 @@ export function V2LifecycleRow(props: {
   }
   if (item.type === "handoff") {
     if (!shouldShowHandoff(item)) return null;
-    const { from: fromEndpoints, to } = resolveHandoffEndpoints(item, props.runs);
     return (
-      <TimelineSystemDivider
-        label="Context handoff"
-        icon={ArrowRightLeftIcon}
-        showDetailSeparator={false}
-        tone={item.status === "failed" ? "danger" : "neutral"}
-        detail={
-          <span className="inline-flex min-w-0 flex-wrap items-center justify-center gap-1.5">
-            {fromEndpoints.map((endpoint, index) => (
-              <Fragment key={`${endpoint.instanceId}:${endpoint.model ?? ""}`}>
-                {index > 0 ? (
-                  <span aria-hidden="true" className="-ml-1">
-                    ,
-                  </span>
-                ) : null}
-                <HandoffEndpoint
-                  providers={props.providerStatuses}
-                  instanceId={endpoint.instanceId}
-                  model={endpoint.model}
-                />
-              </Fragment>
-            ))}
-            {fromEndpoints.length > 0 ? (
-              <ArrowRightIcon aria-hidden="true" className="size-3 shrink-0" />
-            ) : null}
-            <HandoffEndpoint
-              providers={props.providerStatuses}
-              instanceId={item.toProviderInstanceId}
-              model={to.model}
-            />
-          </span>
-        }
+      <HandoffRow
+        endpoints={resolveHandoffEndpoints(item, props.runs)}
+        providers={props.providerStatuses}
+        failed={item.status === "failed"}
       />
     );
   }
@@ -571,6 +544,49 @@ function SubagentTimelineTooltip(
       childThread={child}
       parentProject={parentProject ?? undefined}
       childProject={childProject ?? undefined}
+    />
+  );
+}
+
+export function HandoffRow(props: {
+  readonly endpoints: HandoffEndpoints;
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly pending?: boolean;
+  readonly failed?: boolean;
+}) {
+  const { from: fromEndpoints, to } = props.endpoints;
+  return (
+    <TimelineSystemDivider
+      label={props.pending ? "Context handoff pending" : "Context handoff"}
+      icon={ArrowRightLeftIcon}
+      showDetailSeparator={false}
+      tone={props.failed ? "danger" : "neutral"}
+      detail={
+        <span className="inline-flex min-w-0 flex-wrap items-center justify-center gap-1.5">
+          {fromEndpoints.map((endpoint, index) => (
+            <Fragment key={`${endpoint.instanceId}:${endpoint.model ?? ""}`}>
+              {index > 0 ? (
+                <span aria-hidden="true" className="-ml-1">
+                  ,
+                </span>
+              ) : null}
+              <HandoffEndpoint
+                providers={props.providers}
+                instanceId={endpoint.instanceId}
+                model={endpoint.model}
+              />
+            </Fragment>
+          ))}
+          {fromEndpoints.length > 0 ? (
+            <ArrowRightIcon aria-hidden="true" className="size-3 shrink-0" />
+          ) : null}
+          <HandoffEndpoint
+            providers={props.providers}
+            instanceId={to.instanceId}
+            model={to.model}
+          />
+        </span>
+      }
     />
   );
 }

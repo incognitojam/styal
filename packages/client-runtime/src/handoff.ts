@@ -1,7 +1,10 @@
 import type {
+  ModelSelection,
   OrchestrationV2Run,
+  OrchestrationV2ThreadProjection,
   OrchestrationV2TurnItem,
   ProviderInstanceId,
+  ServerProvider,
 } from "@t3tools/contracts";
 
 /**
@@ -27,6 +30,30 @@ export function shouldShowHandoff(
     (item.fromModelSelections?.some(({ instanceId }) => instanceId !== item.toProviderInstanceId) ??
       false)
   );
+}
+
+export type HandoffEndpoints = ReturnType<typeof resolveHandoffEndpoints>;
+
+/** Preview the next send's handoff without adding anything to durable history. */
+export function resolvePendingHandoff(
+  projection: OrchestrationV2ThreadProjection | null | undefined,
+  selection: ModelSelection | null | undefined,
+  providers: ReadonlyArray<ServerProvider>,
+): HandoffEndpoints | null {
+  const from = projection?.runs.findLast(
+    (run) => run.startedAt !== null && run.status !== "rolled_back",
+  )?.modelSelection;
+  if (from === undefined || selection == null) return null;
+  const source = providers.find((provider) => provider.instanceId === from.instanceId);
+  const target = providers.find((provider) => provider.instanceId === selection.instanceId);
+  const needsHandoff =
+    from.instanceId === selection.instanceId
+      ? from.model !== selection.model && target?.requiresNewThreadForModelChange === true
+      : // Accounts sharing a continuation group resume the same native thread.
+        source?.continuation?.groupKey === undefined ||
+        source.driver !== target?.driver ||
+        source.continuation.groupKey !== target.continuation?.groupKey;
+  return needsHandoff ? { from: [from], to: selection } : null;
 }
 
 export function resolveHandoffEndpoints(
