@@ -252,7 +252,7 @@ function rateLimitKey(properties: ExceptionProperties): string {
 }
 
 /** Admits at most a few reports per issue, and per window overall. */
-export function makeRateLimiter() {
+function makeRateLimiter() {
   let windowStart = 0;
   let total = 0;
   let perIssue = new Map<string, number>();
