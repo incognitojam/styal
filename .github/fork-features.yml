@@ -2282,16 +2282,19 @@ features:
     prs: [793]
     invariants:
       - Web, desktop, and mobile multi-select questions retain selected options while typing a custom addition and retain that text while toggling options.
-      - Submitting a multi-select question sends the selected option values and custom text together; clearing the text or deselecting options removes only that part of the answer.
+      - Submitting a multi-select question sends the selected option values and custom text together, without repeating text that matches a selected value; clearing the text or deselecting options removes only that part of the answer.
+      - Web, desktop, and mobile multi-select answer fields describe the typed text as an addition rather than an alternative.
       - Multi-select option clicks do not move the custom answer into the thread's regular composer draft.
       - Single-select questions still treat custom text as an alternative, and questions that prohibit custom answers still require valid option values.
     implementation_paths:
+      - apps/mobile/src/features/threads/QuestionAttachments.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
       - apps/web/src/pendingUserInput.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/QuestionAttachments.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx

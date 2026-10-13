@@ -2022,6 +2022,14 @@ describe("pending user input answers", () => {
     },
   );
 
+  it("does not repeat a typed addition that matches a selected option", () => {
+    expect(
+      buildPendingUserInputAnswers([multiSelectQuestion], {
+        scope: { selectedOptionValues: ["Orders", "Listings"], customAnswer: " Listings " },
+      }),
+    ).toEqual({ scope: ["Orders", "Listings"] });
+  });
+
   it("matches selected chips against normalized option labels", () => {
     expect(
       isPendingUserInputOptionSelected(

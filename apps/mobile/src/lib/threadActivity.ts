@@ -425,11 +425,15 @@ function resolvePendingUserInputAnswer(
 
   const selectedOptionValues = normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   if (question.multiSelect) {
-    const answers = customAnswer ? [...selectedOptionValues, customAnswer] : selectedOptionValues;
-    return selectedOptionValues.length > 0
-      ? answers
-      : (customAnswer ??
-          (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null));
+    if (selectedOptionValues.length > 0) {
+      return customAnswer && !selectedOptionValues.includes(customAnswer)
+        ? [...selectedOptionValues, customAnswer]
+        : selectedOptionValues;
+    }
+    return (
+      customAnswer ??
+      (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null)
+    );
   }
   return (
     selectedOptionValues[0] ??

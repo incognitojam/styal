@@ -149,6 +149,15 @@ describe("resolvePendingUserInputAnswer", () => {
     },
   );
 
+  it("does not repeat a typed addition that matches a selected option", () => {
+    expect(
+      resolvePendingUserInputAnswer(multiSelectQuestion, {
+        selectedOptionValues: ["Server", "Web"],
+        customAnswer: " Web ",
+      }),
+    ).toEqual(["Server", "Web"]);
+  });
+
   it("does not replace a required choice with a custom answer", () => {
     expect(
       resolvePendingUserInputAnswer(nativeChoiceQuestion, {

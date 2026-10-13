@@ -9778,8 +9778,9 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
       if (!question.multiSelect) {
-        // A single-select option replaces the custom answer. Keep the displaced
-        // text in the thread draft; multi-select answers retain it in place.
+        // A single-select option replaces the custom answer. Anything typed there
+        // is the user's text, so it goes back to the thread draft instead of
+        // vanishing. Multi-select answers keep it alongside the options.
         const displacedAnswer =
           usePendingUserInputDrafts.getState().answersByRequestKey[activePendingRequestKey]?.[
             questionId
@@ -9790,14 +9791,12 @@ export default function ChatView(props: ChatViewProps) {
         if (nextPrompt !== currentPrompt) {
           setComposerDraftPrompt(composerDraftTarget, nextPrompt);
         }
+        promptRef.current = "";
+        composerRef.current?.resetCursorState({ cursor: 0 });
       }
       updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
         togglePendingUserInputOptionSelection(question, draft, optionValue),
       );
-      if (!question.multiSelect) {
-        promptRef.current = "";
-        composerRef.current?.resetCursorState({ cursor: 0 });
-      }
     },
     [
       activePendingProgress?.activeQuestion,
