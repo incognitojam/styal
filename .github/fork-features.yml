@@ -2248,7 +2248,7 @@ features:
   - id: pending-question-displaced-answers
     title: Keep a typed answer when a mobile question option replaces it
     status: maintained
-    prs: []
+    prs: [801]
     invariants:
       - On mobile, picking an option that replaces a typed answer moves that text into the thread's composer draft, after any text already waiting there.
       - Picking an option leaves the thread draft unchanged when nothing was typed or when a multi-select answer keeps the typed text.
