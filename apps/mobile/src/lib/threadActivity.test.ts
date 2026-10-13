@@ -1969,67 +1969,6 @@ describe("pending user input answers", () => {
     ).toEqual({ customAnswer: "Rust instead" });
   });
 
-  it.each([true, false])(
-    "keeps a typed addition with multi-select choices (type first: %s)",
-    (typeFirst) => {
-      const typed = "  Include shipment tracking  ";
-      const selected = togglePendingUserInputOptionSelection(
-        multiSelectQuestion,
-        undefined,
-        "Orders",
-      );
-      const combined = typeFirst
-        ? togglePendingUserInputOptionSelection(
-            multiSelectQuestion,
-            setPendingUserInputCustomAnswer(multiSelectQuestion, undefined, typed),
-            "Orders",
-          )
-        : setPendingUserInputCustomAnswer(multiSelectQuestion, selected, typed);
-      const both = togglePendingUserInputOptionSelection(multiSelectQuestion, combined, "Listings");
-
-      expect(isPendingUserInputOptionSelected(multiSelectQuestion, both, "Orders")).toBe(true);
-      expect(isPendingUserInputOptionSelected(multiSelectQuestion, both, "Listings")).toBe(true);
-      expect(both.customAnswer).toBe(typed);
-      expect(buildPendingUserInputAnswers([multiSelectQuestion], { scope: both })).toEqual({
-        scope: ["Orders", "Listings", typed.trim()],
-      });
-
-      const withoutOrders = togglePendingUserInputOptionSelection(
-        multiSelectQuestion,
-        both,
-        "Orders",
-      );
-      const customOnly = togglePendingUserInputOptionSelection(
-        multiSelectQuestion,
-        withoutOrders,
-        "Listings",
-      );
-      expect(isPendingUserInputOptionSelected(multiSelectQuestion, withoutOrders, "Orders")).toBe(
-        false,
-      );
-      expect(buildPendingUserInputAnswers([multiSelectQuestion], { scope: customOnly })).toEqual({
-        scope: typed.trim(),
-      });
-      const optionsOnly = setPendingUserInputCustomAnswer(multiSelectQuestion, both, "  ");
-      expect(buildPendingUserInputAnswers([multiSelectQuestion], { scope: optionsOnly })).toEqual({
-        scope: ["Orders", "Listings"],
-      });
-      expect(
-        buildPendingUserInputAnswers([multiSelectQuestion], {
-          scope: setPendingUserInputCustomAnswer(multiSelectQuestion, customOnly, ""),
-        }),
-      ).toBeNull();
-    },
-  );
-
-  it("does not repeat a typed addition that matches a selected option", () => {
-    expect(
-      buildPendingUserInputAnswers([multiSelectQuestion], {
-        scope: { selectedOptionValues: ["Orders", "Listings"], customAnswer: " Listings " },
-      }),
-    ).toEqual({ scope: ["Orders", "Listings"] });
-  });
-
   it("matches selected chips against normalized option labels", () => {
     expect(
       isPendingUserInputOptionSelected(

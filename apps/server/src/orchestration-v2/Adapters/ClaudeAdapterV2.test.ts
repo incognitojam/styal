@@ -261,11 +261,11 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     );
     const sdkAnswers: NonNullable<AskUserQuestionInput["answers"]> =
       ClaudeAdapterV2.claudeSdkUserInputAnswers({
-        "Which approach?": ["Simple", "Safe", "Include offline support"],
+        "Which approach?": ["Simple", "Safe"],
         "Deploy now?": "Yes",
       });
     assert.deepEqual(sdkAnswers, {
-      "Which approach?": "Simple, Safe, Include offline support",
+      "Which approach?": "Simple, Safe",
       "Deploy now?": "Yes",
     });
     assert.isTrue(

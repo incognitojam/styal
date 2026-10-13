@@ -54,15 +54,14 @@ export function resolvePendingUserInputAnswer(
     (value) => question.options.some((option) => (option.value ?? option.label) === value),
   );
   if (question.multiSelect) {
-    if (selectedOptionValues.length > 0) {
-      return customAnswer && !selectedOptionValues.includes(customAnswer)
-        ? [...selectedOptionValues, customAnswer]
-        : selectedOptionValues;
+    if (customAnswer && !selectedOptionValues.includes(customAnswer)) {
+      return [...selectedOptionValues, customAnswer];
     }
-    return (
-      customAnswer ??
-      (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null)
-    );
+    return selectedOptionValues.length > 0
+      ? selectedOptionValues
+      : question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0
+        ? ""
+        : null;
   }
 
   return (
@@ -72,15 +71,12 @@ export function resolvePendingUserInputAnswer(
 }
 
 export function setPendingUserInputCustomAnswer(
-  question: UserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
   customAnswer: string,
+  multiSelect = false,
 ): PendingUserInputDraftAnswer {
-  if (question.allowCustomAnswer === false) {
-    return draft ?? {};
-  }
   const selectedOptionValues =
-    !question.multiSelect && customAnswer.trim().length > 0
+    !multiSelect && customAnswer.trim().length > 0
       ? undefined
       : normalizeSelectedOptionValues(draft?.selectedOptionValues);
 
@@ -93,8 +89,8 @@ export function setPendingUserInputCustomAnswer(
 const DISPLACED_ANSWER_SEPARATOR = "\n\n";
 
 /**
- * A single-select option replaces the custom answer, which otherwise outranks
- * selected options in `resolvePendingUserInputAnswer`. Text the
+ * Selecting an option replaces the custom answer, because a non-empty custom
+ * answer outranks selected options in `resolvePendingUserInputAnswer`. Text the
  * user typed into the answer field must not vanish on that click: it moves back
  * into the thread draft, after whatever was already waiting there.
  */

@@ -2301,9 +2301,8 @@ features:
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
       - apps/web/src/pendingUserInput.ts
     tests:
-      - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/web/src/pendingUserInput.test.ts
-      - apps/web/src/pendingUserInputDrafts.test.ts
+      - apps/mobile/src/lib/threadActivityMultiSelect.test.ts
+      - apps/web/src/pendingUserInputMultiSelect.test.ts
     upstream:
       status: tracking
       tracking:
