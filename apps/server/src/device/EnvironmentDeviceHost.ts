@@ -20,6 +20,7 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Cause from "effect/Cause";
+import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import {
   HttpClient,
   HttpClientError,
@@ -39,6 +40,7 @@ export const devicePeerThreadPrefix = (environmentId: string) =>
 
 const isDeviceError = Schema.is(DeviceError);
 const decodeDeviceError = Schema.decodeUnknownOption(DeviceError);
+const isHostUnavailable = Schema.is(DeviceHostUnavailableError);
 
 /**
  * Opening a cold simulator on the device machine can wait on hub startup, a boot,
@@ -53,13 +55,53 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
   sourceEnvironmentId: string,
 ) {
   const http = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
-  const baseUrl = config.url.replace(/\/+$/, "");
+  const urls = [
+    ...new Set([config.url, ...(config.urls ?? [])].map((url) => url.replace(/\/+$/, ""))),
+  ];
+  let baseUrl = urls[0]!;
+  let verified = false;
   const unavailable = (reason: string, httpStatus?: number) =>
     new DeviceHostUnavailableError({
       hostId: config.id,
       reason,
       cause: httpStatus === undefined ? undefined : { httpStatus },
     });
+  const mapError = (cause: unknown) =>
+    isDeviceError(cause)
+      ? cause
+      : Cause.isTimeoutError(cause)
+        ? unavailable(
+            "The device environment did not respond in time. Check that it is online and retry.",
+          )
+        : HttpClientError.isHttpClientError(cause)
+          ? unavailable(
+              "Cannot reach the device environment at any shared address. Check that it is online and reachable from this machine, for example over Tailscale.",
+            )
+          : unavailable(
+              "The device environment sent an unexpected response. Update both environments and retry.",
+            );
+  const isTransportFailure = (cause: unknown) =>
+    Cause.isTimeoutError(cause) ||
+    (HttpClientError.isHttpClientError(cause) && cause.reason._tag === "TransportError");
+  const isEndpointFailure = (cause: unknown) =>
+    isTransportFailure(cause) ||
+    (isHostUnavailable(cause) &&
+      typeof cause.cause === "object" &&
+      cause.cause !== null &&
+      "httpStatus" in cause.cause &&
+      [502, 503, 504].includes(Number(cause.cause.httpStatus)));
+  // Only these failures establish that the command never reached the peer. A
+  // lost response or timeout may follow a completed action, so cannot replay it.
+  const failedBeforeSend = (cause: unknown): boolean => {
+    if (typeof cause !== "object" || cause === null) return false;
+    if (
+      "code" in cause &&
+      typeof cause.code === "string" &&
+      ["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "ENOTFOUND", "EAI_AGAIN"].includes(cause.code)
+    )
+      return true;
+    return "cause" in cause && failedBeforeSend(cause.cause);
+  };
   /** Restores a typed error from the device environment, pointed at this host entry. */
   const remoteError = (body: unknown) => {
     const error =
@@ -70,12 +112,14 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
         : error,
     );
   };
-  const request = <A, I>(
+  const send = <A, I>(
+    url: string,
     command: DevicePeerCommand,
     schema: Schema.Codec<A, I>,
-  ): Effect.Effect<A, DeviceError> =>
+    timeout: Duration.Input = commandTimeout(command.operation),
+  ) =>
     Effect.gen(function* () {
-      const response = yield* HttpClientRequest.post(`${baseUrl}/api/device-share/command`).pipe(
+      const response = yield* HttpClientRequest.post(`${url}/api/device-share/command`).pipe(
         HttpClientRequest.setHeader("authorization", `Bearer ${token}`),
         HttpClientRequest.bodyJson(command),
         Effect.flatMap(http.execute),
@@ -91,39 +135,87 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
               `The device environment could not complete the request (HTTP ${response.status}). Update both environments and retry.`,
               response.status,
             );
-    }).pipe(
-      Effect.scoped,
-      Effect.timeout(commandTimeout(command.operation)),
-      Effect.mapError((cause) =>
-        isDeviceError(cause)
-          ? cause
-          : Cause.isTimeoutError(cause)
-            ? unavailable(
-                "The device environment did not respond in time. Check that it is online and retry.",
-              )
-            : HttpClientError.isHttpClientError(cause)
-              ? unavailable(
-                  "Cannot reach the device environment from this server. Use an address reachable from both machines.",
-                )
-              : unavailable(
-                  "The device environment sent an unexpected response. Update both environments and retry.",
-                ),
-      ),
+    }).pipe(Effect.scoped, Effect.timeout(timeout));
+  const checkIdentity = (value: DeviceEnvironmentInfo) =>
+    value.environmentId === config.environmentId &&
+    value.sourceEnvironmentId === sourceEnvironmentId
+      ? Effect.succeed(value)
+      : Effect.fail(
+          unavailable("This address belongs to a different environment. Reconnect device access."),
+        );
+  const inspectAt = (url: string) =>
+    send(url, { operation: "inspect" }, DeviceEnvironmentInfo, "3 seconds").pipe(
+      Effect.flatMap(checkIdentity),
     );
+  const select = Effect.fn("EnvironmentDeviceHost.selectAddress")(function* (skip?: string) {
+    let failure: DeviceError = unavailable(
+      "No other shared address could reach the device environment.",
+    );
+    for (const url of [baseUrl, ...urls.filter((url) => url !== baseUrl)].filter(
+      (url) => url !== skip,
+    )) {
+      const result = yield* inspectAt(url).pipe(Effect.result);
+      if (result._tag === "Success") {
+        baseUrl = url;
+        verified = true;
+        return result.success;
+      }
+      failure = mapError(result.failure);
+    }
+    if (urls.every((url) => isLocalLoopbackHost(new URL(url).hostname)))
+      return yield* unavailable(
+        "This server could not reach the device environment. Loopback addresses only work when both environments run on the same machine.",
+      );
+    return yield* failure;
+  });
+  const request = <A, I>(
+    command: DevicePeerCommand,
+    schema: Schema.Codec<A, I>,
+  ): Effect.Effect<A, DeviceError> =>
+    Effect.gen(function* () {
+      if (!verified) yield* select();
+      const attempted = baseUrl;
+      return yield* send(attempted, command, schema).pipe(
+        Effect.catch((cause) =>
+          Effect.gen(function* () {
+            if (!isEndpointFailure(cause)) return yield* Effect.fail(cause);
+            verified = false;
+            if (
+              urls.length === 1 ||
+              (!failedBeforeSend(cause) &&
+                !["inspect", "list", "detail", "screenshot"].includes(command.operation))
+            )
+              return yield* Effect.fail(cause);
+            yield* select(attempted);
+            return yield* send(baseUrl, command, schema);
+          }),
+        ),
+      );
+    }).pipe(Effect.mapError(mapError));
   const info = (operation: "inspect" | "list") =>
-    request({ operation }, DeviceEnvironmentInfo).pipe(
-      Effect.flatMap((value) =>
-        value.environmentId === config.environmentId &&
-        value.sourceEnvironmentId === sourceEnvironmentId
-          ? Effect.succeed(value)
-          : Effect.fail(
-              unavailable(
-                "This address belongs to a different environment. Reconnect device access.",
-              ),
-            ),
-      ),
-    );
-  return { request, info, baseUrl };
+    operation === "inspect"
+      ? Effect.suspend(() =>
+          verified
+            ? inspectAt(baseUrl).pipe(
+                Effect.catch((cause) => {
+                  verified = false;
+                  if (urls.length === 1) return Effect.fail(mapError(cause));
+                  return select(baseUrl);
+                }),
+              )
+            : select(),
+        )
+      : request({ operation }, DeviceEnvironmentInfo).pipe(Effect.flatMap(checkIdentity));
+  return {
+    request,
+    info,
+    get baseUrl() {
+      return baseUrl;
+    },
+    get connectedUrl() {
+      return verified ? baseUrl : undefined;
+    },
+  };
 });
 
 export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
@@ -153,7 +245,13 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
     agentDeviceInstalled: false,
   };
   const update = (info: DeviceEnvironmentInfo) => {
-    summary = { ...info.host, id: config.id, label: config.label, kind: "environment" };
+    summary = {
+      ...info.host,
+      id: config.id,
+      label: config.label,
+      kind: "environment",
+      connectedUrl: client.baseUrl,
+    };
     const prefix = devicePeerThreadPrefix(sourceId);
     return {
       ...info,
@@ -191,8 +289,16 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
     agentSessionNamespace: sourceId,
     nodePath: "",
     hub: {
-      origin: `${client.baseUrl}/api/device-share/hub`,
+      get origin() {
+        return `${client.baseUrl}/api/device-share/hub`;
+      },
       headers: { authorization: `Bearer ${token}` },
+      resolve: client.info("inspect").pipe(
+        Effect.map(() => ({
+          origin: `${client.baseUrl}/api/device-share/hub`,
+          headers: { authorization: `Bearer ${token}` },
+        })),
+      ),
     },
     helpers: { serveSimAxSettings: null, serveSimCli: null },
     run: () => Effect.die(new Error("Environment device hosts use typed device operations.")),
@@ -200,6 +306,7 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   // Like the SSH host, a confirmed connection stays ready until stopped. Remote
   // operations report their own failures, so readiness does not re-check the peer.
   let current: DeviceHost.DeviceHostReady | null = null;
+  let agentEndpoint: DeviceHost.AgentDeviceEndpoint | null = null;
   const hostError = (cause: unknown) =>
     new DeviceHost.DeviceHostError({ hostId: config.id, step: "connecting to environment", cause });
   // Readiness calls run without the device lifecycle lock, so one can finish after
@@ -221,6 +328,7 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   const stopRemote = (operation: "stop-agent" | "release") =>
     Effect.gen(function* () {
       generation += 1;
+      agentEndpoint = null;
       yield* cancelPendingStop;
       const attempt = client.request({ operation }, Schema.Null);
       const exit = yield* attempt.pipe(Effect.timeout("5 seconds"), Effect.exit);
@@ -258,7 +366,7 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   );
   return DeviceHost.DeviceHost.of({
     id: config.id,
-    summary: Effect.sync(() => summary),
+    summary: Effect.sync(() => ({ ...summary, connectedUrl: client.connectedUrl })),
     inspect: client.info("inspect").pipe(
       Effect.map(update),
       Effect.map(() => summary),
@@ -293,19 +401,23 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
           Effect.tap(() => stale(started).pipe(Effect.tapError(() => stopAgent))),
           Effect.map((agent) => {
             current = ready;
+            agentEndpoint = {
+              get baseUrl() {
+                return `${client.baseUrl}/api/device-share/agent`;
+              },
+              token: agent.token,
+              entryPath: "",
+            };
             return {
               ...ready,
-              agentDevice: {
-                baseUrl: `${client.baseUrl}/api/device-share/agent`,
-                token: agent.token,
-                entryPath: "",
-              },
+              agentDevice: agentEndpoint,
             };
           }),
           Effect.mapError(hostError),
         );
       }),
     current: Effect.sync(() => current),
+    currentAgent: Effect.sync(() => agentEndpoint),
     // Drops the agent credential on the device environment. The agent-device config
     // keeps the old token, but the proxy no longer accepts it.
     stopAgent,

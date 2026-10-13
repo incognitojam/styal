@@ -22,7 +22,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient } from "effect/unstable/http";
-import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -64,6 +63,13 @@ export class DeviceSharing extends Context.Service<
     readonly hubTarget: Effect.Effect<{ origin: string }, DeviceError>;
     /** Resolves an agent proxy credential. Null means the credential is unknown or revoked. */
     readonly agentTarget: (
+      token: string,
+    ) => Effect.Effect<
+      { origin: string; headers: Readonly<Record<string, string>> } | null,
+      DeviceError
+    >;
+    readonly forwardAgentTarget: (
+      hostId: DeviceHostId,
       token: string,
     ) => Effect.Effect<
       { origin: string; headers: Readonly<Record<string, string>> } | null,
@@ -139,36 +145,40 @@ const make = Effect.gen(function* () {
       input.grant.environmentId === environmentId
     )
       return yield* unavailable("Device access was issued for another environment.", hostId);
-    const url = yield* Effect.try({ try: () => new URL(input.url), catch: sharingError });
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash
-    )
-      return yield* unavailable("Invalid device environment address.", hostId);
+    const urls = yield* Effect.try({
+      try: () => [
+        ...new Set(
+          input.urls.map((value) => {
+            const url = new URL(value);
+            if (
+              !["http:", "https:"].includes(url.protocol) ||
+              url.username ||
+              url.password ||
+              url.search ||
+              url.hash
+            )
+              throw new Error("Invalid device environment address.");
+            return url.toString().replace(/\/+$/, "");
+          }),
+        ),
+      ],
+      catch: () => unavailable("Invalid device environment address.", hostId),
+    });
+    if (!urls[0])
+      return yield* unavailable("No device environment addresses are available.", hostId);
     const host = {
       id: hostId,
       label: input.label,
       environmentId: input.grant.environmentId,
-      url: url.toString().replace(/\/+$/, ""),
+      url: urls[0],
+      urls: [urls[0], ...urls.slice(1)] as const,
       sessionId: input.grant.sessionId,
     };
     const client = yield* makeClient(host, input.grant.token, environmentId).pipe(
       Effect.provideService(HttpClient.HttpClient, http),
     );
-    yield* client.info("inspect").pipe(
-      Effect.mapError((error) =>
-        // A loopback address from the client may reach this server itself or nothing.
-        isLocalLoopbackHost(url.hostname)
-          ? unavailable(
-              `This server could not reach the device environment at ${host.url}. Loopback addresses only work when both environments run on the same machine; enter a LAN, Tailscale, or styal Link address instead.`,
-              host.id,
-            )
-          : error,
-      ),
-    );
+    yield* client.info("inspect");
+    host.url = client.baseUrl;
     const current = yield* settings.getSettings.pipe(Effect.mapError(sharingError));
     if (current.deviceHosts.some((entry) => entry.id === host.id))
       return yield* unavailable(
@@ -369,6 +379,24 @@ const make = Effect.gen(function* () {
       },
     };
   });
+  const forwardAgentTarget = Effect.fn("DeviceSharing.forwardAgentTarget")(function* (
+    hostId: DeviceHostId,
+    token: string,
+  ) {
+    if (!hostId.startsWith("environment-")) return null;
+    const endpoint = yield* devices.currentAgentEndpoint(hostId);
+    if (!endpoint || !sameToken(endpoint.token, token)) return null;
+    yield* requireAccess;
+    const ready = yield* devices.currentReadiness(hostId);
+    if (!ready?.hub.resolve) return null;
+    yield* ready.hub.resolve;
+    const current = yield* devices.currentAgentEndpoint(hostId);
+    if (!current || !sameToken(current.token, token)) return null;
+    return {
+      origin: current.baseUrl,
+      headers: { authorization: `Bearer ${token}`, "x-agent-device-token": token },
+    };
+  });
   return DeviceSharing.of({
     createGrant,
     revokeGrant,
@@ -377,6 +405,7 @@ const make = Effect.gen(function* () {
     command,
     hubTarget,
     agentTarget,
+    forwardAgentTarget,
   });
 });
 

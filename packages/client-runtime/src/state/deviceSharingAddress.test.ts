@@ -1,16 +1,14 @@
 import type { AdvertisedEndpoint } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
 
-import { isClientOnlyDeviceAddress, suggestDeviceSharingAddress } from "./device.ts";
+import { deviceSharingAddresses } from "./device.ts";
 
 const endpoint = (
-  id: string,
   httpBaseUrl: string,
   reachability: AdvertisedEndpoint["reachability"],
-  extra: Partial<AdvertisedEndpoint> = {},
 ): AdvertisedEndpoint => ({
-  id,
-  label: id,
+  id: httpBaseUrl,
+  label: httpBaseUrl,
   provider: { id: "synthetic", label: "Synthetic", kind: "manual", isAddon: false },
   httpBaseUrl,
   wsBaseUrl: httpBaseUrl.replace(/^http/, "ws"),
@@ -18,37 +16,68 @@ const endpoint = (
   compatibility: { hostedHttpsApp: "unknown", desktopApp: "compatible" },
   source: "desktop-core",
   status: "available",
-  ...extra,
 });
 
-it("keeps an address the client reaches over the network", () => {
-  expect(
-    suggestDeviceSharingAddress("https://orion.example.ts.net", [
-      endpoint("lan", "http://192.168.1.20:3773", "lan"),
-    ]),
-  ).toBe("https://orion.example.ts.net");
-});
-
-it("replaces a loopback address with the device environment's advertised network address", () => {
-  const endpoints = [
-    endpoint("loopback", "http://127.0.0.1:3773", "loopback"),
-    endpoint("offline", "http://192.168.1.30:3773", "lan", { status: "unavailable" }),
-    endpoint("lan", "http://192.168.1.20:3773", "lan"),
-    endpoint("tailnet", "https://orion.example.ts.net", "private-network", { isDefault: true }),
-  ];
-  expect(suggestDeviceSharingAddress("http://127.0.0.1:3773", endpoints)).toBe(
+it("collects client, preferred, and advertised addresses in order without duplicates", () => {
+  const lan = endpoint("http://192.168.1.20:3773/", "lan");
+  const tailnet = endpoint("https://orion.example.ts.net/", "private-network");
+  expect(deviceSharingAddresses("https://orion.example.ts.net", [lan, tailnet], lan)).toEqual([
     "https://orion.example.ts.net",
-  );
-  expect(suggestDeviceSharingAddress("http://127.0.0.1:3773", endpoints.slice(0, 3))).toBe(
     "http://192.168.1.20:3773",
-  );
+  ]);
 });
 
-it("falls back to the client's loopback address when nothing else is known", () => {
-  // SSH tunnels and remote servers reached over loopback advertise nothing to the client.
-  expect(suggestDeviceSharingAddress("http://127.0.0.1:41234")).toBe("http://127.0.0.1:41234");
-  expect(isClientOnlyDeviceAddress("http://127.0.0.1:41234")).toBe(true);
-  expect(isClientOnlyDeviceAddress("http://localhost:3773")).toBe(true);
-  expect(isClientOnlyDeviceAddress("http://192.168.1.20:3773")).toBe(false);
-  expect(isClientOnlyDeviceAddress("not a url")).toBe(false);
+it("uses every desktop network address when the client connects on loopback", () => {
+  const lan = endpoint("http://192.168.1.20:3773", "lan");
+  const tailnet = endpoint("http://100.64.0.20:3773", "private-network");
+  expect(deviceSharingAddresses("http://127.0.0.1:3773", [lan, tailnet], tailnet)).toEqual([
+    tailnet.httpBaseUrl,
+    lan.httpBaseUrl,
+  ]);
+});
+
+it("excludes unavailable, loopback, and malformed addresses", () => {
+  const invalid = [
+    "file:///device",
+    "http://user:password@orion.test",
+    "http://orion.test?token=synthetic",
+    "http://orion.test#synthetic",
+    "invalid",
+  ];
+  expect(
+    deviceSharingAddresses("invalid", [
+      endpoint("http://localhost:3773", "lan"),
+      endpoint("http://[::1]:3773", "lan"),
+      endpoint("http://192.168.1.20:3773", "loopback"),
+      { ...endpoint("https://offline.test", "public"), status: "unavailable" },
+      ...invalid.map((url) => endpoint(url, "public")),
+    ]),
+  ).toBeNull();
+  expect(deviceSharingAddresses("http://127.0.0.1:41234")).toBeNull();
+  expect(deviceSharingAddresses(null)).toBeNull();
+});
+
+it("retains a custom proxy's path and unknown-status endpoints", () => {
+  expect(
+    deviceSharingAddresses(null, [
+      { ...endpoint("https://devices.test/styal/", "public"), status: "unknown" },
+    ]),
+  ).toEqual(["https://devices.test/styal"]);
+});
+
+it("includes a discovered styal Link address when the client uses desktop loopback", () => {
+  expect(
+    deviceSharingAddresses("http://127.0.0.1:3773", [], null, ["https://orion.link.example.test/"]),
+  ).toEqual(["https://orion.link.example.test"]);
+});
+
+it("retains every usable advertised address and the Link fallback", () => {
+  const addresses = Array.from({ length: 20 }, (_, index) =>
+    endpoint(`https://device-${index}.test`, "public"),
+  );
+  const result = deviceSharingAddresses(null, addresses, null, ["https://orion.link.example.test"]);
+  expect(result).toEqual([
+    ...addresses.map((entry) => entry.httpBaseUrl),
+    "https://orion.link.example.test",
+  ]);
 });

@@ -1055,7 +1055,8 @@ features:
       - Thread and driver sessions are distinct across environments, and agents see other environments' device reservations.
       - Agents get a separate credential that reaches only agent-device's remote routes, cannot issue peer commands, and stops working when agent access is turned off on either environment or the grant is revoked.
       - Requests to a connected environment do not hold the local device lifecycle lock, so an unreachable environment cannot block local devices.
-      - The connect address is editable and defaults to the client's address unless it is loopback, then to the device environment's advertised network address. Loopback addresses are flagged, and a failed connect over loopback says so.
+      - Settings show one sharing switch per pair on the device environment, without an address field. Clients send their connection address, all usable desktop advertised addresses, and a known styal Link address. The agent server verifies both environment identities and stores the candidates with its device-only grant; legacy single-address shares remain readable.
+      - Unreachable addresses fall back automatically for device operations, new stream connections, and already issued agent commands. Peer errors remain typed, and ambiguous failures never replay a mutating command. Revocation and disabled access cannot be bypassed by fallback.
     rationale: Connecting a machine to the client does not give an agent server access to it. An explicit device-only grant provides persistent access without copying a client credential or requiring redundant SSH setup.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
@@ -1071,12 +1072,16 @@ features:
       - apps/server/src/mcp/toolkits/device/handlers.ts
       - packages/contracts/src/device.ts
     tests:
+      - apps/server/src/device/DeviceHubProxy.test.ts
       - apps/server/src/device/DeviceMultiHost.test.ts
       - apps/server/src/device/DeviceSharing.test.ts
+      - apps/web/src/components/settings/ConnectionsSettings.logic.test.ts
       - packages/client-runtime/src/state/deviceSharingAddress.test.ts
+      - packages/contracts/src/device.test.ts
     upstream:
       status: tracking
       tracking:
+        - https://github.com/pingdotgg/t3code/commit/98a6246d07624432a6e6d0ab4fb87bede90a49a6
         - https://github.com/pingdotgg/t3code/commit/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e
         - https://github.com/pingdotgg/t3code/pull/10856
       retire_when: Upstream supports persistent device-only access between existing environment servers through every client and isolates peer thread and driver sessions.

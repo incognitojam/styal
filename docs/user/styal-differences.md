@@ -11,7 +11,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Devices
 
-- **Share devices between connected environments.** Choose another styal environment as a device host from web, desktop, or mobile settings without configuring SSH. Device access persists after the client closes and can be revoked. T3 Code still connects remote device hosts through SSH as of [revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e). [Use devices from another environment](./devices.md#devices-from-another-environment).
+- **Share devices between connected environments.** Share one styal environment's simulators with another from web, desktop, or mobile settings without configuring SSH or choosing an IP address. styal selects a reachable address and tries saved alternatives when needed. Device access persists after the client closes and can be revoked. T3 Code still connects remote device hosts through SSH as of [revision 98a6246](https://github.com/pingdotgg/t3code/tree/98a6246d07624432a6e6d0ab4fb87bede90a49a6). [Use devices from another environment](./devices.md#devices-from-another-environment).
 
 ## Mobile
 

@@ -35,7 +35,7 @@ export function createDeviceEnvironmentAtoms<R, E>(
         input: {
           targetEnvironmentId: EnvironmentId;
           targetLabel: string;
-          url: string;
+          urls: readonly [string, ...string[]];
           sourceLabel: string;
         },
         _registry,
@@ -56,7 +56,7 @@ export function createDeviceEnvironmentAtoms<R, E>(
           );
           yield* request(WS_METHODS.deviceConnectEnvironment, {
             label: input.targetLabel,
-            url: input.url,
+            urls: input.urls,
             grant,
           }).pipe(
             Effect.onError(() =>
@@ -171,30 +171,45 @@ export function deviceSharingErrorMessage(cause: Cause.Cause<unknown>) {
     : "Device access could not be changed. Reconnect both environments and try again.";
 }
 
-/** True when an address only reaches the device environment from the client's own machine. */
-export function isClientOnlyDeviceAddress(url: string) {
-  try {
-    return isLocalLoopbackHost(new URL(url).hostname);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The address the agent environment should use to reach the device environment.
- * The client's own address is used unless it is loopback, as it is for the desktop
- * app's own server or an SSH tunnel. Then the device environment's advertised network
- * addresses are preferred, in the order the pairing link uses.
- */
-export function suggestDeviceSharingAddress(
+/** Addresses the agent environment can try, with the client's address first. */
+export function deviceSharingAddresses(
   clientUrl: string | null,
-  advertisedEndpoints: ReadonlyArray<AdvertisedEndpoint> = [],
-) {
-  if (clientUrl && !isClientOnlyDeviceAddress(clientUrl)) return clientUrl;
-  const reachable = advertisedEndpoints.filter(
-    (endpoint) => endpoint.status !== "unavailable" && endpoint.reachability !== "loopback",
-  );
-  return (
-    (reachable.find((endpoint) => endpoint.isDefault) ?? reachable[0])?.httpBaseUrl ?? clientUrl
-  );
+  endpoints: ReadonlyArray<AdvertisedEndpoint> = [],
+  desktopDefaultEndpoint?: AdvertisedEndpoint | null,
+  additionalUrls: ReadonlyArray<string> = [],
+): readonly [string, ...string[]] | null {
+  const urls = new Set<string>();
+  const candidates = [
+    clientUrl,
+    desktopDefaultEndpoint?.status !== "unavailable" &&
+    desktopDefaultEndpoint?.reachability !== "loopback"
+      ? desktopDefaultEndpoint?.httpBaseUrl
+      : null,
+    ...endpoints
+      .filter(
+        (endpoint) => endpoint.status !== "unavailable" && endpoint.reachability !== "loopback",
+      )
+      .map((endpoint) => endpoint.httpBaseUrl),
+    ...additionalUrls,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const url = new URL(candidate);
+      if (
+        !["http:", "https:"].includes(url.protocol) ||
+        isLocalLoopbackHost(url.hostname) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash
+      )
+        continue;
+      urls.add(url.toString().replace(/\/+$/, ""));
+    } catch {
+      // An invalid client or custom address cannot be used by another environment.
+    }
+  }
+  const [first, ...rest] = [...urls];
+  return first ? [first, ...rest] : null;
 }

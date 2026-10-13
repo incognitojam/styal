@@ -76,6 +76,7 @@ import {
   deviceSharingRouteLayer,
   deviceSharingProxyRouteLayer,
   deviceSharingAgentRouteLayer,
+  deviceSharingForwardAgentRouteLayer,
 } from "./device/DeviceSharingHttp.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -695,6 +696,7 @@ const makeRoutesLayer = Layer.mergeAll(
     deviceSharingRouteLayer,
     deviceSharingProxyRouteLayer,
     deviceSharingAgentRouteLayer,
+    deviceSharingForwardAgentRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),

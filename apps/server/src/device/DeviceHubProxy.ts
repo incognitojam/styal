@@ -245,19 +245,15 @@ const handler = Effect.gen(function* () {
   upstreamSearch.delete("hostId");
   const search = upstreamSearch.size > 0 ? `?${upstreamSearch.toString()}` : "";
   const upstreamPath = `${hubPath}${search}`;
+  const hub = yield* ready.hub.resolve ?? Effect.succeed(ready.hub);
   if (upgrade) {
     return yield* proxyDeviceWebSocket(
       request,
-      `${ready.hub.origin.replace(/^http/, "ws")}${upstreamPath}`,
-      ready.hub.headers,
+      `${hub.origin.replace(/^http/, "ws")}${upstreamPath}`,
+      hub.headers,
     );
   }
-  return yield* proxyDeviceHttp(
-    request,
-    `${ready.hub.origin}${upstreamPath}`,
-    ready.hub.origin,
-    ready.hub.headers,
-  );
+  return yield* proxyDeviceHttp(request, `${hub.origin}${upstreamPath}`, hub.origin, hub.headers);
 });
 
 export const deviceHubProxyRouteLayer = HttpRouter.add(
