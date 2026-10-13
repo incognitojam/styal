@@ -5235,6 +5235,7 @@ describe("V2 restart response identity", () => {
     expect(expanded.find((row) => row.id === recovery)).toMatchObject({
       kind: "standalone-activity",
       style: "restart-note",
+      label: "Server restarted",
     });
     expect(
       expanded.filter((row) => row.kind === "message" && row.message.role === "user"),

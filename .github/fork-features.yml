@@ -3206,11 +3206,12 @@ features:
 
   - id: server-restart-continuation-note
     title: Show where a thread continued after a server restart
-    status: maintained
-    prs: [515, 744]
+    status: review-needed
+    prs: [515, 744, 802]
     invariants:
       - Restart recovery records a durable server-created continuation message and an explicit restartContinuationOfRunId link; retries do not dispatch the same recovery message twice and newer user work takes precedence.
       - Web and mobile render the recovery prompt as a standalone note inside the interrupted response, preserving one final answer and one worked duration with the outage excluded; unrelated background wake continuations remain separate.
+      - The standalone restart divider reads Server restarted, remaining accurate after the continued response finishes.
       - While a linked replacement run is working, earlier assistant footers stay hidden and tools remain scoped to their own run; a new user message starts a separate response.
       - The live conversation timer on web and mobile, and the working time in thread lists, include work before each linked restart and exclude outage gaps, matching completed or stopped response duration, including quiet work through its recorded end time; new user prompts start a fresh timer. Restart continuations carry this as a work start moved later by each outage, and later wakes keep it.
       - Each prompt starts at most one response. Separate background responses exclude earlier response work and idle time; collapsed or start-positioned tool rows retain completion timing boundaries, and stopped responses include the full duration of overlapping tools.
@@ -3254,6 +3255,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15029
         - https://github.com/pingdotgg/t3code/pull/15323
         - https://github.com/pingdotgg/t3code/pull/15604
+        - https://github.com/pingdotgg/t3code/pull/17723
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream records in the conversation where restart recovery continued a thread and shows it on web and mobile without folding it into grouped work.
 

@@ -246,12 +246,6 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [T3 Code revision fd46510](https://github.com/pingdotgg/t3code/tree/fd465100581055383126aab922a8da2c5d7952fd), whose server update action
   does not check activity.
 
-- **See where a thread continued.** When a restart continues an agent's work, the thread shows
-  **Server restarted** at the point the agent picked up again. Compared with
-  [T3 Code revision d15210c](https://github.com/pingdotgg/t3code/tree/d15210cd3da79f9a1a495a6309d912d76362a046),
-  checked September 28, 2026, which continues the thread without a record in the conversation.
-  [Updating styal](./updating.md).
-
 - **Reopen in full screen on macOS.** If styal quits while its window is in full screen, including
   when it restarts to update, it opens in full screen again. Compared with
   [T3 Code revision 18656a3](https://github.com/pingdotgg/t3code/tree/18656a3402459d9d145bb3fa5767723531b27ac7),
