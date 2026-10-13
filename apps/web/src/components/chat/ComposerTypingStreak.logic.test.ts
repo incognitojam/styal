@@ -44,7 +44,15 @@ describe("isTypingKeystroke", () => {
 describe("createTypingSpeedMeter", () => {
   it("reports sustained pace in words per minute", () => {
     expect(wpmAt(100, 30)).toBe(120);
-    expect(wpmAt(240, 30)).toBe(50);
+    expect(wpmAt(250, 30)).toBe(48);
+  });
+
+  it("needs fast typing to last before the glow starts and the fire colours follow", () => {
+    // 150 WPM is a keystroke every 80ms.
+    expect(typingStreakHeat(wpmAt(80, 12)).intensity).toBe(0);
+    expect(typingStreakHeat(wpmAt(80, 20)).intensity).toBeGreaterThan(0);
+    expect(typingStreakHeat(wpmAt(80, 20)).fire).toBe(0);
+    expect(typingStreakHeat(wpmAt(80, 37)).fire).toBeGreaterThan(0);
   });
 
   it("needs a sustained burst rather than a couple of quick keys", () => {
@@ -54,7 +62,7 @@ describe("createTypingSpeedMeter", () => {
   it("cools down once old keystrokes leave the window", () => {
     const meter = createTypingSpeedMeter();
     for (let index = 0; index < 20; index += 1) meter.record(index * 80);
-    expect(meter.record(20 * 80 + 2000)).toBe(10);
+    expect(meter.record(20 * 80 + 3000)).toBe(4);
   });
 });
 

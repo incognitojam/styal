@@ -1,4 +1,9 @@
-const WINDOW_MS = 1200;
+/**
+ * Pace is averaged over this window and counts from zero while it fills, so
+ * the glow needs a second or two of fast typing to start, and a short burst
+ * of quick words cannot sweep through the fire colours.
+ */
+const WINDOW_MS = 3000;
 /** A pause this long ends the streak. */
 export const TYPING_STREAK_IDLE_MS = 350;
 // Speeds are words per minute, counting five characters as a word.

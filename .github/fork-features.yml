@@ -744,7 +744,7 @@ features:
     prs: []
     invariants:
       - Only printable keystrokes warm the composer; paste, held keys, IME composition, and Ctrl or Cmd chords never count.
-      - The composer edge glows in the theme colour and sparks fly from the caret only while sustained typing is fast, and both settle shortly after typing slows or stops.
+      - The composer edge glows in the theme colour and sparks fly from the caret only while typing stays fast for a second or two, so a short burst of quick words does not light it, and both settle shortly after typing slows or stops.
       - Past 120 WPM the streak turns to fire, shifting from orange through yellow and white to blue as typing speeds up, with larger, rising embers.
       - The animation uses compositor-only opacity and transform changes, runs only in response to keystrokes, and is off under reduced motion or when the Typing streak setting is disabled.
     implementation_paths:
