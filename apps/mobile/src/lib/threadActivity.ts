@@ -1265,7 +1265,7 @@ export function deriveThreadFeedPresentation(
                 id: entry.id,
                 createdAt: entry.createdAt,
                 runId: run.id,
-                label: "Server restarted; continuing this response",
+                label: "Server restarted",
               }
             : entry;
         });

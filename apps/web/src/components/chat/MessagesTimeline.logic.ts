@@ -2419,7 +2419,7 @@ function restartContinuationNotes(
             id: entry.message.id,
             createdAt: entry.createdAt,
             runId: run.id,
-            label: "Server restarted; continuing this response",
+            label: "Server restarted",
             tone: "info",
             sourceActivityKind: "server-restart.continued",
             toolLifecycleStatus: "completed",
