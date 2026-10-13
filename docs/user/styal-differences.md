@@ -134,6 +134,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Add your own answer to a multi-select question.** Select the offered options and type an
+  addition; both are sent together on web, desktop, and mobile. Compared with
+  [T3 Code revision 6524a8d](https://github.com/pingdotgg/t3code/tree/6524a8d43795dc543f7cfb572388cdea3662ad48),
+  checked October 13, 2026, which treats selected options and custom text as alternatives.
 - **Open links in agent questions.** URLs and Markdown links in pending questions open on web,
   desktop, and mobile without sending an answer. Compared with
   [T3 Code revision 701fc83](https://github.com/pingdotgg/t3code/tree/701fc83169611473139c441bc27d5ded9612dc8d),

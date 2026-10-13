@@ -46,7 +46,7 @@ export function resolvePendingUserInputAnswer(
   if (draft?.attachmentsBlocked) return null;
   const customAnswer =
     question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
-  if (customAnswer) {
+  if (customAnswer && !question.multiSelect) {
     return customAnswer;
   }
 
@@ -54,11 +54,11 @@ export function resolvePendingUserInputAnswer(
     (value) => question.options.some((option) => (option.value ?? option.label) === value),
   );
   if (question.multiSelect) {
+    const answers = customAnswer ? [...selectedOptionValues, customAnswer] : selectedOptionValues;
     return selectedOptionValues.length > 0
-      ? selectedOptionValues
-      : question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0
-        ? ""
-        : null;
+      ? answers
+      : (customAnswer ??
+          (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null));
   }
 
   return (
@@ -68,11 +68,15 @@ export function resolvePendingUserInputAnswer(
 }
 
 export function setPendingUserInputCustomAnswer(
+  question: UserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
   customAnswer: string,
 ): PendingUserInputDraftAnswer {
+  if (question.allowCustomAnswer === false) {
+    return draft ?? {};
+  }
   const selectedOptionValues =
-    customAnswer.trim().length > 0
+    !question.multiSelect && customAnswer.trim().length > 0
       ? undefined
       : normalizeSelectedOptionValues(draft?.selectedOptionValues);
 
@@ -85,8 +89,8 @@ export function setPendingUserInputCustomAnswer(
 const DISPLACED_ANSWER_SEPARATOR = "\n\n";
 
 /**
- * Selecting an option replaces the custom answer, because a non-empty custom
- * answer outranks selected options in `resolvePendingUserInputAnswer`. Text the
+ * A single-select option replaces the custom answer, which otherwise outranks
+ * selected options in `resolvePendingUserInputAnswer`. Text the
  * user typed into the answer field must not vanish on that click: it moves back
  * into the thread draft, after whatever was already waiting there.
  */
@@ -116,7 +120,7 @@ export function togglePendingUserInputOptionSelection(
       : [...selectedOptionValues, optionValue];
 
     return {
-      customAnswer: "",
+      customAnswer: draft?.customAnswer ?? "",
       ...(nextSelectedOptionValues.length > 0
         ? { selectedOptionValues: nextSelectedOptionValues }
         : {}),

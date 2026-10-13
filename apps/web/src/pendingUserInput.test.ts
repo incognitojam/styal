@@ -79,11 +79,12 @@ describe("resolvePendingUserInputAnswer", () => {
     ).toEqual(["Server", "Web"]);
   });
 
-  it("clears the preset selection when a custom answer is entered", () => {
+  it("clears a single-select choice when a custom answer is entered", () => {
     expect(
       setPendingUserInputCustomAnswer(
+        singleSelectQuestion,
         {
-          selectedOptionValues: ["Server", "Web"],
+          selectedOptionValues: ["Orchestration-first"],
         },
         "doesn't matter",
       ),
@@ -91,6 +92,62 @@ describe("resolvePendingUserInputAnswer", () => {
       customAnswer: "doesn't matter",
     });
   });
+
+  it.each([true, false])(
+    "submits selected options and a typed addition (type first: %s)",
+    (typeFirst) => {
+      const typed = "  Mobile too, with offline support  ";
+      const selected = togglePendingUserInputOptionSelection(
+        multiSelectQuestion,
+        undefined,
+        "Server",
+      );
+      const combined = typeFirst
+        ? togglePendingUserInputOptionSelection(
+            multiSelectQuestion,
+            setPendingUserInputCustomAnswer(multiSelectQuestion, undefined, typed),
+            "Server",
+          )
+        : setPendingUserInputCustomAnswer(multiSelectQuestion, selected, typed);
+      const both = togglePendingUserInputOptionSelection(multiSelectQuestion, combined, "Web");
+
+      expect(
+        derivePendingUserInputProgress([multiSelectQuestion], { areas: both }, 0),
+      ).toMatchObject({
+        selectedOptionValues: ["Server", "Web"],
+        customAnswer: typed,
+        resolvedAnswer: ["Server", "Web", typed.trim()],
+        canAdvance: true,
+        isComplete: true,
+      });
+      expect(buildPendingUserInputAnswers([multiSelectQuestion], { areas: both })).toEqual({
+        areas: ["Server", "Web", typed.trim()],
+      });
+
+      const withoutServer = togglePendingUserInputOptionSelection(
+        multiSelectQuestion,
+        both,
+        "Server",
+      );
+      const customOnly = togglePendingUserInputOptionSelection(
+        multiSelectQuestion,
+        withoutServer,
+        "Web",
+      );
+      expect(buildPendingUserInputAnswers([multiSelectQuestion], { areas: customOnly })).toEqual({
+        areas: typed.trim(),
+      });
+      const optionsOnly = setPendingUserInputCustomAnswer(multiSelectQuestion, both, "  ");
+      expect(buildPendingUserInputAnswers([multiSelectQuestion], { areas: optionsOnly })).toEqual({
+        areas: ["Server", "Web"],
+      });
+      expect(
+        buildPendingUserInputAnswers([multiSelectQuestion], {
+          areas: setPendingUserInputCustomAnswer(multiSelectQuestion, customOnly, ""),
+        }),
+      ).toBeNull();
+    },
+  );
 
   it("does not replace a required choice with a custom answer", () => {
     expect(

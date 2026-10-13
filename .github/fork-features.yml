@@ -2276,6 +2276,37 @@ features:
         - https://github.com/pingdotgg/t3code/pull/14250
       retire_when: Upstream renders interactive links in pending question bodies across web, desktop, and mobile without answering the question when a link opens.
 
+  - id: pending-question-multiple-answers
+    title: Combine selected options and typed additions in multi-select answers
+    status: maintained
+    prs: [793]
+    invariants:
+      - Web, desktop, and mobile multi-select questions retain selected options while typing a custom addition and retain that text while toggling options.
+      - Submitting a multi-select question sends the selected option values and custom text together; clearing the text or deselecting options removes only that part of the answer.
+      - Multi-select option clicks do not move the custom answer into the thread's regular composer draft.
+      - Single-select questions still treat custom text as an alternative, and questions that prohibit custom answers still require valid option values.
+    implementation_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
+      - apps/web/src/pendingUserInput.ts
+    upstream_paths:
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
+      - apps/web/src/pendingUserInput.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/web/src/pendingUserInput.test.ts
+      - apps/web/src/pendingUserInputDrafts.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/6524a8d43795dc543f7cfb572388cdea3662ad48/apps/web/src/pendingUserInput.ts
+      retire_when: Upstream combines selected options and typed additions for multi-select questions across web, desktop, and mobile without moving the addition into a separate thread draft.
+
   - id: pinned-thread-auto-settlement
     title: Keep pinned threads active until unpinned or manually settled
     status: retiring

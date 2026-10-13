@@ -1959,15 +1959,68 @@ describe("pending user input answers", () => {
     });
   });
 
-  it("clears selected options while a custom answer is active", () => {
+  it("clears single-select options while a custom answer is active", () => {
     expect(
       setPendingUserInputCustomAnswer(
-        multiSelectQuestion,
-        { selectedOptionValues: ["Orders", "Listings"] },
-        "Orders first",
+        singleSelectQuestion,
+        { selectedOptionValues: ["Go"] },
+        "Rust instead",
       ),
-    ).toEqual({ customAnswer: "Orders first" });
+    ).toEqual({ customAnswer: "Rust instead" });
   });
+
+  it.each([true, false])(
+    "keeps a typed addition with multi-select choices (type first: %s)",
+    (typeFirst) => {
+      const typed = "  Include shipment tracking  ";
+      const selected = togglePendingUserInputOptionSelection(
+        multiSelectQuestion,
+        undefined,
+        "Orders",
+      );
+      const combined = typeFirst
+        ? togglePendingUserInputOptionSelection(
+            multiSelectQuestion,
+            setPendingUserInputCustomAnswer(multiSelectQuestion, undefined, typed),
+            "Orders",
+          )
+        : setPendingUserInputCustomAnswer(multiSelectQuestion, selected, typed);
+      const both = togglePendingUserInputOptionSelection(multiSelectQuestion, combined, "Listings");
+
+      expect(isPendingUserInputOptionSelected(multiSelectQuestion, both, "Orders")).toBe(true);
+      expect(isPendingUserInputOptionSelected(multiSelectQuestion, both, "Listings")).toBe(true);
+      expect(both.customAnswer).toBe(typed);
+      expect(buildPendingUserInputAnswers([multiSelectQuestion], { scope: both })).toEqual({
+        scope: ["Orders", "Listings", typed.trim()],
+      });
+
+      const withoutOrders = togglePendingUserInputOptionSelection(
+        multiSelectQuestion,
+        both,
+        "Orders",
+      );
+      const customOnly = togglePendingUserInputOptionSelection(
+        multiSelectQuestion,
+        withoutOrders,
+        "Listings",
+      );
+      expect(isPendingUserInputOptionSelected(multiSelectQuestion, withoutOrders, "Orders")).toBe(
+        false,
+      );
+      expect(buildPendingUserInputAnswers([multiSelectQuestion], { scope: customOnly })).toEqual({
+        scope: typed.trim(),
+      });
+      const optionsOnly = setPendingUserInputCustomAnswer(multiSelectQuestion, both, "  ");
+      expect(buildPendingUserInputAnswers([multiSelectQuestion], { scope: optionsOnly })).toEqual({
+        scope: ["Orders", "Listings"],
+      });
+      expect(
+        buildPendingUserInputAnswers([multiSelectQuestion], {
+          scope: setPendingUserInputCustomAnswer(multiSelectQuestion, customOnly, ""),
+        }),
+      ).toBeNull();
+    },
+  );
 
   it("matches selected chips against normalized option labels", () => {
     expect(
@@ -1983,7 +2036,7 @@ describe("pending user input answers", () => {
         { selectedOptionValues: ["Orders"], customAnswer: "Orders first" },
         "  Orders  ",
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 

@@ -9770,29 +9770,34 @@ export default function ChatView(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
-      // The option replaces the custom answer. Anything typed there is the
-      // user's text, so it goes back to the thread draft instead of vanishing.
-      const displacedAnswer =
-        usePendingUserInputDrafts.getState().answersByRequestKey[activePendingRequestKey]?.[
-          questionId
-        ]?.customAnswer;
-      const currentPrompt =
-        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
-      const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
-      if (nextPrompt !== currentPrompt) {
-        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
-      }
       const question =
         (activePendingProgress?.activeQuestion?.id === questionId
           ? activePendingProgress.activeQuestion
           : undefined) ?? activePendingUserInput.questions.find((entry) => entry.id === questionId);
-      if (question) {
-        updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-          togglePendingUserInputOptionSelection(question, draft, optionValue),
-        );
+      if (!question) {
+        return;
       }
-      promptRef.current = "";
-      composerRef.current?.resetCursorState({ cursor: 0 });
+      if (!question.multiSelect) {
+        // A single-select option replaces the custom answer. Keep the displaced
+        // text in the thread draft; multi-select answers retain it in place.
+        const displacedAnswer =
+          usePendingUserInputDrafts.getState().answersByRequestKey[activePendingRequestKey]?.[
+            questionId
+          ]?.customAnswer;
+        const currentPrompt =
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
+        const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
+        if (nextPrompt !== currentPrompt) {
+          setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+        }
+      }
+      updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
+        togglePendingUserInputOptionSelection(question, draft, optionValue),
+      );
+      if (!question.multiSelect) {
+        promptRef.current = "";
+        composerRef.current?.resetCursorState({ cursor: 0 });
+      }
     },
     [
       activePendingProgress?.activeQuestion,
@@ -9821,7 +9826,7 @@ export default function ChatView(props: ChatViewProps) {
       }
       promptRef.current = value;
       updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-        setPendingUserInputCustomAnswer(draft, value),
+        setPendingUserInputCustomAnswer(question, draft, value),
       );
       const snapshot = composerRef.current?.readSnapshot();
       if (

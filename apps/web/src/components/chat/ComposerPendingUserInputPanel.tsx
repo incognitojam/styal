@@ -263,7 +263,8 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   optimisticSingleSelect.optionValue === optionValue;
                 const isSelected =
                   isOptimisticallySelected ||
-                  (!customAnswerActive && progress.selectedOptionValues.includes(optionValue));
+                  ((activeQuestion.multiSelect || !customAnswerActive) &&
+                    progress.selectedOptionValues.includes(optionValue));
                 const shortcutKey = index < 9 ? index + 1 : null;
                 const className = cn(
                   "group flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-primary/25",

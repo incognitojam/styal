@@ -2884,6 +2884,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const isChoiceOnlyPendingQuestion =
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
+  const pendingQuestionPlaceholder = activePendingProgress?.activeQuestion?.multiSelect
+    ? "Add another answer, or leave this blank to use the selected options"
+    : "Type your own answer, or leave this blank to use the selected option";
   const showComposerTopDrawer =
     isComposerApprovalState ||
     pendingUserInputs.length > 0 ||
@@ -7029,8 +7032,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   {activePendingProgress
                     ? isChoiceOnlyPendingQuestion
                       ? "Choose an option above"
-                      : activePendingProgress.customAnswer ||
-                        "Type your own answer, or leave this blank to use the selected option"
+                      : activePendingProgress.customAnswer || pendingQuestionPlaceholder
                     : prompt.trim() ||
                       (showProviderUnavailable
                         ? "Enable a provider in Settings"
@@ -7583,7 +7585,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         : activePendingProgress
                           ? isChoiceOnlyPendingQuestion
                             ? "Choose an option above"
-                            : "Type your own answer, or leave this blank to use the selected option"
+                            : pendingQuestionPlaceholder
                           : showPlanFollowUpPrompt && activeProposedPlan
                             ? "Add feedback to refine the plan, or leave this blank to implement it"
                             : projectSelectionRequired

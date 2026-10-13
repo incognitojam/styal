@@ -419,17 +419,17 @@ function resolvePendingUserInputAnswer(
   if (draft?.attachmentsBlocked) return null;
   const customAnswer =
     question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
-  if (customAnswer) {
+  if (customAnswer && !question.multiSelect) {
     return customAnswer;
   }
 
   const selectedOptionValues = normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   if (question.multiSelect) {
+    const answers = customAnswer ? [...selectedOptionValues, customAnswer] : selectedOptionValues;
     return selectedOptionValues.length > 0
-      ? selectedOptionValues
-      : question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0
-        ? ""
-        : null;
+      ? answers
+      : (customAnswer ??
+          (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null));
   }
   return (
     selectedOptionValues[0] ??
@@ -1688,7 +1688,7 @@ export function setPendingUserInputCustomAnswer(
   }
 
   const selectedOptionValues =
-    customAnswer.trim().length > 0
+    !question.multiSelect && customAnswer.trim().length > 0
       ? undefined
       : normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   return {
@@ -1702,7 +1702,11 @@ export function isPendingUserInputOptionSelected(
   draft: PendingUserInputDraftAnswer | undefined,
   optionValue: string,
 ): boolean {
-  if (question.allowCustomAnswer !== false && normalizeDraftAnswer(draft?.customAnswer)) {
+  if (
+    !question.multiSelect &&
+    question.allowCustomAnswer !== false &&
+    normalizeDraftAnswer(draft?.customAnswer)
+  ) {
     return false;
   }
 
@@ -1735,7 +1739,7 @@ export function togglePendingUserInputOptionSelection(
       : [...selectedOptionValues, resolvedOptionValue];
 
     return {
-      customAnswer: "",
+      customAnswer: draft?.customAnswer ?? "",
       ...(nextSelectedOptionValues.length > 0
         ? { selectedOptionValues: nextSelectedOptionValues }
         : {}),

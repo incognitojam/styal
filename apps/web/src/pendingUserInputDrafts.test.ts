@@ -42,7 +42,7 @@ describe("pending question drafts", () => {
 
   it("builds the submitted answers from drafts kept per question and request", () => {
     updatePendingUserInputAnswer(requestA, store.id, (draft) =>
-      setPendingUserInputCustomAnswer(draft, "Redis with LRU eviction"),
+      setPendingUserInputCustomAnswer(store, draft, "Redis with LRU eviction"),
     );
     updatePendingUserInputAnswer(requestA, ttl.id, (draft) =>
       togglePendingUserInputOptionSelection(ttl, draft, "1 hour"),
@@ -64,7 +64,7 @@ describe("pending question drafts", () => {
 
   it("replaces a typed answer when an option is picked afterwards", () => {
     updatePendingUserInputAnswer(requestA, store.id, (draft) =>
-      setPendingUserInputCustomAnswer(draft, "Redis"),
+      setPendingUserInputCustomAnswer(store, draft, "Redis"),
     );
     updatePendingUserInputAnswer(requestA, store.id, (draft) =>
       togglePendingUserInputOptionSelection(store, draft, "Memory"),
@@ -72,5 +72,29 @@ describe("pending question drafts", () => {
 
     const drafts = usePendingUserInputDrafts.getState().answersByRequestKey[requestA] ?? {};
     expect(buildPendingUserInputAnswers([store], drafts)).toEqual({ store: "Memory" });
+  });
+
+  it("keeps a multi-select addition when moving between questions", () => {
+    const question = { ...store, multiSelect: true };
+    updatePendingUserInputAnswer(requestA, question.id, (draft) =>
+      togglePendingUserInputOptionSelection(question, draft, "Memory"),
+    );
+    updatePendingUserInputAnswer(requestA, question.id, (draft) =>
+      setPendingUserInputCustomAnswer(question, draft, "Redis for shared entries"),
+    );
+    setPendingUserInputQuestionIndex(requestA, 1);
+    updatePendingUserInputAnswer(requestA, ttl.id, (draft) =>
+      togglePendingUserInputOptionSelection(ttl, draft, "1 hour"),
+    );
+    setPendingUserInputQuestionIndex(requestA, 0);
+    updatePendingUserInputAnswer(requestA, question.id, (draft) =>
+      togglePendingUserInputOptionSelection(question, draft, "SQLite"),
+    );
+
+    const drafts = usePendingUserInputDrafts.getState().answersByRequestKey[requestA] ?? {};
+    expect(buildPendingUserInputAnswers([question, ttl], drafts)).toEqual({
+      store: ["Memory", "SQLite", "Redis for shared entries"],
+      ttl: "1 hour",
+    });
   });
 });
