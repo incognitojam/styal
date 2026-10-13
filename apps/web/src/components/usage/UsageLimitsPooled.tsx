@@ -574,8 +574,10 @@ function PoolWindowRow({
           <span className="font-medium whitespace-nowrap text-foreground tabular-nums">
             {pool.remainingPercent}%
           </span>
-          <span className="text-sm text-muted-foreground">left</span>
-          {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
+          <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <span>left</span>
+            {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
+          </span>
         </span>
       </div>
       <div
