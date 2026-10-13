@@ -1,5 +1,4 @@
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
-import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
@@ -236,7 +235,6 @@ function RootRouteView() {
           <DiscordPresenceSync />
           <SnapShotCoordinator />
           <ThreadNotificationCoordinator />
-          <ConfirmDialogHost />
           <CustomSnoozeDialogHost />
           <SlowRpcRequestToastCoordinator />
           {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
