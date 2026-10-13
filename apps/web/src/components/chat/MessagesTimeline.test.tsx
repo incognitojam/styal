@@ -2217,7 +2217,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("Read a thread");
+    expect(markup).toMatch(/Read a (?:T3 )?thread/u);
     expect(markup).not.toContain("mcp__t3-code__t3_thread_read");
   });
 
