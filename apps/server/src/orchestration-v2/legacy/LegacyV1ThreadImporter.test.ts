@@ -162,7 +162,11 @@ it.layer(TestLayer)("LegacyV1ThreadImporter", (it) => {
         const command = before.turnItems.find((item) => item.type === "command_execution");
         assert.equal(command?.type === "command_execution" && command.input, "cat synthetic.txt");
         assert.equal(command?.type === "command_execution" && command.output, "Recorded output");
-        assert.deepEqual(command?.legacyActivities?.[0]?.payload, historicalCommand);
+        assert.deepEqual(
+          command?.legacyActivities?.map((activity) => [activity.id, activity.payload]),
+          [["synthetic-command-activity", undefined]],
+        );
+        assert.equal(command?.type === "command_execution" && command.exitCode, 0);
         assert.equal(command?.legacyTurnId, "turn:1");
         assert.isFalse(before.turnItems.some((item) => item.type === "system_notice"));
         const notification = before.turnItems.find((item) => item.type === "notification");

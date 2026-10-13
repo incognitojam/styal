@@ -97,17 +97,20 @@ function parseLegacyOutput(detail: unknown) {
 
 export function normalizeCommandOutput(
   row: CommandActivityRow | null,
+  limit = MAX_OUTPUT_LENGTH,
 ): OrchestrationGetCommandOutputResult {
   if (row === null || !Predicate.isObject(row.payload)) return emptyResult("unavailable");
   const payload = row.payload;
   if (row.kind === "command_execution") {
-    // Frozen history keeps the original provider payloads on the canonical item.
-    // ACP streams and exit codes may have no equivalent in its compact output.
+    // Imported history may still carry its original V1 payloads until the startup pass in
+    // legacy/slimImportedHistory.ts folds their output into the canonical item.
     const retained = Array.isArray(payload.legacyActivities)
       ? payload.legacyActivities.toReversed().flatMap((activity) => {
           if (!Predicate.isObject(activity) || typeof activity.kind !== "string") return [];
           if (!Predicate.isObject(activity.payload)) return [];
-          return [normalizeCommandOutput({ kind: activity.kind, payload: activity.payload })];
+          return [
+            normalizeCommandOutput({ kind: activity.kind, payload: activity.payload }, limit),
+          ];
         })
       : [];
     const fallback =
@@ -122,7 +125,7 @@ export function normalizeCommandOutput(
     if (output !== null) {
       return {
         status: "available",
-        output: truncateMiddle(output, MAX_OUTPUT_LENGTH),
+        output: truncateMiddle(output, limit),
         stdout: null,
         stderr: null,
         exitCode,
@@ -153,7 +156,7 @@ export function normalizeCommandOutput(
   const stdout = readText(rawOutput.stdout);
   const stderr = readText(rawOutput.stderr);
   if (stdout !== null || stderr !== null) {
-    const streamLimit = Math.floor(MAX_OUTPUT_LENGTH / 2);
+    const streamLimit = Math.floor(limit / 2);
     return {
       status: "available",
       output: null,
@@ -173,7 +176,7 @@ export function normalizeCommandOutput(
   if (output !== null) {
     return {
       status: "available",
-      output: truncateMiddle(output, MAX_OUTPUT_LENGTH),
+      output: truncateMiddle(output, limit),
       stdout: null,
       stderr: null,
       exitCode,
@@ -229,3 +232,23 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(CommandOutputQuery, make);
+
+/**
+ * The complete output and exit code a converted V1 command recorded, read from its canonical
+ * fields or, failing those, from the V1 payloads it was converted from. Imports and
+ * legacy/slimImportedHistory.ts fold this into the item so the V1 payloads need not be kept.
+ */
+export function recordedCommandOutput(payload: Record<string, unknown>): {
+  readonly output: string | null;
+  readonly exitCode: number | null;
+} {
+  const result = normalizeCommandOutput(
+    { kind: "command_execution", payload },
+    Number.POSITIVE_INFINITY,
+  );
+  const streams = [result.stdout, result.stderr].filter((part) => part !== null);
+  return {
+    output: result.output ?? (streams.length === 0 ? null : streams.join("\n")),
+    exitCode: result.exitCode,
+  };
+}

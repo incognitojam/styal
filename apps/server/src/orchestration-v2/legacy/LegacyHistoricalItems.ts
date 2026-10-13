@@ -12,6 +12,7 @@ import {
 } from "@t3tools/contracts";
 import type { OrchestrationThread } from "@t3tools/contracts/legacy-orchestration";
 import { collectToolFilePaths } from "@t3tools/shared/toolActivity";
+import { recordedCommandOutput } from "../CommandOutputQuery.ts";
 import * as DateTime from "effect/DateTime";
 
 function record(value: unknown): Record<string, unknown> {
@@ -46,6 +47,11 @@ type LegacyActivity = OrchestrationV2TurnItem["legacyActivities"] extends
   | undefined
   ? Activity
   : never;
+
+/** Items keep a reference to their V1 activity; its payload stays in the V1 source. */
+function activityReference({ payload: _payload, ...reference }: LegacyActivity): LegacyActivity {
+  return reference;
+}
 
 /**
  * Runtime bookkeeping the V1 work log never displayed. Checkpoints import as their own
@@ -142,7 +148,7 @@ export function legacyActivityTurnItem(
     startedAt: DateTime.makeUnsafe(first.createdAt),
     completedAt: DateTime.makeUnsafe(last.createdAt),
     updatedAt: DateTime.makeUnsafe(last.createdAt),
-    legacyActivities: activities,
+    legacyActivities: activities.map(activityReference),
     ...(last.turnId === null ? {} : { legacyTurnId: last.turnId }),
   };
   const type = text(payload.itemType, nativeItem.type);
@@ -155,19 +161,18 @@ export function legacyActivityTurnItem(
         rawInput.command,
         payload.detail,
       ) ?? last.summary;
-    const output = text(
-      nativeItem.aggregatedOutput,
-      nativeItem.output,
-      data.output,
-      payload.output,
-    );
-    const exitCode = nativeItem.exitCode ?? data.exitCode;
+    // Providers recorded output in several V1 shapes; read it the way output queries did.
+    const recorded = recordedCommandOutput({
+      output: text(nativeItem.aggregatedOutput, nativeItem.output, data.output, payload.output),
+      exitCode: nativeItem.exitCode ?? data.exitCode,
+      legacyActivities: activities.map(activityReference),
+    });
     return {
       ...base,
       type: "command_execution",
       input: command,
-      ...(output === undefined ? {} : { output }),
-      ...(typeof exitCode === "number" && Number.isInteger(exitCode) ? { exitCode } : {}),
+      ...(recorded.output === null ? {} : { output: recorded.output }),
+      ...(recorded.exitCode === null ? {} : { exitCode: recorded.exitCode }),
     };
   } else if (type === "file_change" || type === "fileChange") {
     const fileName =
@@ -300,7 +305,7 @@ export function legacyHistoricalItems(input: {
       startedAt: DateTime.makeUnsafe(first.createdAt),
       completedAt: DateTime.makeUnsafe(last.createdAt),
       updatedAt: DateTime.makeUnsafe(last.createdAt),
-      legacyActivities: activities,
+      legacyActivities: activities.map(activityReference),
       ...(last.turnId === null ? {} : { legacyTurnId: last.turnId }),
     };
     const subagentId = NodeId.make(`import:v1:subagent:${thread.id}:${key}`);
