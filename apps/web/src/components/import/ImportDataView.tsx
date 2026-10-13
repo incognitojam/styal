@@ -13,6 +13,7 @@ import { type ReactNode, type Ref, useId, useMemo } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
+import { splitOnboardingProjectPath } from "../../onboarding/projectImport.logic";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ClaudeAI, OpenAI, type Icon } from "../Icons";
 import { Button } from "../ui/button";
@@ -325,7 +326,6 @@ function ImportProjectGroupView({
           <ImportProjectRowView
             key={project.id}
             project={project}
-            label={project.path}
             nested
             disabled={disabled}
             onToggle={onToggle}
@@ -336,6 +336,21 @@ function ImportProjectGroupView({
   );
 }
 
+/**
+ * Clones of one repository and plain folders differ only by folder name, so
+ * the name stays visible and the shared parent path truncates first.
+ */
+function ProjectPathText({ path, className }: { path: string; className?: string }) {
+  const { name, parent } = splitOnboardingProjectPath(path);
+  return (
+    <span className={cn("flex min-w-0 items-baseline font-mono", className)}>
+      {parent.length > 0 ? <span className="truncate">{parent}</span> : null}
+      <span className="max-w-full shrink-0 truncate">{name}</span>
+    </span>
+  );
+}
+
+/** Nested rows are labelled by their path; other rows by `label` or their title. */
 function ImportProjectRowView({
   project,
   label,
@@ -392,17 +407,26 @@ function ImportProjectRowView({
       )}
       <Tooltip>
         <TooltipTrigger render={<span className="flex min-w-0 flex-1 flex-col" />}>
-          <span
-            className={cn(
-              "truncate",
-              nested ? "font-mono text-xs" : "text-sm font-medium",
-              project.selected ? "text-foreground" : "text-muted-foreground",
-            )}
-          >
-            {title}
-          </span>
-          {showPath && path.length > 0 ? (
-            <span className="truncate font-mono text-2xs text-muted-foreground/80">{path}</span>
+          {nested && path.length > 0 ? (
+            <ProjectPathText
+              path={path}
+              className={cn(
+                "text-xs",
+                project.selected ? "text-foreground" : "text-muted-foreground",
+              )}
+            />
+          ) : (
+            <span
+              className={cn(
+                "truncate text-sm font-medium",
+                project.selected ? "text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {title}
+            </span>
+          )}
+          {showPath && !nested && path.length > 0 ? (
+            <ProjectPathText path={path} className="text-2xs text-muted-foreground/80" />
           ) : null}
         </TooltipTrigger>
         <TooltipPopup variant="code">{path || title}</TooltipPopup>
