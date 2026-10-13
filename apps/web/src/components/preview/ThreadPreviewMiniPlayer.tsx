@@ -398,9 +398,11 @@ function MiniPlayerShell({
         >
           {viewOnly ? (
             // The view-only page stays visible while its full surface moves the frame.
+            // Double-clicking it opens the source in the right panel.
             <div
               aria-hidden="true"
               className="pointer-events-auto absolute inset-0 z-[49] touch-none cursor-grab rounded-[inherit] active:cursor-grabbing"
+              onDoubleClick={onOpenInPanel}
               onPointerDown={(event) => beginGesture(event, null)}
               onPointerMove={handlePointerMove}
               onPointerUp={endGesture}
