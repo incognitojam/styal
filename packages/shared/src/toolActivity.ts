@@ -25,17 +25,56 @@ export function claudeSkillInvocation(
   return name === undefined ? undefined : { name, args: asTrimmedString(record?.args) };
 }
 
+// Codex named MCP calls `server.tool` before adopting `mcp__server__tool`.
+const COMPUTER_USE_REPL_TOOLS = new Set(["cua_repl.js", "mcp__cua_repl__js"]);
+const JAVASCRIPT_REPL_TOOLS = new Set([
+  "js",
+  ...COMPUTER_USE_REPL_TOOLS,
+  "node_repl.js",
+  "mcp__node_repl__js",
+]);
+
+export function isJavaScriptReplTool(toolName: string | null | undefined): boolean {
+  return toolName != null && JAVASCRIPT_REPL_TOOLS.has(toolName);
+}
+
+export const COMPUTER_USE_TOOL_SOURCE = {
+  key: "computer-use",
+  name: "Computer Use",
+  kind: "computer",
+} as const;
+
+/** Computer-use calls may fail or still be running before result metadata is available. */
+export function dynamicToolSurface(toolName: string | null | undefined, input: unknown) {
+  if (toolName != null && COMPUTER_USE_REPL_TOOLS.has(toolName)) return "computer" as const;
+  const code = asRecord(input)?.code;
+  return isJavaScriptReplTool(toolName) &&
+    typeof code === "string" &&
+    (/\bsky\s*\./u.test(code) || /["']@oai\/sky["']/u.test(code))
+    ? ("computer" as const)
+    : undefined;
+}
+
 /**
- * Activity log heading a dynamic tool derives from its input: CUA's `title`,
+ * Activity log heading a dynamic tool derives from its input: a REPL's `title`,
  * or the skill a Claude `Skill` call loads.
  */
 export function dynamicToolTitle(
   toolName: string | null | undefined,
   input: unknown,
+  retainedTitle?: string | null,
 ): string | undefined {
-  // Codex named MCP calls `server.tool` before adopting `mcp__server__tool`.
-  if (toolName === "mcp__cua_repl__js" || toolName === "cua_repl.js") {
-    return asTrimmedString(asRecord(input)?.title);
+  if (isJavaScriptReplTool(toolName)) {
+    const title = asTrimmedString(retainedTitle);
+    const meaningfulTitle =
+      title && title.toLowerCase() !== "js" && title.toLowerCase() !== toolName?.toLowerCase()
+        ? title
+        : undefined;
+    return (
+      asTrimmedString(asRecord(input)?.title) ??
+      meaningfulTitle ??
+      (dynamicToolSurface(toolName, input) === "computer" ? "Computer use" : "Run JavaScript")
+    );
   }
   const skill = claudeSkillInvocation(toolName, input);
   return skill === undefined ? undefined : `Skill: ${skill.name}`;

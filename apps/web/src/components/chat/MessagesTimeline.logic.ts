@@ -106,7 +106,8 @@ function singleToolCallLabel(entry: WorkLogEntry): string {
   const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
   if (toolPresentation) return toolPresentation.displayName;
   const item = entry.structuredPayload;
-  const title = item?.type === "dynamic_tool" ? dynamicToolTitle(item.toolName, item.input) : null;
+  const title =
+    item?.type === "dynamic_tool" ? dynamicToolTitle(item.toolName, item.input, item.title) : null;
   if (title) return title;
   // A lone web search keeps its heading; the query stays in its detail.
   if (entry.itemType === "web_search") return entry.toolTitle ?? "Web search";
@@ -172,7 +173,8 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   const providerRetry =
     entry.projectedItem?.item.type === "error" && entry.projectedItem.item.retry !== undefined;
   const item = entry.structuredPayload;
-  const title = item?.type === "dynamic_tool" ? dynamicToolTitle(item.toolName, item.input) : null;
+  const title =
+    item?.type === "dynamic_tool" ? dynamicToolTitle(item.toolName, item.input, item.title) : null;
   if (title) return title;
   const compactDetail = entry.detail?.trim();
   const detailIsSearchOutput =
