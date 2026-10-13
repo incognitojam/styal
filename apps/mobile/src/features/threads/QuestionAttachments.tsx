@@ -1,5 +1,6 @@
 import { TextInputWrapper } from "expo-paste-input";
-import { AppTextInput as TextInput } from "../../components/AppText";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { cn } from "../../lib/cn";
 import { useNativePaste } from "../../lib/useNativePaste";
 import { convertPastedImagesToAttachments } from "../../lib/composerImages";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS, type UserInputQuestion } from "@t3tools/contracts";
@@ -32,6 +33,7 @@ export function QuestionAttachments(props: {
   question: UserInputQuestion;
   questions: ReadonlyArray<UserInputQuestion>;
   disabled: boolean;
+  optionSelected: boolean;
   value: string;
   onChangeText: (value: string) => void;
   onInputFocusChange?: ((focused: boolean) => void) | undefined;
@@ -190,15 +192,29 @@ export function QuestionAttachments(props: {
         <TextInput
           value={props.value}
           editable={!props.disabled}
+          accessibilityLabel={props.question.multiSelect ? "Additional answer" : "Custom answer"}
+          accessibilityHint={
+            props.optionSelected
+              ? "An option is selected. Edit this text to use a custom answer instead."
+              : undefined
+          }
           onChangeText={props.onChangeText}
           onFocus={() => props.onInputFocusChange?.(true)}
           onBlur={() => props.onInputFocusChange?.(false)}
           placeholder={
             props.question.multiSelect ? "Add another answer" : "Or type a custom answer"
           }
-          className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
+          className={cn(
+            "min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base",
+            props.optionSelected ? "text-foreground-muted" : "text-foreground",
+          )}
         />
       </TextInputWrapper>
+      {props.optionSelected && props.value.trim().length > 0 ? (
+        <Text className="font-sans text-xs leading-4 text-foreground-muted">
+          The selected option will be sent. Edit your text to use it instead.
+        </Text>
+      ) : null}
     </View>
   );
 }

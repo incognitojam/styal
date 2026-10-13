@@ -2246,25 +2246,31 @@ features:
       retire_when: Upstream keeps unsubmitted web question answers outside the chat view component so a remount does not discard them.
 
   - id: pending-question-displaced-answers
-    title: Keep a typed answer when a mobile question option replaces it
+    title: Keep custom answer drafts while choosing mobile question options
     status: maintained
     prs: [801]
     invariants:
-      - On mobile, picking an option that replaces a typed answer moves that text into the thread's composer draft, after any text already waiting there.
-      - Picking an option leaves the thread draft unchanged when nothing was typed or when a multi-select answer keeps the typed text.
+      - On mobile, picking a single-select option keeps typed text in that question's field and submits only the selected option.
+      - Editing the custom answer clears the single-select option and makes the edited text the answer; an empty answer requires a new choice.
+      - The selected option remains highlighted while retained custom text is muted with an explanation that editing switches back to it.
+      - Selecting options never moves custom answers into the thread composer draft; multi-select answers still combine options and typed additions.
     implementation_paths:
+      - apps/mobile/src/features/threads/PendingUserInputCard.tsx
+      - apps/mobile/src/features/threads/QuestionAttachments.tsx
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/mobile/src/state/use-selected-thread-requests.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/PendingUserInputCard.tsx
+      - apps/mobile/src/features/threads/QuestionAttachments.tsx
       - apps/mobile/src/lib/threadActivity.ts
-      - apps/mobile/src/state/use-selected-thread-requests.ts
     tests:
-      - apps/mobile/src/lib/threadActivityDisplacedAnswer.test.ts
+      - apps/mobile/src/lib/threadActivityCustomAnswer.test.ts
+      - apps/mobile/src/lib/threadActivityMultiSelect.test.ts
     upstream:
       status: partial
       tracking:
+        - https://github.com/pingdotgg/t3code/commit/98a6246d07624432a6e6d0ab4fb87bede90a49a6
         - https://github.com/pingdotgg/t3code/pull/12577
-      retire_when: Upstream mobile keeps text typed into a pending question's answer field when picking an option replaces it.
+      retire_when: Upstream mobile keeps custom text in each question field while selecting an option, submits only the active answer, and lets editing switch back to custom text.
 
   - id: pending-question-links
     title: Open links from pending input questions

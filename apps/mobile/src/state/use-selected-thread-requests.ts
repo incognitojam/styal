@@ -5,12 +5,7 @@ import {
   questionAttachmentDraftPrefix,
   questionAttachmentPreparationAtom,
 } from "./question-attachments";
-import {
-  composerDraftsAtom,
-  clearComposerDraft,
-  getComposerDraftSnapshot,
-  setComposerDraftText,
-} from "./use-composer-drafts";
+import { composerDraftsAtom, clearComposerDraft } from "./use-composer-drafts";
 import {
   composerAttachmentUploadsAtom,
   composerAttachmentUploadBlockReason,
@@ -27,10 +22,9 @@ import {
 import { Atom } from "effect/unstable/reactivity";
 
 import { threadEnvironment } from "../state/threads";
-import { scopedRequestKey, scopedThreadKey } from "../lib/scopedEntities";
+import { scopedRequestKey } from "../lib/scopedEntities";
 import {
   buildPendingUserInputAnswers,
-  carryDisplacedCustomAnswerIntoDraft,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
@@ -48,21 +42,20 @@ const userInputDraftsByRequestKeyAtom = Atom.make<
 
 function setUserInputDraftOption(
   requestKey: string,
-  threadDraftKey: string,
   question: ThreadUserInputQuestion,
   value: string,
 ): void {
   const current = appAtomRegistry.get(userInputDraftsByRequestKeyAtom);
-  const previous = current[requestKey]?.[question.id];
-  const next = togglePendingUserInputOptionSelection(question, previous, value);
-  const draftText = getComposerDraftSnapshot(threadDraftKey).text;
-  const carriedText = carryDisplacedCustomAnswerIntoDraft(draftText, previous, next);
-  if (carriedText !== draftText) {
-    setComposerDraftText(threadDraftKey, carriedText);
-  }
   appAtomRegistry.set(userInputDraftsByRequestKeyAtom, {
     ...current,
-    [requestKey]: { ...current[requestKey], [question.id]: next },
+    [requestKey]: {
+      ...current[requestKey],
+      [question.id]: togglePendingUserInputOptionSelection(
+        question,
+        current[requestKey]?.[question.id],
+        value,
+      ),
+    },
   });
 }
 
@@ -196,11 +189,7 @@ export function useSelectedThreadRequests() {
       }
 
       const requestKey = scopedRequestKey(selectedThreadShell.environmentId, requestId);
-      const threadDraftKey = scopedThreadKey(
-        selectedThreadShell.environmentId,
-        selectedThreadShell.id,
-      );
-      setUserInputDraftOption(requestKey, threadDraftKey, question, value);
+      setUserInputDraftOption(requestKey, question, value);
     },
     [selectedThreadShell],
   );
