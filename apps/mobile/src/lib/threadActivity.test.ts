@@ -2405,7 +2405,7 @@ it("folds V2 restart runs into one response and draws the recovery message as a 
     runs,
   );
   expect(expanded.find((entry) => entry.type === "restart-note")).toMatchObject({
-    label: "Server restarted; continuing this response",
+    label: "Server restarted",
   });
   const working = deriveThreadFeedPresentation(
     feed,

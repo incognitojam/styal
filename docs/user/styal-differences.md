@@ -247,7 +247,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   does not check activity.
 
 - **See where a thread continued.** When a restart continues an agent's work, the thread shows
-  **Continued after server restart** at the point the agent picked up again. Compared with
+  **Server restarted** at the point the agent picked up again. Compared with
   [T3 Code revision d15210c](https://github.com/pingdotgg/t3code/tree/d15210cd3da79f9a1a495a6309d912d76362a046),
   checked September 28, 2026, which continues the thread without a record in the conversation.
   [Updating styal](./updating.md).
