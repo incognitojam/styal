@@ -3925,7 +3925,7 @@ features:
   - id: usage-limits-pace-labels
     title: Explain consumption pace consistently across clients
     status: maintained
-    prs: []
+    prs: [804]
     invariants:
       - Usage Limits, the /usage-limits composer result and mobile account details show Above pace, On pace or Below pace by comparing quota consumed with elapsed window time; unavailable clocks hide pace.
       - Pace keeps the inclusive five-percentage-point tolerance and pooled comparisons include only accounts with known window times.
