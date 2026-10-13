@@ -745,7 +745,7 @@ features:
     invariants:
       - Only printable keystrokes warm the composer; paste, held keys, IME composition, and Ctrl or Cmd chords never count.
       - The composer edge glows in the theme colour and sparks fly from the caret only while typing stays fast for a second or two, so a short burst of quick words does not light it, and both settle shortly after typing slows or stops.
-      - Past 140 WPM the theme glow turns to fire, which only grows from there as typing speeds up: a wider glow and larger, more numerous, rising embers.
+      - Past 140 WPM the theme glow turns to fire, which only grows from there as typing speeds up, with a wider glow and larger, more numerous, rising embers.
       - The animation uses compositor-only opacity and transform changes, runs only in response to keystrokes, and is off under reduced motion or when the Typing streak setting is disabled.
     implementation_paths:
       - apps/web/src/components/chat/ChatComposer.tsx
