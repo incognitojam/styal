@@ -25,6 +25,7 @@ import IconArrowsDiagonal2 from "@tabler/icons-react-native/IconArrowsDiagonal2"
 import IconArrowsMinimize from "@tabler/icons-react-native/IconArrowsMinimize";
 import IconBellRinging from "@tabler/icons-react-native/IconBellRinging";
 import IconBolt from "@tabler/icons-react-native/IconBolt";
+import IconBook from "@tabler/icons-react-native/IconBook";
 import IconBox from "@tabler/icons-react-native/IconBox";
 import IconBrain from "@tabler/icons-react-native/IconBrain";
 import IconCamera from "@tabler/icons-react-native/IconCamera";
@@ -65,8 +66,10 @@ import IconGitPullRequest from "@tabler/icons-react-native/IconGitPullRequest";
 import IconHammer from "@tabler/icons-react-native/IconHammer";
 import IconHome from "@tabler/icons-react-native/IconHome";
 import IconInfoCircle from "@tabler/icons-react-native/IconInfoCircle";
+import IconKey from "@tabler/icons-react-native/IconKey";
 import IconKeyboard from "@tabler/icons-react-native/IconKeyboard";
 import IconKeyboardHide from "@tabler/icons-react-native/IconKeyboardHide";
+import IconLogout from "@tabler/icons-react-native/IconLogout";
 import IconLock from "@tabler/icons-react-native/IconLock";
 import IconLayoutColumns from "@tabler/icons-react-native/IconLayoutColumns";
 import IconLayoutSidebar from "@tabler/icons-react-native/IconLayoutSidebar";
@@ -107,6 +110,7 @@ import IconTrash from "@tabler/icons-react-native/IconTrash";
 import IconTypography from "@tabler/icons-react-native/IconTypography";
 import IconUpload from "@tabler/icons-react-native/IconUpload";
 import IconUserCircle from "@tabler/icons-react-native/IconUserCircle";
+import IconUserPlus from "@tabler/icons-react-native/IconUserPlus";
 import IconUsers from "@tabler/icons-react-native/IconUsers";
 import IconWifiOff from "@tabler/icons-react-native/IconWifiOff";
 import IconWorld from "@tabler/icons-react-native/IconWorld";
@@ -145,6 +149,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "bell.badge": IconBellRinging,
   "bolt.circle": IconBolt,
   "bolt.horizontal.circle": IconBolt,
+  book: IconBook,
   brain: IconBrain,
   camera: IconCamera,
   "chart.bar.xaxis": IconChartBar,
@@ -183,6 +188,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   house: IconHome,
   "info.circle": IconInfoCircle,
   internaldrive: IconDatabase,
+  key: IconKey,
   keyboard: IconKeyboard,
   ladybug: IconBug,
   laptopcomputer: IconDeviceLaptop,
@@ -200,6 +206,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   paintbrush: IconPalette,
   pencil: IconPencil,
   "person.crop.circle": IconUserCircle,
+  "person.crop.circle.badge.plus": IconUserPlus,
   "person.2": IconUsers,
   photo: IconPhoto,
   pin: IconPin,
@@ -208,6 +215,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   plus: IconPlus,
   minus: IconMinus,
   "qrcode.viewfinder": IconQrcode,
+  "rectangle.portrait.and.arrow.right": IconLogout,
   paperplane: IconSend,
   "point.3.connected.trianglepath.dotted": IconNetwork,
   "point.topleft.down.curvedto.point.bottomright.up": IconGitMerge,

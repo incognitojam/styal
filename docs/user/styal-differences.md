@@ -20,6 +20,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   over-the-air updates but no in-app APK installer as of
   [revision 454b94a](https://github.com/pingdotgg/t3code/tree/454b94a13aea918f27bb060d8d054d4cfb791bc2).
   [Install and update the mobile app](./install.md#mobile-app).
+- **Every provider in Provider accounts.** Mobile **Settings → Provider accounts** lists each
+  provider with its icon and sign-in status, including Claude and Codex, which sign in through
+  their own CLI. T3 Code lists only providers that sign in inside the app as of
+  [revision 7ac952c](https://github.com/pingdotgg/t3code/tree/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae).
 
 ## Command line
 
