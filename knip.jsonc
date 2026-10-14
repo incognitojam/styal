@@ -39,6 +39,7 @@
         // Installed as the Codex binary by its test, the T3 import fixture generator, and e2e.
         "scripts/fake-codex.ts",
         "scripts/probe-claude-fork-local-rollback-replay.ts",
+        "scripts/seed-tool-presentation-fixture.ts",
         "scripts/update-test-shard-weights.ts",
         "scripts/verify-background-live.ts",
         "src/provider/testFixtures/*.mjs",

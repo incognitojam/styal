@@ -1,9 +1,14 @@
+import { styalToolHeading } from "@t3tools/shared/styalToolWording";
 import {
   isReportFindingsToolName,
   readReviewFindingsReport,
   type ReviewFindingsReport,
 } from "@t3tools/shared/reviewFindings";
-import { memoryFileToolKind, memoryFileToolPath } from "@t3tools/shared/toolRowPresentation";
+import {
+  deriveToolRowPresentation,
+  memoryFileToolKind,
+  memoryFileToolPath,
+} from "@t3tools/shared/toolRowPresentation";
 
 import {
   isToolLifecycleItemType,
@@ -192,7 +197,7 @@ export function normalizeCompactToolLabel(value: string): string {
 }
 
 /** Structured identity is authoritative, including when it identifies a foreign server. */
-function workEntryToolName(
+function structuredWorkEntryToolName(
   entry: Pick<
     WorkLogPresentationEntry,
     "label" | "toolTitle" | "toolData" | "structuredPayload" | "toolName"
@@ -203,10 +208,17 @@ function workEntryToolName(
   if (entry.toolName) return entry.toolName;
   const data = asRecord(entry.toolData);
   if (typeof data?.server === "string" && typeof data.tool === "string") {
-    return `${data.server}.${data.tool}`;
+    return `mcp__${data.server}__${data.tool}`;
   }
   if (typeof data?.toolName === "string") return data.toolName;
-  return resolveT3McpToolDefinition(entry.toolTitle) ? entry.toolTitle : entry.label;
+  return undefined;
+}
+
+function workEntryToolName(entry: Parameters<typeof structuredWorkEntryToolName>[0]) {
+  return (
+    structuredWorkEntryToolName(entry) ??
+    (resolveT3McpToolDefinition(entry.toolTitle) ? entry.toolTitle : entry.label)
+  );
 }
 
 function workEntryToolInput(entry: WorkLogPresentationEntry): unknown {
@@ -231,19 +243,7 @@ function resolveT3McpToolPresentation(
   data?: unknown,
 ) {
   if (!definition) return null;
-  const [action, running, completed, detail] = definition.labels;
-  const verb =
-    status === "inProgress"
-      ? running
-      : status === "completed"
-        ? completed
-        : status === "failed"
-          ? `Failed to ${action.toLowerCase()}`
-          : status === "declined"
-            ? `Declined to ${action.toLowerCase()}`
-            : status === "stopped"
-              ? `Stopped ${running.toLowerCase()}`
-              : running;
+  const detail = definition.labels[3];
 
   const actionKind =
     definition.summaryAction === "link-pr" ||
@@ -267,7 +267,7 @@ function resolveT3McpToolPresentation(
       ? `PR #${number}`
       : detail;
   return {
-    displayName: `${verb} ${target}`,
+    displayName: styalToolHeading(definition, status, target),
     icon: definition.icon,
     ...(actionKind === undefined ? {} : { action: actionKind }),
   };
@@ -286,7 +286,7 @@ export function liveActivityToolStatus(status: string | undefined, presentTense:
 export function resolveWorkEntryToolPresentation(
   entry: Pick<
     WorkLogPresentationEntry,
-    "label" | "toolTitle" | "toolData" | "toolLifecycleStatus" | "structuredPayload"
+    "label" | "toolName" | "toolTitle" | "toolData" | "toolLifecycleStatus" | "structuredPayload"
   >,
   fallbackStatus?: "inProgress" | "completed",
 ) {
@@ -297,6 +297,39 @@ export function resolveWorkEntryToolPresentation(
     definition && t3ToolResultIndicatesFailure(workEntryToolOutput(entry)) ? "failed" : status,
     entry.toolData,
   );
+}
+
+/** Web row arguments accompany the same lifecycle heading mobile and group previews use. */
+export function resolveWorkEntryToolRowPresentation(entry: WorkLogPresentationEntry) {
+  if (
+    entry.sourceActivityKind?.startsWith("setup-script.") ||
+    entry.structuredPayload?.type === "subagent"
+  ) {
+    return undefined;
+  }
+  const structuredName = structuredWorkEntryToolName(entry);
+  const fallbackName = workEntryToolName(entry);
+  const row = deriveToolRowPresentation({
+    toolName:
+      structuredName ?? (resolveT3McpToolDefinition(fallbackName) ? fallbackName : undefined),
+    itemType:
+      entry.itemType === "dynamic_tool"
+        ? "dynamic_tool_call"
+        : entry.itemType === "command_execution" ||
+            entry.itemType === "file_change" ||
+            entry.itemType === "web_search"
+          ? entry.itemType
+          : undefined,
+    label: entry.toolTitle ?? entry.label,
+    detail: entry.detail,
+    input: workEntryToolInput(entry),
+    command: entry.command,
+    changedFiles: entry.changedFiles,
+    failed: workEntryIndicatesToolFailure(entry),
+    stopped: workEntryIsStoppedToolCall(entry),
+  });
+  const presentation = resolveWorkEntryToolPresentation(entry, "completed");
+  return presentation ? { ...row, heading: presentation.displayName } : row;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

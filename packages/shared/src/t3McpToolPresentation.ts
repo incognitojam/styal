@@ -1,3 +1,5 @@
+import { styalToolDefinition } from "./styalToolWording.ts";
+
 export type T3McpToolLogo = "t3-code";
 
 export interface T3McpToolPresentation {
@@ -76,7 +78,8 @@ function tool(
   return { displayName, labels, icon, summaryAction };
 }
 
-const T3_MCP_SERVER_ALIASES = new Set(["t3-code", "t3_code", "t3code"]);
+// styal registers its server as `styal`; sessions started before the rename keep `t3-code`.
+const T3_MCP_SERVER_ALIASES = new Set(["styal", "t3-code", "t3_code", "t3code"]);
 
 // Cards, activity rows, summaries, and provider identity recovery share this inventory.
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
@@ -286,6 +289,14 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_thread_send_attachments: tool(["Send", "Sending", "Sent", "attachments"], "attachment-send"),
 };
 
+// styal's wording, applied once so lookups stay allocation-free.
+const STYAL_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = Object.fromEntries(
+  Object.entries(T3_MCP_TOOLS).map(([name, definition]) => [
+    name,
+    styalToolDefinition(name, definition),
+  ]),
+);
+
 /**
  * The T3 orchestration tool inventory, used to gate loose name matching on
  * both the server (ACP MCP identity recovery) and the client (logo branding).
@@ -298,7 +309,7 @@ function normalizeT3McpToolLabel(value: string): string {
 
 /**
  * ACP agents disagree on how the injected T3 server prefixes its tools:
- * `mcp__t3-code__x` (Claude/Cursor), `t3-code.x` (Codex), plus single
+ * `mcp__styal__x` (Claude/Cursor), `styal.x` (Codex), plus single
  * underscore, colon, slash, dash, and space separators seen from registry
  * agents. The prefix match is deliberately loose because the display-name
  * inventory is the real gate; unknown tools stay on the generic renderer.
@@ -315,14 +326,15 @@ function resolveT3McpToolName(value: string): string | null {
       : null;
   }
 
-  const namespaceMatch = /^(?<server>t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
-    label,
-  );
+  const namespaceMatch =
+    /^(?<server>styal|t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(label);
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
 
-  const prefixed = /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(label);
+  const prefixed = /^(?:mcp[-_]{1,2})?(?:t3[-_ ]?code|styal)(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
+    label,
+  );
   const candidate = prefixed?.groups?.tool ?? label;
   return Object.hasOwn(T3_MCP_TOOLS, candidate) ? candidate : null;
 }
@@ -331,7 +343,7 @@ export function resolveT3McpToolDefinition(
   toolName: string | null | undefined,
 ): T3McpToolDefinition | null {
   const name = toolName == null ? null : resolveT3McpToolName(toolName);
-  return name !== null && Object.hasOwn(T3_MCP_TOOLS, name) ? T3_MCP_TOOLS[name]! : null;
+  return name !== null && Object.hasOwn(STYAL_MCP_TOOLS, name) ? STYAL_MCP_TOOLS[name]! : null;
 }
 
 export function resolveT3McpToolPresentation(

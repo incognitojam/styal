@@ -1,4 +1,6 @@
 import type { ToolLifecycleItemType } from "@t3tools/contracts";
+import { resolveT3McpToolDefinition } from "./t3McpToolPresentation.ts";
+import { styalToolHeading } from "./styalToolWording.ts";
 
 import {
   isReportFindingsToolName,
@@ -58,7 +60,7 @@ export interface ToolRowPresentation {
 }
 
 export interface ToolRowPresentationInput {
-  /** `data.toolName`; Claude only — Codex and ACP rows never carry one. */
+  /** Canonical tool identity, including persisted provider spellings. */
   readonly toolName?: string | null | undefined;
   readonly itemType?: ToolLifecycleItemType | null | undefined;
   /** The activity summary, i.e. the provider's own vocabulary. Last resort. */
@@ -143,13 +145,34 @@ export function memoryFileToolKind(
   return slug === "MEMORY" ? "index" : slug ? "memory" : undefined;
 }
 
-/** `mcp__styal__preview_snapshot` → `styal · preview_snapshot`. */
-function mcpHeading(toolName: string): string | undefined {
-  const match = /^mcp__(?<server>[^_]+(?:_[^_]+)*?)__(?<tool>.+)$/u.exec(toolName);
+/** styal's own MCP server, under its current and pre-rename names. */
+const PRODUCT_MCP_SERVERS: ReadonlySet<string> = new Set(["styal", "t3-code", "t3_code", "t3code"]);
+
+/**
+ * Adapters name MCP calls `mcp__<server>__<tool>`. Persisted activity also
+ * holds V1's `server · tool` and, for styal's own server only, Codex's
+ * `server.tool`; a bare dotted name is too ambiguous to split generally.
+ */
+function mcpToolNameParts(
+  toolName: string,
+): { readonly server: string; readonly tool: string } | undefined {
+  const match =
+    /^mcp__(?<server>[^_]+(?:_[^_]+)*?)__(?<tool>.+)$/iu.exec(toolName) ??
+    /^(?<server>[^\s·]+) · (?<tool>\S+)$/iu.exec(toolName) ??
+    /^(?<server>styal|t3-code|t3_code|t3code)[._](?<tool>[^.\s]+)$/iu.exec(toolName);
   const server = match?.groups?.server;
   const tool = match?.groups?.tool;
-  const displayServer = server === "t3-code" ? "styal" : server;
-  return displayServer && tool ? `${displayServer} · ${tool}` : undefined;
+  return server && tool ? { server, tool } : undefined;
+}
+
+/** `mcp__styal__preview_snapshot` → `styal · preview_snapshot`. */
+function mcpHeading(toolName: string): string | undefined {
+  const parts = mcpToolNameParts(toolName);
+  if (!parts) {
+    return undefined;
+  }
+  const server = PRODUCT_MCP_SERVERS.has(parts.server.toLowerCase()) ? "styal" : parts.server;
+  return `${server} · ${parts.tool}`;
 }
 
 function previewNavigateArgument(input: Record<string, unknown>): ToolRowArgument | undefined {
@@ -236,121 +259,41 @@ function previewWaitForArgument(input: Record<string, unknown>): ToolRowArgument
   return target ? { kind: "text", value: inline(target) } : undefined;
 }
 
-interface PreviewToolSpec {
-  readonly heading: string;
-  readonly failedHeading: string;
-  readonly argument?: (input: Record<string, unknown>) => ToolRowArgument | undefined;
-}
-
-/**
- * The styal preview tools are a product-native browser family, so their rows get
- * a curated vocabulary instead of the generic `styal · preview_*` MCP form:
- * a verb for the action and only the argument that matters, with session noise
- * (`tabId`, `timeoutMs`, `open`/`show`) dropped.
- *
- * This table is the only list of the family; membership is derived from its
- * keys, so a tool added here is recognized everywhere without a second edit.
- */
-const PREVIEW_TOOL_SPECS: Readonly<Record<string, PreviewToolSpec>> = {
-  preview_status: {
-    heading: "Checked preview status",
-    failedHeading: "Failed to check preview status",
+/** Only the useful argument is fork-specific; headings come from the shared inventory. */
+export const STYAL_PREVIEW_TOOL_ARGUMENTS: Readonly<
+  Record<string, (input: Record<string, unknown>) => ToolRowArgument | undefined>
+> = {
+  preview_open: (input) => {
+    const url = asTrimmedString(input.url);
+    return url ? { kind: "text", value: inline(url) } : undefined;
   },
-  preview_open: {
-    heading: "Opened preview",
-    failedHeading: "Failed to open preview",
-    argument: (input) => {
-      const url = asTrimmedString(input?.url);
-      return url ? { kind: "text", value: inline(url) } : undefined;
-    },
+  preview_navigate: previewNavigateArgument,
+  preview_resize: previewResizeArgument,
+  preview_set_appearance: (input) => {
+    const colorScheme = asTrimmedString(input.colorScheme);
+    return colorScheme ? { kind: "text", value: colorScheme } : undefined;
   },
-  preview_navigate: {
-    heading: "Navigated preview",
-    failedHeading: "Failed to navigate",
-    argument: previewNavigateArgument,
+  preview_click: previewClickArgument,
+  preview_type: previewTypeArgument,
+  preview_press: previewPressArgument,
+  preview_scroll: previewScrollArgument,
+  preview_evaluate: (input) => {
+    const expression = asTrimmedString(input.expression);
+    return expression ? { kind: "text", value: inline(expression) } : undefined;
   },
-  preview_resize: {
-    heading: "Resized preview",
-    failedHeading: "Failed to resize preview",
-    argument: previewResizeArgument,
-  },
-  preview_set_appearance: {
-    heading: "Set preview appearance",
-    failedHeading: "Failed to set appearance",
-    argument: (input) => {
-      const colorScheme = asTrimmedString(input?.colorScheme);
-      return colorScheme ? { kind: "text", value: colorScheme } : undefined;
-    },
-  },
-  preview_snapshot: { heading: "Inspected page", failedHeading: "Failed to inspect page" },
-  preview_click: {
-    heading: "Clicked",
-    failedHeading: "Failed to click",
-    argument: previewClickArgument,
-  },
-  preview_type: {
-    heading: "Typed",
-    failedHeading: "Failed to type",
-    argument: previewTypeArgument,
-  },
-  preview_press: {
-    heading: "Pressed",
-    failedHeading: "Failed to press key",
-    argument: previewPressArgument,
-  },
-  preview_scroll: {
-    heading: "Scrolled",
-    failedHeading: "Failed to scroll",
-    argument: previewScrollArgument,
-  },
-  preview_evaluate: {
-    heading: "Ran JS in preview",
-    failedHeading: "Failed to run JS",
-    argument: (input) => {
-      const expression = asTrimmedString(input?.expression);
-      return expression ? { kind: "text", value: inline(expression) } : undefined;
-    },
-  },
-  preview_wait_for: {
-    heading: "Waited for condition",
-    failedHeading: "Failed to wait for condition",
-    argument: previewWaitForArgument,
-  },
-  preview_recording_start: {
-    heading: "Started recording preview",
-    failedHeading: "Failed to start recording",
-  },
-  preview_recording_stop: {
-    heading: "Stopped recording preview",
-    failedHeading: "Failed to stop recording",
-  },
+  preview_wait_for: previewWaitForArgument,
 };
 
-const PREVIEW_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(PREVIEW_TOOL_SPECS));
-
-/**
- * Every adapter registers this MCP server as `styal`, and the payload
- * projection gives providers that carry identity on the item a synthesized
- * `mcp__<server>__<tool>`, so the qualified name is the one form that reaches
- * presentation. Requiring it is what keeps this vocabulary — which describes
- * styal's browser specifically — off an unrelated server's `preview_*` tool.
- * The former prefix remains readable so persisted activity keeps its curated
- * presentation throughout the compatibility window.
- */
-const QUALIFIED_PREVIEW_PREFIXES = ["mcp__styal__", "mcp__t3-code__"] as const;
-
-function previewToolNameOf(value: string): string | undefined {
-  const trimmed = value.trim();
-  const prefix = QUALIFIED_PREVIEW_PREFIXES.find((candidate) => trimmed.startsWith(candidate));
-  if (!prefix) {
-    return undefined;
-  }
-  const tool = trimmed.slice(prefix.length);
-  return PREVIEW_TOOL_NAMES.has(tool) ? tool : undefined;
+function productToolDefinition(value: string) {
+  const parts = mcpToolNameParts(value.trim());
+  return parts && PRODUCT_MCP_SERVERS.has(parts.server.toLowerCase())
+    ? resolveT3McpToolDefinition(value)
+    : null;
 }
 
+/** Bare tool names cannot establish that a call came from styal's browser. */
 export function isPreviewToolName(value: string): boolean {
-  return previewToolNameOf(value) !== undefined;
+  return productToolDefinition(value)?.icon === "browser";
 }
 
 const ASK_USER_QUESTION_TOOL_NAME = "AskUserQuestion";
@@ -746,17 +689,20 @@ function deriveBaseToolRowPresentation(
     // used to print an unshortened absolute path.
     argumentForItemType(itemType, { command, detail, changedFiles, filePath, toolName });
 
-  // The product-native browser family outranks the generic MCP form: the
-  // verbs are the vocabulary, and the failed heading is already chosen here
-  // because the generic " … failed" suffix reads poorly after a past tense.
   if (rawToolName) {
-    const previewTool = previewToolNameOf(rawToolName);
-    const spec = previewTool ? PREVIEW_TOOL_SPECS[previewTool] : undefined;
-    if (spec) {
-      const previewArgument = spec.argument?.(toolInput ?? {});
+    const definition = productToolDefinition(rawToolName);
+    if (definition) {
+      const name = mcpToolNameParts(rawToolName)?.tool;
+      const previewArgument = name
+        ? STYAL_PREVIEW_TOOL_ARGUMENTS[name]?.(toolInput ?? {})
+        : undefined;
+      const toolArgument = definition.icon === "browser" ? previewArgument : mcpArgument(toolInput);
       return {
-        heading: input.failed ? spec.failedHeading : spec.heading,
-        ...(previewArgument ? { argument: previewArgument } : {}),
+        heading: styalToolHeading(
+          definition,
+          input.failed ? "failed" : input.stopped ? "stopped" : "completed",
+        ),
+        ...(toolArgument ? { argument: toolArgument } : {}),
       };
     }
   }
@@ -857,8 +803,8 @@ export function deriveToolRowPresentation(
     return presentation;
   }
   const toolName = asTrimmedString(input.toolName);
-  if (outcome === "failed" && toolName && isPreviewToolName(toolName)) {
-    // Preview failures carry their own heading ("Failed to click").
+  if (toolName && productToolDefinition(toolName)) {
+    // The shared inventory already phrased the lifecycle outcome.
     return presentation;
   }
   const normalizedToolName = toolName ? normalizeKnownToolName(toolName) : undefined;

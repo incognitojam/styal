@@ -9,6 +9,7 @@ import {
   mergeToolActivityData,
 } from "@t3tools/shared/toolActivity";
 import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
+import { ACTIVE_MCP_SERVER_NAME } from "../../mcp/McpProviderSession.ts";
 import type {
   OrchestrationV2ProviderThreadNativeMetadata,
   ThreadTokenUsageSnapshot,
@@ -1084,12 +1085,13 @@ function acpMcpFallbackInput(value: string | undefined): Record<string, unknown>
  * shared convention (survey of the 2026-08 registry builds): Kilo and
  * opencode use `t3-code_<tool>`, claude-acp and qwen `mcp__t3-code__<tool>`,
  * Amp `mcp__t3_code__<tool>` (hyphens mangled), droid `t3-code___<tool>`,
- * Copilot `t3-code-<tool>`, cline appends `: <args json>`. T3 always injects
- * its server as "t3-code", and matches are additionally gated on the known
- * T3 tool inventory, so the separator match can stay loose.
+ * Copilot `t3-code-<tool>`, cline appends `: <args json>`. The server is
+ * injected as "styal", or "t3-code" for sessions started before the rename,
+ * and matches are additionally gated on the known T3 tool inventory, so the
+ * separator match can stay loose.
  */
 const T3_MCP_TITLE_CALL =
-  /^(?:mcp[-_]{1,2})?t3[-_ ]?code[-_.:/ ]{1,3}(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::.*)?$/i;
+  /^(?:mcp[-_]{1,2})?(?:t3[-_ ]?code|styal)[-_.:/ ]{1,3}(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::.*)?$/i;
 
 /**
  * Gemini CLI titles injected MCP calls "<tool> (<server> MCP Server)" and
@@ -1097,7 +1099,7 @@ const T3_MCP_TITLE_CALL =
  * tool-first as "<tool>_t3-code".
  */
 const T3_MCP_TITLE_SUFFIX_CALL =
-  /^(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*?)(?: \(t3[-_ ]?code MCP Server\)(?::|$)|[-_.]t3[-_ ]?code$)/i;
+  /^(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*?)(?: \((?:t3[-_ ]?code|styal) MCP Server\)(?::|$)|[-_.](?:t3[-_ ]?code|styal)$)/i;
 
 /**
  * glm-acp-agent and Kimi CLI register injected MCP tools under their bare
@@ -1147,7 +1149,7 @@ export function extractMcpToolCallIdentity(
   // its toolName identifies the call even under future prefix formats.
   const metaServerId = typeof meta?.serverId === "string" ? meta.serverId.trim() : "";
   const metaToolName = typeof meta?.toolName === "string" ? meta.toolName.trim() : "";
-  if (/^t3[-_ ]?code$/i.test(metaServerId) && metaToolName.length > 0) {
+  if (/^(?:t3[-_ ]?code|styal)$/i.test(metaServerId) && metaToolName.length > 0) {
     for (const knownTool of T3_MCP_TOOL_NAMES) {
       const boundary = metaToolName.length - knownTool.length - 1;
       if (
@@ -1156,7 +1158,7 @@ export function extractMcpToolCallIdentity(
           boundary >= 0 &&
           !/[A-Za-z0-9]/.test(metaToolName.charAt(boundary)))
       ) {
-        return { server: "t3-code", tool: knownTool };
+        return { server: ACTIVE_MCP_SERVER_NAME, tool: knownTool };
       }
     }
   }
@@ -1165,8 +1167,8 @@ export function extractMcpToolCallIdentity(
   const gooseExtension =
     typeof gooseToolCall?.extensionName === "string" ? gooseToolCall.extensionName.trim() : "";
   const assertsForeignOrigin =
-    (metaServerId.length > 0 && !/^t3[-_ ]?code$/i.test(metaServerId)) ||
-    (gooseExtension.length > 0 && !/^t3[-_ ]?code$/i.test(gooseExtension));
+    (metaServerId.length > 0 && !/^(?:t3[-_ ]?code|styal)$/i.test(metaServerId)) ||
+    (gooseExtension.length > 0 && !/^(?:t3[-_ ]?code|styal)$/i.test(gooseExtension));
   if (assertsForeignOrigin) {
     return undefined;
   }
@@ -1184,7 +1186,7 @@ export function extractMcpToolCallIdentity(
       T3_MCP_BARE_TITLE_CALL.exec(trimmed);
     const candidateTool = match?.groups?.tool;
     if (candidateTool !== undefined && T3_MCP_TOOL_NAMES.has(candidateTool)) {
-      return { server: "t3-code", tool: candidateTool };
+      return { server: ACTIVE_MCP_SERVER_NAME, tool: candidateTool };
     }
   }
   const commands = [
@@ -1199,7 +1201,11 @@ export function extractMcpToolCallIdentity(
       // The acp-mcp-call CLI exists only as T3's bridge fallback, so the
       // server identity is T3's by construction.
       const input = acpMcpFallbackInput(match[2]);
-      return { server: "t3-code", tool: match[1], ...(input === undefined ? {} : { input }) };
+      return {
+        server: ACTIVE_MCP_SERVER_NAME,
+        tool: match[1],
+        ...(input === undefined ? {} : { input }),
+      };
     }
   }
   return undefined;

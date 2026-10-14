@@ -51,6 +51,7 @@ import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
   resolveWorkEntryToolPresentation,
+  resolveWorkEntryToolRowPresentation,
   resolveViewedImageAsset,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
@@ -71,7 +72,6 @@ import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
 import { claudeSkillInvocation } from "@t3tools/shared/toolActivity";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
-  deriveToolRowPresentation,
   formatAskUserQuestionBody,
   isPreviewToolName,
   normalizeKnownToolName,
@@ -5100,30 +5100,7 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
  * `toolRowPresentation` for why this must not be written back onto the entry.
  */
 function toolRowPresentationFor(workEntry: TimelineWorkEntry) {
-  if (
-    workEntry.sourceActivityKind?.startsWith("setup-script.") ||
-    workEntry.structuredPayload?.type === "subagent"
-  ) {
-    return undefined;
-  }
-  return deriveToolRowPresentation({
-    toolName: workEntry.toolName,
-    itemType:
-      workEntry.itemType === "dynamic_tool"
-        ? "dynamic_tool_call"
-        : workEntry.itemType === "command_execution" ||
-            workEntry.itemType === "file_change" ||
-            workEntry.itemType === "web_search"
-          ? workEntry.itemType
-          : undefined,
-    label: workEntry.toolTitle ?? workEntry.label,
-    detail: workEntry.detail,
-    input: workEntry.toolInput,
-    command: workEntry.command,
-    changedFiles: workEntry.changedFiles,
-    failed: workEntryIndicatesToolFailure(workEntry),
-    stopped: workEntryIsStoppedToolCall(workEntry),
-  });
+  return resolveWorkEntryToolRowPresentation(workEntry);
 }
 
 function formatToolRowArgument(
@@ -5694,7 +5671,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? workEntry.toolLifecycleStatus === "inProgress"
         ? "Thinking"
         : "Thought"
-      : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
+      : questionHeading ||
+        (displayLabel ??
+          (presentation && resolveWorkEntryToolPresentation(workEntry)
+            ? toolRowDisplayText(presentation, workspaceRoot)
+            : workEntryDisplayLabel(workEntry, workspaceRoot)));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)

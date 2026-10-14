@@ -245,6 +245,19 @@ describe("deriveToolRowPresentation", () => {
     ).toBe("linear · create_issue");
   });
 
+  it("names styal's server the same way under its pre-rename name", () => {
+    expect(deriveToolRowPresentation({ toolName: "mcp__t3-code__t3_thread_read" })?.heading).toBe(
+      "Read a thread",
+    );
+    expect(deriveToolRowPresentation({ toolName: "styal.t3_thread_read" })?.heading).toBe(
+      "Read a thread",
+    );
+  });
+
+  it("does not split dotted names that are not styal's server", () => {
+    expect(deriveToolRowPresentation({ toolName: "cua_repl.js" })?.heading).toBe("cua_repl.js");
+  });
+
   describe("styal preview tools", () => {
     const PREVIEW_HEADINGS = [
       ["preview_status", "Checked preview status"],
@@ -417,6 +430,19 @@ describe("deriveToolRowPresentation", () => {
       }
     });
 
+    it("names the action for every form providers have persisted", () => {
+      // Current adapters, pre-rename sessions, Codex before it adopted the
+      // `mcp__` form, and activity imported from V1.
+      for (const toolName of [
+        "mcp__styal__preview_open",
+        "mcp__t3-code__preview_open",
+        "styal.preview_open",
+        "styal · preview_open",
+      ]) {
+        expect(deriveToolRowPresentation({ toolName })?.heading, toolName).toBe("Opened preview");
+      }
+    });
+
     it("leaves another server's preview tools as generic MCP rows", () => {
       // The vocabulary describes styal's browser; it would misdescribe anyone
       // else's tool that happens to share the name.
@@ -451,7 +477,7 @@ describe("deriveToolRowPresentation", () => {
         argument: { kind: "text", value: "role=button" },
       });
       expect(preview("preview_navigate", { url: "https://t3.chat" }, true)?.heading).toBe(
-        "Failed to navigate",
+        "Failed to navigate preview",
       );
     });
   });

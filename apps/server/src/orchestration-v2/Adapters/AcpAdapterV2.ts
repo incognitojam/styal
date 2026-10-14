@@ -72,6 +72,7 @@ import {
   parsePermissionRequest,
   parseSessionUpdateEvent,
   type AcpPlanUpdate,
+  type AcpMcpToolCallIdentity,
   type AcpAgentTerminalState,
   type AcpSessionModeState,
   type AcpToolCallState,
@@ -812,6 +813,28 @@ function acpMcpToolCallOutput(rawOutput: unknown): unknown {
   return resultOutput === undefined
     ? { error: errorMessage }
     : { error: errorMessage, result: resultOutput };
+}
+
+/** The recovered MCP item uses the same identity and output shape as native provider items. */
+export function acpMcpToolTurnItem(
+  base: Omit<
+    Extract<OrchestrationV2TurnItem, { type: "dynamic_tool" }>,
+    "type" | "toolName" | "input" | "output"
+  >,
+  identity: AcpMcpToolCallIdentity,
+  rawInput: unknown,
+  rawOutput: unknown,
+) {
+  const rawInputRecord = unknownRecord(rawInput);
+  return {
+    ...base,
+    // The agent's generic title would shadow MCP identity.
+    title: null,
+    type: "dynamic_tool" as const,
+    toolName: `mcp__${identity.server}__${identity.tool}`,
+    input: identity.input ?? unknownRecord(rawInputRecord?.arguments) ?? rawInputRecord ?? {},
+    ...(rawOutput === undefined ? {} : { output: acpMcpToolCallOutput(rawOutput) }),
+  };
 }
 
 function nonEmptyText(value: unknown, fallback: string): string {
@@ -3281,20 +3304,7 @@ export function makeAcpAdapterV2(
               });
             }
           } else if (mcpIdentity !== undefined) {
-            turnItem = {
-              ...base,
-              // Identity lives in toolName, like native Codex MCP items; the
-              // agent's own title (e.g. "Ran command") would shadow it.
-              title: null,
-              type: "dynamic_tool",
-              toolName: `${mcpIdentity.server}.${mcpIdentity.tool}`,
-              input:
-                mcpIdentity.input ??
-                unknownRecord(rawInputRecord?.arguments) ??
-                rawInputRecord ??
-                {},
-              ...(rawOutput === undefined ? {} : { output: acpMcpToolCallOutput(rawOutput) }),
-            };
+            turnItem = acpMcpToolTurnItem(base, mcpIdentity, rawInputRecord, rawOutput);
             yield* emitProviderEvent({ type: "turn_item.updated", driver, turnItem });
             yield* rearmDeferredFinalize(context);
             return;

@@ -903,7 +903,7 @@ describe("CodexAdapterV2 dynamic tool projection", () => {
     });
 
     assert.deepEqual(projection, {
-      toolName: "t3-code.create_threads",
+      toolName: "mcp__t3-code__create_threads",
       input: {
         threads: [{ title: "Fixture child", prompt: "fixture child prompt" }],
       },

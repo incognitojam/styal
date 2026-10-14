@@ -488,7 +488,8 @@ export function projectCodexDynamicToolItem(
     item.type === "mcpToolCall" ? codexMcpToolOutput(item) : codexDynamicToolOutput(item);
   const toolName =
     item.type === "mcpToolCall"
-      ? `${item.server}.${item.tool}`
+      ? // The `mcp__server__tool` form every other adapter reports.
+        `mcp__${item.server}__${item.tool}`
       : [trimText(item.namespace), item.tool].filter(Boolean).join(".");
   const title = dynamicToolTitle(toolName, item.arguments);
   const projection: CodexDynamicToolProjection = {
