@@ -409,6 +409,10 @@
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
     },
+    "./redactedText": {
+      "types": "./src/redactedText.ts",
+      "import": "./src/redactedText.ts"
+    },
     "./cliReleaseVersion": {
       "types": "./src/cliReleaseVersion.ts",
       "import": "./src/cliReleaseVersion.ts"

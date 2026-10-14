@@ -4,6 +4,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ProviderAuthResponse, ServerProvider } from "@t3tools/contracts";
+import { redactedPlaceholder } from "@t3tools/shared/redactedText";
 import { useRef, useState } from "react";
 import { Alert, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -384,16 +385,20 @@ function ProviderAccount({
   );
 }
 
+/** The account email, replaced by a same-shaped placeholder until tapped. */
 function ProviderAccountEmail({ email }: { readonly email: string }) {
   const [revealed, setRevealed] = useState(false);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={revealed ? "Hide account email" : "Reveal account email"}
+      hitSlop={12}
       onPress={() => setRevealed((value) => !value)}
-      className="min-h-[44px] justify-center"
+      className="self-start"
     >
-      <Text className="text-sm text-foreground-muted">{revealed ? email : "••••••@••••••"}</Text>
+      <Text className="text-xs text-foreground-muted ios:font-[family-name:Menlo] android:font-mono">
+        {revealed ? email : redactedPlaceholder(email)}
+      </Text>
     </Pressable>
   );
 }
