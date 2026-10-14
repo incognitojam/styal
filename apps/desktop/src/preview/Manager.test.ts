@@ -2518,7 +2518,7 @@ describe("PreviewManager", () => {
     ),
   );
 
-  effectIt.effect("captures fitted viewports in logical page coordinates", () =>
+  effectIt.effect("captures fitted viewports from the displayed surface", () =>
     withManager((manager) =>
       Effect.gen(function* () {
         const capturePage = vi.fn(async () => ({
@@ -2532,62 +2532,44 @@ describe("PreviewManager", () => {
             readonly debugger: { readonly sendCommand: ReturnType<typeof vi.fn> };
           }
         ).debugger.sendCommand;
-        sendCommand.mockImplementation(async (method: string) => {
-          if (method === "Page.getLayoutMetrics") {
-            return { cssVisualViewport: { pageX: 12, pageY: 34 } };
-          }
-          if (method === "Page.captureScreenshot") {
-            return { data: Buffer.from("logical viewport").toString("base64") };
-          }
-          return undefined;
-        });
         fromId.mockReturnValue(preview);
-        createFromBuffer.mockClear();
 
-        yield* manager.createTab("tab_logical_capture");
-        yield* manager.registerWebview("tab_logical_capture", 42);
-        yield* manager.setViewportPresentation("tab_logical_capture", {
+        yield* manager.createTab("tab_fitted_capture");
+        yield* manager.registerWebview("tab_fitted_capture", 42);
+        yield* manager.setViewportPresentation("tab_fitted_capture", {
           width: 1280,
           height: 800,
           scale: 0.25,
         });
-        yield* manager.captureScreenshot("tab_logical_capture");
+        const artifact = yield* manager.captureScreenshot("tab_fitted_capture");
 
-        expect(capturePage).not.toHaveBeenCalled();
-        expect(sendCommand).toHaveBeenCalledWith("Page.captureScreenshot", {
-          format: "png",
-          fromSurface: true,
-          captureBeyondViewport: true,
-          clip: { x: 12, y: 34, width: 1280, height: 800, scale: 1 },
-        });
-        expect(createFromBuffer).toHaveBeenCalledWith(Buffer.from("logical viewport"));
+        // Chromium tiles the fitted guest's surface when asked for the logical viewport.
+        expect(sendCommand).not.toHaveBeenCalledWith("Page.captureScreenshot", expect.anything());
+        expect(capturePage).toHaveBeenCalledWith();
+        expect(writeFile).toHaveBeenCalledWith(artifact.path, Buffer.from("physical"));
       }),
     ),
   );
 
-  effectIt.effect("captures fitted annotation crops in logical page coordinates", () =>
+  effectIt.effect("maps fitted annotation crops from logical page coordinates", () =>
     withManager((manager) =>
       Effect.gen(function* () {
         let onElementPicked: ((event: unknown, ...args: unknown[]) => void) | undefined;
-        const preview = makeTestPreviewWebContents(async () => ({
+        const crop = vi.fn();
+        const surfaceImage = {
           getSize: () => ({ width: 640, height: 400 }),
+          toDataURL: () => "data:image/png;base64,c3VyZmFjZQ==",
           toJPEG: () => Buffer.from("physical"),
           toPNG: () => Buffer.from("physical"),
-        }));
+          crop,
+        };
+        crop.mockReturnValue(surfaceImage);
+        const preview = makeTestPreviewWebContents(async () => surfaceImage);
         const sendCommand = (
           preview as unknown as {
             readonly debugger: { readonly sendCommand: ReturnType<typeof vi.fn> };
           }
         ).debugger.sendCommand;
-        sendCommand.mockImplementation(async (method: string) => {
-          if (method === "Page.getLayoutMetrics") {
-            return { cssVisualViewport: { pageX: 12, pageY: 34 } };
-          }
-          if (method === "Page.captureScreenshot") {
-            return { data: Buffer.from("logical crop").toString("base64") };
-          }
-          return undefined;
-        });
         Object.assign(preview as object, {
           isFocused: () => true,
           once: vi.fn(),
@@ -2601,14 +2583,14 @@ describe("PreviewManager", () => {
         });
         fromId.mockReturnValue(preview);
 
-        yield* manager.createTab("tab_logical_annotation");
-        yield* manager.registerWebview("tab_logical_annotation", 42);
-        yield* manager.setViewportPresentation("tab_logical_annotation", {
+        yield* manager.createTab("tab_fitted_annotation");
+        yield* manager.registerWebview("tab_fitted_annotation", 42);
+        yield* manager.setViewportPresentation("tab_fitted_annotation", {
           width: 1280,
           height: 800,
           scale: 0.25,
         });
-        const pick = yield* manager.pickElement("tab_logical_annotation").pipe(Effect.forkChild);
+        const pick = yield* manager.pickElement("tab_fitted_annotation").pipe(Effect.forkChild);
         yield* Effect.yieldNow;
         onElementPicked?.(
           {},
@@ -2629,12 +2611,8 @@ describe("PreviewManager", () => {
         );
         const result = yield* Fiber.join(pick);
 
-        expect(sendCommand).toHaveBeenCalledWith("Page.captureScreenshot", {
-          format: "png",
-          fromSurface: true,
-          captureBeyondViewport: true,
-          clip: { x: 812, y: 434, width: 240, height: 120, scale: 1 },
-        });
+        expect(sendCommand).not.toHaveBeenCalledWith("Page.captureScreenshot", expect.anything());
+        expect(crop).toHaveBeenCalledWith({ x: 400, y: 200, width: 120, height: 60 });
         expect(result?.annotation.screenshot?.cropRect).toEqual({
           x: 800,
           y: 400,

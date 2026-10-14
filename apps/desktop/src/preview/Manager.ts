@@ -1715,47 +1715,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     return yield* control.semaphore.withPermit(execute().pipe(Effect.onExit(finalize)));
   });
 
-  const captureLogicalViewportWithSend = Effect.fn("PreviewManager.captureLogicalViewportWithSend")(
-    function* (
-      tabId: string,
-      wc: Electron.WebContents,
-      send: SendCommand,
-      presentation: ViewportPresentation,
-      cropRect?: PreviewAnnotationRect,
-    ) {
-      const metrics = (yield* send("Page.getLayoutMetrics")) as {
-        readonly cssVisualViewport?: { readonly pageX?: number; readonly pageY?: number };
-      };
-      const pageX = metrics.cssVisualViewport?.pageX ?? 0;
-      const pageY = metrics.cssVisualViewport?.pageY ?? 0;
-      const response = (yield* send("Page.captureScreenshot", {
-        format: "png",
-        fromSurface: true,
-        captureBeyondViewport: true,
-        clip: {
-          x: pageX + (cropRect?.x ?? 0),
-          y: pageY + (cropRect?.y ?? 0),
-          width: cropRect?.width ?? presentation.width,
-          height: cropRect?.height ?? presentation.height,
-          scale: 1,
-        },
-      })) as { readonly data?: unknown };
-      if (typeof response.data !== "string") {
-        return yield* new PreviewOperationError({
-          operation: "captureLogicalViewport.decode",
-          tabId,
-          webContentsId: wc.id,
-          cause: new Error("Chromium returned an invalid preview screenshot."),
-        });
-      }
-      const screenshotData = response.data;
-      return yield* attempt(
-        { operation: "captureLogicalViewport.decode", tabId, webContentsId: wc.id },
-        () => nativeImage.createFromBuffer(Buffer.from(screenshotData, "base64")),
-      );
-    },
-  );
-
   const captureNativeViewportPage = (
     operation: string,
     tabId: string,
@@ -1773,7 +1732,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         )
       : capturePageWithTimeout(operation, tabId, wc);
 
-  const captureFallbackViewportPage = Effect.fn("PreviewManager.captureFallbackViewportPage")(
+  // A fitted <webview> guest only has its on-screen surface pixels. CDP screenshots
+  // of the logical viewport tile that surface instead of rendering beyond it, and
+  // capturePage(cropRect) rejects a CSS-scaled guest, so capture the whole surface
+  // and map logical crop rectangles into its pixel space.
+  const captureScaledViewportPage = Effect.fn("PreviewManager.captureScaledViewportPage")(
     function* (
       operation: string,
       tabId: string,
@@ -1786,8 +1749,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
       return yield* attempt({ operation: `${operation}.crop`, tabId, webContentsId: wc.id }, () => {
         const size = image.getSize();
-        // Electron rejects capturePage(cropRect) while the guest is CSS-scaled.
-        // Crop the valid full-surface capture in its actual pixel coordinates.
         const scaleX = size.width / presentation.width;
         const scaleY = size.height / presentation.height;
         const x = Math.max(0, Math.floor(cropRect.x * scaleX));
@@ -1804,31 +1765,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     },
   );
 
-  const captureViewportPageWithSend = Effect.fn("PreviewManager.captureViewportPageWithSend")(
-    function* (
-      operation: string,
-      tabId: string,
-      wc: Electron.WebContents,
-      send: SendCommand,
-      cropRect?: PreviewAnnotationRect,
-    ) {
-      const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
-      const viewportFallback = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.viewportFallback;
-      if (viewportFallback) {
-        return yield* captureFallbackViewportPage(operation, tabId, wc, presentation, cropRect);
-      }
-      if (presentation?.scale !== undefined && presentation.scale < 1) {
-        return yield* captureWithTimeout(
-          operation,
-          tabId,
-          wc,
-          captureLogicalViewportWithSend(tabId, wc, send, presentation, cropRect),
-        );
-      }
-      return yield* captureNativeViewportPage(operation, tabId, wc, cropRect);
-    },
-  );
-
   const captureViewportPage = Effect.fn("PreviewManager.captureViewportPage")(function* (
     operation: string,
     tabId: string,
@@ -1837,31 +1773,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   ) {
     const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
     const viewportFallback = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.viewportFallback;
-    if (viewportFallback) {
-      return yield* captureFallbackViewportPage(operation, tabId, wc, presentation, cropRect);
+    if (viewportFallback || (presentation !== undefined && presentation.scale < 1)) {
+      return yield* captureScaledViewportPage(operation, tabId, wc, presentation, cropRect);
     }
-    if (!presentation || presentation.scale >= 1) {
-      return yield* captureNativeViewportPage(operation, tabId, wc, cropRect);
-    }
-    const control = yield* ensureControlSession(wc);
-    return yield* captureWithTimeout(
-      operation,
-      tabId,
-      wc,
-      control.semaphore.withPermit(
-        captureLogicalViewportWithSend(
-          tabId,
-          wc,
-          (method, commandParams) =>
-            attemptPromise(
-              { operation: `${operation}.${method}`, tabId, webContentsId: wc.id },
-              () => control.debugger.sendCommand(method, commandParams),
-            ),
-          presentation,
-          cropRect,
-        ),
-      ),
-    );
+    return yield* captureNativeViewportPage(operation, tabId, wc, cropRect);
   });
 
   const evaluateWithDebugger = <A = unknown>(
@@ -4157,7 +4072,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           },
           tabId,
           wc,
-          captureViewportPageWithSend("automationSnapshot.capturePage", tabId, wc, send),
+          captureViewportPage("automationSnapshot.capturePage", tabId, wc),
         ),
         Ref.get(diagnosticsRef),
         Ref.get(actionTimelineRef),
