@@ -1,4 +1,5 @@
 import type {
+  OrchestrationV2AppThread,
   RepositoryIdentity,
   SourceControlProviderKind,
   ThreadLinkedPullRequest,
@@ -386,4 +387,17 @@ export function threadPullRequestsOf(thread: {
           stack: null,
         },
       ];
+}
+
+/** Apply a single-link sync without copying unrelated PRs into the event history. */
+export function applyThreadPullRequestLinkUpdate(
+  thread: OrchestrationV2AppThread,
+  updated: ThreadPullRequestLink,
+): OrchestrationV2AppThread {
+  return {
+    ...thread,
+    pullRequests: threadPullRequestsOf(thread).map((link) =>
+      threadPullRequestKeysEqual(link, updated) ? updated : link,
+    ),
+  };
 }

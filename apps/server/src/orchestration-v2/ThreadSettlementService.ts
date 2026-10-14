@@ -661,6 +661,7 @@ export const make = Effect.gen(function* () {
     switch (event.type) {
       case "thread.settled":
         return cleanUpSettledThread(event.threadId);
+      case "thread.pull-request-link-updated":
       case "thread.pull-request-synced":
       case "thread.unpinned":
       case "provider-session.detached":
