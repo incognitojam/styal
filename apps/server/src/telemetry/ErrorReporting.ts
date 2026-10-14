@@ -11,7 +11,7 @@
 import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
 
-import { ErrorTracking } from "@posthog/core";
+import * as ErrorTracking from "@posthog/core/error-tracking";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -44,20 +44,26 @@ export class ErrorReportSink extends Context.Service<
   {
     readonly offer: (entry: LoggedError) => void;
     readonly drain: () => ReadonlyArray<LoggedError>;
+    /** Stops accepting entries, for servers that do not report. */
+    readonly close: () => void;
   }
 >()("@styal/cli/telemetry/ErrorReporting/ErrorReportSink") {}
 
 /** A bounded sink. Entries past capacity are dropped until the next drain. */
 export const makeErrorReportSink = (capacity = SINK_CAPACITY): ErrorReportSink["Service"] => {
-  let pending: Array<LoggedError> = [];
+  // Undefined once closed, so queued errors and what they reference are released.
+  let pending: Array<LoggedError> | undefined = [];
   return ErrorReportSink.of({
     offer: (entry) => {
-      if (pending.length < capacity) pending.push(entry);
+      if (pending && pending.length < capacity) pending.push(entry);
     },
     drain: () => {
-      const drained = pending;
-      pending = [];
+      const drained = pending ?? [];
+      if (pending) pending = [];
       return drained;
+    },
+    close: () => {
+      pending = undefined;
     },
   });
 };
@@ -287,7 +293,10 @@ const APP_ROOT = NodeURL.fileURLToPath(
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const sink = yield* ErrorReportSink;
-    if (!(yield* ErrorReportingConfig)) return;
+    if (!(yield* ErrorReportingConfig)) {
+      sink.close();
+      return;
+    }
     const analytics = yield* AnalyticsService;
     const scrub = makeScrubber({ appRoot: APP_ROOT, homeDir: NodeOS.homedir() });
     const admit = makeRateLimiter();

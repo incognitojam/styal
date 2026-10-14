@@ -1,3 +1,5 @@
+import * as NodeURL from "node:url";
+
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -18,7 +20,7 @@ class TerminalStartError extends Data.TaggedError("TerminalStartError")<{
 const scrub = ErrorReporting.makeScrubber({ appRoot: "/opt/styal", homeDir: "/Users/alex" });
 // Frames from this test file, made relative to the real server package root.
 const localScrub = ErrorReporting.makeScrubber({
-  appRoot: new URL("../..", import.meta.url).pathname,
+  appRoot: NodeURL.fileURLToPath(new URL("../..", import.meta.url)),
   homeDir: "/Users/alex",
 });
 
@@ -195,7 +197,8 @@ describe("ErrorReporting delivery", () => {
           yield* TestClock.adjust("1 second");
         }),
       );
-      return recorded;
+      // Entries a closed sink kept would never be reported or released.
+      return { recorded, held: sink.drain() };
     });
 
   const repeated = (value: string) =>
@@ -208,18 +211,19 @@ describe("ErrorReporting delivery", () => {
 
   it.effect("records a few reports of a repeating error as $exception events", () =>
     Effect.gen(function* () {
-      const recorded = yield* deliver(true, [...repeated("first"), ...repeated("second")]);
+      const { recorded } = yield* deliver(true, [...repeated("first"), ...repeated("second")]);
 
       assert.strictEqual(recorded.length, 6);
       assert.isTrue(recorded.every((report) => report.event === "$exception"));
     }),
   );
 
-  it.effect("records nothing when error reporting is disabled", () =>
+  it.effect("records and holds nothing when error reporting is disabled", () =>
     Effect.gen(function* () {
-      const recorded = yield* deliver(false, repeated("first"));
+      const { recorded, held } = yield* deliver(false, repeated("first"));
 
       assert.deepStrictEqual(recorded, []);
+      assert.deepStrictEqual(held, []);
     }),
   );
 });
