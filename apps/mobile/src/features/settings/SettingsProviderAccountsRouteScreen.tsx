@@ -6,7 +6,17 @@ import {
 import type { ProviderAuthResponse, ServerProvider } from "@t3tools/contracts";
 import { redactedPlaceholder } from "@t3tools/shared/redactedText";
 import { useRef, useState } from "react";
-import { Alert, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
+import { BlurView } from "expo-blur";
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -15,6 +25,7 @@ import { ScreenScrollView } from "../../components/ScreenScrollView";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useAppearancePreferences } from "./appearance/AppearancePreferencesProvider";
 import { SettingsActionRow } from "./components/SettingsActionRow";
 import {
   AndroidSettingsEnvironmentFilter,
@@ -385,9 +396,14 @@ function ProviderAccount({
   );
 }
 
-/** The account email, replaced by a same-shaped placeholder until tapped. */
+/**
+ * The account email, shown as a blurred same-shaped placeholder until tapped.
+ * Android blurs the text with a view filter; iOS has no blur filter, so a
+ * static BlurView covers it instead.
+ */
 function ProviderAccountEmail({ email }: { readonly email: string }) {
   const [revealed, setRevealed] = useState(false);
+  const { themeAppearance } = useAppearancePreferences();
   return (
     <Pressable
       accessibilityRole="button"
@@ -396,9 +412,22 @@ function ProviderAccountEmail({ email }: { readonly email: string }) {
       onPress={() => setRevealed((value) => !value)}
       className="self-start"
     >
-      <Text className="text-xs text-foreground-muted ios:font-[family-name:Menlo] android:font-mono">
+      <Text
+        className="text-xs text-foreground-muted ios:font-[family-name:Menlo] android:font-mono"
+        style={!revealed && Platform.OS === "android" ? EMAIL_BLUR_FILTER : undefined}
+      >
         {revealed ? email : redactedPlaceholder(email)}
       </Text>
+      {!revealed && Platform.OS === "ios" ? (
+        <BlurView
+          pointerEvents="none"
+          intensity={12}
+          tint={themeAppearance === "dark" ? "dark" : "light"}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
     </Pressable>
   );
 }
+
+const EMAIL_BLUR_FILTER = { filter: [{ blur: 3 }] };
