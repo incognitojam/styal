@@ -140,10 +140,14 @@ describe("ErrorReporting scrubbing", () => {
     assert.isTrue(frames.every((frame) => !("abs_path" in frame)));
   });
 
-  it("tags frames from a chunk stamped by the source map upload with its chunk id", () => {
+  it("tags frames and the report with the chunk and release ids stamped by the upload", () => {
     // The upload plugin registers each chunk's stack, keyed by the stack string.
-    const registry = globalThis as { _posthogChunkIds?: Record<string, string> | undefined };
-    const previous = registry._posthogChunkIds;
+    const registry = globalThis as {
+      _posthogChunkIds?: Record<string, string> | undefined;
+      _posthogReleaseId?: string | undefined;
+    };
+    const previous = { chunkIds: registry._posthogChunkIds, releaseId: registry._posthogReleaseId };
+    registry._posthogReleaseId = "0199f0a0-0000-7000-8000-00000000c0de";
     registry._posthogChunkIds = {
       "Error\n    at /opt/styal/dist/binCli-AbC123.mjs:2:120":
         "1619eb4b-b4ec-5017-a3f1-f90e3b71be09",
@@ -156,9 +160,13 @@ describe("ErrorReporting scrubbing", () => {
         "    at run (/opt/styal/dist/Effect-XyZ.mjs:10:3)",
       ].join("\n");
 
-      const frames =
-        firstException({ level: "error", message: [], cause: Cause.die(error), span: undefined })
-          .stacktrace?.frames ?? [];
+      const properties = ErrorReporting.exceptionProperties(
+        { level: "error", message: [], cause: Cause.die(error), span: undefined },
+        scrub,
+      );
+      const frames = properties.$exception_list[0]?.stacktrace?.frames ?? [];
+
+      assert.strictEqual(properties.$release_id, "0199f0a0-0000-7000-8000-00000000c0de");
 
       assert.deepStrictEqual(
         frames.map((frame) => [frame.filename, frame.chunk_id]),
@@ -168,7 +176,8 @@ describe("ErrorReporting scrubbing", () => {
         ],
       );
     } finally {
-      registry._posthogChunkIds = previous;
+      registry._posthogChunkIds = previous.chunkIds;
+      registry._posthogReleaseId = previous.releaseId;
     }
   });
 

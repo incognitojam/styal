@@ -1720,6 +1720,7 @@ features:
       - .github/actions/setup-posthog-cli/action.yml
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-js-bundle.yml
+      - apps/server/scripts/posthogSourcemaps.ts
       - apps/server/src/observability/RpcInstrumentation.ts
       - apps/server/src/serverLogger.ts
       - apps/server/src/telemetry/ErrorReporting.ts
