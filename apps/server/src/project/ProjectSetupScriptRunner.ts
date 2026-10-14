@@ -280,6 +280,9 @@ export const make = Effect.gen(function* () {
   const positions = yield* TurnItemPositions.TurnItemPositionStoreV2;
   const sql = yield* SqlClient.SqlClient;
   const activeRunsRef = yield* SynchronizedRef.make(new Map<string, ActiveSetupRun>());
+  // Runs this process started. Startup recovery runs alongside new runs and
+  // must only close runs a previous server left behind.
+  const ownRunIds = new Set<string>();
   let nextRunSequence = 0;
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
@@ -525,7 +528,7 @@ export const make = Effect.gen(function* () {
             ],
       );
       yield* Effect.forEach(
-        deriveUnfinishedSetupRuns(activities),
+        deriveUnfinishedSetupRuns(activities).filter((run) => !ownRunIds.has(run.runId)),
         (run) =>
           recordOutcome(run, {
             outcome: "failed",
@@ -821,6 +824,7 @@ export const make = Effect.gen(function* () {
       startedActivityRecorded: false,
       pendingOutcome: null,
     };
+    ownRunIds.add(runId);
     yield* SynchronizedRef.update(activeRunsRef, (runs) => {
       const next = new Map(runs);
       next.set(terminalKey(input.threadId, terminalId), activeRun);
