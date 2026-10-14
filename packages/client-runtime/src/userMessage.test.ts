@@ -1,7 +1,7 @@
 import { ScheduledTaskId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveUserMessagePresentation } from "./userMessage.ts";
+import { resolveUserMessageIntent, resolveUserMessagePresentation } from "./userMessage.ts";
 
 describe("resolveUserMessagePresentation", () => {
   const legacyText = "[Triggered by schedule task: Daily audit]\n\nCheck for crashes.\n";
@@ -66,5 +66,20 @@ describe("resolveUserMessagePresentation", () => {
         scheduledTaskId: "task:daily-audit",
       });
     }
+  });
+});
+
+describe("resolveUserMessageIntent", () => {
+  it("has no label for a message that started a turn normally", () => {
+    expect(resolveUserMessageIntent("turn_start")).toBe(null);
+    expect(resolveUserMessageIntent(undefined)).toBe(null);
+  });
+
+  it("labels a promoted queued message as a steer and keeps its origin in the description", () => {
+    expect(resolveUserMessageIntent("promoted_queued_to_steer")).toEqual({
+      label: "Steer",
+      steer: true,
+      description: "Originally queued, then promoted to steer the active turn",
+    });
   });
 });

@@ -47,6 +47,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   the active turn. Choose Queue in Follow-up behavior to wait for the turn to finish;
   saved Queue preferences are preserved. T3 Code defaults to Queue as of
   [revision 5753207](https://github.com/pingdotgg/t3code/tree/5753207d53362608f281738eda3a9faf4e13b6be).
+  A message's Steer or Queued label sits beside its timestamp and appears on hover on web
+  and desktop. T3 Code always shows it above the message on web and as a colored badge on mobile, as of
+  [revision adb0420](https://github.com/pingdotgg/t3code/tree/adb04202b25c1c45255e76be9f03f0b346b9c5c4).
   [Send while the agent is working](./composer.md#send-while-the-agent-is-working).
 
 - **Separate Gemini model and reasoning choices.** Antigravity lists each Gemini generation once,

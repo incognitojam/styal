@@ -1,4 +1,8 @@
-import { type OrchestrationV2Actor, ScheduledTaskId } from "@t3tools/contracts";
+import {
+  type OrchestrationV2Actor,
+  type OrchestrationV2UserMessageInputIntent,
+  ScheduledTaskId,
+} from "@t3tools/contracts";
 
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;
@@ -28,4 +32,25 @@ export function resolveUserMessagePresentation(message: {
     isAutomation,
     scheduledTaskId: legacyTaskId === undefined ? undefined : ScheduledTaskId.make(legacyTaskId),
   };
+}
+
+/** How a user message reached its turn, for the label beside its timestamp. */
+export function resolveUserMessageIntent(
+  intent: OrchestrationV2UserMessageInputIntent | undefined,
+) {
+  switch (intent) {
+    case "queued_turn":
+      return { label: "Queued", steer: false, description: "Queued behind the active turn" };
+    case "steer":
+      return { label: "Steer", steer: true, description: "Steered the active turn" };
+    case "promoted_queued_to_steer":
+      return {
+        label: "Steer",
+        steer: true,
+        description: "Originally queued, then promoted to steer the active turn",
+      };
+    case "turn_start":
+    case undefined:
+      return null;
+  }
 }
