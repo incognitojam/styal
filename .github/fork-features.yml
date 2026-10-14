@@ -3008,7 +3008,7 @@ features:
   - id: pull-request-live-refresh
     title: Keep open pull request details current
     status: maintained
-    prs: [101, 457]
+    prs: [101, 457, 825]
     rationale: Upstream detail reads return the held value and refresh it in the background unless a caller opts out, so opening a cached pull request can show old header totals beside a current diff. The fork returns the current detail cache read and uses held detail only on a transient failure; detail-only invalidation refreshes host state without discarding an unchanged diff.
     invariants:
       - An open pull request refreshes core host state without leaving the visible panel one stale response behind.
