@@ -373,29 +373,6 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream rewind keeps the turn boundaries of human prompts and assistant records that getSessionMessages omits through repeated rewinds, and rewinds at a known recent boundary when older boundaries are unknown.
 
-  - id: claude-live-effort-change
-    title: Apply Claude effort changes without restarting the session
-    status: maintained
-    prs: [541]
-    invariants:
-      - Changing only the effort level between turns on a live Claude thread applies the new level to the running Claude Code session, so its background tasks keep running and the next turn uses the new effort.
-      - Ultracode, levels that resolve to no API effort, and any other model or option change still restart the session.
-    implementation_paths:
-      - apps/server/src/claudeModelOptions.ts
-      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
-    upstream_paths:
-      - apps/server/src/claudeModelOptions.ts
-      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
-    tests:
-      - apps/server/src/claudeModelOptions.test.ts
-      - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
-    upstream:
-      status: tracking
-      tracking:
-        - https://github.com/pingdotgg/t3code/pull/14726
-        - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream applies Claude effort changes to a live session instead of restarting it.
-
   - id: claude-model-manifest-policy
     title: Source Claude models from the styal manifest
     status: review-needed

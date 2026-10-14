@@ -31,6 +31,7 @@ import {
 import {
   type CanUseTool,
   forkSession as forkClaudeSession,
+  type EffortLevel,
   type ForkSessionOptions,
   type ForkSessionResult,
   getSubagentMessages,
@@ -127,7 +128,10 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
 import { planClaudeSkillDispatch } from "../../provider/Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../../provider/Drivers/ClaudeSkills.ts";
-import { canApplyClaudeEffortLive, compileClaudeModelSelection } from "../../claudeModelOptions.ts";
+import {
+  compileClaudeModelSelection,
+  type CompiledClaudeModelSelection,
+} from "../../claudeModelOptions.ts";
 import * as ServerConfig from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import {
@@ -456,8 +460,8 @@ export interface ClaudeAgentSdkQuerySession {
   readonly messages: Stream.Stream<SDKMessage, ClaudeAgentSdkQueryRunnerError>;
   readonly offer: (message: SDKUserMessage) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly setModel: (model: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
-  readonly applyEffort?: (
-    effort: NonNullable<ClaudeAgentSdkQueryOptions["effort"]>,
+  readonly applyFlagSettings: (
+    settings: ClaudeFlagSettings,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly setPermissionMode: (
     mode: PermissionMode,
@@ -621,6 +625,14 @@ export type ClaudeAgentSdkProtocolLogEvent =
       readonly payload: {
         readonly type: "query.set_model";
         readonly model: string;
+      };
+    }
+  | {
+      readonly direction: "outgoing";
+      readonly stage: "decoded";
+      readonly payload: {
+        readonly type: "query.apply_flag_settings";
+        readonly settings: ClaudeFlagSettings;
       };
     }
   | {
@@ -985,11 +997,22 @@ export const layerQueryRunner: Layer.Layer<
                 }),
               ),
             ),
-          applyEffort: (effort) =>
+          applyFlagSettings: (settings) =>
             Effect.tryPromise({
-              try: () => queryRuntime.applyFlagSettings({ effortLevel: effort }),
+              try: () => queryRuntime.applyFlagSettings(settings),
               catch: (cause) => queryRunnerError(cause, "applyFlagSettings"),
-            }),
+            }).pipe(
+              Effect.tap(() =>
+                logProtocolEvent({
+                  direction: "outgoing",
+                  stage: "decoded",
+                  payload: {
+                    type: "query.apply_flag_settings",
+                    settings,
+                  },
+                }),
+              ),
+            ),
           setPermissionMode: (mode) =>
             Effect.tryPromise({
               try: () => queryRuntime.setPermissionMode(mode),
@@ -1134,6 +1157,37 @@ export const layerQueryRunner: Layer.Layer<
     });
   }),
 );
+
+type ClaudeFlagSettings = Parameters<ClaudeQuery["applyFlagSettings"]>[0];
+
+/**
+ * Thinking is a launch flag (`--thinking`), so only a new process can change
+ * it. Clearing an explicit effort also needs one: the live reset goes to the
+ * model default, while a new process reads the user's settings files.
+ */
+function canApplyClaudeSelectionLive(
+  live: CompiledClaudeModelSelection,
+  next: CompiledClaudeModelSelection,
+): boolean {
+  return (
+    live.settings.alwaysThinkingEnabled === next.settings.alwaysThinkingEnabled &&
+    (next.effort !== undefined || live.effort === undefined)
+  );
+}
+
+/**
+ * Flag settings that move a live process to `selection`. `null` clears a key
+ * a new process for `selection` would not set.
+ */
+function claudeLiveSelectionFlagSettings(
+  selection: CompiledClaudeModelSelection,
+): ClaudeFlagSettings {
+  return {
+    ...(selection.effort === undefined ? {} : { effortLevel: selection.effort as EffortLevel }),
+    fastMode: selection.settings.fastMode ?? null,
+    ultracode: selection.settings.ultracode ?? null,
+  };
+}
 
 export function makeClaudeQueryOptions(input: {
   readonly modelSelection: ModelSelection;
@@ -3148,8 +3202,8 @@ interface ClaudeLiveQueryContext {
   readonly nativeThreadId: string;
   readonly query: ClaudeAgentSdkQuerySession;
   readonly queryPolicyKey: string;
-  selectionKey: string;
-  modelSelection: ModelSelection;
+  // The selection this process runs now. Live changes update it.
+  selection: CompiledClaudeModelSelection;
   readonly closed: Deferred.Deferred<void, never>;
   // Retained for process-exit cleanup even when its last turn failed.
   lastTurn: ActiveClaudeTurnContext | null;
@@ -8760,35 +8814,40 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           ) {
             return existing;
           }
+          // Model, effort, ultracode and fast mode change on the live process.
+          // A restart would kill its background agents and shells.
           if (
             existing !== null &&
             existing.nativeThreadId === nativeThreadId &&
             existing.queryPolicyKey === queryPolicyKey &&
-            existing.selectionKey === compiledSelection.queryIdentity
+            !existing.stopping &&
+            existing.selection.queryIdentity !== compiledSelection.queryIdentity &&
+            canApplyClaudeSelectionLive(existing.selection, compiledSelection)
+          ) {
+            const live = existing;
+            yield* live.query.setModel(compiledSelection.apiModelId).pipe(
+              Effect.andThen(
+                live.query.applyFlagSettings(claudeLiveSelectionFlagSettings(compiledSelection)),
+              ),
+              // A partial change leaves the process state unknown. A blank
+              // identity matches no selection, so the next turn sends both again.
+              Effect.tapError(() =>
+                Effect.sync(() => {
+                  live.selection = { ...live.selection, queryIdentity: "" };
+                }),
+              ),
+            );
+            live.selection = compiledSelection;
+          }
+          if (
+            existing !== null &&
+            existing.nativeThreadId === nativeThreadId &&
+            existing.queryPolicyKey === queryPolicyKey &&
+            existing.selection.queryIdentity === compiledSelection.queryIdentity
           ) {
             // Claude can switch its own mode mid-session (EnterPlanMode), and
             // a denied ExitPlanMode leaves it there. Put the live process back
             // in the thread's mode before the next prompt.
-            if (existing.permissionMode !== existing.openedPermissionMode) {
-              yield* existing.query.setPermissionMode(existing.openedPermissionMode);
-              existing.permissionMode = existing.openedPermissionMode;
-            }
-            return existing;
-          }
-
-          if (
-            existing !== null &&
-            existing.nativeThreadId === nativeThreadId &&
-            existing.queryPolicyKey === queryPolicyKey &&
-            existing.query.applyEffort !== undefined &&
-            canApplyClaudeEffortLive(existing.modelSelection, turnInput.modelSelection)
-          ) {
-            const effort = compiledSelection.effort as NonNullable<
-              ClaudeAgentSdkQueryOptions["effort"]
-            >;
-            yield* existing.query.applyEffort(effort);
-            existing.selectionKey = compiledSelection.queryIdentity;
-            existing.modelSelection = turnInput.modelSelection;
             if (existing.permissionMode !== existing.openedPermissionMode) {
               yield* existing.query.setPermissionMode(existing.openedPermissionMode);
               existing.permissionMode = existing.openedPermissionMode;
@@ -8920,8 +8979,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             nativeThreadId,
             query: querySession,
             queryPolicyKey,
-            selectionKey: compiledSelection.queryIdentity,
-            modelSelection: turnInput.modelSelection,
+            selection: compiledSelection,
             closed,
             lastTurn: null,
             promptEchoMode: "unknown",

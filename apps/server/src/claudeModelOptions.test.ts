@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import { ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
 
-import { canApplyClaudeEffortLive, compileClaudeModelSelection } from "./claudeModelOptions.ts";
+import { compileClaudeModelSelection } from "./claudeModelOptions.ts";
 
 const selection = (
   model: string,
@@ -54,39 +54,5 @@ describe("compileClaudeModelSelection", () => {
       compileClaudeModelSelection(selection("claude-haiku-4-5", [{ id: "thinking", value: false }]))
         .settings,
     ).toEqual({ alwaysThinkingEnabled: false });
-  });
-});
-
-describe("canApplyClaudeEffortLive", () => {
-  it("allows only effort changes that both resolve to native API effort", () => {
-    const before = selection("claude-opus-4-6", [{ id: "effort", value: "low" }]);
-    expect(
-      canApplyClaudeEffortLive(before, selection(before.model, [{ id: "effort", value: "high" }])),
-    ).toBe(true);
-    expect(
-      canApplyClaudeEffortLive(
-        before,
-        selection(before.model, [{ id: "effort", value: "ultracode" }]),
-      ),
-    ).toBe(false);
-    expect(
-      canApplyClaudeEffortLive(
-        before,
-        selection(before.model, [
-          { id: "effort", value: "high" },
-          { id: "fastMode", value: true },
-        ]),
-      ),
-    ).toBe(false);
-    expect(
-      canApplyClaudeEffortLive(
-        before,
-        selection("claude-haiku-4-5", [{ id: "effort", value: "high" }]),
-      ),
-    ).toBe(false);
-    const haiku = selection("claude-haiku-4-5", [{ id: "effort", value: "low" }]);
-    expect(
-      canApplyClaudeEffortLive(haiku, selection(haiku.model, [{ id: "effort", value: "high" }])),
-    ).toBe(false);
   });
 });

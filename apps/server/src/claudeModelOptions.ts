@@ -1,4 +1,3 @@
-import * as Equal from "effect/Equal";
 import type { ModelSelection } from "@t3tools/contracts";
 import {
   getModelSelectionBooleanOptionValue,
@@ -57,29 +56,4 @@ export function compileClaudeModelSelection(
     settings,
     queryIdentity: JSON.stringify({ apiModelId, effort: effort ?? null, settings }),
   };
-}
-
-/** Only API effort changes can apply without replacing a live Claude process. */
-export function canApplyClaudeEffortLive(previous: ModelSelection, next: ModelSelection): boolean {
-  const otherOptions = (selection: ModelSelection) =>
-    selection.options?.filter((option) => option.id !== "effort") ?? [];
-  if (
-    previous.instanceId !== next.instanceId ||
-    previous.model !== next.model ||
-    !Equal.equals(otherOptions(previous), otherOptions(next))
-  )
-    return false;
-  if (
-    isClaudeCatalogUltracodeEffort(getModelSelectionStringOptionValue(previous, "effort")) ||
-    isClaudeCatalogUltracodeEffort(getModelSelectionStringOptionValue(next, "effort"))
-  )
-    return false;
-  const before = compileClaudeModelSelection(previous);
-  const after = compileClaudeModelSelection(next);
-  return (
-    before.effort !== undefined &&
-    after.effort !== undefined &&
-    before.settings.ultracode !== true &&
-    after.settings.ultracode !== true
-  );
 }
