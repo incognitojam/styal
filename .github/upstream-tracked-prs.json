@@ -65,6 +65,14 @@
       }
     },
     {
+      "pr": 16867,
+      "reason": "Imported provisionally as one snapshot: Stop finds unfinished background commands outside the recent history window, pending-work reads bound command output, persistent monitors stay excluded, and older history restores retained work in its original position with live state. Fork adaptations preserve the history-rewrite fence, RPC instrumentation, and existing command-outcome wire representation; an upstream test amendment for partial-message history was omitted because that behavior is absent from this baseline. Focused tests and a real browser flow with a synthetic provider verified termination after 120 newer commands and a reload. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and baseline adaptations, verify old-command Stop and history paging, then clear the snapshot marker with that intake. If it closes unmerged, review removal or retention as maintained fork behavior before clearing the marker.",
+      "snapshot": {
+        "base": "20254307084f1101ced00dfadeddc7804a7de45d",
+        "head": "cbfd215e94b1403ccd7453c0c77340fb66b443a2"
+      }
+    },
+    {
       "pr": 16933,
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
     },
