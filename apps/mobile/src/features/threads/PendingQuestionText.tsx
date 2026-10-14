@@ -4,12 +4,12 @@ import { resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
 import { useCallback, useMemo } from "react";
 
 import { fileRoutePathSegments, resolveWorkspaceRelativeFilePath } from "../files/filePath";
-import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { resolveScaledTextRole } from "../../lib/appearancePreferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useFontFamily } from "../../lib/useFontFamily";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
+import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 
 export function PendingQuestionText(props: {
   readonly text: string;
@@ -17,6 +17,8 @@ export function PendingQuestionText(props: {
   readonly workspaceRoot: string | null;
 }) {
   const navigation = useNavigation();
+  // Pull request links open in the app; other links open in the system browser.
+  const openLink = useOpenPullRequest();
   const theme = useUniwindTheme();
   const { appearance } = useAppearancePreferences();
   const fontFamily = useFontFamily("regular");
@@ -58,9 +60,9 @@ export function PendingQuestionText(props: {
         });
         return;
       }
-      if (presentation.href) void tryOpenExternalUrl(presentation.href, "markdown-link");
+      if (presentation.href) void openLink(presentation.href);
     },
-    [navigation, props.threadRef, props.workspaceRoot],
+    [navigation, openLink, props.threadRef, props.workspaceRoot],
   );
 
   return (

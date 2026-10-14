@@ -2815,7 +2815,7 @@ features:
     invariants:
       - Pending question bodies on web, desktop, and mobile render bare URLs and Markdown links as interactive links while preserving line breaks.
       - Opening a question link does not select an option, advance the question, dismiss it, or submit an answer.
-      - Web and desktop reuse chat link preferences and environment-scoped file actions; mobile opens external links through the system and project files in the originating thread's file view.
+      - Web and desktop reuse chat link preferences and environment-scoped file actions; mobile opens pull request links in the app, other external links through the system, and project files in the originating thread's file view.
     implementation_paths:
       - apps/mobile/src/features/threads/PendingQuestionText.tsx
       - apps/mobile/src/features/threads/PendingUserInputCard.tsx
@@ -2832,12 +2832,12 @@ features:
       - apps/web/src/components/ChatMarkdown.file-preview.test.tsx
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.test.tsx
     upstream:
-      status: tracking
+      status: partial
       tracking:
-        - https://github.com/pingdotgg/t3code/blob/701fc83169611473139c441bc27d5ded9612dc8d/apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
-        - https://github.com/pingdotgg/t3code/pull/11141
-        - https://github.com/pingdotgg/t3code/pull/14250
-      retire_when: Upstream renders interactive links in pending question bodies across web, desktop, and mobile without answering the question when a link opens.
+        - https://github.com/pingdotgg/t3code/pull/19197
+      # Upstream renders question text as markdown with clickable links, but without kept
+      # line breaks or literal HTML, and mobile opens file links like any other URL.
+      retire_when: Upstream question text keeps the agent's line breaks and HTML-looking text, and mobile opens file links in the originating thread's file view.
 
   - id: pending-question-multiple-answers
     title: Combine selected options and typed additions in multi-select answers
