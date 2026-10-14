@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { ChatCanvasContext } from "../chat/ChatCanvasContext";
 import { resolveChatCanvasLayout } from "../chat/chatCanvasLayout";
-import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
+import {
+  type PreviewMiniPlayerSource,
+  previewMiniPlayerSourceKey,
+  selectThreadPreviewMiniPlayer,
+  usePreviewMiniPlayerStore,
+} from "~/previewMiniPlayerStore";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 
 const setActivePreviewTab = vi.fn();
@@ -25,7 +30,9 @@ vi.mock("~/browser/browserRecording", () => ({
 }));
 vi.mock("~/browser/BrowserSurfaceSlot", () => ({ BrowserSurfaceSlot: () => null }));
 vi.mock("../device/DeviceStreamView", () => ({ DeviceStreamView: () => null }));
-vi.mock("~/state/device", () => ({ useDeviceState: () => null }));
+vi.mock("~/state/device", () => ({
+  useDeviceState: () => ({ state: { devices: [], hosts: [] } }),
+}));
 vi.mock("~/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
   TooltipTrigger: ({ render }: { render: ReactElement }) => render,
@@ -39,22 +46,35 @@ const threadRef = {
   threadId: ThreadId.make("thread-test"),
 };
 const container = { width: 900, height: 700 };
-const source = { width: 1600, height: 1000 };
+const browserSource: PreviewMiniPlayerSource = { kind: "browser", tabId: "tab-1" };
+const deviceSource: PreviewMiniPlayerSource = {
+  kind: "device",
+  hostId: "host-1",
+  deviceId: "emulator-5554",
+  platform: "android",
+  name: "Pixel",
+};
+// Matches the size each source reports before its content loads.
+const sourceSizes = {
+  browser: { width: 1600, height: 1000 },
+  device: { width: 1000, height: 1000 / (9 / 20) },
+};
 
 function Player() {
   const miniPlayer = usePreviewMiniPlayerStore((state) =>
     selectThreadPreviewMiniPlayer(state.byThreadKey, threadRef),
   );
   if (!miniPlayer) return null;
+  const key = previewMiniPlayerSourceKey(miniPlayer.source);
   return (
     <ChatCanvasContext
       value={{
         container,
         lane: { padding: 20, minChatWidth: 640 },
-        previewKey: "browser:tab-1",
+        previewKey: key,
         layout: resolveChatCanvasLayout({
           container,
-          preview: { ...miniPlayer, key: "browser:tab-1", source },
+          preview: { ...miniPlayer, key, source: sourceSizes[miniPlayer.source.kind] },
         }),
         reportPreview: () => {},
         clearPreview: () => {},
@@ -83,9 +103,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function mount() {
+async function mount(source = browserSource) {
   usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
-  usePreviewMiniPlayerStore.getState().open(threadRef, { kind: "browser", tabId: "tab-1" });
+  usePreviewMiniPlayerStore.getState().open(threadRef, source);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -181,5 +201,33 @@ describe("floating browser preview gestures", () => {
     expect(
       selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
     ).toMatchObject({ kind: "preview", resourceId: "tab-1" });
+  });
+});
+
+describe("floating device preview", () => {
+  it("keeps the stream out of reach and moves from its surface", async () => {
+    await mount(deviceSource);
+    const stream = host.querySelector<HTMLElement>("section [inert]")!;
+    expect(stream.className).toContain("pointer-events-none");
+    const start = frame();
+    const surface = shield();
+    await pointer(surface, "pointerdown", start.x + 40, start.y + 80);
+    await pointer(surface, "pointermove", start.x + 10, start.y + 60);
+    expect(frame()).toEqual({ ...start, x: start.x - 30, y: start.y - 20 });
+    await pointer(surface, "pointerup", start.x + 10, start.y + 60);
+    expect(captured.size).toBe(0);
+  });
+
+  it("opens the device in the right panel on double-click", async () => {
+    await mount(deviceSource);
+    useRightPanelStore.setState({ byThreadKey: {} });
+    await act(() => shield().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(host.querySelector("section")).toBeNull();
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
+    ).toMatchObject({
+      kind: "device",
+      target: { hostId: "host-1", deviceId: "emulator-5554", platform: "android", name: "Pixel" },
+    });
   });
 });
