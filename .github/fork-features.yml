@@ -4534,6 +4534,7 @@ features:
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/hooks/useSidebarProjectGroups.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
       - apps/web/src/components/Sidebar.drag.ts
@@ -4541,6 +4542,7 @@ features:
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/hooks/useSidebarProjectGroups.ts
       - packages/contracts/src/settings.ts
     tests:
       - apps/web/src/components/Sidebar.drag.test.ts
