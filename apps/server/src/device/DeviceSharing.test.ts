@@ -128,6 +128,7 @@ const fixture = Effect.gen(function* () {
   const probeStarted = yield* Deferred.make<void>();
   const peerRequests: { origin: string; operation: string }[] = [];
   let loseOpenResponse = false;
+  let legacyPeer = false;
   // Peer commands the target finished handling, as "operation:status".
   const commands = yield* Queue.unbounded<string>();
   let inventoryUnavailable = false;
@@ -160,6 +161,8 @@ const fixture = Effect.gen(function* () {
           });
         if (unavailable)
           return HttpClientResponse.fromWeb(request, new Response(null, { status: 503 }));
+        if (legacyPeer && operation === "identify")
+          return HttpClientResponse.fromWeb(request, new Response(null, { status: 400 }));
         const response = yield* Effect.promise(() =>
           handler(
             new Request(request.url, {
@@ -362,6 +365,9 @@ const fixture = Effect.gen(function* () {
     peerRequests,
     addressFailures,
     probeStarted,
+    setLegacyPeer: () => {
+      legacyPeer = true;
+    },
     loseNextOpenResponse: () => {
       loseOpenResponse = true;
     },
@@ -516,6 +522,78 @@ it.effect("can clean up older peers that expose identity through inspect", () =>
     yield* client.request({ operation: "revoke" }, Schema.Null);
     expect(f.active.has(f.grant.token)).toBe(false);
   }).pipe(Effect.scoped),
+);
+
+it.effect.each(["enableDeviceSupport", "enableAgentDeviceAccess"] as const)(
+  "revokes an older peer's grant at its saved verified address after %s is off",
+  (setting) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.connect;
+      f.setLegacyPeer();
+      yield* f.targetSettings.service.updateSettings({ [setting]: false });
+      const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
+      yield* f.source.disconnect(config.id);
+      expect(f.active.has(f.grant.token)).toBe(false);
+      expect(f.sourceSettings.read().environmentDeviceHosts).toEqual([]);
+      expect(f.peerRequests.slice(-2).map((entry) => entry.operation)).toEqual([
+        "identify",
+        "revoke",
+      ]);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("stops an older peer's agent after an invalidated connection and disabled access", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const host = yield* f.host;
+    const ready = yield* host.ensureAgentReady(() => Effect.void);
+    f.addressFailures.set("http://orion.test", "ECONNRESET");
+    yield* ready.remote!.close({ threadId: ThreadId.make("synthetic-thread") }).pipe(Effect.result);
+    f.addressFailures.clear();
+    f.setLegacyPeer();
+    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: false });
+    yield* host.stopAgent;
+    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: true });
+    const response = yield* Effect.promise(() =>
+      f.handler(
+        new Request("http://orion.test/api/device-share/agent/health", {
+          headers: { authorization: `Bearer ${ready.agentDevice!.token}` },
+        }),
+      ),
+    );
+    expect(response.status).toBe(401);
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "requires identity verification for an older peer at an unverified alternative address",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.source.connect({
+        label: "Orion",
+        urls: ["http://orion.test", "https://orion-alt.test"],
+        grant: f.grant,
+      });
+      const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
+      f.addressFailures.set(config.url, "ECONNREFUSED");
+      f.setLegacyPeer();
+      yield* f.targetSettings.service.updateSettings({ enableDeviceSupport: false });
+      const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId, {
+        verifiedSavedUrl: config.url,
+      }).pipe(Effect.provideService(HttpClient.HttpClient, f.http));
+      const result = yield* client
+        .request({ operation: "revoke" }, Schema.Null)
+        .pipe(Effect.result);
+      expect(result._tag).toBe("Failure");
+      expect(f.active.has(f.grant.token)).toBe(true);
+      expect(f.peerRequests).not.toContainEqual({
+        origin: "https://orion-alt.test",
+        operation: "revoke",
+      });
+    }).pipe(Effect.scoped),
 );
 
 it.effect(

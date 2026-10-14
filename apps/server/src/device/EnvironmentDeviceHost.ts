@@ -12,6 +12,7 @@ import {
   type EnvironmentDeviceHostConfig,
   type DeviceHostSummary,
   ThreadId,
+  EnvironmentId,
 } from "@t3tools/contracts";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -54,6 +55,7 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
   config: EnvironmentDeviceHostConfig,
   token: string,
   sourceEnvironmentId: string,
+  options?: { readonly verifiedSavedUrl: string },
 ) {
   const http = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
   const urls = [
@@ -150,7 +152,9 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
     );
   const identifyAt = (url: string) =>
     send(url, { operation: "identify" }, DeviceEnvironmentIdentity, "3 seconds").pipe(
-      // Older peers only expose identity through inspect.
+      // Older peers authenticate before rejecting identify. Only their saved,
+      // previously verified address can use that grant for cleanup without inspect,
+      // which they deny while device access is off. Alternatives still need both IDs.
       Effect.catchIf(
         (cause) =>
           isHostUnavailable(cause) &&
@@ -158,7 +162,13 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
           cause.cause !== null &&
           "httpStatus" in cause.cause &&
           cause.cause.httpStatus === 400,
-        () => inspectAt(url),
+        () =>
+          url === options?.verifiedSavedUrl.replace(/\/+$/, "")
+            ? Effect.succeed({
+                environmentId: config.environmentId,
+                sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
+              })
+            : inspectAt(url),
       ),
       Effect.flatMap(checkIdentity),
     );
@@ -256,7 +266,7 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
     ),
   );
   const token = Option.isSome(stored) ? new TextDecoder().decode(stored.value) : "";
-  const client = yield* makeClient(config, token, sourceId);
+  const client = yield* makeClient(config, token, sourceId, { verifiedSavedUrl: config.url });
   let summary: DeviceHostSummary = {
     id: config.id,
     label: config.label,

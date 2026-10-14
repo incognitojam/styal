@@ -213,6 +213,7 @@ const make = Effect.gen(function* () {
         previous,
         new TextDecoder().decode(previousToken.value),
         environmentId,
+        { verifiedSavedUrl: previous.url },
       ).pipe(Effect.provideService(HttpClient.HttpClient, http));
       yield* oldClient
         .request({ operation: "revoke" }, Schema.Null)
@@ -232,6 +233,7 @@ const make = Effect.gen(function* () {
         host,
         new TextDecoder().decode(stored.value),
         environmentId,
+        { verifiedSavedUrl: host.url },
       ).pipe(Effect.provideService(HttpClient.HttpClient, http));
       yield* client.request({ operation: "revoke" }, Schema.Null).pipe(
         Effect.timeout("10 seconds"),
