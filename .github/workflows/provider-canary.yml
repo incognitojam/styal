@@ -6,9 +6,6 @@ name: Provider canary
 on:
   schedule:
     - cron: "17 6 * * *"
-  # TEMPORARY: test runs from the feature branch. Remove before merging.
-  push:
-    branches: [styal/auto-provider-updates]
   workflow_dispatch:
     inputs:
       provider:
@@ -181,7 +178,7 @@ jobs:
   record:
     name: Record verified versions
     needs: [plan, verify]
-    if: ${{ !cancelled() && github.event_name != 'push' && needs.plan.outputs.has_work == 'true' }}
+    if: ${{ !cancelled() && needs.plan.outputs.has_work == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
