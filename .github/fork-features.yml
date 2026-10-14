@@ -2231,6 +2231,28 @@ features:
         - https://github.com/pingdotgg/t3code/pull/12482
       retire_when: Upstream restores the permissions registry patch for its Expo SDK 58 expo-modules-core version, or Expo ships synchronized registry access.
 
+  - id: mobile-provider-accounts-overview
+    title: Mobile provider accounts list every provider
+    status: maintained
+    prs: []
+    invariants:
+      - Mobile Provider accounts lists every configured provider with its icon, usable providers before turned-off ones; providers that sign in through their own CLI show a status line and no sign-in control.
+      - A turned-off or missing provider says why instead of showing a disabled sign-in row, and Sign in, Change account, Sign out, credentials and docs rows each use a distinct icon.
+    rationale: Upstream lists only providers with in-app sign-in, so Claude and Codex users see their providers missing, and every action reuses the same person icon. Compared with upstream revision 7ac952c630ef8a60d14ca8f6a0c7adce33db4bae on October 14, 2026.
+    implementation_paths:
+      - apps/mobile/src/components/AppSymbol.tsx
+      - apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx
+      - apps/mobile/src/features/settings/providerAccountStatus.ts
+    upstream_paths:
+      - apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx
+    tests:
+      - apps/mobile/src/features/settings/providerAccountStatus.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/18425
+      retire_when: Upstream's mobile Provider accounts screen shows every provider with its sign-in source and gives each action its own icon.
+
   - id: pending-question-answer-drafts
     title: Keep unsubmitted question answers when the chat view remounts
     status: maintained

@@ -9,6 +9,7 @@ import { Alert, Linking, Pressable, ScrollView, TextInput, View } from "react-na
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
+import { ProviderIcon } from "../../components/ProviderIcon";
 import { ScreenScrollView } from "../../components/ScreenScrollView";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -20,6 +21,12 @@ import {
 } from "./components/SettingsEnvironmentFilterHeader";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import {
+  externalSignInStatus,
+  providerUnavailableReason,
+  sortProvidersForAccounts,
+  supportsInAppSignIn,
+} from "./providerAccountStatus";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 
 export function SettingsProviderAccountsRouteScreen() {
@@ -40,26 +47,20 @@ export function SettingsProviderAccountsRouteScreen() {
           ) : (
             selectedTargets.map((environment) => (
               <SettingsSection key={environment.environmentId} title={environment.label}>
-                {environment.serverConfig.providers
-                  .filter(
-                    (provider) =>
-                      provider.setup?.canAuthenticate ||
-                      (provider.driver === "acpRegistry" && provider.installed),
-                  )
-                  .map((provider) => (
+                {sortProvidersForAccounts(environment.serverConfig.providers).map((provider) =>
+                  supportsInAppSignIn(provider) ? (
                     <ProviderAccount
                       key={provider.instanceId}
                       environment={environment}
                       provider={provider}
                     />
-                  ))}
-                {!environment.serverConfig.providers.some(
-                  (provider) =>
-                    provider.setup?.canAuthenticate ||
-                    (provider.driver === "acpRegistry" && provider.installed),
-                ) ? (
+                  ) : (
+                    <ExternalProviderAccount key={provider.instanceId} provider={provider} />
+                  ),
+                )}
+                {environment.serverConfig.providers.length === 0 ? (
                   <Text className="p-4 text-foreground-muted">
-                    Configure a provider with in-app sign-in in web or desktop Settings.
+                    Add a provider in web or desktop Settings.
                   </Text>
                 ) : null}
               </SettingsSection>
@@ -68,6 +69,31 @@ export function SettingsProviderAccountsRouteScreen() {
         </ScreenScrollView>
       </SettingsScreen>
     </>
+  );
+}
+
+function ProviderAccountName({ provider }: { readonly provider: ServerProvider }) {
+  return (
+    <View className="flex-row items-center gap-2.5">
+      <ProviderIcon provider={provider.driver} iconUrl={provider.iconUrl} size={20} />
+      <Text className="min-w-0 flex-1 text-lg font-semibold text-foreground">
+        {provider.displayName ?? provider.driver}
+      </Text>
+    </View>
+  );
+}
+
+/** A provider that signs in through its own CLI, so styal only reports its status. */
+function ExternalProviderAccount({ provider }: { readonly provider: ServerProvider }) {
+  const signedIn = provider.auth.status === "authenticated" && !providerUnavailableReason(provider);
+  return (
+    <View className="gap-2 border-b border-border-subtle p-4">
+      <ProviderAccountName provider={provider} />
+      <Text className="text-sm text-foreground-muted">{externalSignInStatus(provider)}</Text>
+      {signedIn && provider.auth.email?.trim() ? (
+        <ProviderAccountEmail key={provider.auth.email} email={provider.auth.email} />
+      ) : null}
+    </View>
   );
 }
 
@@ -117,6 +143,7 @@ function ProviderAccount({
     interaction?.type === "browser" || interaction?.type === "deviceCode"
       ? interaction.url
       : state?.authorizationUrl;
+  const unavailable = providerUnavailableReason(provider);
   const disabled = pending || auth.error !== null || isDiscovering;
   async function run(command: () => Promise<AtomCommandResult<unknown, unknown>>) {
     if (pendingRef.current) return false;
@@ -175,19 +202,19 @@ function ProviderAccount({
   return (
     <View className="border-b border-border-subtle">
       <View className="gap-2 p-4">
-        <Text className="text-lg font-semibold text-foreground">
-          {provider.displayName ?? provider.driver}
-        </Text>
+        <ProviderAccountName provider={provider} />
         <Text accessibilityLiveRegion="polite" className="text-sm text-foreground-muted">
           {active || state?.phase === "failed" || state?.phase === "cancelled"
             ? state.message
-            : signedIn
-              ? "Signed in."
-              : isDiscovering
-                ? "Discovering sign-in methods…"
-                : needsExternalSetup
-                  ? "No in-app sign-in advertised. Follow the provider's docs to finish setup."
-                  : "Connect this provider."}
+            : unavailable
+              ? unavailable
+              : signedIn
+                ? "Signed in."
+                : isDiscovering
+                  ? "Discovering sign-in methods…"
+                  : needsExternalSetup
+                    ? "No in-app sign-in advertised. Follow the provider's docs to finish setup."
+                    : "Not signed in."}
         </Text>
         {signedIn && !active && provider.auth.email?.trim() ? (
           <ProviderAccountEmail key={provider.auth.email} email={provider.auth.email} />
@@ -223,7 +250,7 @@ function ProviderAccount({
               <View key={entry.name}>{field(entry.name, entry.label, entry.secret)}</View>
             ))}
             <SettingsActionRow
-              icon="person.crop.circle"
+              icon="key"
               label="Connect"
               disabled={disabled}
               onPress={() => {
@@ -266,7 +293,7 @@ function ProviderAccount({
           {state?.methods?.map((method) => (
             <SettingsActionRow
               key={method.id}
-              icon="person.crop.circle"
+              icon="key"
               label={method.name}
               disabled={disabled}
               onPress={() => {
@@ -300,7 +327,7 @@ function ProviderAccount({
       ) : null}
       {needsExternalSetup && provider.setup?.documentationUrl ? (
         <SettingsActionRow
-          icon="globe"
+          icon="book"
           label="Open docs"
           onPress={() => {
             void Linking.openURL(provider.setup!.documentationUrl!).catch(() =>
@@ -317,18 +344,21 @@ function ProviderAccount({
             void run(() => cancel({ environmentId, input: { instanceId, flowId: state.flowId! } }));
           }}
         />
-      ) : !active && !needsExternalSetup && provider.setup?.canAuthenticate !== false ? (
+      ) : !active &&
+        !unavailable &&
+        !needsExternalSetup &&
+        provider.setup?.canAuthenticate !== false ? (
         <SettingsActionRow
-          icon="person.crop.circle"
+          icon={signedIn ? "arrow.left.arrow.right" : "person.crop.circle.badge.plus"}
           label={signedIn ? "Change account" : "Sign in"}
-          disabled={disabled || !provider.enabled || !provider.installed || state === null}
+          disabled={disabled || state === null}
           loading={pending}
           onPress={chooseMethod}
         />
       ) : null}
       {!active && signedIn && (provider.auth.canLogout ?? provider.setup?.canAuthenticate) ? (
         <SettingsActionRow
-          icon="person.crop.circle"
+          icon="rectangle.portrait.and.arrow.right"
           label="Sign out"
           tone="danger"
           disabled={disabled || state === null}
