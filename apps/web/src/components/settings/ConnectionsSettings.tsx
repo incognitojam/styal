@@ -1784,6 +1784,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
     isSignedIn,
     linkState: primaryCloudLinkState,
     managedTunnelActive,
+    managedTunnelOutOfSync,
     publishAgentActivity,
     holdWebhooksWhileOffline,
     operationError,
@@ -1874,7 +1875,9 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
           description={
             managedTunnelActive
               ? "This environment is available to your other devices through styal Link."
-              : "Make this environment available to your other devices through styal Link."
+              : managedTunnelOutOfSync
+                ? "styal Link is out of sync. This environment is linked only to publish agent activity, so other devices cannot connect. Turn styal Link on to repair it."
+                : "Make this environment available to your other devices through styal Link."
           }
           status={operationError ?? primaryCloudLinkState.error}
           control={
