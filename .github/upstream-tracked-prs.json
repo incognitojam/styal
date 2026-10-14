@@ -65,6 +65,10 @@
       }
     },
     {
+      "pr": 16631,
+      "reason": "Replaces the resume compaction banner with compact-on-send, which #17127 turns into a Compact chip. Upstream offers it whenever the selected provider is Claude, so an idle thread switched from Codex to Claude offers to compact the Codex session's usage, although Orchestrator V2 hands Claude a bounded summary instead of resending that history. Fork #819 gates the banner on resumesClaudeSession (the next turn resumes the same native Claude session). When intake reaches #16631 and #17127, keep that check on the compact-on-send and chip path, verify a Codex to Claude switch shows no offer while a stale Claude thread still does, and remove this entry."
+    },
+    {
       "pr": 16867,
       "reason": "Imported provisionally as one snapshot: Stop finds unfinished background commands outside the recent history window, pending-work reads bound command output, persistent monitors stay excluded, and older history restores retained work in its original position with live state. Fork adaptations preserve the history-rewrite fence, RPC instrumentation, and existing command-outcome wire representation; an upstream test amendment for partial-message history was omitted because that behavior is absent from this baseline. Focused tests and a real browser flow with a synthetic provider verified termination after 120 newer commands and a reload. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and baseline adaptations, verify old-command Stop and history paging, then clear the snapshot marker with that intake. If it closes unmerged, review removal or retention as maintained fork behavior before clearing the marker.",
       "snapshot": {
