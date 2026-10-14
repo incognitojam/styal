@@ -22,7 +22,11 @@ import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as ModelManifest from "./ModelManifest.ts";
-import { resolveProviderCompatibility } from "./providerCompatibility.ts";
+import {
+  resolveProviderAutoUpdateVersion,
+  resolveProviderCompatibility,
+  stableProviderVersion,
+} from "./providerCompatibility.ts";
 import * as ProviderRegistry from "./Services/ProviderRegistry.ts";
 import { makeProviderMaintenanceCommandCoordinator } from "./providerMaintenanceCommandCoordinator.ts";
 import {
@@ -56,6 +60,12 @@ export interface ProviderMaintenanceRunnerShape {
           readonly provider: ProviderDriverKind;
           readonly instanceId?: ProviderInstanceId | undefined;
           readonly targetVersion?: string | undefined;
+          /**
+           * Background update: install only the canary-verified version. A
+           * targeted install must name it; an untargeted one runs only while
+           * the installer's latest version is that version.
+           */
+          readonly autoUpdate?: boolean | undefined;
         },
   ) => Effect.Effect<ServerProviderUpdatedPayload, ServerProviderUpdateError>;
 }
@@ -317,6 +327,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         ? defaultInstanceIdForDriver(provider)
         : (target.instanceId ?? defaultInstanceIdForDriver(provider));
     const targetVersion = typeof target === "string" ? undefined : target.targetVersion;
+    const autoUpdate = typeof target === "string" ? false : target.autoUpdate === true;
     const targetKey = `instance:${instanceId}`;
     const capabilities = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
       instanceId,
@@ -401,8 +412,15 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               targetVersion !== undefined
                 ? makeTargetedProviderUpdateAction(fresh, targetVersion)
                 : fresh.update;
-            const rejected =
-              targetVersion !== undefined
+            const testedVersion = resolveProviderAutoUpdateVersion(
+              manifest.compatibility,
+              ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
+              provider,
+            );
+            const rejected = autoUpdate
+              ? testedVersion === null ||
+                stableProviderVersion(provider, candidateVersion) !== testedVersion
+              : targetVersion !== undefined
                 ? !command ||
                   advisory?.recommendedVersion !== targetVersion ||
                   advisory.status !== "supported"
@@ -413,8 +431,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                   status: "failed",
                   startedAt,
                   finishedAt: yield* nowIso,
-                  message:
-                    targetVersion !== undefined
+                  message: autoUpdate
+                    ? "The tested provider version changed before the update started."
+                    : targetVersion !== undefined
                       ? "This version is no longer recommended or this installer cannot install a specific version. Refresh provider settings."
                       : "The latest provider version is incompatible with this styal release. Review provider settings.",
                 }),

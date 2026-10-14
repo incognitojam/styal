@@ -103,6 +103,20 @@ five seconds to exit. This can interrupt running work.
 at once. Hover it to see which providers it will update. Providers that only
 offer a manual update command are not included.
 
+### Automatic provider updates
+
+styal installs provider updates in the background once it has tested the new
+version: an automated check runs real agent turns against each new Codex,
+Claude Code, and OpenCode release before styal environments accept it. Until a
+release passes, environments stay on the last tested version, and you can still
+update to the newest version yourself from **Settings → Providers**.
+
+Automatic updates wait until no threads are running or waiting for you. They
+use the same installer as a manual update, so providers that only offer a
+manual update command are not updated automatically. Turn them off with
+**Update providers automatically** in **Settings → General**, or in
+**Settings → Maintenance** on mobile. They need provider update checks on.
+
 ## Mobile updates
 
 To update an environment from your phone, open **Settings → Environments** and

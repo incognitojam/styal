@@ -1,0 +1,284 @@
+name: Provider canary
+
+# Verifies new provider CLI releases against styal with real turns and records
+# each passing version as `autoUpdateVersion` in the model manifest. Servers
+# fetch that manifest from main and automatically update only up to it.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  # TEMPORARY: test runs from the feature branch. Remove before merging.
+  push:
+    branches: [styal/auto-provider-updates]
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Only this provider (codex, claudeAgent, opencode)"
+        required: false
+        type: string
+      force:
+        description: "Verify even when the latest release is already recorded"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provider-canary
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_work: ${{ steps.plan.outputs.has_work }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - id: plan
+        name: Find provider releases to verify
+        env:
+          PROVIDER: ${{ inputs.provider }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          args=()
+          if [[ -n "$PROVIDER" ]]; then args+=(--provider "$PROVIDER"); fi
+          if [[ "$FORCE" == "true" ]]; then args+=(--force); fi
+          node scripts/provider-canary.ts plan "${args[@]}"
+
+  verify:
+    name: Verify ${{ matrix.provider }} ${{ matrix.version }}
+    needs: plan
+    if: needs.plan.outputs.has_work == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      API_KEY: ${{ secrets[matrix.secret] }}
+    steps:
+      - id: secret
+        name: Check provider credentials
+        env:
+          SECRET_NAME: ${{ matrix.secret }}
+        run: |
+          if [[ -z "$API_KEY" ]]; then
+            echo "::notice title=${{ matrix.provider }} not verified::The $SECRET_NAME secret is not set."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.secret.outputs.present == 'true'
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup dependencies
+        if: steps.secret.outputs.present == 'true'
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+
+      # An isolated prefix keeps the verified release first on PATH and away
+      # from any provider CLI preinstalled on the runner.
+      - name: Install ${{ matrix.packageName }}@${{ matrix.version }}
+        if: steps.secret.outputs.present == 'true'
+        env:
+          PACKAGE: ${{ matrix.packageName }}@${{ matrix.version }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          prefix="$RUNNER_TEMP/provider-cli"
+          npm install --global --prefix "$prefix" "$PACKAGE"
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+          "$prefix/bin/$BINARY" --version
+
+      # The styal server passes OPENAI_API_KEY and ANTHROPIC_API_KEY through to
+      # provider processes. Codex keeps its login in CODEX_HOME instead.
+      - id: verify
+        name: Run real provider turns
+        if: steps.secret.outputs.present == 'true'
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          MODEL: ${{ matrix.model }}
+          VERSION: ${{ matrix.version }}
+          SECRET_NAME: ${{ matrix.secret }}
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          export "$SECRET_NAME=$API_KEY"
+          if [[ "$PROVIDER" == "codex" ]]; then
+            printenv OPENAI_API_KEY | codex login --with-api-key
+          fi
+          set +e
+          node apps/server/scripts/verify-provider-live.ts \
+            --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" \
+            2>&1 | tee "$RUNNER_TEMP/verify.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          evidence="$(sed -n 's/^Evidence: //p' "$RUNNER_TEMP/verify.log" | head -n 1)"
+          echo "evidence=$evidence" >> "$GITHUB_OUTPUT"
+          if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
+            jq -r '"### \(.provider) \(.version) (\(.model))\n\n| Scenario | Status | Detail |\n| --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.detail) |")' \
+              "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ "$status" != 0 ]]; then
+            echo "::error title=$PROVIDER $VERSION failed verification::See the job summary and the evidence artifact."
+            exit "$status"
+          fi
+          mkdir -p "$RUNNER_TEMP/canary-result"
+          jq -n --arg provider "$PROVIDER" --arg version "$VERSION" \
+            '{provider: $provider, version: $version}' \
+            > "$RUNNER_TEMP/canary-result/$PROVIDER.json"
+
+      - name: Upload result
+        if: steps.verify.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: canary-result-${{ matrix.provider }}
+          path: ${{ runner.temp }}/canary-result/
+          retention-days: 7
+
+      # Evidence holds the server log, thread projections and events, not the
+      # provider's own home directory or credentials.
+      - name: Upload evidence
+        if: failure() && steps.verify.outputs.evidence != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: canary-evidence-${{ matrix.provider }}-${{ matrix.version }}
+          path: |
+            ${{ steps.verify.outputs.evidence }}/*.json
+            ${{ steps.verify.outputs.evidence }}/*.ndjson
+            ${{ steps.verify.outputs.evidence }}/server.log
+          retention-days: 14
+
+  # Records every provider that passed, even when another failed verification.
+  record:
+    name: Record verified versions
+    needs: [plan, verify]
+    if: ${{ !cancelled() && github.event_name != 'push' && needs.plan.outputs.has_work == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Download results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: canary-result-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/canary-results
+
+      - id: results
+        name: Collect results
+        run: |
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/canary-results/*.json)
+          if (( ${#files[@]} == 0 )); then
+            echo "No provider passed verification."
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          jq -s '.' "${files[@]}" > "$RUNNER_TEMP/canary-results.json"
+          echo "any=true" >> "$GITHUB_OUTPUT"
+
+      # Pull requests opened with GITHUB_TOKEN do not trigger Fork CI, so an
+      # app token opens this one.
+      - id: app_token
+        name: Mint app token
+        if: steps.results.outputs.any == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.NIGHTLY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NIGHTLY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout main
+        if: steps.results.outputs.any == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          token: ${{ steps.app_token.outputs.token }}
+          persist-credentials: true
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup dependencies
+        if: steps.results.outputs.any == 'true'
+        uses: ./.github/actions/setup-deps
+        with:
+          filters: |
+            @styal/cli...
+
+      - id: record
+        name: Record versions in the model manifest
+        if: steps.results.outputs.any == 'true'
+        run: |
+          args=()
+          while IFS=$'\t' read -r provider version; do
+            args+=(--provider "$provider" --version "$version")
+          done < <(jq -r 'sort_by(.provider)[] | [.provider, .version] | @tsv' "$RUNNER_TEMP/canary-results.json")
+          node scripts/provider-canary.ts record "${args[@]}"
+          # Importing the manifest module decodes the bundled file with the server's schema.
+          node --input-type=module -e "await import('./apps/server/src/provider/ModelManifest.ts')"
+          vp test run apps/server/src/provider/ModelManifest.test.ts
+          summary="$(jq -r 'sort_by(.provider) | map("\(.provider) \(.version)") | join(", ")' "$RUNNER_TEMP/canary-results.json")"
+          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the pull request
+        if: steps.results.outputs.any == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_REPO: incognitojam/styal
+          BRANCH: automation/provider-canary
+          SUMMARY: ${{ steps.record.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="chore(providers): verify $SUMMARY for automatic updates"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add apps/server/src/provider/model-manifest.json
+          git commit -m "$title"
+          # The branch is regenerated from main on every run. Releases recorded
+          # by an unmerged earlier run are newer than main, so they are planned,
+          # verified and recorded again.
+          git push --force origin "$BRANCH"
+          body="$(printf '%s\n\n%s\n\n%s\n' \
+            "Real provider turns (tool use, checkpoint, resume, interrupt) passed for $SUMMARY on styal $(jq -r .version apps/server/package.json)." \
+            "Merging this sets \`autoUpdateVersion\` in the model manifest, so servers with automatic provider updates install up to these versions." \
+            "Canary run: $RUN_URL")"
+          number="$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$number" ]]; then
+            gh pr edit "$number" --title "$title" --body "$body"
+          else
+            gh pr create --head "$BRANCH" --base main --title "$title" --body "$body"
+          fi

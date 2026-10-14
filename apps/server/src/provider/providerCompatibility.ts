@@ -29,6 +29,12 @@ const Policy = Schema.Struct({
   t3CodeRange: VersionRange,
   recommendedRange: Schema.optionalKey(VersionRange),
   recommendedVersion: Schema.optionalKey(StableVersion),
+  /**
+   * Newest version the provider canary verified against this styal release
+   * range. Automatic updates install up to this version and never past it;
+   * scripts/provider-canary.ts records it.
+   */
+  autoUpdateVersion: Schema.optionalKey(StableVersion),
   ranges: Schema.Array(
     Schema.Struct({
       range: VersionRange,
@@ -36,6 +42,9 @@ const Policy = Schema.Struct({
     }),
   ),
 });
+
+const isSupportedVersion = (policy: typeof Policy.Type, version: string) =>
+  policy.ranges.find((entry) => satisfiesSemverRange(version, entry.range))?.status === "supported";
 
 export const ProviderCompatibilityPolicy = Policy.pipe(
   Schema.check(
@@ -46,26 +55,39 @@ export const ProviderCompatibilityPolicy = Policy.pipe(
         return (
           (policy.recommendedRange === undefined ||
             satisfiesSemverRange(version, policy.recommendedRange)) &&
-          policy.ranges.find((entry) => satisfiesSemverRange(version, entry.range))?.status ===
-            "supported"
+          isSupportedVersion(policy, version)
         );
       },
       { expected: "a recommended version in a supported range" },
+    ),
+    Schema.makeFilter(
+      (policy) =>
+        policy.autoUpdateVersion === undefined ||
+        isSupportedVersion(policy, policy.autoUpdateVersion),
+      { expected: "an automatic update version in a supported range" },
     ),
   ),
 );
 export type ProviderCompatibilityPolicy = typeof ProviderCompatibilityPolicy.Type;
 
-export function resolveProviderCompatibility(
+function findPolicy(
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
   driver: ProviderDriverKind,
-  version: string | null,
-  t3CodeVersion = packageJson.version,
-): ServerProviderCompatibilityAdvisory | undefined {
-  const policy = policies?.find(
+  t3CodeVersion: string,
+): ProviderCompatibilityPolicy | undefined {
+  return policies?.find(
     (entry) => entry.driver === driver && satisfiesSemverRange(t3CodeVersion, entry.t3CodeRange),
   );
-  if (!policy) return undefined;
+}
+
+/**
+ * The plain `x.y.z` form of a provider's reported version, or null for
+ * prereleases and unrecognized release tags.
+ */
+export function stableProviderVersion(
+  driver: ProviderDriverKind,
+  version: string | null | undefined,
+): string | null {
   const unprefixed = version?.replace(/^v/, "");
   // Cursor appends a build hash to its date; Google's ACP runtime uses a release prefix.
   // Strip only these driver-specific forms, keeping semver prereleases unknown.
@@ -75,11 +97,34 @@ export function resolveProviderCompatibility(
       : driver === "antigravity"
         ? unprefixed?.replace(/^agy_acp_server_(\d+\.\d+\.\d+)$/, "$1")
         : unprefixed;
-  const status =
-    stable && /^\d+\.\d+\.\d+$/.test(stable)
-      ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??
-        "unknown")
-      : "unknown";
+  return stable && /^\d+\.\d+\.\d+$/.test(stable) ? stable : null;
+}
+
+/** The canary-verified version for this styal release, remote policy first. */
+export function resolveProviderAutoUpdateVersion(
+  policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  fallback: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  driver: ProviderDriverKind,
+  t3CodeVersion = packageJson.version,
+): string | null {
+  const policy =
+    findPolicy(policies, driver, t3CodeVersion) ?? findPolicy(fallback, driver, t3CodeVersion);
+  return policy?.autoUpdateVersion ?? null;
+}
+
+export function resolveProviderCompatibility(
+  policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  driver: ProviderDriverKind,
+  version: string | null,
+  t3CodeVersion = packageJson.version,
+): ServerProviderCompatibilityAdvisory | undefined {
+  const policy = findPolicy(policies, driver, t3CodeVersion);
+  if (!policy) return undefined;
+  const stable = stableProviderVersion(driver, version);
+  const status = stable
+    ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??
+      "unknown")
+    : "unknown";
   const message =
     status === "broken"
       ? "This provider version is known to be incompatible with this styal release."

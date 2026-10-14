@@ -49,6 +49,8 @@ import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
 import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
+import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
+import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ResetCreditCoordinator from "./provider/Layers/resetCreditCoordinator.ts";
 import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
 import * as OpenCodeRuntime from "./provider/opencodeRuntime.ts";
@@ -539,6 +541,10 @@ const ProviderInstallationRefreshLive = Layer.effectDiscard(
   }),
 );
 
+const ProviderAutoUpdaterLive = Layer.effectDiscard(
+  ProviderAutoUpdater.make.pipe(Effect.flatMap((service) => service.start)),
+).pipe(Layer.provide(ProjectionStoreV2.layer));
+
 const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   AgentAwarenessRelay.layer,
   ThreadSettlementWorkerLive,
@@ -570,6 +576,7 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   // telemetry instead of waiting for the next status probe.
   ProviderUsageLimitsIngestionLive,
   ProviderInstallationRefreshLive,
+  ProviderAutoUpdaterLive,
   ReplayMarkers.layer,
 ).pipe(
   // Core Services
@@ -591,6 +598,8 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
       traceShutdown("user-files"),
     ),
   ),
+  // One runner per server, so manual and background updates share its locks.
+  Layer.provideMerge(ProviderMaintenanceRunner.layer),
   Layer.provideMerge(ProviderRegistryLive.pipe(traceShutdown("provider-registry"))),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`

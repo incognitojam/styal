@@ -20,6 +20,7 @@ import * as Schema from "effect/Schema";
 import {
   applyProviderCompatibility,
   ProviderCompatibilityPolicy,
+  resolveProviderAutoUpdateVersion,
   resolveProviderCompatibility,
 } from "./providerCompatibility.ts";
 
@@ -274,8 +275,34 @@ describe("provider compatibility", () => {
       { ...policy, ranges: [{ range: ">=2.0.0 garbage", status: "supported" }] },
       { ...policy, recommendedVersion: "2.0.0; echo unsafe" },
       { ...policy, ranges: [{ range: ">=0.0.0", status: "broken" }, ...policy.ranges] },
+      { ...policy, autoUpdateVersion: "1.6.0" },
+      { ...policy, autoUpdateVersion: "2.1.0-beta.1" },
     ])
       assert.throws(() => decode(invalid));
+  });
+
+  it("reads the automatic update version from the remote policy before the bundled one", () => {
+    const decode = Schema.decodeUnknownSync(ProviderCompatibilityPolicy);
+    const bundled = decode({ ...policy, autoUpdateVersion: "2.0.0" });
+    const remote = decode({ ...policy, autoUpdateVersion: "2.4.1" });
+    assert.strictEqual(
+      resolveProviderAutoUpdateVersion([remote], [bundled], driver, "0.0.50"),
+      "2.4.1",
+    );
+    assert.strictEqual(
+      resolveProviderAutoUpdateVersion(undefined, [bundled], driver, "0.0.50"),
+      "2.0.0",
+    );
+    // A remote policy without the field replaces the bundled one, as for every other field.
+    assert.strictEqual(
+      resolveProviderAutoUpdateVersion([policy], [bundled], driver, "0.0.50"),
+      null,
+    );
+    // Releases outside the policy's styal range never auto-update.
+    assert.strictEqual(
+      resolveProviderAutoUpdateVersion([remote], [bundled], driver, "0.2.0"),
+      null,
+    );
   });
 });
 
