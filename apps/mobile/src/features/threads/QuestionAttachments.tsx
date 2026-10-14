@@ -199,7 +199,7 @@ export function QuestionAttachments(props: {
           editable={!props.disabled}
           accessibilityLabel={props.question.multiSelect ? "Additional answer" : "Custom answer"}
           accessibilityHint={
-            props.optionSelected
+            props.optionSelected && props.value.trim().length > 0
               ? "An option is selected. Tap this field to use your custom answer."
               : undefined
           }
