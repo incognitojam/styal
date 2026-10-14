@@ -3788,13 +3788,17 @@ features:
     invariants:
       - Text generation defaults to Claude Haiku 5.5 at low effort.
       - Thread titles, branch names, and commit and pull request text run on the selected text generation model while its provider is enabled, installed, and signed in; otherwise they run on the first usable provider in the order Claude, Codex, then the rest, with that provider's text generation default.
-      - The choice is made from the last provider status check before the request, with one call per request and no retry on another provider; a provider not yet checked counts as usable.
-      - Settings shows the model that will run, and the fallback is never saved over the user's selection.
-    rationale: Users bring their own subscriptions, so a fixed default provider fails for anyone without that subscription. Upstream falls back only when the selected provider is disabled in settings.
+      - The choice is made from the last provider status check before the request; a provider not yet checked counts as usable.
+      - Rate-limit and usage-limit failures retry on another usable provider in the same preference order, at most once per instance per request. Other failures and cancellation stop immediately; exhausting providers preserves the last failure.
+      - Fallbacks preserve the request context and never change the saved model preference; the next request tries the preferred provider again.
+      - Settings shows the initial model chosen from provider status, and runtime fallbacks are never saved over the user's selection.
+    rationale: Users bring their own subscriptions, so a fixed default provider fails for anyone without that subscription or with an exhausted allowance. Upstream falls back only when the selected provider is disabled in settings.
     implementation_paths:
       - apps/server/src/git/GitManager.ts
       - apps/server/src/orchestration-v2/ThreadTitleRegenerationService.ts
+      - apps/server/src/textGeneration/ClaudeTextGeneration.ts
       - apps/server/src/textGeneration/TextGeneration.ts
+      - apps/server/src/textGeneration/TextGenerationUtils.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/modelSelection.ts
       - packages/contracts/src/settings.ts
@@ -3806,6 +3810,7 @@ features:
       - packages/contracts/src/settings.ts
       - packages/shared/src/serverSettings.ts
     tests:
+      - apps/server/src/textGeneration/ClaudeTextGeneration.test.ts
       - apps/server/src/textGeneration/TextGeneration.test.ts
       - apps/web/src/modelSelection.test.ts
       - packages/shared/src/serverSettings.test.ts
@@ -3813,7 +3818,7 @@ features:
       status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/15272
-      retire_when: Upstream chooses the text generation provider from install and sign-in status, preferring Claude Haiku 5.5 then GPT-6 Luna.
+      retire_when: Upstream chooses the text generation provider from install and sign-in status, preferring Claude Haiku 5.5 then GPT-6 Luna, and retries rate-limited generation on another usable provider without changing the saved preference.
 
   - id: thread-action-undo-shortcut
     title: Undo thread actions from the focused composer

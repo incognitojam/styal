@@ -159,7 +159,7 @@ describe("TextGeneration.make", () => {
   );
 
   it.effect(
-    "selects a signed-in provider before each operation and never retries a generation failure",
+    "selects a signed-in provider before each operation and does not retry an ordinary failure",
     () =>
       Effect.gen(function* () {
         const requested = createModelSelection(ProviderInstanceId.make("codex"), "chosen-model");
@@ -270,6 +270,357 @@ describe("TextGeneration.make", () => {
         ).toBe("codex-branch");
         expect(calls[5]).toEqual(requested);
       }),
+  );
+
+  it.effect("recovers every text operation from a rate limit without changing the preference", () =>
+    Effect.gen(function* () {
+      const requested = createModelSelection(
+        ProviderInstanceId.make("claudeAgent"),
+        "chosen-model",
+        [{ id: "effort", value: "high" }],
+      );
+      const original = structuredClone(requested);
+      const calls: ModelSelection[] = [];
+      const contexts: string[] = [];
+      let limited = true;
+      const record = (input: {
+        modelSelection: ModelSelection;
+        linkedContext?: string | undefined;
+      }) =>
+        Effect.sync(() => {
+          calls.push(input.modelSelection);
+          if (input.linkedContext) contexts.push(input.linkedContext);
+        }).pipe(
+          Effect.andThen(() =>
+            limited && input.modelSelection.instanceId === requested.instanceId
+              ? Effect.fail(
+                  new TextGenerationError({ operation: "synthetic", detail: "Rate limit reached" }),
+                )
+              : Effect.void,
+          ),
+        );
+      const service = makeStubTextGeneration({
+        generateBranchName: (input) =>
+          record(input).pipe(Effect.as({ branch: "recovered-branch" })),
+        generateThreadTitle: (input) => record(input).pipe(Effect.as({ title: "Recovered title" })),
+        generateCommitMessage: (input) =>
+          record(input).pipe(Effect.as({ subject: "Recovered subject", body: "Recovered body" })),
+        generatePrContent: (input) =>
+          record(input).pipe(Effect.as({ title: "Recovered PR", body: "Recovered body" })),
+      });
+      const generation = yield* TextGeneration.make.pipe(
+        Effect.provideService(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          makeStubRegistry([
+            makeStubInstance(requested.instanceId, service),
+            makeStubInstance(ProviderInstanceId.make("codex"), service),
+          ]),
+        ),
+        Effect.provide(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => Effect.die("Supplied context must not be fetched again"),
+          }),
+        ),
+      );
+      const base = { cwd: process.cwd(), modelSelection: requested };
+      expect(
+        yield* generation.generateBranchName({ ...base, message: "Synthetic prompt" }),
+      ).toEqual({ branch: "recovered-branch" });
+      expect(
+        yield* generation.generateThreadTitle({
+          ...base,
+          message: "Synthetic prompt",
+          linkedContext: "Synthetic link context",
+        }),
+      ).toEqual({ title: "Recovered title" });
+      expect(
+        yield* generation.generateCommitMessage({
+          ...base,
+          branch: null,
+          stagedSummary: "Synthetic diff",
+          stagedPatch: "",
+        }),
+      ).toEqual({ subject: "Recovered subject", body: "Recovered body" });
+      expect(
+        yield* generation.generatePrContent({
+          ...base,
+          baseBranch: "main",
+          headBranch: "synthetic",
+          commitSummary: "Synthetic diff",
+          diffSummary: "",
+          diffPatch: "",
+        }),
+      ).toEqual({ title: "Recovered PR", body: "Recovered body" });
+      expect(calls).toHaveLength(8);
+      for (let index = 0; index < calls.length; index += 2) {
+        expect(calls[index]).toEqual(requested);
+        expect(calls[index + 1]).toEqual(
+          createModelSelection(
+            ProviderInstanceId.make("codex"),
+            DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("codex")]!,
+            [{ id: "reasoningEffort", value: "low" }],
+          ),
+        );
+      }
+      expect(contexts).toEqual(["Synthetic link context", "Synthetic link context"]);
+      expect(requested).toEqual(original);
+      limited = false;
+      yield* generation.generateBranchName({ ...base, message: "Synthetic prompt" });
+      expect(calls[8]).toEqual(requested);
+    }),
+  );
+
+  it.effect.each([
+    { label: "CLI rate limit", detail: "Codex CLI command failed: Rate limit reached." },
+    {
+      label: "CLI usage limit",
+      detail: "Claude CLI command failed: You've hit your limit · resets later",
+    },
+    { label: "HTTP status", detail: "Provider request failed", cause: { status: 429 } },
+    {
+      label: "nested SDK error",
+      detail: "Provider request failed",
+      cause: new Error("SDK failure", { cause: { statusCode: 429 } }),
+    },
+    {
+      label: "Codex error code",
+      detail: "Provider request failed",
+      cause: { code: "usageLimitExceeded" },
+    },
+    {
+      label: "OpenCode API error",
+      detail: "Provider request failed",
+      cause: { name: "APIError", data: { statusCode: 429, message: "Request rejected" } },
+    },
+    {
+      label: "Grok ACP error",
+      detail: "Provider request failed",
+      cause: { cause: { code: -32003, errorMessage: "Rate limited" } },
+    },
+  ])("falls back on $label", ({ detail, ...entry }) =>
+    Effect.gen(function* () {
+      const selectedId = ProviderInstanceId.make("claudeAgent");
+      const error = new TextGenerationError({
+        operation: "generateBranchName",
+        detail,
+        ...(entry.cause === undefined ? {} : { cause: entry.cause }),
+      });
+      const generation = yield* TextGeneration.make.pipe(
+        Effect.provideService(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          makeStubRegistry([
+            makeStubInstance(
+              selectedId,
+              makeStubTextGeneration({ generateBranchName: () => Effect.fail(error) }),
+            ),
+            makeStubInstance(
+              ProviderInstanceId.make("codex"),
+              makeStubTextGeneration({
+                generateBranchName: () => Effect.succeed({ branch: "recovered" }),
+              }),
+            ),
+          ]),
+        ),
+        Effect.provide(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => Effect.die("No link lookup expected"),
+          }),
+        ),
+      );
+      expect(
+        yield* generation.generateBranchName({
+          cwd: process.cwd(),
+          message: "Synthetic prompt",
+          modelSelection: createModelSelection(selectedId, "synthetic-model"),
+        }),
+      ).toEqual({ branch: "recovered" });
+    }),
+  );
+
+  it.effect.each([
+    { label: "all providers limited", lastDetail: "Rate limit reached" },
+    { label: "fallback fails normally", lastDetail: "Invalid structured output" },
+  ])("stops when $label and preserves the last error", ({ lastDetail }) =>
+    Effect.gen(function* () {
+      const ids = ["codex", "claudeAgent", "codex-secondary"].map((id) =>
+        ProviderInstanceId.make(id),
+      );
+      const calls: string[] = [];
+      const lastError = new TextGenerationError({
+        operation: "generateBranchName",
+        detail: lastDetail,
+      });
+      const instances = ids.map((id, index) =>
+        makeStubInstance(
+          id,
+          makeStubTextGeneration({
+            generateBranchName: () =>
+              Effect.sync(() => calls.push(id)).pipe(
+                Effect.andThen(() =>
+                  Effect.fail(
+                    index === 2
+                      ? lastError
+                      : new TextGenerationError({
+                          operation: "generateBranchName",
+                          detail: "Rate limit reached",
+                        }),
+                  ),
+                ),
+              ),
+          }),
+        ),
+      );
+      const generation = yield* TextGeneration.make.pipe(
+        Effect.provideService(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          makeStubRegistry(instances),
+        ),
+        Effect.provide(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => Effect.die("No link lookup expected"),
+          }),
+        ),
+      );
+      const result = yield* Effect.flip(
+        generation.generateBranchName({
+          cwd: process.cwd(),
+          message: "Synthetic prompt",
+          modelSelection: createModelSelection(ids[0]!, "synthetic-model"),
+        }),
+      );
+      expect(result).toBe(lastError);
+      expect(calls).toEqual(ids);
+    }),
+  );
+
+  it.effect.each([true, false])(
+    "does not retry an unavailable original selection after its fallback is limited (%s)",
+    (selectedReady) =>
+      Effect.gen(function* () {
+        const id = ProviderInstanceId.make("codex");
+        const error = new TextGenerationError({
+          operation: "generateBranchName",
+          detail: "Rate limit reached",
+        });
+        const selected = makeStubInstance(
+          id,
+          makeStubTextGeneration({
+            generateBranchName: () =>
+              selectedReady ? Effect.fail(error) : Effect.die("Unavailable provider must not run"),
+          }),
+        );
+        const selectedSnapshot = yield* selected.snapshot.getSnapshot;
+        const generation = yield* TextGeneration.make.pipe(
+          Effect.provideService(
+            ProviderInstanceRegistry.ProviderInstanceRegistry,
+            makeStubRegistry([
+              {
+                ...selected,
+                snapshot: {
+                  ...selected.snapshot,
+                  getSnapshot: Effect.succeed({
+                    ...selectedSnapshot,
+                    auth: { status: selectedReady ? "authenticated" : "unauthenticated" },
+                  }),
+                },
+              },
+              makeStubInstance(
+                ProviderInstanceId.make("claudeAgent"),
+                makeStubTextGeneration({ generateBranchName: () => Effect.fail(error) }),
+              ),
+            ]),
+          ),
+          Effect.provide(
+            Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+              resolveLink: () => Effect.die("No link lookup expected"),
+            }),
+          ),
+        );
+        expect(
+          yield* Effect.flip(
+            generation.generateBranchName({
+              cwd: process.cwd(),
+              message: "Synthetic prompt",
+              modelSelection: createModelSelection(id, "synthetic-model"),
+            }),
+          ),
+        ).toBe(error);
+      }),
+  );
+
+  it.effect.each([
+    {
+      label: "timeout",
+      error: new TextGenerationError({
+        operation: "generateBranchName",
+        detail: "Provider request timed out",
+      }),
+    },
+    {
+      label: "authentication",
+      error: new TextGenerationError({
+        operation: "generateBranchName",
+        detail: "Sign in to continue",
+      }),
+    },
+    {
+      label: "cancellation",
+      error: new TextGenerationError({
+        operation: "generateBranchName",
+        detail: "Request cancelled",
+      }),
+    },
+    {
+      label: "invalid output containing a rate-limit prompt",
+      error: new TextGenerationError({
+        operation: "generateBranchName",
+        detail: "Invalid structured output",
+        cause: { _tag: "SchemaError", message: "Invalid title: rate limit reached" },
+      }),
+    },
+    {
+      label: "ordinary HTTP failure",
+      error: new TextGenerationError({
+        operation: "generateBranchName",
+        detail: "Request failed",
+        cause: { statusCode: 500 },
+      }),
+    },
+  ])("does not fall back on $label", ({ error }) =>
+    Effect.gen(function* () {
+      const id = ProviderInstanceId.make("claudeAgent");
+      const generation = yield* TextGeneration.make.pipe(
+        Effect.provideService(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          makeStubRegistry([
+            makeStubInstance(
+              id,
+              makeStubTextGeneration({ generateBranchName: () => Effect.fail(error) }),
+            ),
+            makeStubInstance(
+              ProviderInstanceId.make("codex"),
+              makeStubTextGeneration({
+                generateBranchName: () => Effect.die("Must not retry this failure"),
+              }),
+            ),
+          ]),
+        ),
+        Effect.provide(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => Effect.die("No link lookup expected"),
+          }),
+        ),
+      );
+      expect(
+        yield* Effect.flip(
+          generation.generateBranchName({
+            cwd: process.cwd(),
+            message: "Synthetic prompt",
+            modelSelection: createModelSelection(id, "synthetic-model"),
+          }),
+        ),
+      ).toBe(error);
+    }),
   );
 
   it.effect("fails with TextGenerationError when the instance is unknown", () =>

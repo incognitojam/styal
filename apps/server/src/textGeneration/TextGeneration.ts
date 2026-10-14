@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
 import type {
   BranchNamingOptions,
   ChatAttachment,
@@ -15,6 +16,7 @@ import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
+import { isTextGenerationRateLimitError } from "./TextGenerationUtils.ts";
 
 export interface CommitMessageGenerationInput {
   cwd: string;
@@ -144,75 +146,79 @@ const resolveInstance = (
 export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const sourceControl = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-  const resolveSelection = Effect.fn("TextGeneration.resolveSelection")(function* (
-    modelSelection: ModelSelection,
+  const generate = Effect.fn("TextGeneration.generate")(function* <A>(
+    operation: TextGenerationOp,
+    requested: ModelSelection,
+    run: (
+      textGeneration: TextGeneration["Service"],
+      modelSelection: ModelSelection,
+    ) => Effect.Effect<A, TextGenerationError>,
   ) {
     const instances = yield* registry.listInstances;
-    const providers = yield* Effect.forEach(
-      instances,
-      (instance) => instance.snapshot.getSnapshot,
-      { concurrency: "unbounded" },
-    );
-    return resolveTextGenerationModelSelection({ textGenerationModelSelection: modelSelection }, [
-      ...providers,
+    const providers = [
+      ...(yield* Effect.forEach(instances, (instance) => instance.snapshot.getSnapshot, {
+        concurrency: "unbounded",
+      })),
       ...(yield* registry.listUnavailable),
-    ]);
+    ];
+    const attempted = new Set<string>();
+    let modelSelection = resolveTextGenerationModelSelection(
+      { textGenerationModelSelection: requested },
+      providers,
+    );
+    while (true) {
+      const result = yield* resolveInstance(registry, operation, modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => run(textGeneration, modelSelection)),
+        Effect.result,
+      );
+      if (Result.isSuccess(result)) return result.success;
+      attempted.add(modelSelection.instanceId);
+      if (!isTextGenerationRateLimitError(result.failure)) return yield* result.failure;
+      const next = resolveTextGenerationModelSelection(
+        { textGenerationModelSelection: requested },
+        providers,
+        attempted,
+      );
+      if (next.instanceId === requested.instanceId || attempted.has(next.instanceId)) {
+        return yield* result.failure;
+      }
+      yield* Effect.logDebug("Text generation rate limit: trying another provider", {
+        operation,
+        from: modelSelection.instanceId,
+        to: next.instanceId,
+      });
+      modelSelection = next;
+    }
   });
   return TextGeneration.of({
     generateCommitMessage: (input) =>
-      resolveSelection(input.modelSelection).pipe(
-        Effect.flatMap((modelSelection) =>
-          resolveInstance(registry, "generateCommitMessage", modelSelection.instanceId).pipe(
-            Effect.flatMap((textGeneration) =>
-              textGeneration.generateCommitMessage({ ...input, modelSelection }),
-            ),
-          ),
-        ),
+      generate("generateCommitMessage", input.modelSelection, (textGeneration, modelSelection) =>
+        textGeneration.generateCommitMessage({ ...input, modelSelection }),
       ),
     generatePrContent: (input) =>
-      resolveSelection(input.modelSelection).pipe(
-        Effect.flatMap((modelSelection) =>
-          resolveInstance(registry, "generatePrContent", modelSelection.instanceId).pipe(
-            Effect.flatMap((textGeneration) =>
-              textGeneration.generatePrContent({ ...input, modelSelection }),
-            ),
-          ),
-        ),
+      generate("generatePrContent", input.modelSelection, (textGeneration, modelSelection) =>
+        textGeneration.generatePrContent({ ...input, modelSelection }),
       ),
     generateBranchName: (input) =>
-      resolveSelection(input.modelSelection).pipe(
-        Effect.flatMap((modelSelection) =>
-          resolveInstance(registry, "generateBranchName", modelSelection.instanceId).pipe(
-            Effect.flatMap((textGeneration) =>
-              textGeneration.generateBranchName({ ...input, modelSelection }),
-            ),
-          ),
-        ),
+      generate("generateBranchName", input.modelSelection, (textGeneration, modelSelection) =>
+        textGeneration.generateBranchName({ ...input, modelSelection }),
       ),
-    generateThreadTitle: (input) =>
-      resolveSelection(input.modelSelection).pipe(
-        Effect.flatMap((modelSelection) =>
-          resolveInstance(registry, "generateThreadTitle", modelSelection.instanceId).pipe(
-            Effect.flatMap((textGeneration) =>
-              Effect.gen(function* () {
-                const linkedContext =
-                  input.linkedContext ??
-                  (yield* ThreadTitleLinks.resolveThreadTitleLinks(input).pipe(
-                    Effect.provideService(
-                      SourceControlProviderRegistry.SourceControlProviderRegistry,
-                      sourceControl,
-                    ),
-                  ));
-                return yield* textGeneration.generateThreadTitle({
-                  ...input,
-                  modelSelection,
-                  linkedContext,
-                });
-              }),
-            ),
+    generateThreadTitle: Effect.fn("TextGeneration.generateThreadTitle")(function* (input) {
+      const linkedContext =
+        input.linkedContext ??
+        (yield* ThreadTitleLinks.resolveThreadTitleLinks(input).pipe(
+          Effect.provideService(
+            SourceControlProviderRegistry.SourceControlProviderRegistry,
+            sourceControl,
           ),
-        ),
-      ),
+        ));
+      return yield* generate(
+        "generateThreadTitle",
+        input.modelSelection,
+        (textGeneration, modelSelection) =>
+          textGeneration.generateThreadTitle({ ...input, modelSelection, linkedContext }),
+      );
+    }),
   });
 });
 

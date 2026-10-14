@@ -3,6 +3,54 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
+const decodeProviderError = Schema.decodeUnknownOption(
+  Schema.Struct({
+    _tag: Schema.optionalKey(Schema.Unknown),
+    status: Schema.optionalKey(Schema.Unknown),
+    statusCode: Schema.optionalKey(Schema.Unknown),
+    code: Schema.optionalKey(Schema.Unknown),
+    message: Schema.optionalKey(Schema.Unknown),
+    errorMessage: Schema.optionalKey(Schema.Unknown),
+    detail: Schema.optionalKey(Schema.Unknown),
+    cause: Schema.optionalKey(Schema.Unknown),
+    error: Schema.optionalKey(Schema.Unknown),
+    data: Schema.optionalKey(Schema.Unknown),
+    errors: Schema.optionalKey(Schema.Unknown),
+  }),
+);
+const RATE_LIMIT_MESSAGE =
+  /\b(?:rate[ _-]?limit(?:ed|ing|exceeded|_exceeded)?|usage[ _-]?limit(?:exceeded|_exceeded)?|too many requests|(?:you(?:'ve| have) )?hit your limit|insufficient_quota|quota[ _-]exceeded|resource_exhausted)\b/i;
+
+/** Read only error fields: structured-output validation can contain the user's prompt. */
+export function isTextGenerationRateLimitError(error: TextGenerationError): boolean {
+  const seen = new Set<unknown>();
+  const visit = (value: unknown, depth: number): boolean => {
+    if (depth > 8 || seen.has(value)) return false;
+    if (typeof value === "string") return RATE_LIMIT_MESSAGE.test(value);
+    if (value === null || typeof value !== "object") return false;
+    seen.add(value);
+    if (Array.isArray(value)) return value.some((entry) => visit(entry, depth + 1));
+    const decoded = decodeProviderError(value);
+    if (Option.isNone(decoded) || decoded.value._tag === "SchemaError") return false;
+    const fields = decoded.value;
+    return (
+      [fields.status, fields.statusCode, fields.code].some(
+        (status) => status === 429 || status === "429",
+      ) ||
+      [
+        fields.code,
+        fields.message,
+        fields.errorMessage,
+        fields.detail,
+        fields.cause,
+        fields.error,
+        fields.data,
+        fields.errors,
+      ].some((entry) => visit(entry, depth + 1))
+    );
+  };
+  return visit(error, 0);
+}
 const decodeJsonThreadTitle = Schema.decodeOption(
   Schema.fromJsonString(Schema.Struct({ title: Schema.String })),
 );

@@ -63,12 +63,23 @@ const ClaudeOutputEnvelope = Schema.Struct({
 const ClaudeOutputMessage = Schema.Struct({
   type: Schema.String,
   structured_output: Schema.optionalKey(Schema.Unknown),
+  is_error: Schema.optionalKey(Schema.Boolean),
+  result: Schema.optionalKey(Schema.String),
+  errors: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+const ClaudeOutputFailure = Schema.Struct({
+  is_error: Schema.Literal(true),
+  result: Schema.optionalKey(Schema.String),
+  errors: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 const isClaudeOutputEnvelope = Schema.is(ClaudeOutputEnvelope);
+const isClaudeOutputFailure = Schema.is(ClaudeOutputFailure);
 
 const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeClaudeOutput = Schema.decodeEffect(
-  Schema.fromJsonString(Schema.Union([ClaudeOutputEnvelope, Schema.Array(ClaudeOutputMessage)])),
+  Schema.fromJsonString(
+    Schema.Union([ClaudeOutputFailure, ClaudeOutputEnvelope, Schema.Array(ClaudeOutputMessage)]),
+  ),
 );
 
 export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(function* (
@@ -295,9 +306,17 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           ),
       }),
     );
-    const envelope = isClaudeOutputEnvelope(output)
-      ? output
-      : output.findLast((message) => message.type === "result");
+    const envelope =
+      isClaudeOutputFailure(output) || isClaudeOutputEnvelope(output)
+        ? output
+        : output.findLast((message) => message.type === "result");
+    if (isClaudeOutputFailure(envelope)) {
+      return yield* new TextGenerationError({
+        operation,
+        detail: "Claude CLI generation failed.",
+        cause: new Error(envelope.errors?.join("\n") || envelope.result || "Claude request failed"),
+      });
+    }
 
     const decodeOutput = Schema.decodeEffect(outputSchemaJson);
     return yield* decodeOutput(envelope?.structured_output).pipe(

@@ -76,9 +76,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Text generation uses a provider you're signed in to.** Thread titles, branch names, and commit
   and pull request text default to Claude Haiku 5.5. When the chosen provider is signed out or not
   installed, styal uses Claude Haiku 5.5, then GPT-6 Luna, then another signed-in provider, and
-  **Settings** shows the model in use. T3 Code defaults to GPT-6 Luna and switches only when the
-  provider is turned off as of
-  [revision 18656a3](https://github.com/pingdotgg/t3code/tree/18656a3402459d9d145bb3fa5767723531b27ac7).
+  **Settings** shows the initial model choice. If a generation request hits a rate or usage limit, styal
+  tries another usable provider in the same order without changing your saved model preference.
+  T3 Code defaults to GPT-6 Luna and switches only when the provider is turned off as of
+  [revision 7ac952c](https://github.com/pingdotgg/t3code/tree/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae).
 - **New threads start in a worktree.** Both apps support isolated Git worktrees. After project,
   environment, and `t3.json` settings, styal defaults to a worktree when the project is a Git
   repository with a commit, and the current checkout otherwise. T3 Code defaults to the local
