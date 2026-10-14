@@ -447,11 +447,14 @@ export const make = Effect.gen(function* () {
             ...(workflowApprovals.known
               ? { workflowApprovalsRequired: workflowApprovals.runs.length }
               : {}),
-            reviewers: pullRequest.reviewRequestLogins.map((login) => ({
-              login,
-              name: null,
-              avatarUrl: null,
-            })),
+            reviewers: [
+              ...pullRequest.reviewRequestLogins.map((login) => ({
+                login,
+                name: null,
+                avatarUrl: null,
+              })),
+              ...pullRequest.reviewRequestTeams,
+            ],
             mergeCapabilities: narrowMergeCapabilities(
               pullRequest.viewerAccess.mergeCapabilities,
               branchPolicy?.allowedMergeMethods ?? null,
