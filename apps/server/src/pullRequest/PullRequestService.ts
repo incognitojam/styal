@@ -2681,23 +2681,7 @@ export const make = Effect.gen(function* () {
           },
         }),
       );
-    /**
-     * A change request already read does not wait on the host again. `reuse` answers from
-     * what we hold and spends nothing — title, author, and state barely move, and a linked
-     * thread already names the change request. `revalidate` answers the same way and
-     * refreshes behind it, so line counts and the rest can change in place.
-     */
-    const serveHeld = (
-      key: string,
-      effect: Effect.Effect<A, PullRequestError>,
-      mode: "reuse" | "revalidate",
-    ) => {
-      const snapshot = held.get(key);
-      if (snapshot === undefined) return read(key, effect);
-      if (mode === "reuse") return Effect.succeed(snapshot.value);
-      return revalidate(read(key, effect)).pipe(Effect.as(snapshot.value));
-    };
-    return { peek: (key: string) => held.get(key)?.value, read, record, serveHeld };
+    return { peek: (key: string) => held.get(key)?.value, read, record };
   };
   const lastGoodSummary = makeLastGoodRead<PullRequestSummary>(DETAIL_CACHE_CAPACITY);
   const lastGoodDetail = makeLastGoodRead<PullRequestDetail>(DETAIL_CACHE_CAPACITY);
@@ -3057,10 +3041,8 @@ export const make = Effect.gen(function* () {
   };
   const detail: PullRequestService["Service"]["detail"] = (input) => {
     const key = refCacheKey(input);
-    // Record the summary from a host or cache read, not the stale value
-    // `serveHeld` returns immediately. Skip the write when that read is older
-    // than a later strict summary — display reuse would otherwise keep the
-    // regression and never ask the host again.
+    // Skip summary writes older than a later strict summary, so opening detail
+    // cannot roll back the state a linked thread has already observed.
     const read = Cache.get(detailCache, key).pipe(
       Effect.tap((value) => {
         const summary = summaryFromDetail(value, lastGoodSummary.peek(key));
@@ -3069,9 +3051,11 @@ export const make = Effect.gen(function* () {
           : Effect.void;
       }),
     );
+    // The client already keeps its previous detail while this request is pending.
+    // Returning held detail would leave its header one read behind the diff.
     return input.allowStale === false
       ? read.pipe(Effect.tap((value) => lastGoodDetail.record(key, value)))
-      : lastGoodDetail.serveHeld(key, read, "revalidate");
+      : lastGoodDetail.read(key, read);
   };
 
   const activityCache = yield* Cache.makeWith(

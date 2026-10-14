@@ -3009,9 +3009,10 @@ features:
     title: Keep open pull request details current
     status: maintained
     prs: [101, 457]
-    rationale: Upstream detail reads return the held value and refresh it in the background unless a caller opts out, so its automatic refresh shows each change one refresh late. The fork's detail-only invalidation makes that refresh wait for the host.
+    rationale: Upstream detail reads return the held value and refresh it in the background unless a caller opts out, so opening a cached pull request can show old header totals beside a current diff. The fork returns the current detail cache read and uses held detail only on a transient failure; detail-only invalidation refreshes host state without discarding an unchanged diff.
     invariants:
       - An open pull request refreshes core host state without leaving the visible panel one stale response behind.
+      - Reopening a pull request after its detail cache expires returns current file and line totals in that request, while concurrent reads share one host request and transient host failures retain recent detail.
       - Finished turns recheck pull request details without resetting an unrelated diff; a changed pull request revision refreshes its diff.
       - A diff refresh keeps the existing pages visible until the first replacement page arrives, then discards old continuation pages only when that page changes.
     implementation_paths:

@@ -4891,20 +4891,19 @@ it.effect("rejects mismatched routing credentials before use and preserves actio
   }),
 );
 
-it.effect("answers a known pull request immediately while the host refreshes", () =>
+it.effect("returns current file totals on the first detail read after its cache expires", () =>
   Effect.gen(function* () {
-    const gate = yield* Deferred.make<void>();
     let calls = 0;
+    let current = { ...hostedChangeRequest("cached body", 428), deletions: 235, changedFiles: 5 };
     const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
     const service = yield* makeService({
       projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
       providers: [
         fakeProvider("github", {
           getChangeRequest: () =>
-            Effect.gen(function* () {
+            Effect.sync(() => {
               calls += 1;
-              if (calls > 1) yield* Deferred.await(gate);
-              return hostedChangeRequest("cached body", 4);
+              return current;
             }),
         }),
       ],
@@ -4912,14 +4911,27 @@ it.effect("answers a known pull request immediately while the host refreshes", (
 
     const first = yield* service.detail(reference);
     assert.strictEqual(first.body, "cached body");
-    assert.strictEqual(first.additions, 4);
+    assert.strictEqual(first.additions, 428);
+    assert.strictEqual(first.changedFiles, 5);
+
+    current = { ...current, body: "updated body", additions: 322, changedFiles: 4 };
+    assert.strictEqual((yield* service.detail(reference)).changedFiles, 5);
+    assert.strictEqual(calls, 1);
 
     yield* TestClock.adjust("16 seconds");
-    const second = yield* service.detail(reference);
-    assert.strictEqual(second.body, "cached body");
-    assert.strictEqual(second.additions, 4);
-    yield* Effect.yieldNow;
+    const refreshed = yield* Effect.all([service.detail(reference), service.detail(reference)], {
+      concurrency: 2,
+    });
+    for (const detail of refreshed) {
+      assert.strictEqual(detail.body, "updated body");
+      assert.strictEqual(detail.additions, 322);
+      assert.strictEqual(detail.deletions, 235);
+      assert.strictEqual(detail.changedFiles, 4);
+    }
     assert.strictEqual(calls, 2);
+    const summary = yield* service.summary(reference);
+    assert.strictEqual(summary.additions, 322);
+    assert.strictEqual(summary.changedFiles, 4);
   }),
 );
 
@@ -5020,6 +5032,7 @@ it.effect("reuses an observed merged state for strict settlement reads", () =>
 it.effect("does not let a stale detail reopen overwrite a fresher linked summary", () =>
   Effect.gen(function* () {
     const gate = yield* Deferred.make<void>();
+    const started = yield* Deferred.make<void>();
     let detailCalls = 0;
     let summaryTitle = "old title";
     let summaryState: "open" | "merged" = "open";
@@ -5031,7 +5044,10 @@ it.effect("does not let a stale detail reopen overwrite a fresher linked summary
           getChangeRequest: () =>
             Effect.gen(function* () {
               detailCalls += 1;
-              if (detailCalls > 1) yield* Deferred.await(gate);
+              if (detailCalls > 1) {
+                yield* Deferred.succeed(started, undefined);
+                yield* Deferred.await(gate);
+              }
               return hostedChangeRequest("old body", 4);
             }),
           getChangeRequestSummary: () =>
@@ -5055,14 +5071,17 @@ it.effect("does not let a stale detail reopen overwrite a fresher linked summary
     assert.strictEqual(settled.state, "merged");
 
     yield* TestClock.adjust("16 seconds");
-    const stale = yield* service.detail(reference);
-    assert.strictEqual(stale.title, "Change request 1");
-    yield* Effect.yieldNow;
+    const refresh = yield* Effect.forkChild(service.detail(reference));
+    yield* Deferred.await(started);
 
     const display = yield* service.summary(reference);
     assert.strictEqual(display.title, "merged title");
     assert.strictEqual(display.state, "merged");
     assert.strictEqual(detailCalls, 2);
+
+    yield* Deferred.succeed(gate, undefined);
+    assert.strictEqual((yield* Fiber.join(refresh)).title, "Change request 1");
+    assert.strictEqual((yield* service.summary(reference)).state, "merged");
 
     summaryTitle = "updated after merge";
     yield* TestClock.adjust("61 seconds");
