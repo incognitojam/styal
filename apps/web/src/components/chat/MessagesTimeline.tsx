@@ -136,7 +136,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Root, RootContent } from "mdast";
-import { T3Wordmark } from "../T3Wordmark";
+import { StyalToolIcon } from "../StyalToolIcon";
 import { ThreadContextChip } from "../ThreadContextChip";
 import { IssueContextChip } from "../IssueContextChip";
 import {
@@ -5012,7 +5012,7 @@ function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className
     case "device":
       return <SmartphoneIcon className={className} aria-hidden />;
     case "t3-code":
-      return <T3Wordmark className={className} aria-hidden />;
+      return <StyalToolIcon className={className} />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":
