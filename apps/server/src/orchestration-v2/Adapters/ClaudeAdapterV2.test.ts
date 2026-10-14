@@ -2281,6 +2281,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly apiErrorStatus?: number;
     // null omits the field, as the CLI does on a zero-turn result.
     readonly terminalReason?: SDKResultMessage["terminal_reason"] | null;
+    readonly usage?: {
+      readonly input_tokens: number;
+      readonly output_tokens: number;
+      readonly cache_creation_input_tokens: number;
+      readonly cache_read_input_tokens: number;
+    };
   }) =>
     claudeSdkFrame({
       type: "result",
@@ -2292,7 +2298,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       result: input.result,
       stop_reason: "end_turn",
       total_cost_usd: 0,
-      usage: {
+      usage: input.usage ?? {
         input_tokens: 1,
         output_tokens: 1,
         cache_creation_input_tokens: 0,
@@ -3517,6 +3523,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             uuid: "00000000-0000-4000-8000-000000000901",
             result: "",
             terminalReason,
+            usage: {
+              input_tokens: 600,
+              output_tokens: 40,
+              cache_creation_input_tokens: 500,
+              cache_read_input_tokens: 2000,
+            },
           }),
         );
         if (steered) {
@@ -3526,6 +3538,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             makeResultFrame({
               uuid: "00000000-0000-4000-8000-000000000902",
               result: "Audit finished after the steer.",
+              usage: {
+                input_tokens: 3,
+                output_tokens: 6,
+                cache_creation_input_tokens: 2347,
+                cache_read_input_tokens: 9455,
+              },
             }),
           );
         }
@@ -3539,6 +3557,25 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 event.turnItem.type === "assistant_message" &&
                 event.turnItem.text === WAKE_ASSISTANT_TEXT,
             ),
+          );
+          // Each result's usage covers only its own segment, so the steered
+          // turn bills both segments.
+          const completed = harness.events.findLast(
+            (event) => event.type === "provider_turn.updated",
+          );
+          assert.deepEqual(
+            completed?.type === "provider_turn.updated"
+              ? completed.providerTurn.turnTokenUsage
+              : undefined,
+            {
+              usageScope: "main_agent",
+              usageStatus: "complete",
+              hasSubagents: false,
+              inputTokens: 603 + 2847 + 11455,
+              outputTokens: 46,
+              cachedInputTokens: 11455,
+              cacheCreationTokens: 2847,
+            },
           );
         }
         assert.lengthOf(harness.terminalEvents(), 1);

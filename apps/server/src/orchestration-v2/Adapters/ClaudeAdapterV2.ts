@@ -281,12 +281,14 @@ function claudeTerminalTurnTokenUsage(
   result: SDKResultMessage | undefined,
   status: ProviderRuntimeTurnStatus,
   turnModelUsage: ClaudeModelUsageCounts | undefined,
+  steeredSegmentUsage: ReadonlyArray<unknown>,
 ): TurnTokenUsage {
   const usage = normalizeClaudeTurnTokenUsage(
     result,
     claudeTurnHasSubagents(context),
     status,
     turnModelUsage,
+    steeredSegmentUsage,
   );
   return usage.usageStatus === "unavailable"
     ? (claudeStreamedTurnTokenUsage(context) ?? usage)
@@ -3083,6 +3085,9 @@ interface ActiveClaudeTurnContext {
     >
   >;
   streamingMessageId: string | undefined;
+  // Usage of the results that steers ended, oldest first. The final result's
+  // usage covers only its own segment, so the turn bills these as well.
+  readonly steeredSegmentUsage: Array<SDKResultMessage["usage"]>;
   readonly subagentsByTaskId: Map<string, ActiveClaudeSubagent>;
   readonly subagentsByToolUseId: Map<string, ActiveClaudeSubagent>;
   readonly subagentNodesByTaskId: Map<string, OrchestrationV2ExecutionNode["id"]>;
@@ -6216,6 +6221,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     input.result,
                     input.status,
                     input.result === undefined ? undefined : resultModelUsage.get(input.result),
+                    input.context.steeredSegmentUsage,
                   ),
                 },
               }),
@@ -8110,6 +8116,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
             const wasSteered = (yield* Ref.get(steeredTurns)).has(context.providerTurnId);
             if (!interrupted && wasSteered && isClaudeActiveSteeringAbortResult(message)) {
+              context.steeredSegmentUsage.push(message.usage);
               return;
             }
             yield* Ref.update(steeredTurns, (current) => {
@@ -9089,6 +9096,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               rejectedRateLimitTypes: new Set(),
               rateLimitResetTimes: new Map(),
               latestAssistantRateLimited: false,
+              steeredSegmentUsage: [],
               subagentsByTaskId: new Map(),
               subagentsByToolUseId: new Map(),
               subagentNodesByTaskId: new Map(),
