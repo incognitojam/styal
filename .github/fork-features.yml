@@ -1398,7 +1398,7 @@ features:
   - id: fork-distribution-identity
     title: Keep fork builds distinctly identifiable
     status: maintained
-    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335, 344, 378, 728, 741]
+    prs: [3, 27, 29, 49, 56, 235, 242, 243, 244, 245, 281, 287, 302, 335, 344, 378, 728, 741, 818]
     invariants:
       - The default static worktree branch prefix is styal across clients; explicit environment and project prefixes, including an empty prefix, are preserved.
       - Packaged builds ship as styal with their own application identifier, URL scheme, product name, and About-panel identity instead of presenting as upstream T3 Code.
@@ -1424,6 +1424,7 @@ features:
       - Android agent activity cards and status bar chips use the styal cotton reel, and shared client errors, accessibility labels, clipboard labels, and terminal previews identify styal.
       - Subscription usage widgets on iOS and Android name styal when they ask the user to open the app.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
+      - macOS desktop packages carry the channel's Icon Composer icon as a compiled asset catalog, so macOS 26 and later draw it without the legacy grey plate, and keep the safe-area `.icns` for earlier macOS releases.
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
       - Mobile production and preview profiles retain styal identity and fork Expo configuration; Android distribution uses installable APKs without store submission, while iOS submits to TestFlight.
