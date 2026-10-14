@@ -5440,6 +5440,29 @@ export default function ChatView(props: ChatViewProps) {
     deviceState.sessions,
     deviceState.devices,
   ]);
+  // Like browser tabs, every live device keeps a panel tab unless the user
+  // closed it, including one that floats or started while the thread was not
+  // shown. Declared after the effect above so its opens and activations land first.
+  useEffect(() => {
+    if (!activeThreadRef || !deviceStateLoaded) return;
+    const targets = deviceState.sessions.flatMap((session) => {
+      if (session.threadId !== activeThreadRef.threadId) return [];
+      const device = deviceState.devices.find(
+        (entry) => entry.hostId === session.hostId && entry.id === session.deviceId,
+      );
+      return device
+        ? [
+            {
+              hostId: session.hostId,
+              deviceId: session.deviceId,
+              platform: device.platform,
+              name: device.name,
+            },
+          ]
+        : [];
+    });
+    useRightPanelStore.getState().reconcileDeviceSurfaces(activeThreadRef, targets);
+  }, [activeThreadRef, deviceStateLoaded, deviceState.sessions, deviceState.devices]);
   // A floating device follows its session: once the agent or another client
   // closes the device there is nothing left to stream.
   useEffect(() => {
