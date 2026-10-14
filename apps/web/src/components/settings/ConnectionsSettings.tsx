@@ -1783,6 +1783,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
   const {
     isSignedIn,
     linkState: primaryCloudLinkState,
+    linkRevoked,
     managedTunnelActive,
     managedTunnelOutOfSync,
     publishAgentActivity,
@@ -1873,11 +1874,13 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
         <SettingsRow
           title={searchableSetting("t3-connect").title}
           description={
-            managedTunnelActive
-              ? "This environment is available to your other devices through styal Link."
-              : managedTunnelOutOfSync
-                ? "styal Link is out of sync. This environment is linked only to publish agent activity, so other devices cannot connect. Turn styal Link on to repair it."
-                : "Make this environment available to your other devices through styal Link."
+            linkRevoked
+              ? "This environment was removed from styal Link. Turn it on to link it again."
+              : managedTunnelActive
+                ? "This environment is available to your other devices through styal Link."
+                : managedTunnelOutOfSync
+                  ? "styal Link is out of sync. This environment is linked only to publish agent activity, so other devices cannot connect. Turn styal Link on to repair it."
+                  : "Make this environment available to your other devices through styal Link."
           }
           status={operationError ?? primaryCloudLinkState.error}
           control={
@@ -1894,6 +1897,11 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
               onCheckedChange={(enabled) => void updateManagedTunnel(enabled)}
             />
           }
+        />
+      ) : linkRevoked ? (
+        <SettingsRow
+          title={searchableSetting("t3-connect").title}
+          description="This environment was removed from styal Link. Run `styal link` on the host to link it again."
         />
       ) : null}
       <SettingsRow

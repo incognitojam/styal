@@ -290,8 +290,14 @@ the workspace. These scopes control direct file access from the client.
 To remove an environment from styal Link, open your account menu's **styal Link**
 page, or **Settings → styal Link** on mobile, and choose **Deregister**. This
 revokes its cloud access and frees its host space even when the environment is
-offline or has been wiped. Removing an environment from a device's connection
-settings only forgets it on that device; it stays registered to your account.
+offline or has been wiped. When styal Link rejects a host's link, the host
+shows that it was removed from styal Link. To link it again, turn on
+**styal Link** in **Settings → Connections** on a desktop host, or run
+`styal link` on a command-line host and then restart styal there. A
+command-line host that released its tunnel when it last stopped may link itself
+again on its next start; run `styal link unlink` on that host to keep it off.
+Removing an environment from a device's connection settings only forgets it on
+that device; it stays registered to your account.
 
 When idle tunnel cleanup is enabled, styal Link removes a linked environment's
 tunnel after it stays offline for several minutes. The environment stays linked
