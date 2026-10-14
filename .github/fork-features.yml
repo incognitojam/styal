@@ -3784,7 +3784,7 @@ features:
   - id: text-generation-provider-preference
     title: Pick a signed-in provider for text generation
     status: maintained
-    prs: [732]
+    prs: [732, 823]
     invariants:
       - Text generation defaults to Claude Haiku 5.5 at low effort.
       - Thread titles, branch names, and commit and pull request text run on the selected text generation model while its provider is enabled, installed, and signed in; otherwise they run on the first usable provider in the order Claude, Codex, then the rest, with that provider's text generation default.
