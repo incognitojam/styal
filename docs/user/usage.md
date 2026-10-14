@@ -123,7 +123,7 @@ or countdown to open account details. Banked reset credits appear beside the pro
 With several accounts, each window shows how much of the pool is left and a bar with one segment per account,
 kept in the same column across windows. Accounts are ordered by their 5-hour reset, soonest
 first, or by the first available window when no account reports a 5-hour limit. A gap means the
-account does not report that window. When the provider reports reset times, the card also says
+account does not report that window. When the provider reports reset times, the window also says
 when the next reset lands and how much it hands back. The hatched
 part of a segment is what that reset restores. Tap a segment or account row for the account's plan,
 where it is signed in, and its reset time. On web, you can hover too. Codex and Claude accounts

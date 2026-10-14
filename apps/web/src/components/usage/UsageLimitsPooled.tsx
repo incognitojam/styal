@@ -281,7 +281,7 @@ function PoolSegment({
             className={
               pooled
                 ? "relative h-5 min-w-0 cursor-pointer overflow-hidden rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
-                : "group flex min-w-0 cursor-pointer flex-col gap-3 rounded-md text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border"
+                : "group flex min-w-0 cursor-pointer flex-col gap-1 rounded-md pt-1.5 text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border"
             }
           />
         }
@@ -541,44 +541,66 @@ function PoolBar({
 }
 
 /**
- * Big pooled number and the segment bar. Accounts keep the same column across
+ * One compact row within a provider. Accounts keep the same column across
  * windows; each segment's popover shows its own reset time and share restored.
  */
-function PoolWindowCard({
+function PoolWindowRow({
   pool,
   color,
   now,
   label,
   description,
+  nested = false,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
   readonly now: number;
   readonly label?: string | undefined;
   readonly description?: string | undefined;
+  readonly nested?: boolean;
 }) {
   // The soonest reset that hands anything back; an untouched account resets to no effect.
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  const pooled = pool.columns.length > 1;
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 p-4">
-      <div className="flex flex-col gap-1">
-        <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
-        <span className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold text-foreground tabular-nums">
+    <div className="col-span-full grid min-w-0 grid-cols-subgrid gap-y-1.5">
+      <div
+        className={cn(
+          "col-start-1 row-start-1 flex min-w-0 flex-col gap-1",
+          nested && "border-s border-border ps-3",
+        )}
+      >
+        <h3
+          aria-label={nested ? pool.label : undefined}
+          className={cn("text-sm text-foreground", !nested && "font-medium")}
+        >
+          {label ?? pool.label}
+        </h3>
+        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+      </div>
+      <div className={cn("col-start-2 row-start-1 text-sm", !pooled && "@2xl/limits:col-start-3")}>
+        <span className="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-1">
+          <span className="font-medium whitespace-nowrap text-foreground tabular-nums">
             {pool.remainingPercent}%
           </span>
           <span className="text-sm text-muted-foreground">left</span>
           {pool.pace ? <PaceIcon pace={pool.pace} /> : null}
         </span>
       </div>
-      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
-      {nextRefill && pool.columns.length > 1 ? (
-        <span className="text-xs text-muted-foreground tabular-nums">
-          ↻ +{nextRefill.restoresPercent}%{" "}
-          {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
-        </span>
-      ) : null}
-      <PoolBar pool={pool} color={color} now={now} />
+      <div
+        className={cn(
+          "col-span-full min-w-0",
+          !pooled && "@2xl/limits:col-span-1 @2xl/limits:col-start-2 @2xl/limits:row-start-1",
+        )}
+      >
+        <PoolBar pool={pool} color={color} now={now} />
+        {nextRefill && pooled ? (
+          <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+            ↻ +{nextRefill.restoresPercent}%{" "}
+            {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -588,6 +610,7 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   const label = getDriverOption(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
   const credits = singleAccountResetCredits(pool)?.count ?? 0;
+  const plan = pool.accounts.length === 1 ? pool.accounts[0]?.plan : undefined;
   return (
     <section className="@container/limits flex flex-col gap-3">
       <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -599,25 +622,43 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
           iconClassName="size-4 text-foreground/80"
         />
         {label}
+        {plan ? (
+          <span className="min-w-0 truncate text-xs font-normal text-muted-foreground">{plan}</span>
+        ) : pool.accounts.length > 1 ? (
+          <span className="text-xs font-normal text-muted-foreground">
+            {pool.accounts.length} accounts
+          </span>
+        ) : null}
         {credits ? (
-          <span className="ms-auto inline-flex items-center gap-1 text-xs font-normal text-muted-foreground tabular-nums">
+          <span className="ms-auto inline-flex shrink-0 items-center gap-1 text-xs font-normal whitespace-nowrap text-muted-foreground tabular-nums">
             <TicketIcon className="size-3.5" aria-hidden />
             {credits} reset {credits === 1 ? "credit" : "credits"}
           </span>
         ) : null}
       </h2>
-      <div className={cn("grid gap-3", pool.accounts.length === 1 && "@3xl/limits:grid-cols-2")}>
+      <div
+        className={cn(
+          "grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-4 border-t border-border/60 pt-3",
+          pool.accounts.length === 1 && "@2xl/limits:grid-cols-[10rem_minmax(0,1fr)_auto]",
+        )}
+      >
         {windows.map((window) => {
           const details =
             pool.driver === "cursor" ? cursorUsageWindowDetails(window.id) : undefined;
+          const nested =
+            pool.driver === "claudeAgent" &&
+            window.kind === "weekly" &&
+            window.id.startsWith("seven_day_") &&
+            windows.some((candidate) => candidate.id === "seven_day");
           return (
-            <PoolWindowCard
+            <PoolWindowRow
               key={`${window.kind}:${window.id}`}
               pool={window}
               color={color}
               now={now}
-              label={details?.label}
+              label={nested ? window.label.replace(/^Weekly · /, "") : details?.label}
               description={details?.description}
+              nested={nested}
             />
           );
         })}

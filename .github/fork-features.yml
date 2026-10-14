@@ -3954,7 +3954,7 @@ features:
     prs: [753, 803]
     invariants:
       - On Usage → Limits, a provider window backed by one account shows its percentage left, a bar, and when it resets, without pool segment numbers, the per-account row, or the pool refill line.
-      - Web and desktop use the same single-account hierarchy as mobile, with a thin bar without a repeated percentage, an explicit reset countdown below it, and access to account details from the bar and countdown. Single-account windows share a row when the content has enough room; multi-account windows keep their full-width segments and account details.
+      - Web and desktop group compact, vertically stacked window rows under each provider, with a thin single-account bar without a repeated percentage, an explicit reset countdown below it, and access to account details from the bar and countdown. Model-scoped Claude weekly limits are nested under the account-wide weekly limit; multi-account windows keep their full-width segments and account details.
       - A single account's banked reset credits appear once beside the provider name instead of on every window; with several accounts, each account's segment and row keep their own credits.
       - On mobile, both the single-account window and the provider's credit count open that account's detail screen, where credits are redeemed.
     implementation_paths:
