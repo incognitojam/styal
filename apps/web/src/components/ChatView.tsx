@@ -493,6 +493,7 @@ import {
   hasDismissedResumeCompaction,
   shouldOfferResumeCompaction,
 } from "./chat/ContextWindowMeter.logic";
+import { resumesClaudeSession } from "./chat/claudeSessionResume";
 import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
 import { EMPTY_TURN_SUMMARIES, threadUsageView } from "@t3tools/shared/turnUsage";
 import { useTurnSummaries, useTurnUsage } from "./chat/TurnUsageLabel";
@@ -7508,7 +7509,13 @@ export default function ChatView(props: ChatViewProps) {
       pendingUserInputs.length > 0 ||
       phase === "running" ||
       !shouldOfferResumeCompaction({
-        provider: selectedProvider,
+        provider: resumesClaudeSession(
+          providerInstanceEntries,
+          activeThread.modelSelection.instanceId,
+          selectedProviderEntry,
+        )
+          ? selectedProvider
+          : null,
         usedTokens: activeContextWindow.usedTokens,
         updatedAt: activeContextWindow.updatedAt,
         now: `${nowMinute}:00.000Z`,
@@ -7560,9 +7567,11 @@ export default function ChatView(props: ChatViewProps) {
     onCompactContext,
     pendingUserInputs.length,
     phase,
+    providerInstanceEntries,
     resumeCompactionKey,
     resumeCompactionPermanentlyDismissed,
     selectedProvider,
+    selectedProviderEntry,
   ]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {

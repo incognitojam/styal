@@ -444,12 +444,17 @@ features:
     prs: [507]
     invariants:
       - The web composer offers to compact a Claude thread of at least 100,000 tokens once 60 minutes have passed since its last context update, matching Claude Code's one-hour prompt cache TTL rather than Claude Code's 70-minute resume prompt.
+      - The offer appears only when the next turn resumes the thread's native Claude session; a switch from another provider or to a Claude instance with separate history hands off a summary, so the current usage does not describe it.
     implementation_paths:
+      - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ContextWindowMeter.logic.ts
+      - apps/web/src/components/chat/claudeSessionResume.ts
     upstream_paths:
+      - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ContextWindowMeter.logic.ts
     tests:
       - apps/web/src/components/chat/ContextWindowMeter.logic.test.ts
+      - apps/web/src/components/chat/claudeSessionResume.test.ts
     upstream:
       status: tracking
       tracking:
@@ -464,14 +469,16 @@ features:
       - While a Claude thread of at least 100,000 tokens has a prompt cache less than 60 minutes old, the web composer warns before a pending model, provider instance, or fast mode change would resend the history uncached, and offers to undo it.
       - An effort change warns only on models for which Claude Code sends effort as a request parameter; Opus 5.5 and Fable 5.1 send it per turn and keep the cache.
       - Writing an option's default value out explicitly is not treated as a change.
+      - Switches that hand off instead of resuming the native Claude session (from another provider, or to a Claude instance with separate history) do not warn, because the next turn receives a bounded summary rather than the history.
     implementation_paths:
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/ContextWindowMeter.logic.ts
+      - apps/web/src/components/chat/claudeSessionResume.ts
     upstream_paths:
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/ContextWindowMeter.logic.ts
     tests:
-      - apps/web/src/components/chat/ContextWindowMeter.logic.test.ts
+      - apps/web/src/components/chat/claudeSessionResume.test.ts
     upstream:
       status: unassessed
       tracking: []
