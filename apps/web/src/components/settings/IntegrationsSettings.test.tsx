@@ -41,9 +41,13 @@ vi.mock("./settingsLayout", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./settingsLayout")>()),
   SettingsPageContainer: ({ children }: { children: ReactNode }) => children,
 }));
-// The scoped agent-access rows need the settings layout's scope provider;
-// this test covers the device-local browser sections only.
+// The scoped agent-access rows need the settings layout's scope provider, and
+// the device-sharing row mounts a tooltip that needs a DOM; this test covers
+// the device-local browser sections only.
 vi.mock("./ProjectDefaultsSettings", () => ({ ProjectDefaultsSettings: () => null }));
+vi.mock("./EnvironmentDeviceHostsSettings", () => ({
+  EnvironmentDeviceHostsSettings: () => null,
+}));
 vi.mock("./SettingsScopeContext", () => ({
   useSettingsScope: () => ({
     scope: { kind: "all", environmentIds: [] },
