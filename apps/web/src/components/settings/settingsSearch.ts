@@ -700,10 +700,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "environment-device-hosts",
-    title: "Devices from connected environments",
+    title: "Share devices with other environments",
     to: "/settings/integrations",
     searchTerms: [
-      "share sharing simulator emulator ios android another environment remote agent access revoke address",
+      "share sharing simulator emulator ios android another environment connected remote agent access revoke",
     ],
   },
   {

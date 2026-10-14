@@ -5,6 +5,7 @@ import {
   AuthSessionId,
   DEFAULT_SERVER_SETTINGS,
   DeviceNotFoundError,
+  DeviceSession,
   DevicePeerAgent,
   ServerSettings as ServerSettingsSchema,
   ServerSettingsError,
@@ -16,13 +17,15 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientResponse, HttpRouter } from "effect/unstable/http";
+import { HttpClient, HttpClientError, HttpClientResponse, HttpRouter } from "effect/unstable/http";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -120,19 +123,45 @@ const fixture = Effect.gen(function* () {
     body: string | undefined;
   }[] = [];
   let unavailable = false;
+  const addressFailures = new Map<string, string>();
+  const probeStarted = yield* Deferred.make<void>();
+  const peerRequests: { origin: string; operation: string }[] = [];
+  let loseOpenResponse = false;
+  let legacyPeer = false;
   // Peer commands the target finished handling, as "operation:status".
   const commands = yield* Queue.unbounded<string>();
   let inventoryUnavailable = false;
   let handler: (request: Request) => Promise<Response>;
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
-      if (request.url.startsWith("http://orion.test")) {
-        if (unavailable)
-          return HttpClientResponse.fromWeb(request, new Response(null, { status: 503 }));
+      if (
+        ["http://orion.test", "https://orion-alt.test", "http://unreachable.test"].includes(
+          new URL(request.url).origin,
+        )
+      ) {
+        const origin = new URL(request.url).origin;
         const body =
           request.body._tag === "Uint8Array"
             ? new TextDecoder().decode(request.body.body)
             : undefined;
+        const operation =
+          request.url.endsWith("/api/device-share/command") && body
+            ? decodeCommandBody(body).operation
+            : "proxy";
+        peerRequests.push({ origin, operation });
+        const code = addressFailures.get(origin);
+        if (code === "timeout") {
+          yield* Deferred.succeed(probeStarted, undefined);
+          return yield* Effect.never;
+        }
+        if (code)
+          return yield* new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({ request, cause: { cause: { code } } }),
+          });
+        if (unavailable)
+          return HttpClientResponse.fromWeb(request, new Response(null, { status: 503 }));
+        if (legacyPeer && operation === "identify")
+          return HttpClientResponse.fromWeb(request, new Response(null, { status: 400 }));
         const response = yield* Effect.promise(() =>
           handler(
             new Request(request.url, {
@@ -144,6 +173,12 @@ const fixture = Effect.gen(function* () {
         );
         if (request.url.endsWith("/api/device-share/command") && body)
           yield* Queue.offer(commands, `${decodeCommandBody(body).operation}:${response.status}`);
+        if (loseOpenResponse && operation === "open") {
+          loseOpenResponse = false;
+          return yield* new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({ request, cause: { code: "ECONNRESET" } }),
+          });
+        }
         return HttpClientResponse.fromWeb(request, response);
       }
       if (request.url.startsWith("http://daemon.test")) {
@@ -297,7 +332,7 @@ const fixture = Effect.gen(function* () {
   );
   const source = yield* DeviceSharing.DeviceSharing.pipe(Effect.provide(sourceLayer));
   const grant = yield* target.createGrant({ sourceEnvironmentId: sourceId, sourceLabel: "Atlas" });
-  const connect = source.connect({ label: "Orion", url: "http://orion.test", grant });
+  const connect = source.connect({ label: "Orion", urls: ["http://orion.test"], grant });
   const host = Effect.gen(function* () {
     const config = sourceSettings.read().environmentDeviceHosts[0]!;
     return yield* EnvironmentDeviceHost.make(config);
@@ -326,6 +361,15 @@ const fixture = Effect.gen(function* () {
     handler,
     http,
     daemonRequests,
+    peerRequests,
+    addressFailures,
+    probeStarted,
+    setLegacyPeer: () => {
+      legacyPeer = true;
+    },
+    loseNextOpenResponse: () => {
+      loseOpenResponse = true;
+    },
     commands,
     setDaemon: (value: DeviceHost.AgentDeviceEndpoint) => {
       daemon = value;
@@ -358,6 +402,154 @@ it.effect("persists device-only access and reconnects a host without client cred
     expect(f.secrets.entries.size).toBe(0);
     expect(f.revoked).toContain(f.grant.sessionId);
   }).pipe(Effect.scoped),
+);
+
+it.effect.each(["enableDeviceSupport", "enableAgentDeviceAccess"] as const)(
+  "revokes a saved share after %s is disabled",
+  (setting) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.connect;
+      const host = f.sourceSettings.read().environmentDeviceHosts[0]!;
+      yield* f.targetSettings.service.updateSettings({ [setting]: false });
+      yield* f.source.disconnect(host.id);
+      expect(f.active.has(f.grant.token)).toBe(false);
+      expect(f.sourceSettings.read().environmentDeviceHosts).toEqual([]);
+      expect(f.peerRequests.slice(-2).map((entry) => entry.operation)).toEqual([
+        "identify",
+        "revoke",
+      ]);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("stops an agent after a failed request and disabled device access", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.source.connect({
+      label: "Orion",
+      urls: ["http://orion.test", "https://orion-alt.test"],
+      grant: f.grant,
+    });
+    const host = yield* f.host;
+    const ready = yield* host.ensureAgentReady(() => Effect.void);
+    f.addressFailures.set("http://orion.test", "ECONNRESET");
+    yield* ready.remote!.close({ threadId: ThreadId.make("synthetic-thread") }).pipe(Effect.result);
+    f.addressFailures.clear();
+    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: false });
+    yield* host.stopAgent;
+    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: true });
+    const response = yield* Effect.promise(() =>
+      f.handler(
+        new Request("http://orion.test/api/device-share/agent/health", {
+          headers: { authorization: `Bearer ${ready.agentDevice!.token}` },
+        }),
+      ),
+    );
+    expect(response.status).toBe(401);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("releases sessions through an alternative address while device access is off", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.source.connect({
+      label: "Orion",
+      urls: ["http://orion.test", "https://orion-alt.test"],
+      grant: f.grant,
+    });
+    const host = yield* f.host;
+    const ready = yield* host.ensureReady(() => Effect.void);
+    yield* ready.remote!.open({
+      threadId: ThreadId.make("cleanup-thread"),
+      deviceId: "emulator-5554",
+      platform: "android",
+    });
+    f.addressFailures.set("http://orion.test", "ECONNREFUSED");
+    yield* f.targetSettings.service.updateSettings({ enableDeviceSupport: false });
+    yield* host.stop;
+    expect((yield* f.targetDevices.state).sessions).toEqual([]);
+    expect(f.active.has(f.grant.token)).toBe(true);
+    expect(f.peerRequests).toContainEqual({
+      origin: "https://orion-alt.test",
+      operation: "release",
+    });
+  }).pipe(Effect.scoped),
+);
+
+it.effect("checks both peer identities before sending cleanup commands", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
+    for (const identity of [
+      { environmentId: "another-target", sourceEnvironmentId: sourceId },
+      { environmentId: targetId, sourceEnvironmentId: "another-source" },
+    ]) {
+      const operations: string[] = [];
+      const http = HttpClient.make((request) => {
+        const body =
+          request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+        operations.push(decodeCommandBody(body).operation);
+        return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(identity)));
+      });
+      const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId).pipe(
+        Effect.provideService(HttpClient.HttpClient, http),
+      );
+      const error = yield* client.request({ operation: "revoke" }, Schema.Null).pipe(Effect.flip);
+      expect(error).toMatchObject({ reason: expect.stringContaining("different environment") });
+      expect(operations).toEqual(["identify"]);
+      expect(f.active.has(f.grant.token)).toBe(true);
+    }
+  }).pipe(Effect.scoped),
+);
+
+it.effect("can clean up older peers that expose identity through inspect", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
+    const http = HttpClient.make((request) => {
+      const body =
+        request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+      return decodeCommandBody(body).operation === "identify"
+        ? Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 400 })))
+        : f.http.execute(request);
+    });
+    const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId).pipe(
+      Effect.provideService(HttpClient.HttpClient, http),
+    );
+    yield* client.request({ operation: "revoke" }, Schema.Null);
+    expect(f.active.has(f.grant.token)).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "requires identity verification for an older peer at an unverified alternative address",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.source.connect({
+        label: "Orion",
+        urls: ["http://orion.test", "https://orion-alt.test"],
+        grant: f.grant,
+      });
+      const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
+      f.addressFailures.set(config.url, "ECONNREFUSED");
+      f.setLegacyPeer();
+      yield* f.targetSettings.service.updateSettings({ enableDeviceSupport: false });
+      const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId).pipe(
+        Effect.provideService(HttpClient.HttpClient, f.http),
+      );
+      const result = yield* client
+        .request({ operation: "revoke" }, Schema.Null)
+        .pipe(Effect.result);
+      expect(result._tag).toBe("Failure");
+      expect(f.active.has(f.grant.token)).toBe(true);
+      expect(f.peerRequests).not.toContainEqual({
+        origin: "https://orion-alt.test",
+        operation: "revoke",
+      });
+    }).pipe(Effect.scoped),
 );
 
 it.effect(
@@ -665,7 +857,7 @@ it.effect("explains loopback addresses when the device environment cannot be rea
   Effect.gen(function* () {
     const f = yield* fixture;
     const failure = yield* f.source
-      .connect({ label: "Orion", url: "http://127.0.0.1:3773", grant: f.grant })
+      .connect({ label: "Orion", urls: ["http://127.0.0.1:3773"], grant: f.grant })
       .pipe(Effect.flip);
     expect(failure).toMatchObject({
       _tag: "DeviceHostUnavailableError",
@@ -681,7 +873,7 @@ it.effect("rejects a mismatched environment identity without storing access", ()
     const result = yield* f.source
       .connect({
         label: "Wrong server",
-        url: "http://orion.test",
+        urls: ["http://orion.test"],
         grant: { ...f.grant, environmentId: EnvironmentId.make("another-environment") },
       })
       .pipe(Effect.result);
@@ -712,7 +904,7 @@ it.effect("checks the credential's source identity before persisting access", ()
     const result = yield* f.source
       .connect({
         label: "Orion",
-        url: "http://orion.test",
+        urls: ["http://orion.test"],
         grant: { ...grant, sourceEnvironmentId: sourceId },
       })
       .pipe(Effect.result);
@@ -763,7 +955,7 @@ it.effect("reconnecting replaces the credential and revokes the previous grant",
       sourceEnvironmentId: sourceId,
       sourceLabel: "Atlas",
     });
-    yield* f.source.connect({ label: "Orion", url: "http://orion.test", grant });
+    yield* f.source.connect({ label: "Orion", urls: ["http://orion.test"], grant });
     expect(f.sourceSettings.read().environmentDeviceHosts).toHaveLength(1);
     expect(f.sourceSettings.read().environmentDeviceHosts[0]?.sessionId).toBe(grant.sessionId);
     expect(f.active.has(f.grant.token)).toBe(false);
@@ -786,7 +978,7 @@ it.effect("restores the previous credential if saving a replacement fails", () =
     });
     f.sourceSettings.failWrites(true);
     const result = yield* f.source
-      .connect({ label: "Replacement", url: "http://orion.test", grant })
+      .connect({ label: "Replacement", urls: ["http://orion.test"], grant })
       .pipe(Effect.result);
     expect(result._tag).toBe("Failure");
     expect(f.sourceSettings.read().environmentDeviceHosts).toEqual([original]);
@@ -864,5 +1056,188 @@ it.effect(
       const secondArgs = yield* second.agentTarget(input);
       expect(firstArgs).not.toEqual(secondArgs);
       expect(yield* first.agentTarget(input)).toEqual(firstArgs);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("tries alternate addresses before saving a grant and retains them across restart", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.addressFailures.set("http://unreachable.test", "ECONNREFUSED");
+    yield* f.source.connect({
+      label: "Orion",
+      urls: ["http://unreachable.test/", "https://orion-alt.test/", "https://orion-alt.test"],
+      grant: f.grant,
+    });
+    const saved = f.sourceSettings.read().environmentDeviceHosts[0]!;
+    expect(saved).toMatchObject({
+      url: "https://orion-alt.test",
+      urls: ["http://unreachable.test", "https://orion-alt.test"],
+    });
+    expect(f.peerRequests).toEqual([
+      { origin: "http://unreachable.test", operation: "inspect" },
+      { origin: "https://orion-alt.test", operation: "inspect" },
+    ]);
+    const resumed = yield* f.host;
+    expect(
+      (yield* (yield* resumed.ensureReady(() => Effect.void)).remote!.list).devices,
+    ).toHaveLength(1);
+    expect((yield* resumed.summary).connectedUrl).toBe("https://orion-alt.test");
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "reads through another saved address after the current one stops answering, without a new grant",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.source.connect({
+        label: "Orion",
+        urls: ["http://orion.test", "https://orion-alt.test"],
+        grant: f.grant,
+      });
+      const host = yield* f.host;
+      const ready = yield* host.ensureReady(() => Effect.void);
+      f.addressFailures.set("http://orion.test", "ECONNREFUSED");
+      expect((yield* ready.remote!.list).devices).toHaveLength(1);
+      // New streams follow the selected address.
+      expect(ready.hub.origin).toBe("https://orion-alt.test/api/device-share/hub");
+      expect((yield* host.summary).connectedUrl).toBe("https://orion-alt.test");
+      expect(f.grants).toHaveLength(1);
+      yield* f.source.disconnect(host.id);
+      expect(f.active.has(f.grant.token)).toBe(false);
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "does not replay an open operation after the target ran it but its response was lost",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.source.connect({
+        label: "Orion",
+        urls: ["http://orion.test", "https://orion-alt.test"],
+        grant: f.grant,
+      });
+      const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
+      const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId).pipe(
+        Effect.provideService(HttpClient.HttpClient, f.http),
+      );
+      yield* client.info("inspect");
+      f.loseNextOpenResponse();
+      const opened = yield* client
+        .request(
+          {
+            operation: "open",
+            input: {
+              threadId: ThreadId.make("lost-response"),
+              deviceId: "emulator-5554",
+              platform: "android",
+            },
+          },
+          DeviceSession,
+        )
+        .pipe(Effect.result);
+      expect(opened._tag).toBe("Failure");
+      expect(f.peerRequests.filter((request) => request.operation === "open")).toHaveLength(1);
+      expect((yield* f.targetDevices.state).sessions).toHaveLength(1);
+      f.addressFailures.set("http://orion.test", "ECONNREFUSED");
+      expect((yield* client.info("list")).devices).toHaveLength(1);
+      expect(client.baseUrl).toBe("https://orion-alt.test");
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "keeps typed peer failures and revoked access from replaying actions on another address",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.source.connect({
+        label: "Orion",
+        urls: ["http://orion.test", "https://orion-alt.test"],
+        grant: f.grant,
+      });
+      const host = yield* f.host;
+      const ready = yield* host.ensureReady(() => Effect.void);
+      const close = { threadId: ThreadId.make("missing-device"), deviceId: "missing" };
+      const failure = yield* ready.remote!.detail({ deviceId: "missing" }).pipe(Effect.flip);
+      expect(failure._tag).toBe("DeviceNotFoundError");
+      expect(
+        f.peerRequests.filter((request) => request.origin === "https://orion-alt.test"),
+      ).toHaveLength(0);
+      f.active.delete(f.grant.token);
+      const revoked = yield* ready.remote!.close(close).pipe(Effect.flip);
+      expect(revoked).toMatchObject({
+        _tag: "DeviceHostUnavailableError",
+        reason: expect.stringContaining("revoked"),
+      });
+      expect(f.peerRequests.filter((request) => request.operation === "close")).toHaveLength(1);
+      expect(f.grants).toHaveLength(1);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("bounds address probes so a silent LAN address cannot block a working alternative", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.addressFailures.set("http://unreachable.test", "timeout");
+    const connecting = yield* f.source
+      .connect({
+        label: "Orion",
+        urls: ["http://unreachable.test", "https://orion-alt.test"],
+        grant: f.grant,
+      })
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(f.probeStarted);
+    yield* TestClock.adjust("3 seconds");
+    yield* Fiber.join(connecting);
+    expect(f.sourceSettings.read().environmentDeviceHosts[0]?.url).toBe("https://orion-alt.test");
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "skips a responding address with the wrong identity before sending any device operation",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const wrongRequests: string[] = [];
+      const http = HttpClient.make((request) => {
+        if (!request.url.startsWith("http://wrong.test")) return f.http.execute(request);
+        const body =
+          request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+        wrongRequests.push(decodeCommandBody(body).operation);
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json({
+              environmentId: "another-environment",
+              sourceEnvironmentId: sourceId,
+              host: {
+                id: "local",
+                kind: "local",
+                label: "Other environment",
+                platforms: [],
+                hubInstalled: false,
+                agentDeviceInstalled: false,
+              },
+              devices: [],
+              sessions: [],
+            }),
+          ),
+        );
+      });
+      const client = yield* EnvironmentDeviceHost.makeClient(
+        {
+          id: EnvironmentDeviceHost.environmentDeviceHostId(targetId),
+          label: "Orion",
+          environmentId: targetId,
+          url: "http://wrong.test",
+          urls: ["http://wrong.test", "https://orion-alt.test"],
+          sessionId: f.grant.sessionId,
+        },
+        f.grant.token,
+        sourceId,
+      ).pipe(Effect.provideService(HttpClient.HttpClient, http));
+      expect((yield* client.info("list")).devices).toHaveLength(1);
+      expect(client.baseUrl).toBe("https://orion-alt.test");
+      expect(wrongRequests).toEqual(["inspect"]);
     }).pipe(Effect.scoped),
 );

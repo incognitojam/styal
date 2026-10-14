@@ -1,21 +1,21 @@
 import {
+  deviceSharingAddresses,
   deviceSharingErrorMessage,
-  isClientOnlyDeviceAddress,
-  suggestDeviceSharingAddress,
+  offlineDeviceShares,
 } from "@t3tools/client-runtime/state/device";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentDeviceHostConfig } from "@t3tools/contracts";
 import { useState } from "react";
-import { View } from "react-native";
+import { useAtomValue } from "@effect/atom-react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Option from "effect/Option";
-import type { EnvironmentId } from "@t3tools/contracts";
 import { ScreenScrollView } from "../../components/ScreenScrollView";
-import { AppText, AppTextInput } from "../../components/AppText";
+import { AppText } from "../../components/AppText";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
 import { usePreparedConnection } from "../../state/session";
+import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "./components/SettingsSection";
-import { SettingsActionRow } from "./components/SettingsActionRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import {
@@ -24,55 +24,17 @@ import {
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 
+type SharingEnvironment = ReturnType<
+  typeof useSettingsEnvironmentFilter
+>["availableTargets"][number];
+
 export function SettingsDevicesRouteScreen() {
+  const [offlineError, setOfflineError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
-  const { selectedTargets, availableTargets, selectedProjectKey } = useSettingsEnvironmentFilter();
-  const [sourceId, setSourceId] = useState<EnvironmentId | null>(null);
-  const [targetId, setTargetId] = useState<EnvironmentId | null>(null);
-  // "connect", a revoked host's key, or "other", so each row shows progress only for its own work.
-  const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const source =
-    selectedTargets.find((entry) => entry.environmentId === sourceId) ?? selectedTargets[0];
-  const candidates = availableTargets.filter(
-    (entry) => entry.environmentId !== source?.environmentId,
-  );
-  const target = candidates.find((entry) => entry.environmentId === targetId) ?? candidates[0];
-  const prepared = Option.getOrNull(usePreparedConnection(target?.environmentId ?? null));
-  // An address typed for one device environment does not carry over to another.
-  const [addressDraft, setAddressDraft] = useState<{
-    readonly targetId: EnvironmentId;
-    readonly value: string;
-  } | null>(null);
-  const url = (
-    addressDraft && addressDraft.targetId === target?.environmentId
-      ? addressDraft.value
-      : (suggestDeviceSharingAddress(prepared?.httpBaseUrl ?? null) ?? "")
-  ).trim();
-  const clientOnly = url !== "" && isClientOnlyDeviceAddress(url);
-  const sourceState = useDeviceState(source?.environmentId ?? null);
-  const targetState = useDeviceState(target?.environmentId ?? null);
-  const connect = useAtomCommand(deviceEnvironment.connectEnvironment);
-  const disconnect = useAtomCommand(deviceEnvironment.disconnectEnvironment);
-  const configure = useAtomCommand(deviceEnvironment.configure);
-  const disabled = pending !== null || selectedProjectKey !== null;
-  const checked = sourceState.loaded && targetState.loaded;
-  const compatible =
-    checked &&
-    sourceState.state.supportsEnvironmentHosts &&
-    targetState.state.supportsEnvironmentHosts;
-  const linked = source?.serverConfig.settings.environmentDeviceHosts?.some(
-    (host) => host.environmentId === target?.environmentId,
-  );
-  const perform = (action: () => Promise<AtomCommandResult<unknown, unknown>>, kind = "other") => {
-    setError(null);
-    setPending(kind);
-    void action()
-      .then((result) => {
-        if (result._tag === "Failure") setError(deviceSharingErrorMessage(result.cause));
-      })
-      .finally(() => setPending(null));
-  };
+  const { selectedTargets, availableTargets, selectedIds, selectedProjectKey } =
+    useSettingsEnvironmentFilter();
+  const disabled = selectedProjectKey !== null;
+  const offlineShares = offlineDeviceShares(availableTargets, selectedIds);
   return (
     <>
       <SettingsEnvironmentFilterHeader />
@@ -88,160 +50,214 @@ export function SettingsDevicesRouteScreen() {
               Select All projects to change environment device access.
             </AppText>
           ) : null}
-          <SettingsSection title="Agents run on">
-            {selectedTargets.map((entry) => (
-              <SettingsActionRow
-                key={entry.environmentId}
-                icon={
-                  source?.environmentId === entry.environmentId
-                    ? "checkmark.circle"
-                    : "desktopcomputer"
-                }
-                label={entry.label}
-                disabled={disabled}
-                onPress={() => setSourceId(entry.environmentId)}
-              />
-            ))}
-          </SettingsSection>
-          {source ? (
-            <SettingsSection title={`${source.label} devices`}>
-              <SettingsSwitchRow
-                icon="desktopcomputer"
-                label="Device hub"
-                value={source.serverConfig.settings.enableDeviceSupport}
-                disabled={disabled}
-                onValueChange={(enabled) =>
-                  perform(() =>
-                    configure({ environmentId: source.environmentId, input: { enabled } }),
-                  )
-                }
-              />
-              <SettingsSwitchRow
-                icon="bolt.circle"
-                label="Agent device access"
-                value={source.serverConfig.settings.enableAgentDeviceAccess}
-                disabled={disabled}
-                onValueChange={(agentAccessEnabled) =>
-                  perform(() =>
-                    configure({
-                      environmentId: source.environmentId,
-                      input: { agentAccessEnabled },
-                    }),
-                  )
-                }
-              />
-            </SettingsSection>
-          ) : null}
-          <SettingsSection title="Use devices from">
-            {candidates.map((entry) => (
-              <SettingsActionRow
-                key={entry.environmentId}
-                icon={
-                  target?.environmentId === entry.environmentId
-                    ? "checkmark.circle"
-                    : "desktopcomputer"
-                }
-                label={entry.label}
-                disabled={disabled}
-                onPress={() => setTargetId(entry.environmentId)}
-              />
-            ))}
-          </SettingsSection>
-          {source && target ? (
-            <View className="gap-3">
-              <AppText className="px-2 text-sm text-foreground-muted">
-                {!checked
-                  ? "Checking whether both environments support device sharing…"
-                  : compatible
-                    ? `${source.label} agents will be allowed to control devices on ${target.label}. Device hub and agent access will be enabled on both. Access keeps working when you close the app.`
-                    : "Update both environments to a version that supports device sharing."}
-              </AppText>
-              <SettingsSection title={`Address ${source.label} uses to reach ${target.label}`}>
-                <View className="px-4 py-3">
-                  <AppTextInput
-                    accessibilityLabel={`Address ${source.label} uses to reach ${target.label}`}
-                    value={url}
-                    onChangeText={(value) =>
-                      setAddressDraft({ targetId: target.environmentId, value })
-                    }
-                    editable={!disabled}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                    className="min-h-10 rounded-xl px-3 py-2 text-base text-foreground"
-                  />
-                </View>
-              </SettingsSection>
-              {clientOnly ? (
-                <AppText className="px-2 text-sm text-foreground-muted">
-                  This address only works if {source.label} runs on the same machine as{" "}
-                  {target.label}. Otherwise enter a LAN, Tailscale, or styal Link address for{" "}
-                  {target.label}.
-                </AppText>
-              ) : null}
-              <SettingsSection>
-                <SettingsActionRow
-                  icon="link"
-                  label={linked ? "Reconnect device access" : "Allow device access"}
-                  loading={pending === "connect"}
-                  disabled={disabled || !url || !compatible}
-                  onPress={() => {
-                    if (!url) return;
-                    perform(
-                      () =>
-                        connect({
-                          environmentId: source.environmentId,
-                          input: {
-                            targetEnvironmentId: target.environmentId,
-                            targetLabel: target.label,
-                            url,
-                            sourceLabel: source.label,
-                          },
-                        }),
-                      "connect",
-                    );
-                  }}
-                />
-              </SettingsSection>
-            </View>
-          ) : (
-            <AppText className="px-2 text-sm text-foreground-muted">
-              Connect two environments to share simulators and emulators between them.
-            </AppText>
-          )}
-          {error ? (
+          {offlineShares.map(({ agent, host }) => (
+            <OfflineShare
+              key={`${agent.environmentId}:${host.id}`}
+              agent={agent}
+              host={host}
+              disabled={disabled}
+              onError={setOfflineError}
+            />
+          ))}
+          {offlineError ? (
             <AppText accessibilityRole="alert" className="px-2 text-sm text-danger-foreground">
-              {error}
+              {offlineError}
             </AppText>
           ) : null}
-          {selectedTargets.map((entry) =>
-            (entry.serverConfig.settings.environmentDeviceHosts ?? []).map((host) => (
-              <SettingsSection
-                key={`${entry.environmentId}:${host.id}`}
-                title={`${host.label} → ${entry.label}`}
-              >
-                <SettingsActionRow
-                  icon="trash"
-                  label="Revoke device access"
-                  tone="danger"
-                  loading={pending === `${entry.environmentId}:${host.id}`}
-                  disabled={disabled}
-                  onPress={() =>
-                    perform(
-                      () =>
-                        disconnect({
-                          environmentId: entry.environmentId,
-                          input: { hostId: host.id },
-                        }),
-                      `${entry.environmentId}:${host.id}`,
-                    )
-                  }
-                />
-              </SettingsSection>
-            )),
-          )}
+          {selectedTargets.map((device) => (
+            <EnvironmentDevices
+              key={device.environmentId}
+              device={device}
+              agents={availableTargets.filter(
+                (entry) => entry.environmentId !== device.environmentId,
+              )}
+              disabled={disabled}
+            />
+          ))}
+          <AppText className="px-2 text-sm text-foreground-muted">
+            {availableTargets.length < 2
+              ? "Connect another environment to share simulators and emulators with it."
+              : "Sharing lets agents on another environment use these simulators and emulators. It turns on device hub and agent device access on both, and keeps working when you close the app."}
+          </AppText>
         </ScreenScrollView>
       </SettingsScreen>
     </>
+  );
+}
+
+function OfflineShare(props: {
+  agent: SharingEnvironment;
+  host: EnvironmentDeviceHostConfig;
+  disabled: boolean;
+  onError: (error: string | null) => void;
+}) {
+  const disconnect = useAtomCommand(deviceEnvironment.disconnectEnvironment);
+  const [pending, setPending] = useState(false);
+  return (
+    <>
+      <SettingsSection title={`${props.host.label} devices`}>
+        <SettingsSwitchRow
+          icon="link"
+          label={`Share with ${props.agent.label}`}
+          subtitle="The device environment is offline. You can still remove this share."
+          value
+          disabled={props.disabled || pending}
+          onValueChange={() => {
+            props.onError(null);
+            setPending(true);
+            void disconnect({
+              environmentId: props.agent.environmentId,
+              input: { hostId: props.host.id },
+            })
+              .then((result) => {
+                if (result._tag === "Failure")
+                  props.onError(deviceSharingErrorMessage(result.cause));
+              })
+              .finally(() => setPending(false));
+          }}
+        />
+      </SettingsSection>
+    </>
+  );
+}
+
+/** One environment's device settings and a sharing switch for each other connected environment. */
+function EnvironmentDevices(props: {
+  device: SharingEnvironment;
+  agents: ReadonlyArray<SharingEnvironment>;
+  disabled: boolean;
+}) {
+  const { device } = props;
+  const prepared = Option.getOrNull(usePreparedConnection(device.environmentId));
+  const linkUrl = useAtomValue(relayEnvironmentDiscovery.stateValueAtom).environments.get(
+    device.environmentId,
+  )?.environment.endpoint.httpBaseUrl;
+  const addresses = deviceSharingAddresses(
+    prepared?.httpBaseUrl ?? null,
+    [],
+    null,
+    linkUrl ? [linkUrl] : [],
+  );
+  const deviceState = useDeviceState(device.environmentId);
+  const configure = useAtomCommand(deviceEnvironment.configure);
+  const connect = useAtomCommand(deviceEnvironment.connectEnvironment);
+  const disconnect = useAtomCommand(deviceEnvironment.disconnectEnvironment);
+  // "configure" or the agent environment ID, so each row shows progress only for its own work.
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const perform = (kind: string, action: () => Promise<AtomCommandResult<unknown, unknown>>) => {
+    setError(null);
+    setPending(kind);
+    void action()
+      .then((result) => {
+        if (result._tag === "Failure") setError(deviceSharingErrorMessage(result.cause));
+      })
+      .finally(() => setPending(null));
+  };
+  const busy = props.disabled || pending !== null;
+  return (
+    <>
+      <SettingsSection title={`${device.label} devices`}>
+        <SettingsSwitchRow
+          icon="desktopcomputer"
+          label="Device hub"
+          value={device.serverConfig.settings.enableDeviceSupport}
+          disabled={busy}
+          onValueChange={(enabled) =>
+            perform("configure", () =>
+              configure({ environmentId: device.environmentId, input: { enabled } }),
+            )
+          }
+        />
+        <SettingsSwitchRow
+          icon="bolt.circle"
+          label="Agent device access"
+          value={device.serverConfig.settings.enableAgentDeviceAccess}
+          disabled={busy}
+          onValueChange={(agentAccessEnabled) =>
+            perform("configure", () =>
+              configure({ environmentId: device.environmentId, input: { agentAccessEnabled } }),
+            )
+          }
+        />
+        {props.agents.map((agent) => (
+          <SharingSwitch
+            key={agent.environmentId}
+            device={device}
+            agent={agent}
+            addresses={addresses}
+            deviceLoaded={deviceState.loaded}
+            deviceSupportsSharing={deviceState.state.supportsEnvironmentHosts === true}
+            disabled={busy}
+            onToggle={(enabled, host) => {
+              if (enabled && addresses)
+                perform(agent.environmentId, () =>
+                  connect({
+                    environmentId: agent.environmentId,
+                    input: {
+                      targetEnvironmentId: device.environmentId,
+                      targetLabel: device.label,
+                      urls: addresses,
+                      sourceLabel: agent.label,
+                    },
+                  }),
+                );
+              else if (!enabled && host)
+                perform(agent.environmentId, () =>
+                  disconnect({ environmentId: agent.environmentId, input: { hostId: host.id } }),
+                );
+            }}
+          />
+        ))}
+      </SettingsSection>
+      {error ? (
+        <AppText accessibilityRole="alert" className="px-2 text-sm text-danger-foreground">
+          {error}
+        </AppText>
+      ) : null}
+    </>
+  );
+}
+
+function SharingSwitch(props: {
+  device: SharingEnvironment;
+  agent: SharingEnvironment;
+  addresses: readonly [string, ...string[]] | null;
+  deviceLoaded: boolean;
+  deviceSupportsSharing: boolean;
+  disabled: boolean;
+  onToggle: (enabled: boolean, host: EnvironmentDeviceHostConfig | undefined) => void;
+}) {
+  const { device, agent, addresses } = props;
+  const agentState = useDeviceState(agent.environmentId);
+  // The grant lives on the environment whose agents use the devices.
+  const host = agent.serverConfig.settings.environmentDeviceHosts?.find(
+    (entry) => entry.environmentId === device.environmentId,
+  );
+  const checked = props.deviceLoaded && agentState.loaded;
+  const compatible =
+    props.deviceSupportsSharing && agentState.state.supportsEnvironmentHostAddresses === true;
+  const connectedUrl =
+    host && agentState.state.hosts.find((entry) => entry.id === host.id)?.connectedUrl;
+  const subtitle = host
+    ? connectedUrl
+      ? `Last connected at ${connectedUrl}. Addresses are selected automatically.`
+      : `Agents on ${agent.label} can use these devices. Addresses are selected automatically.`
+    : !checked
+      ? "Checking whether both environments support sharing…"
+      : !compatible
+        ? "Update both environments to share devices."
+        : addresses
+          ? undefined
+          : `No network address is available for ${device.label}. Device sharing needs a LAN, Tailscale, styal Link, or custom address.`;
+  return (
+    <SettingsSwitchRow
+      icon="link"
+      label={`Share with ${agent.label}`}
+      subtitle={subtitle}
+      value={host !== undefined}
+      disabled={props.disabled || (!host && (!checked || !compatible || !addresses))}
+      onValueChange={(enabled) => props.onToggle(enabled, host)}
+    />
   );
 }

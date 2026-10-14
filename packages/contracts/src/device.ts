@@ -11,6 +11,7 @@
  * @module Device
  */
 import { Schema } from "effect";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { AuthSessionId, EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
@@ -44,11 +45,32 @@ export const SshDeviceHostConfigs = Schema.Array(SshDeviceHostConfig).check(
   ),
 );
 
+const DeviceEnvironmentUrl = TrimmedNonEmptyString.check(
+  Schema.makeFilter((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        (["http:", "https:"].includes(url.protocol) &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash) ||
+        "Invalid device environment address."
+      );
+    } catch {
+      return "Invalid device environment address.";
+    }
+  }),
+);
+const DeviceEnvironmentUrls = Schema.NonEmptyArray(DeviceEnvironmentUrl);
+
 export const EnvironmentDeviceHostConfig = Schema.Struct({
   id: DeviceHostId.check(Schema.isPattern(/^environment-[a-f0-9]{24}$/)),
   label: TrimmedNonEmptyString,
   environmentId: EnvironmentId,
-  url: TrimmedNonEmptyString.check(Schema.isPattern(/^https?:\/\//)),
+  /** Initially verified address. Older saved hosts have only this field. */
+  url: DeviceEnvironmentUrl,
+  urls: Schema.optional(DeviceEnvironmentUrls),
   sessionId: AuthSessionId,
 });
 export type EnvironmentDeviceHostConfig = typeof EnvironmentDeviceHostConfig.Type;
@@ -70,11 +92,30 @@ export const DeviceHostGrant = Schema.Struct({
   token: TrimmedNonEmptyString,
 });
 export type DeviceHostGrant = typeof DeviceHostGrant.Type;
-export const DeviceConnectEnvironmentInput = Schema.Struct({
+const DeviceConnectEnvironmentAddresses = Schema.Struct({
   label: TrimmedNonEmptyString,
-  url: TrimmedNonEmptyString.check(Schema.isPattern(/^https?:\/\//)),
+  urls: DeviceEnvironmentUrls,
   grant: DeviceHostGrant,
 });
+export const DeviceConnectEnvironmentInput = Schema.Union([
+  DeviceConnectEnvironmentAddresses,
+  Schema.Struct({
+    label: TrimmedNonEmptyString,
+    url: DeviceEnvironmentUrl,
+    grant: DeviceHostGrant,
+  }).pipe(
+    Schema.decodeTo(
+      Schema.toType(DeviceConnectEnvironmentAddresses),
+      SchemaTransformation.transform({
+        decode: ({ url, ...input }): typeof DeviceConnectEnvironmentAddresses.Type => ({
+          ...input,
+          urls: [url],
+        }),
+        encode: ({ urls, ...input }) => ({ ...input, url: urls[0] }),
+      }),
+    ),
+  ),
+]);
 export type DeviceConnectEnvironmentInput = typeof DeviceConnectEnvironmentInput.Type;
 
 /** Simulator udid or adb serial (an AVD name while it is not running). */
@@ -122,6 +163,7 @@ export const DeviceHostSummary = Schema.Struct({
   id: DeviceHostId,
   kind: Schema.Literals(["local", "ssh", "environment"]),
   label: TrimmedNonEmptyString,
+  connectedUrl: Schema.optional(DeviceEnvironmentUrl),
   platforms: Schema.Array(DevicePlatformAvailability),
   tools: Schema.optional(DeviceToolVersions),
   toolInspectionError: Schema.optional(Schema.String),
@@ -160,6 +202,7 @@ export type DeviceSession = typeof DeviceSession.Type;
 
 export const DeviceServiceState = Schema.Struct({
   supportsEnvironmentHosts: Schema.optional(Schema.Boolean),
+  supportsEnvironmentHostAddresses: Schema.optional(Schema.Boolean),
   supportsHostRetry: Schema.optional(Schema.Boolean),
   supportsToolUpdate: Schema.optional(Schema.Boolean),
   supportsToolInspection: Schema.optional(Schema.Boolean),
@@ -393,9 +436,12 @@ export type DeviceActionType = DeviceActionInput["type"];
 export const DeviceDetailInput = Schema.Struct(DeviceTarget);
 export type DeviceDetailInput = typeof DeviceDetailInput.Type;
 
-export const DeviceEnvironmentInfo = Schema.Struct({
+export const DeviceEnvironmentIdentity = Schema.Struct({
   environmentId: EnvironmentId,
   sourceEnvironmentId: EnvironmentId,
+});
+export const DeviceEnvironmentInfo = Schema.Struct({
+  ...DeviceEnvironmentIdentity.fields,
   host: DeviceHostSummary,
   devices: Schema.Array(DeviceSummary),
   sessions: Schema.Array(DeviceSession),
@@ -403,7 +449,15 @@ export const DeviceEnvironmentInfo = Schema.Struct({
 export type DeviceEnvironmentInfo = typeof DeviceEnvironmentInfo.Type;
 export const DevicePeerCommand = Schema.Union([
   Schema.Struct({
-    operation: Schema.Literals(["inspect", "list", "agent", "stop-agent", "release", "revoke"]),
+    operation: Schema.Literals([
+      "identify",
+      "inspect",
+      "list",
+      "agent",
+      "stop-agent",
+      "release",
+      "revoke",
+    ]),
   }),
   Schema.Struct({ operation: Schema.Literal("open"), input: DeviceOpenInput }),
   Schema.Struct({ operation: Schema.Literal("close"), input: DeviceCloseInput }),

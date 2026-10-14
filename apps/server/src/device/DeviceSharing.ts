@@ -22,7 +22,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient } from "effect/unstable/http";
-import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -139,36 +138,22 @@ const make = Effect.gen(function* () {
       input.grant.environmentId === environmentId
     )
       return yield* unavailable("Device access was issued for another environment.", hostId);
-    const url = yield* Effect.try({ try: () => new URL(input.url), catch: sharingError });
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash
-    )
-      return yield* unavailable("Invalid device environment address.", hostId);
+    // The input schema has already validated each address.
+    const [first, ...rest] = [...new Set(input.urls.map((url) => url.replace(/\/+$/, "")))];
+    if (!first) return yield* unavailable("No device environment addresses are available.", hostId);
     const host = {
       id: hostId,
       label: input.label,
       environmentId: input.grant.environmentId,
-      url: url.toString().replace(/\/+$/, ""),
+      url: first,
+      urls: [first, ...rest] as const,
       sessionId: input.grant.sessionId,
     };
     const client = yield* makeClient(host, input.grant.token, environmentId).pipe(
       Effect.provideService(HttpClient.HttpClient, http),
     );
-    yield* client.info("inspect").pipe(
-      Effect.mapError((error) =>
-        // A loopback address from the client may reach this server itself or nothing.
-        isLocalLoopbackHost(url.hostname)
-          ? unavailable(
-              `This server could not reach the device environment at ${host.url}. Loopback addresses only work when both environments run on the same machine; enter a LAN, Tailscale, or styal Link address instead.`,
-              host.id,
-            )
-          : error,
-      ),
-    );
+    yield* client.info("inspect");
+    host.url = client.baseUrl;
     const current = yield* settings.getSettings.pipe(Effect.mapError(sharingError));
     if (current.deviceHosts.some((entry) => entry.id === host.id))
       return yield* unavailable(
@@ -260,6 +245,10 @@ const make = Effect.gen(function* () {
     const sourceId = session.subject.slice("device-host:".length);
     if (!session.subject.startsWith("device-host:") || !sourceId)
       return yield* unavailable("Invalid device access credential.");
+    // Cleanup still needs to verify the authenticated peer after device access is off.
+    // This reveals no inventory and does not start either device daemon.
+    if (input.operation === "identify")
+      return { environmentId, sourceEnvironmentId: EnvironmentId.make(sourceId) };
     const prefix = devicePeerThreadPrefix(sourceId);
     const thread = (id: string) => ThreadId.make(`${prefix}${id}`);
     if (input.operation === "stop-agent") {

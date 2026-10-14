@@ -4,6 +4,7 @@ import {
   applyWslEnableSelection,
   isQrShareableEndpoint,
   isWslSettingsRowVisible,
+  selectDesktopDefaultEndpoint,
   selectQrEndpointOption,
 } from "./ConnectionsSettings.logic";
 
@@ -132,6 +133,33 @@ describe("isQrShareableEndpoint", () => {
     expect(
       isQrShareableEndpoint(makeEndpoint({ reachability: "private-network", status: "unknown" })),
     ).toBe(true);
+  });
+});
+
+describe("selectDesktopDefaultEndpoint", () => {
+  const lan = makeEndpoint({ isDefault: true });
+  const tailscaleIp = makeEndpoint({
+    id: "tailscale-ip:http://100.64.0.7:4780",
+    label: "Tailscale IP",
+    httpBaseUrl: "http://100.64.0.7:4780",
+    reachability: "private-network",
+  });
+  const magicDns = makeEndpoint({
+    id: "tailscale-magicdns:https://orion.example.ts.net",
+    label: "Tailscale HTTPS",
+    httpBaseUrl: "https://orion.example.ts.net",
+    reachability: "private-network",
+  });
+  const endpoints = [lan, tailscaleIp, magicDns];
+
+  it("uses the saved default before the server's default", () => {
+    expect(selectDesktopDefaultEndpoint(endpoints, true, "tailscale:ip:http")).toBe(tailscaleIp);
+    expect(selectDesktopDefaultEndpoint(endpoints, true, null)).toBe(lan);
+  });
+
+  it("uses Tailscale HTTPS when network access is off", () => {
+    expect(selectDesktopDefaultEndpoint(endpoints, false, "desktop-core:lan:http")).toBe(magicDns);
+    expect(selectDesktopDefaultEndpoint([lan], false, null)).toBeNull();
   });
 });
 
