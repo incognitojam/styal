@@ -24,6 +24,7 @@ const defaultSnapshot = {
   repositoriesWithApprovedFileActions: 0,
   sidebarAutoSettleOnMerge: true,
   sidebarAutoSettleAfterDays: 3,
+  sidebarAutoSettleKeepPullRequests: false,
   snoozeLimitedThreads: false,
   autoResumeLimitedThreads: false,
   branchNamingMode: "static",

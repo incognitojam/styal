@@ -53,6 +53,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
       settings.sidebarAutoSettleAfterDays === null
         ? null
         : Math.round(settings.sidebarAutoSettleAfterDays),
+    sidebarAutoSettleKeepPullRequests: settings.sidebarAutoSettleKeepPullRequests,
     snoozeLimitedThreads: settings.snoozeLimitedThreads,
     autoResumeLimitedThreads: settings.autoResumeLimitedThreads,
     // Source control writing
