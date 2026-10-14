@@ -14,7 +14,7 @@ Exporting requires Icon Composer 2 or newer on macOS. The script selects the new
 
 ## macOS exports
 
-The desktop app's macOS icon is a classic `.icns`, which macOS draws exactly as its pixels are, so the PNG has to carry the classic safe area itself: a 1024×1024 canvas with an 824×824 opaque body inset 100 pixels on every side, and only a soft drop shadow in the margin.
+On macOS 26 and later, the desktop app uses an asset catalog that the desktop build compiles from the Icon Composer project with `actool`, which needs Xcode 26 or later. Earlier releases use a classic `.icns`, which macOS draws exactly as its pixels are, so the PNG has to carry the classic safe area itself: a 1024×1024 canvas with an 824×824 opaque body inset 100 pixels on every side, and only a soft drop shadow in the margin.
 
 Icon Composer cannot export that directly. Its command-line exporter has no pre-Tahoe rendering, and on macOS 27 the GUI's `macOS pre-Tahoe` preset exports full bleed. So the body is exported by hand and `vp run icons:export` adds the margin and shadow.
 

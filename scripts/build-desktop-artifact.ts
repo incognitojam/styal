@@ -137,6 +137,7 @@ const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* () {
 
 interface DesktopBuildIconAssets {
   readonly macIconPng: string;
+  readonly macIconComposerProject: string;
   readonly linuxIconPng: string;
   readonly windowsIconIco: string;
 }
@@ -1023,6 +1024,8 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!apps/desktop/prod-resources/windows-server/**/*",
   "!apps/desktop/gnome-extension",
   "!apps/desktop/gnome-extension/**/*",
+  "!apps/desktop/mac-icon-catalog",
+  "!apps/desktop/mac-icon-catalog/**/*",
 ] as const;
 // Windows terminal helpers cannot run on macOS and slow signing and notarization.
 export const MAC_FILE_EXCLUSIONS = [
@@ -1144,6 +1147,14 @@ export const LINUX_CAPTURE_EXTRA_RESOURCES = [
 ] as const;
 export const LINUX_BROWSER_SECRET_EXTRA_RESOURCES = [
   { from: "apps/desktop/prod-resources/browser-secret", to: "browser-secret" },
+] as const;
+// macOS 26 and later only draw an app icon unboxed when it comes from an
+// Icon Composer asset catalog. The catalog is staged outside the resources
+// directories so it is copied once into Contents/Resources, not into app.asar.
+export const MAC_ICON_CATALOG_DIR = "apps/desktop/mac-icon-catalog";
+export const MAC_ICON_NAME = "AppIcon";
+export const MAC_ICON_CATALOG_EXTRA_RESOURCES = [
+  { from: MAC_ICON_CATALOG_DIR, to: ".", filter: ["Assets.car"] },
 ] as const;
 
 export interface MacPasskeySigningConfiguration {
@@ -2460,6 +2471,39 @@ function stageMacIcons(stageResourcesDir: string, sourcePng: string, verbose: bo
   });
 }
 
+// Compiles the Icon Composer project into the asset catalog that macOS 26 and
+// later read through CFBundleIconName. actool names the icon after the
+// project directory, so the project is copied under MAC_ICON_NAME first.
+// Requires Xcode 26 or later.
+function stageMacIconCatalog(stageAppDir: string, iconComposerProject: string, verbose: boolean) {
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    if (!(yield* fs.exists(iconComposerProject))) {
+      return yield* new DesktopIconSourceMissingError({
+        platform: "mac",
+        sourcePath: iconComposerProject,
+      });
+    }
+
+    const tmpRoot = yield* fs.makeTempDirectoryScoped({
+      prefix: "styal-icon-catalog-",
+    });
+    const projectCopy = path.join(tmpRoot, `${MAC_ICON_NAME}.icon`);
+    yield* fs.copy(iconComposerProject, projectCopy);
+
+    const catalogDir = path.join(stageAppDir, MAC_ICON_CATALOG_DIR);
+    yield* fs.makeDirectory(catalogDir, { recursive: true });
+    const partialInfoPlist = path.join(tmpRoot, "assetcatalog_generated_info.plist");
+    yield* runCommand(
+      ChildProcess.make(
+        {},
+      )`actool ${projectCopy} --compile ${catalogDir} --app-icon ${MAC_ICON_NAME} --output-partial-info-plist ${partialInfoPlist} --platform macosx --target-device mac --minimum-deployment-target 26.0 --output-format human-readable-text --errors --warnings`,
+      { label: "actool icon catalog", verbose },
+    );
+  });
+}
+
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
   stageResourcesDir: string,
   channel: "latest" | "nightly",
@@ -2670,6 +2714,7 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
   if (isDesktopPreviewVersion(version)) {
     return {
       macIconPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+      macIconComposerProject: BRAND_ASSET_PATHS.developmentIconComposerProject,
       linuxIconPng: BRAND_ASSET_PATHS.developmentUniversalIconPng,
       windowsIconIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
     };
@@ -2678,6 +2723,7 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
   if (resolveDesktopUpdateChannel(version) === "nightly") {
     return {
       macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
+      macIconComposerProject: BRAND_ASSET_PATHS.nightlyIconComposerProject,
       linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
       windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
     };
@@ -2685,6 +2731,7 @@ export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIcon
 
   return {
     macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
+    macIconComposerProject: BRAND_ASSET_PATHS.productionIconComposerProject,
     linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
     windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
   };
@@ -2760,6 +2807,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ...DESKTOP_EXTRA_RESOURCES,
       ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),
       ...(platform === "linux" ? LINUX_BROWSER_SECRET_EXTRA_RESOURCES : []),
+      ...(platform === "mac" ? MAC_ICON_CATALOG_EXTRA_RESOURCES : []),
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
       ...(platform === "win" && wslRuntimeBundled ? WSL_RUNTIME_EXTRA_RESOURCES : []),
     ],
@@ -2787,6 +2835,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {
+        // Older macOS releases fall back to icon.icns through CFBundleIconFile.
+        CFBundleIconName: MAC_ICON_NAME,
         NSScreenCaptureUsageDescription:
           "styal captures the active window when you use the window capture shortcut.",
       },
@@ -2909,12 +2959,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
 
 const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(function* (
   platform: typeof BuildPlatform.Type,
+  stageAppDir: string,
   stageResourcesDir: string,
   iconAssets: DesktopBuildIconAssets,
   verbose: boolean,
 ) {
   if (platform === "mac") {
     yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, verbose);
+    yield* stageMacIconCatalog(stageAppDir, iconAssets.macIconComposerProject, verbose);
     return;
   }
 
@@ -3777,9 +3829,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   yield* assertPlatformBuildResources(
     options.platform,
+    stageAppDir,
     stageResourcesDir,
     {
       macIconPng: path.join(repoRoot, iconAssets.macIconPng),
+      macIconComposerProject: path.join(repoRoot, iconAssets.macIconComposerProject),
       linuxIconPng: path.join(repoRoot, iconAssets.linuxIconPng),
       windowsIconIco: path.join(repoRoot, iconAssets.windowsIconIco),
     },

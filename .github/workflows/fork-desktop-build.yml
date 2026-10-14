@@ -114,7 +114,7 @@ jobs:
             {
               id: "macos-arm64",
               label: "macOS arm64",
-              runner: "macos-15",
+              runner: "macos-26",
               platform: "mac",
               target: "dmg",
               arch: "arm64",
