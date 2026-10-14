@@ -44,7 +44,10 @@ import {
 import { parseScopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentThreadDetails } from "../../state/threads";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import {
+  resolveUserMessageIntent,
+  resolveUserMessagePresentation,
+} from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
@@ -2373,9 +2376,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
-          {row.message.inputIntent && row.message.inputIntent !== "turn_start" ? (
-            <UserMessageIntentMarker intent={row.message.inputIntent} />
-          ) : null}
+          <UserMessageIntentMarker intent={row.message.inputIntent} />
           <Tooltip>
             <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
               {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
@@ -2414,27 +2415,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
 }
 
-function UserMessageIntentMarker({
-  intent,
-}: {
-  readonly intent: NonNullable<ChatMessage["inputIntent"]>;
-}) {
-  const presentation =
-    intent === "queued_turn"
-      ? {
-          label: "Queued",
-          icon: null,
-        }
-      : intent === "promoted_queued_to_steer"
-        ? {
-            label: "Steer",
-            icon: Redo2Icon,
-          }
-        : {
-            label: "Steer",
-            icon: Redo2Icon,
-          };
-  const IntentIcon = presentation.icon;
+function UserMessageIntentMarker({ intent }: { readonly intent: ChatMessage["inputIntent"] }) {
+  const presentation = resolveUserMessageIntent(intent);
+  if (!presentation) return null;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -2445,16 +2428,10 @@ function UserMessageIntentMarker({
           />
         }
       >
-        {IntentIcon ? <IntentIcon aria-hidden="true" className="size-3" /> : null}
+        {presentation.steer ? <Redo2Icon aria-hidden="true" className="size-3" /> : null}
         {presentation.label}
       </TooltipTrigger>
-      <TooltipPopup side="top">
-        {intent === "queued_turn"
-          ? "Queued behind the active turn"
-          : intent === "promoted_queued_to_steer"
-            ? "Originally queued, then promoted to steer the active turn"
-            : "Steered the active turn"}
-      </TooltipPopup>
+      <TooltipPopup side="top">{presentation.description}</TooltipPopup>
     </Tooltip>
   );
 }
