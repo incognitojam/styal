@@ -2452,7 +2452,7 @@ features:
     prs: [193, 197, 198, 217]
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback.
-      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state, and screenshots and annotation crops use logical page coordinates.
+      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots capture the displayed surface rather than tiling it, and annotation crops are given in logical page coordinates.
       - The floating browser preview remains visible but does not send pointer or keyboard input to its page; dragging anywhere on its view-only surface moves the frame, double-clicking it opens that tab in the right panel, and its frame controls remain usable.
     implementation_paths:
       - apps/desktop/src/preview/Manager.ts
@@ -2484,7 +2484,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/10141
         - https://github.com/pingdotgg/t3code/pull/15328
         - https://github.com/pingdotgg/t3code/pull/9916
-      retire_when: Upstream preserves equivalent responsive device metrics, logical capture coordinates, DevTools fallback behavior, and surface ownership across panel visibility changes.
+      retire_when: Upstream preserves equivalent responsive device metrics, logical crop coordinates, DevTools fallback behavior, and surface ownership across panel visibility changes.
 
   - id: proactive-panels-default
     title: Open proactive panels by default

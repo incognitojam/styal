@@ -46,7 +46,7 @@
     },
     {
       "pr": 15328,
-      "reason": "Moves agent preview tabs from the desktop app to a browser on the environment server. The fork imported #17693 early while previews still ran in the desktop app, so it kept the desktop wording of the no-host and recording-transfer errors and the MCP snapshot test that checks it. #15328 does not change those messages and the queue already counts #17693 as recorded, so when the queue reaches #15328, also apply #17693's wording for them."
+      "reason": "Moves agent preview tabs from the desktop app to a browser on the environment server. The fork imported #17693 early while previews still ran in the desktop app, so it kept the desktop wording of the no-host and recording-transfer errors and the MCP snapshot test that checks it. #15328 does not change those messages and the queue already counts #17693 as recorded, so when the queue reaches #15328, also apply #17693's wording for them. Its server snapshot captures desktop tabs with Page.captureScreenshot through the CDP relay. That works upstream, where the webview keeps its full layout size under a CSS transform, but the fork fits previews with device-metrics emulation, so the guest surface is only the panel size and Chromium tiles it into the screenshot. Keep fitted desktop captures on the full-surface capturePage path (ledger preview-surface-continuity) rather than taking the relayed screenshot."
     },
     {
       "pr": 16022,
