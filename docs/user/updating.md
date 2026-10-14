@@ -195,7 +195,9 @@ The same page lets you refresh provider status and update supported providers.
 These controls require a connected environment and permission to operate it.
 Provider update checks and restart continuation preferences are in
 **Settings → Maintenance**. If provider update checks are disabled, enable them
-there before refreshing to find newer versions.
+there before refreshing to find newer versions. The same setting controls whether
+styal downloads model catalog updates, so with it off new models may not appear
+until you enable it and refresh provider status.
 
 The mobile app can download updates in the background and apply them when you
 next leave the app. It saves drafts and queued messages before restarting. If you
