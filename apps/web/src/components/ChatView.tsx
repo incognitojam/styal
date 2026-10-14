@@ -12233,6 +12233,7 @@ export default function ChatView(props: ChatViewProps) {
                               pullRequestRepository={
                                 supportsPullRequests ? activeProjectRepository : null
                               }
+                              threadPullRequests={(activeThreadShell ?? activeThread)?.pullRequests}
                               restingControlsHost={restingComposerControlsHost}
                               restingControlsHaveLeadingContext={
                                 mountComposerContextStrip &&
