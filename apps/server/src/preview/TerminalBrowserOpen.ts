@@ -234,7 +234,7 @@ export const make = Effect.gen(function* TerminalBrowserOpenMake() {
     owner: TerminalBrowserOpenOwner,
   ) {
     if (!helperAvailable) return {};
-    const token = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+    const token = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
     yield* SynchronizedRef.update(state, (current) => {
       const key = ownerKey(owner);
       const previousToken = current.tokensByOwner.get(key);

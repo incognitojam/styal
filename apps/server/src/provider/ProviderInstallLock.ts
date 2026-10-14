@@ -219,7 +219,7 @@ const make = Effect.gen(function* () {
   const tryRun: ProviderInstallLock["Service"]["tryRun"] = (lockKey, run) =>
     Effect.gen(function* () {
       const key = `${encodeURIComponent(lockKey)}.lock`;
-      const owner = yield* crypto.randomUUIDv4.pipe(Effect.mapError(toLockError));
+      const owner = yield* crypto.randomUUIDv4().pipe(Effect.mapError(toLockError));
       const contents = `${process.pid}\n${owner}`;
       // Written aside and renamed over the lock, so a failed write (disk full)
       // leaves the previous complete record instead of an empty, held file.

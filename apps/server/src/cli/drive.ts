@@ -191,8 +191,8 @@ const sendCommand = Command.make("send", {
           params: { threadId },
         });
         const crypto = yield* Crypto.Crypto;
-        const commandId = CommandId.make(yield* crypto.randomUUIDv4);
-        const messageId = MessageId.make(yield* crypto.randomUUIDv4);
+        const commandId = CommandId.make(yield* crypto.randomUUIDv4());
+        const messageId = MessageId.make(yield* crypto.randomUUIDv4());
         const receipt = yield* client.orchestration.dispatch({
           headers,
           payload: {

@@ -183,9 +183,6 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         Effect.andThen(Effect.sync(() => meter?.opened())),
         Effect.asVoid,
       ),
-      onPingTimeout: Ref.set(pingTimedOut, true).pipe(
-        Effect.andThen(Effect.sync(() => meter?.heartbeatTimedOut())),
-      ),
       onDisconnect: Effect.all([Deferred.isDone(connected), Ref.get(pingTimedOut)]).pipe(
         Effect.flatMap(([wasConnected, timedOut]) =>
           Deferred.fail(
@@ -229,6 +226,9 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         pingTimeout: PING_TIMEOUT,
         retryTransientErrors: false,
         retryPolicy: Schedule.recurs(0),
+        onPingTimeout: Ref.set(pingTimedOut, true).pipe(
+          Effect.andThen(Effect.sync(() => meter?.heartbeatTimedOut())),
+        ),
       }),
     ).pipe(
       Layer.provide(
