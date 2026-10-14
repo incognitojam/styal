@@ -1,11 +1,19 @@
-import { cn } from "../lib/utils";
-import { StyalWordmark } from "./StyalWordmark";
+import styalMarkUrl from "../../../../assets/brand/mark.svg?url";
 
-/** Keep the wordmark readable inside the work log's compact icon slot. */
+/** Mask the shared artwork so the external SVG follows the row's icon color. */
 export function StyalToolIcon({ className }: { className?: string }) {
   return (
-    <span className={cn("inline-flex items-center justify-center", className)} aria-hidden>
-      <StyalWordmark className="h-2.5" />
-    </span>
+    <span
+      className={className}
+      aria-hidden
+      style={{
+        display: "inline-block",
+        backgroundColor: "currentColor",
+        maskImage: `url("${styalMarkUrl}")`,
+        maskPosition: "center",
+        maskRepeat: "no-repeat",
+        maskSize: "contain",
+      }}
+    />
   );
 }
