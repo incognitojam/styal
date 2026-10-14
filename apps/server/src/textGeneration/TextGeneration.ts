@@ -179,7 +179,7 @@ export const make = Effect.gen(function* () {
         providers,
         attempted,
       );
-      if (next.instanceId === requested.instanceId || attempted.has(next.instanceId)) {
+      if (next.instanceId === requested.instanceId) {
         return yield* result.failure;
       }
       yield* Effect.logDebug("Text generation rate limit: trying another provider", {

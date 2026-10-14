@@ -15,6 +15,7 @@ import { CodexSettings, ProviderInstanceId, TextGenerationError } from "@t3tools
 
 import * as ServerConfig from "../config.ts";
 import * as TextGeneration from "./TextGeneration.ts";
+import { isTextGenerationRateLimitError } from "./TextGenerationUtils.ts";
 import { makeCodexTextGeneration } from "./CodexTextGeneration.ts";
 import { writeFakeCli } from "../testUtils/fakeCli.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
@@ -735,33 +736,42 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
       ),
   );
 
-  it.effect("returns typed TextGenerationError when codex exits non-zero", () =>
-    withFakeCodexEnv(
-      {
-        output: JSON.stringify({ subject: "ignored", body: "" }),
-        exitCode: 1,
-        stderr: "codex execution failed",
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const result = yield* textGeneration
-            .generateCommitMessage({
-              cwd: process.cwd(),
-              branch: "feature/codex-error",
-              stagedSummary: "M README.md",
-              stagedPatch: "diff --git a/README.md b/README.md",
-              modelSelection: DEFAULT_TEST_MODEL_SELECTION,
-            })
-            .pipe(Effect.result);
+  it.effect.each([
+    { stderr: "codex execution failed", limited: false },
+    {
+      stderr:
+        "user\nSummarize these logs:\nERROR: Rate limit reached\nERROR: unexpected status 401 Unauthorized",
+      limited: false,
+    },
+    { stderr: "user\nSummarize rate limit handling\nERROR: Rate limit reached", limited: true },
+  ])(
+    "classifies failed Codex output without matching the prompt ($limited)",
+    ({ stderr, limited }) =>
+      withFakeCodexEnv(
+        {
+          output: JSON.stringify({ subject: "ignored", body: "" }),
+          exitCode: 1,
+          stderr,
+        },
+        (textGeneration) =>
+          Effect.gen(function* () {
+            const result = yield* textGeneration
+              .generateCommitMessage({
+                cwd: process.cwd(),
+                branch: "feature/codex-error",
+                stagedSummary: "M README.md",
+                stagedPatch: "diff --git a/README.md b/README.md",
+                modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+              })
+              .pipe(Effect.result);
 
-          expect(Result.isFailure(result)).toBe(true);
-          if (Result.isFailure(result)) {
-            expect(result.failure).toBeInstanceOf(TextGenerationError);
-            expect(result.failure.message).toContain(
-              "Codex CLI command failed: codex execution failed",
-            );
-          }
-        }),
-    ),
+            expect(Result.isFailure(result)).toBe(true);
+            if (Result.isFailure(result)) {
+              expect(result.failure).toBeInstanceOf(TextGenerationError);
+              expect(result.failure.message).toContain(`Codex CLI command failed: ${stderr}`);
+              expect(isTextGenerationRateLimitError(result.failure)).toBe(limited);
+            }
+          }),
+      ),
   );
 });

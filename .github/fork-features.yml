@@ -3796,7 +3796,7 @@ features:
     implementation_paths:
       - apps/server/src/git/GitManager.ts
       - apps/server/src/orchestration-v2/ThreadTitleRegenerationService.ts
-      - apps/server/src/textGeneration/ClaudeTextGeneration.ts
+      - apps/server/src/textGeneration/CursorTextGeneration.ts
       - apps/server/src/textGeneration/TextGeneration.ts
       - apps/server/src/textGeneration/TextGenerationUtils.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
@@ -3810,8 +3810,10 @@ features:
       - packages/contracts/src/settings.ts
       - packages/shared/src/serverSettings.ts
     tests:
-      - apps/server/src/textGeneration/ClaudeTextGeneration.test.ts
+      - apps/server/src/textGeneration/CodexTextGeneration.test.ts
+      - apps/server/src/textGeneration/CursorTextGeneration.test.ts
       - apps/server/src/textGeneration/TextGeneration.test.ts
+      - apps/server/src/textGeneration/TextGenerationPrompts.test.ts
       - apps/web/src/modelSelection.test.ts
       - packages/shared/src/serverSettings.test.ts
     upstream:

@@ -3,53 +3,40 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
-const decodeProviderError = Schema.decodeUnknownOption(
-  Schema.Struct({
-    _tag: Schema.optionalKey(Schema.Unknown),
-    status: Schema.optionalKey(Schema.Unknown),
-    statusCode: Schema.optionalKey(Schema.Unknown),
-    code: Schema.optionalKey(Schema.Unknown),
-    message: Schema.optionalKey(Schema.Unknown),
-    errorMessage: Schema.optionalKey(Schema.Unknown),
-    detail: Schema.optionalKey(Schema.Unknown),
-    cause: Schema.optionalKey(Schema.Unknown),
-    error: Schema.optionalKey(Schema.Unknown),
-    data: Schema.optionalKey(Schema.Unknown),
-    errors: Schema.optionalKey(Schema.Unknown),
-  }),
-);
 const RATE_LIMIT_MESSAGE =
-  /\b(?:rate[ _-]?limit(?:ed|ing|exceeded|_exceeded)?|usage[ _-]?limit(?:exceeded|_exceeded)?|too many requests|(?:you(?:'ve| have) )?hit your limit|insufficient_quota|quota[ _-]exceeded|resource_exhausted)\b/i;
+  /\b(?:rate[ _-]?limit(?:ed|ing|exceeded|_exceeded)?|usage[ _-]?limit(?:exceeded|_exceeded)?|too many requests|hit your limit|insufficient_quota|quota[ _-]exceeded|resource_exhausted)\b/i;
 
-/** Read only error fields: structured-output validation can contain the user's prompt. */
+/** Inspect error fields, excluding validation inputs and Codex's echoed prompt. */
 export function isTextGenerationRateLimitError(error: TextGenerationError): boolean {
-  const seen = new Set<unknown>();
-  const visit = (value: unknown, depth: number): boolean => {
-    if (depth > 8 || seen.has(value)) return false;
-    if (typeof value === "string") return RATE_LIMIT_MESSAGE.test(value);
-    if (value === null || typeof value !== "object") return false;
-    seen.add(value);
-    if (Array.isArray(value)) return value.some((entry) => visit(entry, depth + 1));
-    const decoded = decodeProviderError(value);
-    if (Option.isNone(decoded) || decoded.value._tag === "SchemaError") return false;
-    const fields = decoded.value;
-    return (
-      [fields.status, fields.statusCode, fields.code].some(
-        (status) => status === 429 || status === "429",
-      ) ||
-      [
-        fields.code,
-        fields.message,
-        fields.errorMessage,
-        fields.detail,
-        fields.cause,
-        fields.error,
-        fields.data,
-        fields.errors,
-      ].some((entry) => visit(entry, depth + 1))
-    );
-  };
-  return visit(error, 0);
+  const pending: unknown[] = [error];
+  const seen = new Set<object>();
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (typeof value === "string") {
+      const prefix = "Codex CLI command failed:";
+      const offset = value.indexOf(prefix);
+      const detail =
+        offset === -1
+          ? value
+          : (value
+              .slice(offset + prefix.length)
+              .split("\n")
+              .findLast((line) => line.trimStart().startsWith("ERROR:")) ?? "");
+      if (RATE_LIMIT_MESSAGE.test(detail)) return true;
+    } else if (value !== null && typeof value === "object" && !seen.has(value)) {
+      seen.add(value);
+      const field = (key: string): unknown => Reflect.get(value, key);
+      if (field("_tag") === "SchemaError") continue;
+      if (
+        ["status", "statusCode", "code"]
+          .map(field)
+          .some((status) => status === 429 || status === "429")
+      )
+        return true;
+      pending.push(...["detail", "message", "errorMessage", "code", "data", "cause"].map(field));
+    }
+  }
+  return false;
 }
 const decodeJsonThreadTitle = Schema.decodeOption(
   Schema.fromJsonString(Schema.Struct({ title: Schema.String })),

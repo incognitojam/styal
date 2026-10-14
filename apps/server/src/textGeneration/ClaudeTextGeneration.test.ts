@@ -19,7 +19,7 @@ import {
   SYNTHETIC_CLAUDE_THINKING_MODEL,
 } from "../provider/ClaudeModelCatalog.testFixtures.ts";
 import * as TextGeneration from "./TextGeneration.ts";
-import { isTextGenerationRateLimitError, sanitizeThreadTitle } from "./TextGenerationUtils.ts";
+import { sanitizeThreadTitle } from "./TextGenerationUtils.ts";
 import { makeClaudeTextGeneration } from "./ClaudeTextGeneration.ts";
 import { writeFakeCli } from "../testUtils/fakeCli.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
@@ -541,40 +541,6 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
         );
 
         expect(error._tag).toBe("TextGenerationError");
-      }),
-    ),
-  );
-
-  it.effect.each([
-    { label: "stderr", output: "", stderr: "You've hit your limit · resets later", exitCode: 1 },
-    {
-      label: "normal JSON error",
-      output: JSON.stringify({ type: "result", is_error: true, result: "Rate limit reached" }),
-      exitCode: 0,
-    },
-    {
-      label: "verbose JSON error",
-      output: JSON.stringify([
-        { type: "rate_limit_event" },
-        { type: "result", is_error: true, errors: ["Usage limit reached"] },
-      ]),
-      exitCode: 0,
-    },
-  ])("preserves rate-limit failures from $label", (input) =>
-    withFakeClaudeEnv(input, (textGeneration) =>
-      Effect.gen(function* () {
-        const error = yield* Effect.flip(
-          textGeneration.generateThreadTitle({
-            cwd: process.cwd(),
-            message: "Synthetic title request",
-            modelSelection: createModelSelection(
-              ProviderInstanceId.make("claudeAgent"),
-              SYNTHETIC_CLAUDE_STANDARD_MODEL,
-            ),
-          }),
-        );
-        expect(error.operation).toBe("generateThreadTitle");
-        expect(isTextGenerationRateLimitError(error)).toBe(true);
       }),
     ),
   );

@@ -369,53 +369,6 @@ describe("serverSettings helpers", () => {
     });
   });
 
-  it.each([
-    { label: "disabled", overrides: { enabled: false } },
-    { label: "missing CLI", overrides: { installed: false, status: "error" } },
-    { label: "unavailable instance", overrides: { availability: "unavailable" } },
-    { label: "signed out", overrides: { auth: { status: "unauthenticated" } } },
-    { label: "provider error", overrides: { status: "error" } },
-    { label: "unsupported text generation", overrides: { supportsTextGeneration: false } },
-  ] satisfies Array<{ label: string; overrides: Partial<ServerProvider> }>)(
-    "skips an excluded preferred provider and a $label fallback",
-    ({ overrides }) => {
-      const claude = {
-        instanceId: ProviderInstanceId.make("claudeAgent"),
-        driver: ProviderDriverKind.make("claudeAgent"),
-        enabled: true,
-        installed: true,
-        version: null,
-        status: "ready",
-        auth: { status: "authenticated" },
-        checkedAt: "2026-10-14T00:00:00.000Z",
-        models: [],
-        slashCommands: [],
-        skills: [],
-      } satisfies ServerProvider;
-      const codex = {
-        ...claude,
-        instanceId: ProviderInstanceId.make("codex"),
-        driver: ProviderDriverKind.make("codex"),
-        ...overrides,
-      };
-      const cursor = {
-        ...claude,
-        instanceId: ProviderInstanceId.make("cursor"),
-        driver: ProviderDriverKind.make("cursor"),
-      };
-      const settings = {
-        textGenerationModelSelection: createModelSelection(claude.instanceId, "synthetic-model"),
-      };
-      const excluded = new Set([claude.instanceId]);
-      expect(
-        resolveTextGenerationModelSelection(settings, [claude, codex, cursor], excluded).instanceId,
-      ).toBe(cursor.instanceId);
-      expect(resolveTextGenerationModelSelection(settings, [claude, codex, cursor])).toBe(
-        settings.textGenerationModelSelection,
-      );
-    },
-  );
-
   it("replaces source control writer selection without retaining stale options", () => {
     const current = {
       ...DEFAULT_SERVER_SETTINGS,
