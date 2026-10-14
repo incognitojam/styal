@@ -29,9 +29,7 @@ const SOUND_SETTINGS = [
 ] as const;
 
 function isNotificationSound(value: string | null): value is NotificationSound {
-  return (
-    value === "t3-completion" || value === "t3-input" || value === "avanti" || value === "none"
-  );
+  return value !== null && Object.hasOwn(NOTIFICATION_SOUND_LABELS, value);
 }
 
 export function NotificationSettings() {

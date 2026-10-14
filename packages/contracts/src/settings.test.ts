@@ -763,7 +763,7 @@ describe("ClientSettings notification sound migration", () => {
   it.each(["completionSound", "inputSound", "approvalSound"])(
     "round-trips independent %s choices",
     (key) => {
-      for (const sound of ["none", "t3-completion", "t3-input", "avanti"]) {
+      for (const sound of ["none", "t3-completion", "t3-input", "avanti", "departures"]) {
         const settings = decodeClientSettings({ [key]: sound, notificationMode: "off" });
         expect(encodeClientSettings(settings)).toHaveProperty(key, sound);
         expect(decodeClientSettingsPatch({ [key]: sound })).toHaveProperty(key, sound);

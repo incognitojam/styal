@@ -658,6 +658,7 @@ features:
       - Playback follows the persisted notification mode and event sound choice without repeating the same turn state.
       - Fresh settings play upstream completion and attention sounds with system notifications off; legacy Resolve or Chime migrates to T3 completion, and Avanti remains Avanti, with notifications and sound enabled unless a notification mode was explicitly saved.
       - Legacy None stays disabled, Resolve is retired, and Avanti retains its normalized playback level.
+      - Departures is an original chime synthesised for styal, so it carries no third-party notice.
     implementation_paths:
       - apps/web/src/components/ThreadNotificationCoordinator.tsx
       - apps/web/src/components/settings/NotificationSettings.tsx
