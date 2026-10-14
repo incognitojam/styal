@@ -42,8 +42,6 @@ import { resolveNodeExecutable, nodeRuntimeUnavailableMessage } from "@t3tools/s
 import * as Path from "effect/Path";
 import { ensureAgentDevice, ensureDeviceHub } from "./DeviceToolchain.ts";
 import * as ServerConfig from "../config.ts";
-import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
-import * as Option from "effect/Option";
 import {
   agentDeviceConfigPath,
   agentDeviceSession,
@@ -160,7 +158,7 @@ export class DeviceService extends Context.Service<
       hostId?: DeviceHostId,
     ) => Effect.Effect<DeviceAgentReadiness | null, DeviceError>;
     readonly currentReadiness: (hostId?: DeviceHostId) => Effect.Effect<DeviceReadiness | null>;
-    /** The running agent-device endpoint, without the lifecycle lock. */
+    /** The running agent-device endpoint of a local host, without the lifecycle lock. */
     readonly currentAgentEndpoint: (
       hostId?: DeviceHostId,
     ) => Effect.Effect<DeviceHost.AgentDeviceEndpoint | null>;
@@ -1118,37 +1116,9 @@ export const make = Effect.gen(function* () {
   const hosts = new Map<DeviceHostId, DeviceHost.DeviceHost["Service"]>([
     [localHost.id, localHost],
   ]);
-  const configureAgent = Effect.fn("DeviceService.configureAgent")(function* (
-    hostId: DeviceHostId,
-    ready: DeviceHost.DeviceHostAgentReady,
-  ) {
+  const configureAgent = (hostId: DeviceHostId, ready: DeviceHost.DeviceHostAgentReady) => {
     const file = agentDeviceConfigPath(config.stateDir, hostId, path);
-    let endpoint = ready.agentDevice;
-    if (ready.remote) {
-      const runtime = yield* readPersistedServerRuntimeState(config.serverRuntimeStatePath).pipe(
-        Effect.provideService(FileSystem.FileSystem, fs),
-        Effect.mapError(
-          (cause) =>
-            new DeviceOperationError({
-              operation: "configure agent",
-              reason: "settings_failed",
-              cause,
-            }),
-        ),
-      );
-      if (Option.isNone(runtime))
-        return yield* new DeviceHostUnavailableError({
-          hostId,
-          reason: "The local server address is unavailable. Restart this environment and retry.",
-        });
-      // A stable source-server URL lets already issued CLI commands follow address
-      // changes without replacing their config file or issuing another grant.
-      endpoint = {
-        ...endpoint,
-        baseUrl: `${runtime.value.origin}/api/device-share/forward/${hostId}/agent`,
-      };
-    }
-    return yield* writeAgentDeviceConfig(file, endpoint).pipe(
+    return writeAgentDeviceConfig(file, ready.agentDevice).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
       Effect.mapError(
@@ -1161,7 +1131,7 @@ export const make = Effect.gen(function* () {
       ),
       Effect.as(file),
     );
-  });
+  };
   const probeContext =
     yield* Effect.context<Effect.Services<ReturnType<typeof SshDeviceHost.probe>>>();
   const localTargetContext =

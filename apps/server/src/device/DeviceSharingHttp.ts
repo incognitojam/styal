@@ -102,15 +102,8 @@ const proxy = errors(
     const request = yield* HttpServerRequest.HttpServerRequest;
     const url = HttpServerRequest.toURL(request);
     if (Option.isNone(url)) return HttpServerResponse.empty({ status: 400 });
-    const forward = /^\/api\/device-share\/forward\/(environment-[a-f0-9]{24})\/agent\//.exec(
-      url.value.pathname,
-    );
-    const agent = forward !== null || url.value.pathname.startsWith("/api/device-share/agent/");
-    const prefix = forward
-      ? `/api/device-share/forward/${forward[1]}/agent`
-      : agent
-        ? "/api/device-share/agent"
-        : "/api/device-share/hub";
+    const agent = url.value.pathname.startsWith("/api/device-share/agent/");
+    const prefix = agent ? "/api/device-share/agent" : "/api/device-share/hub";
     const path = url.value.pathname.slice(prefix.length);
     const upgrade = request.headers.upgrade?.toLowerCase() === "websocket";
     const sharing = yield* DeviceSharing.DeviceSharing;
@@ -118,14 +111,10 @@ const proxy = errors(
     if (agent) {
       // Agents hold a separate credential that reaches only this proxy, never peer commands.
       const token = agentToken(request);
+      const resolved = token ? yield* sharing.agentTarget(token) : null;
+      if (!resolved) return agentAccessEnded(path);
       if (upgrade || !isAllowedAgentRequest(path, request.method))
         return HttpServerResponse.empty({ status: 404 });
-      const resolved = token
-        ? yield* forward
-            ? sharing.forwardAgentTarget(forward[1]!, token)
-            : sharing.agentTarget(token)
-        : null;
-      if (!resolved) return agentAccessEnded(path);
       target = resolved;
     } else {
       yield* authenticate;
@@ -155,8 +144,3 @@ const proxy = errors(
 export const deviceSharingRouteLayer = HttpRouter.add("POST", "/api/device-share/command", command);
 export const deviceSharingProxyRouteLayer = HttpRouter.add("*", "/api/device-share/hub/*", proxy);
 export const deviceSharingAgentRouteLayer = HttpRouter.add("*", "/api/device-share/agent/*", proxy);
-export const deviceSharingForwardAgentRouteLayer = HttpRouter.add(
-  "*",
-  "/api/device-share/forward/*",
-  proxy,
-);

@@ -1056,7 +1056,7 @@ features:
       - Agents get a separate credential that reaches only agent-device's remote routes, cannot issue peer commands, and stops working when agent access is turned off on either environment or the grant is revoked.
       - Requests to a connected environment do not hold the local device lifecycle lock, so an unreachable environment cannot block local devices.
       - Settings show one sharing switch per pair on the device environment, without an address field. Clients send their connection address, all usable desktop advertised addresses, and a known styal Link address. The agent server verifies both environment identities and stores the candidates with its device-only grant; legacy single-address shares remain readable.
-      - Unreachable addresses fall back automatically for device operations, new stream connections, and already issued agent commands. Peer errors remain typed, and ambiguous failures never replay a mutating command. Revocation and disabled access cannot be bypassed by fallback.
+      - When the selected address stops answering, the next request selects another saved address after checking both identities. Reads and cleanup retry once; other commands report the failure and are never replayed. New streams use the selected address; a running agent picks it up when agent access next starts.
       - Authenticated cleanup remains available when device access is disabled, and connected agent environments retain removal controls for offline or removed device environments.
     rationale: Connecting a machine to the client does not give an agent server access to it. An explicit device-only grant provides persistent access without copying a client credential or requiring redundant SSH setup.
     implementation_paths:
@@ -1073,11 +1073,9 @@ features:
       - apps/server/src/mcp/toolkits/device/handlers.ts
       - packages/contracts/src/device.ts
     tests:
-      - apps/server/src/device/DeviceHubProxy.test.ts
       - apps/server/src/device/DeviceMultiHost.test.ts
       - apps/server/src/device/DeviceSharing.test.ts
       - apps/web/src/components/settings/ConnectionsSettings.logic.test.ts
-      - apps/web/src/components/settings/EnvironmentDeviceHostsSettings.test.tsx
       - packages/client-runtime/src/state/deviceSharingAddress.test.ts
       - packages/client-runtime/src/state/offlineDeviceShares.test.ts
       - packages/contracts/src/device.test.ts

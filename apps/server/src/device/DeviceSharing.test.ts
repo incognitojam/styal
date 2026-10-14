@@ -38,7 +38,6 @@ import {
   deviceSharingRouteLayer,
   deviceSharingProxyRouteLayer,
   deviceSharingAgentRouteLayer,
-  deviceSharingForwardAgentRouteLayer,
 } from "./DeviceSharingHttp.ts";
 
 const encodeSettings = Schema.encodeSync(Schema.fromJsonString(ServerSettingsSchema));
@@ -524,49 +523,6 @@ it.effect("can clean up older peers that expose identity through inspect", () =>
   }).pipe(Effect.scoped),
 );
 
-it.effect.each(["enableDeviceSupport", "enableAgentDeviceAccess"] as const)(
-  "revokes an older peer's grant at its saved verified address after %s is off",
-  (setting) =>
-    Effect.gen(function* () {
-      const f = yield* fixture;
-      yield* f.connect;
-      f.setLegacyPeer();
-      yield* f.targetSettings.service.updateSettings({ [setting]: false });
-      const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
-      yield* f.source.disconnect(config.id);
-      expect(f.active.has(f.grant.token)).toBe(false);
-      expect(f.sourceSettings.read().environmentDeviceHosts).toEqual([]);
-      expect(f.peerRequests.slice(-2).map((entry) => entry.operation)).toEqual([
-        "identify",
-        "revoke",
-      ]);
-    }).pipe(Effect.scoped),
-);
-
-it.effect("stops an older peer's agent after an invalidated connection and disabled access", () =>
-  Effect.gen(function* () {
-    const f = yield* fixture;
-    yield* f.connect;
-    const host = yield* f.host;
-    const ready = yield* host.ensureAgentReady(() => Effect.void);
-    f.addressFailures.set("http://orion.test", "ECONNRESET");
-    yield* ready.remote!.close({ threadId: ThreadId.make("synthetic-thread") }).pipe(Effect.result);
-    f.addressFailures.clear();
-    f.setLegacyPeer();
-    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: false });
-    yield* host.stopAgent;
-    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: true });
-    const response = yield* Effect.promise(() =>
-      f.handler(
-        new Request("http://orion.test/api/device-share/agent/health", {
-          headers: { authorization: `Bearer ${ready.agentDevice!.token}` },
-        }),
-      ),
-    );
-    expect(response.status).toBe(401);
-  }).pipe(Effect.scoped),
-);
-
 it.effect(
   "requires identity verification for an older peer at an unverified alternative address",
   () =>
@@ -581,9 +537,9 @@ it.effect(
       f.addressFailures.set(config.url, "ECONNREFUSED");
       f.setLegacyPeer();
       yield* f.targetSettings.service.updateSettings({ enableDeviceSupport: false });
-      const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId, {
-        verifiedSavedUrl: config.url,
-      }).pipe(Effect.provideService(HttpClient.HttpClient, f.http));
+      const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId).pipe(
+        Effect.provideService(HttpClient.HttpClient, f.http),
+      );
       const result = yield* client
         .request({ operation: "revoke" }, Schema.Null)
         .pipe(Effect.result);
@@ -1130,7 +1086,7 @@ it.effect("tries alternate addresses before saving a grant and retains them acro
 );
 
 it.effect(
-  "switches an already open host, stream target, and agent target without a new grant",
+  "reads through another saved address after the current one stops answering, without a new grant",
   () =>
     Effect.gen(function* () {
       const f = yield* fixture;
@@ -1140,16 +1096,11 @@ it.effect(
         grant: f.grant,
       });
       const host = yield* f.host;
-      const ready = yield* host.ensureAgentReady(() => Effect.void);
-      const agentToken = ready.agentDevice.token;
+      const ready = yield* host.ensureReady(() => Effect.void);
       f.addressFailures.set("http://orion.test", "ECONNREFUSED");
       expect((yield* ready.remote!.list).devices).toHaveLength(1);
-      expect((yield* ready.hub.resolve!).origin).toBe(
-        "https://orion-alt.test/api/device-share/hub",
-      );
+      // New streams follow the selected address.
       expect(ready.hub.origin).toBe("https://orion-alt.test/api/device-share/hub");
-      expect(ready.agentDevice.baseUrl).toBe("https://orion-alt.test/api/device-share/agent");
-      expect(ready.agentDevice.token).toBe(agentToken);
       expect((yield* host.summary).connectedUrl).toBe("https://orion-alt.test");
       expect(f.grants).toHaveLength(1);
       yield* f.source.disconnect(host.id);
@@ -1221,68 +1172,6 @@ it.effect(
       });
       expect(f.peerRequests.filter((request) => request.operation === "close")).toHaveLength(1);
       expect(f.grants).toHaveLength(1);
-    }).pipe(Effect.scoped),
-);
-
-it.effect(
-  "forwards an agent through a stable source URL after address loss and denies ended access",
-  () =>
-    Effect.gen(function* () {
-      const f = yield* fixture;
-      yield* f.source.connect({
-        label: "Orion",
-        urls: ["http://orion.test", "https://orion-alt.test"],
-        grant: f.grant,
-      });
-      const host = yield* f.host;
-      const ready = yield* host.ensureAgentReady(() => Effect.void);
-      const sourceDevices = yield* DeviceService.makeWithHosts(new Map([[host.id, host]])).pipe(
-        Effect.provideService(
-          ServerSettingsService.ServerSettingsService,
-          f.sourceSettings.service,
-        ),
-        Effect.provideService(HttpClient.HttpClient, f.http),
-      );
-      const sharingLayer = DeviceSharing.layer.pipe(
-        Layer.provideMerge(
-          Layer.mergeAll(
-            Layer.succeed(DeviceService.DeviceService, sourceDevices),
-            Layer.succeed(ServerSettingsService.ServerSettingsService, f.sourceSettings.service),
-            Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
-            f.secrets.layer,
-            environmentLayer(sourceId),
-            Layer.succeed(HttpClient.HttpClient, f.http),
-          ),
-        ),
-      );
-      const web = HttpRouter.toWebHandler(
-        deviceSharingForwardAgentRouteLayer.pipe(
-          Layer.provideMerge(sharingLayer),
-          Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, f.http)),
-        ),
-        { disableLogger: true },
-      );
-      yield* Effect.addFinalizer(() => Effect.promise(web.dispose));
-      const url = `http://atlas.test/api/device-share/forward/${host.id}/agent/rpc`;
-      const send = (token: string) =>
-        Effect.promise(() =>
-          web.handler(
-            new Request(url, {
-              method: "POST",
-              headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-              body: encodeJson({ jsonrpc: "2.0", id: 1, method: "snapshot", params: { token } }),
-            }),
-          ),
-        );
-      f.addressFailures.set("http://orion.test", "ECONNREFUSED");
-      expect((yield* send(ready.agentDevice.token)).status).toBe(200);
-      expect(f.daemonRequests).toHaveLength(1);
-      expect(f.daemonRequests[0]?.headers.authorization).toBe("Bearer synthetic-daemon-token");
-      expect(f.daemonRequests[0]?.body).not.toContain(ready.agentDevice.token);
-      expect((yield* send("wrong-synthetic-token")).status).toBe(401);
-      yield* host.stopAgent;
-      expect((yield* send(ready.agentDevice.token)).status).toBe(401);
-      expect(f.daemonRequests).toHaveLength(1);
     }).pipe(Effect.scoped),
 );
 

@@ -12,7 +12,6 @@ import {
   type EnvironmentDeviceHostConfig,
   type DeviceHostSummary,
   ThreadId,
-  EnvironmentId,
 } from "@t3tools/contracts";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -55,13 +54,13 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
   config: EnvironmentDeviceHostConfig,
   token: string,
   sourceEnvironmentId: string,
-  options?: { readonly verifiedSavedUrl: string },
 ) {
   const http = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
   const urls = [
     ...new Set([config.url, ...(config.urls ?? [])].map((url) => url.replace(/\/+$/, ""))),
   ];
   let baseUrl = urls[0]!;
+  // Cleared when the address stops answering, so the next request selects again.
   let verified = false;
   const unavailable = (reason: string, httpStatus?: number) =>
     new DeviceHostUnavailableError({
@@ -86,25 +85,6 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
   const isTransportFailure = (cause: unknown) =>
     Cause.isTimeoutError(cause) ||
     (HttpClientError.isHttpClientError(cause) && cause.reason._tag === "TransportError");
-  const isEndpointFailure = (cause: unknown) =>
-    isTransportFailure(cause) ||
-    (isHostUnavailable(cause) &&
-      typeof cause.cause === "object" &&
-      cause.cause !== null &&
-      "httpStatus" in cause.cause &&
-      [502, 503, 504].includes(Number(cause.cause.httpStatus)));
-  // Only these failures establish that the command never reached the peer. A
-  // lost response or timeout may follow a completed action, so cannot replay it.
-  const failedBeforeSend = (cause: unknown): boolean => {
-    if (typeof cause !== "object" || cause === null) return false;
-    if (
-      "code" in cause &&
-      typeof cause.code === "string" &&
-      ["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "ENOTFOUND", "EAI_AGAIN"].includes(cause.code)
-    )
-      return true;
-    return "cause" in cause && failedBeforeSend(cause.cause);
-  };
   /** Restores a typed error from the device environment, pointed at this host entry. */
   const remoteError = (body: unknown) => {
     const error =
@@ -146,15 +126,15 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
       : Effect.fail(
           unavailable("This address belongs to a different environment. Reconnect device access."),
         );
+  // A short timeout keeps a silent address from delaying the next one.
   const inspectAt = (url: string) =>
     send(url, { operation: "inspect" }, DeviceEnvironmentInfo, "3 seconds").pipe(
       Effect.flatMap(checkIdentity),
     );
+  // Cleanup must reach the peer while device access is off, when it denies inspect.
+  // Older peers reject identify, so they are checked with inspect instead.
   const identifyAt = (url: string) =>
     send(url, { operation: "identify" }, DeviceEnvironmentIdentity, "3 seconds").pipe(
-      // Older peers authenticate before rejecting identify. Only their saved,
-      // previously verified address can use that grant for cleanup without inspect,
-      // which they deny while device access is off. Alternatives still need both IDs.
       Effect.catchIf(
         (cause) =>
           isHostUnavailable(cause) &&
@@ -162,26 +142,16 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
           cause.cause !== null &&
           "httpStatus" in cause.cause &&
           cause.cause.httpStatus === 400,
-        () =>
-          url === options?.verifiedSavedUrl.replace(/\/+$/, "")
-            ? Effect.succeed({
-                environmentId: config.environmentId,
-                sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
-              })
-            : inspectAt(url),
+        () => inspectAt(url),
       ),
       Effect.flatMap(checkIdentity),
     );
+  /** Uses the first address, starting with the current one, where both identities match. */
   const select = Effect.fn("EnvironmentDeviceHost.selectAddress")(function* <A, E>(
     probe: (url: string) => Effect.Effect<A, E>,
-    skip?: string,
   ) {
-    let failure: DeviceError = unavailable(
-      "No other shared address could reach the device environment.",
-    );
-    for (const url of [baseUrl, ...urls.filter((url) => url !== baseUrl)].filter(
-      (url) => url !== skip,
-    )) {
+    let failure: DeviceError = unavailable("No shared address could reach the device environment.");
+    for (const url of [baseUrl, ...urls.filter((url) => url !== baseUrl)]) {
       const result = yield* probe(url).pipe(Effect.result);
       if (result._tag === "Success") {
         baseUrl = url;
@@ -196,47 +166,38 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
       );
     return yield* failure;
   });
+  // Reads and cleanup are safe to repeat, so they try another address once after a
+  // transport failure. Other commands are only reported: the peer may have run one
+  // before its response was lost.
   const request = <A, I>(
     command: DevicePeerCommand,
     schema: Schema.Codec<A, I>,
-  ): Effect.Effect<A, DeviceError> =>
-    Effect.gen(function* () {
-      const probe = ["stop-agent", "release", "revoke"].includes(command.operation)
-        ? identifyAt
-        : inspectAt;
-      if (!verified) yield* select(probe);
-      const attempted = baseUrl;
-      return yield* send(attempted, command, schema).pipe(
-        Effect.catch((cause) =>
-          Effect.gen(function* () {
-            if (!isEndpointFailure(cause)) return yield* Effect.fail(cause);
-            verified = false;
-            if (
-              urls.length === 1 ||
-              (!failedBeforeSend(cause) &&
-                !["inspect", "list", "detail", "screenshot"].includes(command.operation))
-            )
-              return yield* Effect.fail(cause);
-            yield* select(probe, attempted);
-            return yield* send(baseUrl, command, schema);
+  ): Effect.Effect<A, DeviceError> => {
+    const cleanup = ["stop-agent", "release", "revoke"].includes(command.operation);
+    const attempt = Effect.gen(function* () {
+      if (!verified) yield* select(cleanup ? identifyAt : inspectAt);
+      return yield* send(baseUrl, command, schema).pipe(
+        Effect.tapError((cause) =>
+          Effect.sync(() => {
+            if (isTransportFailure(cause)) verified = false;
           }),
         ),
       );
-    }).pipe(Effect.mapError(mapError));
+    });
+    const repeatable =
+      cleanup || ["inspect", "list", "detail", "screenshot"].includes(command.operation);
+    return (
+      repeatable && urls.length > 1
+        ? attempt.pipe(Effect.retry({ times: 1, while: isTransportFailure }))
+        : attempt
+    ).pipe(Effect.mapError(mapError));
+  };
   const info = (operation: "inspect" | "list") =>
-    operation === "inspect"
-      ? Effect.suspend(() =>
-          verified
-            ? inspectAt(baseUrl).pipe(
-                Effect.catch((cause) => {
-                  verified = false;
-                  if (urls.length === 1) return Effect.fail(mapError(cause));
-                  return select(inspectAt, baseUrl);
-                }),
-              )
-            : select(inspectAt),
-        )
-      : request({ operation }, DeviceEnvironmentInfo).pipe(Effect.flatMap(checkIdentity));
+    Effect.suspend(() =>
+      operation === "inspect" && !verified
+        ? select(inspectAt)
+        : request({ operation }, DeviceEnvironmentInfo).pipe(Effect.flatMap(checkIdentity)),
+    );
   return {
     request,
     info,
@@ -266,7 +227,7 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
     ),
   );
   const token = Option.isSome(stored) ? new TextDecoder().decode(stored.value) : "";
-  const client = yield* makeClient(config, token, sourceId, { verifiedSavedUrl: config.url });
+  const client = yield* makeClient(config, token, sourceId);
   let summary: DeviceHostSummary = {
     id: config.id,
     label: config.label,
@@ -281,7 +242,6 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
       id: config.id,
       label: config.label,
       kind: "environment",
-      connectedUrl: client.baseUrl,
     };
     const prefix = devicePeerThreadPrefix(sourceId);
     return {
@@ -324,12 +284,6 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
         return `${client.baseUrl}/api/device-share/hub`;
       },
       headers: { authorization: `Bearer ${token}` },
-      resolve: client.info("inspect").pipe(
-        Effect.map(() => ({
-          origin: `${client.baseUrl}/api/device-share/hub`,
-          headers: { authorization: `Bearer ${token}` },
-        })),
-      ),
     },
     helpers: { serveSimAxSettings: null, serveSimCli: null },
     run: () => Effect.die(new Error("Environment device hosts use typed device operations.")),
@@ -337,7 +291,6 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   // Like the SSH host, a confirmed connection stays ready until stopped. Remote
   // operations report their own failures, so readiness does not re-check the peer.
   let current: DeviceHost.DeviceHostReady | null = null;
-  let agentEndpoint: DeviceHost.AgentDeviceEndpoint | null = null;
   const hostError = (cause: unknown) =>
     new DeviceHost.DeviceHostError({ hostId: config.id, step: "connecting to environment", cause });
   // Readiness calls run without the device lifecycle lock, so one can finish after
@@ -359,7 +312,6 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   const stopRemote = (operation: "stop-agent" | "release") =>
     Effect.gen(function* () {
       generation += 1;
-      agentEndpoint = null;
       yield* cancelPendingStop;
       const attempt = client.request({ operation }, Schema.Null);
       const exit = yield* attempt.pipe(Effect.timeout("5 seconds"), Effect.exit);
@@ -432,23 +384,19 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
           Effect.tap(() => stale(started).pipe(Effect.tapError(() => stopAgent))),
           Effect.map((agent) => {
             current = ready;
-            agentEndpoint = {
-              get baseUrl() {
-                return `${client.baseUrl}/api/device-share/agent`;
-              },
-              token: agent.token,
-              entryPath: "",
-            };
             return {
               ...ready,
-              agentDevice: agentEndpoint,
+              agentDevice: {
+                baseUrl: `${client.baseUrl}/api/device-share/agent`,
+                token: agent.token,
+                entryPath: "",
+              },
             };
           }),
           Effect.mapError(hostError),
         );
       }),
     current: Effect.sync(() => current),
-    currentAgent: Effect.sync(() => agentEndpoint),
     // Drops the agent credential on the device environment. The agent-device config
     // keeps the old token, but the proxy no longer accepts it.
     stopAgent,

@@ -68,13 +68,6 @@ export class DeviceSharing extends Context.Service<
       { origin: string; headers: Readonly<Record<string, string>> } | null,
       DeviceError
     >;
-    readonly forwardAgentTarget: (
-      hostId: DeviceHostId,
-      token: string,
-    ) => Effect.Effect<
-      { origin: string; headers: Readonly<Record<string, string>> } | null,
-      DeviceError
-    >;
     readonly command: (
       session: Pick<EnvironmentAuth.AuthenticatedSession, "subject" | "sessionId">,
       input: DevicePeerCommand,
@@ -145,33 +138,15 @@ const make = Effect.gen(function* () {
       input.grant.environmentId === environmentId
     )
       return yield* unavailable("Device access was issued for another environment.", hostId);
-    const urls = yield* Effect.try({
-      try: () => [
-        ...new Set(
-          input.urls.map((value) => {
-            const url = new URL(value);
-            if (
-              !["http:", "https:"].includes(url.protocol) ||
-              url.username ||
-              url.password ||
-              url.search ||
-              url.hash
-            )
-              throw new Error("Invalid device environment address.");
-            return url.toString().replace(/\/+$/, "");
-          }),
-        ),
-      ],
-      catch: () => unavailable("Invalid device environment address.", hostId),
-    });
-    if (!urls[0])
-      return yield* unavailable("No device environment addresses are available.", hostId);
+    // The input schema has already validated each address.
+    const [first, ...rest] = [...new Set(input.urls.map((url) => url.replace(/\/+$/, "")))];
+    if (!first) return yield* unavailable("No device environment addresses are available.", hostId);
     const host = {
       id: hostId,
       label: input.label,
       environmentId: input.grant.environmentId,
-      url: urls[0],
-      urls: [urls[0], ...urls.slice(1)] as const,
+      url: first,
+      urls: [first, ...rest] as const,
       sessionId: input.grant.sessionId,
     };
     const client = yield* makeClient(host, input.grant.token, environmentId).pipe(
@@ -213,7 +188,6 @@ const make = Effect.gen(function* () {
         previous,
         new TextDecoder().decode(previousToken.value),
         environmentId,
-        { verifiedSavedUrl: previous.url },
       ).pipe(Effect.provideService(HttpClient.HttpClient, http));
       yield* oldClient
         .request({ operation: "revoke" }, Schema.Null)
@@ -233,7 +207,6 @@ const make = Effect.gen(function* () {
         host,
         new TextDecoder().decode(stored.value),
         environmentId,
-        { verifiedSavedUrl: host.url },
       ).pipe(Effect.provideService(HttpClient.HttpClient, http));
       yield* client.request({ operation: "revoke" }, Schema.Null).pipe(
         Effect.timeout("10 seconds"),
@@ -385,24 +358,6 @@ const make = Effect.gen(function* () {
       },
     };
   });
-  const forwardAgentTarget = Effect.fn("DeviceSharing.forwardAgentTarget")(function* (
-    hostId: DeviceHostId,
-    token: string,
-  ) {
-    if (!hostId.startsWith("environment-")) return null;
-    const endpoint = yield* devices.currentAgentEndpoint(hostId);
-    if (!endpoint || !sameToken(endpoint.token, token)) return null;
-    yield* requireAccess;
-    const ready = yield* devices.currentReadiness(hostId);
-    if (!ready?.hub.resolve) return null;
-    yield* ready.hub.resolve;
-    const current = yield* devices.currentAgentEndpoint(hostId);
-    if (!current || !sameToken(current.token, token)) return null;
-    return {
-      origin: current.baseUrl,
-      headers: { authorization: `Bearer ${token}`, "x-agent-device-token": token },
-    };
-  });
   return DeviceSharing.of({
     createGrant,
     revokeGrant,
@@ -411,7 +366,6 @@ const make = Effect.gen(function* () {
     command,
     hubTarget,
     agentTarget,
-    forwardAgentTarget,
   });
 });
 

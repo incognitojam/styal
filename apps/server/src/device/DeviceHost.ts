@@ -43,8 +43,6 @@ export interface DeviceHubEndpoint {
   /** Origin of expo-device-hub or an authenticated environment proxy. */
   readonly origin: string;
   readonly headers?: Readonly<Record<string, string>>;
-  /** Environment hosts verify a reachable address before a new stream attaches. */
-  readonly resolve?: Effect.Effect<DeviceHubEndpoint, DeviceError>;
 }
 
 export interface AgentDeviceEndpoint {
@@ -112,7 +110,7 @@ export class DeviceHost extends Context.Service<
     >;
     /** Current endpoints when already running, without starting anything. */
     readonly current: Effect.Effect<DeviceHostReady | null>;
-    /** The running agent-device endpoint, without starting anything. */
+    /** The running agent-device endpoint, without starting anything. Local hosts only. */
     readonly currentAgent?: Effect.Effect<AgentDeviceEndpoint | null>;
     /** Stops only agent-device. Manual viewing through the hub stays available. */
     readonly stopAgent: Effect.Effect<void>;

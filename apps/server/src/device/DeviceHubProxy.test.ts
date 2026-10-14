@@ -11,7 +11,6 @@ import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse, HttpRouter } from "effect/unstable/http";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as DeviceService from "./DeviceService.ts";
-import type * as DeviceHost from "./DeviceHost.ts";
 import { deviceHubProxyRouteLayer } from "./DeviceHubProxy.ts";
 
 const disposers: Array<() => Promise<void>> = [];
@@ -23,7 +22,6 @@ const fixture = (
   scopes: ReadonlyArray<AuthEnvironmentScope>,
   fail = false,
   authError?: EnvironmentAuth.ServerAuthCredentialError | EnvironmentAuth.ServerAuthInternalError,
-  hub: DeviceHost.DeviceHubEndpoint = { origin: "http://hub.test" },
 ) => {
   let finalized = 0;
   const requests: string[] = [];
@@ -54,7 +52,8 @@ const fixture = (
       ),
       Layer.provideMerge(
         Layer.succeed(DeviceService.DeviceService, {
-          currentReadiness: () => Effect.succeed({ hostId: LOCAL_DEVICE_HOST_ID, hub }),
+          currentReadiness: () =>
+            Effect.succeed({ hostId: LOCAL_DEVICE_HOST_ID, hub: { origin: "http://hub.test" } }),
         } as DeviceService.DeviceService["Service"]),
       ),
       Layer.provideMerge(Layer.succeed(HttpClient.HttpClient, client)),
@@ -66,25 +65,6 @@ const fixture = (
 };
 
 describe("device hub proxy", () => {
-  it("attaches a new stream to the resolved address instead of the unavailable saved address", async () => {
-    const { handler, requests } = fixture([AuthOrchestrationReadScope], false, undefined, {
-      origin: "http://unreachable.test",
-      resolve: Effect.succeed({
-        origin: "https://available.test/api/device-share/hub",
-        headers: { authorization: "Bearer synthetic-peer-token" },
-      }),
-    });
-    const response = await handler(
-      new Request(
-        "http://t3.test/api/device-hub/vendor/serve-sim/helper/synthetic-device/stream.avcc?hostId=synthetic-host",
-      ),
-    );
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe("frame");
-    expect(requests).toEqual([
-      "https://available.test/api/device-share/hub/vendor/serve-sim/helper/synthetic-device/stream.avcc",
-    ]);
-  });
   it("releases the upstream response after forwarding its body and strips tickets", async () => {
     const { handler, requests, finalized } = fixture([AuthOrchestrationReadScope]);
     const response = await handler(
