@@ -32,6 +32,10 @@ export interface PullRequestWatchReport {
 // "action-required" is a finished check that needs someone, so the agent hears about it.
 const isFailedCheck = (check: PullRequestCheck) =>
   check.status === "failure" || check.status === "cancelled" || check.status === "action-required";
+// Named outright: an "expected" row is a required check that has not reported yet, so neither it
+// nor any status added later can count as passed by default.
+const isPassedCheck = (check: PullRequestCheck) =>
+  check.status === "success" || check.status === "skipped" || check.status === "neutral";
 
 /**
  * Compares a watched pull request with what its agent was last told. Each check is reported as
@@ -62,7 +66,7 @@ export function evaluatePullRequestWatch(
 
     const required = detail.checks.filter((check) => check.required === true);
     const gate = required.length > 0 ? required : detail.checks;
-    const passedNow = gate.every((check) => check.status !== "pending" && !isFailedCheck(check));
+    const passedNow = gate.every(isPassedCheck);
     if (passedNow && !passed) {
       changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
     }
