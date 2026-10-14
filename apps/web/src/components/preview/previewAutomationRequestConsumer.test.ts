@@ -1,12 +1,13 @@
 import {
   EnvironmentId,
   type PreviewAutomationRequest,
-  type PreviewAutomationResponse,
+  PreviewAutomationResponse,
   type PreviewAutomationStreamEvent,
   PreviewTabId,
   ThreadId,
 } from "@t3tools/contracts";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
+import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -348,6 +349,81 @@ describe("previewAutomationRequestConsumer", () => {
       },
     });
     expect(JSON.stringify(response)).not.toContain("preview-secret");
+  });
+
+  it.each([
+    [new TypeError("private page content: synthetic-secret"), "TypeError"],
+    [
+      new Error("IPC wrapper", {
+        cause: new Error(
+          "net::ERR_CONNECTION_REFUSED at https://example.test/?token=synthetic-secret",
+        ),
+      }),
+      "ERR_CONNECTION_REFUSED",
+    ],
+    [new Error("Error invoking remote method: SyntaxError: synthetic-secret"), "SyntaxError"],
+    [new Error("Execution context was destroyed: synthetic-secret"), "ExecutionContextDestroyed"],
+    [
+      new Error("Target page, context or browser has been closed: synthetic-secret"),
+      "TargetClosedError",
+    ],
+  ])("retains an allowlisted diagnostic without the original cause: %s", (cause, reason) => {
+    const response = serializePreviewAutomationError(cause, {
+      requestId: "request-diagnostic",
+      operation: "navigate",
+      environmentId,
+      threadId,
+      tabId,
+    });
+    expect(response.failureReason).toBe(reason);
+    expect(response).not.toHaveProperty("cause");
+    expect(response).not.toHaveProperty("stack");
+    expect(JSON.stringify(response)).not.toContain("synthetic-secret");
+    expect(JSON.stringify(response)).not.toContain("example.test");
+  });
+
+  it("ignores unrecognized codes, cyclic causes, and throwing diagnostic getters", () => {
+    const cyclic = Object.assign(new Error("synthetic-secret"), {
+      code: "CUSTOM_SYNTHETIC_SECRET",
+    });
+    Object.defineProperty(cyclic, "cause", { value: cyclic });
+    const throwing = Object.defineProperty({}, "message", {
+      get: () => {
+        throw new Error("synthetic-secret");
+      },
+    });
+    for (const cause of [cyclic, throwing, new Error("net::ERR_SYNTHETIC_SECRET")]) {
+      const response = serializePreviewAutomationError(cause, {
+        requestId: "request-private",
+        operation: "evaluate",
+        environmentId,
+        threadId,
+        tabId,
+      });
+      expect(response).not.toHaveProperty("failureReason");
+      expect(JSON.stringify(response)).not.toContain("synthetic-secret");
+    }
+  });
+
+  it("accepts legacy responses and rejects arbitrary diagnostic text on the wire", () => {
+    const response = {
+      clientId,
+      connectionId,
+      requestId: "request-wire",
+      ok: false,
+      error: { _tag: "PreviewAutomationExecutionError", message: "Preview navigation failed." },
+    };
+    const valid = Schema.is(PreviewAutomationResponse);
+    expect(valid(response)).toBe(true);
+    expect(
+      valid({ ...response, error: { ...response.error, failureReason: "ERR_CONNECTION_REFUSED" } }),
+    ).toBe(true);
+    expect(
+      valid({
+        ...response,
+        error: { ...response.error, failureReason: "private page content: synthetic-secret" },
+      }),
+    ).toBe(false);
   });
 
   it("sanitizes unexpected handler failures at the response boundary", async () => {

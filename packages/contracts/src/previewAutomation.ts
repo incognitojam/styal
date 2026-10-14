@@ -631,6 +631,43 @@ export const PreviewAutomationStreamEvent = Schema.Union([
 ]);
 export type PreviewAutomationStreamEvent = typeof PreviewAutomationStreamEvent.Type;
 
+/** Fixed diagnostics that can cross the browser boundary without page or request content. */
+export const PreviewAutomationFailureReason = Schema.Literals([
+  "TypeError",
+  "ReferenceError",
+  "SyntaxError",
+  "RangeError",
+  "EvalError",
+  "URIError",
+  "SecurityError",
+  "NotAllowedError",
+  "NotSupportedError",
+  "InvalidStateError",
+  "DataCloneError",
+  "NetworkError",
+  "AbortError",
+  "TimeoutError",
+  "TargetClosedError",
+  "ExecutionContextDestroyed",
+  "ERR_ABORTED",
+  "ERR_FAILED",
+  "ERR_INVALID_URL",
+  "ERR_UNSAFE_PORT",
+  "ERR_BLOCKED_BY_CLIENT",
+  "ERR_NAME_NOT_RESOLVED",
+  "ERR_CONNECTION_REFUSED",
+  "ERR_CONNECTION_RESET",
+  "ERR_CONNECTION_CLOSED",
+  "ERR_CONNECTION_TIMED_OUT",
+  "ERR_TIMED_OUT",
+  "ERR_INTERNET_DISCONNECTED",
+  "ERR_CERT_AUTHORITY_INVALID",
+  "ERR_CERT_DATE_INVALID",
+  "ERR_CERT_COMMON_NAME_INVALID",
+  "ERR_SSL_PROTOCOL_ERROR",
+]);
+export type PreviewAutomationFailureReason = typeof PreviewAutomationFailureReason.Type;
+
 export const PreviewAutomationResponse = Schema.Struct({
   clientId: PreviewAutomationClientId,
   connectionId: PreviewAutomationConnectionId,
@@ -641,6 +678,7 @@ export const PreviewAutomationResponse = Schema.Struct({
     Schema.Struct({
       _tag: TrimmedNonEmptyString,
       message: Schema.String,
+      failureReason: Schema.optional(PreviewAutomationFailureReason),
       detail: Schema.optional(Schema.Unknown),
     }),
   ),
@@ -698,6 +736,7 @@ const PreviewAutomationRequestErrorFields = {
 };
 
 const PreviewAutomationRemoteDiagnosticFields = {
+  failureReason: Schema.optional(PreviewAutomationFailureReason),
   remoteTag: TrimmedNonEmptyString,
   remoteMessageLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   remoteDetailKind: Schema.optional(
@@ -707,6 +746,7 @@ const PreviewAutomationRemoteDiagnosticFields = {
 };
 
 const PreviewAutomationOptionalRemoteDiagnosticFields = {
+  failureReason: Schema.optional(PreviewAutomationFailureReason),
   remoteTag: Schema.optional(TrimmedNonEmptyString),
   remoteMessageLength: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   remoteDetailKind: Schema.optional(
@@ -791,7 +831,8 @@ export class PreviewAutomationExecutionError extends Schema.TaggedError<PreviewA
   },
 ) {
   override get message(): string {
-    return `Preview automation ${this.operation} failed on client ${this.clientId}.`;
+    const reason = this.failureReason === undefined ? "" : ` (${this.failureReason})`;
+    return `Preview automation ${this.operation} failed${reason} on client ${this.clientId}.`;
   }
 }
 

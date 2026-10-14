@@ -202,6 +202,7 @@ const classifyResponseError = (
   error: NonNullable<PreviewAutomationResponse["error"]>,
 ): PreviewAutomationError => {
   const remoteDiagnostics = {
+    ...(error.failureReason === undefined ? {} : { failureReason: error.failureReason }),
     remoteTag: error._tag,
     remoteMessageLength: error.message.length,
     ...(error.detail === undefined ? {} : { remoteDetailKind: remoteDetailKind(error.detail) }),

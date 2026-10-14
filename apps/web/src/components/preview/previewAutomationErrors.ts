@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  PreviewAutomationFailureReason,
   type PreviewAutomationHost,
   PreviewAutomationOperation,
   PreviewAutomationRecordingTransferError,
@@ -226,6 +227,42 @@ export type PreviewAutomationHostError = typeof PreviewAutomationHostError.Type;
 
 const isPreviewAutomationHostError = Schema.is(PreviewAutomationHostError);
 
+const isFailureReason = Schema.is(PreviewAutomationFailureReason);
+
+function errorField(error: unknown, key: string): unknown {
+  try {
+    return typeof error === "object" && error !== null ? Reflect.get(error, key) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Inspect wrapped errors locally; only an allowlisted code leaves this boundary. */
+function failureReason(error: unknown): PreviewAutomationFailureReason | undefined {
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 5 && error !== undefined && !seen.has(error); depth += 1) {
+    seen.add(error);
+    const code = errorField(error, "code");
+    if (isFailureReason(code)) return code;
+    const message = errorField(error, "message");
+    if (typeof message === "string") {
+      // Electron IPC can flatten the original Error into its wrapper message.
+      const text = message.slice(0, 4_096);
+      const network = /\bnet::(ERR_[A-Z_]+)\b/.exec(text)?.[1];
+      if (isFailureReason(network)) return network;
+      if (text.includes("Execution context was destroyed")) return "ExecutionContextDestroyed";
+      if (text.includes("Target page, context or browser has been closed"))
+        return "TargetClosedError";
+      const builtIn = /\b((?:Type|Reference|Syntax|Range|Eval|URI)Error):/.exec(text)?.[1];
+      if (isFailureReason(builtIn)) return builtIn;
+    }
+    const name = errorField(error, "name");
+    if (isFailureReason(name)) return name;
+    error = errorField(error, "cause");
+  }
+  return undefined;
+}
+
 export function serializePreviewAutomationHostError(
   error: PreviewAutomationHostError,
 ): NonNullable<PreviewAutomationResponse["error"]> {
@@ -235,9 +272,11 @@ export function serializePreviewAutomationHostError(
         key !== "_tag" && key !== "cause" && key !== "name" && key !== "message" && key !== "stack",
     ),
   );
+  const reason = failureReason(error);
   return {
     _tag: "responseTag" in error ? error.responseTag : error._tag,
     message: error.message,
+    ...(reason === undefined ? {} : { failureReason: reason }),
     ...(Object.keys(detail).length === 0 ? {} : { detail }),
   };
 }
