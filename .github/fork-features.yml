@@ -1072,7 +1072,7 @@ features:
   - id: device-panel-tabs
     title: Keep a panel tab for every live device
     status: maintained
-    prs: []
+    prs: [830]
     invariants:
       - Every device session on the thread has a right-panel tab, including devices that float over chat and devices opened while the thread was not shown; adding the tab does not open the panel or change its active tab.
       - A device tab the user closed stays closed until the user opens that device again.
