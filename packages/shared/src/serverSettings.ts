@@ -118,21 +118,29 @@ const TEXT_GENERATION_EFFORT_OPTION_BY_DRIVER: Readonly<Record<string, string>> 
  * The text generation selection to run, decided from provider status before any
  * call is made. Keeps the selection while its provider is usable; otherwise picks
  * the first usable provider, Claude then Codex then the rest, with that
- * provider's text generation default.
+ * provider's text generation default. The server excludes instances already
+ * tried after rate-limit failures; when none remain, returns the saved selection.
  */
 export function resolveTextGenerationModelSelection(
   settings: Pick<ServerSettings, "textGenerationModelSelection">,
   providers: ReadonlyArray<ServerProvider>,
+  excludedInstanceIds: ReadonlySet<string> = new Set(),
 ): ModelSelection {
   const selection = settings.textGenerationModelSelection;
   const selected = providers.find((provider) => provider.instanceId === selection.instanceId);
-  if (!selected || canProviderGenerateText(selected)) {
+  if (
+    !excludedInstanceIds.has(selection.instanceId) &&
+    (!selected || canProviderGenerateText(selected))
+  ) {
     return selection;
   }
 
   // `.sort()` on a copy, not `.toSorted()`: mobile runs this on Hermes.
   const candidates = providers
-    .filter(canProviderGenerateText)
+    .filter(
+      (provider) =>
+        !excludedInstanceIds.has(provider.instanceId) && canProviderGenerateText(provider),
+    )
     .sort((a, b) => textGenerationPreferenceRank(a) - textGenerationPreferenceRank(b));
   for (const provider of candidates) {
     const model =

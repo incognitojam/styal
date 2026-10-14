@@ -3,6 +3,41 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
+const RATE_LIMIT_MESSAGE =
+  /\b(?:rate[ _-]?limit(?:ed|ing|exceeded|_exceeded)?|usage[ _-]?limit(?:exceeded|_exceeded)?|too many requests|hit your limit|insufficient_quota|quota[ _-]exceeded|resource_exhausted)\b/i;
+
+/** Inspect error fields, excluding validation inputs and Codex's echoed prompt. */
+export function isTextGenerationRateLimitError(error: TextGenerationError): boolean {
+  const pending: unknown[] = [error];
+  const seen = new Set<object>();
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (typeof value === "string") {
+      const prefix = "Codex CLI command failed:";
+      const offset = value.indexOf(prefix);
+      const detail =
+        offset === -1
+          ? value
+          : (value
+              .slice(offset + prefix.length)
+              .split("\n")
+              .findLast((line) => line.trimStart().startsWith("ERROR:")) ?? "");
+      if (RATE_LIMIT_MESSAGE.test(detail)) return true;
+    } else if (value !== null && typeof value === "object" && !seen.has(value)) {
+      seen.add(value);
+      const field = (key: string): unknown => Reflect.get(value, key);
+      if (field("_tag") === "SchemaError") continue;
+      if (
+        ["status", "statusCode", "code"]
+          .map(field)
+          .some((status) => status === 429 || status === "429")
+      )
+        return true;
+      pending.push(...["detail", "message", "errorMessage", "code", "data", "cause"].map(field));
+    }
+  }
+  return false;
+}
 const decodeJsonThreadTitle = Schema.decodeOption(
   Schema.fromJsonString(Schema.Struct({ title: Schema.String })),
 );

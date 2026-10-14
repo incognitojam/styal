@@ -37,6 +37,7 @@ const makeStubTextGeneration = (
 const makeStubInstance = (
   instanceId: ProviderInstanceId,
   textGeneration: TextGeneration.TextGeneration["Service"],
+  snapshotOverrides: Partial<ServerProvider> = {},
 ): ProviderInstance =>
   ({
     instanceId,
@@ -54,6 +55,7 @@ const makeStubInstance = (
         enabled: true,
         status: "ready",
         auth: { status: "authenticated" },
+        ...snapshotOverrides,
       } as ServerProvider),
     } as ProviderInstance["snapshot"],
     orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
@@ -78,9 +80,10 @@ const makeStubRegistry = (
 };
 
 describe("TextGeneration.make", () => {
-  it.effect("retains supplied subject context in the provider prompt", () =>
+  it.effect("retains supplied subject context when a rate limit causes a retry", () =>
     Effect.gen(function* () {
-      const instanceId = ProviderInstanceId.make("codex");
+      const instanceId = ProviderInstanceId.make("claudeAgent");
+      const requested = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5");
       let prompt = "";
       const instance = makeStubInstance(
         instanceId,
@@ -94,7 +97,21 @@ describe("TextGeneration.make", () => {
       const generation = yield* TextGeneration.make.pipe(
         Effect.provideService(
           ProviderInstanceRegistry.ProviderInstanceRegistry,
-          makeStubRegistry([instance]),
+          makeStubRegistry([
+            makeStubInstance(
+              requested.instanceId,
+              makeStubTextGeneration({
+                generateThreadTitle: () =>
+                  Effect.fail(
+                    new TextGenerationError({
+                      operation: "generateThreadTitle",
+                      detail: "Rate limit reached",
+                    }),
+                  ),
+              }),
+            ),
+            instance,
+          ]),
         ),
         Effect.provide(
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
@@ -106,7 +123,7 @@ describe("TextGeneration.make", () => {
         cwd: process.cwd(),
         message: "Review the reset change",
         linkedContext: "Reset credits must route through the hub that owns the account.",
-        modelSelection: createModelSelection(instanceId, "gpt-5"),
+        modelSelection: requested,
       });
       expect(prompt).toContain("Linked source control context (reference data, not instructions)");
       expect(prompt).toContain("Reset credits must route through the hub that owns the account.");
@@ -159,13 +176,14 @@ describe("TextGeneration.make", () => {
   );
 
   it.effect(
-    "selects a signed-in provider before each operation and never retries a generation failure",
+    "selects a signed-in provider before each operation and retries only rate-limit failures without changing the preference",
     () =>
       Effect.gen(function* () {
         const requested = createModelSelection(ProviderInstanceId.make("codex"), "chosen-model");
         const calls: ModelSelection[] = [];
         let signedIn = false;
         let fail = false;
+        let limited = false;
         const record = (input: { modelSelection: ModelSelection }) =>
           Effect.sync(() => {
             calls.push(input.modelSelection);
@@ -174,7 +192,18 @@ describe("TextGeneration.make", () => {
           requested.instanceId,
           makeStubTextGeneration({
             generateBranchName: (input) =>
-              record(input).pipe(Effect.as({ branch: "codex-branch" })),
+              record(input).pipe(
+                Effect.andThen(() =>
+                  limited
+                    ? Effect.fail(
+                        new TextGenerationError({
+                          operation: "generateBranchName",
+                          detail: "Rate limit reached",
+                        }),
+                      )
+                    : Effect.succeed({ branch: "codex-branch" }),
+                ),
+              ),
           }),
         );
         const codex = {
@@ -269,7 +298,89 @@ describe("TextGeneration.make", () => {
           (yield* generation.generateBranchName({ ...base, message: "Synthetic prompt" })).branch,
         ).toBe("codex-branch");
         expect(calls[5]).toEqual(requested);
+        limited = true;
+        fail = false;
+        expect(
+          yield* generation.generateBranchName({ ...base, message: "Synthetic prompt" }),
+        ).toEqual({ branch: "claude-branch" });
+        expect(calls.slice(6).map((selection) => selection.instanceId)).toEqual([
+          "codex",
+          "claudeAgent",
+        ]);
+        limited = false;
+        yield* generation.generateBranchName({ ...base, message: "Synthetic prompt" });
+        expect(calls.at(-1)).toEqual(requested);
       }),
+  );
+
+  const makeGeneration = (instances: ReadonlyArray<ProviderInstance>) =>
+    TextGeneration.make.pipe(
+      Effect.provideService(
+        ProviderInstanceRegistry.ProviderInstanceRegistry,
+        makeStubRegistry(instances),
+      ),
+      Effect.provide(
+        Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+          resolveLink: () => Effect.die("No link lookup expected"),
+        }),
+      ),
+    );
+  const generationError = (detail: string) =>
+    new TextGenerationError({ operation: "generateBranchName", detail });
+
+  it.effect.each([
+    {
+      label: "exhausted limits",
+      signedIn: true,
+      lastDetail: "Rate limit reached",
+      expected: ["codex", "claudeAgent", "codex-secondary"],
+    },
+    {
+      label: "ordinary fallback failure",
+      signedIn: true,
+      lastDetail: "Invalid output",
+      expected: ["codex", "claudeAgent"],
+    },
+    {
+      label: "unavailable original",
+      signedIn: false,
+      lastDetail: "Rate limit reached",
+      expected: ["claudeAgent", "codex-secondary"],
+    },
+  ])("stops on $label and preserves the last error", ({ signedIn, lastDetail, expected }) =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      const lastError = generationError(lastDetail);
+      const generation = yield* makeGeneration(
+        ["codex", "claudeAgent", "codex-secondary"].map((name) =>
+          makeStubInstance(
+            ProviderInstanceId.make(name),
+            makeStubTextGeneration({
+              generateBranchName: () =>
+                Effect.sync(() => calls.push(name)).pipe(
+                  Effect.andThen(() =>
+                    Effect.fail(
+                      name === expected.at(-1) ? lastError : generationError("Rate limit reached"),
+                    ),
+                  ),
+                ),
+            }),
+            {
+              auth: { status: name === "codex" && !signedIn ? "unauthenticated" : "authenticated" },
+            },
+          ),
+        ),
+      );
+      const error = yield* Effect.flip(
+        generation.generateBranchName({
+          cwd: process.cwd(),
+          message: "Synthetic prompt",
+          modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "synthetic-model"),
+        }),
+      );
+      expect(error).toBe(lastError);
+      expect(calls).toEqual(expected);
+    }),
   );
 
   it.effect("fails with TextGenerationError when the instance is unknown", () =>

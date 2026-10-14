@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { createModelSelection } from "@t3tools/shared/model";
 import { beforeEach, vi } from "vite-plus/test";
 
+import { isTextGenerationRateLimitError } from "./TextGenerationUtils.ts";
 import { makeCursorTextGeneration } from "./CursorTextGeneration.ts";
 
 const cursorSdkMock = vi.hoisted(() => ({
@@ -260,6 +261,7 @@ describe("CursorTextGeneration", () => {
         const promptResult = {
           id: "run-cursor-partial-title-test",
           status,
+          error: { message: "Rate limit reached", code: "rate_limit" },
           result: '{"title":"Partial title from a failed run."}',
         } satisfies RunResult;
         cursorSdkMock.prompt.mockResolvedValueOnce(promptResult);
@@ -283,6 +285,7 @@ describe("CursorTextGeneration", () => {
             ? "Cursor SDK request was cancelled."
             : "Cursor SDK request finished with an error.",
         );
+        expect(isTextGenerationRateLimitError(failure)).toBe(status === "error");
         expect(cursorSdkMock.close).toHaveBeenCalledOnce();
       }).pipe(Effect.provide(fsLayer)),
   );

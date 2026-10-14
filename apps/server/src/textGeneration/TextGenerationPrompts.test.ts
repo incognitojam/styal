@@ -7,6 +7,7 @@ import {
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
+  isTextGenerationRateLimitError,
   normalizeCliError,
   sanitizeThreadTitle,
   toJsonSchemaObject,
@@ -362,4 +363,24 @@ describe("normalizeCliError", () => {
     expect(result.detail).toBe("Failed to generate a commit message");
     expect(result.message).not.toContain("secret-token");
   });
+});
+
+it.each([
+  ["Rate limit reached", undefined, true],
+  ["You've hit your limit · resets later", undefined, true],
+  ["Request failed", { status: 429 }, true],
+  ["SDK failed", new Error("Request failed", { cause: { statusCode: 429 } }), true],
+  ["Request failed", { code: "usageLimitExceeded" }, true],
+  ["Request failed", { data: { statusCode: 429 } }, true],
+  ["Request failed", { cause: { errorMessage: "Rate limited" } }, true],
+  ["Request timed out", undefined, false],
+  ["Sign in to continue", undefined, false],
+  ["Request failed", { statusCode: 500 }, false],
+  ["Invalid output", { _tag: "SchemaError", message: "Invalid title: rate limit reached" }, false],
+] as const)("detects rate limits in %s", (detail, cause, expected) => {
+  expect(
+    isTextGenerationRateLimitError(
+      new TextGenerationError({ operation: "synthetic", detail, cause }),
+    ),
+  ).toBe(expected);
 });
