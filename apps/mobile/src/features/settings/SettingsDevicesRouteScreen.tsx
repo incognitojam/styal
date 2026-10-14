@@ -1,6 +1,7 @@
 import {
   deviceSharingAddresses,
   deviceSharingErrorMessage,
+  offlineDeviceShares,
 } from "@t3tools/client-runtime/state/device";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentDeviceHostConfig } from "@t3tools/contracts";
@@ -28,9 +29,12 @@ type SharingEnvironment = ReturnType<
 >["availableTargets"][number];
 
 export function SettingsDevicesRouteScreen() {
+  const [offlineError, setOfflineError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
-  const { selectedTargets, availableTargets, selectedProjectKey } = useSettingsEnvironmentFilter();
+  const { selectedTargets, availableTargets, selectedIds, selectedProjectKey } =
+    useSettingsEnvironmentFilter();
   const disabled = selectedProjectKey !== null;
+  const offlineShares = offlineDeviceShares(availableTargets, selectedIds);
   return (
     <>
       <SettingsEnvironmentFilterHeader />
@@ -44,6 +48,20 @@ export function SettingsDevicesRouteScreen() {
           {selectedProjectKey !== null ? (
             <AppText className="text-sm text-foreground-muted">
               Select All projects to change environment device access.
+            </AppText>
+          ) : null}
+          {offlineShares.map(({ agent, host }) => (
+            <OfflineShare
+              key={`${agent.environmentId}:${host.id}`}
+              agent={agent}
+              host={host}
+              disabled={disabled}
+              onError={setOfflineError}
+            />
+          ))}
+          {offlineError ? (
+            <AppText accessibilityRole="alert" className="px-2 text-sm text-danger-foreground">
+              {offlineError}
             </AppText>
           ) : null}
           {selectedTargets.map((device) => (
@@ -63,6 +81,42 @@ export function SettingsDevicesRouteScreen() {
           </AppText>
         </ScreenScrollView>
       </SettingsScreen>
+    </>
+  );
+}
+
+function OfflineShare(props: {
+  agent: SharingEnvironment;
+  host: EnvironmentDeviceHostConfig;
+  disabled: boolean;
+  onError: (error: string | null) => void;
+}) {
+  const disconnect = useAtomCommand(deviceEnvironment.disconnectEnvironment);
+  const [pending, setPending] = useState(false);
+  return (
+    <>
+      <SettingsSection title={`${props.host.label} devices`}>
+        <SettingsSwitchRow
+          icon="link"
+          label={`Share with ${props.agent.label}`}
+          subtitle="The device environment is offline. You can still remove this share."
+          value
+          disabled={props.disabled || pending}
+          onValueChange={() => {
+            props.onError(null);
+            setPending(true);
+            void disconnect({
+              environmentId: props.agent.environmentId,
+              input: { hostId: props.host.id },
+            })
+              .then((result) => {
+                if (result._tag === "Failure")
+                  props.onError(deviceSharingErrorMessage(result.cause));
+              })
+              .finally(() => setPending(false));
+          }}
+        />
+      </SettingsSection>
     </>
   );
 }

@@ -436,9 +436,12 @@ export type DeviceActionType = DeviceActionInput["type"];
 export const DeviceDetailInput = Schema.Struct(DeviceTarget);
 export type DeviceDetailInput = typeof DeviceDetailInput.Type;
 
-export const DeviceEnvironmentInfo = Schema.Struct({
+export const DeviceEnvironmentIdentity = Schema.Struct({
   environmentId: EnvironmentId,
   sourceEnvironmentId: EnvironmentId,
+});
+export const DeviceEnvironmentInfo = Schema.Struct({
+  ...DeviceEnvironmentIdentity.fields,
   host: DeviceHostSummary,
   devices: Schema.Array(DeviceSummary),
   sessions: Schema.Array(DeviceSession),
@@ -446,7 +449,15 @@ export const DeviceEnvironmentInfo = Schema.Struct({
 export type DeviceEnvironmentInfo = typeof DeviceEnvironmentInfo.Type;
 export const DevicePeerCommand = Schema.Union([
   Schema.Struct({
-    operation: Schema.Literals(["inspect", "list", "agent", "stop-agent", "release", "revoke"]),
+    operation: Schema.Literals([
+      "identify",
+      "inspect",
+      "list",
+      "agent",
+      "stop-agent",
+      "release",
+      "revoke",
+    ]),
   }),
   Schema.Struct({ operation: Schema.Literal("open"), input: DeviceOpenInput }),
   Schema.Struct({ operation: Schema.Literal("close"), input: DeviceCloseInput }),

@@ -2,7 +2,9 @@ import { Link } from "@tanstack/react-router";
 import {
   deviceSharingAddresses,
   deviceSharingErrorMessage,
+  offlineDeviceShares,
 } from "@t3tools/client-runtime/state/device";
+import type { EnvironmentDeviceHostConfig } from "@t3tools/contracts";
 import { useState } from "react";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
 import { desktopNetworkAccessStateAtom } from "../../state/desktopNetworkAccess";
@@ -23,11 +25,16 @@ import { useSettingsScope } from "./SettingsScopeContext";
 type SharingEnvironment = ReturnType<typeof useSettingsScope>["connectedEnvironments"][number];
 
 export function EnvironmentDeviceHostsSettings() {
+  const [offlineError, setOfflineError] = useState<string | null>(null);
   const { scope, connectedEnvironments } = useSettingsScope();
   const { environments } = useEnvironments();
   const disabled = scope.kind === "project" || scope.kind === "checkout";
   const reachable = environments.filter(
     (entry) => entry.connection.phase === "connected" && entry.serverConfig !== null,
+  );
+  const offlineShares = offlineDeviceShares(
+    reachable,
+    scope.kind === "all" ? null : new Set(scope.environmentIds),
   );
   return (
     <SettingsRow
@@ -38,6 +45,20 @@ export function EnvironmentDeviceHostsSettings() {
       description="Let agents on your other connected environments use this environment's simulators and emulators. Sharing turns on device hub and agent device access on both, and keeps working when you close this client."
     >
       <div className="pt-3 pb-2">
+        {offlineShares.map(({ agent, host }) => (
+          <OfflineShare
+            key={`${agent.environmentId}:${host.id}`}
+            agent={agent}
+            host={host}
+            disabled={disabled}
+            onError={setOfflineError}
+          />
+        ))}
+        {offlineError ? (
+          <p role="status" className="text-xs text-destructive">
+            {offlineError}
+          </p>
+        ) : null}
         {reachable.length < 2 ? (
           <p className="text-sm text-muted-foreground">
             Connect another environment to share devices with it.
@@ -55,6 +76,45 @@ export function EnvironmentDeviceHostsSettings() {
         )}
       </div>
     </SettingsRow>
+  );
+}
+
+function OfflineShare(props: {
+  agent: SharingEnvironment;
+  host: EnvironmentDeviceHostConfig;
+  disabled: boolean;
+  onError: (error: string | null) => void;
+}) {
+  const disconnect = useAtomCommand(deviceEnvironment.disconnectEnvironment);
+  const [pending, setPending] = useState(false);
+  return (
+    <div className="flex items-start gap-3 border-t border-border/50 py-2 first:border-t-0">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">
+          {props.host.label} devices shared with {props.agent.label}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          The device environment is offline. You can still remove this share.
+        </p>
+      </div>
+      <Switch
+        checked
+        disabled={props.disabled || pending}
+        aria-label={`Share ${props.host.label} devices with ${props.agent.label}`}
+        onCheckedChange={() => {
+          props.onError(null);
+          setPending(true);
+          void disconnect({
+            environmentId: props.agent.environmentId,
+            input: { hostId: props.host.id },
+          })
+            .then((result) => {
+              if (result._tag === "Failure") props.onError(deviceSharingErrorMessage(result.cause));
+            })
+            .finally(() => setPending(false));
+        }}
+      />
+    </div>
   );
 }
 

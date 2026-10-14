@@ -1,6 +1,7 @@
 import {
   type AdvertisedEndpoint,
   type DeviceToolVersions,
+  type EnvironmentDeviceHostConfig,
   type EnvironmentId,
   WS_METHODS,
 } from "@t3tools/contracts";
@@ -17,6 +18,31 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
+
+/** Saved shares remain removable through their connected agent environment. */
+export function offlineDeviceShares<
+  T extends {
+    readonly environmentId: EnvironmentId;
+    readonly serverConfig: {
+      readonly settings: {
+        readonly environmentDeviceHosts: readonly EnvironmentDeviceHostConfig[];
+      };
+    } | null;
+  },
+>(connected: readonly T[], selectedIds: ReadonlySet<EnvironmentId> | null) {
+  const connectedIds = new Set(connected.map((entry) => entry.environmentId));
+  return connected.flatMap((agent) =>
+    (agent.serverConfig?.settings.environmentDeviceHosts ?? [])
+      .filter(
+        (host) =>
+          !connectedIds.has(host.environmentId) &&
+          (selectedIds === null ||
+            selectedIds.has(agent.environmentId) ||
+            selectedIds.has(host.environmentId)),
+      )
+      .map((host) => ({ agent, host })),
+  );
+}
 
 export function createDeviceEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,

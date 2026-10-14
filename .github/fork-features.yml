@@ -1057,6 +1057,7 @@ features:
       - Requests to a connected environment do not hold the local device lifecycle lock, so an unreachable environment cannot block local devices.
       - Settings show one sharing switch per pair on the device environment, without an address field. Clients send their connection address, all usable desktop advertised addresses, and a known styal Link address. The agent server verifies both environment identities and stores the candidates with its device-only grant; legacy single-address shares remain readable.
       - Unreachable addresses fall back automatically for device operations, new stream connections, and already issued agent commands. Peer errors remain typed, and ambiguous failures never replay a mutating command. Revocation and disabled access cannot be bypassed by fallback.
+      - Authenticated cleanup remains available when device access is disabled, and connected agent environments retain removal controls for offline or removed device environments.
     rationale: Connecting a machine to the client does not give an agent server access to it. An explicit device-only grant provides persistent access without copying a client credential or requiring redundant SSH setup.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
@@ -1076,7 +1077,9 @@ features:
       - apps/server/src/device/DeviceMultiHost.test.ts
       - apps/server/src/device/DeviceSharing.test.ts
       - apps/web/src/components/settings/ConnectionsSettings.logic.test.ts
+      - apps/web/src/components/settings/EnvironmentDeviceHostsSettings.test.tsx
       - packages/client-runtime/src/state/deviceSharingAddress.test.ts
+      - packages/client-runtime/src/state/offlineDeviceShares.test.ts
       - packages/contracts/src/device.test.ts
     upstream:
       status: tracking

@@ -98,7 +98,7 @@ This enables device hub and agent access on both environments and grants the age
 
 The agent environment tries the available addresses automatically, including your client's connection address, the desktop server's advertised LAN and Tailscale addresses, and its styal Link address when known. You do not need to choose an address. If the active address becomes unreachable, it tries the other saved addresses. For the desktop app’s own server, enable network access, Tailscale, or styal Link in **Settings → Connections**. Sharing is unavailable when the device environment is only reachable through an SSH tunnel.
 
-Turn the switch off to revoke access. If the device environment is offline during removal, revoke the matching **Devices for…** session in its Connections settings when it comes back online. Access expires after a year; turn sharing off and on to renew it. Enabling sharing again also picks up newly added addresses; existing single-address shares keep working.
+Turn the switch off to revoke access, even after device hub or agent access has been disabled. Saved shares stay removable while the agent environment is connected, including when the device environment is offline or has been removed from your client. If the device environment is offline during removal, revoke the matching **Devices for…** session in its Connections settings when it comes back online. Access expires after a year; turn sharing off and on to renew it. Enabling sharing again also picks up newly added addresses; existing single-address shares keep working.
 
 Shared inventory includes devices open in other environments’ threads. Use a separate simulator or emulator for each agent working in parallel.
 

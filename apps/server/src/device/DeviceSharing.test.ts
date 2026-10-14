@@ -399,6 +399,125 @@ it.effect("persists device-only access and reconnects a host without client cred
   }).pipe(Effect.scoped),
 );
 
+it.effect.each(["enableDeviceSupport", "enableAgentDeviceAccess"] as const)(
+  "revokes a saved share after %s is disabled",
+  (setting) =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.connect;
+      const host = f.sourceSettings.read().environmentDeviceHosts[0]!;
+      yield* f.targetSettings.service.updateSettings({ [setting]: false });
+      yield* f.source.disconnect(host.id);
+      expect(f.active.has(f.grant.token)).toBe(false);
+      expect(f.sourceSettings.read().environmentDeviceHosts).toEqual([]);
+      expect(f.peerRequests.slice(-2).map((entry) => entry.operation)).toEqual([
+        "identify",
+        "revoke",
+      ]);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("stops an agent after a failed request and disabled device access", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.source.connect({
+      label: "Orion",
+      urls: ["http://orion.test", "https://orion-alt.test"],
+      grant: f.grant,
+    });
+    const host = yield* f.host;
+    const ready = yield* host.ensureAgentReady(() => Effect.void);
+    f.addressFailures.set("http://orion.test", "ECONNRESET");
+    yield* ready.remote!.close({ threadId: ThreadId.make("synthetic-thread") }).pipe(Effect.result);
+    f.addressFailures.clear();
+    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: false });
+    yield* host.stopAgent;
+    yield* f.targetSettings.service.updateSettings({ enableAgentDeviceAccess: true });
+    const response = yield* Effect.promise(() =>
+      f.handler(
+        new Request("http://orion.test/api/device-share/agent/health", {
+          headers: { authorization: `Bearer ${ready.agentDevice!.token}` },
+        }),
+      ),
+    );
+    expect(response.status).toBe(401);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("releases sessions through an alternative address while device access is off", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.source.connect({
+      label: "Orion",
+      urls: ["http://orion.test", "https://orion-alt.test"],
+      grant: f.grant,
+    });
+    const host = yield* f.host;
+    const ready = yield* host.ensureReady(() => Effect.void);
+    yield* ready.remote!.open({
+      threadId: ThreadId.make("cleanup-thread"),
+      deviceId: "emulator-5554",
+      platform: "android",
+    });
+    f.addressFailures.set("http://orion.test", "ECONNREFUSED");
+    yield* f.targetSettings.service.updateSettings({ enableDeviceSupport: false });
+    yield* host.stop;
+    expect((yield* f.targetDevices.state).sessions).toEqual([]);
+    expect(f.active.has(f.grant.token)).toBe(true);
+    expect(f.peerRequests).toContainEqual({
+      origin: "https://orion-alt.test",
+      operation: "release",
+    });
+  }).pipe(Effect.scoped),
+);
+
+it.effect("checks both peer identities before sending cleanup commands", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
+    for (const identity of [
+      { environmentId: "another-target", sourceEnvironmentId: sourceId },
+      { environmentId: targetId, sourceEnvironmentId: "another-source" },
+    ]) {
+      const operations: string[] = [];
+      const http = HttpClient.make((request) => {
+        const body =
+          request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+        operations.push(decodeCommandBody(body).operation);
+        return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(identity)));
+      });
+      const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId).pipe(
+        Effect.provideService(HttpClient.HttpClient, http),
+      );
+      const error = yield* client.request({ operation: "revoke" }, Schema.Null).pipe(Effect.flip);
+      expect(error).toMatchObject({ reason: expect.stringContaining("different environment") });
+      expect(operations).toEqual(["identify"]);
+      expect(f.active.has(f.grant.token)).toBe(true);
+    }
+  }).pipe(Effect.scoped),
+);
+
+it.effect("can clean up older peers that expose identity through inspect", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const config = f.sourceSettings.read().environmentDeviceHosts[0]!;
+    const http = HttpClient.make((request) => {
+      const body =
+        request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+      return decodeCommandBody(body).operation === "identify"
+        ? Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 400 })))
+        : f.http.execute(request);
+    });
+    const client = yield* EnvironmentDeviceHost.makeClient(config, f.grant.token, sourceId).pipe(
+      Effect.provideService(HttpClient.HttpClient, http),
+    );
+    yield* client.request({ operation: "revoke" }, Schema.Null);
+    expect(f.active.has(f.grant.token)).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
 it.effect(
   "delegates device open and close while isolating matching thread IDs across environments",
   () =>

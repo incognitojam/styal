@@ -1,6 +1,7 @@
 import * as NodeCrypto from "node:crypto";
 import {
   DeviceEnvironmentInfo,
+  DeviceEnvironmentIdentity,
   DeviceDetail,
   DeviceError,
   DeviceHostUnavailableError,
@@ -136,7 +137,7 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
               response.status,
             );
     }).pipe(Effect.scoped, Effect.timeout(timeout));
-  const checkIdentity = (value: DeviceEnvironmentInfo) =>
+  const checkIdentity = <A extends typeof DeviceEnvironmentIdentity.Type>(value: A) =>
     value.environmentId === config.environmentId &&
     value.sourceEnvironmentId === sourceEnvironmentId
       ? Effect.succeed(value)
@@ -147,14 +148,31 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
     send(url, { operation: "inspect" }, DeviceEnvironmentInfo, "3 seconds").pipe(
       Effect.flatMap(checkIdentity),
     );
-  const select = Effect.fn("EnvironmentDeviceHost.selectAddress")(function* (skip?: string) {
+  const identifyAt = (url: string) =>
+    send(url, { operation: "identify" }, DeviceEnvironmentIdentity, "3 seconds").pipe(
+      // Older peers only expose identity through inspect.
+      Effect.catchIf(
+        (cause) =>
+          isHostUnavailable(cause) &&
+          typeof cause.cause === "object" &&
+          cause.cause !== null &&
+          "httpStatus" in cause.cause &&
+          cause.cause.httpStatus === 400,
+        () => inspectAt(url),
+      ),
+      Effect.flatMap(checkIdentity),
+    );
+  const select = Effect.fn("EnvironmentDeviceHost.selectAddress")(function* <A, E>(
+    probe: (url: string) => Effect.Effect<A, E>,
+    skip?: string,
+  ) {
     let failure: DeviceError = unavailable(
       "No other shared address could reach the device environment.",
     );
     for (const url of [baseUrl, ...urls.filter((url) => url !== baseUrl)].filter(
       (url) => url !== skip,
     )) {
-      const result = yield* inspectAt(url).pipe(Effect.result);
+      const result = yield* probe(url).pipe(Effect.result);
       if (result._tag === "Success") {
         baseUrl = url;
         verified = true;
@@ -173,7 +191,10 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
     schema: Schema.Codec<A, I>,
   ): Effect.Effect<A, DeviceError> =>
     Effect.gen(function* () {
-      if (!verified) yield* select();
+      const probe = ["stop-agent", "release", "revoke"].includes(command.operation)
+        ? identifyAt
+        : inspectAt;
+      if (!verified) yield* select(probe);
       const attempted = baseUrl;
       return yield* send(attempted, command, schema).pipe(
         Effect.catch((cause) =>
@@ -186,7 +207,7 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
                 !["inspect", "list", "detail", "screenshot"].includes(command.operation))
             )
               return yield* Effect.fail(cause);
-            yield* select(attempted);
+            yield* select(probe, attempted);
             return yield* send(baseUrl, command, schema);
           }),
         ),
@@ -200,10 +221,10 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
                 Effect.catch((cause) => {
                   verified = false;
                   if (urls.length === 1) return Effect.fail(mapError(cause));
-                  return select(baseUrl);
+                  return select(inspectAt, baseUrl);
                 }),
               )
-            : select(),
+            : select(inspectAt),
         )
       : request({ operation }, DeviceEnvironmentInfo).pipe(Effect.flatMap(checkIdentity));
   return {

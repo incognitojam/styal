@@ -270,6 +270,10 @@ const make = Effect.gen(function* () {
     const sourceId = session.subject.slice("device-host:".length);
     if (!session.subject.startsWith("device-host:") || !sourceId)
       return yield* unavailable("Invalid device access credential.");
+    // Cleanup still needs to verify the authenticated peer after device access is off.
+    // This reveals no inventory and does not start either device daemon.
+    if (input.operation === "identify")
+      return { environmentId, sourceEnvironmentId: EnvironmentId.make(sourceId) };
     const prefix = devicePeerThreadPrefix(sourceId);
     const thread = (id: string) => ThreadId.make(`${prefix}${id}`);
     if (input.operation === "stop-agent") {
