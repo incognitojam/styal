@@ -2901,11 +2901,28 @@ export const make = Effect.gen(function* () {
       ref.repository.toLowerCase(),
       ref.number,
     ]);
-  const refEpoch = (scope: RefCacheScope, ref: PullRequestRef) =>
-    Math.max(
-      projectEpochs.get(ref.projectId) ?? projectEpochFloor,
-      refEpochs.get(refScope(ref))?.[scope] ?? 0,
+  /**
+   * The project epoch a pull request was first read merged under. A merged pull request cannot
+   * change again, so a turn in its project no longer moves its key; otherwise every reader showing
+   * it would read the host again after every turn. A refresh or a mutation still moves it.
+   */
+  const mergedEpochs = new Map<string, number>();
+  const refEpoch = (scope: RefCacheScope, ref: PullRequestRef) => {
+    const key = refScope(ref);
+    return Math.max(
+      mergedEpochs.get(key) ?? projectEpochs.get(ref.projectId) ?? projectEpochFloor,
+      refEpochs.get(key)?.[scope] ?? 0,
     );
+  };
+  const noteMerged = (ref: PullRequestRef) => {
+    const scope = refScope(ref);
+    if (mergedEpochs.has(scope)) return;
+    if (mergedEpochs.size >= REF_EPOCH_CAPACITY) {
+      const oldest = mergedEpochs.keys().next().value;
+      if (oldest !== undefined) mergedEpochs.delete(oldest);
+    }
+    mergedEpochs.set(scope, projectEpochs.get(ref.projectId) ?? projectEpochFloor);
+  };
   // Keys carry the reference back out of the cache loader, so the slot layout is shared with
   // `refOfCacheKey` rather than read positionally at every loader.
   const refCacheKey = (ref: CredentialRef, scope: RefCacheScope = "detail") =>
@@ -3328,6 +3345,7 @@ export const make = Effect.gen(function* () {
     // cannot roll back the state a linked thread has already observed.
     const read = Cache.get(detailCache, key).pipe(
       Effect.tap((value) => {
+        if (value.state === "merged") noteMerged(input);
         const summary = summaryFromDetail(value, lastGoodSummary.peek(key));
         return noteDetailReading(input, summary).pipe(
           Effect.andThen(
