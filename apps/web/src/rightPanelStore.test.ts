@@ -108,6 +108,34 @@ describe("rightPanelStore", () => {
     },
   );
 
+  it("adds background tabs for live devices without opening the panel or skipping closed ones", () => {
+    const store = useRightPanelStore.getState();
+    const pixel = {
+      hostId: "nucbox",
+      deviceId: "emulator-5580",
+      name: "Pixel",
+      platform: "android",
+    } as const;
+    const iphone = {
+      hostId: "macmini",
+      deviceId: "ios-1",
+      name: "iPhone",
+      platform: "ios",
+    } as const;
+    store.reconcileDeviceSurfaces(refA, [pixel]);
+    let state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state).toMatchObject({ isOpen: false, activeSurfaceId: "device:nucbox:emulator-5580" });
+    expect(store.getUserActionRevision(refA)).toBe(0);
+
+    store.open(refA, "files");
+    store.closeSurface(refA, "device:nucbox:emulator-5580");
+    store.reconcileDeviceSurfaces(refA, [pixel, iphone]);
+    state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual(["files", "device:macmini:ios-1"]);
+    expect(state).toMatchObject({ isOpen: true, activeSurfaceId: "files" });
+    expect(state.surfaces[1]).toMatchObject({ target: iphone });
+  });
+
   const completedDiff = { id: "diff", kind: "diff" } as const;
   const linkedPullRequest = pullRequestSurface({
     projectId: "project-a",

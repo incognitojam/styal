@@ -5383,55 +5383,57 @@ export default function ChatView(props: ChatViewProps) {
     useRightPanelStore.getState().open(activeThreadRef, "device");
   }, [activeThreadRef, deviceState.onboardingCompleted, deviceState.hostStatus]);
   // A device the agent opens floats over chat like an agent-driven browser,
-  // or becomes a panel tab when floating previews are off. Sessions opened by
-  // another client arrive the same way; sheet layouts get neither. The first
-  // snapshot is a baseline: persisted tabs restore themselves, and existing
-  // sessions must not resurrect closed tabs. A session whose device summary
-  // has not arrived yet stays out of the baseline so a later snapshot opens it.
+  // or becomes the active panel tab when floating previews are off. Sessions
+  // opened by another client arrive the same way; sheet layouts get neither.
+  // The first snapshot is a baseline, so existing sessions do not pop up when
+  // the thread loads. A session whose device summary has not arrived yet stays
+  // out of the baseline so a later snapshot opens it. Every live device also
+  // keeps a background tab unless the user closed it, so one that floats or
+  // started while the thread was not shown can still be found in the panel.
   const autoShowFloatingPreview = useClientSettings(selectAutoShowFloatingPreview);
   const previousDeviceSessions = useRef(new Map<string, Set<string>>());
   useEffect(() => {
     if (!activeThreadRef || !deviceStateLoaded) return;
     const threadKey = `${activeThreadRef.environmentId}:${activeThreadRef.threadId}`;
-    const sessions = deviceState.sessions.filter(
-      (session) => session.threadId === activeThreadRef.threadId,
-    );
-    const key = (session: (typeof sessions)[number]) => `${session.hostId}:${session.deviceId}`;
-    const deviceFor = (session: (typeof sessions)[number]) =>
-      deviceState.devices.find(
+    const sessions = deviceState.sessions.flatMap((session) => {
+      if (session.threadId !== activeThreadRef.threadId) return [];
+      const device = deviceState.devices.find(
         (entry) => entry.hostId === session.hostId && entry.id === session.deviceId,
       );
-    const previous = previousDeviceSessions.current.get(threadKey);
-    previousDeviceSessions.current.set(
-      threadKey,
-      new Set(sessions.filter((session) => deviceFor(session) !== undefined).map(key)),
-    );
-    if (!previous || shouldUsePlanSidebarSheet) return;
-    for (const session of sessions) {
-      if (previous.has(key(session))) continue;
-      const device = deviceFor(session);
-      if (!device) continue;
+      if (!device) return [];
       const target = {
         hostId: session.hostId,
         deviceId: session.deviceId,
         platform: device.platform,
         name: device.name,
       };
-      if (autoShowFloatingPreview) {
-        usePreviewMiniPlayerStore.getState().open(activeThreadRef, { kind: "device", ...target });
-        continue;
+      return [{ key: `${session.hostId}:${session.deviceId}`, target }];
+    });
+    const previous = previousDeviceSessions.current.get(threadKey);
+    previousDeviceSessions.current.set(threadKey, new Set(sessions.map((session) => session.key)));
+    if (previous && !shouldUsePlanSidebarSheet) {
+      for (const { key, target } of sessions) {
+        if (previous.has(key)) continue;
+        if (autoShowFloatingPreview) {
+          usePreviewMiniPlayerStore.getState().open(activeThreadRef, { kind: "device", ...target });
+          continue;
+        }
+        const existing = useRightPanelStore
+          .getState()
+          .byThreadKey[scopedThreadKey(activeThreadRef)]?.surfaces.some(
+            (surface) =>
+              surface.kind === "device" &&
+              surface.target?.hostId === target.hostId &&
+              surface.target.deviceId === target.deviceId,
+          );
+        if (existing) continue;
+        useRightPanelStore.getState().openDevice(activeThreadRef, target, true);
       }
-      const existing = useRightPanelStore
-        .getState()
-        .byThreadKey[scopedThreadKey(activeThreadRef)]?.surfaces.some(
-          (surface) =>
-            surface.kind === "device" &&
-            surface.target?.hostId === session.hostId &&
-            surface.target.deviceId === session.deviceId,
-        );
-      if (existing) continue;
-      useRightPanelStore.getState().openDevice(activeThreadRef, target, true);
     }
+    useRightPanelStore.getState().reconcileDeviceSurfaces(
+      activeThreadRef,
+      sessions.map((session) => session.target),
+    );
   }, [
     activeThreadRef,
     autoShowFloatingPreview,

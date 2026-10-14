@@ -1069,6 +1069,27 @@ features:
         - https://github.com/pingdotgg/t3code/pull/10856
       retire_when: Upstream supports persistent device-only access between existing environment servers through every client and isolates peer thread and driver sessions.
 
+  - id: device-panel-tabs
+    title: Keep a panel tab for every live device
+    status: maintained
+    prs: []
+    invariants:
+      - Every device session on the thread has a right-panel tab, including devices that float over chat and devices opened while the thread was not shown; adding the tab does not open the panel or change its active tab.
+      - A device tab the user closed stays closed until the user opens that device again.
+    rationale: Upstream gives an agent-opened device either a floating window or a panel tab, and nothing for sessions that started while the thread was not shown, so a running device could be missing from the panel.
+    implementation_paths:
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/rightPanelStore.ts
+    upstream_paths:
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/rightPanelStore.ts
+    tests:
+      - apps/web/src/rightPanelStore.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream keeps a panel tab for every live device session, including floating ones.
+
   - id: device-tool-thread-awareness
     title: Agents see devices other threads have open
     status: maintained

@@ -169,6 +169,11 @@ interface RightPanelStoreState {
   closeSurfacesToRight: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeAllSurfaces: (ref: ScopedThreadRef) => void;
   reconcileBrowserSurfaces: (ref: ScopedThreadRef, tabIds: readonly string[]) => void;
+  /**
+   * Adds a background tab for each live device the user has not closed, so a
+   * floating or agent-opened device can always be found in the panel.
+   */
+  reconcileDeviceSurfaces: (ref: ScopedThreadRef, targets: readonly DeviceTabTarget[]) => void;
   reconcileFileSurfaces: (ref: ScopedThreadRef, workspaceAvailable: boolean) => void;
   show: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
@@ -211,6 +216,9 @@ const singletonSurface = (
       return { id: "device", kind };
   }
 };
+
+const deviceSurfaceId = (target: DeviceTabTarget) =>
+  `device:${encodeURIComponent(target.hostId)}:${encodeURIComponent(target.deviceId)}` as const;
 
 const browserSurface = (tabId: string | null): RightPanelSurface =>
   tabId
@@ -656,8 +664,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       openDevice: (ref, target, automatic = false) =>
         set((state) =>
           (automatic ? automaticUpdate : userAction)(state, scopedThreadKey(ref), (current) => {
-            const id =
-              `device:${encodeURIComponent(target.hostId)}:${encodeURIComponent(target.deviceId)}` as const;
+            const id = deviceSurfaceId(target);
             if (automatic && current.dismissedDeviceSurfaceIds?.includes(id)) return current;
             const surface: RightPanelSurface = { id, kind: "device", target };
             const existing = current.surfaces.find((entry) => entry.id === id);
@@ -917,6 +924,28 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               activeSurfaceId: activeStillExists
                 ? current.activeSurfaceId
                 : (fallbackBrowser?.id ?? surfaces[0]?.id ?? null),
+            };
+          }),
+        ),
+      reconcileDeviceSurfaces: (ref, targets) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => {
+            const knownIds = new Set([
+              ...current.surfaces.map((surface) => surface.id),
+              ...(current.dismissedDeviceSurfaceIds ?? []),
+            ]);
+            const added = targets
+              .filter((target) => !knownIds.has(deviceSurfaceId(target)))
+              .map((target): RightPanelSurface => ({
+                id: deviceSurfaceId(target),
+                kind: "device",
+                target,
+              }));
+            if (added.length === 0) return current;
+            return {
+              ...current,
+              surfaces: [...current.surfaces, ...added],
+              activeSurfaceId: current.activeSurfaceId ?? added[0]!.id,
             };
           }),
         ),
