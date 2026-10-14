@@ -8,6 +8,7 @@ import {
   displayLimitWindows,
   formatDuration,
   formatResetsIn,
+  limitProjection,
   type LimitAccount,
   type LimitPool,
   type LimitPoolMember,
@@ -31,8 +32,8 @@ import { OpenAI } from "../Icons";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
-  PaceIndicator,
   ResetCreditDialog,
+  RunOutLabel,
   barColor,
   resetCreditsSummary,
   useResetCredit,
@@ -157,6 +158,7 @@ function SegmentPopover({
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
+  const projection = limitProjection(window, now);
   const where =
     account.environments.length > 0
       ? account.environments.map((environment) => environment.label).join(", ")
@@ -200,6 +202,7 @@ function SegmentPopover({
         {reset && reset.restoresPercent > 0 ? (
           <Row label="Restores">+{reset.restoresPercent}% of pool</Row>
         ) : null}
+        {projection ? <Row label="At this rate">{projection.label}</Row> : null}
       </div>
       {credits && redeem ? (
         <div className="border-t border-border/60 pt-2.5 text-muted-foreground">
@@ -406,7 +409,7 @@ function LegendRow({
       <AccountName account={account} className="min-w-0 truncate font-medium text-foreground" />
       <span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>
       <span className="ms-auto flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground tabular-nums">
-        {resetsIn?.replace("resets in ", "↻ ") ?? ""}
+        {resetsIn ? `↻ ${resetsIn.replace("resets", "Resets")}` : ""}
         {credits ? (
           <>
             {resetsIn ? <span aria-hidden>·</span> : null}
@@ -415,7 +418,7 @@ function LegendRow({
               className="inline-flex items-center gap-0.5 font-semibold text-foreground"
             >
               <TicketIcon className="size-3" aria-hidden />
-              {credits}
+              {credits} {credits === 1 ? "credit" : "credits"}
             </span>
             <span className="sr-only">
               {credits} reset {credits === 1 ? "credit" : "credits"} banked
@@ -539,18 +542,19 @@ function PoolWindowCard({
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
   return (
     <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col items-start gap-1">
         <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
         <span className="flex items-baseline gap-2">
           <span className="text-3xl font-semibold text-foreground tabular-nums">
             {pool.remainingPercent}%
           </span>
           <span className="text-sm text-muted-foreground">left</span>
-          <PaceIndicator pace={pool.pace} />
         </span>
+        <RunOutLabel projection={pool.projection} />
         {nextRefill && pool.columns.length > 1 ? (
           <span className="text-xs font-medium text-foreground tabular-nums">
-            ↻ +{nextRefill.restoresPercent}%
+            ↻ +{nextRefill.restoresPercent}% back{" "}
+            {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
           </span>
         ) : null}
       </div>

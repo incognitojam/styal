@@ -10,7 +10,7 @@ import {
   displayLimitWindows,
   formatDuration,
   formatResetsIn,
-  pacePresentation,
+  limitProjection,
   remainingPercent,
   singleAccountResetCredits,
   type LimitAccount,
@@ -29,7 +29,7 @@ import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
 import { useProviderColors } from "./usageProviders";
-import { PaceIndicator } from "./UsagePace";
+import { ProjectionLabel } from "./UsageProjection";
 
 const DRIVER_LABEL: Partial<Record<string, string>> = { codex: "Codex", claudeAgent: "Claude" };
 
@@ -116,12 +116,12 @@ function PoolWindowCard({
             <Text className="text-sm text-foreground-muted">left</Text>
           </View>
         </View>
-        <PaceIndicator pace={pool.pace} />
+        <ProjectionLabel projection={pool.projection} />
       </View>
       {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
       {nextRefill && !single ? (
         <Text className="text-xs tabular-nums text-foreground-muted">
-          ↻ +{nextRefill.restoresPercent}%{" "}
+          ↻ +{nextRefill.restoresPercent}% back{" "}
           {nextRefill.at <= now ? "now" : `in ${formatDuration(nextRefill.at - now)}`}
         </Text>
       ) : null}
@@ -245,7 +245,7 @@ function AccountSegments({
               <View className="flex-row items-center gap-1">
                 {resetsIn ? (
                   <Text className="text-xs tabular-nums text-foreground-muted">
-                    {resetsIn.replace("resets in ", "↻ ")}
+                    ↻ {resetsIn.replace("resets", "Resets")}
                   </Text>
                 ) : null}
                 {credits ? (
@@ -253,7 +253,7 @@ function AccountSegments({
                     {resetsIn ? <Text className="text-xs text-foreground-tertiary">·</Text> : null}
                     <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
                     <Text className="text-xs font-t3-medium tabular-nums text-foreground">
-                      {credits}
+                      {credits} {credits === 1 ? "credit" : "credits"}
                     </Text>
                   </>
                 ) : null}
@@ -508,7 +508,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
                 {remainingPercent(window)}% left
               </Text>
-              <PaceIndicator pace={pacePresentation(window, now)} expanded />
+              <ProjectionLabel projection={limitProjection(window, now)} expanded />
               {window.resetsAt ? (
                 <Text selectable className="text-sm text-foreground-muted">
                   Resets{" "}

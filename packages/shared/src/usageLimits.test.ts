@@ -23,8 +23,7 @@ import {
   limitsNotice,
   resetCreditExpiries,
   singleAccountResetCredits,
-  paceOf,
-  pacePresentation,
+  limitProjection,
   paceRemainingPercent,
   providersWithLimits,
   remainingPercent,
@@ -63,38 +62,47 @@ describe("pace", () => {
   it("places the clock three fifths through a five-hour window with two hours left", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);
     expect(paceRemainingPercent(window, now)).toBe(40);
-    expect(paceOf(window, now)).toBe("under");
-    expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("on");
-    expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
   });
 
-  it("has no pace without a reset or a duration", () => {
-    expect(paceOf({ ...window, resetsAt: undefined }, now)).toBeNull();
-    expect(paceOf({ ...window, windowDurationMins: undefined }, now)).toBeNull();
+  it("has no clock without a reset or a duration", () => {
+    expect(limitProjection({ ...window, resetsAt: undefined }, now)).toBeNull();
+    expect(limitProjection({ ...window, windowDurationMins: undefined }, now)).toBeNull();
     expect(formatResetsIn({ ...window, resetsAt: undefined }, now)).toBeNull();
   });
 
-  it.each([
-    [80, "Above pace", "faster"],
-    [62, "On pace", "within 5 percentage points"],
-    [40, "Below pace", "slower"],
-  ] as const)("explains %s%% consumed against 60%% elapsed", (usedPercent, label, explanation) => {
-    expect(pacePresentation({ ...window, usedPercent }, now)).toEqual({
-      label,
-      description: expect.stringContaining(
-        `${usedPercent}% of quota consumed · 60% of window time elapsed.`,
-      ),
+  it("lasts until the reset when the rate so far leaves quota at the reset", () => {
+    // 40% in 3h is 60% more in the 4h30m it takes, past the reset in 2h.
+    expect(limitProjection(window, now)).toEqual({
+      runsOut: false,
+      label: "Lasts until reset",
+      description: "40% used with 60% of the window gone. At this rate it lasts until the reset.",
     });
-    expect(pacePresentation({ ...window, usedPercent }, now)?.description).toContain(explanation);
+  });
+
+  it("runs out before the reset when the rate so far empties the window first", () => {
+    // 80% in 3h leaves 20%, gone in 45m, an hour and a quarter before the reset.
+    expect(limitProjection({ ...window, usedPercent: 80 }, now)).toEqual({
+      runsOut: true,
+      label: "Runs out in 45m",
+      description:
+        "80% used with 60% of the window gone. At this rate it runs out 1h 15m before the reset.",
+    });
   });
 
   it.each([
-    [55, "On pace"],
-    [65, "On pace"],
-    [54.99, "Below pace"],
-    [65.01, "Above pace"],
-  ] as const)("keeps the five-point tolerance before rounding %s%%", (usedPercent, label) => {
-    expect(pacePresentation({ ...window, usedPercent }, now)?.label).toBe(label);
+    [60, false, "Lasts until reset"],
+    [60.01, true, "Runs out in 1h 59m"],
+    [99.999, true, "Runs out now"],
+    [0, false, "Lasts until reset"],
+  ] as const)("projects %s%% used against 60%% elapsed", (usedPercent, runsOut, label) => {
+    expect(limitProjection({ ...window, usedPercent }, now)).toMatchObject({ runsOut, label });
+  });
+
+  it("has nothing to project once the window is empty or before any time has passed", () => {
+    expect(limitProjection({ ...window, usedPercent: 100 }, now)).toBeNull();
+    const opened = now - 3 * 60 * 60_000;
+    expect(limitProjection({ ...window, usedPercent: 5 }, opened)).toBeNull();
+    expect(limitProjection({ ...window, usedPercent: 0 }, opened)?.label).toBe("Lasts until reset");
   });
 
   it.each([
@@ -102,8 +110,8 @@ describe("pace", () => {
     { resetsAt: "invalid" },
     { windowDurationMins: undefined },
     { windowDurationMins: 0 },
-  ])("hides pace without a usable clock: %j", (overrides) => {
-    expect(pacePresentation({ ...window, ...overrides }, now)).toBeNull();
+  ])("hides the projection without a usable clock: %j", (overrides) => {
+    expect(limitProjection({ ...window, ...overrides }, now)).toBeNull();
     expect(paceRemainingPercent({ ...window, ...overrides }, now)).toBeNull();
   });
 
@@ -691,7 +699,7 @@ describe("pools", () => {
       ["codex", 1],
     ]);
     const [session, week] = pools[0]!.windows;
-    // A member with no reset has no clock, so it does not vote on pace.
+    // A member with no reset has no clock, so it adds usage but no rate.
     const untimed = collectLimitPools(
       collectLimitAccounts(input).map((account) =>
         account.key === "hub:b"
@@ -706,22 +714,42 @@ describe("pools", () => {
       ),
       now,
     );
-    // Only a votes: 80% used, 80% elapsed.
-    expect(untimed[0]?.windows[0]?.pace).toEqual({
-      label: "On pace",
-      description:
-        "Average across 1 account with known window times: 80% of quota consumed · 80% of window time elapsed. Consumption is within 5 percentage points of elapsed time.",
-    });
-    // a is 80% through its window and b 60%: the pool is 70% elapsed, 60% used.
+    // Only a has a rate: 80% in 4h, halved across the pool, empties 40% in 4h.
+    expect(untimed[0]?.windows[0]?.projection?.label).toBe("Lasts until reset");
+    // a spent 80% in 4h and b 40% in 3h; the pool's 40% left lasts 2h 24m,
+    // past a's reset in an hour.
     expect(session).toMatchObject({
       id: "five_hour",
       remainingPercent: 40,
       usedPercent: 60,
-      pace: {
-        label: "Below pace",
-        description:
-          "Average across 2 accounts with known window times: 60% of quota consumed · 70% of window time elapsed. Quota is being consumed slower than time elapses.",
+      projection: {
+        runsOut: false,
+        label: "Lasts until reset",
+        description: "2 accounts, 60% used. At this rate it lasts until the next account reset.",
       },
+    });
+    // At 90%, b's 3h rate drains the pool's 15% left in 36m, before a resets.
+    const busy = collectLimitPools(
+      collectLimitAccounts(input).map((account) =>
+        account.key === "hub:b"
+          ? {
+              ...account,
+              limits: {
+                ...account.limits,
+                windows: account.limits.windows.map((w) =>
+                  w.id === "five_hour" ? { ...w, usedPercent: 90 } : w,
+                ),
+              },
+            }
+          : account,
+      ),
+      now,
+    );
+    expect(busy[0]?.windows[0]?.projection).toEqual({
+      runsOut: true,
+      label: "Runs out in 36m",
+      description:
+        "2 accounts, 85% used. At this rate it runs out 24m before the next account reset.",
     });
     expect(
       session?.resets.map((reset) => [reset.member.account.key, reset.restoresPercent]),

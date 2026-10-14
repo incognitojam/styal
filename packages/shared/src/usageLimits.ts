@@ -1,6 +1,6 @@
 /**
  * Selection and pace maths for the provider limits view, shared by web and
- * mobile so both agree on which providers show, what "above pace" means,
+ * mobile so both agree on which providers show, when a window runs out,
  * and how a reset is phrased.
  *
  * @module usageLimits
@@ -340,7 +340,7 @@ export interface LimitPoolWindow {
   }>;
   readonly remainingPercent: number;
   readonly usedPercent: number;
-  readonly pace: LimitPacePresentation | null;
+  readonly projection: LimitProjection | null;
   readonly resets: ReadonlyArray<{
     readonly member: LimitPoolMember;
     readonly at: number;
@@ -434,16 +434,6 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const memberByAccount = new Map(members.map((member) => [member.account.key, member]));
     const first = members[0]!.window;
     const usedPercent = members.reduce((sum, m) => sum + m.window.usedPercent, 0) / members.length;
-    // Pace compares spend against the clock, so it is judged only over the
-    // members that have a clock; a window with no reset would otherwise
-    // count as spend with no time elapsed and skew the verdict.
-    const timed = members.flatMap((m) => {
-      const share = elapsedShare(m.window, now);
-      return share === null ? [] : [{ used: m.window.usedPercent, elapsed: share }];
-    });
-    const timedUsed = timed.reduce((sum, t) => sum + t.used, 0) / timed.length;
-    const meanElapsed =
-      timed.length > 0 ? timed.reduce((sum, t) => sum + t.elapsed, 0) / timed.length : null;
     const resets = members
       .flatMap((member) => {
         const at = resetMillis(member.window);
@@ -468,16 +458,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       ),
       usedPercent: Math.round(usedPercent),
       remainingPercent: Math.round(100 - usedPercent),
-      pace:
-        meanElapsed === null
-          ? null
-          : pacePresentationOfShares(
-              timedUsed,
-              meanElapsed,
-              timed.length > 1 || timed.length < members.length
-                ? `Average across ${timed.length} ${timed.length === 1 ? "account" : "accounts"} with known window times: `
-                : "",
-            ),
+      projection: poolProjection(members, resets, usedPercent, now),
       resets,
     };
   });
@@ -524,55 +505,96 @@ export function paceRemainingPercent(
   return elapsed === null ? null : Math.round((1 - elapsed) * 100);
 }
 
-export type LimitPace = "ahead" | "on" | "under";
-
-const PACE_LABEL = { ahead: "Above pace", on: "On pace", under: "Below pace" } as const;
-
-export interface LimitPacePresentation {
-  readonly label: (typeof PACE_LABEL)[LimitPace];
+/**
+ * Where spending at the rate so far leads: empty before the reset, or lasting
+ * until it. The rate is a straight line from the window's start, so a burst
+ * early in a window reads as a risk until time catches up with it.
+ */
+export interface LimitProjection {
+  readonly runsOut: boolean;
+  /** `Runs out in 1h 57m` or `Lasts until reset`. */
+  readonly label: string;
+  /** The figures behind the label, for tooltips and screen readers. */
   readonly description: string;
 }
 
-/** Explain consumed quota against elapsed time, using the same tolerance on every client. */
-export function pacePresentation(
-  window: ServerProviderUsageWindow,
-  now: number,
-): LimitPacePresentation | null {
+/** Usage per millisecond so far, or null when there is no clock to divide by. */
+function usageRate(window: ServerProviderUsageWindow, now: number): number | null {
   const elapsed = elapsedShare(window, now);
-  return elapsed === null ? null : pacePresentationOfShares(window.usedPercent, elapsed);
+  if (elapsed === null || window.windowDurationMins === undefined) return null;
+  const elapsedMs = elapsed * window.windowDurationMins * MINUTE;
+  if (elapsedMs > 0) return window.usedPercent / elapsedMs;
+  return window.usedPercent > 0 ? null : 0;
 }
 
-function pacePresentationOfShares(
+function projectionOf(
   usedPercent: number,
-  elapsed: number,
-  scope = "",
-): LimitPacePresentation {
-  const pace = paceOfShares(usedPercent, elapsed);
-  const comparison = `${Math.round(usedPercent)}% of quota consumed · ${Math.round(elapsed * 100)}% of window time elapsed.`;
-  const explanation =
-    pace === "ahead"
-      ? "Quota is being consumed faster than time elapses."
-      : pace === "under"
-        ? "Quota is being consumed slower than time elapses."
-        : "Consumption is within 5 percentage points of elapsed time.";
-  return { label: PACE_LABEL[pace], description: `${scope}${comparison} ${explanation}` };
+  rate: number,
+  untilRefill: number,
+  figures: string,
+  refill: string,
+): LimitProjection | null {
+  if (usedPercent >= 100) return null;
+  const runOutIn = rate > 0 ? (100 - usedPercent) / rate : Number.POSITIVE_INFINITY;
+  if (runOutIn >= untilRefill) {
+    return {
+      runsOut: false,
+      label: "Lasts until reset",
+      description: `${figures} At this rate it lasts until ${refill}.`,
+    };
+  }
+  return {
+    runsOut: true,
+    label: runOutIn < MINUTE ? "Runs out now" : `Runs out in ${formatDuration(runOutIn)}`,
+    description: `${figures} At this rate it runs out ${formatDuration(untilRefill - runOutIn)} before ${refill}.`,
+  };
+}
+
+/** One window's projection, or null without a usable clock or once it is empty. */
+export function limitProjection(
+  window: ServerProviderUsageWindow,
+  now: number,
+): LimitProjection | null {
+  const resetsAt = resetMillis(window);
+  const elapsed = elapsedShare(window, now);
+  const rate = usageRate(window, now);
+  if (resetsAt === null || elapsed === null || rate === null) return null;
+  return projectionOf(
+    window.usedPercent,
+    rate,
+    resetsAt - now,
+    `${Math.round(window.usedPercent)}% used with ${Math.round(elapsed * 100)}% of the window gone.`,
+    "the reset",
+  );
 }
 
 /**
- * Usage against the clock. Spending evenly leaves the same share of quota as
- * there is time left in the window; within five points of that counts as on
- * pace, further ahead means the window may run dry first.
+ * A pool drains at the mean of its members' rates, since its percentage is
+ * their mean, and refills at the soonest reset that hands anything back.
+ * Members without a clock add their usage but no rate.
  */
-export function paceOf(window: ServerProviderUsageWindow, now: number): LimitPace | null {
-  const elapsed = elapsedShare(window, now);
-  return elapsed === null ? null : paceOfShares(window.usedPercent, elapsed);
-}
-
-function paceOfShares(usedPercent: number, elapsed: number): LimitPace {
-  const gap = usedPercent - elapsed * 100;
-  if (gap > 5) return "ahead";
-  if (gap < -5) return "under";
-  return "on";
+function poolProjection(
+  members: readonly LimitPoolMember[],
+  resets: LimitPoolWindow["resets"],
+  usedPercent: number,
+  now: number,
+): LimitProjection | null {
+  if (members.length === 1) return limitProjection(members[0]!.window, now);
+  const rates = members.flatMap((member) => {
+    const rate = usageRate(member.window, now);
+    return rate === null ? [] : [rate];
+  });
+  // An untouched pool has nothing to refill, so it lasts until any reset.
+  const refill = resets.find((reset) => reset.restoresPercent > 0) ?? resets[0];
+  if (rates.length === 0 || !refill) return null;
+  const rate = rates.reduce((sum, value) => sum + value, 0) / members.length;
+  return projectionOf(
+    usedPercent,
+    rate,
+    refill.at - now,
+    `${members.length} accounts, ${Math.round(usedPercent)}% used.`,
+    "the next account reset",
+  );
 }
 
 /** `2h 13m`, `3d 4h`, `12m`. */

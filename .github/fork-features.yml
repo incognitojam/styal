@@ -3923,18 +3923,20 @@ features:
       retire_when: Upstream presents an equivalent cross-client operational carbon estimate with transparent methodology and appropriately qualified comparisons.
 
   - id: usage-limits-pace-labels
-    title: Explain consumption pace consistently across clients
+    title: Warn when a usage window will run out before it resets
     status: maintained
     prs: [804]
     invariants:
-      - Usage Limits, the /usage-limits composer result and mobile account details show Above pace, On pace or Below pace by comparing quota consumed with elapsed window time; unavailable clocks hide pace.
-      - Pace keeps the inclusive five-percentage-point tolerance and pooled comparisons include only accounts with known window times.
+      - Usage Limits, the /usage-limits composer result and mobile window rows show "Runs out in <time>" only when usage so far, extended in a straight line from the window's start, empties the window before it resets; otherwise they show nothing in that slot. Unavailable clocks and empty windows show no projection.
+      - Account details (the web segment popover, the web bar tooltip and the mobile account screen) show either "Runs out in <time>" or "Lasts until reset" with the figures behind it.
+      - A pool drains at the mean of its members' rates, members without a clock add usage but no rate, and it runs out only if it empties before the next account reset that restores quota.
+      - Reset countdowns, refills and per-account credit counts show words beside their icons wherever there is room; the wide pooled segment plates keep the compact icon form, with the words in their accessible labels and popovers.
       - Explanations are keyboard and screen-reader accessible on web and readable on mobile; existing even-usage ticks remain visible over fills and at window boundaries.
-      - Pace changes preserve single-account simplification, reset credits and card layout.
+      - These changes preserve single-account simplification, reset credits and card layout.
     implementation_paths:
       - apps/mobile/src/features/usage/UsageLimitsPooled.tsx
       - apps/mobile/src/features/usage/UsageLimitsSection.tsx
-      - apps/mobile/src/features/usage/UsagePace.tsx
+      - apps/mobile/src/features/usage/UsageProjection.tsx
       - apps/web/src/components/usage/UsageLimits.tsx
       - apps/web/src/components/usage/UsageLimitsPooled.tsx
       - packages/shared/src/usageLimits.ts
@@ -3951,7 +3953,7 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/pull/14477
         - https://github.com/pingdotgg/t3code/pull/16937
-      retire_when: Upstream uses unambiguous cross-client consumption pace labels with quota/time explanations, the five-point tolerance and visible even-usage ticks while preserving the fork's single-account and reset-credit behavior.
+      retire_when: Upstream projects when each window and pool runs out across clients, labels its usage glyphs with words and keeps visible even-usage ticks while preserving the fork's single-account and reset-credit behavior.
 
   - id: usage-limits-single-account
     title: Show a provider with one account like its own usage screen

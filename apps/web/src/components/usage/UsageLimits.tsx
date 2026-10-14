@@ -11,8 +11,8 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   formatDuration,
   formatResetsIn,
-  type LimitPacePresentation,
-  pacePresentation,
+  type LimitProjection,
+  limitProjection,
   paceRemainingPercent,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
@@ -44,23 +44,27 @@ export function barColor(driver: ServerProvider["driver"]): string {
   return kind ? PROVIDER_PRESENTATION[kind].color : "var(--foreground)";
 }
 
-/** Visible pace text; keyboard focus exposes the quota and time comparison. */
-export function PaceIndicator({ pace }: { readonly pace: LimitPacePresentation | null }) {
-  if (pace === null) return null;
+/**
+ * `Runs out in 45m` beside a window that empties before its reset, with the
+ * figures on hover and focus. A window that lasts shows nothing here; its
+ * details say so.
+ */
+export function RunOutLabel({ projection }: { readonly projection: LimitProjection | null }) {
+  if (!projection?.runsOut) return null;
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <span
             tabIndex={0}
-            aria-label={`${pace.label}. ${pace.description}`}
+            aria-label={`${projection.label}. ${projection.description}`}
             className="inline-flex shrink-0 rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         }
       >
-        {pace.label}
+        {projection.label}
       </TooltipTrigger>
-      <TooltipPopup side="top">{pace.description}</TooltipPopup>
+      <TooltipPopup side="top">{projection.description}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -93,6 +97,7 @@ function WindowBar({
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
   const timeLeft = paceRemainingPercent(window, now);
+  const projection = limitProjection(window, now);
   const resetsIn = formatResetsIn(window, now);
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
@@ -143,6 +148,7 @@ function WindowBar({
           {timeLeft !== null ? (
             <span className="text-muted-foreground">The tick is where even spending would be.</span>
           ) : null}
+          {projection ? <span className="text-muted-foreground">{projection.label}</span> : null}
           {resetsAt ? (
             <span className="text-muted-foreground">
               Resets {resetsAt}
@@ -156,7 +162,7 @@ function WindowBar({
 }
 
 /**
- * One account's windows as rows: label and percent, bar, pace and countdown.
+ * One account's windows as rows: label and percent, bar, run-out and countdown.
  * Compact rows fit the composer panel with narrower columns.
  */
 export function LimitWindows({
@@ -180,7 +186,7 @@ export function LimitWindows({
       }
     >
       {windows.map((window) => {
-        const pace = pacePresentation(window, now);
+        const projection = limitProjection(window, now);
         const resetsIn = formatResetsIn(window, now);
         return (
           <Fragment key={window.id}>
@@ -192,7 +198,7 @@ export function LimitWindows({
             </span>
             <WindowBar color={color} window={window} now={now} />
             <span className="flex items-center gap-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-              <PaceIndicator pace={pace} />
+              <RunOutLabel projection={projection} />
               <span className="ms-auto shrink-0">{resetsIn ?? ""}</span>
             </span>
           </Fragment>

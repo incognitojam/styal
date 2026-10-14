@@ -15,10 +15,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Usage limits
 
-- **Readable consumption pace.** Usage Limits and `/usage-limits` show **Above pace**, **On pace**,
-  or **Below pace**, with an explanation comparing quota consumed with elapsed window time.
-  Mobile account details show the same comparison. T3 Code still uses pace icons on web and
-  “Ahead of pace” on mobile as of [revision 42160f2](https://github.com/pingdotgg/t3code/tree/42160f2925daa3c0d4ef2b95f68a87858972e6a3).
+- **Run-out warnings instead of pace.** Usage Limits and `/usage-limits` say **Runs out in** and how long when a window will empty before it resets at the current rate, and account details say **Lasts until reset** otherwise. Reset countdowns, refills, and credit counts put words beside their icons. T3 Code still shows pace icons on web and “Ahead of pace” on mobile as of [revision 7ac952c](https://github.com/pingdotgg/t3code/tree/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae).
 
 ## Mobile
 

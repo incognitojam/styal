@@ -12,7 +12,7 @@ import {
   formatDuration,
   formatResetsIn,
   limitsNotice,
-  pacePresentation,
+  limitProjection,
   paceRemainingPercent,
   remainingPercent,
   resetCreditExpiries,
@@ -28,7 +28,7 @@ import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useProviderColors } from "./usageProviders";
-import { PaceIndicator } from "./UsagePace";
+import { ProjectionLabel } from "./UsageProjection";
 
 type Driver = ServerProvider["driver"];
 
@@ -43,8 +43,8 @@ function useBarColor(driver: Driver): string | null {
 /**
  * One window as a bar spanning its whole duration: the fill is quota left,
  * the tick is how much of the window is left, so even spending keeps the
- * fill at the tick. Pace sits under the left edge, the countdown under the
- * right, so a row reads in one glance.
+ * fill at the tick. A run-out warning sits under the left edge, the
+ * countdown under the right, so a row reads in one glance.
  */
 function WindowRow(props: {
   readonly window: ServerProviderUsageWindow;
@@ -54,7 +54,7 @@ function WindowRow(props: {
   const { window, now } = props;
   const remaining = remainingPercent(window);
   const timeLeft = paceRemainingPercent(window, now);
-  const pace = pacePresentation(window, now);
+  const projection = limitProjection(window, now);
   const resetsIn = formatResetsIn(window, now);
   // The tick sits in a gap cut 3px either side through the bar, so it reads over
   // any fill; it stays 3px inside the ends so a fresh or spent window keeps its caps.
@@ -127,9 +127,9 @@ function WindowRow(props: {
           />
         ) : null}
       </View>
-      {pace || resetsIn ? (
+      {projection?.runsOut || resetsIn ? (
         <View className="flex-row justify-between gap-3">
-          <PaceIndicator pace={pace} />
+          <ProjectionLabel projection={projection} />
           <Text className="text-xs tabular-nums text-foreground-tertiary">{resetsIn ?? ""}</Text>
         </View>
       ) : null}
@@ -359,7 +359,7 @@ export function ResetCredits(props: {
 /**
  * Re-probes every provider (and usage-limit source) on each connected
  * environment; the fresh snapshots then arrive over the config stream.
- * Countdowns and pace anchor to `now` rather than ticking, so a refresh also
+ * Countdowns and projections anchor to `now` rather than ticking, so a refresh also
  * re-anchors the clock: quota and elapsed time move together, or not at all.
  * Environments whose probe failed are named, since their rows keep showing
  * the previous quota with nothing else to say so.

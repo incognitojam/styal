@@ -46,7 +46,7 @@
     },
     {
       "pr": 14477,
-      "reason": "Partially imported provisionally for the pace-label PR: reuse only paceRemainingPercent. Keep the existing +/-5-point tolerance and fork single-account/reset-credit behavior; exclude headroom wording, pooled markers and refill/layout changes. At chronological intake compare the frozen diff with the final upstream result, reconcile the omitted behavior deliberately with ledger usage-limits-pace-labels, validate all pace entry points, then clear the snapshot. If closed unmerged, review retaining this helper as maintained fork behavior before clearing it.",
+      "reason": "Partially imported provisionally for the run-out projection PR: reuse only paceRemainingPercent for the even-usage tick. The fork replaces pace labels with run-out projections and keeps its single-account/reset-credit behavior; exclude headroom wording, pooled markers and refill/layout changes. At chronological intake compare the frozen diff with the final upstream result, reconcile the omitted behavior deliberately with ledger usage-limits-pace-labels, validate all pace entry points, then clear the snapshot. If closed unmerged, review retaining this helper as maintained fork behavior before clearing it.",
       "snapshot": {
         "base": "0d9468fea907dda747b51204e92ca15b54f81d47",
         "head": "13e7ea33128c58fb32f36ea1f2eb1ea34615e485"
@@ -70,7 +70,7 @@
     },
     {
       "pr": 16937,
-      "reason": "Imported provisionally for the pace-label PR: reuse the web mask and native clipping gap that keep existing even-usage ticks visible over any fill and at the bar ends. The fork additionally uses shared pace labels and even-usage calculation. At chronological intake compare this frozen diff with the final upstream result, reconcile amendments, verify ticks on light/dark composer surfaces and native mobile, then clear the snapshot. If closed unmerged, review retaining the visibility fix before clearing it.",
+      "reason": "Imported provisionally for the run-out projection PR: reuse the web mask and native clipping gap that keep existing even-usage ticks visible over any fill and at the bar ends. The fork additionally uses shared run-out projections and the even-usage calculation. At chronological intake compare this frozen diff with the final upstream result, reconcile amendments, verify ticks on light/dark composer surfaces and native mobile, then clear the snapshot. If closed unmerged, review retaining the visibility fix before clearing it.",
       "snapshot": {
         "base": "a9fb6a80635c77a1d4fd988e0018059e13628eff",
         "head": "4b2f2fc50c4ee110677a4d8b06517bd85f87193f"

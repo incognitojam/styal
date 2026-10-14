@@ -130,6 +130,12 @@ Claude resets are not available when the server runs on macOS, where Claude keep
 Keychain. On narrow screens, numbered rows below
 the bar show each account's quota, countdown, and credits. Tap a row to open its details.
 
+A window that will run out before it resets at your current rate shows **Runs out in** and how
+long. The rate is your usage so far divided by the time since the window opened, so heavy use early
+in a window can show a warning that clears as time passes. A pooled window runs out only if it
+empties before the next account reset that gives quota back. Account details show **Lasts until
+reset** when the window will not run out.
+
 The same account signed in on more than one environment, or reported by a hub as well, counts once.
 Filter with the environment dropdown to see what a single machine has.
 
