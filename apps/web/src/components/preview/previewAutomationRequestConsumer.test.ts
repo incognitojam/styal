@@ -355,17 +355,17 @@ describe("previewAutomationRequestConsumer", () => {
     [new TypeError("private page content: synthetic-secret"), "TypeError"],
     [
       new Error("IPC wrapper", {
-        cause: new Error(
-          "net::ERR_CONNECTION_REFUSED at https://example.test/?token=synthetic-secret",
-        ),
+        cause: Object.assign(new Error("private page content: synthetic-secret"), {
+          code: "ERR_CONNECTION_REFUSED",
+        }),
       }),
       "ERR_CONNECTION_REFUSED",
     ],
-    [new Error("Error invoking remote method: SyntaxError: synthetic-secret"), "SyntaxError"],
-    [new Error("Execution context was destroyed: synthetic-secret"), "ExecutionContextDestroyed"],
     [
-      new Error("Target page, context or browser has been closed: synthetic-secret"),
-      "TargetClosedError",
+      new Error(
+        "Error invoking remote method 'preview:evaluate': PreviewAutomationEvaluationError: Preview JavaScript evaluation failed in tab tab_1 [styal-preview-reason=SyntaxError]",
+      ),
+      "SyntaxError",
     ],
   ])("retains an allowlisted diagnostic without the original cause: %s", (cause, reason) => {
     const response = serializePreviewAutomationError(cause, {
@@ -392,7 +392,15 @@ describe("previewAutomationRequestConsumer", () => {
         throw new Error("synthetic-secret");
       },
     });
-    for (const cause of [cyclic, throwing, new Error("net::ERR_SYNTHETIC_SECRET")]) {
+    for (const cause of [
+      cyclic,
+      throwing,
+      new Error("net::ERR_SYNTHETIC_SECRET"),
+      new Error("TypeError: net::ERR_CONNECTION_REFUSED synthetic-secret"),
+      new Error("Execution context was destroyed: synthetic-secret"),
+      new Error("[styal-preview-reason=TypeError]"),
+      new Error("Error invoking remote method: SyntaxError: synthetic-secret"),
+    ]) {
       const response = serializePreviewAutomationError(cause, {
         requestId: "request-private",
         operation: "evaluate",
@@ -405,7 +413,7 @@ describe("previewAutomationRequestConsumer", () => {
     }
   });
 
-  it("accepts legacy responses and rejects arbitrary diagnostic text on the wire", () => {
+  it("accepts legacy and future diagnostic codes without allowing unbounded text", () => {
     const response = {
       clientId,
       connectionId,
@@ -421,8 +429,11 @@ describe("previewAutomationRequestConsumer", () => {
     expect(
       valid({
         ...response,
-        error: { ...response.error, failureReason: "private page content: synthetic-secret" },
+        error: { ...response.error, failureReason: "FutureBrowserError" },
       }),
+    ).toBe(true);
+    expect(
+      valid({ ...response, error: { ...response.error, failureReason: "x".repeat(65) } }),
     ).toBe(false);
   });
 

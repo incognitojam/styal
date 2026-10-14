@@ -678,7 +678,9 @@ export const PreviewAutomationResponse = Schema.Struct({
     Schema.Struct({
       _tag: TrimmedNonEmptyString,
       message: Schema.String,
-      failureReason: Schema.optional(PreviewAutomationFailureReason),
+      // Accept future client codes without rejecting the whole response. The server
+      // narrows this to its known allowlist before using it in diagnostics.
+      failureReason: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
       detail: Schema.optional(Schema.Unknown),
     }),
   ),

@@ -6,6 +6,7 @@ import type {
   DesktopPreviewRecordingInputEvent,
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { previewAutomationFailureReason } from "@t3tools/shared/previewErrorDiagnostics";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -1027,6 +1028,13 @@ describe("PreviewManager", () => {
           manager.navigate("tab_superseded_load", "http://localhost:5174/"),
         );
         expect(refused._tag).toBe("Failure");
+        if (Exit.isSuccess(refused)) return;
+        const error = Option.getOrThrow(Cause.findErrorOption(refused.cause));
+        const rendererError = new Error(
+          `Error invoking remote method 'preview:navigate': ${String(error)}`,
+        );
+        expect(previewAutomationFailureReason(rendererError)).toBe("ERR_CONNECTION_REFUSED");
+        expect(rendererError.message).not.toContain("http://localhost:5174/");
       }),
     ),
   );
@@ -5226,7 +5234,7 @@ describe("PreviewManager", () => {
         const text = "ReferenceError: fallbackDetail is not defined";
         const exceptionDetails = {
           text,
-          exception: { description: "" },
+          exception: { className: "TypeError", description: "" },
         };
         const sendCommand = vi.fn(async (method: string) =>
           method === "Runtime.evaluate" ? { exceptionDetails } : undefined,
@@ -5274,6 +5282,11 @@ describe("PreviewManager", () => {
           detailLength: text.length,
           cause: exceptionDetails,
         });
+        const rendererError = new Error(
+          `Error invoking remote method 'preview:evaluate': ${String(error)}`,
+        );
+        expect(previewAutomationFailureReason(rendererError)).toBe("TypeError");
+        expect(rendererError.message).not.toContain(text);
       }),
     ),
   );
@@ -5415,7 +5428,7 @@ describe("Preview automation diagnostics", () => {
     const detail = "ReferenceError: missingValue is not defined";
     const cause = {
       text: "Uncaught Error",
-      exception: { description: detail },
+      exception: { className: "ReferenceError", description: detail },
       unsafePayload: secret,
     };
     const error = new PreviewManager.PreviewAutomationEvaluationError({
@@ -5432,7 +5445,13 @@ describe("Preview automation diagnostics", () => {
 
     expect(error.cause).toBe(cause);
     expect(encodedCause).toStrictEqual(cause);
-    expect(error.message).toBe("Preview JavaScript evaluation failed in tab tab_1");
+    expect(error.message).toBe(
+      "Preview JavaScript evaluation failed in tab tab_1 [styal-preview-reason=ReferenceError]",
+    );
+    const rendererError = new Error(
+      `Error invoking remote method 'preview:evaluate': ${String(error)}`,
+    );
+    expect(previewAutomationFailureReason(rendererError)).toBe("ReferenceError");
     expect(error.message).not.toContain(secret);
     expect(JSON.stringify(encodedDiagnostics)).not.toContain(secret);
     expect("detail" in error).toBe(false);

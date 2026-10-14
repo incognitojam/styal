@@ -26,6 +26,7 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Result from "effect/Result";
 import * as Scheduler from "effect/Scheduler";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -36,6 +37,7 @@ import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as ErrorReporting from "../telemetry/ErrorReporting.ts";
 
 const makeBroker = PreviewAutomationBroker.make.pipe(Effect.provide(NodeServices.layer));
+const encodeReportJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 const scope = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -70,46 +72,52 @@ const requestsFrom = (
     }),
   );
 
-it.effect("carries a safe browser diagnostic through the broker into an exception report", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const broker = yield* makeBroker;
-      const requests = requestsFrom(yield* broker.connect(makeHost()));
-      yield* Stream.runForEach(requests, (request) =>
-        broker.respond({
-          clientId: "client-1",
-          connectionId: request.connectionId,
-          requestId: request.requestId,
-          ok: false,
-          error: {
-            _tag: "PreviewAutomationExecutionError",
-            message: "Preview navigation failed.",
-            failureReason: "ERR_CONNECTION_REFUSED",
+it.effect.each(["ERR_CONNECTION_REFUSED", "FutureBrowserError-synthetic-secret", undefined])(
+  "handles browser diagnostic %s without losing the response",
+  (failureReason) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const broker = yield* makeBroker;
+        const requests = requestsFrom(yield* broker.connect(makeHost()));
+        yield* Stream.runForEach(requests, (request) =>
+          broker.respond({
+            clientId: "client-1",
+            connectionId: request.connectionId,
+            requestId: request.requestId,
+            ok: false,
+            error: {
+              _tag: "PreviewAutomationExecutionError",
+              message: "Preview navigation failed.",
+              ...(failureReason === undefined ? {} : { failureReason }),
+            },
+          }),
+        ).pipe(Effect.forkScoped);
+        yield* Effect.yieldNow;
+        const error = yield* broker
+          .invoke<void>({ scope, operation: "navigate", input: {} })
+          .pipe(Effect.flip);
+        expect(error).toBeInstanceOf(PreviewAutomationExecutionError);
+        const known = failureReason === "ERR_CONNECTION_REFUSED";
+        expect(error.message.includes("ERR_CONNECTION_REFUSED")).toBe(known);
+        expect(Reflect.get(error, "failureReason")).toBe(known ? failureReason : undefined);
+        const properties = ErrorReporting.exceptionProperties(
+          {
+            level: "error",
+            message: [],
+            cause: Cause.fail(error),
+            span: "preview-test",
           },
-        }),
-      ).pipe(Effect.forkScoped);
-      yield* Effect.yieldNow;
-      const error = yield* broker
-        .invoke<void>({ scope, operation: "navigate", input: {} })
-        .pipe(Effect.flip);
-      expect(error).toBeInstanceOf(PreviewAutomationExecutionError);
-      expect(error.message).toContain("navigate failed (ERR_CONNECTION_REFUSED)");
-      const properties = ErrorReporting.exceptionProperties(
-        {
-          level: "error",
-          message: [],
-          cause: Cause.fail(error),
-          span: "preview-test",
-        },
-        ErrorReporting.makeScrubber({ appRoot: "/opt/synthetic", homeDir: "/home/synthetic" }),
-      );
-      expect(
-        properties.$exception_list.some((exception) =>
-          exception.value?.includes("ERR_CONNECTION_REFUSED"),
-        ),
-      ).toBe(true);
-    }),
-  ),
+          ErrorReporting.makeScrubber({ appRoot: "/opt/synthetic", homeDir: "/home/synthetic" }),
+        );
+        expect(
+          properties.$exception_list.some((exception) =>
+            exception.value?.includes("ERR_CONNECTION_REFUSED"),
+          ),
+        ).toBe(known);
+        const reportJson = yield* encodeReportJson(properties);
+        expect(reportJson).not.toContain("synthetic-secret");
+      }),
+    ),
 );
 
 it.effect("atomically registers a connected host and correlates its response", () =>

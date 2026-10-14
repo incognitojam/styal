@@ -293,6 +293,10 @@
       "types": "./src/preview.ts",
       "import": "./src/preview.ts"
     },
+    "./previewErrorDiagnostics": {
+      "types": "./src/previewErrorDiagnostics.ts",
+      "import": "./src/previewErrorDiagnostics.ts"
+    },
     "./previewViewport": {
       "types": "./src/previewViewport.ts",
       "import": "./src/previewViewport.ts"

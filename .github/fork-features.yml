@@ -1733,6 +1733,7 @@ features:
       - .github/actions/setup-posthog-cli/action.yml
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-js-bundle.yml
+      - apps/desktop/src/preview/Manager.ts
       - apps/server/scripts/posthogSourcemaps.ts
       - apps/server/src/mcp/PreviewAutomationBroker.ts
       - apps/server/src/observability/RpcInstrumentation.ts
@@ -1741,16 +1742,19 @@ features:
       - apps/server/vite.config.ts
       - apps/web/src/components/preview/previewAutomationErrors.ts
       - packages/contracts/src/previewAutomation.ts
+      - packages/shared/src/previewErrorDiagnostics.ts
     upstream_paths:
       - apps/server/src/observability/RpcInstrumentation.ts
       - apps/server/src/server.ts
       - apps/server/src/serverLogger.ts
       - apps/server/vite.config.ts
     tests:
+      - apps/desktop/src/preview/Manager.test.ts
       - apps/server/src/mcp/PreviewAutomationBroker.test.ts
       - apps/server/src/observability/RpcInstrumentation.test.ts
       - apps/server/src/telemetry/ErrorReporting.test.ts
       - apps/web/src/components/preview/previewAutomationRequestConsumer.test.ts
+      - packages/shared/src/previewErrorDiagnostics.test.ts
     upstream:
       status: unassessed
       tracking: []

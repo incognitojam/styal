@@ -3,6 +3,7 @@ import {
   PreviewAutomationClientDisconnectedError,
   PreviewAutomationControlInterruptedError,
   PreviewAutomationExecutionError,
+  PreviewAutomationFailureReason,
   PreviewAutomationInvalidSelectorError,
   PreviewAutomationMalformedResponseError,
   PreviewAutomationNoAvailableHostError,
@@ -197,12 +198,14 @@ function remoteDetailKind(detail: unknown): RemoteDetailKind {
   }
 }
 
+const isFailureReason = Schema.is(PreviewAutomationFailureReason);
+
 const classifyResponseError = (
   context: PreviewAutomationRequestErrorContext,
   error: NonNullable<PreviewAutomationResponse["error"]>,
 ): PreviewAutomationError => {
   const remoteDiagnostics = {
-    ...(error.failureReason === undefined ? {} : { failureReason: error.failureReason }),
+    ...(isFailureReason(error.failureReason) ? { failureReason: error.failureReason } : {}),
     remoteTag: error._tag,
     remoteMessageLength: error.message.length,
     ...(error.detail === undefined ? {} : { remoteDetailKind: remoteDetailKind(error.detail) }),
