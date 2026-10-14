@@ -49,6 +49,14 @@
       "reason": "Moves agent preview tabs from the desktop app to a browser on the environment server. The fork imported #17693 early while previews still ran in the desktop app, so it kept the desktop wording of the no-host and recording-transfer errors and the MCP snapshot test that checks it. #15328 does not change those messages and the queue already counts #17693 as recorded, so when the queue reaches #15328, also apply #17693's wording for them."
     },
     {
+      "pr": 16022,
+      "reason": "Imported provisionally as one unchanged snapshot: the web and desktop waiting banner names a single subagent once and uses Show to open its child thread. Multi-item banners retain named links, and single items without a child thread retain no link. No fork adaptations or known gaps. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments, verify the single linked, unnamed, no-child, and multi-item cases and child navigation, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior before clearing the marker.",
+      "snapshot": {
+        "base": "11fd54fcbbfb39f824bb4c908d428c20d801267c",
+        "head": "955bb3afe30cb8aa82d702863ec70921d68ca5d0"
+      }
+    },
+    {
       "pr": 16172,
       "reason": "Imported provisionally as one snapshot in fork #734: a visible thread Undo notice claims mod+z from focused text fields until another keypress or text edit, so Undo works from the composer. The fork keeps the handler in its own sidebar component and consumes held-key repeats until release, so they cannot undo the composer draft after the notice clears. Upstream closed the PR unmerged for missing real-client evidence; the fork retains the change as maintained behavior (ledger thread-action-undo-shortcut). If it reopens and merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and the held-key handling, verify Undo from the composer, text undo after typing and a held key, then clear the snapshot marker with that intake.",
       "snapshot": {
