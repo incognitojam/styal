@@ -2251,8 +2251,9 @@ features:
     prs: [801]
     invariants:
       - On mobile, picking a single-select option keeps typed text in that question's field and submits only the selected option.
-      - Editing the custom answer clears the single-select option and makes the edited text the answer; an empty answer requires a new choice.
-      - The selected option remains highlighted while retained custom text is muted with an explanation that editing switches back to it.
+      - Tapping or focusing retained nonblank custom text clears the single-select option and activates the saved answer without editing it.
+      - Editing the custom answer clears the single-select option and makes the edited text the answer; an empty answer without attachments requires a new choice.
+      - The selected option remains highlighted while retained custom text is muted with an explanation that tapping switches back to it.
       - Selecting options never moves custom answers into the thread composer draft; multi-select answers still combine options and typed additions.
     implementation_paths:
       - apps/mobile/src/features/threads/PendingUserInputCard.tsx
@@ -2268,9 +2269,9 @@ features:
     upstream:
       status: partial
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/98a6246d07624432a6e6d0ab4fb87bede90a49a6
+        - https://github.com/pingdotgg/t3code/commit/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae
         - https://github.com/pingdotgg/t3code/pull/12577
-      retire_when: Upstream mobile keeps custom text in each question field while selecting an option, submits only the active answer, and lets editing switch back to custom text.
+      retire_when: Upstream mobile keeps custom text in each question field while selecting an option, submits only the active answer, and lets tapping the retained text switch back to it.
 
   - id: pending-question-links
     title: Open links from pending input questions

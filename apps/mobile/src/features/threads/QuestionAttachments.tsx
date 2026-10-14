@@ -111,6 +111,11 @@ export function QuestionAttachments(props: {
       .finally(() => changeQuestionAttachmentPreparation(key, -1));
   });
   if (!selectedThread || props.question.allowCustomAnswer === false) return null;
+  const activateCustomAnswer = () => {
+    if (!props.disabled && props.optionSelected && props.value.trim().length > 0) {
+      props.onChangeText(props.value);
+    }
+  };
   const { environmentId, id: threadId } = selectedThread;
   const capabilities = configs.get(environmentId)?.environment.capabilities;
   const canAttach = capabilities?.questionAttachments === true;
@@ -195,11 +200,15 @@ export function QuestionAttachments(props: {
           accessibilityLabel={props.question.multiSelect ? "Additional answer" : "Custom answer"}
           accessibilityHint={
             props.optionSelected
-              ? "An option is selected. Edit this text to use a custom answer instead."
+              ? "An option is selected. Tap this field to use your custom answer."
               : undefined
           }
           onChangeText={props.onChangeText}
-          onFocus={() => props.onInputFocusChange?.(true)}
+          onPressIn={activateCustomAnswer}
+          onFocus={() => {
+            activateCustomAnswer();
+            props.onInputFocusChange?.(true);
+          }}
           onBlur={() => props.onInputFocusChange?.(false)}
           placeholder={
             props.question.multiSelect ? "Add another answer" : "Or type a custom answer"
@@ -212,7 +221,7 @@ export function QuestionAttachments(props: {
       </TextInputWrapper>
       {props.optionSelected && props.value.trim().length > 0 ? (
         <Text className="font-sans text-xs leading-4 text-foreground-muted">
-          The selected option will be sent. Edit your text to use it instead.
+          Option selected. Tap your text to use it.
         </Text>
       ) : null}
     </View>

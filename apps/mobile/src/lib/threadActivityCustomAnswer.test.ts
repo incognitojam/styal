@@ -41,6 +41,25 @@ describe("single-select questions with a custom answer draft", () => {
     });
   });
 
+  it("reactivates the retained answer without changing its text", () => {
+    const selected = togglePendingUserInputOptionSelection(
+      runtime,
+      setPendingUserInputCustomAnswer(runtime, undefined, typed),
+      "Go",
+    );
+    const activated = setPendingUserInputCustomAnswer(
+      runtime,
+      selected,
+      selected.customAnswer ?? "",
+    );
+
+    expect(activated.customAnswer).toBe(typed);
+    expect(isPendingUserInputOptionSelected(runtime, activated, "Go")).toBe(false);
+    expect(buildPendingUserInputAnswers([runtime], { runtime: activated })).toEqual({
+      runtime: "Rust instead",
+    });
+  });
+
   it("switches back to the custom answer when the retained text is edited", () => {
     const selected = togglePendingUserInputOptionSelection(
       runtime,
