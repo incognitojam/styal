@@ -141,6 +141,10 @@ cancel or continue; cancelling keeps the downloaded update. If the confirmation
 cannot be displayed and the app stays unresponsive, choose **Quit** again after
 five seconds to exit. This can interrupt running work.
 
+Only one server can use a styal home directory at a time. If startup reports that
+another server owns it, stop that server before retrying, or use a separate home
+directory and pair with the running server.
+
 ## Update providers
 
 **Settings → Providers** shows provider updates for the selected environment.
