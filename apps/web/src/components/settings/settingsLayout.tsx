@@ -492,7 +492,7 @@ function ForkFeatureBadge() {
       >
         <StyalToolIcon className="size-3.5" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Only in styal, not in T3 Code</TooltipPopup>
+      <TooltipPopup side="top">Only in styal</TooltipPopup>
     </Tooltip>
   );
 }
