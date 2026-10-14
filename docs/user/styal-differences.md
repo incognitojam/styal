@@ -197,9 +197,9 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked September 18, 2026, which does not include Rich Presence.
 - **A sound choice for each alert.** T3 Code provides fixed completion and attention sounds as of
   [revision 35be904](https://github.com/pingdotgg/t3code/tree/35be904f2fc40aa6d7a42778b6895e8274f3097f).
-  styal lets you independently select and preview those sounds or Avanti for completion, input,
-  and approval alerts, or silence an event. Sounds are on by default; T3 Code starts with alerts
-  off. [Completion sounds](./thread-sidebar.md#completion-sounds).
+  styal lets you independently select and preview those sounds, Avanti, or Departures for
+  completion, input, and approval alerts, or silence an event. Sounds are on by default; T3 Code
+  starts with alerts off. [Completion sounds](./thread-sidebar.md#completion-sounds).
 - **Relevant outage notices.** Sidebar notices surface GitHub, Claude, and OpenAI incidents relevant
   to your projects and providers. Alerts are configurable.
   [GitHub](./source-control.md), [Claude](./providers-claude.md),

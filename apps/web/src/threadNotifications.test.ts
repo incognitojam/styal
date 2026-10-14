@@ -27,6 +27,7 @@ it.each([
   { sound: "t3-completion", url: "/src/assets/notification-completion.mp3", volume: 1 },
   { sound: "t3-input", url: "/src/assets/notification-input.mp3", volume: 1 },
   { sound: "avanti", url: "/avanti.mp3", volume: 0.28 },
+  { sound: "departures", url: "/src/assets/notification-departures.mp3", volume: 1 },
 ] as const)(
   "uses the selected $sound sample and normalized level",
   async ({ sound, url, volume }) => {

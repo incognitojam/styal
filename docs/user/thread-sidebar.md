@@ -284,9 +284,9 @@ prompted.
 
 With **Notification sounds** on, choose a sound independently for
 **Completion**, **Input**, and **Approval**: **T3 completion**, **T3
-attention**, **Avanti**, or **None**, and use the speaker button to hear it. The
-defaults use T3 completion for finished threads and T3 attention for input and
-approval requests.
+attention**, **Avanti**, **Departures**, or **None**, and use the speaker button
+to hear it. The defaults use T3 completion for finished threads and T3 attention
+for input and approval requests.
 
 Fresh installations start with **Notification sounds** on and system and in-app
 notifications off. Existing Resolve and Chime

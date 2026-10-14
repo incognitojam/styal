@@ -1,14 +1,23 @@
 import type { ClientSettings, NotificationSound } from "@t3tools/contracts/settings";
 
 import completionUrl from "./assets/notification-completion.mp3";
+import departuresUrl from "./assets/notification-departures.mp3";
 import inputUrl from "./assets/notification-input.mp3";
 
 export const NOTIFICATION_SOUND_LABELS = {
   "t3-completion": "T3 completion",
   "t3-input": "T3 attention",
   avanti: "Avanti",
+  departures: "Departures",
   none: "None",
 } satisfies Record<NotificationSound, string>;
+
+const NOTIFICATION_SOUND_URLS = {
+  "t3-completion": completionUrl,
+  "t3-input": inputUrl,
+  avanti: "/avanti.mp3",
+  departures: departuresUrl,
+} satisfies Record<Exclude<NotificationSound, "none">, string>;
 
 export function notificationSoundForEvent(
   settings: Pick<ClientSettings, "completionSound" | "inputSound" | "approvalSound">,
@@ -98,8 +107,7 @@ export async function playNotificationSound(
   if (!audioContext || audioContext.state !== "running") return;
   const context = audioContext;
   if (sound === "none") return;
-  const url =
-    sound === "avanti" ? "/avanti.mp3" : sound === "t3-completion" ? completionUrl : inputUrl;
+  const url = NOTIFICATION_SOUND_URLS[sound];
   try {
     let buffer = buffers.get(url);
     if (!buffer) {
