@@ -39,6 +39,7 @@ export function EnvironmentDeviceHostsSettings() {
   return (
     <SettingsRow
       id="environment-device-hosts"
+      forkFeature="device-environment-hosts"
       title="Share devices with other environments"
       serverScoped
       settingKeys={["environmentDeviceHosts"]}

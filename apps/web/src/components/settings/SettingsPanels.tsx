@@ -2375,6 +2375,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("group-threads-by-project")}
+          forkFeature="sidebar-project-thread-groups"
           description="Show active threads under a header for each project."
           resetAction={
             settings.sidebarThreadGrouping !== DEFAULT_UNIFIED_SETTINGS.sidebarThreadGrouping ? (
@@ -2545,6 +2546,7 @@ export function GeneralSettingsPanel() {
         <NotificationSettings />
         <SettingsRow
           {...searchableSetting("outage-alerts")}
+          forkFeature="github-outage-status"
           description="Shows affected services in the sidebar during incidents, based on each service's official status page."
         >
           <SettingsSubRows>
@@ -2634,6 +2636,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("thread-timestamp")}
+          forkFeature="sidebar-last-message-time"
           description="Choose the last prompt or latest message, including agent replies. Older servers use the latest thread activity as an estimate of the last message."
           resetAction={
             settings.sidebarThreadTimestampMode !==
@@ -3022,6 +3025,7 @@ export function GeneralSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("turn-usage")}
+          forkFeature="turn-token-usage"
           description="Show the tokens each agent turn used beside its timestamp. Hover for the breakdown."
           resetAction={
             settings.turnUsageEnabled !== DEFAULT_UNIFIED_SETTINGS.turnUsageEnabled ? (
@@ -3542,6 +3546,7 @@ export function GeneralSettingsPanel() {
         <SettingsSection title="Activity sharing">
           <SettingsRow
             {...searchableSetting("discord-rich-presence")}
+            forkFeature="desktop-discord-rich-presence"
             description="Show your active thread and project counts in Discord. Names and conversation content are never shared. Requires Discord running on this computer."
             resetAction={
               settings.discordRichPresence ? (
