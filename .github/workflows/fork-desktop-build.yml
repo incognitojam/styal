@@ -53,6 +53,8 @@ on:
         required: false
       MACOS_PROVISIONING_PROFILE:
         required: false
+      POSTHOG_SOURCEMAPS_API_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -167,6 +169,8 @@ jobs:
       version: ${{ inputs.version }}
       target: linux-x64
       artifact_namespace: wsl
+    secrets:
+      POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
 
   # node-pty publishes no Linux prebuilt and the WSL backend runs under the
   # distro's own (Linux) Node. Build it on Linux for the Windows package so WSL

@@ -224,6 +224,7 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.ref }}
       version: ${{ needs.prepare.outputs.version }}
+    secrets: inherit
 
   build_desktop_mac:
     name: Build macOS desktop artifact

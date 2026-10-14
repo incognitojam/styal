@@ -69,6 +69,12 @@ Warning or below. Effect does not log fibers that fail unhandled, so a defect is
 reported only where something logs it; RPC handler defects are logged by
 [RPC instrumentation](../../apps/server/src/observability/RpcInstrumentation.ts).
 
+Release CI uploads server source maps with PostHog's bundler plugin, which stamps
+each chunk with a chunk id that the reporter attaches to that chunk's frames.
+Only bundles built with the upload resolve: a frame from any other build, or from
+a chunk bundled outside `apps/server/vite.config.ts`, reaches PostHog unresolved.
+See [release credentials](../operations/release.md#server-source-maps-for-error-tracking).
+
 Reports carry only the thrown value and the log message. Log annotations and
 message objects stay local because they often hold prompts, paths, or
 configuration. Only release builds report by default; development servers set

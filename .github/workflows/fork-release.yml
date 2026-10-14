@@ -152,6 +152,7 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.ref }}
       version: ${{ needs.prepare.outputs.version }}
+    secrets: inherit
 
   # One call per target, so macOS and Linux never wait for the Windows WSL
   # archive and no target waits for the full CLI archive matrix.

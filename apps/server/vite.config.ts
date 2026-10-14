@@ -4,6 +4,7 @@ import { defineConfig, mergeConfig } from "vite-plus";
 import baseConfig from "../../vite.config.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import packageJson from "./package.json" with { type: "json" };
+import { posthogSourcemapPlugins } from "./scripts/posthogSourcemaps.ts";
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
 
 // The bundle used to inline only workspace packages, leaving every third-party
@@ -42,6 +43,10 @@ export default mergeConfig(
       entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claudeHistoryWorker.ts"],
       outDir: packExecutable ? "dist-exe" : "dist",
       sourcemap: !packExecutable,
+      plugins: posthogSourcemapPlugins({
+        version: packageJson.version,
+        executable: packExecutable,
+      }),
       ...(packExecutable
         ? { exe: { fileName: "styal", outDir: "dist-exe", seaConfig: { useCodeCache: false } } }
         : {}),

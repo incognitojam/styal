@@ -202,6 +202,17 @@ function loggedError(entry: LoggedError, message: string | undefined): Error {
 }
 
 /**
+ * The release the source map upload stamped into this bundle, so PostHog knows
+ * which uploaded symbol sets resolve these frames. Read from the bundle only:
+ * `ErrorTracking.getInjectedReleaseId` prefers a `POSTHOG_RELEASE_ID` variable,
+ * which on a user's machine belongs to some other project.
+ */
+function injectedReleaseId(): string | undefined {
+  const injected = (globalThis as { _posthogReleaseId?: unknown })._posthogReleaseId;
+  return typeof injected === "string" && injected.length > 0 ? injected : undefined;
+}
+
+/**
  * Properties for a `$exception` event. A log entry without a thrown value is
  * reported under its message, so PostHog still groups it as an issue.
  */
@@ -234,6 +245,7 @@ export function exceptionProperties(entry: LoggedError, scrub: Scrubber) {
     })),
     logMessage: message === undefined ? undefined : scrub.text(message),
     span: entry.span,
+    $release_id: injectedReleaseId(),
   };
 }
 

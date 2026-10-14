@@ -1,0 +1,28 @@
+name: Set up posthog-cli
+description: >-
+  Install posthog-cli for source map uploads when the job has
+  POSTHOG_SOURCEMAPS_API_KEY, and export its path as POSTHOG_CLI_PATH. The
+  server bundle uploads its maps only when that path is set, so jobs without
+  the key, including fork builds, bundle as before.
+runs:
+  using: composite
+  steps:
+    - name: Install posthog-cli
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${POSTHOG_SOURCEMAPS_API_KEY:-}" ]; then
+          echo "No POSTHOG_SOURCEMAPS_API_KEY; source maps will not be uploaded."
+          exit 0
+        fi
+        prefix="$RUNNER_TEMP/posthog-cli"
+        npm install --prefix "$prefix" --no-save --no-audit --no-fund --ignore-scripts @posthog/cli@0.18.10
+        # Run the binary download explicitly rather than depend on npm's install
+        # script policy. Spawning the binary directly avoids the Node wrapper,
+        # which Windows cannot execute as a binary.
+        package="$prefix/node_modules/@posthog/cli"
+        node "$package/install.js"
+        bin="$package/node_modules/.bin_real/posthog-cli"
+        if [ "$RUNNER_OS" = "Windows" ]; then bin="$bin.exe"; fi
+        "$bin" --version
+        echo "POSTHOG_CLI_PATH=$bin" >> "$GITHUB_ENV"

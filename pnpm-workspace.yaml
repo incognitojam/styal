@@ -43,6 +43,7 @@ catalog:
   "@noble/hashes": 1.8.0
   "@pierre/diffs": 1.3.0-beta.10
   "@posthog/core": 1.57.4
+  "@posthog/rollup-plugin": 1.6.1
   "@tailwindcss/node": 4.3.3
   "@tailwindcss/oxide": 4.3.3
   "@tailwindcss/vite": 4.3.3
@@ -177,6 +178,10 @@ overrides:
   "@alchemy.run/sigil>react": "-"
   "@alchemy.run/sigil>react-reconciler": "-"
   "@alchemy.run/sigil>scheduler": "-"
+  # The server bundle passes release CI's own posthog-cli to the PostHog plugin,
+  # which imports only types from rollup; rolldown runs the plugin.
+  "@posthog/rollup-plugin>@posthog/cli": "-"
+  "@posthog/rollup-plugin>rollup": "-"
   # Alchemy only reaches @prisma/dev through a lazy import inside the Prisma
   # database provider, which the relay never deploys. Its exact hono/valibot
   # pins are also the bulk of our open dependency advisories.

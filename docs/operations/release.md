@@ -69,6 +69,19 @@ The finalize job uses them to commit and push aligned package versions to `main`
 GitHub Release publication uses the repository-scoped workflow token so it has a rate-limit quota
 independent from the shared Release App installation.
 
+### Server source maps for error tracking
+
+Release and nightly builds upload server source maps to PostHog so error reports resolve to
+`apps/server/src` lines. The upload needs:
+
+- Secret `POSTHOG_SOURCEMAPS_API_KEY`: a PostHog personal API key with the `error_tracking:write`
+  scope, limited to the styal project.
+- Variable `POSTHOG_SOURCEMAPS_PROJECT_ID`: the styal project's numeric ID.
+
+Without the secret, builds succeed and skip the upload, so reports from that build show bundle
+frames. A failed upload fails the build that ran it. Rerun the job; each chunk's ID comes from its
+content, so a repeated upload is deduplicated.
+
 ## styal Link relay deployment
 
 The relay is a shared control plane versioned separately from client releases. Stable and nightly
