@@ -862,6 +862,7 @@ features:
       - Shutdown confirmation has one renderer-wide host, including on recovery screens; cancelling an update restart dismisses the request without reopening it. Failed presentation alone arms a subsequent Quit override that preserves cleanup, cannot be consumed by restart actions, and clears when the renderer recovers or displays a dialog.
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
       - Downloaded updates install on normal app quit; the sidebar offers a plain restart arrow without a completion checkmark, using the theme update surface and foreground once an installer is ready, while Settings presents automatic checks and downloads as status and reserves download actions for failure retries.
+      - An install on quit records its target version like an in-app install, so a restart on the old version reports that the update did not apply, and quitting never retries a version whose install did not apply.
       - When other machines' servers or providers are behind, the sidebar button on desktop and web runs upstream's update-everything pass instead; its server updates go through the in-app server update flow, which checks each host for running work first, and this app installs only an update that has already downloaded.
       - A downloaded update remains visible in the sidebar during rechecks, with restart temporarily disabled and release notes retained until the check settles.
       - A late native window-close event cannot bypass cleanup and the selected-channel installer handoff after scoped lifecycle listeners are removed.
@@ -4171,6 +4172,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15323
         - https://github.com/pingdotgg/t3code/pull/15604
         - https://github.com/pingdotgg/t3code/pull/17723
+        - https://github.com/pingdotgg/t3code/pull/19291
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream records in the conversation where restart recovery continued a thread and shows it on web and mobile without folding it into grouped work.
 
@@ -4216,9 +4218,8 @@ features:
       - Activity checks skip detailed continuation recovery reads for idle or waiting threads and projects with continuation disabled, respecting project overrides before loading thread recovery state while retaining settled threads with live background work.
       - Overlapping host activity checks within a client share the in-flight request per environment, including retries after cancelling an update dialog; completion or failure clears the shared request so later checks read fresh activity.
       - When thread continuation is requested, the confirmation says a thread will continue only if the same selection the continuation step uses includes it; every other active thread is described as interrupted.
-      - Continuation after an update also covers settled threads whose background work (monitors, background shells, subagents) is live; after the restart they receive a prompt to restart that work instead of a promptless turn continuation.
       - A turn the restart cut short is recorded as interrupted before its continuation turn starts, rather than closed as completed when the resumed session reports ready.
-    rationale: Upstream leaves threads asleep after a restart even when their background work, such as a monitor or background shell, was still running. The fork prompts those threads to restart the work after an in-app update, because the update stopped work the user had left running and the restart is usually short. A thread the user settles has no live work to restart, since settling stops its provider session.
+    rationale: The fork confirms in-app server updates against host activity, so an update never interrupts running work without asking, and its manual instructions match how the server was actually installed. Waking settled threads whose monitors, subagents, or background tasks a restart stopped is now upstream's behaviour, including leaving background shells for the next user message.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx
       - apps/mobile/src/features/settings/SettingsServerUpdateConfirmRouteScreen.tsx

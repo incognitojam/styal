@@ -1,10 +1,21 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
+import { Atom } from "effect/reactivity";
 import { TriangleAlertIcon } from "lucide-react";
-import { type ComponentProps, useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
+import { serverEnvironment } from "../../state/server";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   getArm64IntelBuildWarningDescription,
@@ -16,6 +27,7 @@ import {
   shouldShowDesktopUpdateButton,
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
+import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuItem } from "../ui/sidebar";
@@ -24,7 +36,13 @@ import { DesktopUpdateStatusIcon } from "./DesktopUpdateStatusIcon";
 import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
 import { SidebarWebUpdatePill } from "./SidebarWebUpdatePill";
 import { UpdateEverythingDialog } from "./UpdateEverythingDialog";
-import { useUpdateEverything } from "./useUpdateEverything";
+import {
+  describeUpdateRun,
+  resolveUpdateRunMachineStatus,
+  type UpdateEverythingRun,
+} from "./updateEverything.logic";
+import { useUpdateEverythingRun } from "./updateEverythingRun";
+import { type ReportLocalUpdateError, useUpdateEverything } from "./useUpdateEverything";
 
 type SidebarUpdatePopoverChangeDetails = Parameters<
   NonNullable<ComponentProps<typeof Popover>["onOpenChange"]>
@@ -76,29 +94,74 @@ function SidebarUpdateArchitectureWarningContent() {
   );
 }
 
-/** Installs this app's downloaded update, which relaunches the app. Failures toast. */
-async function installLocalUpdate(bridge: DesktopBridge): Promise<void> {
+const toastUpdateError: ReportLocalUpdateError = (title, description) => {
+  toastManager.add(stackedThreadToast({ type: "error", title, description }));
+};
+
+/** Installs this app's downloaded update, which relaunches the app. Resolves
+    true when the relaunch is under way. Failures go to `reportError` (a toast
+    by default). A refused install (the download is not marked ready yet)
+    leaves the restart to the user. */
+async function installLocalUpdate(
+  bridge: DesktopBridge,
+  reportError: ReportLocalUpdateError = toastUpdateError,
+): Promise<boolean> {
   try {
     const result = await bridge.installUpdate();
-    if (!shouldToastDesktopUpdateActionResult(result)) return;
-    const actionError = getDesktopUpdateActionError(result);
-    if (!actionError) return;
-    toastManager.add(
-      stackedThreadToast({
-        type: "error",
-        title: "Could not install update",
-        description: actionError,
-      }),
-    );
+    if (!result.accepted) {
+      showDesktopUpdateDownloadedToast(bridge, result.state);
+      return false;
+    }
+    const actionError = shouldToastDesktopUpdateActionResult(result)
+      ? getDesktopUpdateActionError(result)
+      : null;
+    if (!actionError) return true;
+    reportError("Could not install update", actionError);
+    return false;
   } catch (error) {
-    toastManager.add(
-      stackedThreadToast({
-        type: "error",
-        title: "Could not install update",
-        description: error instanceof Error ? error.message : "An unexpected error occurred.",
-      }),
+    reportError(
+      "Could not install update",
+      error instanceof Error ? error.message : "An unexpected error occurred.",
     );
+    return false;
   }
+}
+
+/** Tooltip lines for a running pass: this app first, then one per machine. */
+function useUpdateRunTooltip(
+  run: UpdateEverythingRun | null,
+  state: DesktopUpdateState | null,
+  localReady: boolean,
+): string | null {
+  const statusesAtom = useMemo(
+    () =>
+      Atom.make((get) =>
+        run === null
+          ? []
+          : run.machines.map((machine) => ({
+              label: machine.label,
+              status: resolveUpdateRunMachineStatus(
+                machine,
+                run.phase,
+                get(serverEnvironment.updateStateAtom(machine.environmentId)),
+              ),
+            })),
+      ),
+    [run],
+  );
+  const statuses = useAtomValue(statusesAtom);
+  if (run === null) return null;
+  const local =
+    run.localVersion === null
+      ? null
+      : state?.status === "downloading"
+        ? `downloading${state.downloadPercent === null ? "" : ` ${Math.floor(state.downloadPercent)}%`}`
+        : run.phase === "installing"
+          ? "restarting"
+          : localReady
+            ? "restarts last"
+            : "waiting";
+  return describeUpdateRun(statuses, local).join("\n");
 }
 
 /**
@@ -121,7 +184,6 @@ export function SidebarUpdatePill() {
 function SidebarUpdateControl() {
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
-  const [isUpdatingEverything, setIsUpdatingEverything] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
@@ -132,15 +194,18 @@ function SidebarUpdateControl() {
   const isDownloading = state?.status === "downloading";
   const runsEverything = everything.hasUpdates && !isDownloading;
   // Providers leave the list once queued, so the run keeps its own state.
-  const isRunningEverything = isUpdatingEverything && !isDownloading;
+  const run = useUpdateEverythingRun();
+  const isRunningEverything = run !== null;
+  const runTooltip = useUpdateRunTooltip(run, state, action === "install");
   const showsEverything = runsEverything || isRunningEverything;
-  const tooltip = isRunningEverything
-    ? "Updating…"
-    : runsEverything
-      ? everything.summary
-      : state
-        ? getDesktopUpdateButtonTooltip(state)
-        : "Restart to update";
+  const tooltip =
+    runTooltip !== null
+      ? runTooltip
+      : runsEverything
+        ? everything.summary
+        : state
+          ? getDesktopUpdateButtonTooltip(state)
+          : "Restart to update";
   const isInteractionDisabled =
     isActionPending || isRunningEverything || (!runsEverything && state?.status === "checking");
   const [releaseNotesPopoverHandle] = useState(() => PopoverCreateHandle());
@@ -180,10 +245,11 @@ function SidebarUpdateControl() {
     const bridge = window.desktopBridge;
     setIsConfirmingEverything(false);
     setIsActionPending(true);
-    setIsUpdatingEverything(true);
     try {
       await everything.run(
-        bridge && action === "install" ? { installLocal: () => installLocalUpdate(bridge) } : {},
+        bridge && action === "install"
+          ? { installLocal: (reportError) => installLocalUpdate(bridge, reportError) }
+          : {},
       );
     } catch (error) {
       toastManager.add(
@@ -194,7 +260,6 @@ function SidebarUpdateControl() {
         }),
       );
     } finally {
-      setIsUpdatingEverything(false);
       setIsActionPending(false);
     }
   }, [action, everything]);
@@ -279,7 +344,7 @@ function SidebarUpdateControl() {
               side="top"
               variant={showUpdateDetails ? "glass" : "default"}
             >
-              {tooltip}
+              <span className="whitespace-pre-line">{tooltip}</span>
             </TooltipPopup>
           ) : null}
         </Tooltip>
@@ -314,6 +379,7 @@ function SidebarUpdateControl() {
         summary={everything.summary}
         lines={everything.lines}
         restarts={everything.restarts}
+        skipped={everything.skipped}
         onConfirm={() => void runEverything()}
       />
     </SidebarMenuItem>

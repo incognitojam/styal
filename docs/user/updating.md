@@ -16,9 +16,13 @@ installs the latest release from its own channel. Hover the button to see what
 it will update.
 
 Server updates appear only after that version is published to npm. Remote
-desktop apps do not wait for npm. Servers that need
-a manual update are not included. Use the notice or **Settings → Connections**
-for those.
+desktop apps do not wait for npm. The confirmation lists each machine it skips
+and why, such as a machine that is offline or needs a manual update. Use the
+notice or **Settings → Connections** for those.
+
+If a desktop app restarts on its old version, styal tells you the update did
+not apply. It does not install that version again on its own, on quit or when
+another device asks. Use the update button on that machine to retry.
 
 The confirmation counts the running threads that the restarts will interrupt,
 and how many can resume afterwards. See **Continue threads after restarts**
@@ -41,8 +45,9 @@ different value, use **Apply to all** in Settings after it connects.
 styal must start again on that machine;
 the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
-After an update, threads whose agent was only running background work, such as
-a monitor or subagent, are asked to restart the work they still need.
+A thread that finished its turn to wait on a monitor, subagent, or background task
+is woken and asked to restart the work it still needs. A background shell, such as
+a dev server, does not wake it; the thread learns about it with your next message.
 A thread whose turn continues shows **Continued after server restart** where
 the agent picked up again, and a thread asked to restart background work shows
 **Asked to restart background work after server restart**.

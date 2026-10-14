@@ -91,20 +91,30 @@ function continuesRunningThreads(target: ServerUpdateTarget): boolean {
   return Boolean(target.threadContinuation && target.continueThreadsAfterServerUpdate);
 }
 
+/** What one server's update did. "skipped" covers a missing permission, an
+    update already in flight, a cancelled confirmation, and an interrupted request. */
+export type ServerUpdateOutcome =
+  | { readonly status: "updated" | "skipped" }
+  | { readonly status: "failed"; readonly message: string };
+
 /**
  * Updates servers after one confirmation covering all of them. Servers with an
- * update already in flight are skipped; each remaining server reports its own
- * result. The returned promise settles once every update has finished.
+ * update already in flight are skipped. Each server toasts its own result unless
+ * `quiet`, and `onSettled` hears each outcome as it lands. The returned promise
+ * settles once every update has finished, with one outcome per target.
  */
 export function useServerUpdates() {
   const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
   const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, {
     reportFailure: false,
   });
-  const updateOne = async (target: ServerUpdateTarget, failureTitle: string) => {
+  const updateOne = async (
+    target: ServerUpdateTarget,
+    quiet: boolean,
+  ): Promise<ServerUpdateOutcome> => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
     if (!canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))))
-      return;
+      return { status: "skipped" };
     try {
       const result = await updateServer({
         environmentId,
@@ -114,33 +124,56 @@ export function useServerUpdates() {
         },
       });
       if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) return;
+        if (isAtomCommandInterrupted(result)) return { status: "skipped" };
         throw squashAtomCommandFailure(result);
       }
-      toastManager.add({
-        type: "success",
-        title: `${serverLabel} updated`,
-        description:
-          selfUpdate === "desktop-managed"
-            ? `Desktop app relaunched on ${result.value.targetVersion}.`
-            : `Reconnected on @styal/cli@${result.value.targetVersion}.`,
-      });
+      if (!quiet) {
+        toastManager.add({
+          type: "success",
+          title: `${serverLabel} updated`,
+          description:
+            selfUpdate === "desktop-managed"
+              ? `Desktop app relaunched on ${result.value.targetVersion}.`
+              : `Reconnected on @styal/cli@${result.value.targetVersion}.`,
+        });
+      }
+      return { status: "updated" };
     } catch (error) {
-      toastManager.add({
-        type: "error",
-        title: failureTitle,
-        description: updateFailureMessage(error),
-      });
+      const message = updateFailureMessage(error);
+      if (!quiet) {
+        toastManager.add({
+          type: "error",
+          title: `${serverLabel} update failed`,
+          description: message,
+        });
+      }
+      return { status: "failed", message };
     }
   };
-  return async (targets: ReadonlyArray<ServerUpdateTarget>) => {
+  return async (
+    targets: ReadonlyArray<ServerUpdateTarget>,
+    {
+      quiet = false,
+      onSettled,
+    }: {
+      readonly quiet?: boolean;
+      readonly onSettled?: (target: ServerUpdateTarget, outcome: ServerUpdateOutcome) => void;
+    } = {},
+  ): Promise<ReadonlyArray<{ target: ServerUpdateTarget; outcome: ServerUpdateOutcome }>> => {
     const claimed = targets.filter(
       (target) =>
         canUpdateServer(
           appAtomRegistry.get(environmentSession.sessionStateAtom(target.environmentId)),
         ) && !pendingUpdateEnvironmentIds.has(target.environmentId),
     );
-    if (claimed.length === 0) return;
+    const settle = (target: ServerUpdateTarget, outcome: ServerUpdateOutcome) => {
+      onSettled?.(target, outcome);
+      return { target, outcome };
+    };
+    const skipAll = (skipped: ReadonlyArray<ServerUpdateTarget>) =>
+      skipped.map((target) => settle(target, { status: "skipped" }));
+    const unclaimed = targets.filter((target) => !claimed.includes(target));
+    if (claimed.length === 0) return skipAll(unclaimed);
     for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
     const hosts = claimed.map((target) => ({
       serverLabel: target.serverLabel,
@@ -172,15 +205,11 @@ export function useServerUpdates() {
       // No themed host mounted (undefined) means proceed: the click itself
       // was the request.
       if (confirmation === undefined) await prepare();
-      else if (!(await confirmation)) return;
-      await Promise.all(
-        claimed.map((target) =>
-          updateOne(
-            target,
-            claimed.length === 1 ? "Server update failed" : `${target.serverLabel} update failed`,
-          ),
-        ),
+      else if (!(await confirmation)) return skipAll(targets);
+      const updated = await Promise.all(
+        claimed.map(async (target) => settle(target, await updateOne(target, quiet))),
       );
+      return [...skipAll(unclaimed), ...updated];
     } finally {
       for (const target of claimed) pendingUpdateEnvironmentIds.delete(target.environmentId);
     }
@@ -234,7 +263,7 @@ export function canUpdateServer(
 
 /**
  * One-row status for an in-flight server update: "Downloading…" then
- * "Restarting…". The update is a wait, not a warning: a single pulsing dot
+ * "Restarting…". The update is a wait, not a warning: a single static dot
  * and label, no step rail, no versions. Failure turns the row red with the
  * rollback reason.
  */
@@ -263,10 +292,7 @@ export function ServerUpdateProgress({
     <div
       className={cn("mt-1 flex items-center gap-2 text-xs font-medium text-foreground", className)}
     >
-      <span
-        className="size-1.5 shrink-0 animate-status-pulse rounded-full bg-current"
-        aria-hidden="true"
-      />
+      <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
       <span>{serverUpdateStageLabel(state.stage)}</span>
     </div>
   );
@@ -531,7 +557,7 @@ export function OutdatedServerUpdateAction({
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Server update failed",
+        title: `${serverLabel} update failed`,
         description: updateFailureMessage(error),
       });
     } finally {

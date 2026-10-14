@@ -5,7 +5,6 @@ import {
   latestProviderTurnForAttempt,
   MessageId,
   type OrchestrationV2Run,
-  type ProviderThreadId,
   type RunId,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -17,6 +16,10 @@ import * as ServerSettings from "../serverSettings.ts";
 import { isNativeMaintenanceCommand } from "./Orchestrator.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import {
+  cancelledRosterTaskWork,
+  cancelledTurnItemWork,
+  isAwaitedWork,
+  isRestartContinuationSource,
   isRestartNoteSource,
   restartCancelledBackgroundWorkNote,
   restartContinuationNote,
@@ -34,9 +37,9 @@ const MAX_CONTINUATION_CHAIN = 3;
 /**
  * Whether a restart must leave this run for the user: the thread is put away,
  * the provider turn already ended, or the user owes an answer. Checked when
- * intent is recorded and again when the continuation is delivered.
- * `settledWithLostWork` allows an ended turn whose background work the restart
- * cancelled, which continues with a note of that work.
+ * intent is recorded and again when the continuation is delivered. A
+ * `settled` run is woken for the awaited work it lost, so its ended provider
+ * turn does not block it.
  */
 function restartContinuationBlocked(
   projection: Pick<
@@ -45,7 +48,7 @@ function restartContinuationBlocked(
   >,
   source: OrchestrationV2Run,
   now: DateTime.Utc,
-  settledWithLostWork: boolean,
+  settled: boolean,
 ): boolean {
   const { thread } = projection;
   if (
@@ -57,7 +60,7 @@ function restartContinuationBlocked(
     return true;
   const turn = latestProviderTurnForAttempt(projection.providerTurns, source.activeAttemptId);
   if (
-    !settledWithLostWork &&
+    !settled &&
     turn !== undefined &&
     (turn.status === "completed" || turn.status === "failed" || turn.status === "interrupted")
   )
@@ -91,9 +94,38 @@ function restartContinuationBlocked(
 }
 
 /**
- * The run a restart continuation resumes, if any: an unfinished root run, or a
- * settled one whose own provider thread lost background work in the restart
- * (`cancelledWorkProviderThreadIds`, which recovery records on that thread).
+ * Open awaited work (see `isAwaitedWork`) on a provider thread. App-owned
+ * delegations are not counted: their own threads continue and report back.
+ */
+function hasOpenAwaitedWork(
+  projection: Pick<ProjectionRuntimeRecoveryState, "runs" | "turnItems">,
+  providerThread: ProjectionRuntimeRecoveryState["providerThreads"][number],
+): boolean {
+  const openItem = projection.turnItems.some((item) => {
+    if (item.status !== "pending" && item.status !== "running" && item.status !== "waiting")
+      return false;
+    if (item.type === "subagent" && item.origin === "app_owned" && item.childThreadId !== null)
+      return false;
+    const work = cancelledTurnItemWork(item);
+    const providerThreadId =
+      item.providerThreadId ??
+      projection.runs.find((run) => run.id === item.runId)?.providerThreadId;
+    return work !== undefined && isAwaitedWork(work) && providerThreadId === providerThread.id;
+  });
+  return (
+    openItem ||
+    (providerThread.ownerNodeId === null &&
+      (providerThread.pendingBackgroundTasks ?? []).some((task) =>
+        isAwaitedWork(cancelledRosterTaskWork(task)),
+      ))
+  );
+}
+
+/**
+ * The run a restart continues: an unfinished root turn, or a settled one
+ * waiting on awaited work that the restart cancels. A settled run needs a
+ * live session, so stale records from an older crash never wake it. Other
+ * leftover work is cleaned up and reported on the next user turn.
  */
 export function restartContinuationRun(
   projection: Pick<
@@ -107,7 +139,6 @@ export function restartContinuationRun(
     | "turnItems"
   >,
   now: DateTime.Utc,
-  cancelledWorkProviderThreadIds: ReadonlySet<ProviderThreadId> = new Set(),
 ): OrchestrationV2Run | undefined {
   // Queued runs never started; recovery holds them behind the cut run.
   const run = projection.runs.reduce<OrchestrationV2Run | undefined>(
@@ -120,14 +151,10 @@ export function restartContinuationRun(
   if (!run) return;
   const preparedContinuation =
     run.status === "starting" && run.restartContinuationOfRunId !== undefined;
-  // Background work outlived this settled turn; the provider has no live turn.
-  const settledWithCancelledWork =
-    (run.status === "completed" || run.status === "waiting") &&
-    run.providerThreadId !== null &&
-    cancelledWorkProviderThreadIds.has(run.providerThreadId);
-  if (run.status !== "running" && !preparedContinuation && !settledWithCancelledWork) return;
-  if (restartContinuationBlocked(projection, run, now, settledWithCancelledWork)) return;
-  const liveTurnRequired = !preparedContinuation && !settledWithCancelledWork;
+  const settled = run.status === "completed" || run.status === "waiting";
+  if (run.status !== "running" && !preparedContinuation && !settled) return;
+  if (restartContinuationBlocked(projection, run, now, settled)) return;
+  const liveTurnRequired = !preparedContinuation && !settled;
   if (projection.thread.providerInstanceId !== run.providerInstanceId) return;
   const providerThread = projection.providerThreads.find(
     (thread) => thread.id === run.providerThreadId,
@@ -160,6 +187,7 @@ export function restartContinuationRun(
     (!preparedContinuation && (session.status === "stopped" || session.status === "error"))
   )
     return;
+  if (settled) return hasOpenAwaitedWork(projection, providerThread) ? run : undefined;
   if (
     liveTurnRequired &&
     !projection.providerTurns.some(
@@ -192,13 +220,17 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       return;
     if (projection.messages.some((message) => message.id === messageId)) return;
     const source = projection.runs.find((run) => run.id === input.sourceRunId);
-    // A settled source prompts with the note of the background work it lost.
-    const noteSource =
-      source !== undefined && isRestartNoteSource(source, projection.providerTurns);
+    // Reconciliation cancels a waiting run it cannot checkpoint, so a settled
+    // source can be cancelled too. It continues only for awaited work.
     if (
       !source ||
-      (source.status !== "cancelled" && !noteSource) ||
-      restartContinuationBlocked(projection, source, yield* DateTime.now, noteSource)
+      !isRestartContinuationSource(source, projection.providerTurns) ||
+      restartContinuationBlocked(
+        projection,
+        source,
+        yield* DateTime.now,
+        isRestartNoteSource(source, projection.providerTurns),
+      )
     )
       return;
     // A user submission after reconciliation takes precedence over an automatic

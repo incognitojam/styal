@@ -122,6 +122,13 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
   if (state.status === "checking" && state.downloadedVersion !== null) {
     return `Update ${state.downloadedVersion} downloaded. Checking for newer updates…`;
   }
+  if (
+    state.notAppliedVersion !== undefined &&
+    (state.status === "available" || state.status === "downloaded") &&
+    getDesktopUpdateDownloadedVersion(state) === state.notAppliedVersion
+  ) {
+    return `Update ${state.notAppliedVersion} did not apply. Click to retry.`;
+  }
   if (state.status === "available") {
     if (state.errorContext === "download") {
       return `Download failed for ${state.availableVersion ?? "the available update"}. Click to retry.`;
