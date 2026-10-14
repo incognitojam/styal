@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { redactedPlaceholder } from "./redactedText";
+import { redactedPlaceholder } from "./redactedText.ts";
 
 describe("redactedPlaceholder", () => {
   it("keeps the shape of the value without revealing its characters", () => {
