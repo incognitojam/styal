@@ -1,4 +1,5 @@
 import { WS_METHODS } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -61,12 +62,20 @@ const withRpcStreamTracing = <A, E, R>(
       )
     : stream.pipe(Stream.provideService(References.TracerEnabled, false));
 
+// The RPC server sends a handler's defect to the client without logging it,
+// so this is where a server bug thrown by a handler gets reported.
+const logRpcDefect = <E>(method: string, exit: Exit.Exit<unknown, E>) =>
+  Exit.isFailure(exit) && Cause.hasDies(exit.cause)
+    ? Effect.logError("RPC handler defect", { method }, exit.cause)
+    : Effect.void;
+
 const recordRpcStreamMetrics = <E>(
   method: string,
   startedAt: bigint,
   exit: Exit.Exit<unknown, E>,
 ): Effect.Effect<void, never, never> =>
   Effect.gen(function* () {
+    yield* logRpcDefect(method, exit);
     const endedAt = yield* Clock.currentTimeNanos;
     const elapsedNanos = endedAt > startedAt ? endedAt - startedAt : 0n;
 
@@ -92,6 +101,7 @@ export const observeRpcEffect = <A, E, R>(
   traceAttributes?: Readonly<Record<string, unknown>>,
 ): Effect.Effect<A, E, R> => {
   const instrumented = effect.pipe(
+    Effect.onExit((exit) => logRpcDefect(method, exit)),
     withMetrics({
       counter: rpcRequestsTotal,
       timer: rpcRequestDuration,

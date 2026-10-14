@@ -45,6 +45,7 @@ import * as SqlitePersistence from "./persistence/Layers/Sqlite.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
+import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
 import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
@@ -658,6 +659,7 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   Layer.provideMerge(ResourceDiagnosticsLayerLive.pipe(traceShutdown("resource-diagnostics"))),
   Layer.provideMerge(UsageLayerLive.pipe(traceShutdown("usage"))),
   Layer.provideMerge(TraceDiagnostics.layer),
+  Layer.provideMerge(ErrorReporting.layer),
   Layer.provideMerge(AnalyticsService.layer.pipe(traceShutdown("analytics"))),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),

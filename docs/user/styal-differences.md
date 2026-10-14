@@ -258,6 +258,15 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [T3 Code revision 18656a3](https://github.com/pingdotgg/t3code/tree/18656a3402459d9d145bb3fa5767723531b27ac7),
   checked October 11, 2026, which reopens a full-screen window at its normal size.
 
+## Error reports
+
+- **Server errors reach the styal maintainers.** Release builds report server errors, scrubbed of
+  personal paths and secrets, alongside product usage data so bugs can be found and fixed. Turn
+  them off with `T3CODE_ERROR_REPORTING_ENABLED=false`. Compared with
+  [T3 Code revision 6524a8d437](https://github.com/pingdotgg/t3code/tree/6524a8d43795dc543f7cfb572388cdea3662ad48),
+  checked October 13, 2026, which sends no error reports.
+  [Product usage data](./telemetry.md#error-reports).
+
 [^import-comparison]: Setup compared with [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c), checked September 17, 2026.
 
 [^setup-comparison]: Hosted setup compared with [T3 Code revision dfbb11b](https://github.com/pingdotgg/t3code/tree/dfbb11bdd7c3f1a5575cb55d3e3abb12be025727), checked September 19, 2026.
