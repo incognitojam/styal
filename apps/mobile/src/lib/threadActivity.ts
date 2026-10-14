@@ -1159,11 +1159,26 @@ function deriveThreadFeedRunFolds(
   latestRun: ThreadFeedLatestRun | null,
   runlessWorkActive: boolean,
   roots: ReadonlyMap<RunId, RunId>,
+  feedFailedRunIds: ReadonlySet<RunId>,
 ): ReadonlyMap<string, ThreadFeedRunFold> {
   const firstAssistantMessageIdByRun = new Map<RunId, string>();
   const terminalAssistantMessageIdByRun = new Map<RunId, string>();
   const interruptedRunIds = new Set<RunId>();
-  const failedRunIds = failedFeedRunIds(feed, latestRun);
+  const failedRunIds = new Set(feedFailedRunIds);
+  const promptIndexByRunId = new Map<RunId, number>();
+  for (const [index, entry] of feed.entries()) {
+    // A steer joins a run that already started, maybe from a promptless wake.
+    if (
+      entry.type !== "message" ||
+      entry.message.role !== "user" ||
+      entry.message.inputIntent === "steer" ||
+      entry.message.inputIntent === "promoted_queued_to_steer"
+    ) {
+      continue;
+    }
+    const runId = entry.message.runId;
+    if (runId != null && !promptIndexByRunId.has(runId)) promptIndexByRunId.set(runId, index);
+  }
   const groupsByRunId = new Map<
     RunId,
     { entries: ThreadFeedEntry[]; startBoundary: string | null }
@@ -1172,16 +1187,19 @@ function deriveThreadFeedRunFolds(
   // stable key of its own. Decide per prompt, not per thread: a V1 thread's
   // first V2 run must not unfold every imported turn above it.
   let runlessKey: RunId | null = null;
+  let responseKey: RunId | null = null;
   let pendingUserBoundary: string | null = null;
-  for (const entry of feed) {
+  for (const [index, entry] of feed.entries()) {
     if (entry.type === "message" && entry.message.role === "user") {
       pendingUserBoundary = entry.message.createdAt;
       runlessKey = entry.message.runId == null ? RunId.make(`runless:${entry.id}`) : null;
+      responseKey = entry.message.runId ?? runlessKey;
       continue;
     }
     if (entry.type === "restart-note" && entry.startsResponse) {
       pendingUserBoundary = entry.createdAt;
       runlessKey = null;
+      responseKey = null;
       continue;
     }
     const entryRunId =
@@ -1194,8 +1212,15 @@ function deriveThreadFeedRunFolds(
           : entry.type === "restart-note"
             ? entry.runId
             : null;
-    const runId = entryRunId ? (roots.get(entryRunId) ?? entryRunId) : null;
-    if (!runId) continue;
+    const ownRunId = entryRunId ? (roots.get(entryRunId) ?? entryRunId) : null;
+    if (!ownRunId) continue;
+    // Resuming a subagent moves its item to the resuming run, but the item
+    // keeps its place in the turn that started it. It folds with that turn,
+    // so the later run's fold still opens under its own prompt.
+    const runId =
+      responseKey !== null && (promptIndexByRunId.get(ownRunId) ?? -1) > index
+        ? responseKey
+        : ownRunId;
     let group = groupsByRunId.get(runId);
     if (!group) {
       group = { entries: [], startBoundary: pendingUserBoundary };
@@ -1397,6 +1422,7 @@ export function deriveThreadFeedPresentation(
     latestRun,
     isWorking && runlessWorkActive,
     roots,
+    failedRunIds,
   );
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorId.values()) {
