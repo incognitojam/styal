@@ -150,6 +150,7 @@ function DefaultRepositorySetting({ checkout }: { checkout: SidebarProjectGroupM
   return (
     <SettingsRow
       title="Default repository"
+      forkFeature="source-control-fork-remotes"
       description="Which repository pull requests, issues, and releases target in this checkout, shared with the GitHub CLI's gh repo set-default. Changing it can move this checkout to a different project group."
       control={
         <Select
@@ -629,6 +630,7 @@ function ProjectDetail({
           />
           <SettingsRow
             title="Additional instructions"
+            forkFeature="project-agent-instructions"
             description="Included when a new agent session starts for this project; applies to every checkout in this group."
             resetAction={
               additionalInstructions !== null ? (

@@ -21,7 +21,9 @@ import {
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
+import { StyalToolIcon } from "../StyalToolIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import type { SettingsForkFeature } from "./forkFeatures";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeSentence } from "./SettingsScopeSentence";
 import {
@@ -262,6 +264,7 @@ export function SettingsRow({
   serverScoped = false,
   settingKeys = EMPTY_SETTING_KEYS,
   mixed: mixedOverride,
+  forkFeature,
   children,
   className,
   ...rowProps
@@ -276,6 +279,8 @@ export function SettingsRow({
   serverScoped?: boolean;
   settingKeys?: readonly (keyof ServerSettings)[];
   mixed?: boolean;
+  /** Marks a setting only styal has; see `SETTINGS_FORK_FEATURES`. */
+  forkFeature?: SettingsForkFeature;
   children?: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
@@ -436,6 +441,7 @@ export function SettingsRow({
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
             <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            {forkFeature ? <ForkFeatureBadge /> : null}
             {renderedInheritance ? (
               <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
                 {renderedInheritance}
@@ -468,6 +474,26 @@ export function SettingsRow({
         children
       )}
     </div>
+  );
+}
+
+function ForkFeatureBadge() {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          // Focusable so keyboard users can still reach the explanation.
+          <span
+            tabIndex={0}
+            aria-label="styal feature"
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        }
+      >
+        <StyalToolIcon className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Only in styal, not in T3 Code</TooltipPopup>
+    </Tooltip>
   );
 }
 

@@ -1439,6 +1439,7 @@ features:
       - Production Android installs offer the newest GitHub release once per release, and keep its download directly below Version in About styal, only when its runtime version differs from the installed binary's, because over-the-air updates cannot reach that install.
       - Android APK updates download inside styal with progress, cancellation and retry; incomplete APKs are discarded, complete APKs remain available after installer dismissal, and installs require Android's source permission and system confirmation. Downloads finishing in the background wait for an explicit install action.
       - Mobile About styal identifies the installed binary by its native version and build number on Android and iOS, retaining non-production variant labels.
+      - Settings that exist only in styal show the monochrome styal mark beside their title, limited to ledger features that are still maintained or under review; fork refinements of upstream settings stay unmarked.
     implementation_paths:
       - .github/scripts/publish-android-release.sh
       - .github/scripts/release-changelog.sh
@@ -1507,6 +1508,8 @@ features:
       - apps/web/src/components/settings/BranchNamingSettings.tsx
       - apps/web/src/components/settings/SettingsFontPreviews.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/settings/forkFeatures.ts
+      - apps/web/src/components/settings/settingsLayout.tsx
       - apps/web/src/components/sidebar/SidebarChrome.tsx
       - apps/web/src/fork-theme.css
       - packages/client-runtime/src/connection/compatibility.ts
@@ -1540,6 +1543,7 @@ features:
       - apps/web/src/components/SidebarStageBackdrop.tsx
       - apps/web/src/components/settings/BranchNamingSettings.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/settings/settingsLayout.tsx
       - packages/contracts/src/settings.ts
       - scripts/build-desktop-artifact.ts
       - scripts/export-brand-icons.ts
@@ -1564,6 +1568,7 @@ features:
       - apps/server/src/provider/providerCompatibility.test.ts
       - apps/web/src/branding.test.ts
       - apps/web/src/components/SidebarStageBackdrop.test.tsx
+      - apps/web/src/components/settings/forkFeatures.test.ts
       - packages/client-runtime/src/connection/compatibility.test.ts
       - packages/client-runtime/src/state/pullRequestDiffHttp.test.ts
       - packages/contracts/src/settings.test.ts
