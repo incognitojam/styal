@@ -95,6 +95,29 @@ describe("evaluatePullRequestWatch", () => {
     assert.deepEqual(passed.changes, [{ kind: "checks-passed", count: 2, required: true }]);
     assert.deepEqual(evaluatePullRequestWatch(passed.next, green, noRemarks).changes, []);
 
+    // A required check that has not reported yet holds the news back, then passes on its own.
+    const waiting = detail({
+      checks: [required("CI", "expected"), check("build", "success")],
+    });
+    const early = evaluatePullRequestWatch(watch(), waiting, noRemarks);
+    assert.deepEqual(early.changes, []);
+    const reported = detail({ checks: [required("CI", "success"), check("build", "success")] });
+    assert.deepEqual(evaluatePullRequestWatch(early.next, reported, noRemarks).changes, [
+      { kind: "checks-passed", count: 1, required: true },
+    ]);
+
+    // A rerun on the same head takes the pass back while the gate waits, and reports it again.
+    const rerun = evaluatePullRequestWatch(
+      passed.next,
+      detail({ checks: [required("test", "expected"), required("lint", "success")] }),
+      noRemarks,
+    );
+    assert.deepEqual(rerun.changes, []);
+    assert.isFalse(rerun.next.passed);
+    assert.deepEqual(evaluatePullRequestWatch(rerun.next, green, noRemarks).changes, [
+      { kind: "checks-passed", count: 2, required: true },
+    ]);
+
     // Where nothing is marked required, every check has to pass.
     const plain = detail({ checks: [check("test", "success"), check("bot", "pending")] });
     assert.deepEqual(evaluatePullRequestWatch(watch(), plain, noRemarks).changes, []);
