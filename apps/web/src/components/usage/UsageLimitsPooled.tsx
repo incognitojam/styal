@@ -550,32 +550,20 @@ function PoolWindowRow({
   now,
   label,
   description,
-  nested = false,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
   readonly now: number;
   readonly label?: string | undefined;
   readonly description?: string | undefined;
-  readonly nested?: boolean;
 }) {
   // The soonest reset that hands anything back; an untouched account resets to no effect.
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
   const pooled = pool.columns.length > 1;
   return (
     <div className="col-span-full grid min-w-0 grid-cols-subgrid gap-y-1.5">
-      <div
-        className={cn(
-          "col-start-1 row-start-1 flex min-w-0 flex-col gap-1",
-          nested && "border-s border-border ps-3",
-        )}
-      >
-        <h3
-          aria-label={nested ? pool.label : undefined}
-          className={cn("text-sm text-foreground", !nested && "font-medium")}
-        >
-          {label ?? pool.label}
-        </h3>
+      <div className="col-start-1 row-start-1 flex min-w-0 flex-col gap-1">
+        <h3 className="text-sm font-medium text-foreground">{label ?? pool.label}</h3>
         {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
       </div>
       <div className={cn("col-start-2 row-start-1 text-sm", !pooled && "@2xl/limits:col-start-3")}>
@@ -645,20 +633,14 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
         {windows.map((window) => {
           const details =
             pool.driver === "cursor" ? cursorUsageWindowDetails(window.id) : undefined;
-          const nested =
-            pool.driver === "claudeAgent" &&
-            window.kind === "weekly" &&
-            window.id.startsWith("seven_day_") &&
-            windows.some((candidate) => candidate.id === "seven_day");
           return (
             <PoolWindowRow
               key={`${window.kind}:${window.id}`}
               pool={window}
               color={color}
               now={now}
-              label={nested ? window.label.replace(/^Weekly · /, "") : details?.label}
+              label={details?.label}
               description={details?.description}
-              nested={nested}
             />
           );
         })}
