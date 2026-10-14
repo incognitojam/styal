@@ -419,10 +419,6 @@ function resolvePendingUserInputAnswer(
   if (draft?.attachmentsBlocked) return null;
   const customAnswer =
     question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
-  if (customAnswer && !question.multiSelect) {
-    return customAnswer;
-  }
-
   const selectedOptionValues = normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   if (question.multiSelect) {
     if (customAnswer && !selectedOptionValues.includes(customAnswer)) {
@@ -436,6 +432,7 @@ function resolvePendingUserInputAnswer(
   }
   return (
     selectedOptionValues[0] ??
+    customAnswer ??
     (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null)
   );
 }
@@ -1690,10 +1687,9 @@ export function setPendingUserInputCustomAnswer(
     return draft ?? {};
   }
 
-  const selectedOptionValues =
-    !question.multiSelect && customAnswer.trim().length > 0
-      ? undefined
-      : normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
+  const selectedOptionValues = !question.multiSelect
+    ? undefined
+    : normalizeSelectedOptionValues(question, draft?.selectedOptionValues);
   return {
     customAnswer,
     ...(selectedOptionValues && selectedOptionValues.length > 0 ? { selectedOptionValues } : {}),
@@ -1705,14 +1701,6 @@ export function isPendingUserInputOptionSelected(
   draft: PendingUserInputDraftAnswer | undefined,
   optionValue: string,
 ): boolean {
-  if (
-    !question.multiSelect &&
-    question.allowCustomAnswer !== false &&
-    normalizeDraftAnswer(draft?.customAnswer)
-  ) {
-    return false;
-  }
-
   const resolvedOptionValue = resolvePendingUserInputOptionValue(question, optionValue);
   return (
     resolvedOptionValue !== null &&
@@ -1750,7 +1738,9 @@ export function togglePendingUserInputOptionSelection(
   }
 
   return {
-    customAnswer: "",
+    // Keep the custom draft in its field; the selected option is the answer
+    // until an edit clears the selection in setPendingUserInputCustomAnswer.
+    customAnswer: draft?.customAnswer ?? "",
     selectedOptionValues: [resolvedOptionValue],
   };
 }

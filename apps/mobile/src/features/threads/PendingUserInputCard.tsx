@@ -273,6 +273,15 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         ) : null}
         {props.pendingUserInput.questions.map((question) => {
           const draft = props.drafts[question.id];
+          const optionSelected =
+            !question.multiSelect &&
+            question.options.some((option) =>
+              isPendingUserInputOptionSelected(
+                question,
+                draft,
+                option.value ?? option.label.trim(),
+              ),
+            );
           return (
             <View key={question.id} className="gap-2 pt-1">
               <Text className="font-t3-bold text-xs uppercase tracking-[1px] text-foreground-muted">
@@ -332,6 +341,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                   question={question}
                   questions={props.pendingUserInput.questions}
                   disabled={responseDisabled}
+                  optionSelected={optionSelected}
                   value={draft?.customAnswer ?? ""}
                   onChangeText={(value) =>
                     props.onChangeCustomAnswer(props.pendingUserInput.requestId, question.id, value)

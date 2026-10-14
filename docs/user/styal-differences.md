@@ -142,6 +142,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Switch question answers on mobile without losing your draft.** Choosing a single answer
+  keeps your custom text in its question field. The selected option is sent; tap your text to
+  use it instead. Compared with
+  [T3 Code revision 7ac952c](https://github.com/pingdotgg/t3code/tree/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae),
+  checked October 14, 2026, which clears the mobile custom answer when you choose an option.
 - **Add your own answer to a multi-select question.** Select the offered options and type an
   addition; both are sent together on web, desktop, and mobile. Compared with
   [T3 Code revision 6524a8d](https://github.com/pingdotgg/t3code/tree/6524a8d43795dc543f7cfb572388cdea3662ad48),

@@ -1,5 +1,6 @@
 import { TextInputWrapper } from "expo-paste-input";
-import { AppTextInput as TextInput } from "../../components/AppText";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
+import { cn } from "../../lib/cn";
 import { useNativePaste } from "../../lib/useNativePaste";
 import { convertPastedImagesToAttachments } from "../../lib/composerImages";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS, type UserInputQuestion } from "@t3tools/contracts";
@@ -32,6 +33,7 @@ export function QuestionAttachments(props: {
   question: UserInputQuestion;
   questions: ReadonlyArray<UserInputQuestion>;
   disabled: boolean;
+  optionSelected: boolean;
   value: string;
   onChangeText: (value: string) => void;
   onInputFocusChange?: ((focused: boolean) => void) | undefined;
@@ -109,6 +111,11 @@ export function QuestionAttachments(props: {
       .finally(() => changeQuestionAttachmentPreparation(key, -1));
   });
   if (!selectedThread || props.question.allowCustomAnswer === false) return null;
+  const activateCustomAnswer = () => {
+    if (!props.disabled && props.optionSelected && props.value.trim().length > 0) {
+      props.onChangeText(props.value);
+    }
+  };
   const { environmentId, id: threadId } = selectedThread;
   const capabilities = configs.get(environmentId)?.environment.capabilities;
   const canAttach = capabilities?.questionAttachments === true;
@@ -190,15 +197,33 @@ export function QuestionAttachments(props: {
         <TextInput
           value={props.value}
           editable={!props.disabled}
+          accessibilityLabel={props.question.multiSelect ? "Additional answer" : "Custom answer"}
+          accessibilityHint={
+            props.optionSelected && props.value.trim().length > 0
+              ? "An option is selected. Tap this field to use your custom answer."
+              : undefined
+          }
           onChangeText={props.onChangeText}
-          onFocus={() => props.onInputFocusChange?.(true)}
+          onPressIn={activateCustomAnswer}
+          onFocus={() => {
+            activateCustomAnswer();
+            props.onInputFocusChange?.(true);
+          }}
           onBlur={() => props.onInputFocusChange?.(false)}
           placeholder={
             props.question.multiSelect ? "Add another answer" : "Or type a custom answer"
           }
-          className="min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base text-foreground"
+          className={cn(
+            "min-h-[54px] rounded-2xl border border-input-border bg-input px-3.5 py-3 font-sans text-base",
+            props.optionSelected ? "text-foreground-muted" : "text-foreground",
+          )}
         />
       </TextInputWrapper>
+      {props.optionSelected && props.value.trim().length > 0 ? (
+        <Text className="font-sans text-xs leading-4 text-foreground-muted">
+          Option selected. Tap your text to use it.
+        </Text>
+      ) : null}
     </View>
   );
 }
