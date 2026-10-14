@@ -13,6 +13,7 @@ import {
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import { previewAutomationFailureReason } from "@t3tools/shared/previewErrorDiagnostics";
 
 export interface PreviewAutomationOperationContext {
   readonly requestId: PreviewAutomationRequest["requestId"];
@@ -235,9 +236,11 @@ export function serializePreviewAutomationHostError(
         key !== "_tag" && key !== "cause" && key !== "name" && key !== "message" && key !== "stack",
     ),
   );
+  const reason = previewAutomationFailureReason(error);
   return {
     _tag: "responseTag" in error ? error.responseTag : error._tag,
     message: error.message,
+    ...(reason === undefined ? {} : { failureReason: reason }),
     ...(Object.keys(detail).length === 0 ? {} : { detail }),
   };
 }

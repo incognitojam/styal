@@ -4,6 +4,7 @@ import {
   AuthOrchestrationOperateScope,
   EnvironmentId,
   PreviewAutomationClientDisconnectedError,
+  PreviewAutomationExecutionError,
   PreviewAutomationInvalidSelectorError,
   PreviewAutomationMalformedResponseError,
   PreviewAutomationNoAvailableHostError,
@@ -18,12 +19,14 @@ import {
   type PreviewAutomationStreamEvent,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
 import * as Layer from "effect/Layer";
 import * as Exit from "effect/Exit";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Result from "effect/Result";
 import * as Scheduler from "effect/Scheduler";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -31,8 +34,10 @@ import * as RpcTest from "effect/unstable/rpc/RpcTest";
 
 import { rpcScopeAuthorizationLayer } from "../auth/RpcAuthorization.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import * as ErrorReporting from "../telemetry/ErrorReporting.ts";
 
 const makeBroker = PreviewAutomationBroker.make.pipe(Effect.provide(NodeServices.layer));
+const encodeReportJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 const scope = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -66,6 +71,54 @@ const requestsFrom = (
       return Result.succeed({ ...event.request, connectionId: event.connectionId });
     }),
   );
+
+it.effect.each(["ERR_CONNECTION_REFUSED", "FutureBrowserError-synthetic-secret", undefined])(
+  "handles browser diagnostic %s without losing the response",
+  (failureReason) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const broker = yield* makeBroker;
+        const requests = requestsFrom(yield* broker.connect(makeHost()));
+        yield* Stream.runForEach(requests, (request) =>
+          broker.respond({
+            clientId: "client-1",
+            connectionId: request.connectionId,
+            requestId: request.requestId,
+            ok: false,
+            error: {
+              _tag: "PreviewAutomationExecutionError",
+              message: "Preview navigation failed.",
+              ...(failureReason === undefined ? {} : { failureReason }),
+            },
+          }),
+        ).pipe(Effect.forkScoped);
+        yield* Effect.yieldNow;
+        const error = yield* broker
+          .invoke<void>({ scope, operation: "navigate", input: {} })
+          .pipe(Effect.flip);
+        expect(error).toBeInstanceOf(PreviewAutomationExecutionError);
+        const known = failureReason === "ERR_CONNECTION_REFUSED";
+        expect(error.message.includes("ERR_CONNECTION_REFUSED")).toBe(known);
+        expect(Reflect.get(error, "failureReason")).toBe(known ? failureReason : undefined);
+        const properties = ErrorReporting.exceptionProperties(
+          {
+            level: "error",
+            message: [],
+            cause: Cause.fail(error),
+            span: "preview-test",
+          },
+          ErrorReporting.makeScrubber({ appRoot: "/opt/synthetic", homeDir: "/home/synthetic" }),
+        );
+        expect(
+          properties.$exception_list.some((exception) =>
+            exception.value?.includes("ERR_CONNECTION_REFUSED"),
+          ),
+        ).toBe(known);
+        const reportJson = yield* encodeReportJson(properties);
+        expect(reportJson).not.toContain("synthetic-secret");
+      }),
+    ),
+);
 
 it.effect("atomically registers a connected host and correlates its response", () =>
   Effect.scoped(

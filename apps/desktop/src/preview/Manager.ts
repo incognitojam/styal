@@ -37,6 +37,7 @@ import type {
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
+import { previewAutomationFailureReasonSuffix } from "@t3tools/shared/previewErrorDiagnostics";
 import {
   BrowserWindow,
   ClipboardItem,
@@ -5077,7 +5078,7 @@ export class PreviewOperationError extends Schema.TaggedError<PreviewOperationEr
       this.webContentsId === undefined ? undefined : `WebContents ${this.webContentsId}`,
       this.artifactPath === undefined ? undefined : `artifact ${this.artifactPath}`,
     ].filter((value): value is string => value !== undefined);
-    return `Desktop preview operation failed: ${this.operation}${context.length === 0 ? "" : ` (${context.join(", ")})`}`;
+    return `Desktop preview operation failed: ${this.operation}${context.length === 0 ? "" : ` (${context.join(", ")})`}${previewAutomationFailureReasonSuffix(this.cause)}`;
   }
 }
 
@@ -5136,7 +5137,7 @@ export class PreviewAutomationEvaluationError extends Schema.TaggedError<Preview
   }
 
   override get message(): string {
-    return `Preview JavaScript evaluation failed in tab ${this.tabId}`;
+    return `Preview JavaScript evaluation failed in tab ${this.tabId}${previewAutomationFailureReasonSuffix(this.cause)}`;
   }
 }
 
