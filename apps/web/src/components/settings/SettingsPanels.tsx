@@ -633,9 +633,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
         ? ["Rich text composer"]
         : []),
-      ...(settings.composerTypingStreak !== DEFAULT_UNIFIED_SETTINGS.composerTypingStreak
-        ? ["Typing streak"]
-        : []),
       ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? ["Send shortcut"] : []),
       ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
         ? ["Follow-up behavior"]
@@ -711,7 +708,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadUnpin,
       settings.composerCollapseOnScroll,
       settings.composerRichTextEnabled,
-      settings.composerTypingStreak,
       settings.sendShortcut,
       settings.followUpBehavior,
       settings.turnUsageEnabled,
@@ -842,7 +838,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
       composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
-      composerTypingStreak: DEFAULT_UNIFIED_SETTINGS.composerTypingStreak,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
       turnUsageEnabled: DEFAULT_UNIFIED_SETTINGS.turnUsageEnabled,
@@ -2905,32 +2900,6 @@ export function GeneralSettingsPanel() {
                 updateSettings({ composerRichTextEnabled: Boolean(checked) })
               }
               aria-label="Rich text composer"
-            />
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("composer-typing-streak")}
-          description="Light up the composer and throw sparks from the caret while you type quickly. Past 140 WPM it turns to fire."
-          resetAction={
-            settings.composerTypingStreak !== DEFAULT_UNIFIED_SETTINGS.composerTypingStreak ? (
-              <SettingResetButton
-                label="typing streak"
-                onClick={() =>
-                  updateSettings({
-                    composerTypingStreak: DEFAULT_UNIFIED_SETTINGS.composerTypingStreak,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.composerTypingStreak}
-              onCheckedChange={(checked) =>
-                updateSettings({ composerTypingStreak: Boolean(checked) })
-              }
-              aria-label="Typing streak"
             />
           }
         />

@@ -740,34 +740,6 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9658
       retire_when: Upstream synchronizes equivalent composer draft state across clients, marks existing mobile threads with unsent content without notifying thread lists on every keystroke, and safely migrates installations carrying the fork schema.
 
-  - id: composer-typing-streak
-    title: Animate the composer while the user types quickly
-    status: maintained
-    prs: []
-    invariants:
-      - Only printable keystrokes warm the composer; paste, held keys, IME composition, and Ctrl or Cmd chords never count.
-      - The composer edge glows in the theme colour and sparks fly from the caret only while typing stays fast for a second or two, so a short burst of quick words does not light it, and both settle shortly after typing slows or stops.
-      - Past 140 WPM the theme glow turns to fire, which only grows from there as typing speeds up, with a wider glow and larger, more numerous, rising embers.
-      - The animation uses compositor-only opacity and transform changes, runs only in response to keystrokes, and is off under reduced motion or when the Typing streak setting is disabled.
-    implementation_paths:
-      - apps/web/src/components/chat/ChatComposer.tsx
-      - apps/web/src/components/chat/ComposerTypingStreak.logic.ts
-      - apps/web/src/components/chat/ComposerTypingStreak.tsx
-      - apps/web/src/components/settings/SettingsPanels.tsx
-      - apps/web/src/components/settings/settingsSearch.ts
-      - packages/contracts/src/settings.ts
-    upstream_paths:
-      - apps/web/src/components/chat/ChatComposer.tsx
-      - apps/web/src/components/settings/SettingsPanels.tsx
-      - apps/web/src/components/settings/settingsSearch.ts
-      - packages/contracts/src/settings.ts
-    tests:
-      - apps/web/src/components/chat/ComposerTypingStreak.logic.test.ts
-    upstream:
-      status: unassessed
-      tracking: []
-      retire_when: Upstream animates the composer for fast typing, or styal drops the effect.
-
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: review-needed

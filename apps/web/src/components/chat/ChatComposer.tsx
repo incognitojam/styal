@@ -151,7 +151,6 @@ import {
 import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerSurface } from "./ComposerSurface";
-import { ComposerTypingStreak } from "./ComposerTypingStreak";
 import {
   ComposerBannerStack,
   type ComposerBannerStackContent,
@@ -7003,7 +7002,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           className={composerProviderState.composerFrameClassName}
         >
-          <ComposerTypingStreak enabled={settings.composerTypingStreak} />
           <div
             ref={composerSurfaceRef}
             data-chat-composer-surface="true"
