@@ -1867,7 +1867,7 @@ function renderFeedEntry(
                 className="mr-1 flex-row items-center gap-1"
               >
                 {intent.steer ? (
-                  <SymbolView name="arrow.uturn.forward" size={11} tintColor={iconSubtleColor} />
+                  <SymbolView name="arrow.uturn.forward" size={13} tintColor={iconSubtleColor} />
                 ) : null}
                 <Text className="font-t3-medium text-xs text-foreground-secondary">
                   {intent.label}
