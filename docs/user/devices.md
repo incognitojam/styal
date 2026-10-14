@@ -18,10 +18,10 @@ device to boot it. The panel shows when you or an agent starts a device.
 Each device opens in its own tab. Use **+ → Device** to open another, and
 double-click a tab name or choose **Rename** from its context menu to rename it.
 Only the visible tab streams video; switching tabs keeps both devices running.
-Choose **Float device over chat** in the toolbar to keep watching and tapping the
-device in a small window while the right panel shows something else; drag the
-window by its handle, resize it from any edge, and use **Open in right panel**
-to bring it back.
+Choose **Float device over chat** in the toolbar to keep watching the device in a
+small window while the right panel shows something else. The floating window is
+view-only: drag it from anywhere, resize it from any edge, and double-click it or
+use **Open in right panel** to tap and type on the device again.
 Turn off the device hub in **Settings → Integrations → Devices** to stop the
 helper processes; simulators and emulators keep running until you power them
 off.

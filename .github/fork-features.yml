@@ -2458,7 +2458,7 @@ features:
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback.
       - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots capture the displayed surface rather than tiling it, and annotation crops are given in logical page coordinates.
-      - The floating browser preview remains visible but does not send pointer or keyboard input to its page; dragging anywhere on its view-only surface moves the frame, double-clicking it opens that tab in the right panel, and its frame controls remain usable.
+      - Floating browser and device previews remain visible but do not send pointer or keyboard input to their page or device; dragging anywhere on the view-only surface moves the frame, double-clicking it opens that source in the right panel, and its frame controls remain usable.
     implementation_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/BrowserSurfaceSlot.tsx

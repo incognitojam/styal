@@ -149,7 +149,6 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
       miniPlayer={miniPlayer}
       sourceSize={sourceSize}
       label="Floating browser preview"
-      viewOnly
       recording={recording}
       onOpenInPanel={openInPanel}
       pillActions={
@@ -241,8 +240,10 @@ function DeviceMiniPlayer({
     >
       {() => (
         // The stream is DOM, so it takes the band the browser's native webview would.
+        // Like the browser, it is view-only; the right panel takes taps and keys.
         <div
-          className="pointer-events-auto absolute inset-0 overflow-hidden rounded-[inherit]"
+          inert
+          className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
           style={{ zIndex: PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX }}
         >
           <DeviceStreamView
@@ -271,7 +272,6 @@ function MiniPlayerShell({
   miniPlayer,
   sourceSize,
   label,
-  viewOnly = false,
   onOpenInPanel,
   pillActions,
   recording = false,
@@ -282,8 +282,6 @@ function MiniPlayerShell({
   readonly miniPlayer: PreviewMiniPlayerState;
   readonly sourceSize: PreviewMiniPlayerSize;
   readonly label: string;
-  /** Uses the source's input shield as a drag surface. */
-  readonly viewOnly?: boolean;
   readonly onOpenInPanel: () => void;
   readonly pillActions?: ReactNode;
   readonly recording?: boolean;
@@ -396,19 +394,17 @@ function MiniPlayerShell({
             borderRadius: radius,
           }}
         >
-          {viewOnly ? (
-            // The view-only page stays visible while its full surface moves the frame.
-            // Double-clicking it opens the source in the right panel.
-            <div
-              aria-hidden="true"
-              className="pointer-events-auto absolute inset-0 z-[49] touch-none cursor-grab rounded-[inherit] active:cursor-grabbing"
-              onDoubleClick={onOpenInPanel}
-              onPointerDown={(event) => beginGesture(event, null)}
-              onPointerMove={handlePointerMove}
-              onPointerUp={endGesture}
-              onPointerCancel={endGesture}
-            />
-          ) : null}
+          {/* The source is view-only: its full surface moves the frame, and
+              double-clicking it opens the source in the right panel. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-auto absolute inset-0 z-[49] touch-none cursor-grab rounded-[inherit] active:cursor-grabbing"
+            onDoubleClick={onOpenInPanel}
+            onPointerDown={(event) => beginGesture(event, null)}
+            onPointerMove={handlePointerMove}
+            onPointerUp={endGesture}
+            onPointerCancel={endGesture}
+          />
           <div
             className="group pointer-events-auto absolute z-[49] size-3 touch-none cursor-grab active:cursor-grabbing"
             style={{ right: pillInset, top: pillInset }}
