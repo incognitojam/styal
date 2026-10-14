@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
+import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 
@@ -49,6 +50,14 @@ export interface ClaudeProcessHandle {
 export function makeClaudeProcessSpawner(input?: {
   readonly observer?: ClaudeProcessObserver;
   readonly spawn?: SpawnClaudeChild;
+  /**
+   * Starts the CLI as the leader of its own process group. When the CLI exits it
+   * stops the MCP servers it started, but not their children: a plugin's
+   * `bun run start` wrapper dies and its `bun server.ts` keeps running. Those stay
+   * in the CLI's group, so the rest of the group gets SIGKILL once the CLI exits.
+   * Commands the agent runs through its Bash tool start their own groups.
+   */
+  readonly processGroup?: boolean;
 }): {
   readonly handle: ClaudeProcessHandle;
   readonly spawnClaudeCodeProcess: (options: SpawnOptions) => SpawnedProcess;
@@ -73,6 +82,7 @@ export function makeClaudeProcessSpawner(input?: {
       stdio: ["pipe", "pipe", "pipe"],
       signal: options.signal,
       windowsHide: true,
+      ...(input?.processGroup ? { detached: true } : {}),
     });
     child = process;
     // The SDK's abort of `signal` surfaces as an AbortError here; the exit
@@ -85,6 +95,13 @@ export function makeClaudeProcessSpawner(input?: {
       observer?.onStderr?.(chunk);
     });
     process.once("exit", (code, signal) => {
+      if (input?.processGroup && process.pid !== undefined) {
+        try {
+          signalProcessGroup(process.pid, "SIGKILL");
+        } catch {
+          // The group is already empty.
+        }
+      }
       exited = { code, signal };
       observer?.onExit?.({ code, signal, pid: process.pid, stderrTail });
       resolveExit(exited);

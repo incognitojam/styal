@@ -797,6 +797,7 @@ export const layerQueryRunner: Layer.Layer<
     const crypto = yield* Crypto.Crypto;
     const { native: nativeEventLogger } = yield* ProviderEventLoggers.ProviderEventLoggers;
     const agentScope = yield* AgentScope;
+    const platform = yield* HostProcess.Platform;
 
     return ClaudeAgentSdkQueryRunner.of({
       allocateSessionId: crypto
@@ -822,6 +823,8 @@ export const layerQueryRunner: Layer.Layer<
         const runtimeContext = yield* Effect.context<never>();
         const runFork = Effect.runForkWith(runtimeContext);
         const claudeProcess = makeClaudeProcessSpawner({
+          // Windows has no process groups.
+          processGroup: platform !== "win32",
           observer: {
             onSpawn: ({ pid }) => {
               runFork(Effect.logInfo("claude.cli.spawned", { threadId: input.threadId, pid }));
@@ -850,9 +853,8 @@ export const layerQueryRunner: Layer.Layer<
         // of the environment every command the agent runs inherits.
         const { mcpServers, ...queryOptions } = input.options;
         // The SDK spawns a native binary as `path ...executableArgs ...sdkArgs`,
-        // which lets the agent scope wrapper go in front of the CLI while the
-        // SDK keeps its own stderr capture and exit reporting. The SDK runs a
-        // script entry through node instead, so those launch unwrapped.
+        // which lets the agent scope wrapper go in front of the CLI. The SDK
+        // runs a script entry through node instead, so those launch unwrapped.
         const binaryPath = queryOptions.pathToClaudeCodeExecutable;
         const launch =
           binaryPath === undefined ||
