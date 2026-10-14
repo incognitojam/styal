@@ -111,11 +111,9 @@ NodeFS.writeFileSync(
       enableProviderUpdateChecks: false,
       autoUpdateProviders: false,
       enableAgentBrowserAccess: false,
+      // Some providers (OpenCode) are off by default, so enable the one under test.
       providers: Object.fromEntries(
-        BUILT_IN_PROVIDERS.filter((key) => key !== provider).map((key) => [
-          key,
-          { enabled: false },
-        ]),
+        BUILT_IN_PROVIDERS.map((key) => [key, { enabled: key === provider }]),
       ),
     },
     null,
