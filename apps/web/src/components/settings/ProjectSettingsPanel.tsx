@@ -29,7 +29,7 @@ import {
   type SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
-import { useThreadShells } from "../../state/entities";
+import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
@@ -534,6 +534,7 @@ function ProjectDetail({
           return;
         }
         const projectRef = scopeProjectRef(member.environmentId, member.id);
+        await waitForProjectRemoval(projectRef);
         releaseProjectDraftUploads(
           projectRef,
           memberThreads.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),

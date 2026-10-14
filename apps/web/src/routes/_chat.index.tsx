@@ -15,6 +15,7 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import {
+  readProject,
   useAllEnvironmentShellsBootstrapped,
   useProjects,
   useThreadShells,
@@ -81,18 +82,23 @@ function IndexDraftLanding() {
     ) {
       return;
     }
+    const projectRef = scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
+    // A project removed since this render is gone from the store; the next
+    // render picks another one.
+    if (readProject(projectRef) === null) {
+      return;
+    }
     const { claim, release } = useLaunchNavigationStore.getState();
     if (!claim("index-draft")) {
       return;
     }
     startingRef.current = true;
-    void handleNewThread(scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id), {
-      replace: true,
-    })
+    void handleNewThread(projectRef, { replace: true })
       .then((result) => {
         if (indexDraftStartNeedsRetry(result)) {
           // A concurrent draft operation won while handleNewThread awaited
-          // defaults. Let its route land, or retry if this index stays mounted.
+          // defaults, or the project was removed meanwhile. Let the other route
+          // land, or retry with the next project if this index stays mounted.
           startingRef.current = false;
         }
       })
