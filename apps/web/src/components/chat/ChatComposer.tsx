@@ -305,6 +305,7 @@ import {
   resolveContextWindowModelDisplayName,
   shouldReserveContextWindowMeter,
 } from "./ContextWindowMeter.logic";
+import { resumesClaudeSession } from "./claudeSessionResume";
 import {
   attachVideoThumbnail,
   buildAttachmentVideoPreview,
@@ -2357,7 +2358,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const cacheLossBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (!activeContextWindow) return null;
     const change = claudeSelectionCacheLoss({
-      provider: selectedProvider,
+      provider: resumesClaudeSession(
+        providerInstanceEntries,
+        activeThreadModelSelection?.instanceId,
+        selectedProviderEntry,
+      )
+        ? selectedProvider
+        : null,
       current: activeThreadModelSelection,
       next: selectedModelSelection,
       capabilities: selectedProviderModels.find(
@@ -2409,8 +2416,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerDraftTarget,
     dismissedCacheLossKeys,
     nowMinute,
+    providerInstanceEntries,
     selectedModelSelection,
     selectedProvider,
+    selectedProviderEntry,
     selectedProviderModels,
     setComposerDraftModelSelection,
   ]);
