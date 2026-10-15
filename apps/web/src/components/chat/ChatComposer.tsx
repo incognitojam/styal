@@ -206,7 +206,10 @@ import {
   type TerminalContextSelection,
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
-import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import {
+  replaceComposerContextReferences,
+  toKindScopedComposerContextId,
+} from "@t3tools/shared/composerContextReferences";
 import {
   getRestingComposerImagePreviewCounts,
   resolveRestingComposerControlsLayout,
@@ -236,7 +239,6 @@ import {
   formatInlineContextReference,
   insertInlineContextReference,
   inlineContextReferenceReplacement,
-  toKindScopedComposerContextId,
 } from "~/lib/composerContextReferences";
 import {
   asKnownContextRecord,

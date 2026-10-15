@@ -5,12 +5,12 @@ import {
   type IssueContextRecord,
   type SourceControlIssue,
 } from "@t3tools/contracts";
-import { sanitizeComposerContextLabel } from "@t3tools/shared/composerContextReferences";
-
 import {
-  type ComposerContextReference,
+  sanitizeComposerContextLabel,
   toKindScopedComposerContextId,
-} from "./composerContextReferences";
+} from "@t3tools/shared/composerContextReferences";
+
+import type { ComposerContextReference } from "./composerContextReferences";
 
 const ISSUE_CONTEXT_TITLE_LABEL_MAX = 60;
 const ISSUE_CONTEXT_SHORT_FIELD_MAX = 2_048;
