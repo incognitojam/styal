@@ -1618,7 +1618,7 @@ features:
   - id: fork-feature-usage
     title: Measure anonymous adoption of maintained features
     status: maintained
-    prs: []
+    prs: [840]
     rationale: Maintainers need observed feature adoption to evaluate the cost of retaining fork behavior.
     invariants:
       - Agent browser tools emit one structural feature.used event per public operation, including failures and cancellation, with action, outcome, and duration but no operation arguments or results.
@@ -2572,7 +2572,7 @@ features:
   - id: preview-surface-continuity
     title: Preserve responsive preview presentation and ownership
     status: maintained
-    prs: [193, 197, 198, 217]
+    prs: [193, 197, 198, 217, 833, 840]
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback. Presentation accounts for independent desktop window and page zoom, including zoom changes, so the requested CSS viewport fits its visible and captured surface.
       - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots capture the displayed surface rather than tiling it, and annotation crops and automation clicks are given in logical page coordinates and mapped into that surface.
