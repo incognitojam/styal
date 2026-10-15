@@ -314,6 +314,7 @@ type TestDisplayMediaHandler = (
 
 interface TestHostWebContents {
   readonly id: number;
+  readonly getZoomFactor: () => number;
   readonly mainFrame: { readonly frameTreeNodeId: number };
   readonly executeJavaScript: ReturnType<typeof vi.fn>;
   readonly isDestroyed: () => boolean;
@@ -334,6 +335,7 @@ const makeTestHostWebContents = (): TestHostWebContents => {
     mainFrame: { frameTreeNodeId: 7 },
     executeJavaScript: vi.fn(async () => true),
     isDestroyed: () => false,
+    getZoomFactor: () => 1,
     session: {
       setDisplayMediaRequestHandler: vi.fn((next: TestDisplayMediaHandler) => {
         handler = next;
@@ -1872,6 +1874,60 @@ describe("PreviewManager", () => {
               scale: 0.5,
             },
           );
+        }),
+      ),
+  );
+
+  effectIt.effect(
+    "fits the full viewport when window zoom changes independently of page zoom",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          let windowZoom = 0.8;
+          const host = { ...makeTestHostWebContents(), getZoomFactor: () => windowZoom };
+          const guest = makeTestPreviewWebContents(
+            async () => ({
+              toJPEG: () => Buffer.from("frame"),
+              getSize: () => ({ width: 512, height: 320 }),
+            }),
+            42,
+            host,
+          );
+          fromId.mockReturnValue(guest);
+          yield* manager.createTab("tab_window_zoom");
+          yield* manager.registerWebview("tab_window_zoom", 42);
+          yield* manager.zoomIn("tab_window_zoom");
+          const presentation = { width: 1280, height: 800, scale: 0.5 };
+          yield* manager.setViewportPresentation("tab_window_zoom", presentation);
+          const sendCommand = guest.debugger.sendCommand;
+          expect(sendCommand).toHaveBeenCalledWith("Emulation.setDeviceMetricsOverride", {
+            width: 1280,
+            height: 800,
+            deviceScaleFactor: 0,
+            mobile: false,
+            scale: 0.4,
+          });
+
+          windowZoom = 1.2;
+          yield* manager.reapplyZoom();
+          expect(sendCommand).toHaveBeenCalledWith("Emulation.setDeviceMetricsOverride", {
+            width: 1280,
+            height: 800,
+            deviceScaleFactor: 0,
+            mobile: false,
+            scale: 0.6,
+          });
+          expect(guest.setZoomFactor).toHaveBeenLastCalledWith(1.1);
+
+          windowZoom = 1;
+          yield* manager.reapplyZoom();
+          expect(sendCommand).toHaveBeenCalledWith("Emulation.setDeviceMetricsOverride", {
+            width: 1280,
+            height: 800,
+            deviceScaleFactor: 0,
+            mobile: false,
+            scale: 0.5,
+          });
         }),
       ),
   );
@@ -4866,6 +4922,59 @@ describe("PreviewManager", () => {
           });
         }),
       ),
+  );
+
+  effectIt.effect("keeps cursor coordinates logical while clicking a fitted surface", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const host = { ...makeTestHostWebContents(), getZoomFactor: () => 0.8 };
+        const guest = makeTestPreviewWebContents(
+          async () => ({
+            toJPEG: () => Buffer.from("frame"),
+            getSize: () => ({ width: 512, height: 320 }),
+          }),
+          42,
+          host,
+        );
+        vi.mocked(guest.debugger.sendCommand).mockImplementation(async (method) =>
+          method === "Runtime.evaluate"
+            ? { result: { value: { width: 1280, height: 800 } } }
+            : undefined,
+        );
+        fromId.mockReturnValue(guest);
+        const points: Array<{ phase: string; x: number; y: number }> = [];
+        yield* manager.subscribePointerEvents(({ phase, x, y }) =>
+          Effect.sync(() => {
+            points.push({ phase, x, y });
+          }),
+        );
+        yield* manager.createTab("tab_fitted_click");
+        yield* manager.registerWebview("tab_fitted_click", 42);
+        yield* manager.setViewportPresentation("tab_fitted_click", {
+          width: 1280,
+          height: 800,
+          scale: 0.5,
+        });
+        const click = yield* manager
+          .automationClick("tab_fitted_click", { x: 120, y: 80 })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(200);
+        yield* Fiber.join(click);
+        expect(points).toEqual([
+          { phase: "move", x: 120, y: 80 },
+          { phase: "click", x: 120, y: 80 },
+        ]);
+        for (const type of ["mousePressed", "mouseReleased"]) {
+          expect(guest.debugger.sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+            type,
+            x: 48,
+            y: 32,
+            button: "left",
+            clickCount: 1,
+          });
+        }
+      }),
+    ),
   );
 
   effectIt.effect("types in background webviews and enables native key input", () =>

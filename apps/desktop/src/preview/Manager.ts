@@ -1567,7 +1567,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           height: presentation.height,
           deviceScaleFactor: 0,
           mobile: false,
-          scale: presentation.scale,
+          // The renderer measures the panel in host CSS pixels, while CDP scales
+          // into native view coordinates. Window zoom changes that conversion:
+          // omitting it crops zoomed-out guests and leaves zoomed-in ones underfilled.
+          scale: presentation.scale * (wc.hostWebContents?.getZoomFactor() ?? 1),
         }),
     );
   });
@@ -2975,7 +2978,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
    */
   const reapplyZoom = Effect.fn("PreviewManager.reapplyZoom")(function* () {
     const tabIds = Array.from((yield* SynchronizedRef.get(tabsRef)).keys());
-    yield* Effect.forEach(tabIds, assertTabZoom, { discard: true });
+    yield* Effect.forEach(
+      tabIds,
+      (tabId) =>
+        Effect.gen(function* () {
+          yield* assertTabZoom(tabId);
+          const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
+          if (presentation && presentation.scale < 1) {
+            yield* setViewportPresentation(tabId, presentation).pipe(Effect.ignore);
+          }
+        }),
+      { discard: true },
+    );
   });
 
   const applyZoom = Effect.fn("PreviewManager.applyZoom")(function* (
@@ -4188,6 +4202,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const performAutomationClick = Effect.fn("PreviewManager.performAutomationClick")(function* (
     tabId: string,
+    wc: Electron.WebContents,
     input: PreviewAutomationClickInput,
     send: SendCommand,
   ) {
@@ -4229,15 +4244,23 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     });
     yield* Effect.sleep(AGENT_CURSOR_CLICK_LEAD_MS);
     yield* expectAgentInput(tabId, { kind: "pointer", ...point, button: 0 });
+    // CDP mouse input targets the scaled surface; locators, cursor overlays,
+    // and the guest's human-input events use logical page coordinates.
+    const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
+    const inputScale =
+      presentation && presentation.scale < 1
+        ? presentation.scale * (wc.hostWebContents?.getZoomFactor() ?? 1)
+        : 1;
+    const inputPoint = { x: point.x * inputScale, y: point.y * inputScale };
     yield* send("Input.dispatchMouseEvent", {
       type: "mousePressed",
-      ...point,
+      ...inputPoint,
       button: "left",
       clickCount: 1,
     });
     yield* send("Input.dispatchMouseEvent", {
       type: "mouseReleased",
-      ...point,
+      ...inputPoint,
       button: "left",
       clickCount: 1,
     });
@@ -4249,7 +4272,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   ) {
     const wc = yield* requireWebContents(tabId);
     yield* withControlSession(tabId, wc, "click", (send) =>
-      performAutomationClick(tabId, input, send),
+      performAutomationClick(tabId, wc, input, send),
     );
   });
 
