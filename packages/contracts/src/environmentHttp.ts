@@ -33,6 +33,8 @@ import {
 import {
   DpopFailureReason,
   AuthSessionId,
+  EnvironmentId,
+  ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
@@ -44,7 +46,7 @@ import {
   OrchestrationV2Command,
   OrchestrationV2DispatchCommandResult,
 } from "./orchestrationV2.ts";
-import { Project, ProjectMutation, ProjectSnapshot } from "./project.ts";
+import { Project, ProjectIconOverride, ProjectMutation, ProjectSnapshot } from "./project.ts";
 import {
   PullRequestDiffInput,
   PullRequestDiffResult,
@@ -667,6 +669,16 @@ export const HostActivityThread = Schema.Struct({
   threadId: ThreadId,
   title: Schema.String,
   projectTitle: Schema.NullOr(Schema.String),
+  /** Saved project identity, including icon overrides, for shutdown dialogs. */
+  project: Schema.optionalKey(
+    Schema.Struct({
+      id: ProjectId,
+      title: Schema.String,
+      workspaceRoot: Schema.String,
+      faviconPath: Schema.NullOr(Schema.String),
+      projectIcon: Schema.NullOr(ProjectIconOverride),
+    }),
+  ),
   reasons: Schema.Array(
     Schema.Literals([
       "preparing",
@@ -687,6 +699,7 @@ export type HostActivityThread = typeof HostActivityThread.Type;
 
 /** Fresh host activity; counts and thread details cover all connected clients. */
 export const HostActivity = Schema.Struct({
+  environmentId: Schema.optionalKey(EnvironmentId),
   activeSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   /** Active threads that thread continuation resumes after a restart, when enabled. */
   continuableSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

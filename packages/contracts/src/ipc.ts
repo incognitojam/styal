@@ -1132,6 +1132,7 @@ export type DesktopDiscordPresenceActivity = typeof DesktopDiscordPresenceActivi
 
 export const ConfirmDialogThreadActivitySchema = Schema.Struct({
   thread: HostActivityThread,
+  environmentId: Schema.optionalKey(EnvironmentId),
   hostLabel: Schema.NullOr(Schema.String),
   continuesAfterRestart: Schema.Boolean,
 });

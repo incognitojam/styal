@@ -11,9 +11,10 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { requireEnvironmentScope, failEnvironmentInternal } from "../auth/http.ts";
 import { DeviceSharing } from "../device/DeviceSharing.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
-import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ProjectStoreV2, type ProjectRow } from "../orchestration-v2/ProjectStore.ts";
 import { listContinuableThreadIds } from "../orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
+import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts";
 
 type HostThread = Pick<
   OrchestrationV2ThreadShell,
@@ -23,7 +24,10 @@ type HostThread = Pick<
 export function summarizeHostSessions(
   threads: ReadonlyArray<HostThread>,
   continuableThreadIds: ReadonlySet<string> = new Set(),
-  projectTitles: ReadonlyMap<string, string> = new Map(),
+  projects: ReadonlyMap<
+    string,
+    Pick<ProjectRow, "title" | "workspaceRoot" | "faviconPath" | "projectIcon">
+  > = new Map(),
 ): Pick<HostActivity, "activeSessions" | "continuableSessions" | "waitingSessions" | "threads"> {
   const active = new Set<string>();
   const waiting = new Set<string>();
@@ -60,10 +64,22 @@ export function summarizeHostSessions(
       if (!reasons.includes(task.kind)) reasons.push(task.kind);
     }
     if (reasons.length === 0) continue;
+    const project = projects.get(thread.projectId);
     affected.set(thread.id, {
       threadId: thread.id,
       title: thread.title,
-      projectTitle: projectTitles.get(thread.projectId) ?? null,
+      projectTitle: project?.title ?? null,
+      ...(project
+        ? {
+            project: {
+              id: thread.projectId,
+              title: project.title,
+              workspaceRoot: project.workspaceRoot,
+              faviconPath: project.faviconPath,
+              projectIcon: project.projectIcon,
+            },
+          }
+        : {}),
       reasons,
       continuable: active.has(thread.id) && continuableThreadIds.has(thread.id),
     });
@@ -77,6 +93,7 @@ export function summarizeHostSessions(
 }
 
 export const inspectHostActivity = Effect.gen(function* () {
+  const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const projections = yield* ProjectionStoreV2;
   const terminals = yield* TerminalManager;
   const terminalActivity = yield* terminals.shutdownPreflight;
@@ -103,10 +120,11 @@ export const inspectHostActivity = Effect.gen(function* () {
     ),
   );
   return {
+    environmentId,
     ...summarizeHostSessions(
       snapshot.threads,
       continuable,
-      new Map(projects.map((project) => [project.projectId, project.title])),
+      new Map(projects.map((project) => [project.projectId, project])),
     ),
     ...terminalActivity,
     environmentsUsingDevices,

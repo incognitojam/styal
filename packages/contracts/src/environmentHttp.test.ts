@@ -65,6 +65,36 @@ describe("environment HTTP errors", () => {
 });
 
 describe("HostActivity", () => {
+  it("preserves the environment and saved project icon alongside affected thread titles", () => {
+    const project = {
+      id: "sample",
+      title: "Sample project",
+      workspaceRoot: "/workspace/sample",
+      faviconPath: "brand/icon.svg",
+      projectIcon: { kind: "emoji", emoji: "🌿" },
+    };
+    const activity = decodeHostActivity({
+      environmentId: "laptop",
+      activeSessions: 1,
+      continuableSessions: 0,
+      waitingSessions: 0,
+      terminalsRequiringConfirmation: 0,
+      terminalsWithUnknownActivity: 0,
+      threads: [
+        {
+          threadId: "release",
+          title: "Review the release",
+          projectTitle: project.title,
+          project,
+          reasons: ["running"],
+          continuable: false,
+        },
+      ],
+    });
+    expect(activity.environmentId).toBe("laptop");
+    expect(activity.threads?.[0]?.project).toEqual(project);
+    expect(activity.threads?.[0]?.title).toBe("Review the release");
+  });
   it("reads activity from servers that predate shared device use", () => {
     const activity = decodeHostActivity({
       activeSessions: 0,

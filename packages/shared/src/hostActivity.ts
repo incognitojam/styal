@@ -88,6 +88,7 @@ export function describeHostActivity(
     for (const thread of check.threads ?? []) {
       threadActivity.push({
         thread,
+        ...(check.environmentId ? { environmentId: check.environmentId } : {}),
         hostLabel: check.hostLabel ?? null,
         continuesAfterRestart: Boolean(continueThreads && thread.continuable),
       });

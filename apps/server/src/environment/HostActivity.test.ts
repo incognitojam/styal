@@ -77,6 +77,14 @@ const pendingRequest = (kind: "user_input" | "permission") => ({
   createdAt: DateTime.makeUnsafe("2026-10-15T12:00:00.000Z"),
 });
 
+const sampleProject = {
+  id: ProjectId.make("project"),
+  title: "Sample project",
+  workspaceRoot: "/workspace/sample",
+  faviconPath: "brand/icon.svg",
+  projectIcon: { kind: "emoji" as const, emoji: "🌿" },
+};
+
 describe("host thread details", () => {
   it("names each affected thread and explains all its work from the count's snapshot", () => {
     const activity = summarizeHostSessions(
@@ -109,63 +117,65 @@ describe("host thread details", () => {
         },
       ],
       new Set(["running", "input", "background"]),
-      new Map([["project", "Sample project"]]),
+      new Map([["project", sampleProject]]),
     );
     expect(activity).toMatchObject({
       activeSessions: 4,
       waitingSessions: 3,
       continuableSessions: 2,
     });
-    expect(activity.threads).toEqual([
-      {
-        threadId: "preparing",
-        title: "Thread preparing",
-        projectTitle: "Sample project",
-        reasons: ["preparing"],
-        continuable: false,
-      },
-      {
-        threadId: "starting",
-        title: "Thread starting",
-        projectTitle: "Sample project",
-        reasons: ["starting"],
-        continuable: false,
-      },
-      {
-        threadId: "running",
-        title: "Thread running",
-        projectTitle: "Sample project",
-        reasons: ["running"],
-        continuable: true,
-      },
-      {
-        threadId: "input",
-        title: "Thread input",
-        projectTitle: "Sample project",
-        reasons: ["input"],
-        continuable: false,
-      },
-      {
-        threadId: "approval",
-        title: "Thread approval",
-        projectTitle: "Sample project",
-        reasons: ["approval"],
-        continuable: false,
-      },
-      {
-        threadId: "waiting",
-        title: "Thread waiting",
-        projectTitle: "Sample project",
-        reasons: ["waiting"],
-        continuable: false,
-      },
-      {
-        threadId: "background",
-        title: "Thread background",
-        projectTitle: "Sample project",
-        reasons: ["monitor", "command", "subagent", "background_task"],
-        continuable: true,
-      },
-    ]);
+    expect(activity.threads).toEqual(
+      [
+        {
+          threadId: "preparing",
+          title: "Thread preparing",
+          projectTitle: "Sample project",
+          reasons: ["preparing"],
+          continuable: false,
+        },
+        {
+          threadId: "starting",
+          title: "Thread starting",
+          projectTitle: "Sample project",
+          reasons: ["starting"],
+          continuable: false,
+        },
+        {
+          threadId: "running",
+          title: "Thread running",
+          projectTitle: "Sample project",
+          reasons: ["running"],
+          continuable: true,
+        },
+        {
+          threadId: "input",
+          title: "Thread input",
+          projectTitle: "Sample project",
+          reasons: ["input"],
+          continuable: false,
+        },
+        {
+          threadId: "approval",
+          title: "Thread approval",
+          projectTitle: "Sample project",
+          reasons: ["approval"],
+          continuable: false,
+        },
+        {
+          threadId: "waiting",
+          title: "Thread waiting",
+          projectTitle: "Sample project",
+          reasons: ["waiting"],
+          continuable: false,
+        },
+        {
+          threadId: "background",
+          title: "Thread background",
+          projectTitle: "Sample project",
+          reasons: ["monitor", "command", "subagent", "background_task"],
+          continuable: true,
+        },
+      ].map((thread) => ({ ...thread, project: sampleProject })),
+    );
   });
 });

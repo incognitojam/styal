@@ -1,4 +1,4 @@
-import { ThreadId, type HostActivityThread } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type HostActivityThread } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { describeHostActivity } from "./hostActivity.ts";
@@ -125,6 +125,7 @@ describe("host thread descriptions", () => {
           activeSessions: 1,
           continuableSessions: 1,
           hostLabel: "Lab server",
+          environmentId: EnvironmentId.make("lab"),
           threads: [namedThread],
         },
       ],
@@ -132,7 +133,12 @@ describe("host thread descriptions", () => {
     );
     expect(activity.lines).toEqual(["1 thread will be interrupted."]);
     expect(activity.threadActivity).toEqual([
-      { thread: namedThread, hostLabel: "Lab server", continuesAfterRestart: false },
+      {
+        thread: namedThread,
+        environmentId: EnvironmentId.make("lab"),
+        hostLabel: "Lab server",
+        continuesAfterRestart: false,
+      },
     ]);
   });
   it("labels continuation per host, including matching thread IDs on different hosts", () => {
