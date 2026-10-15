@@ -115,6 +115,7 @@ export function PullRequestChip(props: {
       data-markdown-copy={props.copyMarkdown}
       onClick={(event) => props.onOpen(event, props.metadata.url)}
       onContextMenu={(event) => props.onContextMenu(event, props.metadata.url)}
+      onAuxClick={(event) => props.onOpen(event, props.metadata.url)}
     >
       <StateIcon />
       <ContextChipLabel>{props.label}</ContextChipLabel>
