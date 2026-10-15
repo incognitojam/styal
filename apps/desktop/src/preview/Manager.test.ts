@@ -6,7 +6,10 @@ import type {
   DesktopPreviewRecordingInputEvent,
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { previewAutomationFailureReason } from "@t3tools/shared/previewErrorDiagnostics";
+import {
+  previewAutomationFailureReason,
+  previewAutomationFailureStage,
+} from "@t3tools/shared/previewErrorDiagnostics";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -807,12 +810,19 @@ describe("PreviewManager", () => {
 
         expect(Exit.isFailure(firstExit)).toBe(true);
         if (Exit.isSuccess(firstExit)) return;
-        expect(Option.getOrThrow(Cause.findErrorOption(firstExit.cause))).toMatchObject({
+        const firstError = Option.getOrThrow(Cause.findErrorOption(firstExit.cause));
+        expect(firstError).toMatchObject({
           _tag: "PreviewOperationError",
           operation: "automationSnapshot.capturePage",
           tabId: "tab_snapshot_timeout",
           webContentsId: 42,
         });
+        // The renderer only sees the IPC message, which must still name the stalled step.
+        const rendererError = new Error(
+          `Error invoking remote method 'desktop:preview-automation-snapshot': ${String(firstError)}`,
+        );
+        expect(previewAutomationFailureStage(rendererError)).toBe("page-capture");
+        expect(previewAutomationFailureReason(rendererError)).toBe("TimeoutError");
 
         const accessibilityCallsBeforeSecond = sendCommand.mock.calls.filter(
           ([method]) => method === "Accessibility.getFullAXTree",

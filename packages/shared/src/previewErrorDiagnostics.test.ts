@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   previewAutomationFailureReason,
   previewAutomationFailureReasonSuffix,
+  previewAutomationFailureStage,
+  previewAutomationFailureStageSuffix,
 } from "./previewErrorDiagnostics.ts";
 
 describe("previewAutomationFailureReason", () => {
@@ -52,5 +54,32 @@ describe("previewAutomationFailureReason", () => {
     let nested: unknown = new TypeError("private-text");
     for (let depth = 0; depth < 5; depth++) nested = { cause: nested };
     expect(previewAutomationFailureReason(nested)).toBeUndefined();
+  });
+});
+
+describe("previewAutomationFailureStage", () => {
+  const ipcMessage = (suffix: string) =>
+    `Error invoking remote method 'desktop:preview-automation-snapshot': Error: Desktop preview operation failed: automationSnapshot.capturePage${suffix}`;
+
+  it("reads a known stage before or without the reason suffix", () => {
+    const stage = previewAutomationFailureStageSuffix("page-capture");
+    expect(
+      previewAutomationFailureStage(
+        new Error(ipcMessage(`${stage} [styal-preview-reason=TimeoutError]`)),
+      ),
+    ).toBe("page-capture");
+    expect(previewAutomationFailureStage({ cause: new Error(ipcMessage(stage)) })).toBe(
+      "page-capture",
+    );
+  });
+
+  it("ignores unknown stages and tokens outside Electron IPC errors", () => {
+    expect(
+      previewAutomationFailureStage(new Error(ipcMessage(" [styal-preview-stage=private-text]"))),
+    ).toBeUndefined();
+    expect(
+      previewAutomationFailureStage(new Error("[styal-preview-stage=page-capture]")),
+    ).toBeUndefined();
+    expect(previewAutomationFailureStageSuffix(undefined)).toBe("");
   });
 });

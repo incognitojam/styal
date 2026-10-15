@@ -28,6 +28,7 @@ import type {
   PreviewAutomationActionEvent,
   PreviewAutomationConsoleEntry,
   PreviewAutomationEvaluateInput,
+  PreviewAutomationFailureStage,
   PreviewAutomationPressInput,
   PreviewAutomationNetworkEntry,
   PreviewAutomationScrollInput,
@@ -37,7 +38,10 @@ import type {
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
-import { previewAutomationFailureReasonSuffix } from "@t3tools/shared/previewErrorDiagnostics";
+import {
+  previewAutomationFailureReasonSuffix,
+  previewAutomationFailureStageSuffix,
+} from "@t3tools/shared/previewErrorDiagnostics";
 import {
   BrowserWindow,
   ClipboardItem,
@@ -172,7 +176,10 @@ const isAbortedNavigationError = (error: unknown): boolean =>
 
 const DIAGNOSTIC_BUFFER_LIMIT = 200;
 
-class PreviewCaptureTimeoutError extends Error {}
+class PreviewCaptureTimeoutError extends Error {
+  // Reported to agents as the allowlisted TimeoutError reason.
+  override name = "TimeoutError";
+}
 const MAX_ARTIFACT_SITE_SLUG_LENGTH = 80;
 const AGENT_CURSOR_MOVE_MS = 160;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
@@ -5108,6 +5115,16 @@ export class PreviewRecordingCaptureUnavailableError extends Schema.TaggedError<
   }
 }
 
+/** Name the agent-visible step for desktop operations whose failure explains a stalled tool. */
+const previewOperationFailureStage = (
+  operation: string,
+): PreviewAutomationFailureStage | undefined => {
+  if (operation.endsWith(".capturePage")) return "page-capture";
+  if (operation === "ensureControlSession") return "control-session";
+  if (operation.startsWith("navigate.")) return "navigation";
+  return undefined;
+};
+
 export class PreviewOperationError extends Schema.TaggedError<PreviewOperationError>()(
   "PreviewOperationError",
   {
@@ -5128,7 +5145,7 @@ export class PreviewOperationError extends Schema.TaggedError<PreviewOperationEr
       this.webContentsId === undefined ? undefined : `WebContents ${this.webContentsId}`,
       this.artifactPath === undefined ? undefined : `artifact ${this.artifactPath}`,
     ].filter((value): value is string => value !== undefined);
-    return `Desktop preview operation failed: ${this.operation}${context.length === 0 ? "" : ` (${context.join(", ")})`}${previewAutomationFailureReasonSuffix(this.cause)}`;
+    return `Desktop preview operation failed: ${this.operation}${context.length === 0 ? "" : ` (${context.join(", ")})`}${previewAutomationFailureStageSuffix(previewOperationFailureStage(this.operation))}${previewAutomationFailureReasonSuffix(this.cause)}`;
   }
 }
 

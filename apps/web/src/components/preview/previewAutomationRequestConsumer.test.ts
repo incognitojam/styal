@@ -288,7 +288,23 @@ describe("previewAutomationRequestConsumer", () => {
       }),
     ).toMatchObject({
       _tag: "PreviewAutomationTimeoutError",
+      failureStage: "viewport-render",
       detail: { tabId: "tab-1", timeoutMs: 2_500 },
+    });
+  });
+
+  it("names the desktop step where a snapshot capture stalled", () => {
+    const response = serializePreviewAutomationError(
+      new Error(
+        "Error invoking remote method 'desktop:preview-automation-snapshot': Error: Desktop preview operation failed: automationSnapshot.capturePage (tab tab_1, WebContents 7) [styal-preview-stage=page-capture] [styal-preview-reason=TimeoutError]",
+      ),
+      { requestId: "request-snapshot", operation: "snapshot", environmentId, threadId, tabId },
+    );
+
+    expect(response).toMatchObject({
+      _tag: "PreviewAutomationExecutionError",
+      failureStage: "page-capture",
+      failureReason: "TimeoutError",
     });
   });
 

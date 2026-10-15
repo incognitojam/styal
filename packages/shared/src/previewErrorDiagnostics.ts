@@ -1,7 +1,8 @@
-import { PreviewAutomationFailureReason } from "@t3tools/contracts";
+import { PreviewAutomationFailureReason, PreviewAutomationFailureStage } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 const isFailureReason = Schema.is(PreviewAutomationFailureReason);
+const isFailureStage = Schema.is(PreviewAutomationFailureStage);
 
 function errorField(error: unknown, key: string): unknown {
   try {
@@ -45,4 +46,35 @@ export function previewAutomationFailureReason(
 export function previewAutomationFailureReasonSuffix(cause: unknown): string {
   const reason = previewAutomationFailureReason(cause);
   return reason === undefined ? "" : ` [styal-preview-reason=${reason}]`;
+}
+
+/** Read the desktop step token from an Electron IPC error; other text is never inspected. */
+export function previewAutomationFailureStage(
+  error: unknown,
+): PreviewAutomationFailureStage | undefined {
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 5 && error !== undefined && !seen.has(error); depth += 1) {
+    seen.add(error);
+    const message = errorField(error, "message");
+    if (
+      typeof message === "string" &&
+      message.length <= 4_096 &&
+      message.startsWith("Error invoking remote method '")
+    ) {
+      const stage =
+        / \[styal-preview-stage=([a-z-]+)\](?: \[styal-preview-reason=[A-Za-z_]+\])?$/.exec(
+          message,
+        )?.[1];
+      if (isFailureStage(stage)) return stage;
+    }
+    error = errorField(error, "cause");
+  }
+  return undefined;
+}
+
+/** Carry a desktop step across Electron IPC; place it before the reason suffix. */
+export function previewAutomationFailureStageSuffix(
+  stage: PreviewAutomationFailureStage | undefined,
+): string {
+  return stage === undefined ? "" : ` [styal-preview-stage=${stage}]`;
 }
