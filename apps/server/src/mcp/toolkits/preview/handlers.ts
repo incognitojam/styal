@@ -27,6 +27,7 @@ import {
 } from "../../../attachmentStore.ts";
 import { resolveAttachmentRelativePath } from "../../../attachmentPaths.ts";
 import * as ServerConfig from "../../../config.ts";
+import * as BrowserFeatureUsage from "../../../telemetry/BrowserFeatureUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import { PreviewSnapshotToolkit, PreviewStandardToolkit, PreviewToolkit } from "./tools.ts";
@@ -233,7 +234,9 @@ const handlers = {
 
 const { preview_snapshot, ...standardHandlers } = handlers;
 
-export const PreviewStandardToolkitHandlersLive = PreviewStandardToolkit.toLayer(standardHandlers);
+export const PreviewStandardToolkitHandlersLive = PreviewStandardToolkit.toLayer(
+  BrowserFeatureUsage.observeHandlers(standardHandlers),
+);
 
 export const PreviewSnapshotToolkitHandlersLive = PreviewSnapshotToolkit.toLayer({
   preview_snapshot,

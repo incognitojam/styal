@@ -192,6 +192,7 @@ export const make = Effect.gen(function* () {
           arch: hostArchitecture,
           t3CodeVersion: packageJson.version,
           t3CodeRepository: T3_CODE_REPOSITORY,
+          featureUsageVersion: 1,
           clientType,
           serverOs: serverOsFromNodePlatform(hostPlatform),
           serverArch: hostArchitecture,

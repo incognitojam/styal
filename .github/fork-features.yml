@@ -1622,6 +1622,34 @@ features:
       tracking: []
       retire_when: The fork no longer ships any separately branded desktop, mobile, or web distribution, or adopts reusable downstream distribution machinery that makes these overrides unnecessary.
 
+  - id: fork-feature-usage
+    title: Measure anonymous adoption of maintained features
+    status: maintained
+    prs: [840]
+    rationale: Maintainers need observed feature adoption to evaluate the cost of retaining fork behavior.
+    invariants:
+      - Agent browser tools emit one structural feature.used event per public operation, including failures and cancellation, with action, outcome, and duration but no operation arguments or results.
+      - Internal metadata reads do not inflate agent usage, and telemetry failures never change the operation's result.
+      - Every analytics event carries a feature-usage version so adoption comparisons can exclude uninstrumented releases, and the shared telemetry opt-out also disables feature events.
+    implementation_paths:
+      - apps/server/src/mcp/McpHttpServer.ts
+      - apps/server/src/mcp/toolkits/preview/handlers.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/telemetry/BrowserFeatureUsage.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+    upstream_paths:
+      - apps/server/src/telemetry/AnalyticsService.ts
+    tests:
+      - apps/server/src/mcp/BrowserFeatureUsage.test.ts
+      - apps/server/src/telemetry/AnalyticsService.test.ts
+      - apps/server/src/telemetry/FeatureUsage.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15913
+        - https://github.com/pingdotgg/t3code/pull/15921
+      retire_when: Upstream provides equivalent anonymous feature-adoption events with outcome, opt-out, and rollout-aware coverage.
+
   - id: fork-managed-link
     title: Operate styal Link independently
     status: maintained

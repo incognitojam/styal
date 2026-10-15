@@ -17,6 +17,7 @@ import { PreviewAutomationError } from "@t3tools/contracts";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
+import * as BrowserFeatureUsage from "../telemetry/BrowserFeatureUsage.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
@@ -385,6 +386,7 @@ const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
 };
 
 const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot")(function* () {
+  const observeSnapshot = yield* BrowserFeatureUsage.snapshotObserver;
   const server = yield* McpServer.McpServer;
   const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
   // The MCP tool runner only supplies the client, so hand the save path its services here.
@@ -490,6 +492,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
             }),
           ),
           Effect.provide(saveServices),
+          observeSnapshot,
           Effect.matchCauseEffect({
             onFailure: previewSnapshotFailure,
             onSuccess: Effect.succeed,
