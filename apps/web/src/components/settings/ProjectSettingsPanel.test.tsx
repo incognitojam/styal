@@ -191,10 +191,19 @@ vi.mock("./settingsLayout", () => ({
       {children}
     </section>
   ),
-  SettingsRow: ({ control, resetAction }: { control?: ReactNode; resetAction?: ReactNode }) => (
+  SettingsRow: ({
+    control,
+    resetAction,
+    children,
+  }: {
+    control?: ReactNode;
+    resetAction?: ReactNode;
+    children?: ReactNode;
+  }) => (
     <div>
       {resetAction}
       {control}
+      {children}
     </div>
   ),
   SettingResetButton: ({

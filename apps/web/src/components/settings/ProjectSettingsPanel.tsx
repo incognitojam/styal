@@ -62,6 +62,7 @@ import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 const ProjectIconPickerDialog = lazy(() =>
   import("./ProjectIconPickerDialog").then((module) => ({
@@ -618,19 +619,37 @@ function ProjectDetail({
     ],
   );
 
+  const checkoutsByEnvironment = new Map<EnvironmentId, SidebarProjectGroupMember[]>();
+  for (const member of group.memberProjects) {
+    const members = checkoutsByEnvironment.get(member.environmentId);
+    if (members) members.push(member);
+    else checkoutsByEnvironment.set(member.environmentId, [member]);
+  }
   const checkoutChoices = (
     <SettingsSection title="Checkouts">
-      {group.memberProjects.map((member) => (
-        <CheckoutRow
-          key={member.physicalProjectKey}
-          checkout={member}
-          machineKind={resolveEnvironmentMachineKind(
-            environmentById.get(member.environmentId)?.serverConfig ?? null,
-          )}
-          canRemove={editableIds.has(member.environmentId)}
-          onRemove={() => void removeMembers([member])}
-        />
-      ))}
+      {Array.from(checkoutsByEnvironment, ([environmentId, members]) => {
+        const checkouts = members.map((member) => (
+          <CheckoutRow
+            key={member.physicalProjectKey}
+            checkout={member}
+            machineKind={resolveEnvironmentMachineKind(
+              environmentById.get(member.environmentId)?.serverConfig ?? null,
+            )}
+            canRemove={editableIds.has(member.environmentId)}
+            onRemove={() => void removeMembers([member])}
+          />
+        ));
+        if (checkoutsByEnvironment.size === 1) return checkouts;
+        const environment = environmentById.get(environmentId);
+        const labels = environment
+          ? settingsScopeEnvironmentLabels(environment, environments)
+          : { primary: members[0]!.environmentLabel ?? "Environment", secondary: environmentId };
+        return (
+          <SettingsRow key={environmentId} title={labels.primary} description={labels.secondary}>
+            <div className="space-y-3 pb-2 pt-1">{checkouts}</div>
+          </SettingsRow>
+        );
+      })}
     </SettingsSection>
   );
 
