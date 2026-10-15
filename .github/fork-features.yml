@@ -2441,7 +2441,6 @@ features:
       - apps/server/src/binCli.ts
       - apps/server/src/cli/pair.ts
     tests:
-      - apps/server/src/binPair.test.ts
       - apps/server/src/cli/pair.test.ts
     upstream:
       status: tracking

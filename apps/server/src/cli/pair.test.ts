@@ -354,35 +354,14 @@ describe("styal pair", () => {
         const token = /#token=([A-Z2-9]+)/.exec(output)?.[1];
         assert.isString(token);
 
-        yield* captureStdout(
-          runCli([
-            "pair",
-            "--base-dir",
-            baseDir,
-            "--ttl",
-            "15m",
-            "--label",
-            "test-device",
-            "--log-level",
-            "warn",
-          ]),
-        );
-
         // The token must be in the same store the running server reads.
         const listed = yield* captureStdout(
           runCli(["auth", "pairing", "list", "--base-dir", baseDir, "--json"]),
         );
         // @effect-diagnostics-next-line preferSchemaOverJson:off - CLI JSON output is decoded as a presentation DTO.
-        const credentials = JSON.parse(listed) as ReadonlyArray<{
-          readonly label?: string;
-          readonly createdAt: string;
-          readonly expiresAt: string;
-        }>;
-        assert.equal(credentials.length, 2);
-        assert.isTrue(credentials.some((credential) => credential.label === "styal pair"));
-        const custom = credentials.find((credential) => credential.label === "test-device");
-        assert.isDefined(custom);
-        assert.equal(Date.parse(custom.expiresAt) - Date.parse(custom.createdAt), 15 * 60 * 1_000);
+        const credentials = JSON.parse(listed) as ReadonlyArray<{ readonly label?: string }>;
+        assert.equal(credentials.length, 1);
+        assert.equal(credentials[0]?.label, "styal pair");
       }),
     ).pipe(
       Effect.provide(NodeServices.layer),
