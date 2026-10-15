@@ -362,6 +362,7 @@ it.effect(
         diffFilesCollapsed: true,
         diffIgnoreWhitespace: true,
         browserLinkTarget: "system",
+        pullRequestLinksOpenInApp: true,
         browserAutoShowFloatingPreview: true,
         browserDefaultViewport: "fill",
         browserDefaultZoomFactor: 1,

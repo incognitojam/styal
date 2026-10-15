@@ -86,6 +86,7 @@ export function clientSettingsSnapshot(
     diffFilesCollapsed: settings.diffFilesCollapsed,
     diffIgnoreWhitespace: settings.diffIgnoreWhitespace,
     browserLinkTarget: settings.browserLinkTarget,
+    pullRequestLinksOpenInApp: settings.pullRequestLinksOpenInApp,
     browserAutoShowFloatingPreview: settings.browserAutoShowFloatingPreview,
     browserDefaultViewport: settings.browserDefaultViewport._tag,
     browserDefaultZoomFactor: settings.browserDefaultZoomFactor,

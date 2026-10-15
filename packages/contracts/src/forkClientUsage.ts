@@ -30,7 +30,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 7;
+export const FORK_CLIENT_USAGE_VERSION = 8;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -101,6 +101,7 @@ export const ClientSettingsSnapshot = Schema.Struct({
   diffIgnoreWhitespace: Schema.Boolean,
   // Browser
   browserLinkTarget: BrowserLinkTarget,
+  pullRequestLinksOpenInApp: Schema.Boolean,
   browserAutoShowFloatingPreview: Schema.Boolean,
   browserDefaultViewport: Schema.Literals(["fill", "freeform", "preset"]),
   browserDefaultZoomFactor: PreviewZoomFactor,
