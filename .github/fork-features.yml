@@ -3337,7 +3337,7 @@ features:
   - id: pull-request-merge-intent-badges
     title: Show automatic merge intent on thread pull request badges
     status: maintained
-    prs: []
+    prs: [853]
     invariants:
       - Sidebar, composer, and mobile thread badges retain the pull request state glyph and color while a filled corner dot marks enabled auto-merge or confirmed merge-queue membership.
       - A stack or linked count gets the dot only when every remaining open pull request has automatic merge requested; an unknown snapshot or an unarmed draft keeps the aggregate unmarked.

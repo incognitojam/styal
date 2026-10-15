@@ -971,6 +971,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const showDraftIcon = props.hasUnsentDraft === true && !selected;
   const threadAccessibilityLabel = [
     thread.title,
+    pr?.mergeIntent ? pr.accessibilityLabel : null,
     showDraftIcon ? "unsent draft" : null,
     props.hasQueuedMessages ? "messages queued to send" : null,
   ]
