@@ -116,6 +116,9 @@ const proxy = errors(
       if (upgrade || !isAllowedAgentRequest(path, request.method))
         return HttpServerResponse.empty({ status: 404 });
       target = resolved;
+      // Counts until the request scope closes, so a long agent request counts until it ends.
+      // Hub requests are a person viewing or driving the device, which a restart can resume.
+      yield* sharing.beginUse(resolved.sourceId);
     } else {
       yield* authenticate;
       if (!isAllowedDeviceHubRequest(path, request.method, upgrade))

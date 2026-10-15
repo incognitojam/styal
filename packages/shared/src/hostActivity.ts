@@ -40,6 +40,7 @@ export function describeHostActivity(
   let waiting = 0;
   let terminals = 0;
   let uncheckedTerminals = 0;
+  let deviceUsers = 0;
   let uncheckedHosts = checks.length === 0;
   for (const check of checks) {
     if (check === null) {
@@ -51,6 +52,7 @@ export function describeHostActivity(
     waiting += check.waitingSessions;
     terminals += check.terminalsRequiringConfirmation - check.terminalsWithUnknownActivity;
     uncheckedTerminals += check.terminalsWithUnknownActivity;
+    deviceUsers += check.environmentsUsingDevices;
   }
   const lines: string[] = [];
   if (active - continuing)
@@ -59,6 +61,7 @@ export function describeHostActivity(
   if (waiting)
     lines.push(`${plural(waiting, "thread")} waiting for input or approval will be interrupted.`);
   if (terminals) lines.push(`${plural(terminals, "terminal session")} will be interrupted.`);
+  if (deviceUsers) lines.push("Devices in use by other environments will be disconnected.");
   if (uncheckedTerminals)
     lines.push(
       `Could not check ${plural(uncheckedTerminals, "terminal session")} for running commands.`,
@@ -66,7 +69,13 @@ export function describeHostActivity(
   if (uncheckedHosts) lines.push(options.uncheckedHostsLine);
   return {
     concern:
-      active || terminals ? "running" : waiting ? "waiting" : lines.length ? "unchecked" : null,
+      active || terminals || deviceUsers
+        ? "running"
+        : waiting
+          ? "waiting"
+          : lines.length
+            ? "unchecked"
+            : null,
     lines,
     incomplete: uncheckedHosts || uncheckedTerminals > 0,
   };

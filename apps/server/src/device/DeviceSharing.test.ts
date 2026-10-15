@@ -131,6 +131,10 @@ const fixture = Effect.gen(function* () {
   // Peer commands the target finished handling, as "operation:status".
   const commands = yield* Queue.unbounded<string>();
   let inventoryUnavailable = false;
+  // Hub device streams and daemon artifact downloads stay open until the test closes them.
+  const openStreams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  let readyGate: Deferred.Deferred<void> | null = null;
+  const readyStarted = yield* Deferred.make<void>();
   let handler: (request: Request) => Promise<Response>;
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
@@ -181,6 +185,18 @@ const fixture = Effect.gen(function* () {
         }
         return HttpClientResponse.fromWeb(request, response);
       }
+      if (request.url.endsWith("/stream.mjpeg") || request.url.includes("/artifacts/"))
+        return HttpClientResponse.fromWeb(
+          request,
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start: (controller) => {
+                openStreams.push(controller);
+                controller.enqueue(new TextEncoder().encode("chunk"));
+              },
+            }),
+          ),
+        );
       if (request.url.startsWith("http://daemon.test")) {
         daemonRequests.push({
           url: request.url,
@@ -288,7 +304,14 @@ const fixture = Effect.gen(function* () {
       agentDeviceInstalled: true,
     }),
     platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
-    ensureReady: () => Effect.succeed(ready),
+    ensureReady: () =>
+      Effect.suspend(() =>
+        readyGate
+          ? Deferred.succeed(readyStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(readyGate)),
+            )
+          : Effect.void,
+      ).pipe(Effect.as(ready)),
     ensureAgentReady: () => Effect.succeed(ready),
     current: Effect.succeed(ready),
     currentAgent: Effect.sync(() => daemon),
@@ -315,7 +338,11 @@ const fixture = Effect.gen(function* () {
       deviceSharingRouteLayer,
       deviceSharingProxyRouteLayer,
       deviceSharingAgentRouteLayer,
-    ).pipe(Layer.provideMerge(targetLayer)),
+    ).pipe(
+      // The routes share `target`'s in-memory state, as they do in the server.
+      Layer.provideMerge(Layer.succeed(DeviceSharing.DeviceSharing, target)),
+      Layer.provideMerge(targetLayer),
+    ),
     { disableLogger: true },
   );
   handler = (request) => web.handler(request);
@@ -379,6 +406,11 @@ const fixture = Effect.gen(function* () {
     },
     setInventoryUnavailable: (value: boolean) => {
       inventoryUnavailable = value;
+    },
+    openStreams,
+    readyStarted,
+    setReadyGate: (gate: Deferred.Deferred<void> | null) => {
+      readyGate = gate;
     },
   };
 });
@@ -1240,4 +1272,125 @@ it.effect(
       expect(client.baseUrl).toBe("https://orion-alt.test");
       expect(wrongRequests).toEqual(["inspect"]);
     }).pipe(Effect.scoped),
+);
+
+it.effect("counts another environment as using devices only while it uses them", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const peer = { subject: `device-host:${sourceId}`, sessionId: f.grant.sessionId };
+    const target = { deviceId: "emulator-5554", platform: "android" as const };
+    yield* f.target.command(peer, {
+      operation: "open",
+      input: { threadId: ThreadId.make("thread"), hostId: LOCAL_DEVICE_HOST_ID, ...target },
+    });
+    expect(yield* f.target.environmentsUsingDevices).toBe(1);
+    // An agent between device actions still holds the device.
+    yield* TestClock.adjust("4 minutes");
+    expect(yield* f.target.environmentsUsingDevices).toBe(1);
+    // A session left open after the work ended does not block a restart.
+    yield* TestClock.adjust("2 minutes");
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+    // Discovery is not use.
+    yield* f.target.command(peer, { operation: "list" });
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+    yield* f.target.command(peer, {
+      operation: "detail",
+      input: { hostId: LOCAL_DEVICE_HOST_ID, ...target },
+    });
+    expect(yield* f.target.environmentsUsingDevices).toBe(1);
+    yield* f.target.command(peer, { operation: "release" });
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("does not count a person watching a shared device", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const response = yield* Effect.promise(() =>
+      f.handler(
+        new Request(
+          "http://orion.test/api/device-share/hub/vendor/serve-sim/helper/sim/stream.mjpeg",
+          { headers: { authorization: `Bearer ${f.grant.token}` } },
+        ),
+      ),
+    );
+    expect(response.status).toBe(200);
+    yield* TestClock.adjust("1 hour");
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+    yield* Effect.promise(() => response.body!.cancel());
+  }).pipe(Effect.scoped),
+);
+
+it.effect("counts a device command while it is still running", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const peer = { subject: `device-host:${sourceId}`, sessionId: f.grant.sessionId };
+    const gate = yield* Deferred.make<void>();
+    f.setReadyGate(gate);
+    // A cold open can take minutes before the device session exists.
+    const open = yield* f.target
+      .command(peer, {
+        operation: "open",
+        input: {
+          threadId: ThreadId.make("thread"),
+          hostId: LOCAL_DEVICE_HOST_ID,
+          deviceId: "emulator-5554",
+          platform: "android",
+        },
+      })
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(f.readyStarted);
+    yield* TestClock.adjust("10 minutes");
+    expect(yield* f.target.environmentsUsingDevices).toBe(1);
+    yield* Deferred.succeed(gate, undefined);
+    yield* Fiber.join(open);
+    expect(yield* f.target.environmentsUsingDevices).toBe(1);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("counts an agent request for as long as it stays open", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const host = yield* f.host;
+    yield* (yield* host.ensureReady(() => Effect.void)).remote!.open({
+      threadId: ThreadId.make("thread"),
+      deviceId: "emulator-5554",
+      platform: "android",
+    });
+    const { agentDevice } = yield* host.ensureAgentReady(() => Effect.void);
+    const download = () =>
+      Effect.promise(() =>
+        f.handler(
+          new Request("http://orion.test/api/device-share/agent/artifacts/recording", {
+            headers: { authorization: `Bearer ${agentDevice.token}` },
+          }),
+        ),
+      );
+    yield* TestClock.adjust("10 minutes");
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+
+    // An agent that disconnects mid-download stops counting once the window passes.
+    const abandoned = yield* download();
+    expect(abandoned.status).toBe(200);
+    yield* Effect.promise(() => abandoned.body!.cancel());
+    yield* TestClock.adjust("10 minutes");
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+
+    const response = yield* download();
+    const reader = response.body!.getReader();
+    yield* Effect.promise(() => reader.read());
+    yield* TestClock.adjust("1 hour");
+    expect(yield* f.target.environmentsUsingDevices).toBe(1);
+    // Releasing the devices does not stop counting a request that is still open.
+    yield* f.target.command(
+      { subject: `device-host:${sourceId}`, sessionId: f.grant.sessionId },
+      { operation: "release" },
+    );
+    expect(yield* f.target.environmentsUsingDevices).toBe(1);
+    f.openStreams.at(-1)!.close();
+    while (!(yield* Effect.promise(() => reader.read())).done);
+    yield* TestClock.adjust("10 minutes");
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+  }).pipe(Effect.scoped),
 );

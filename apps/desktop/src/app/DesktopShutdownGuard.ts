@@ -70,6 +70,7 @@ const make = Effect.gen(function* () {
                     waitingSessions: 0,
                     terminalsRequiringConfirmation: 0,
                     terminalsWithUnknownActivity: 0,
+                    environmentsUsingDevices: 0,
                   };
                 }
                 const option = yield* instance.currentConfig;

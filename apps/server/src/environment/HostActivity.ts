@@ -8,6 +8,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { requireEnvironmentScope, failEnvironmentInternal } from "../auth/http.ts";
+import { DeviceSharing } from "../device/DeviceSharing.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { listContinuableThreadIds } from "../orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
@@ -44,6 +45,9 @@ export const inspectHostActivity = Effect.gen(function* () {
   const projections = yield* ProjectionStoreV2;
   const terminals = yield* TerminalManager;
   const terminalActivity = yield* terminals.shutdownPreflight;
+  // Threads using a shared device run on the other environment, so their activity is
+  // invisible here. A restart stops the hub and daemon they are driving.
+  const environmentsUsingDevices = yield* (yield* DeviceSharing).environmentsUsingDevices;
   const snapshot = yield* projections.getShellSnapshot().pipe(
     Effect.mapError(
       (cause) =>
@@ -60,7 +64,11 @@ export const inspectHostActivity = Effect.gen(function* () {
       ),
     ),
   );
-  return { ...summarizeHostSessions(snapshot.threads, continuable), ...terminalActivity };
+  return {
+    ...summarizeHostSessions(snapshot.threads, continuable),
+    ...terminalActivity,
+    environmentsUsingDevices,
+  };
 });
 
 export const hostActivityHttpApiLayer = HttpApiBuilder.group(
