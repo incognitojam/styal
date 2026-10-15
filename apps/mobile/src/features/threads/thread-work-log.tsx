@@ -968,7 +968,7 @@ const ThreadWorkLogRow = memo(function ThreadWorkLogRow(
       ? shownItem.exitCode
       : null;
   const fullDetail =
-    expanded && !reasoning && !call
+    expanded && !reasoning && !call && !row.workEntry.questionAnswer
       ? fetchedItem && !isRead
         ? formatItemFullDetail(row.projectedItem, fetchedItem)
         : row.getFullDetail()

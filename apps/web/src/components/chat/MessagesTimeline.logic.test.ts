@@ -797,6 +797,114 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
+  it.each(["running", "completed"] as const)(
+    "keeps submitted questions and answers outside tool groups and turn folds when %s",
+    (status) => {
+      const fixture = makeStreamingTimelineFixture();
+      const source = fixture.visibleTurnItems[0]!;
+      const requestId = RuntimeRequestId.make("answered-question");
+      const questionAnswer = {
+        requestId,
+        questionTextById: { scope: "Which tasks should run?" },
+        answers: { scope: ["Build", "Lint", "Include the documentation"] },
+        attachmentsByQuestionId: {},
+      };
+      const common = {
+        ...source.item,
+        threadId: fixture.threadId,
+        runId: fixture.runId,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        status: "completed" as const,
+      };
+      const question = {
+        ...common,
+        id: TurnItemId.make("answered-question-item"),
+        type: "user_input_request" as const,
+        requestId,
+        questions: [],
+        questionAnswer,
+      };
+      const command = {
+        ...common,
+        id: TurnItemId.make("command-before-question"),
+        type: "command_execution" as const,
+        input: "pwd",
+        output: "",
+      };
+      const final = {
+        ...common,
+        id: TurnItemId.make("final-answer"),
+        type: "assistant_message" as const,
+        messageId: MessageId.make("final-answer-message"),
+        text: "Done",
+        streaming: false,
+      };
+      // Cover both a question at the live tail and one followed by more work.
+      for (const hasFollowingCommand of [false, true]) {
+        const items = [
+          command,
+          question,
+          ...(hasFollowingCommand
+            ? [{ ...command, id: TurnItemId.make("command-after-question") }]
+            : []),
+          ...(status === "completed" ? [final] : []),
+        ];
+        const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+          visibleTurnItems: items.map((item, position) => ({
+            ...source,
+            item,
+            position,
+            sourceItemId: item.id,
+          })),
+          optimisticMessages: [],
+        });
+        const input = {
+          timelineEntries,
+          latestRun: {
+            runId: fixture.runId,
+            status,
+            startedAt: fixture.time(0),
+            completedAt: status === "completed" ? fixture.time(5) : null,
+          },
+          isWorking: status === "running",
+          activeTurnStartedAt: fixture.time(0),
+          turnDiffSummaries: [],
+          supportsConversationRollback: false,
+        };
+        const collapsed = deriveMessagesTimelineRows(input);
+        const expanded = deriveMessagesTimelineRows({
+          ...input,
+          expandedRunIds: new Set([fixture.runId]),
+          expandedWorkGroupIds: new Set(
+            collapsed.flatMap((row) =>
+              row.kind === "work-toggle" || row.kind === "work-live" ? [row.groupId] : [],
+            ),
+          ),
+        });
+        for (const rows of [collapsed, expanded]) {
+          const questionRows = rows.filter(
+            (row) =>
+              row.kind === "work" &&
+              row.groupedEntries.some((entry) => entry.questionAnswer !== undefined),
+          );
+          expect(questionRows).toHaveLength(1);
+          expect(questionRows[0]).toMatchObject({
+            isExpandedToolGroup: false,
+            groupedEntries: [{ itemType: "user_input_request", questionAnswer }],
+          });
+          if (questionRows[0]?.kind === "work") {
+            expect(questionRows[0].groupedEntries).toHaveLength(1);
+          }
+        }
+        expect(collapsed.some((row) => row.kind === "turn-fold")).toBe(status === "completed");
+      }
+    },
+  );
+
   it.each(["waiting", "completed"] as const)(
     "groups approval and user-input requests with commands without expanding them when %s",
     (status) => {

@@ -234,6 +234,66 @@ function assistantMessage(updatedAt = "2026-06-20T00:00:03.000Z") {
 }
 
 describe("buildThreadFeed", () => {
+  it.each(["running", "completed"] as const)(
+    "keeps submitted answers visible outside neighboring work and turn folds when %s",
+    (status) => {
+      const requestId = RuntimeRequestId.make("question-history");
+      const questionAnswer = {
+        requestId,
+        questionTextById: { scope: "Which tasks should run?" },
+        answers: { scope: ["Build", "Lint", "Include the documentation"] },
+        attachmentsByQuestionId: {},
+      };
+      const question: OrchestrationV2TurnItem = {
+        ...base("question-history-item", "2026-06-20T00:00:02.000Z", 2),
+        type: "user_input_request",
+        requestId,
+        questions: [],
+        questionAnswer,
+      };
+      for (const hasFollowingCommand of [false, true]) {
+        const items = [
+          userMessage(),
+          command(),
+          question,
+          ...(hasFollowingCommand
+            ? [{ ...command(), id: TurnItemId.make("command-after-question") }]
+            : []),
+          ...(status === "completed" ? [assistantMessage()] : []),
+        ];
+        const feed = buildThreadFeed(items.map((item, position) => projected(item, position)));
+        const latestRun = {
+          runId,
+          status,
+          startedAt: "2026-06-20T00:00:01.000Z",
+          completedAt: status === "completed" ? "2026-06-20T00:00:03.000Z" : null,
+        };
+        for (const expandedRuns of [new Set<RunId>(), new Set([runId])]) {
+          const rows = deriveThreadFeedPresentation(
+            feed,
+            latestRun,
+            expandedRuns,
+            new Set(),
+            status === "running" ? latestRun.startedAt : null,
+          );
+          const questionRows = rows.filter(
+            (row) =>
+              row.type === "activity-group" &&
+              row.activities.some((activity) => activity.workEntry.questionAnswer !== undefined),
+          );
+          expect(questionRows).toHaveLength(1);
+          expect(questionRows[0]).toMatchObject({
+            activities: [{ workEntry: { questionAnswer }, canExpand: true }],
+          });
+          if (questionRows[0]?.type === "activity-group") {
+            expect(questionRows[0].activities).toHaveLength(1);
+          }
+          expect(rows.some((row) => row.type === "run-fold")).toBe(status === "completed");
+        }
+      }
+    },
+  );
+
   it("keeps async answers in question history instead of user bubbles", () => {
     const requestId = RuntimeRequestId.make("question");
     const question: OrchestrationV2TurnItem = {

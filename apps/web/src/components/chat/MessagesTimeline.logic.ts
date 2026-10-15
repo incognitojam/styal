@@ -1117,10 +1117,11 @@ function deriveTurnFolds(input: {
       if (!isCompaction && index > terminalEntryIndex && !isFoldableTrailingActivity) {
         continue;
       }
-      // Linked resources can outlive their launching run and stay visible
-      // after the surrounding work folds.
+      // Submitted answers and linked resources stay visible after the
+      // surrounding work folds.
       if (
         timelineEntryIsPersistentResourceCard(entry) ||
+        (entry.kind === "work" && entry.entry.questionAnswer !== undefined) ||
         (entry.kind === "work" && workEntryReviewFindings(entry.entry))
       ) {
         continue;
@@ -1469,6 +1470,7 @@ export function deriveMessagesTimelineRows(input: {
         entry.entry.sourceActivityKind === "runtime.error" ||
         entry.entry.itemType === "system_notice" ||
         entry.entry.itemType === "notification" ||
+        entry.entry.questionAnswer !== undefined ||
         !runIdIsActiveResponse(entry.entry.runId) ||
         entry.entry.sourceActivityKind === "context-compaction" ||
         collapsedEntryIds.has(entry.id) ||
@@ -1663,6 +1665,7 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.entry.tone === "error" ||
         timelineEntry.entry.sourceActivityKind === "runtime.error" ||
         timelineEntry.entry.itemType === "system_notice" ||
+        timelineEntry.entry.questionAnswer !== undefined ||
         timelineEntry.entry.itemType === "notification"
       ) {
         nextRows.push({
@@ -1681,6 +1684,7 @@ export function deriveMessagesTimelineRows(input: {
         if (
           !nextEntry ||
           nextEntry.kind !== "work" ||
+          nextEntry.entry.questionAnswer !== undefined ||
           nextEntry.entry.sourceActivityKind === "context-compaction" ||
           nextEntry.entry.sourceActivityKind === "server-restart.continued" ||
           workEntryReviewFindings(nextEntry.entry) !== undefined ||
