@@ -1,7 +1,36 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { DesktopDiscordPresenceActivity, DesktopEnvironmentBootstrapSchema } from "./ipc.ts";
+import {
+  DesktopDiscordPresenceActivity,
+  DesktopEnvironmentBootstrapSchema,
+  DesktopShutdownConfirmationRequestSchema,
+} from "./ipc.ts";
+
+describe("DesktopShutdownConfirmationRequestSchema", () => {
+  const decode = Schema.decodeUnknownSync(DesktopShutdownConfirmationRequestSchema);
+  it("accepts older confirmations and preserves structured activity across JSON IPC", () => {
+    const older = { requestId: 1, message: "Restart styal?", confirmLabel: "Restart" };
+    expect(decode(older)).toEqual(older);
+    const current = {
+      ...older,
+      threadActivity: [
+        {
+          thread: {
+            threadId: "preview",
+            title: "Watch the preview build",
+            projectTitle: "Sample project",
+            reasons: ["monitor"],
+            continuable: false,
+          },
+          hostLabel: "Lab server",
+          continuesAfterRestart: false,
+        },
+      ],
+    };
+    expect(decode(JSON.parse(JSON.stringify(current)))).toEqual(current);
+  });
+});
 
 describe("DesktopDiscordPresenceActivity", () => {
   const decode = Schema.decodeUnknownSync(DesktopDiscordPresenceActivity);

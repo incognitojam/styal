@@ -13,7 +13,7 @@ const idle = {
 };
 
 function confirmation(overrides: Partial<ServerUpdateHost> = {}): string | null {
-  return serverUpdateConfirmation([host(overrides)]);
+  return serverUpdateConfirmation([host(overrides)])?.message ?? null;
 }
 
 function host(overrides: Partial<ServerUpdateHost> = {}): ServerUpdateHost {
@@ -24,6 +24,10 @@ function host(overrides: Partial<ServerUpdateHost> = {}): ServerUpdateHost {
     continueRunningThreads: false,
     ...overrides,
   };
+}
+
+function messageForHosts(hosts: ReadonlyArray<ServerUpdateHost>): string | null {
+  return serverUpdateConfirmation(hosts)?.message ?? null;
 }
 
 describe("serverUpdateConfirmation", () => {
@@ -46,13 +50,11 @@ describe("serverUpdateConfirmation", () => {
       host({ serverLabel: "Laptop", activity, continueRunningThreads: true }),
       host({ serverLabel: "Lab server", activity, continueRunningThreads: false }),
     ]);
-    expect(message).toContain(
-      "• Check the release (Sample project · Laptop)\n  Running a turn; Continues after restart",
-    );
-    expect(message).toContain(
-      "• Check the release (Sample project · Lab server)\n  Running a turn",
-    );
-    expect(message?.match(/Continues after restart/g)).toHaveLength(1);
+    expect(message?.message).toContain("1 thread will continue after the restart.");
+    expect(message?.threadActivity).toEqual([
+      { thread: activity.threads[0], hostLabel: "Laptop", continuesAfterRestart: true },
+      { thread: activity.threads[0], hostLabel: "Lab server", continuesAfterRestart: false },
+    ]);
   });
 
   it("does not ask when the server is idle", () => {
@@ -113,7 +115,7 @@ describe("serverUpdateConfirmation", () => {
 
   it("asks once for several servers and counts continuation per server", () => {
     expect(
-      serverUpdateConfirmation([
+      messageForHosts([
         host({
           serverLabel: "Laptop",
           activity: { ...idle, activeSessions: 1, continuableSessions: 1 },
@@ -139,7 +141,7 @@ describe("serverUpdateConfirmation", () => {
 
   it("names the desktop apps and unchecked servers in a batch", () => {
     expect(
-      serverUpdateConfirmation([
+      messageForHosts([
         host({ serverLabel: "Laptop", desktopApp: true }),
         host({ serverLabel: "Office", desktopApp: true, activity: null }),
       ]),
@@ -154,7 +156,7 @@ describe("serverUpdateConfirmation", () => {
 
   it("does not ask when every server in a batch is idle", () => {
     expect(
-      serverUpdateConfirmation([host({ serverLabel: "Laptop" }), host({ serverLabel: "Office" })]),
+      messageForHosts([host({ serverLabel: "Laptop" }), host({ serverLabel: "Office" })]),
     ).toBeNull();
   });
 });

@@ -877,6 +877,9 @@ features:
       - apps/server/src/environment/HostActivity.ts
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/ConfirmDialogHost.tsx
+      - apps/web/src/components/HostActivityThreadList.tsx
+      - apps/web/src/components/ServerUpdateAction.logic.ts
+      - apps/web/src/components/ServerUpdateAction.tsx
       - apps/web/src/components/desktopUpdate.logic.ts
       - apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
@@ -908,11 +911,14 @@ features:
       - apps/server/src/auth/PairingGrantStore.test.ts
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/terminal/Manager.test.ts
+      - apps/web/src/components/ServerUpdateAction.logic.test.ts
+      - apps/web/src/components/ServerUpdateAction.test.tsx
       - apps/web/src/components/desktopUpdate.logic.test.ts
       - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
       - apps/web/src/confirmDialog.test.ts
       - apps/web/src/state/desktopUpdate.test.ts
       - packages/contracts/src/environmentHttp.test.ts
+      - packages/contracts/src/ipc.test.ts
       - packages/shared/src/hostActivity.test.ts
     upstream:
       status: partial

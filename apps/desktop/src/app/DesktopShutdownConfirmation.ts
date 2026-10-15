@@ -1,4 +1,7 @@
-import type { DesktopShutdownConfirmationRequest } from "@t3tools/contracts";
+import type {
+  ConfirmDialogThreadActivity,
+  DesktopShutdownConfirmationRequest,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -14,7 +17,11 @@ const PRESENTATION_TIMEOUT = "5 seconds";
 export class DesktopShutdownConfirmation extends Context.Service<
   DesktopShutdownConfirmation,
   {
-    readonly request: (message: string, confirmLabel?: string) => Effect.Effect<boolean>;
+    readonly request: (
+      message: string,
+      confirmLabel?: string,
+      threadActivity?: ReadonlyArray<ConfirmDialogThreadActivity>,
+    ) => Effect.Effect<boolean>;
     readonly current: Effect.Effect<DesktopShutdownConfirmationRequest | null>;
     readonly acknowledge: (requestId: number) => Effect.Effect<void>;
     readonly rendererReady: Effect.Effect<void>;
@@ -56,13 +63,18 @@ const make = Effect.gen(function* () {
           pending.resolve(confirmed);
         }
       }),
-    request: (message, confirmLabel) =>
+    request: (message, confirmLabel, threadActivity) =>
       Effect.gen(function* () {
         if (pending) return false;
         const window = yield* desktopWindow.revealOrCreateMain.pipe(
           Effect.timeout(PRESENTATION_TIMEOUT),
         );
-        const request = { requestId: ++nextId, message, ...(confirmLabel ? { confirmLabel } : {}) };
+        const request = {
+          requestId: ++nextId,
+          message,
+          ...(confirmLabel ? { confirmLabel } : {}),
+          ...(threadActivity?.length ? { threadActivity } : {}),
+        };
         let cleanup = () => {};
         let responded = false;
         const failPresentation = () => {

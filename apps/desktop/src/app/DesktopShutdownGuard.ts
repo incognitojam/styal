@@ -20,7 +20,7 @@ export function shutdownConfirmation(
   action: ShutdownAction,
   title?: string,
 ) {
-  const { concern, lines, incomplete } = describeHostActivity(checks, {
+  const { concern, lines, incomplete, threadActivity } = describeHostActivity(checks, {
     uncheckedHostsLine: "Could not check every local environment for running work.",
   });
   if (concern === null) return null;
@@ -33,8 +33,9 @@ export function shutdownConfirmation(
     : lines;
   return {
     message: title ?? `${action === "quit" ? "Quit" : "Restart"}${hostActivityQuestion[concern]}`,
-    detail: `${detail.join("\n")}\n\nMake sure you're ready before continuing.`,
+    detail: detail.join("\n"),
     confirmLabel: action === "quit" ? "Quit" : "Restart",
+    ...(threadActivity.length ? { threadActivity } : {}),
   };
 }
 
@@ -122,6 +123,7 @@ const make = Effect.gen(function* () {
           return yield* dialog.request(
             `${confirmation.message}\n\n${confirmation.detail}`,
             confirmation.confirmLabel,
+            confirmation.threadActivity,
           );
         }).pipe(
           Effect.ensuring(

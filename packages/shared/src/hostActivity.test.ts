@@ -19,6 +19,7 @@ describe("describeHostActivity", () => {
       concern: null,
       lines: [],
       incomplete: false,
+      threadActivity: [],
     });
   });
 
@@ -42,6 +43,7 @@ describe("describeHostActivity", () => {
         "Thread names and activity reasons are unavailable from this server.",
       ],
       incomplete: false,
+      threadActivity: [],
     });
   });
 
@@ -62,6 +64,7 @@ describe("describeHostActivity", () => {
         "Thread names and activity reasons are unavailable from this server.",
       ],
       incomplete: false,
+      threadActivity: [],
     });
     expect(describeHostActivity(checks, options).lines).toEqual([
       "3 threads will be interrupted.",
@@ -75,6 +78,7 @@ describe("describeHostActivity", () => {
       concern: "running",
       lines: ["Devices in use by other environments will be disconnected."],
       incomplete: false,
+      threadActivity: [],
     });
   });
 
@@ -88,6 +92,7 @@ describe("describeHostActivity", () => {
       concern: "unchecked",
       lines: ["Could not check 1 terminal session for running commands."],
       incomplete: true,
+      threadActivity: [],
     });
   });
 
@@ -97,6 +102,7 @@ describe("describeHostActivity", () => {
         concern: "unchecked",
         lines: ["Some hosts could not be checked."],
         incomplete: true,
+        threadActivity: [],
       });
     }
   });
@@ -111,7 +117,7 @@ const namedThread: HostActivityThread = {
 };
 
 describe("host thread descriptions", () => {
-  it("lists titles, project and host context with all activity reasons", () => {
+  it("keeps titles, project and host context separate from summary copy", () => {
     const activity = describeHostActivity(
       [
         {
@@ -124,10 +130,9 @@ describe("host thread descriptions", () => {
       ],
       options,
     );
-    expect(activity.lines).toEqual([
-      "1 thread will be interrupted.",
-      "",
-      "• Check the release (Sample project · Lab server)\n  Running a turn; Running a monitor",
+    expect(activity.lines).toEqual(["1 thread will be interrupted."]);
+    expect(activity.threadActivity).toEqual([
+      { thread: namedThread, hostLabel: "Lab server", continuesAfterRestart: false },
     ]);
   });
   it("labels continuation per host, including matching thread IDs on different hosts", () => {
@@ -142,41 +147,37 @@ describe("host thread descriptions", () => {
     expect(activity.lines).toEqual([
       "1 thread will be interrupted.",
       "1 thread will continue after the restart.",
-      "",
-      "• Check the release (Sample project · Laptop)\n  Running a turn; Running a monitor; Continues after restart",
-      "• Check the release (Sample project · Lab server)\n  Running a turn; Running a monitor",
+    ]);
+    expect(activity.threadActivity).toEqual([
+      { thread: namedThread, hostLabel: "Laptop", continuesAfterRestart: true },
+      { thread: namedThread, hostLabel: "Lab server", continuesAfterRestart: false },
     ]);
   });
-  it("keeps titles on one line and handles unnamed threads or missing projects", () => {
-    expect(
-      describeHostActivity(
-        [
-          {
-            ...idle,
-            activeSessions: 1,
-            threads: [
-              {
-                ...namedThread,
-                title: " \n ",
-                projectTitle: null,
-                reasons: ["command", "subagent", "background_task"],
-              },
-            ],
-          },
-        ],
-        options,
-      ).lines,
-    ).toContain(
-      "• Untitled thread\n  Running a background command; Running a subagent; Running a background task",
+  it("keeps unnamed threads visible when a title or project is unavailable", () => {
+    const unnamed = { ...namedThread, title: "", projectTitle: null };
+    const activity = describeHostActivity(
+      [
+        {
+          ...idle,
+          activeSessions: 1,
+          threads: [unnamed],
+        },
+      ],
+      options,
     );
+    expect(activity.lines).toEqual(["1 thread will be interrupted."]);
+    expect(activity.threadActivity).toEqual([
+      { thread: unnamed, hostLabel: null, continuesAfterRestart: false },
+    ]);
   });
   it("keeps known thread details alongside failed host inspections", () => {
+    const waiting = { ...namedThread, reasons: ["approval" as const], continuable: false };
     const activity = describeHostActivity(
       [
         {
           ...idle,
           waitingSessions: 1,
-          threads: [{ ...namedThread, reasons: ["approval"], continuable: false }],
+          threads: [waiting],
         },
         null,
       ],
@@ -185,8 +186,8 @@ describe("host thread descriptions", () => {
     expect(activity.concern).toBe("waiting");
     expect(activity.incomplete).toBe(true);
     expect(activity.lines).toContain("Some hosts could not be checked.");
-    expect(activity.lines).toContain(
-      "• Check the release (Sample project)\n  Waiting for approval",
-    );
+    expect(activity.threadActivity).toEqual([
+      { thread: waiting, hostLabel: null, continuesAfterRestart: false },
+    ]);
   });
 });

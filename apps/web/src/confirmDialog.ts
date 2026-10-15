@@ -7,18 +7,21 @@ export type ConfirmDialogState =
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
       readonly confirmLabel: string;
+      readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
     }
   | {
       readonly status: "closing";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
       readonly confirmLabel: string;
+      readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
     };
 
 type PendingConfirmation = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
   readonly confirmLabel: string;
+  readonly threadActivity?: ConfirmDialogOptions["threadActivity"];
   readonly resolve: (confirmed: boolean) => void;
   readonly onPresented?: () => void;
   presented: boolean;
@@ -95,6 +98,7 @@ export function requestConfirmDialog(
       message,
       variant: options?.variant ?? "default",
       confirmLabel: options?.confirmLabel ?? "Confirm",
+      ...(options?.threadActivity ? { threadActivity: options.threadActivity } : {}),
       resolve: (confirmed: boolean) => {
         lifecycle?.signal?.removeEventListener("abort", cancel);
         resolve(confirmed);
@@ -122,6 +126,7 @@ export function requestConfirmDialog(
       message,
       variant: pending.variant,
       confirmLabel: pending.confirmLabel,
+      ...(pending.threadActivity ? { threadActivity: pending.threadActivity } : {}),
     });
   });
 
@@ -152,6 +157,7 @@ export function respondToConfirmDialog(confirmed: boolean): void {
     message: state.message,
     variant: state.variant,
     confirmLabel: state.confirmLabel,
+    ...(state.threadActivity ? { threadActivity: state.threadActivity } : {}),
   });
 }
 
@@ -170,6 +176,7 @@ export function completeConfirmDialogClose(): void {
     message: next.message,
     variant: next.variant,
     confirmLabel: next.confirmLabel,
+    ...(next.threadActivity ? { threadActivity: next.threadActivity } : {}),
   });
 }
 

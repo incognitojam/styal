@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { ThreadId, type HostActivity } from "@t3tools/contracts";
+import { ThreadId, type ConfirmDialogThreadActivity, type HostActivity } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -29,6 +29,7 @@ function harness(
   } = {},
 ) {
   const messages: string[] = [];
+  const details: ReadonlyArray<ConfirmDialogThreadActivity>[] = [];
   let checks = 0;
   let exchanges = 0;
   let overrideChecks = 0;
@@ -111,14 +112,16 @@ function harness(
       return options.quitOverride ?? false;
     }),
     resolve: () => Effect.void,
-    request: (message) =>
+    request: (message, _confirmLabel, threadActivity) =>
       Effect.gen(function* () {
         messages.push(message);
+        details.push(threadActivity ?? []);
         return (yield* options.dialog ?? Effect.succeed(0)) === 1;
       }),
   });
   return {
     messages,
+    details,
     checks: () => checks,
     overrideChecks: () => overrideChecks,
     exchanges: () => exchanges,
@@ -148,13 +151,16 @@ describe("DesktopShutdownGuard", () => {
       const guard = yield* Guard.DesktopShutdownGuard;
       assert.isFalse(yield* guard.confirm("restart"));
       assert.include(h.messages[0]!, "2 threads will be interrupted.");
-      assert.include(
-        h.messages[0]!,
-        "• Check the release (Sample project · primary)\n  Running a turn",
-      );
-      assert.include(
-        h.messages[0]!,
-        "• Check the release (Sample project · wsl)\n  Running a monitor",
+      assert.deepEqual(
+        h.details[0]?.map(({ thread, hostLabel }) => ({
+          title: thread.title,
+          reasons: thread.reasons,
+          hostLabel,
+        })),
+        [
+          { title: "Check the release", reasons: ["running"], hostLabel: "primary" },
+          { title: "Check the release", reasons: ["monitor"], hostLabel: "wsl" },
+        ],
       );
       assert.notInclude(h.messages[0]!, "unavailable");
     }).pipe(Effect.provide(h.layer));
@@ -253,7 +259,7 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Quit with running work?",
         detail:
-          "1 thread will be interrupted.\n1 terminal session will be interrupted.\n\nThread names and activity reasons are unavailable from this server.\n\nMake sure you're ready before continuing.",
+          "1 thread will be interrupted.\n1 terminal session will be interrupted.\n\nThread names and activity reasons are unavailable from this server.",
         confirmLabel: "Quit",
       },
     );
@@ -270,7 +276,7 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Restart with running work?",
         detail:
-          "2 terminal sessions will be interrupted.\nCould not check 1 terminal session for running commands.\n\nRestarting will stop any work hosted by this app.\n\nMake sure you're ready before continuing.",
+          "2 terminal sessions will be interrupted.\nCould not check 1 terminal session for running commands.\n\nRestarting will stop any work hosted by this app.",
         confirmLabel: "Restart",
       },
     );
@@ -284,7 +290,7 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Quit?",
         detail:
-          "Could not check 1 terminal session for running commands.\n\nQuitting will stop any work hosted by this app.\n\nMake sure you're ready before continuing.",
+          "Could not check 1 terminal session for running commands.\n\nQuitting will stop any work hosted by this app.",
         confirmLabel: "Quit",
       },
     );
@@ -293,7 +299,7 @@ describe("shutdown confirmation copy", () => {
     assert.deepEqual(Guard.shutdownConfirmation([{ ...idle, waitingSessions: 1 }], "restart"), {
       message: "Restart with waiting threads?",
       detail:
-        "1 thread waiting for input or approval will be interrupted.\n\nThread names and activity reasons are unavailable from this server.\n\nMake sure you're ready before continuing.",
+        "1 thread waiting for input or approval will be interrupted.\n\nThread names and activity reasons are unavailable from this server.",
       confirmLabel: "Restart",
     });
   });
