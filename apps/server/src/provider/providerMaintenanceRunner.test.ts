@@ -234,6 +234,7 @@ const makeTestRunner = (
               refresh: Effect.succeed(manifest),
               forceRefresh: Effect.succeed(manifest),
               refreshInBackground: Effect.void,
+              remote: Effect.succeed(null),
             }),
             // Fresh per runner so a version cached by one test cannot leak into another.
             Layer.sync(ProviderVersionCache, () => new Map()),
@@ -1056,79 +1057,59 @@ it.effect("refuses incompatible latest versions and unapproved or unpinnable tar
   );
 });
 
-it.effect("background updates install only the canary-verified version", () => {
+it.effect("background updates run only a pinned install that shouldStart allows", () => {
   const calls: string[] = [];
-  const manifest: ModelManifest.ModelManifestData = {
-    version: 1,
-    currentModels: {},
-    compatibility: [
-      {
-        driver: "codex",
-        t3CodeRange: ">=0.0.42",
-        autoUpdateVersion: "2.0.0",
-        ranges: [{ range: ">=1.0.0", status: "supported" }],
-      },
-    ],
-  };
   return Effect.gen(function* () {
     const { registry } = yield* makeRegistry({ ...baseProvider, version: "2.0.0" });
-    const pinnedCapabilities = makeProviderMaintenanceCapabilities({
-      provider: CODEX_DRIVER,
-      packageName: "@openai/codex",
-      updateExecutable: "npm",
-      updateArgs: ["install", "-g", "@openai/codex@latest"],
-      updateLockKey: "npm-global:/fixture",
-    });
     const withCapabilities = (capabilities: ProviderMaintenanceCapabilities) =>
-      makeTestRunner(
-        {
-          ...registry,
-          getProviderMaintenanceCapabilitiesForInstance: () => Effect.succeed(capabilities),
-        },
-        manifest,
-      );
-    const pinned = yield* withCapabilities(pinnedCapabilities);
+      makeTestRunner({
+        ...registry,
+        getProviderMaintenanceCapabilitiesForInstance: () => Effect.succeed(capabilities),
+      });
+    const pinned = yield* withCapabilities(
+      makeProviderMaintenanceCapabilities({
+        provider: CODEX_DRIVER,
+        packageName: "@openai/codex",
+        updateExecutable: "npm",
+        updateArgs: ["install", "-g", "@openai/codex@latest"],
+        updateLockKey: "npm-global:/fixture",
+      }),
+    );
 
-    const untested = yield* pinned.updateProvider({
+    const declined = yield* pinned.updateProvider({
       provider: CODEX_DRIVER,
-      targetVersion: "3.0.0",
-      autoUpdate: true,
+      targetVersion: "2.0.0",
+      autoUpdate: { shouldStart: Effect.succeed(false) },
     });
-    assert.strictEqual(untested.providers[0]?.updateState?.status, "failed");
+    assert.strictEqual(declined.providers[0]?.updateState, undefined);
     assert.deepStrictEqual(calls, []);
 
     const tested = yield* pinned.updateProvider({
       provider: CODEX_DRIVER,
       targetVersion: "2.0.0",
-      autoUpdate: true,
+      autoUpdate: { shouldStart: Effect.succeed(true) },
     });
     assert.strictEqual(tested.providers[0]?.updateState?.status, "succeeded");
     assert.deepStrictEqual(calls, ["install -g @openai/codex@2.0.0"]);
 
-    // An installer that cannot pin runs only while its latest is the verified version.
-    const native = (latestVersion: string) =>
-      withCapabilities(
-        makeProviderMaintenanceCapabilities({
-          provider: CODEX_DRIVER,
-          packageName: "@openai/codex",
-          updateExecutable: "brew",
-          updateArgs: ["upgrade", "codex"],
-          updateLockKey: "homebrew",
-          latestVersion,
-        }),
-      );
-    const ahead = yield* (yield* native("3.0.0")).updateProvider({
+    // Homebrew cannot be held to a version, so it never runs in the background.
+    const brew = yield* withCapabilities(
+      makeProviderMaintenanceCapabilities({
+        provider: CODEX_DRIVER,
+        packageName: "@openai/codex",
+        updateExecutable: "brew",
+        updateArgs: ["upgrade", "codex"],
+        updateLockKey: "homebrew",
+        latestVersion: "2.0.0",
+      }),
+    );
+    const unpinned = yield* brew.updateProvider({
       provider: CODEX_DRIVER,
-      autoUpdate: true,
+      targetVersion: "2.0.0",
+      autoUpdate: { shouldStart: Effect.succeed(true) },
     });
-    assert.strictEqual(ahead.providers[0]?.updateState?.status, "failed");
+    assert.strictEqual(unpinned.providers[0]?.updateState?.status, "failed");
     assert.strictEqual(calls.length, 1);
-    const matching = yield* (yield* native("2.0.0")).updateProvider({
-      provider: CODEX_DRIVER,
-      autoUpdate: true,
-    });
-    assert.strictEqual(matching.providers[0]?.updateState?.status, "succeeded");
-    assert.deepStrictEqual(calls.at(-1), "upgrade codex");
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

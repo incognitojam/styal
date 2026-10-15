@@ -5,6 +5,7 @@ import {
   type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -13,6 +14,7 @@ import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettingsService from "../serverSettings.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { decideProviderAutoUpdate, make } from "./ProviderAutoUpdater.ts";
+import type { ProviderMaintenanceCapabilities } from "./providerMaintenance.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
 import { ProviderRegistry } from "./Services/ProviderRegistry.ts";
 
@@ -44,37 +46,29 @@ const withAdvisory = (
   advisory: Partial<NonNullable<ServerProvider["versionAdvisory"]>>,
 ): ServerProvider => ({ ...codex, versionAdvisory: { ...codex.versionAdvisory!, ...advisory } });
 
-const manifest: ModelManifest.ModelManifestData = {
+const manifestWith = (
+  autoUpdates: ReadonlyArray<{ version: string; package: string; after: string }>,
+): ModelManifest.ModelManifestData => ({
   version: 1,
   currentModels: {},
   compatibility: [
     {
       driver: "codex",
       t3CodeRange: ">=0.0.0",
-      autoUpdateVersion: "2.0.0",
+      autoUpdates,
       ranges: [{ range: ">=1.0.0", status: "supported" }],
     },
   ],
-};
+});
+
+const verified = manifestWith([{ version: "2.0.0", package: "@openai/codex", after: "0.0.1" }]);
 
 describe("decideProviderAutoUpdate", () => {
-  it("pins the verified version when the installer can install one", () => {
-    assert.deepStrictEqual(decideProviderAutoUpdate(codex, "2.0.0"), { targetVersion: "2.0.0" });
+  it("installs the verified version when the installer can pin it", () => {
+    assert.strictEqual(decideProviderAutoUpdate(codex, "2.0.0"), "2.0.0");
   });
 
-  it("runs an unpinnable installer only while its latest is the verified version", () => {
-    const native = withAdvisory({ canInstallVersion: false });
-    assert.strictEqual(decideProviderAutoUpdate(native, "2.0.0"), null);
-    assert.deepStrictEqual(
-      decideProviderAutoUpdate(
-        { ...native, versionAdvisory: { ...native.versionAdvisory!, latestVersion: "2.0.0" } },
-        "2.0.0",
-      ),
-      { targetVersion: undefined },
-    );
-  });
-
-  it("leaves current, newer, unknown, disabled and manual installs alone", () => {
+  it("leaves current, newer, unknown, disabled, unpinnable and manual installs alone", () => {
     for (const provider of [
       { ...codex, version: "2.0.0" },
       { ...codex, version: "2.1.0" },
@@ -84,6 +78,8 @@ describe("decideProviderAutoUpdate", () => {
       { ...codex, installed: false },
       { ...codex, status: "error" as const },
       withAdvisory({ canUpdate: false }),
+      // Native updaters and Homebrew install whatever is newest.
+      withAdvisory({ canInstallVersion: false, latestVersion: "2.0.0" }),
     ]) {
       assert.strictEqual(decideProviderAutoUpdate(provider, "2.0.0"), null);
     }
@@ -91,71 +87,164 @@ describe("decideProviderAutoUpdate", () => {
   });
 });
 
-const testLayer = (input: {
+interface Fixture {
   readonly settings?: Partial<ServerSettings>;
-  readonly threadStatus?: string;
-  readonly calls: Array<unknown>;
-}) =>
-  Layer.mergeAll(
+  /** Thread status per shell snapshot read, in order; the last one repeats. */
+  readonly threadStatuses?: ReadonlyArray<string | null>;
+  readonly manifest?: ModelManifest.ModelManifestData;
+  /** Age of the fetched manifest, or null for no fetched copy. */
+  readonly manifestAgeMs?: number | null;
+  /** The provider as a fresh health check inside the lock sees it. */
+  readonly refreshed?: ServerProvider;
+  readonly installs: Array<unknown>;
+}
+
+const testLayer = (input: Fixture) => {
+  let snapshotReads = 0;
+  const statuses = input.threadStatuses ?? [null];
+  const ageMs = input.manifestAgeMs === undefined ? 60_000 : input.manifestAgeMs;
+  return Layer.mergeAll(
     // Only `devUrl` is read; the service has no partial form.
     Layer.succeed(ServerConfig, { devUrl: undefined } as never),
     ServerSettingsService.layerTest(input.settings ?? {}),
-    Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed([codex]) }),
-    Layer.mock(ModelManifest.ModelManifest)({ refresh: Effect.succeed(manifest) }),
+    Layer.mock(ProviderRegistry)({
+      getProviders: Effect.succeed([codex]),
+      // The check inside the lock must not depend on the update advisory,
+      // which a live health refresh did not carry.
+      refreshInstance: () => {
+        const { versionAdvisory: _advisory, ...refreshed } = input.refreshed ?? codex;
+        return Effect.succeed([refreshed]);
+      },
+      getProviderMaintenanceCapabilitiesForInstance: () =>
+        Effect.succeed({
+          provider: codex.driver,
+          packageName: "@openai/codex",
+          update: null,
+        } satisfies ProviderMaintenanceCapabilities),
+    }),
+    Layer.mock(ModelManifest.ModelManifest)({
+      refresh: Effect.succeed(input.manifest ?? verified),
+      remote: Clock.currentTimeMillis.pipe(
+        Effect.map((now) =>
+          ageMs === null
+            ? null
+            : { manifest: input.manifest ?? verified, fetchedAtMs: now - ageMs },
+        ),
+      ),
+    }),
     Layer.mock(ProjectionStoreV2)({
       getShellSnapshot: () =>
-        Effect.succeed({
-          threads: input.threadStatus
-            ? [{ id: "thread", status: input.threadStatus, pendingRuntimeRequest: null }]
-            : [],
-        } as never),
+        Effect.sync(() => {
+          const status = statuses[Math.min(snapshotReads++, statuses.length - 1)];
+          return {
+            threads: status ? [{ id: "thread", status, pendingRuntimeRequest: null }] : [],
+          } as never;
+        }),
     }),
+    // Mirrors the real runner: `shouldStart` decides whether the install runs.
     Layer.mock(ProviderMaintenanceRunner)({
-      updateProvider: (target) => {
-        input.calls.push(target);
-        return Effect.succeed({ providers: [] });
-      },
+      updateProvider: (target) =>
+        Effect.gen(function* () {
+          if (typeof target === "string") return yield* Effect.die("untargeted update");
+          if (target.autoUpdate && !(yield* target.autoUpdate.shouldStart)) {
+            return { providers: [codex] };
+          }
+          input.installs.push({ instanceId: target.instanceId, version: target.targetVersion });
+          return {
+            providers: [
+              {
+                ...codex,
+                updateState: {
+                  status: "succeeded" as const,
+                  startedAt: null,
+                  finishedAt: null,
+                  message: null,
+                  output: null,
+                },
+              },
+            ],
+          };
+        }),
     }),
   );
+};
 
-const runPassWith = (input: Parameters<typeof testLayer>[0]) =>
+const runPassWith = (input: Fixture) =>
   Effect.flatMap(make, (updater) => updater.runPass).pipe(Effect.provide(testLayer(input)));
 
 describe("ProviderAutoUpdater.runPass", () => {
   it.effect("installs the verified version once per window", () => {
-    const calls: Array<unknown> = [];
+    const installs: Array<unknown> = [];
     return Effect.gen(function* () {
       const updater = yield* make;
       yield* updater.runPass;
       yield* updater.runPass;
-      assert.deepStrictEqual(calls, [
-        {
-          provider: "codex",
-          instanceId: "codex",
-          targetVersion: "2.0.0",
-          autoUpdate: true,
-        },
-      ]);
-    }).pipe(Effect.provide(testLayer({ calls })));
+      assert.deepStrictEqual(installs, [{ instanceId: "codex", version: "2.0.0" }]);
+    }).pipe(Effect.provide(testLayer({ installs })));
   });
 
   it.effect("waits while a thread is running or waiting on the user", () => {
-    const calls: Array<unknown> = [];
+    const installs: Array<unknown> = [];
     return Effect.gen(function* () {
-      yield* runPassWith({ threadStatus: "running", calls });
-      yield* runPassWith({ threadStatus: "waiting", calls });
-      assert.deepStrictEqual(calls, []);
-      yield* runPassWith({ threadStatus: "completed", calls });
-      assert.strictEqual(calls.length, 1);
+      yield* runPassWith({ threadStatuses: ["running"], installs });
+      yield* runPassWith({ threadStatuses: ["waiting"], installs });
+      assert.deepStrictEqual(installs, []);
+      yield* runPassWith({ threadStatuses: ["completed"], installs });
+      assert.strictEqual(installs.length, 1);
+    });
+  });
+
+  it.effect("drops an update when a turn starts before the install, and retries next pass", () => {
+    const installs: Array<unknown> = [];
+    return Effect.gen(function* () {
+      const updater = yield* make;
+      // Idle when the pass looks, busy when the runner checks inside the lock.
+      yield* updater.runPass;
+      assert.deepStrictEqual(installs, []);
+      yield* updater.runPass;
+      assert.strictEqual(installs.length, 1);
+    }).pipe(Effect.provide(testLayer({ threadStatuses: [null, "running", null], installs })));
+  });
+
+  it.effect("skips an install already at the version when the lock is acquired", () => {
+    const installs: Array<unknown> = [];
+    return runPassWith({ refreshed: { ...codex, version: "2.0.0" }, installs }).pipe(
+      Effect.tap(() => Effect.sync(() => assert.deepStrictEqual(installs, []))),
+    );
+  });
+
+  it.effect("does nothing without a recently fetched manifest", () => {
+    const installs: Array<unknown> = [];
+    return Effect.gen(function* () {
+      yield* runPassWith({ manifestAgeMs: null, installs });
+      yield* runPassWith({ manifestAgeMs: 3 * 24 * 60 * 60 * 1_000, installs });
+      assert.deepStrictEqual(installs, []);
+    });
+  });
+
+  it.effect("ignores versions verified for another package or a newer styal release", () => {
+    const installs: Array<unknown> = [];
+    return Effect.gen(function* () {
+      yield* runPassWith({
+        manifest: manifestWith([
+          { version: "2.0.0", package: "@openai/codex-next", after: "0.0.1" },
+        ]),
+        installs,
+      });
+      yield* runPassWith({
+        manifest: manifestWith([{ version: "2.0.0", package: "@openai/codex", after: "99.0.0" }]),
+        installs,
+      });
+      assert.deepStrictEqual(installs, []);
     });
   });
 
   it.effect("does nothing when automatic updates or update checks are off", () => {
-    const calls: Array<unknown> = [];
+    const installs: Array<unknown> = [];
     return Effect.gen(function* () {
-      yield* runPassWith({ settings: { autoUpdateProviders: false }, calls });
-      yield* runPassWith({ settings: { enableProviderUpdateChecks: false }, calls });
-      assert.deepStrictEqual(calls, []);
+      yield* runPassWith({ settings: { autoUpdateProviders: false }, installs });
+      yield* runPassWith({ settings: { enableProviderUpdateChecks: false }, installs });
+      assert.deepStrictEqual(installs, []);
     });
   });
 });

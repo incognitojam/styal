@@ -63,6 +63,7 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
       refresh: Effect.succeed(ModelManifest.BUNDLED_MODEL_MANIFEST),
       forceRefresh: Effect.succeed(ModelManifest.BUNDLED_MODEL_MANIFEST),
       refreshInBackground: Effect.void,
+      remote: Effect.succeed(null),
     }),
     Effect.provideService(HostProcessPlatform, "darwin"),
     Effect.provideService(HostProcessArchitecture, "arm64"),

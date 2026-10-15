@@ -5,7 +5,7 @@ import {
   type ServerProvider,
   type ServerProviderCompatibilityAdvisory,
 } from "@t3tools/contracts";
-import { satisfiesSemverRange } from "@t3tools/shared/semver";
+import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 import packageJson from "../../package.json" with { type: "json" };
 
@@ -24,17 +24,34 @@ const VersionRange = TrimmedNonEmptyString.pipe(
     ),
   ),
 );
+/** A styal release version, nightlies included (`0.1.1-nightly.20261015.730`). */
+const StyalVersion = TrimmedNonEmptyString.pipe(
+  Schema.check(Schema.makeFilter((value) => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(value))),
+);
+
+/**
+ * One provider release the provider canary verified. It applies to servers
+ * newer than `after`, the newest published styal release when the canary
+ * ran: those builds contain the code it tested.
+ */
+const AutoUpdate = Schema.Struct({
+  version: StableVersion,
+  /** npm package that was installed; installs of another package are not updated. */
+  package: TrimmedNonEmptyString,
+  after: StyalVersion,
+});
+
 const Policy = Schema.Struct({
   driver: TrimmedNonEmptyString,
   t3CodeRange: VersionRange,
   recommendedRange: Schema.optionalKey(VersionRange),
   recommendedVersion: Schema.optionalKey(StableVersion),
   /**
-   * Newest version the provider canary verified against this styal release
-   * range. Automatic updates install up to this version and never past it;
-   * scripts/provider-canary.ts records it.
+   * Provider releases automatic updates may install, recorded by
+   * scripts/provider-canary.ts. Servers install the newest entry that applies
+   * to them and never anything newer.
    */
-  autoUpdateVersion: Schema.optionalKey(StableVersion),
+  autoUpdates: Schema.optionalKey(Schema.Array(AutoUpdate)),
   ranges: Schema.Array(
     Schema.Struct({
       range: VersionRange,
@@ -62,9 +79,8 @@ export const ProviderCompatibilityPolicy = Policy.pipe(
     ),
     Schema.makeFilter(
       (policy) =>
-        policy.autoUpdateVersion === undefined ||
-        isSupportedVersion(policy, policy.autoUpdateVersion),
-      { expected: "an automatic update version in a supported range" },
+        (policy.autoUpdates ?? []).every((entry) => isSupportedVersion(policy, entry.version)),
+      { expected: "automatic update versions in a supported range" },
     ),
   ),
 );
@@ -100,16 +116,24 @@ export function stableProviderVersion(
   return stable && /^\d+\.\d+\.\d+$/.test(stable) ? stable : null;
 }
 
-/** The canary-verified version for this styal release, remote policy first. */
+/**
+ * The newest canary-verified version of `packageName` for this styal release,
+ * or null. Only the remote manifest counts: removing an entry on `main`
+ * withdraws it, which a bundled copy could not undo.
+ */
 export function resolveProviderAutoUpdateVersion(
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
-  fallback: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
   driver: ProviderDriverKind,
+  packageName: string | null,
   t3CodeVersion = packageJson.version,
 ): string | null {
-  const policy =
-    findPolicy(policies, driver, t3CodeVersion) ?? findPolicy(fallback, driver, t3CodeVersion);
-  return policy?.autoUpdateVersion ?? null;
+  let best: string | null = null;
+  for (const entry of findPolicy(policies, driver, t3CodeVersion)?.autoUpdates ?? []) {
+    if (entry.package !== packageName) continue;
+    if (compareSemverVersions(t3CodeVersion, entry.after) <= 0) continue;
+    if (best === null || compareSemverVersions(entry.version, best) > 0) best = entry.version;
+  }
+  return best;
 }
 
 export function resolveProviderCompatibility(

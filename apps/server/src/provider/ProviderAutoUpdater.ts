@@ -2,16 +2,16 @@
  * ProviderAutoUpdater — installs provider CLI updates in the background when
  * `autoUpdateProviders` is on.
  *
- * It never installs past the version the provider canary verified for this
- * styal release (`autoUpdateVersion` in the manifest's compatibility policy),
- * so a provider release reaches users only after a real turn has passed
- * against it. Installers that can pin a version install exactly that version;
- * the rest (native self-updaters, Homebrew) run only while their latest
- * version is the verified one.
+ * It installs only a version the provider canary verified for this styal
+ * release (`autoUpdates` in the manifest's compatibility policy), read from a
+ * copy of the manifest fetched from `main` in the last two days. Only
+ * installers that can pin an exact version take part; native self-updaters
+ * and Homebrew cannot be held to the verified version.
  *
- * Passes skip while any thread is running or waiting, so a CLI is not
- * replaced under an active turn. Dev servers never run it: they share the
- * host's provider CLIs with the developer's real install.
+ * Passes skip while any thread is running or waiting, and the runner checks
+ * again inside the installation lock, so a CLI is not replaced under an
+ * active turn. Dev servers never run it: they share the host's provider CLIs
+ * with the developer's real install.
  */
 import type { ServerProvider } from "@t3tools/contracts";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -37,17 +37,14 @@ const FIRST_PASS_DELAY = Duration.minutes(2);
 const PASS_INTERVAL = Duration.minutes(30);
 /** One attempt per instance and version in this window, so a failing install is not retried every pass. */
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1_000;
+/** A manifest older than this may still list a version that was since withdrawn. */
+const MANIFEST_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1_000;
 
-export interface ProviderAutoUpdateDecision {
-  /** Pinned version to install, or undefined to run the installer's own update. */
-  readonly targetVersion: string | undefined;
-}
-
-/** Whether `provider` should be updated to `testedVersion`, and how. */
+/** The version to install on `provider`, or null to leave it alone. */
 export function decideProviderAutoUpdate(
   provider: ServerProvider,
   testedVersion: string | null,
-): ProviderAutoUpdateDecision | null {
+): string | null {
   // A provider that already fails its health check (often signed out) is left
   // alone: the update could not be verified and would be reported as failing.
   if (
@@ -59,12 +56,8 @@ export function decideProviderAutoUpdate(
     return null;
   const current = stableProviderVersion(provider.driver, provider.version);
   const advisory = provider.versionAdvisory;
-  if (current === null || !advisory?.canUpdate) return null;
-  if (compareSemverVersions(current, testedVersion) >= 0) return null;
-  if (advisory.canInstallVersion) return { targetVersion: testedVersion };
-  return stableProviderVersion(provider.driver, advisory.latestVersion) === testedVersion
-    ? { targetVersion: undefined }
-    : null;
+  if (current === null || !advisory?.canUpdate || !advisory.canInstallVersion) return null;
+  return compareSemverVersions(current, testedVersion) < 0 ? testedVersion : null;
 }
 
 export interface ProviderAutoUpdater {
@@ -83,6 +76,10 @@ export const make = Effect.gen(function* () {
   const projections = yield* ProjectionStoreV2;
   const attemptedAt = new Map<string, number>();
 
+  const isEnabled = settingsService.getSettings.pipe(
+    Effect.map((settings) => settings.enableProviderUpdateChecks && settings.autoUpdateProviders),
+  );
+
   const isHostBusy = projections.getShellSnapshot().pipe(
     Effect.map(({ threads }) => {
       const activity = summarizeHostSessions(threads);
@@ -92,29 +89,78 @@ export const make = Effect.gen(function* () {
     Effect.catchCause(() => Effect.succeed(true)),
   );
 
+  const testedVersionFor = Effect.fn("ProviderAutoUpdater.testedVersionFor")(function* (
+    provider: ServerProvider,
+  ) {
+    const remote = yield* manifestService.remote;
+    const now = yield* Clock.currentTimeMillis;
+    if (
+      remote === null ||
+      now < remote.fetchedAtMs ||
+      now - remote.fetchedAtMs > MANIFEST_MAX_AGE_MS
+    )
+      return null;
+    const capabilities = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
+      provider.instanceId,
+      provider.driver,
+    );
+    return resolveProviderAutoUpdateVersion(
+      remote.manifest.compatibility,
+      provider.driver,
+      capabilities.packageName,
+    );
+  });
+
+  // Runs inside the installation lock. A fresh health check sees a manual
+  // update that finished while this one waited, or another instance that
+  // shares the same CLI and was already updated.
+  const shouldStart = (provider: ServerProvider, targetVersion: string) =>
+    Effect.gen(function* () {
+      const skip = (reason: string) =>
+        Effect.logInfo("Background provider update skipped", {
+          instanceId: provider.instanceId,
+          reason,
+        }).pipe(Effect.as(false));
+      if (!(yield* isEnabled)) return yield* skip("automatic updates were turned off");
+      if (yield* isHostBusy) return yield* skip("a thread is running or waiting");
+      const providers = yield* providerRegistry.refreshInstance(provider.instanceId);
+      const current = providers.find((candidate) => candidate.instanceId === provider.instanceId);
+      const version = stableProviderVersion(provider.driver, current?.version);
+      if (
+        !current?.enabled ||
+        !current.installed ||
+        current.status === "error" ||
+        version === null ||
+        compareSemverVersions(version, targetVersion) >= 0
+      )
+        return yield* skip("the provider is already updated or no longer healthy");
+      if ((yield* testedVersionFor(current)) !== targetVersion)
+        return yield* skip("the verified version changed");
+      return true;
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Background provider update check failed", { cause }).pipe(
+          Effect.as(false),
+        ),
+      ),
+    );
+
   const runPass = Effect.gen(function* () {
-    const settings = yield* settingsService.getSettings;
-    if (!settings.enableProviderUpdateChecks || !settings.autoUpdateProviders) return;
-    const manifest = yield* manifestService.refresh;
+    if (!(yield* isEnabled)) return;
+    yield* manifestService.refresh;
     const providers = yield* providerRegistry.getProviders;
     for (const provider of providers) {
-      const testedVersion = resolveProviderAutoUpdateVersion(
-        manifest.compatibility,
-        ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
-        provider.driver,
-      );
-      const decision = decideProviderAutoUpdate(provider, testedVersion);
-      if (decision === null) continue;
-      const attemptKey = `${provider.instanceId}@${testedVersion}`;
+      const targetVersion = decideProviderAutoUpdate(provider, yield* testedVersionFor(provider));
+      if (targetVersion === null) continue;
+      const attemptKey = `${provider.instanceId}@${targetVersion}`;
       const now = yield* Clock.currentTimeMillis;
       const previous = attemptedAt.get(attemptKey);
       if (previous !== undefined && now >= previous && now - previous < RETRY_AFTER_MS) continue;
       if (yield* isHostBusy) return;
-      attemptedAt.set(attemptKey, now);
       yield* Effect.logInfo("Updating provider in the background", {
         instanceId: provider.instanceId,
         fromVersion: provider.version,
-        toVersion: testedVersion,
+        toVersion: targetVersion,
       });
       // The runner publishes the update state, so clients show a background
       // update the same way as one they started.
@@ -122,17 +168,20 @@ export const make = Effect.gen(function* () {
         .updateProvider({
           provider: provider.driver,
           instanceId: provider.instanceId,
-          targetVersion: decision.targetVersion,
-          autoUpdate: true,
+          targetVersion,
+          autoUpdate: { shouldStart: shouldStart(provider, targetVersion) },
         })
         .pipe(
           Effect.flatMap((result) => {
             const updated = result.providers.find(
               (candidate) => candidate.instanceId === provider.instanceId,
             );
+            // Only an install that ran counts; one skipped by `shouldStart`
+            // is tried again next pass.
+            if (updated?.updateState) attemptedAt.set(attemptKey, now);
             return Effect.logInfo("Background provider update finished", {
               instanceId: provider.instanceId,
-              status: updated?.updateState?.status ?? "unknown",
+              status: updated?.updateState?.status ?? "skipped",
               message: updated?.updateState?.message ?? null,
             });
           }),

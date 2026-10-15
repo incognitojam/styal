@@ -1276,9 +1276,9 @@ export const ServerSettings = Schema.Struct({
   ),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
-   * Install provider CLI updates in the background, but only up to the
-   * version the provider canary verified for this release (`autoUpdateVersion`
-   * in the model manifest's compatibility policy). Needs update checks on.
+   * Install provider CLI updates in the background, but only versions the
+   * provider canary verified for this release (`autoUpdates` in the model
+   * manifest's compatibility policy). Needs update checks on.
    */
   autoUpdateProviders: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Retain the update-era key; recovery now needs an environment-owned opt-in.

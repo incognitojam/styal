@@ -275,32 +275,40 @@ describe("provider compatibility", () => {
       { ...policy, ranges: [{ range: ">=2.0.0 garbage", status: "supported" }] },
       { ...policy, recommendedVersion: "2.0.0; echo unsafe" },
       { ...policy, ranges: [{ range: ">=0.0.0", status: "broken" }, ...policy.ranges] },
-      { ...policy, autoUpdateVersion: "1.6.0" },
-      { ...policy, autoUpdateVersion: "2.1.0-beta.1" },
+      { ...policy, autoUpdates: [{ version: "1.6.0", package: "pkg", after: "0.0.42" }] },
+      { ...policy, autoUpdates: [{ version: "2.1.0-beta.1", package: "pkg", after: "0.0.42" }] },
+      { ...policy, autoUpdates: [{ version: "2.1.0", package: "pkg", after: "latest" }] },
     ])
       assert.throws(() => decode(invalid));
   });
 
-  it("reads the automatic update version from the remote policy before the bundled one", () => {
+  it("picks the newest verified version that applies to this styal release and package", () => {
     const decode = Schema.decodeUnknownSync(ProviderCompatibilityPolicy);
-    const bundled = decode({ ...policy, autoUpdateVersion: "2.0.0" });
-    const remote = decode({ ...policy, autoUpdateVersion: "2.4.1" });
+    const verified = decode({
+      ...policy,
+      t3CodeRange: ">=0.0.42",
+      autoUpdates: [
+        { version: "2.0.0", package: "pkg", after: "0.1.0" },
+        { version: "2.4.1", package: "pkg", after: "0.1.1-nightly.20261015.730" },
+        { version: "2.9.0", package: "other-pkg", after: "0.1.0" },
+      ],
+    });
+    const resolve = (t3CodeVersion: string, packageName: string | null = "pkg") =>
+      resolveProviderAutoUpdateVersion([verified], driver, packageName, t3CodeVersion);
+    // Builds newer than the release published when the canary ran contain the tested code.
+    assert.strictEqual(resolve("0.1.1-nightly.20261016.731"), "2.4.1");
+    assert.strictEqual(resolve("0.1.1"), "2.4.1");
+    assert.strictEqual(resolve("0.1.1-nightly.20261015.730"), "2.0.0");
+    assert.strictEqual(resolve("0.1.0"), null);
+    assert.strictEqual(resolve("0.1.1", "other-pkg"), "2.9.0");
+    assert.strictEqual(resolve("0.1.1", null), null);
     assert.strictEqual(
-      resolveProviderAutoUpdateVersion([remote], [bundled], driver, "0.0.50"),
-      "2.4.1",
-    );
-    assert.strictEqual(
-      resolveProviderAutoUpdateVersion(undefined, [bundled], driver, "0.0.50"),
-      "2.0.0",
-    );
-    // A remote policy without the field replaces the bundled one, as for every other field.
-    assert.strictEqual(
-      resolveProviderAutoUpdateVersion([policy], [bundled], driver, "0.0.50"),
-      null,
-    );
-    // Releases outside the policy's styal range never auto-update.
-    assert.strictEqual(
-      resolveProviderAutoUpdateVersion([remote], [bundled], driver, "0.2.0"),
+      resolveProviderAutoUpdateVersion(
+        [{ ...policy, t3CodeRange: ">=0.0.42" }],
+        driver,
+        "pkg",
+        "0.1.1",
+      ),
       null,
     );
   });
@@ -356,6 +364,7 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
         refresh,
         forceRefresh: refresh,
         refreshInBackground: Effect.void,
+        remote: Effect.succeed(null),
       }),
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
         getInstance: (id) => Effect.succeed(id === instance.instanceId ? instance : undefined),

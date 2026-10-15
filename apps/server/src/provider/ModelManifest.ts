@@ -378,6 +378,13 @@ export class ModelManifest extends Context.Service<
      * provider checks: the fetch is process-shared state, so it must survive
      * the teardown of whichever instance happened to trigger it. */
     readonly refreshInBackground: Effect.Effect<void>;
+    /** The last manifest fetched from `main` and when, or null while the
+     * bundle is in use. Never fetches. Automatic provider updates act only
+     * on a recent remote copy. */
+    readonly remote: Effect.Effect<{
+      readonly manifest: ModelManifestData;
+      readonly fetchedAtMs: number;
+    } | null>;
   }
 >()("@styal/cli/provider/ModelManifest") {}
 
@@ -387,6 +394,7 @@ const BundledOnlyModelManifest: ModelManifest["Service"] = {
   refresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   forceRefresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   refreshInBackground: Effect.void,
+  remote: Effect.succeed(null),
 };
 
 export const layerTest = Layer.succeed(ModelManifest, BundledOnlyModelManifest);
@@ -479,6 +487,9 @@ export const make = Effect.gen(function* () {
     refresh: guardedRefresh,
     forceRefresh: refreshSemaphore.withPermits(1)(refresh(true)),
     refreshInBackground: Effect.forkIn(guardedRefresh, serviceScope).pipe(Effect.asVoid),
+    remote: ensureDiskCacheLoaded.pipe(
+      Effect.map(() => (fetchedAtMs === null ? null : { manifest, fetchedAtMs })),
+    ),
   });
 });
 

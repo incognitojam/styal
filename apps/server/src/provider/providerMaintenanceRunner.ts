@@ -22,11 +22,7 @@ import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as ModelManifest from "./ModelManifest.ts";
-import {
-  resolveProviderAutoUpdateVersion,
-  resolveProviderCompatibility,
-  stableProviderVersion,
-} from "./providerCompatibility.ts";
+import { resolveProviderCompatibility } from "./providerCompatibility.ts";
 import * as ProviderRegistry from "./Services/ProviderRegistry.ts";
 import { makeProviderMaintenanceCommandCoordinator } from "./providerMaintenanceCommandCoordinator.ts";
 import {
@@ -61,11 +57,12 @@ export interface ProviderMaintenanceRunnerShape {
           readonly instanceId?: ProviderInstanceId | undefined;
           readonly targetVersion?: string | undefined;
           /**
-           * Background update: install only the canary-verified version. A
-           * targeted install must name it; an untargeted one runs only while
-           * the installer's latest version is that version.
+           * Background update of `targetVersion`, which must be set and which
+           * the installer must be able to pin. `shouldStart` runs inside the
+           * installation lock just before the install; when it yields false
+           * the update is dropped without publishing a state.
            */
-          readonly autoUpdate?: boolean | undefined;
+          readonly autoUpdate?: { readonly shouldStart: Effect.Effect<boolean> } | undefined;
         },
   ) => Effect.Effect<ServerProviderUpdatedPayload, ServerProviderUpdateError>;
 }
@@ -327,7 +324,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         ? defaultInstanceIdForDriver(provider)
         : (target.instanceId ?? defaultInstanceIdForDriver(provider));
     const targetVersion = typeof target === "string" ? undefined : target.targetVersion;
-    const autoUpdate = typeof target === "string" ? false : target.autoUpdate === true;
+    const autoUpdate = typeof target === "string" ? undefined : target.autoUpdate;
     const targetKey = `instance:${instanceId}`;
     const capabilities = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
       instanceId,
@@ -361,6 +358,11 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         const finish = (state: ServerProviderUpdateState) =>
           setUpdateState(state).pipe(Effect.map((providers) => ({ providers })));
         const startedAtRef = yield* Ref.make<string | null>(null);
+        // Checked under the lock, so a manual update that finished while this
+        // one was queued, or a turn that started meanwhile, is seen.
+        if (autoUpdate && !(yield* autoUpdate.shouldStart)) {
+          return yield* setUpdateState(null).pipe(Effect.map((providers) => ({ providers })));
+        }
 
         const runCommandAndVerify = Effect.fn("ProviderMaintenanceRunner.runCommandAndVerify")(
           function* () {
@@ -412,14 +414,10 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               targetVersion !== undefined
                 ? makeTargetedProviderUpdateAction(fresh, targetVersion)
                 : fresh.update;
-            const testedVersion = resolveProviderAutoUpdateVersion(
-              manifest.compatibility,
-              ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
-              provider,
-            );
+            // Background updates were checked against the canary entries by
+            // `shouldStart`; they only need an installer that pins the version.
             const rejected = autoUpdate
-              ? testedVersion === null ||
-                stableProviderVersion(provider, candidateVersion) !== testedVersion
+              ? targetVersion === undefined
               : targetVersion !== undefined
                 ? !command ||
                   advisory?.recommendedVersion !== targetVersion ||
@@ -432,7 +430,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                   startedAt,
                   finishedAt: yield* nowIso,
                   message: autoUpdate
-                    ? "The tested provider version changed before the update started."
+                    ? "This installer cannot install a specific version."
                     : targetVersion !== undefined
                       ? "This version is no longer recommended or this installer cannot install a specific version. Refresh provider settings."
                       : "The latest provider version is incompatible with this styal release. Review provider settings.",
@@ -442,6 +440,8 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             const result = yield* runMaintenanceCommand(command);
             const finishedAt = yield* nowIso;
             if (result.timedOut || result.exitCode !== 0) {
+              // A failed install can leave the provider broken; show its health now.
+              yield* providerRegistry.refreshInstance(instanceId);
               return yield* finish(
                 makeUpdateState({
                   status: "failed",
