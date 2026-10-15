@@ -2347,7 +2347,15 @@ describe("orchestration v2 provider switching", () => {
     ),
   );
 
-  const importedFailureScenario = (queueBeforeFailure: boolean) =>
+  const importedThreadScenario = (
+    queueBeforeFailure: boolean,
+    firstSend?: {
+      nativeSource: boolean;
+      importedHistory: boolean;
+      switchProvider: boolean;
+      setSelectionFirst: boolean;
+    },
+  ) =>
     Effect.scoped(
       Effect.gen(function* () {
         const importedThreadId = ThreadId.make("thread:provider-switch:legacy-import");
@@ -2366,7 +2374,7 @@ describe("orchestration v2 provider switching", () => {
             modelSelection: CODEX_MODEL_SELECTION,
             responseByRunOrdinal: {},
             capturedTurns,
-            failedRunOrdinals: new Set([1]),
+            failedRunOrdinals: new Set(firstSend === undefined ? [1] : []),
             ...(queueBeforeFailure ? { holdFirstTurn: firstTurnStarted, releaseFirstTurn } : {}),
           }),
           makeTestAdapter({
@@ -2437,7 +2445,7 @@ describe("orchestration v2 provider switching", () => {
           ${importedProjectId},
           'Imported provider switch project',
           ${cwd},
-          '{"instanceId":"codex","model":"gpt-5.4"}',
+          ${yield* encodeJson(CODEX_MODEL_SELECTION)},
           '[]',
           '2026-01-01T00:00:00.000Z',
           '2026-01-01T00:00:00.000Z',
@@ -2465,7 +2473,7 @@ describe("orchestration v2 provider switching", () => {
           ${importedThreadId},
           ${importedProjectId},
           'Imported provider switch thread',
-          '{"instanceId":"codex","model":"gpt-5.4"}',
+          ${yield* encodeJson(CODEX_MODEL_SELECTION)},
           'full-access',
           'default',
           'main',
@@ -2515,10 +2523,100 @@ describe("orchestration v2 provider switching", () => {
           )
       `;
 
+          if (firstSend?.nativeSource) {
+            yield* sql`INSERT INTO provider_session_runtime
+              (thread_id, provider_name, provider_instance_id, adapter_key, status, runtime_mode, resume_cursor_json, last_seen_at)
+              VALUES (${importedThreadId}, 'codex', 'codex', 'codex', 'stopped', 'full-access',
+                '{"threadId":"synthetic-imported-native-thread"}', '2026-01-01T00:00:00.000Z')`;
+          }
+          if (firstSend?.importedHistory === false) {
+            yield* sql`DELETE FROM projection_thread_messages WHERE thread_id = ${importedThreadId}`;
+          }
           yield* importer.reconcileShells;
           yield* maintenance.rebuild;
           yield* importer.ensureTranscript(importedThreadId);
 
+          if (firstSend !== undefined) {
+            const target = firstSend.switchProvider
+              ? CLAUDE_MODEL_SELECTION
+              : CODEX_MODEL_SELECTION;
+            if (firstSend.setSelectionFirst) {
+              yield* orchestrator.dispatch({
+                type: "thread.model-selection.set",
+                commandId: CommandId.make("select-imported-target"),
+                threadId: importedThreadId,
+                modelSelection: target,
+              });
+            }
+            const send = {
+              type: "message.dispatch" as const,
+              createdBy: "user" as const,
+              creationSource: "web" as const,
+              commandId: CommandId.make("send-imported-first-turn"),
+              threadId: importedThreadId,
+              messageId: MessageId.make("send-imported-first-turn"),
+              text: recoveryPrompt,
+              attachments: [],
+              modelSelection: target,
+              dispatchMode: { type: "start_immediately" as const },
+            };
+            yield* orchestrator.dispatch(send);
+            yield* orchestrator.dispatch(send);
+            yield* orchestrator
+              .streamStoredEventsFrom({ threadId: importedThreadId, afterSequence: 0 })
+              .pipe(
+                Stream.filter(
+                  ({ event }) =>
+                    event.type === "run.updated" && event.payload.status === "completed",
+                ),
+                Stream.runHead,
+              );
+            yield* worker.drain();
+            const before = yield* orchestrator.getThreadProjection(importedThreadId);
+            assert.equal(before.runs[0]?.status, "completed");
+            const notices = before.turnItems.filter((item) => item.type === "handoff");
+            assert.lengthOf(notices, firstSend.importedHistory ? 1 : 0);
+            if (firstSend.importedHistory) {
+              const notice = notices[0]!;
+              assert.equal(notice.contextHandoffId, before.runs[0]?.contextHandoffId);
+              assert.equal(notice.title, "Imported context");
+              assert.equal(notice.strategy, "manual_context");
+              assert.equal(notice.toProviderInstanceId, target.instanceId);
+              assert.equal(notice.toModel, target.model);
+              assert.deepEqual(
+                notice.fromModelSelections,
+                firstSend.switchProvider && !firstSend.setSelectionFirst
+                  ? [CODEX_MODEL_SELECTION]
+                  : [],
+              );
+              assert.deepEqual(
+                notice.fromProviderInstanceIds,
+                firstSend.nativeSource || (firstSend.switchProvider && !firstSend.setSelectionFirst)
+                  ? [CODEX_MODEL_SELECTION.instanceId]
+                  : [],
+              );
+              const prompt = before.turnItems.find(
+                (item) => item.type === "user_message" && item.messageId === send.messageId,
+              )!;
+              assert.isAbove(
+                notice.ordinal,
+                Math.max(
+                  ...before.turnItems
+                    .filter((item) => item.runId === null)
+                    .map((item) => item.ordinal),
+                ),
+              );
+              assert.isBelow(notice.ordinal, prompt.ordinal);
+              assert.include(
+                (yield* Ref.get(capturedTurns))[0]!.text,
+                "imported release marker is violet",
+              );
+            }
+            yield* maintenance.rebuild;
+            const rebuilt = yield* orchestrator.getThreadProjection(importedThreadId);
+            assert.deepEqual(rebuilt.turnItems, before.turnItems);
+            return rebuilt;
+          }
           yield* orchestrator.dispatch({
             type: "message.dispatch",
             createdBy: "user",
@@ -2588,6 +2686,7 @@ describe("orchestration v2 provider switching", () => {
           return rebuilt;
         }).pipe(Effect.provide(testLayer));
 
+        if (firstSend !== undefined) return;
         const turns = yield* Ref.get(capturedTurns);
         assert.deepEqual(
           projection.runs.map((run) => [run.providerInstanceId, run.status]),
@@ -2613,15 +2712,17 @@ describe("orchestration v2 provider switching", () => {
         );
         assert.equal(recoveryHandoff?.strategy, "full_thread_summary");
         assert.include(recoveryHandoff?.summaryText ?? "", failedPrompt);
-        if (queueBeforeFailure) {
-          const handoffItem = projection.turnItems.find(
-            (item) => item.type === "handoff" && item.runId === projection.runs[1]?.id,
-          );
-          assert.equal(
-            handoffItem?.type === "handoff" ? handoffItem.contextHandoffId : null,
-            recoveryHandoff?.id,
-          );
-        }
+        assert.lengthOf(
+          projection.turnItems.filter((item) => item.type === "handoff"),
+          2,
+        );
+        const handoffItem = projection.turnItems.find(
+          (item) => item.type === "handoff" && item.runId === projection.runs[1]?.id,
+        );
+        assert.equal(
+          handoffItem?.type === "handoff" ? handoffItem.contextHandoffId : null,
+          recoveryHandoff?.id,
+        );
         assert.include(turns[1]?.text ?? "", "Context handoff (manual_context):");
         assert.include(turns[1]?.text ?? "", "imported release marker is violet");
         assert.include(turns[1]?.text ?? "", "I will remember violet.");
@@ -2631,11 +2732,23 @@ describe("orchestration v2 provider switching", () => {
     );
 
   it.live("reissues imported v1 context when switching after the first provider fails", () =>
-    importedFailureScenario(false),
+    importedThreadScenario(false),
   );
   it.live(
     "reissues imported v1 context when a queued provider starts after the first provider fails",
-    () => importedFailureScenario(true),
+    () => importedThreadScenario(true),
+  );
+
+  it.live.each([
+    { nativeSource: false, importedHistory: true, switchProvider: true, setSelectionFirst: false },
+    { nativeSource: true, importedHistory: true, switchProvider: true, setSelectionFirst: false },
+    { nativeSource: false, importedHistory: true, switchProvider: false, setSelectionFirst: false },
+    { nativeSource: false, importedHistory: false, switchProvider: true, setSelectionFirst: false },
+    { nativeSource: true, importedHistory: true, switchProvider: true, setSelectionFirst: true },
+    { nativeSource: false, importedHistory: true, switchProvider: true, setSelectionFirst: true },
+  ])(
+    "shows first imported handoff: native=$nativeSource, history=$importedHistory, switch=$switchProvider, preset=$setSelectionFirst",
+    (scenario) => importedThreadScenario(false, scenario),
   );
 
   it.live("uses portable fallback when native resume fails after a provider switch", () =>

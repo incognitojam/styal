@@ -207,6 +207,10 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     (target) =>
       target.environment.serverConfig.environment.capabilities.threadRestartContinuation === true,
   );
+  const supportsProviderAutoUpdates = targets.every(
+    (target) =>
+      target.environment.serverConfig.environment.capabilities.providerAutoUpdates === true,
+  );
   const disabledFor = (key: string) =>
     disabled ||
     (projectSelected &&
@@ -428,6 +432,26 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       disabled={disabledFor("enableProviderUpdateChecks")}
                       onValueChange={(value) => write({ enableProviderUpdateChecks: value })}
                     />
+                    <View className="border-t border-border-subtle">
+                      <SettingsSwitchRow
+                        icon="arrow.down.circle"
+                        label="Update providers automatically"
+                        subtitle={
+                          !supportsProviderAutoUpdates
+                            ? "Update older servers to install provider updates automatically."
+                            : projectSelected
+                              ? "Environment-wide setting. Select All projects to change it."
+                              : "Install tested provider updates while no threads are running."
+                        }
+                        value={supportsProviderAutoUpdates && uniform("autoUpdateProviders")}
+                        disabled={
+                          disabledFor("autoUpdateProviders") ||
+                          !supportsProviderAutoUpdates ||
+                          uniform("enableProviderUpdateChecks") !== true
+                        }
+                        onValueChange={(value) => write({ autoUpdateProviders: value })}
+                      />
+                    </View>
                     <View className="border-t border-border-subtle">
                       <SettingsSwitchRow
                         icon="arrow.uturn.forward"

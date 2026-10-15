@@ -9,6 +9,7 @@ export const SETTINGS_FORK_FEATURES = [
   "device-environment-hosts",
   "github-outage-status",
   "project-agent-instructions",
+  "provider-auto-updates",
   "sidebar-last-message-time",
   "sidebar-project-thread-groups",
   "source-control-fork-remotes",

@@ -31,7 +31,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect non-documentation changes
+      - name: Detect application or tooling changes
         id: filter
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -43,17 +43,19 @@ jobs:
           fi
 
           run_ci=true
+          ledger_changed=false
           changed_files="$RUNNER_TEMP/fork-ci-changed-files.txt"
 
           if git rev-parse --verify "$BASE_SHA^{commit}" >/dev/null 2>&1 &&
             git rev-parse --verify "$HEAD_SHA^{commit}" >/dev/null 2>&1 &&
-            git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$changed_files"
+            git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA" > "$changed_files"
           then
             run_ci=false
             while IFS= read -r changed_file; do
               case "$changed_file" in
                 *.md | docs/*) ;;
-                *) run_ci=true; break ;;
+                .github/fork-features.yml) ledger_changed=true ;;
+                *) run_ci=true ;;
               esac
             done < "$changed_files"
           else
@@ -61,6 +63,20 @@ jobs:
           fi
 
           echo "run_ci=$run_ci" >> "$GITHUB_OUTPUT"
+          echo "ledger_changed=$ledger_changed" >> "$GITHUB_OUTPUT"
+
+      # Ledger edits need validation and the tests that read the checked-in ledger,
+      # including the Settings badge guard, even when application jobs skip.
+      - name: Setup ledger dependencies
+        if: steps.filter.outputs.run_ci == 'false' && steps.filter.outputs.ledger_changed == 'true'
+        uses: ./.github/actions/setup-deps
+
+      - name: Check ledger-only changes
+        if: steps.filter.outputs.run_ci == 'false' && steps.filter.outputs.ledger_changed == 'true'
+        run: |
+          vp fmt --check .github/fork-features.yml
+          vp run --filter @t3tools/scripts ledger:check
+          vp test run scripts/fork-feature-ledger.test.ts apps/web/src/components/settings/forkFeatures.test.ts
 
   intake:
     name: Fork Intake Audit
@@ -286,10 +302,14 @@ jobs:
   check:
     name: Fork Check
     needs: [changes, lint, typecheck, build, preview_calibration]
-    if: ${{ !cancelled() && needs.changes.outputs.run_ci == 'true' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Require change classification and ledger validation to pass
+        run: test '${{ needs.changes.result }}' = success
+
       - name: Require lint, typecheck, build, and browser calibration to pass
+        if: needs.changes.outputs.run_ci == 'true'
         run: |
           test '${{ needs.lint.result }}' = success
           test '${{ needs.typecheck.result }}' = success

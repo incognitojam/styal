@@ -251,7 +251,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   which disables automatic downloads and installation on quit.
 
 - **Confirm only when quitting may interrupt work.** Desktop quits and restarts check agents and
-  terminal work across the environments hosted by the app, including work started from other devices.
+  terminal work across the environments hosted by the app, including work started from other devices
+  and agents in other environments using its shared devices.
   Idle hosts proceed without a dialog; active work or an unavailable check requires an in-app confirmation.
   The **Update server** action checks the connected server the same way before it restarts.
   Compared with [T3 Code revision d4d5d12](https://github.com/pingdotgg/t3code/tree/d4d5d12e8ba086cfbf79ca3adeb4156b46ead665),
@@ -263,6 +264,18 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   when it restarts to update, it opens in full screen again. Compared with
   [T3 Code revision 18656a3](https://github.com/pingdotgg/t3code/tree/18656a3402459d9d145bb3fa5767723531b27ac7),
   checked October 11, 2026, which reopens a full-screen window at its normal size.
+
+## Provider updates
+
+- **Tested provider updates install themselves.** Each environment installs new Codex, Claude Code,
+  and OpenCode releases in the background once an automated check has run real agent turns against
+  them, and waits until no threads are running. This covers providers installed with npm or a
+  similar package manager. Turn this off in **Settings → General**. T3 Code
+  updates providers only when you choose to, as of
+  [revision 40a7908](https://github.com/pingdotgg/t3code/tree/40a7908df54d5069c93835032c9e955b56b55f1d);
+  automatic installs exist there only as an open pull request
+  ([#17585](https://github.com/pingdotgg/t3code/pull/17585)) without a tested-version gate.
+  [Automatic provider updates](./updating.md#automatic-provider-updates).
 
 ## Error reports
 

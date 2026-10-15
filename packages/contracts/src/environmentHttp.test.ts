@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -7,9 +8,11 @@ import {
   EnvironmentRequestInvalidError,
   EnvironmentResourceNotFoundError,
   EnvironmentScopeRequiredError,
+  HostActivity,
 } from "./environmentHttp.ts";
 
 const traceId = "trace-1";
+const decodeHostActivity = Schema.decodeSync(HostActivity);
 
 describe("environment HTTP errors", () => {
   // A client squashes the cause and shows `message`; an empty one becomes a generic
@@ -58,5 +61,18 @@ describe("environment HTTP errors", () => {
     errors.forEach((error, index) => {
       expect(error.message).toContain(details[index]);
     });
+  });
+});
+
+describe("HostActivity", () => {
+  it("reads activity from servers that predate shared device use", () => {
+    const activity = decodeHostActivity({
+      activeSessions: 0,
+      continuableSessions: 0,
+      waitingSessions: 0,
+      terminalsRequiringConfirmation: 0,
+      terminalsWithUnknownActivity: 0,
+    });
+    expect(activity.environmentsUsingDevices).toBe(0);
   });
 });

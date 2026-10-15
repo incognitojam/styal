@@ -1,5 +1,6 @@
 import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
@@ -670,6 +671,10 @@ export const HostActivity = Schema.Struct({
   waitingSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   terminalsRequiringConfirmation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   terminalsWithUnknownActivity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Other environments currently using this environment's shared devices. */
+  environmentsUsingDevices: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(0)),
+  ),
 });
 export type HostActivity = typeof HostActivity.Type;
 

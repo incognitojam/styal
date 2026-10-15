@@ -752,7 +752,7 @@ features:
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: review-needed
-    prs: [294, 297, 298, 300, 306, 347, 349, 379, 478]
+    prs: [294, 297, 298, 300, 306, 347, 349, 379, 478, 842]
     rationale: Upstream V2 supplies canonical orchestration and messages-only automatic V1 migration, but the maintained T3 import flow must retain full recorded history and costs. The batch explicitly preserves these values, converts V1 history at the boundary, imports native V2 projections through inert canonical events, and materializes unavailable fork ancestors.
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
@@ -769,6 +769,7 @@ features:
       - Startup history repairs index their temporary event lookups so upgrading large imported histories does not repeatedly scan every repair for each event.
       - Legacy history metadata rewrites preserve JSON byte alignment where possible, avoiding writes of unchanged SQLite overflow pages; ordering updates preserve each historical event's own payload.
       - Imported native V2 sessions remain stopped while durable native conversation references remain resumable; process sessions, pending effects, and runtime requests never migrate.
+      - Resuming imported V1 history records a visible context handoff on its receiving run, including the selected target model and available source metadata, even before any V2 run has completed.
       - Fork imports retain history through the chosen source run even when ancestors are deleted, excluded, not yet imported, or fail during the batch. Materialized history keeps original fork lineage and never duplicates when an ancestor is imported later.
     implementation_paths:
       - apps/server/src/dataImport/LegacyHistoryWriter.ts
@@ -828,6 +829,7 @@ features:
       - apps/server/src/dataImport/V2HistoryImport.test.ts
       - apps/server/src/orchestration-v2/legacy/legacyPayloadEncoding.test.ts
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
+      - apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
       - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.test.ts
       - apps/web/src/components/import/useHistoryImport.test.ts
       - apps/web/src/components/import/useLegacyImport.test.ts
@@ -1041,12 +1043,14 @@ features:
       - Settings show one sharing switch per pair on the device environment, without an address field. Web and mobile send their own connection address, the LAN and tailnet addresses the device environment's server reports in `directEndpoints`, and a known styal Link address. For the desktop app's own server, web also sends the Network tab's default address before the reported ones, which only sets order, and every usable advertised desktop address after them. The agent server verifies both environment identities and stores the candidates with its device-only grant; legacy single-address shares remain readable.
       - When the selected address stops answering, the next request selects another saved address after checking both identities. Reads and cleanup retry once; other commands report the failure and are never replayed. New streams use the selected address; a running agent picks it up when agent access next starts.
       - Authenticated cleanup remains available when device access is disabled, and connected agent environments retain removal controls for offline or removed device environments.
+      - Quit, restart, and update confirmations on the device environment count other environments with a device command or agent request in progress, or that used a device they still hold within five minutes. An idle shared session or a person only viewing a shared device does not ask for confirmation.
     rationale: Connecting a machine to the client does not give an agent server access to it. An explicit device-only grant provides persistent access without copying a client credential or requiring redundant SSH setup.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
       - apps/server/src/device/DeviceSharing.ts
       - apps/server/src/device/DeviceSharingHttp.ts
       - apps/server/src/device/EnvironmentDeviceHost.ts
+      - apps/server/src/environment/HostActivity.ts
       - apps/web/src/components/settings/EnvironmentDeviceHostsSettings.tsx
       - packages/client-runtime/src/state/device.ts
       - packages/contracts/src/device.ts
@@ -2791,6 +2795,57 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9416
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
 
+  - id: provider-auto-updates
+    title: Install canary-verified provider updates automatically
+    status: maintained
+    prs: []
+    invariants:
+      - With automatic provider updates and provider update checks on (both default on), a non-dev server installs a provider version in the background only when an `autoUpdates` entry in the matching compatibility policy of a manifest fetched from main in the last two days names it, for the installation's own npm package, verified on a published styal build the server's code contains (a later nightly, or a stable release of a later version; a stable or same build itself). It installs the newest such version and never anything newer. The bundled manifest never authorizes an automatic install.
+      - Only installers that can pin a version take part, and they install exactly the verified version; native self-updaters and Homebrew are never run in the background.
+      - Background passes skip while any thread is running or waiting on the user, skip providers that are disabled, missing, or already failing their health check, and try each instance and version at most once per six hours. Inside the install lock, a fresh health check and activity check run again, and the install is dropped without publishing a state when a thread became active, settings changed, or the provider already reached the version.
+      - Manual and background updates share one server-lifetime maintenance runner and its install locks, and background updates publish the same update state clients show for manual updates.
+      - The provider canary workflow verifies each new release against the published stable and nightly styal builds, checked out from their release tags, and records a version with the build it passed on only after real turns (tool use, checkpoint, resume, interrupt, approval, rewind, native subagent, restart) pass, retrying a failed run once. It proposes the manifest change as a pull request to main. The open canary pull request's own additions are carried over rather than verified again; entries withdrawn from main are not brought back.
+      - The canary keeps one "Provider canary status" issue with at most one problem per provider and kind (failed, blocked, skipped) plus failed jobs. A problem clears only when a later run checks that provider again. The issue gets a comment only when a new problem appears or every problem clears, and closes when every check passes.
+      - Clients show the setting only as on for environments that advertise the `providerAutoUpdates` capability.
+    rationale: Upstream keeps provider updates user-initiated (closed issue 2993) and its open background-install pull request has no tested-version gate. styal updates providers for users by default, so every automatic install is limited to a release the canary verified.
+    implementation_paths:
+      - .github/workflows/provider-canary.yml
+      - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
+      - apps/server/scripts/verify-provider-live.ts
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/ProviderAutoUpdater.ts
+      - apps/server/src/provider/providerCompatibility.ts
+      - apps/server/src/provider/providerMaintenanceRunner.ts
+      - apps/server/src/server.ts
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/contracts/src/environment.ts
+      - packages/contracts/src/settings.ts
+      - scripts/provider-canary.ts
+    upstream_paths:
+      - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/model-manifest.json
+      - apps/server/src/provider/providerCompatibility.ts
+      - apps/server/src/provider/providerMaintenanceRunner.ts
+      - apps/server/src/server.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/contracts/src/environment.ts
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/server/src/provider/ModelManifest.test.ts
+      - apps/server/src/provider/ProviderAutoUpdater.test.ts
+      - apps/server/src/provider/providerCompatibility.test.ts
+      - apps/server/src/provider/providerMaintenanceRunner.test.ts
+      - scripts/provider-canary.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/2993
+        - https://github.com/pingdotgg/t3code/pull/17585
+      retire_when: Upstream installs provider updates automatically while gating each install on a version verified by real provider turns.
   - id: provider-server-settings-isolation
     title: Keep the server's own settings out of agent processes
     status: maintained
