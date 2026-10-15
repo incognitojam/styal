@@ -4385,6 +4385,35 @@ features:
         - https://github.com/pingdotgg/t3code/blob/f23d0084b6e023ffb1af9e332d8666affc99d542/packages/contracts/src/providerUsageLimits.ts
       retire_when: Upstream reports and shows every banked reset credit's expiry instead of only the next one.
 
+  - id: web-build-update-notice
+    title: Offer a refresh when a new web build is deployed
+    status: maintained
+    prs: []
+    invariants:
+      - Production browser clients compare the loaded build with a fresh manifest from the page's own origin, independently of paired environments; every build, including rebuilds of one commit, has a distinct identifier.
+      - A changed build shows a manual refresh action in the sidebar without interrupting work; a rollback to the loaded build clears the notice, while failed or malformed checks preserve the last known state.
+      - Checks pause while hidden or offline, resume on visibility, focus, or connectivity changes, and never overlap; Electron keeps its native updater and development builds keep HMR.
+    implementation_paths:
+      - apps/web/public/_headers
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/WebBuildUpdateProvider.tsx
+      - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+      - apps/web/src/components/sidebar/SidebarWebUpdatePill.tsx
+      - apps/web/src/webBuildUpdate.ts
+      - apps/web/vite.config.ts
+      - apps/web/vite/buildMetadata.ts
+    upstream_paths:
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+      - apps/web/vite.config.ts
+    tests:
+      - apps/web/src/webBuildUpdate.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
+      retire_when: Upstream detects new static web deployments from the page's origin and offers a manual refresh independently of desktop and paired-server updates.
+
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable
     status: review-needed

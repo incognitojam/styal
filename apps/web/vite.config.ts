@@ -1,4 +1,5 @@
 import * as NodeZlib from "node:zlib";
+import * as NodeCrypto from "node:crypto";
 
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
@@ -14,6 +15,7 @@ import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { tailwindPlugins } from "./vite/tailwind";
+import { buildMetadataPlugin } from "./vite/buildMetadata";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -54,6 +56,7 @@ const configuredAppCommitHash = (() => {
   }
   return "unknown";
 })();
+const configuredAppBuildId = `${configuredAppCommitHash}-${NodeCrypto.randomUUID()}`;
 const configuredHostedAppUrl = (() => {
   const explicitHostedAppUrl = process.env.VITE_HOSTED_APP_URL?.trim();
   if (explicitHostedAppUrl) {
@@ -170,6 +173,7 @@ export default defineConfig(() => {
   return {
     assetsInclude: ["**/*.wasm"],
     plugins: [
+      buildMetadataPlugin(configuredAppBuildId),
       devCompressionPlugin(),
       thirdPartyLicensesPlugin({
         bundleName: "web",
@@ -230,6 +234,7 @@ export default defineConfig(() => {
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
       "import.meta.env.APP_COMMIT_HASH": JSON.stringify(configuredAppCommitHash),
+      "import.meta.env.APP_BUILD_ID": JSON.stringify(configuredAppBuildId),
     },
     resolve: {
       tsconfigPaths: true,
