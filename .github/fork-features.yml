@@ -3663,9 +3663,11 @@ features:
     status: maintained
     prs: [849]
     invariants:
-      - Web and desktop settings keep the project and environment pickers beneath the breadcrumb in one compact fixed header while the settings content scrolls.
+      - Web and desktop settings retain the original scope sentence above the content and move its project and environment pickers into the existing toolbar only after the sentence scrolls out of view; scrolling back restores the sentence without changing the toolbar height or shifting the settings content.
+      - Docking moves the same mounted controls so open menus, selected values, and keyboard focus survive the transition. Narrow toolbars prioritize the scope pickers; the breadcrumb and restore-defaults action return when scrolling back to the sentence.
       - The scope sentence wraps on narrow screens and truncates long picker labels, stays available for unavailable scopes, preserves the environment-only Providers picker, and remains hidden on device-only pages.
     implementation_paths:
+      - apps/web/src/components/settings/SettingsScopeDock.tsx
       - apps/web/src/components/settings/SettingsScopeSentence.tsx
       - apps/web/src/components/settings/settingsLayout.tsx
       - apps/web/src/routes/settings.tsx
@@ -3674,6 +3676,7 @@ features:
       - apps/web/src/components/settings/settingsLayout.tsx
       - apps/web/src/routes/settings.tsx
     tests:
+      - apps/web/src/components/settings/SettingsScopeDock.test.tsx
       - apps/web/src/components/settings/settingsLayout.test.tsx
       - apps/web/src/components/settings/settingsScopeAxis.test.ts
     upstream:

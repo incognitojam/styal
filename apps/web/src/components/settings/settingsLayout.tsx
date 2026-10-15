@@ -25,6 +25,7 @@ import { StyalToolIcon } from "../StyalToolIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { SettingsForkFeature } from "./forkFeatures";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
+import { SettingsScopeInline } from "./SettingsScopeDock";
 import {
   isProjectScopedSettingKey,
   listProjectOverrides,
@@ -621,6 +622,7 @@ export function SettingsPageContainer({
         data-settings-page-scroll
       >
         <WorkspacePageContainer width={width} className={cn("gap-8", className)}>
+          <SettingsScopeInline />
           {children}
         </WorkspacePageContainer>
       </div>

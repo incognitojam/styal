@@ -49,12 +49,13 @@ interface SettingsScopeMenuProps {
 }
 
 /**
- * "Applying settings for <project> across <environment>" in the settings
- * header, below the breadcrumb. The two pickers are the targets a change
- * is written to. A project is the same project on every environment, so the
- * environment alone decides where a project override is written.
+ * "Applying settings for <project> across <environment>" above the settings,
+ * reduced to its two pickers when docked in the toolbar. The pickers are the
+ * targets a change is written to. A project is the same project on every
+ * environment, so the environment alone decides where a project override is
+ * written.
  */
-export function SettingsScopeSentence() {
+export function SettingsScopeSentence({ compact = false }: { compact?: boolean }) {
   const scope = useOptionalSettingsScope();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
@@ -67,16 +68,22 @@ export function SettingsScopeSentence() {
     onChange: scope.selectScope,
   };
   return (
-    <p className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+    <p
+      className={
+        compact
+          ? "flex min-w-0 items-center gap-3 text-sm text-muted-foreground"
+          : "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-base text-muted-foreground sm:px-4"
+      }
+    >
       {/* Each connective stays with its picker so a wrap never strands "on". */}
       {scope.singleEnvironment ? null : (
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="shrink-0">Applying settings for</span>
+          {compact ? null : <span className="shrink-0">Applying settings for</span>}
           <ProjectScopeMenu {...props} />
         </span>
       )}
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className="shrink-0">
+        <span className={compact ? "hidden" : "shrink-0"}>
           {/* A legacy checkout link names one environment without `machine`. */}
           {scope.singleEnvironment
             ? "Applying settings on"
