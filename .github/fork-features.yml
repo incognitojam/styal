@@ -1041,12 +1041,14 @@ features:
       - Settings show one sharing switch per pair on the device environment, without an address field. Web and mobile send their own connection address, the LAN and tailnet addresses the device environment's server reports in `directEndpoints`, and a known styal Link address. For the desktop app's own server, web also sends the Network tab's default address before the reported ones, which only sets order, and every usable advertised desktop address after them. The agent server verifies both environment identities and stores the candidates with its device-only grant; legacy single-address shares remain readable.
       - When the selected address stops answering, the next request selects another saved address after checking both identities. Reads and cleanup retry once; other commands report the failure and are never replayed. New streams use the selected address; a running agent picks it up when agent access next starts.
       - Authenticated cleanup remains available when device access is disabled, and connected agent environments retain removal controls for offline or removed device environments.
+      - Quit, restart, and update confirmations on the device environment count other environments with an open device stream or request, or that used a device they still hold within five minutes. An idle shared session does not ask for confirmation.
     rationale: Connecting a machine to the client does not give an agent server access to it. An explicit device-only grant provides persistent access without copying a client credential or requiring redundant SSH setup.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
       - apps/server/src/device/DeviceSharing.ts
       - apps/server/src/device/DeviceSharingHttp.ts
       - apps/server/src/device/EnvironmentDeviceHost.ts
+      - apps/server/src/environment/HostActivity.ts
       - apps/web/src/components/settings/EnvironmentDeviceHostsSettings.tsx
       - packages/client-runtime/src/state/device.ts
       - packages/contracts/src/device.ts

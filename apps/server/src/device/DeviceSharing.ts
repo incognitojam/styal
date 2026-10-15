@@ -20,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient } from "effect/unstable/http";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
@@ -50,6 +51,20 @@ const sameToken = (left: string, right: string) => {
 };
 /** How long a session check covers agent proxy requests before the grant is checked again. */
 const AGENT_SESSION_CHECK_MS = 30_000;
+/**
+ * How long after its last request another environment still counts as using this
+ * environment's devices. Covers an agent thinking between device actions.
+ */
+const PEER_USE_WINDOW_MS = 5 * 60_000;
+/** Peer commands that use a device, as opposed to discovery and cleanup. */
+const PEER_USE_OPERATIONS = new Set<DevicePeerCommand["operation"]>([
+  "agent",
+  "open",
+  "detail",
+  "action",
+  "screenshot",
+  "shutdown",
+]);
 
 export class DeviceSharing extends Context.Service<
   DeviceSharing,
@@ -62,16 +77,30 @@ export class DeviceSharing extends Context.Service<
     readonly disconnect: (hostId: string) => Effect.Effect<void, DeviceError>;
     readonly hubTarget: Effect.Effect<{ origin: string }, DeviceError>;
     /** Resolves an agent proxy credential. Null means the credential is unknown or revoked. */
-    readonly agentTarget: (
-      token: string,
-    ) => Effect.Effect<
-      { origin: string; headers: Readonly<Record<string, string>> } | null,
+    readonly agentTarget: (token: string) => Effect.Effect<
+      {
+        origin: string;
+        headers: Readonly<Record<string, string>>;
+        /** The environment the agent credential was issued to. */
+        sourceId: string;
+      } | null,
       DeviceError
     >;
     readonly command: (
       session: Pick<EnvironmentAuth.AuthenticatedSession, "subject" | "sessionId">,
       input: DevicePeerCommand,
     ) => Effect.Effect<unknown, DeviceError>;
+    /**
+     * Counts another environment's device request as in use until the current scope
+     * closes. For a proxied request that is the request scope, which stays open until
+     * the response body, such as a device stream, ends.
+     */
+    readonly beginUse: (sourceId: string) => Effect.Effect<void, never, Scope.Scope>;
+    /**
+     * Other environments with a device stream or request open, or that used a device
+     * they still hold within the last few minutes. A restart disconnects them.
+     */
+    readonly environmentsUsingDevices: Effect.Effect<number>;
   }
 >()("@styal/cli/device/DeviceSharing") {}
 
@@ -87,7 +116,41 @@ const make = Effect.gen(function* () {
   // Agent credentials live only in memory. A restart, a stop-agent, release, or revoke
   // command, or finding local device or agent access off drops them. The source gets a
   // new one the next time an agent opens a device.
-  const agents = new Map<AuthSessionId, { token: string; checkedAt: number }>();
+  const agents = new Map<AuthSessionId, { token: string; checkedAt: number; sourceId: string }>();
+  const usage = new Map<string, { inFlight: number; lastUsedAt: number }>();
+  // Use is recorded from HTTP routes and read by the activity check; one clock keeps
+  // their timestamps comparable.
+  const clock = yield* Clock.Clock;
+  const beginUse = (sourceId: string) =>
+    Effect.acquireRelease(
+      Effect.map(clock.currentTimeMillis, (now) => {
+        const entry = usage.get(sourceId) ?? { inFlight: 0, lastUsedAt: now };
+        usage.set(sourceId, entry);
+        entry.inFlight++;
+        entry.lastUsedAt = now;
+        return entry;
+      }),
+      (entry) =>
+        Effect.map(clock.currentTimeMillis, (now) => {
+          entry.inFlight--;
+          entry.lastUsedAt = now;
+        }),
+    ).pipe(Effect.asVoid);
+  const environmentsUsingDevices = Effect.gen(function* () {
+    const now = yield* clock.currentTimeMillis;
+    const { sessions } = yield* devices.state;
+    let count = 0;
+    for (const [sourceId, entry] of usage) {
+      const prefix = devicePeerThreadPrefix(sourceId);
+      if (
+        entry.inFlight > 0 ||
+        (now - entry.lastUsedAt < PEER_USE_WINDOW_MS &&
+          sessions.some((session) => session.threadId.startsWith(prefix)))
+      )
+        count++;
+    }
+    return count;
+  });
   const requireAccess = Effect.gen(function* () {
     const value = yield* settings.getSettings.pipe(Effect.mapError(sharingError));
     if (!value.enableDeviceSupport || !value.enableAgentDeviceAccess)
@@ -265,6 +328,7 @@ const make = Effect.gen(function* () {
       return null;
     }
     yield* requireAccess;
+    if (PEER_USE_OPERATIONS.has(input.operation)) yield* beginUse(sourceId);
     switch (input.operation) {
       case "inspect":
       case "list": {
@@ -291,7 +355,11 @@ const make = Effect.gen(function* () {
           );
         const token =
           agents.get(session.sessionId)?.token ?? NodeCrypto.randomBytes(32).toString("base64url");
-        agents.set(session.sessionId, { token, checkedAt: yield* Clock.currentTimeMillis });
+        agents.set(session.sessionId, {
+          token,
+          checkedAt: yield* Clock.currentTimeMillis,
+          sourceId,
+        });
         return { token };
       }
       case "open":
@@ -319,7 +387,7 @@ const make = Effect.gen(function* () {
         return { device: shot.device, png: Buffer.from(shot.png).toString("base64") };
       }
     }
-  });
+  }, Effect.scoped);
   const hubTarget = Effect.gen(function* () {
     yield* requireAccess;
     const ready = yield* devices.readinessIfSupported(LOCAL_DEVICE_HOST_ID);
@@ -356,6 +424,7 @@ const make = Effect.gen(function* () {
         // installs from local paths and limits its network requests to public addresses.
         "x-agent-device-network-access": "public-only",
       },
+      sourceId: entry.sourceId,
     };
   });
   return DeviceSharing.of({
@@ -366,6 +435,8 @@ const make = Effect.gen(function* () {
     command,
     hubTarget,
     agentTarget,
+    beginUse,
+    environmentsUsingDevices,
   });
 });
 

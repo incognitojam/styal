@@ -68,6 +68,7 @@ const idleActivity = {
   waitingSessions: 0,
   terminalsRequiringConfirmation: 0,
   terminalsWithUnknownActivity: 0,
+  environmentsUsingDevices: 0,
 };
 
 describe("ServerUpdateAction", () => {

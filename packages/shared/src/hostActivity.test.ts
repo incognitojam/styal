@@ -8,6 +8,7 @@ const idle = {
   waitingSessions: 0,
   terminalsRequiringConfirmation: 0,
   terminalsWithUnknownActivity: 0,
+  environmentsUsingDevices: 0,
 };
 const options = { uncheckedHostsLine: "Some hosts could not be checked." };
 
@@ -54,6 +55,14 @@ describe("describeHostActivity", () => {
       incomplete: false,
     });
     expect(describeHostActivity(checks, options).lines).toEqual(["3 threads will be interrupted."]);
+  });
+
+  it("treats other environments using shared devices as running work", () => {
+    expect(describeHostActivity([{ ...idle, environmentsUsingDevices: 2 }], options)).toEqual({
+      concern: "running",
+      lines: ["Devices in use by 2 other environments will be disconnected."],
+      incomplete: false,
+    });
   });
 
   it("does not count uninspected terminals as running work", () => {
