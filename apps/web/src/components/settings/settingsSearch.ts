@@ -495,6 +495,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
   },
   {
+    id: "provider-auto-updates",
+    title: "Automatic provider updates",
+    to: "/settings/general",
+    searchTerms: ["install cli updates background tested version codex claude opencode"],
+    scope: "environment-defaults",
+  },
+  {
     id: "continue-threads-after-server-update",
     title: "Continue threads after restarts",
     to: "/settings/general",

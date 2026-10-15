@@ -2792,6 +2792,57 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9416
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
 
+  - id: provider-auto-updates
+    title: Install canary-verified provider updates automatically
+    status: maintained
+    prs: []
+    invariants:
+      - With automatic provider updates and provider update checks on (both default on), a non-dev server installs a provider version in the background only when an `autoUpdates` entry in the matching compatibility policy of a manifest fetched from main in the last two days names it, for the installation's own npm package, verified on a published styal build the server's code contains (a later nightly, or a stable release of a later version; a stable or same build itself). It installs the newest such version and never anything newer. The bundled manifest never authorizes an automatic install.
+      - Only installers that can pin a version take part, and they install exactly the verified version; native self-updaters and Homebrew are never run in the background.
+      - Background passes skip while any thread is running or waiting on the user, skip providers that are disabled, missing, or already failing their health check, and try each instance and version at most once per six hours. Inside the install lock, a fresh health check and activity check run again, and the install is dropped without publishing a state when a thread became active, settings changed, or the provider already reached the version.
+      - Manual and background updates share one server-lifetime maintenance runner and its install locks, and background updates publish the same update state clients show for manual updates.
+      - The provider canary workflow verifies each new release against the published stable and nightly styal builds, checked out from their release tags, and records a version with the build it passed on only after real turns (tool use, checkpoint, resume, interrupt, approval, rewind, native subagent, restart) pass, retrying a failed run once. It proposes the manifest change as a pull request to main. The open canary pull request's own additions are carried over rather than verified again; entries withdrawn from main are not brought back.
+      - The canary keeps one "Provider canary status" issue with at most one problem per provider and kind (failed, blocked, skipped) plus failed jobs. A problem clears only when a later run checks that provider again. The issue gets a comment only when a new problem appears or every problem clears, and closes when every check passes.
+      - Clients show the setting only as on for environments that advertise the `providerAutoUpdates` capability.
+    rationale: Upstream keeps provider updates user-initiated (closed issue 2993) and its open background-install pull request has no tested-version gate. styal updates providers for users by default, so every automatic install is limited to a release the canary verified.
+    implementation_paths:
+      - .github/workflows/provider-canary.yml
+      - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
+      - apps/server/scripts/verify-provider-live.ts
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/ProviderAutoUpdater.ts
+      - apps/server/src/provider/providerCompatibility.ts
+      - apps/server/src/provider/providerMaintenanceRunner.ts
+      - apps/server/src/server.ts
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/contracts/src/environment.ts
+      - packages/contracts/src/settings.ts
+      - scripts/provider-canary.ts
+    upstream_paths:
+      - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
+      - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/model-manifest.json
+      - apps/server/src/provider/providerCompatibility.ts
+      - apps/server/src/provider/providerMaintenanceRunner.ts
+      - apps/server/src/server.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/settings/SettingsPanels.tsx
+      - packages/contracts/src/environment.ts
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/server/src/provider/ModelManifest.test.ts
+      - apps/server/src/provider/ProviderAutoUpdater.test.ts
+      - apps/server/src/provider/providerCompatibility.test.ts
+      - apps/server/src/provider/providerMaintenanceRunner.test.ts
+      - scripts/provider-canary.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/2993
+        - https://github.com/pingdotgg/t3code/pull/17585
+      retire_when: Upstream installs provider updates automatically while gating each install on a version verified by real provider turns.
   - id: provider-server-settings-isolation
     title: Keep the server's own settings out of agent processes
     status: maintained

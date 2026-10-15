@@ -265,6 +265,18 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [T3 Code revision 18656a3](https://github.com/pingdotgg/t3code/tree/18656a3402459d9d145bb3fa5767723531b27ac7),
   checked October 11, 2026, which reopens a full-screen window at its normal size.
 
+## Provider updates
+
+- **Tested provider updates install themselves.** Each environment installs new Codex, Claude Code,
+  and OpenCode releases in the background once an automated check has run real agent turns against
+  them, and waits until no threads are running. This covers providers installed with npm or a
+  similar package manager. Turn this off in **Settings → General**. T3 Code
+  updates providers only when you choose to, as of
+  [revision 40a7908](https://github.com/pingdotgg/t3code/tree/40a7908df54d5069c93835032c9e955b56b55f1d);
+  automatic installs exist there only as an open pull request
+  ([#17585](https://github.com/pingdotgg/t3code/pull/17585)) without a tested-version gate.
+  [Automatic provider updates](./updating.md#automatic-provider-updates).
+
 ## Error reports
 
 - **Server errors reach the styal maintainers.** Release builds report server errors, scrubbed of

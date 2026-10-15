@@ -20,6 +20,8 @@ import * as Schema from "effect/Schema";
 import {
   applyProviderCompatibility,
   ProviderCompatibilityPolicy,
+  resolveProviderAutoUpdateVersion,
+  styalBuildContains,
   resolveProviderCompatibility,
 } from "./providerCompatibility.ts";
 
@@ -274,8 +276,49 @@ describe("provider compatibility", () => {
       { ...policy, ranges: [{ range: ">=2.0.0 garbage", status: "supported" }] },
       { ...policy, recommendedVersion: "2.0.0; echo unsafe" },
       { ...policy, ranges: [{ range: ">=0.0.0", status: "broken" }, ...policy.ranges] },
+      { ...policy, autoUpdates: [{ version: "1.6.0", package: "pkg", styal: "0.0.42" }] },
+      { ...policy, autoUpdates: [{ version: "2.1.0-beta.1", package: "pkg", styal: "0.0.42" }] },
+      { ...policy, autoUpdates: [{ version: "2.1.0", package: "pkg", styal: "latest" }] },
     ])
       assert.throws(() => decode(invalid));
+  });
+
+  it("treats a build as containing tested nightlies before it and stables at or before it", () => {
+    const nightly = "0.1.1-nightly.20261015.730";
+    assert.isTrue(styalBuildContains(nightly, nightly));
+    assert.isTrue(styalBuildContains("0.1.1-nightly.20261016.731", nightly));
+    assert.isFalse(styalBuildContains("0.1.1-nightly.20261014.700", nightly));
+    // Stable 0.1.1 may be rebuilt from a nightly older than the tested one.
+    assert.isFalse(styalBuildContains("0.1.1", nightly));
+    assert.isTrue(styalBuildContains("0.1.2", nightly));
+    assert.isTrue(styalBuildContains("0.1.1", "0.1.1"));
+    assert.isTrue(styalBuildContains("0.1.2-nightly.20261020.760", "0.1.1"));
+    assert.isFalse(styalBuildContains("0.1.1-nightly.20261020.760", "0.1.1"));
+    assert.isFalse(styalBuildContains("0.1.0", "0.1.1"));
+  });
+
+  it("picks the newest verified version that applies to this styal build and package", () => {
+    const decode = Schema.decodeUnknownSync(ProviderCompatibilityPolicy);
+    const verified = decode({
+      ...policy,
+      t3CodeRange: ">=0.0.42",
+      autoUpdates: [
+        { version: "2.0.0", package: "pkg", styal: "0.1.0" },
+        { version: "2.4.1", package: "pkg", styal: "0.1.1-nightly.20261015.730" },
+        { version: "2.9.0", package: "other-pkg", styal: "0.1.0" },
+      ],
+    });
+    const resolve = (t3CodeVersion: string, packageName: string | null = "pkg") =>
+      resolveProviderAutoUpdateVersion([verified], driver, packageName, t3CodeVersion);
+    assert.strictEqual(resolve("0.1.1-nightly.20261016.731"), "2.4.1");
+    assert.strictEqual(resolve("0.1.1-nightly.20261015.730"), "2.4.1");
+    // An older nightly lacks the tested nightly but contains stable 0.1.0.
+    assert.strictEqual(resolve("0.1.1-nightly.20261014.700"), "2.0.0");
+    assert.strictEqual(resolve("0.1.1"), "2.0.0");
+    assert.strictEqual(resolve("0.1.0"), "2.0.0");
+    assert.strictEqual(resolve("0.0.45"), null);
+    assert.strictEqual(resolve("0.1.1", "other-pkg"), "2.9.0");
+    assert.strictEqual(resolve("0.1.1", null), null);
   });
 });
 
@@ -329,6 +372,7 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
         refresh,
         forceRefresh: refresh,
         refreshInBackground: Effect.void,
+        remote: Effect.succeed(null),
       }),
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
         getInstance: (id) => Effect.succeed(id === instance.instanceId ? instance : undefined),

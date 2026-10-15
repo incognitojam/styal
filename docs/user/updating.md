@@ -114,6 +114,23 @@ five seconds to exit. This can interrupt running work.
 at once. Hover it to see which providers it will update. Providers that only
 offer a manual update command are not included.
 
+### Automatic provider updates
+
+styal installs provider updates in the background once it has tested the new
+version: an automated check runs real agent turns against each new Codex,
+Claude Code, and OpenCode release before styal installs it automatically. A
+release that has not passed is never installed automatically, but you can
+still install the newest version yourself from **Settings → Providers**.
+
+Each provider release is tested against the current stable and nightly styal
+builds, so an environment on an older styal build receives provider updates
+again once styal itself is updated. Automatic updates wait until no threads are running or
+waiting for you, and only cover providers installed with npm, Bun, pnpm, Yarn,
+or Volta. Providers installed with Homebrew or a native installer keep updating
+the way they always have. Turn automatic updates off with **Update providers
+automatically** in **Settings → General**, or in **Settings → Maintenance** on
+mobile. They need provider update checks on.
+
 ## Mobile updates
 
 To update an environment from your phone, open **Settings → Environments** and

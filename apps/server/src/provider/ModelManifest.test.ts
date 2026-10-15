@@ -2,6 +2,7 @@ import { applyManifestDefault, classifyModels, type ModelManifestData } from "./
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderDriverKind, type ServerProviderModel } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -574,6 +575,8 @@ describe("ModelManifest service", () => {
 
     return Effect.gen(function* () {
       const service = yield* ModelManifest.make;
+      assert.strictEqual(yield* service.remote, null);
+      const fetchedAtMs = yield* Clock.currentTimeMillis;
       assert.deepStrictEqual(yield* service.refresh, REMOTE_CLAUDE_MANIFEST);
 
       for (const _invalid of INVALID_REMOTE_MANIFESTS) {
@@ -581,6 +584,12 @@ describe("ModelManifest service", () => {
         responseIndex += 1;
         assert.deepStrictEqual(yield* service.refresh, REMOTE_CLAUDE_MANIFEST);
       }
+      // Failed refreshes keep the original fetch time, so the copy ages out
+      // for automatic provider updates.
+      assert.deepStrictEqual(yield* service.remote, {
+        manifest: REMOTE_CLAUDE_MANIFEST,
+        fetchedAtMs,
+      });
 
       const rebooted = yield* ModelManifest.make;
       assert.deepStrictEqual(yield* rebooted.current, REMOTE_CLAUDE_MANIFEST);

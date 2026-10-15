@@ -653,6 +653,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
         : []),
+      ...(settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders
+        ? ["Automatic provider updates"]
+        : []),
       ...(settings.continueThreadsAfterServerUpdate !==
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
         ? ["Continue threads after restarts"]
@@ -734,6 +737,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.responseStreamingMode,
       settings.persistComposerContextStrip,
       settings.enableProviderUpdateChecks,
+      settings.autoUpdateProviders,
       settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
@@ -857,6 +861,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+      autoUpdateProviders: DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
@@ -2235,6 +2240,11 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadAutoSettlement === true,
     );
+  const supportsProviderAutoUpdates =
+    connectedEnvironments.length > 0 &&
+    connectedEnvironments.every(
+      (target) => target.serverConfig?.environment.capabilities.providerAutoUpdates === true,
+    );
   const supportsRestartContinuation =
     connectedEnvironments.length > 0 &&
     connectedEnvironments.every(
@@ -3109,6 +3119,44 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
               }
               aria-label="Check provider versions"
+            />
+          }
+        />
+
+        <SettingsRow
+          serverScoped
+          settingKeys={["autoUpdateProviders"]}
+          {...searchableSetting("provider-auto-updates")}
+          forkFeature="provider-auto-updates"
+          description="Install provider CLI updates while no threads are running, once styal has tested the new version."
+          status={
+            !supportsProviderAutoUpdates
+              ? "All selected connected environments must support automatic provider updates."
+              : settings.enableProviderUpdateChecks
+                ? undefined
+                : "Turn on provider update checks to install updates automatically."
+          }
+          resetAction={
+            settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders ? (
+              <SettingResetButton
+                label="automatic provider updates"
+                onClick={() =>
+                  updateSettings({
+                    autoUpdateProviders: DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["autoUpdateProviders"]}
+              checked={supportsProviderAutoUpdates && settings.autoUpdateProviders}
+              disabled={!supportsProviderAutoUpdates || !settings.enableProviderUpdateChecks}
+              onCheckedChange={(checked) =>
+                updateSettings({ autoUpdateProviders: Boolean(checked) })
+              }
+              aria-label="Update providers automatically"
             />
           }
         />

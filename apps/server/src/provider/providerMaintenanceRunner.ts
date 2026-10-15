@@ -56,6 +56,13 @@ export interface ProviderMaintenanceRunnerShape {
           readonly provider: ProviderDriverKind;
           readonly instanceId?: ProviderInstanceId | undefined;
           readonly targetVersion?: string | undefined;
+          /**
+           * Background update of `targetVersion`, which must be set and which
+           * the installer must be able to pin. `shouldStart` runs inside the
+           * installation lock just before the install; when it yields false
+           * the update is dropped without publishing a state.
+           */
+          readonly autoUpdate?: { readonly shouldStart: Effect.Effect<boolean> } | undefined;
         },
   ) => Effect.Effect<ServerProviderUpdatedPayload, ServerProviderUpdateError>;
 }
@@ -317,6 +324,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         ? defaultInstanceIdForDriver(provider)
         : (target.instanceId ?? defaultInstanceIdForDriver(provider));
     const targetVersion = typeof target === "string" ? undefined : target.targetVersion;
+    const autoUpdate = typeof target === "string" ? undefined : target.autoUpdate;
     const targetKey = `instance:${instanceId}`;
     const capabilities = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
       instanceId,
@@ -350,6 +358,11 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         const finish = (state: ServerProviderUpdateState) =>
           setUpdateState(state).pipe(Effect.map((providers) => ({ providers })));
         const startedAtRef = yield* Ref.make<string | null>(null);
+        // Checked under the lock, so a manual update that finished while this
+        // one was queued, or a turn that started meanwhile, is seen.
+        if (autoUpdate && !(yield* autoUpdate.shouldStart)) {
+          return yield* setUpdateState(null).pipe(Effect.map((providers) => ({ providers })));
+        }
 
         const runCommandAndVerify = Effect.fn("ProviderMaintenanceRunner.runCommandAndVerify")(
           function* () {
@@ -401,8 +414,11 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               targetVersion !== undefined
                 ? makeTargetedProviderUpdateAction(fresh, targetVersion)
                 : fresh.update;
-            const rejected =
-              targetVersion !== undefined
+            // Background updates were checked against the canary entries by
+            // `shouldStart`; they only need an installer that pins the version.
+            const rejected = autoUpdate
+              ? targetVersion === undefined
+              : targetVersion !== undefined
                 ? !command ||
                   advisory?.recommendedVersion !== targetVersion ||
                   advisory.status !== "supported"
@@ -413,8 +429,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                   status: "failed",
                   startedAt,
                   finishedAt: yield* nowIso,
-                  message:
-                    targetVersion !== undefined
+                  message: autoUpdate
+                    ? "This installer cannot install a specific version."
+                    : targetVersion !== undefined
                       ? "This version is no longer recommended or this installer cannot install a specific version. Refresh provider settings."
                       : "The latest provider version is incompatible with this styal release. Review provider settings.",
                 }),
@@ -423,6 +440,8 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             const result = yield* runMaintenanceCommand(command);
             const finishedAt = yield* nowIso;
             if (result.timedOut || result.exitCode !== 0) {
+              // A failed install can leave the provider broken; show its health now.
+              yield* providerRegistry.refreshInstance(instanceId);
               return yield* finish(
                 makeUpdateState({
                   status: "failed",

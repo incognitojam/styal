@@ -5,7 +5,7 @@ import {
   type ServerProvider,
   type ServerProviderCompatibilityAdvisory,
 } from "@t3tools/contracts";
-import { satisfiesSemverRange } from "@t3tools/shared/semver";
+import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 import packageJson from "../../package.json" with { type: "json" };
 
@@ -24,11 +24,34 @@ const VersionRange = TrimmedNonEmptyString.pipe(
     ),
   ),
 );
+/** A styal release version, nightlies included (`0.1.1-nightly.20261015.730`). */
+const StyalVersion = TrimmedNonEmptyString.pipe(
+  Schema.check(Schema.makeFilter((value) => /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(value))),
+);
+
+/**
+ * One provider release the provider canary verified against the published
+ * styal build `styal`. It applies to servers whose code contains that build;
+ * see `styalBuildContains`.
+ */
+const AutoUpdate = Schema.Struct({
+  version: StableVersion,
+  /** npm package that was installed; installs of another package are not updated. */
+  package: TrimmedNonEmptyString,
+  styal: StyalVersion,
+});
+
 const Policy = Schema.Struct({
   driver: TrimmedNonEmptyString,
   t3CodeRange: VersionRange,
   recommendedRange: Schema.optionalKey(VersionRange),
   recommendedVersion: Schema.optionalKey(StableVersion),
+  /**
+   * Provider releases automatic updates may install, recorded by
+   * scripts/provider-canary.ts. Servers install the newest entry that applies
+   * to them and never anything newer.
+   */
+  autoUpdates: Schema.optionalKey(Schema.Array(AutoUpdate)),
   ranges: Schema.Array(
     Schema.Struct({
       range: VersionRange,
@@ -36,6 +59,9 @@ const Policy = Schema.Struct({
     }),
   ),
 });
+
+const isSupportedVersion = (policy: typeof Policy.Type, version: string) =>
+  policy.ranges.find((entry) => satisfiesSemverRange(version, entry.range))?.status === "supported";
 
 export const ProviderCompatibilityPolicy = Policy.pipe(
   Schema.check(
@@ -46,26 +72,38 @@ export const ProviderCompatibilityPolicy = Policy.pipe(
         return (
           (policy.recommendedRange === undefined ||
             satisfiesSemverRange(version, policy.recommendedRange)) &&
-          policy.ranges.find((entry) => satisfiesSemverRange(version, entry.range))?.status ===
-            "supported"
+          isSupportedVersion(policy, version)
         );
       },
       { expected: "a recommended version in a supported range" },
+    ),
+    Schema.makeFilter(
+      (policy) =>
+        (policy.autoUpdates ?? []).every((entry) => isSupportedVersion(policy, entry.version)),
+      { expected: "automatic update versions in a supported range" },
     ),
   ),
 );
 export type ProviderCompatibilityPolicy = typeof ProviderCompatibilityPolicy.Type;
 
-export function resolveProviderCompatibility(
+function findPolicy(
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
   driver: ProviderDriverKind,
-  version: string | null,
-  t3CodeVersion = packageJson.version,
-): ServerProviderCompatibilityAdvisory | undefined {
-  const policy = policies?.find(
+  t3CodeVersion: string,
+): ProviderCompatibilityPolicy | undefined {
+  return policies?.find(
     (entry) => entry.driver === driver && satisfiesSemverRange(t3CodeVersion, entry.t3CodeRange),
   );
-  if (!policy) return undefined;
+}
+
+/**
+ * The plain `x.y.z` form of a provider's reported version, or null for
+ * prereleases and unrecognized release tags.
+ */
+export function stableProviderVersion(
+  driver: ProviderDriverKind,
+  version: string | null | undefined,
+): string | null {
   const unprefixed = version?.replace(/^v/, "");
   // Cursor appends a build hash to its date; Google's ACP runtime uses a release prefix.
   // Strip only these driver-specific forms, keeping semver prereleases unknown.
@@ -75,11 +113,56 @@ export function resolveProviderCompatibility(
       : driver === "antigravity"
         ? unprefixed?.replace(/^agy_acp_server_(\d+\.\d+\.\d+)$/, "$1")
         : unprefixed;
-  const status =
-    stable && /^\d+\.\d+\.\d+$/.test(stable)
-      ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??
-        "unknown")
-      : "unknown";
+  return stable && /^\d+\.\d+\.\d+$/.test(stable) ? stable : null;
+}
+
+/**
+ * Whether a styal build at `version` contains the code of the published build
+ * `tested`. Nightlies are cut from ever newer commits on main, so a later
+ * nightly contains an earlier one. A stable release is rebuilt from some
+ * nightly of its own version, possibly older than `tested`, so it contains a
+ * nightly only of an earlier version (a stable 0.1.2 contains every
+ * 0.1.1-nightly). It contains a stable release at or before it.
+ */
+export function styalBuildContains(version: string, tested: string): boolean {
+  const isNightly = (value: string) => value.includes("-");
+  if (isNightly(version) || !isNightly(tested)) return compareSemverVersions(version, tested) >= 0;
+  return compareSemverVersions(version, tested.slice(0, tested.indexOf("-"))) > 0;
+}
+
+/**
+ * The newest canary-verified version of `packageName` for this styal release,
+ * or null. Only the remote manifest counts: removing an entry on `main`
+ * withdraws it, which a bundled copy could not undo.
+ */
+export function resolveProviderAutoUpdateVersion(
+  policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  driver: ProviderDriverKind,
+  packageName: string | null,
+  t3CodeVersion = packageJson.version,
+): string | null {
+  let best: string | null = null;
+  for (const entry of findPolicy(policies, driver, t3CodeVersion)?.autoUpdates ?? []) {
+    if (entry.package !== packageName) continue;
+    if (!styalBuildContains(t3CodeVersion, entry.styal)) continue;
+    if (best === null || compareSemverVersions(entry.version, best) > 0) best = entry.version;
+  }
+  return best;
+}
+
+export function resolveProviderCompatibility(
+  policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  driver: ProviderDriverKind,
+  version: string | null,
+  t3CodeVersion = packageJson.version,
+): ServerProviderCompatibilityAdvisory | undefined {
+  const policy = findPolicy(policies, driver, t3CodeVersion);
+  if (!policy) return undefined;
+  const stable = stableProviderVersion(driver, version);
+  const status = stable
+    ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??
+      "unknown")
+    : "unknown";
   const message =
     status === "broken"
       ? "This provider version is known to be incompatible with this styal release."
