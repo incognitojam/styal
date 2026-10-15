@@ -61,8 +61,8 @@ restarts the service. Threads, settings, and projects stay in the same data
 directory. If you use a custom data directory, pass the same `--base-dir` you
 used before.
 
-For a foreground server, stop it after active work finishes, then run
-`npx @styal/cli@<version> serve` with your existing startup options.
+For a foreground server, let active work finish, then follow
+[Update a connected server](./updating.md#update-a-connected-server).
 
 ## Troubleshooting
 

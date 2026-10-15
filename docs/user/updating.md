@@ -65,10 +65,21 @@ Replace `<client-version>` with the version shown in the notice. An older servic
 launcher needs this local update before it supports remote updates and rollback.
 See [migrating an existing installation](./background-service.md#migrating-an-existing-styal-installation).
 
-For a foreground server, stop it, then relaunch with
-`npx @styal/cli@<client-version> serve`, preserving options such as `--host` or
-`--tailscale-serve`. If styal runs under a service or container that you manage
-yourself, update it through your existing deployment method. See
+For a foreground server installed with `npm install -g @styal/cli`, the
+instructions show
+`npm install --global --prefix <prefix> @styal/cli@<client-version>` with the
+npm prefix the server runs from. Run it on the host, then stop the server and
+start `styal` again with your usual options. On Windows, or when the server
+cannot confirm its npm installation, the instructions show the relaunch command
+below instead; update a global install with `npm install -g @styal/cli@<client-version>`.
+
+For a foreground server started with `npx`, `pnpm dlx`, or `bunx`, stop it, then
+relaunch with the same runner, for example `npx @styal/cli@<client-version> serve`,
+preserving options such as `--host` or `--tailscale-serve`. This runs the new
+version without updating an installed `styal` command.
+
+If styal runs under a service or container that you manage yourself, update it
+through your existing deployment method. See
 [background services](./background-service.md) for service management.
 
 ## If an update fails

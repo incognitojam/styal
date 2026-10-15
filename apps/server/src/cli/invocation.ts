@@ -1,6 +1,15 @@
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 
-import { HostProcessArguments } from "@t3tools/shared/hostProcess";
+import type { ServerInstallation } from "@t3tools/contracts";
+import {
+  HostProcessArguments,
+  HostProcessExecutablePath,
+  HostProcessIsExecutable,
+  HostProcessPlatform,
+} from "@t3tools/shared/hostProcess";
 
 import { CLI_COMMAND_NAME, CLI_PACKAGE_NAME } from "@t3tools/shared/cliPackage";
 
@@ -37,6 +46,73 @@ function detectCliRunner(entryPath: string): CliRunner | null {
   }
   return null;
 }
+
+const InstallManifest = Schema.Struct({
+  name: Schema.String,
+  version: Schema.String,
+  bin: Schema.optionalKey(Schema.Struct({ [CLI_COMMAND_NAME]: Schema.String })),
+  optionalDependencies: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+});
+const decodeInstallManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(InstallManifest));
+const GLOBAL_PACKAGE_DIR = `lib/node_modules/${CLI_PACKAGE_NAME}`;
+const LAUNCHER_BIN = `./bin/${CLI_COMMAND_NAME}.js`;
+// The published layout: the launcher package, its legacy `dist/bin.mjs`
+// entry, and the per-platform executable npm installs as an optional
+// dependency. The package and command names contain no regex metacharacters.
+const GLOBAL_PACKAGE_ENTRY = new RegExp(
+  `^(.*)/${GLOBAL_PACKAGE_DIR}/(?:dist/bin\\.mjs|bin/${CLI_COMMAND_NAME}\\.js|node_modules/${CLI_PACKAGE_NAME}-[^/]+/${CLI_COMMAND_NAME})$`,
+);
+
+/** Prove the running package and its global bin belong together before suggesting an update. */
+export const resolveServerInstallation = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const args = yield* HostProcessArguments;
+  const executable = yield* HostProcessIsExecutable;
+  const executablePath = yield* HostProcessExecutablePath;
+  const platform = yield* HostProcessPlatform;
+  const entry = yield* fs.realPath(executable ? executablePath : (args[1] ?? ""));
+  const match = GLOBAL_PACKAGE_ENTRY.exec(entry);
+  if (!match) {
+    const runner = detectCliRunner(entry);
+    return runner === null
+      ? null
+      : ({ kind: runner === "pnpm dlx" ? "pnpm-dlx" : runner } satisfies ServerInstallation);
+  }
+  // A global prefix can contain runner-like names; prove its ownership first.
+  // Windows shims and other package managers need their own ownership proof.
+  if (platform === "win32") return null;
+  const prefix = match[1] || "/";
+  if (
+    prefix.includes("/node_modules/") ||
+    /\/(?:Cellar|Caskroom)\//i.test(prefix) ||
+    /\/mise\/installs\/(?!node\/)[^/]+\//.test(prefix)
+  )
+    return null;
+
+  const packageRoot = path.join(prefix, GLOBAL_PACKAGE_DIR);
+  const manifest = yield* fs
+    .readFileString(path.join(packageRoot, "package.json"))
+    .pipe(Effect.flatMap(decodeInstallManifest));
+  if (manifest.name !== CLI_PACKAGE_NAME || !manifest.bin) return null;
+  const bin = yield* fs.realPath(path.join(packageRoot, manifest.bin[CLI_COMMAND_NAME]));
+  const globalBin = yield* fs.realPath(path.join(prefix, "bin", CLI_COMMAND_NAME));
+  if (globalBin !== bin) return null;
+  if (executable) {
+    const nativeManifest = yield* fs
+      .readFileString(path.join(path.dirname(entry), "package.json"))
+      .pipe(Effect.flatMap(decodeInstallManifest));
+    if (
+      manifest.bin[CLI_COMMAND_NAME] !== LAUNCHER_BIN ||
+      manifest.optionalDependencies?.[nativeManifest.name] !== nativeManifest.version ||
+      nativeManifest.version !== manifest.version
+    )
+      return null;
+  } else if (bin !== entry) {
+    return null;
+  }
+  return { kind: "npm-global", prefix } satisfies ServerInstallation;
+}).pipe(Effect.orElseSucceed(() => null));
 
 /**
  * The CLI package spec to suggest. The literal spec the user typed (e.g.
