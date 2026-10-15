@@ -129,60 +129,6 @@ jobs:
       - name: Verify preload bundle output
         run: node apps/desktop/scripts/verify-preload-bundle.mjs
 
-  preview_calibration:
-    name: Browser calibration (${{ matrix.platform }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: Linux
-            runner: blacksmith-8vcpu-ubuntu-2404
-          - platform: macOS
-            runner: blacksmith-6vcpu-macos-26
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-
-      - name: Install Electron display dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0 libnss3 libasound2t64 libgbm1
-
-      - uses: voidzero-dev/setup-vp@v1
-        with:
-          node-version-file: package.json
-          cache: true
-          run-install: true
-
-      - name: Ignore calibration artifacts
-        run: echo '.scratch/' >> .git/info/exclude
-
-      - name: Capture calibration snapshots (Linux)
-        if: runner.os == 'Linux'
-        run: xvfb-run -a vp run --filter @t3tools/desktop test:preview-calibration
-
-      - name: Capture calibration snapshots (macOS)
-        if: runner.os == 'macOS'
-        run: vp run --filter @t3tools/desktop test:preview-calibration
-
-      - name: Upload calibration snapshots and measurements
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: browser-calibration-${{ matrix.platform }}
-          path: |
-            .scratch/preview-calibration/*.png
-            .scratch/preview-calibration/measurements.json
-          if-no-files-found: ignore
-          retention-days: 14
-
   # Everything except `t3` (apps/server) and the web app, which has its own job
   # below. `--parallel` drops the package dependency ordering that `vp run`
   # applies by default: these `test` tasks declare no `dependsOn` and resolve
@@ -535,7 +481,6 @@ jobs:
         lint,
         typecheck,
         build,
-        preview_calibration,
         test,
         test_web,
         test_server,
