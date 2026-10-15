@@ -2751,11 +2751,12 @@ features:
     status: maintained
     prs: []
     invariants:
-      - With automatic provider updates and provider update checks on (both default on), a non-dev server installs a provider update in the background only up to the `autoUpdateVersion` recorded in the model manifest's compatibility policy for its styal release, never past it.
-      - Installers that can pin a version install exactly the verified version; native self-updaters and Homebrew run only while their latest version is the verified version.
-      - Background passes skip while any thread is running or waiting on the user, skip providers that are disabled, missing, or already failing their health check, and try each instance and version at most once per six hours.
+      - With automatic provider updates and provider update checks on (both default on), a non-dev server installs a provider version in the background only when an `autoUpdates` entry in the matching compatibility policy of a manifest fetched from main in the last two days names it, for the installation's own npm package, with an `after` release older than the server. It installs the newest such version and never anything newer. The bundled manifest never authorizes an automatic install.
+      - Only installers that can pin a version take part, and they install exactly the verified version; native self-updaters and Homebrew are never run in the background.
+      - Background passes skip while any thread is running or waiting on the user, skip providers that are disabled, missing, or already failing their health check, and try each instance and version at most once per six hours. Inside the install lock, a fresh health check and activity check run again, and the install is dropped without publishing a state when a thread became active, settings changed, or the provider already reached the version.
       - Manual and background updates share one server-lifetime maintenance runner and its install locks, and background updates publish the same update state clients show for manual updates.
-      - The provider canary workflow records a version only after real turns (tool use, checkpoint, resume, interrupt) pass against that release, and proposes the manifest change as a pull request to main.
+      - The provider canary workflow records a version only after real turns (tool use, checkpoint, resume, interrupt, approval, rewind, native subagent, restart) pass against that release, retrying a failed run once, and proposes the manifest change as a pull request to main. Results already in an open canary pull request are carried over rather than verified again.
+      - The canary keeps one "Provider canary status" issue listing failed, blocked, and unverified releases and failed jobs. It comments only when a new problem appears or every problem clears, and closes when every check passes.
       - Clients show the setting only as on for environments that advertise the `providerAutoUpdates` capability.
     rationale: Upstream keeps provider updates user-initiated (closed issue 2993) and its open background-install pull request has no tested-version gate. styal updates providers for users by default, so every automatic install is limited to a release the canary verified.
     implementation_paths:
@@ -2763,6 +2764,7 @@ features:
       - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
       - apps/server/scripts/verify-provider-live.ts
       - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/ProviderAutoUpdater.ts
       - apps/server/src/provider/providerCompatibility.ts
       - apps/server/src/provider/providerMaintenanceRunner.ts
@@ -2774,6 +2776,7 @@ features:
     upstream_paths:
       - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
       - apps/server/src/environment/ServerEnvironment.ts
+      - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/model-manifest.json
       - apps/server/src/provider/providerCompatibility.ts
       - apps/server/src/provider/providerMaintenanceRunner.ts
@@ -2783,6 +2786,7 @@ features:
       - packages/contracts/src/environment.ts
       - packages/contracts/src/settings.ts
     tests:
+      - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/ProviderAutoUpdater.test.ts
       - apps/server/src/provider/providerCompatibility.test.ts
       - apps/server/src/provider/providerMaintenanceRunner.test.ts

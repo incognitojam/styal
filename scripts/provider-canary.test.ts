@@ -5,10 +5,16 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CANARY_PROVIDERS,
   MANIFEST_PATH,
+  addAutoUpdate,
+  collectProblems,
   planProvider,
+  reconcileStatusIssue,
   recordVersions,
   type CanaryProvider,
 } from "./provider-canary.ts";
+
+const NIGHTLY = "0.1.1-nightly.20261014.700";
+const LATER_NIGHTLY = "0.1.1-nightly.20261015.730";
 
 const MANIFEST_TEXT = `{
   "version": 1,
@@ -16,26 +22,55 @@ const MANIFEST_TEXT = `{
   "compatibility": [
     {
       "driver": "codex",
-      "t3CodeRange": ">=0.0.44",
+      "t3CodeRange": ">=0.1.0",
       "recommendedRange": ">=0.159.0",
       "ranges": [
-        { "range": ">=0.156.0", "status": "supported" },
-        { "range": "<0.156.0", "status": "broken" }
+        {
+          "range": ">=0.156.0",
+          "status": "supported"
+        },
+        {
+          "range": "<0.156.0",
+          "status": "broken"
+        }
       ]
     },
     {
       "driver": "codex",
-      "t3CodeRange": ">=0.0.42 <0.0.44",
-      "autoUpdateVersion": "0.157.0",
-      "ranges": [{ "range": ">=0.156.0", "status": "supported" }]
+      "t3CodeRange": ">=0.0.42 <0.1.0",
+      "autoUpdates": [
+        {
+          "version": "0.157.0",
+          "package": "@openai/codex",
+          "after": "0.0.45"
+        }
+      ],
+      "ranges": [
+        {
+          "range": ">=0.156.0",
+          "status": "supported"
+        }
+      ]
     },
     {
       "driver": "opencode",
       "t3CodeRange": ">=0.0.42",
-      "autoUpdateVersion": "2.0.20",
+      "autoUpdates": [
+        {
+          "version": "2.0.20",
+          "package": "@opencode/cli",
+          "after": "${NIGHTLY}"
+        }
+      ],
       "ranges": [
-        { "range": ">=2.0.18", "status": "supported" },
-        { "range": ">=1.14.19 <2.0.0", "status": "graceful" }
+        {
+          "range": ">=2.0.18",
+          "status": "supported"
+        },
+        {
+          "range": ">=1.14.19 <2.0.0",
+          "status": "graceful"
+        }
       ]
     }
   ],
@@ -49,7 +84,7 @@ const NOW = new Date("2026-10-14T12:00:00.000Z");
 describe("provider canary plan", () => {
   it("verifies a supported release newer than the recorded version", () => {
     expect(
-      planProvider(canary("codex"), manifest, "0.0.43", { "@openai/codex": "0.158.0" }),
+      planProvider(canary("codex"), manifest, "0.0.46", { "@openai/codex": "0.158.0" }),
     ).toEqual({
       kind: "verify",
       entry: {
@@ -65,12 +100,19 @@ describe("provider canary plan", () => {
 
   it("skips a release that is already verified unless forced", () => {
     const latest = { "@openai/codex": "0.157.0" };
-    expect(planProvider(canary("codex"), manifest, "0.0.43", latest).kind).toBe("current");
-    expect(planProvider(canary("codex"), manifest, "0.0.43", latest, true).kind).toBe("verify");
+    expect(planProvider(canary("codex"), manifest, "0.0.46", latest).kind).toBe("current");
+    expect(planProvider(canary("codex"), manifest, "0.0.46", latest, true).kind).toBe("verify");
+  });
+
+  it("verifies again for servers that the recorded entry does not cover", () => {
+    // The entry applies to servers after 0.0.45; one recorded for older code
+    // says nothing about builds before it.
+    const latest = { "@openai/codex": "0.157.0" };
+    expect(planProvider(canary("codex"), manifest, "0.0.44", latest).kind).toBe("verify");
   });
 
   it("verifies when the policy has no recorded version", () => {
-    const plan = planProvider(canary("codex"), manifest, "0.0.45", { "@openai/codex": "0.157.0" });
+    const plan = planProvider(canary("codex"), manifest, NIGHTLY, { "@openai/codex": "0.157.0" });
     expect(plan.kind).toBe("verify");
   });
 
@@ -78,23 +120,27 @@ describe("provider canary plan", () => {
     const plan = planProvider(
       canary("codex"),
       manifest,
-      "0.0.45",
+      NIGHTLY,
       { "@openai/codex": "0.150.0" },
       true,
     );
-    expect(plan).toMatchObject({ kind: "blocked", provider: "codex" });
+    expect(plan).toMatchObject({
+      kind: "blocked",
+      provider: "codex",
+      releases: "@openai/codex@0.150.0",
+    });
     expect(plan.kind === "blocked" && plan.reason).toContain("@openai/codex@0.150.0 is broken");
   });
 
   it("blocks a provider without an applicable policy", () => {
-    const plan = planProvider(canary("claudeAgent"), manifest, "0.0.45", {
+    const plan = planProvider(canary("claudeAgent"), manifest, NIGHTLY, {
       "@anthropic-ai/claude-code": "2.1.300",
     });
     expect(plan.kind).toBe("blocked");
   });
 
   it("picks the OpenCode package whose release is supported", () => {
-    const plan = planProvider(canary("opencode"), manifest, "0.0.45", {
+    const plan = planProvider(canary("opencode"), manifest, NIGHTLY, {
       "opencode-ai": "1.15.0",
       "@opencode/cli": "2.0.21",
     });
@@ -105,7 +151,7 @@ describe("provider canary plan", () => {
   });
 
   it("ignores prerelease tags", () => {
-    const plan = planProvider(canary("codex"), manifest, "0.0.45", {
+    const plan = planProvider(canary("codex"), manifest, NIGHTLY, {
       "@openai/codex": "0.170.0-alpha.1",
     });
     expect(plan.kind).toBe("blocked");
@@ -122,68 +168,116 @@ describe("provider canary plan", () => {
 });
 
 describe("provider canary record", () => {
-  it("inserts the version before ranges and bumps updatedAt without reformatting", () => {
+  it("adds an entry before ranges and bumps updatedAt, leaving other policies untouched", () => {
     const next = recordVersions(
       MANIFEST_TEXT,
-      "0.0.45",
-      [{ provider: "codex", version: "0.158.0" }],
+      NIGHTLY,
+      [{ provider: "codex", packageName: "@openai/codex", version: "0.158.0" }],
       NOW,
     );
     expect(next).toBe(
       MANIFEST_TEXT.replace("2026-10-11T20:00:00.000Z", NOW.toISOString()).replace(
         `"recommendedRange": ">=0.159.0",\n`,
-        `"recommendedRange": ">=0.159.0",\n      "autoUpdateVersion": "0.158.0",\n`,
+        `"recommendedRange": ">=0.159.0",\n      "autoUpdates": [\n        {\n          "version": "0.158.0",\n          "package": "@openai/codex",\n          "after": "${NIGHTLY}"\n        }\n      ],\n`,
       ),
     );
   });
 
-  it("replaces an existing version on the applicable policy only", () => {
-    const next = recordVersions(
-      MANIFEST_TEXT,
-      "0.0.43",
-      [{ provider: "codex", version: "0.160.0" }],
-      NOW,
-    );
-    const parsed = JSON.parse(next);
-    expect(parsed.compatibility[1].autoUpdateVersion).toBe("0.160.0");
-    expect(parsed.compatibility[0].autoUpdateVersion).toBeUndefined();
-    expect(parsed.compatibility[2].autoUpdateVersion).toBe("2.0.20");
-  });
-
-  it("records several providers at once", () => {
+  it("keeps entries for older servers and drops ones a new entry covers", () => {
     const parsed = JSON.parse(
       recordVersions(
         MANIFEST_TEXT,
-        "0.0.45",
-        [
-          { provider: "opencode", version: "2.0.21" },
-          { provider: "codex", version: "0.158.0" },
-        ],
+        LATER_NIGHTLY,
+        [{ provider: "opencode", packageName: "@opencode/cli", version: "2.0.21" }],
         NOW,
       ),
     );
-    expect(parsed.compatibility[0].autoUpdateVersion).toBe("0.158.0");
-    expect(parsed.compatibility[2].autoUpdateVersion).toBe("2.0.21");
+    expect(parsed.compatibility[2].autoUpdates).toEqual([
+      { version: "2.0.20", package: "@opencode/cli", after: NIGHTLY },
+      { version: "2.0.21", package: "@opencode/cli", after: LATER_NIGHTLY },
+    ]);
+    const covering = JSON.parse(
+      recordVersions(
+        MANIFEST_TEXT,
+        NIGHTLY,
+        [{ provider: "opencode", packageName: "@opencode/cli", version: "2.0.21" }],
+        NOW,
+      ),
+    );
+    expect(covering.compatibility[2].autoUpdates).toEqual([
+      { version: "2.0.21", package: "@opencode/cli", after: NIGHTLY },
+    ]);
+  });
+
+  it("returns the text unchanged when the entry adds nothing", () => {
+    expect(
+      recordVersions(
+        MANIFEST_TEXT,
+        LATER_NIGHTLY,
+        [{ provider: "opencode", packageName: "@opencode/cli", version: "2.0.20" }],
+        NOW,
+      ),
+    ).toBe(MANIFEST_TEXT);
+  });
+
+  it("carries entries over from an unmerged canary branch", () => {
+    const pending = JSON.parse(
+      recordVersions(
+        MANIFEST_TEXT,
+        NIGHTLY,
+        [{ provider: "codex", packageName: "@openai/codex", version: "0.158.0" }],
+        NOW,
+      ),
+    );
+    // Today only OpenCode passed; yesterday's Codex result must survive.
+    const parsed = JSON.parse(
+      recordVersions(
+        MANIFEST_TEXT,
+        LATER_NIGHTLY,
+        [{ provider: "opencode", packageName: "@opencode/cli", version: "2.0.21" }],
+        new Date("2026-10-15T12:00:00.000Z"),
+        pending,
+      ),
+    );
+    expect(parsed.compatibility[0].autoUpdates).toEqual([
+      { version: "0.158.0", package: "@openai/codex", after: NIGHTLY },
+    ]);
+    expect(parsed.compatibility[2].autoUpdates).toHaveLength(2);
+  });
+
+  it("keeps at most three entries per package", () => {
+    const policy = structuredClone(manifest.compatibility[2]);
+    for (const [index, version] of ["2.0.21", "2.0.22", "2.0.23"].entries()) {
+      policy.autoUpdates = addAutoUpdate(policy, {
+        version,
+        package: "@opencode/cli",
+        after: `0.1.1-nightly.2026101${5 + index}.${731 + index}`,
+      });
+    }
+    expect(policy.autoUpdates.map((entry: { version: string }) => entry.version)).toEqual([
+      "2.0.21",
+      "2.0.22",
+      "2.0.23",
+    ]);
   });
 
   it("refuses versions outside a supported range", () => {
     expect(() =>
-      recordVersions(MANIFEST_TEXT, "0.0.45", [{ provider: "opencode", version: "1.15.0" }], NOW),
+      recordVersions(
+        MANIFEST_TEXT,
+        NIGHTLY,
+        [{ provider: "opencode", packageName: "opencode-ai", version: "1.15.0" }],
+        NOW,
+      ),
     ).toThrow("graceful");
-  });
-
-  it("refuses versions older than the recorded one", () => {
-    expect(() =>
-      recordVersions(MANIFEST_TEXT, "0.0.45", [{ provider: "opencode", version: "2.0.19" }], NOW),
-    ).toThrow("older than the recorded 2.0.20");
   });
 
   it("refuses an updatedAt that does not move forward", () => {
     expect(() =>
       recordVersions(
         MANIFEST_TEXT,
-        "0.0.45",
-        [{ provider: "codex", version: "0.158.0" }],
+        NIGHTLY,
+        [{ provider: "codex", packageName: "@openai/codex", version: "0.158.0" }],
         new Date("2026-10-01T00:00:00.000Z"),
       ),
     ).toThrow("not newer");
@@ -201,11 +295,104 @@ describe("provider canary record", () => {
     const version = supported.range.replace(/^>=/, "");
     const next = recordVersions(
       text,
-      "0.0.45",
-      [{ provider: "claudeAgent", version }],
+      LATER_NIGHTLY,
+      [{ provider: "claudeAgent", packageName: "@anthropic-ai/claude-code", version }],
       new Date(Date.parse(bundled.updatedAt) + 1000),
     );
     expect(next.endsWith("}\n")).toBe(true);
-    expect(next.split("\n").length).toBe(text.split("\n").length + 1);
+    // Seven new lines for the autoUpdates array; the rest of the file keeps its layout.
+    expect(next.split("\n").length).toBe(text.split("\n").length + 7);
+  });
+});
+
+describe("provider canary report", () => {
+  const RUN = "https://github.com/incognitojam/styal/actions/runs/1";
+  const LATER_RUN = "https://github.com/incognitojam/styal/actions/runs/2";
+  const failed = collectProblems({
+    blocked: [],
+    outcomes: [
+      {
+        provider: "codex",
+        packageName: "@openai/codex",
+        version: "0.163.0",
+        outcome: "failed",
+        detail: "rewind: rollback method not found",
+      },
+    ],
+    failedJobs: [],
+  });
+
+  it("opens the issue on the first problem, without a separate comment", () => {
+    const update = reconcileStatusIssue(null, failed, [], RUN);
+    expect(update).toMatchObject({ state: "open" });
+    expect(update?.comment).toBeUndefined();
+    expect(update?.body).toContain("@openai/codex@0.163.0** failed verification twice");
+  });
+
+  it("comments only for problems the open issue does not list", () => {
+    const opened = reconcileStatusIssue(null, failed, [], RUN)!;
+    const issue = { number: 5, open: true, body: opened.body };
+    expect(reconcileStatusIssue(issue, failed, [], LATER_RUN)?.comment).toBeUndefined();
+
+    const blocked = collectProblems({
+      blocked: [
+        {
+          provider: "opencode",
+          releases: "@opencode/cli@3.0.0",
+          reason: "No latest release is in a supported range.",
+        },
+      ],
+      outcomes: [],
+      failedJobs: [],
+    });
+    const update = reconcileStatusIssue(issue, [...failed, ...blocked], [], LATER_RUN);
+    expect(update?.comment).toContain("**opencode** is not verified");
+    expect(update?.comment).not.toContain("codex");
+  });
+
+  it("closes the issue with a comment once every problem clears, and reopens on a new one", () => {
+    const opened = reconcileStatusIssue(null, failed, [], RUN)!;
+    const closing = reconcileStatusIssue(
+      { number: 5, open: true, body: opened.body },
+      [],
+      [],
+      LATER_RUN,
+    );
+    expect(closing).toMatchObject({ state: "closed" });
+    expect(closing?.comment).toContain("Every check passed");
+    expect(reconcileStatusIssue(null, [], [], LATER_RUN)).toBeNull();
+
+    const reopened = reconcileStatusIssue(
+      { number: 5, open: false, body: closing!.body },
+      failed,
+      [],
+      RUN,
+    );
+    expect(reopened).toMatchObject({ state: "open" });
+    expect(reopened?.comment).toContain("0.163.0");
+  });
+
+  it("lists passes on retry and missing credentials", () => {
+    const problems = collectProblems({
+      blocked: [],
+      outcomes: [
+        {
+          provider: "claudeAgent",
+          packageName: "@anthropic-ai/claude-code",
+          version: "2.1.301",
+          outcome: "skipped",
+          detail: "The ANTHROPIC_API_KEY secret is not set.",
+        },
+      ],
+      failedJobs: ["record"],
+    });
+    expect(problems.map((problem) => problem.key)).toEqual(["job:record", "skipped:claudeAgent"]);
+    const update = reconcileStatusIssue(
+      null,
+      problems,
+      ["@openai/codex@0.163.0: interrupt timed out"],
+      RUN,
+    );
+    expect(update?.body).toContain("Passed on retry:");
   });
 });

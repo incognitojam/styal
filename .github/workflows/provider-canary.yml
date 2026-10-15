@@ -1,8 +1,9 @@
 name: Provider canary
 
 # Verifies new provider CLI releases against styal with real turns and records
-# each passing version as `autoUpdateVersion` in the model manifest. Servers
-# fetch that manifest from main and automatically update only up to it.
+# each passing version in the model manifest's `autoUpdates`. Servers fetch
+# that manifest from main and automatically update only to a recorded version.
+# Problems are kept in one "Provider canary status" issue.
 on:
   schedule:
     - cron: "17 6 * * *"
@@ -25,15 +26,22 @@ concurrency:
   group: provider-canary
   cancel-in-progress: false
 
+env:
+  CANARY_BRANCH: automation/provider-canary
+
 jobs:
   plan:
     name: Plan
     if: github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       has_work: ${{ steps.plan.outputs.has_work }}
+      after: ${{ steps.plan.outputs.after }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -52,23 +60,44 @@ jobs:
             args:
               - --filter=@t3tools/scripts...
 
+      # Versions an open canary pull request already records are not verified
+      # again, and are carried into today's pull request.
+      - name: Read the open canary pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/plan"
+          open="$(gh pr list --head "$CANARY_BRANCH" --base main --state open --json number --jq 'length')"
+          if [[ "$open" != "0" ]] && git fetch --depth=1 origin "$CANARY_BRANCH"; then
+            git show FETCH_HEAD:apps/server/src/provider/model-manifest.json \
+              > "$RUNNER_TEMP/plan/pending-manifest.json"
+          fi
+
       - id: plan
         name: Find provider releases to verify
         env:
           PROVIDER: ${{ inputs.provider }}
           FORCE: ${{ inputs.force }}
         run: |
-          args=()
+          args=(--json "$RUNNER_TEMP/plan/plan.json" --pending "$RUNNER_TEMP/plan/pending-manifest.json")
           if [[ -n "$PROVIDER" ]]; then args+=(--provider "$PROVIDER"); fi
           if [[ "$FORCE" == "true" ]]; then args+=(--force); fi
           node scripts/provider-canary.ts plan "${args[@]}"
+
+      - name: Upload plan
+        uses: actions/upload-artifact@v7
+        with:
+          name: canary-plan
+          path: ${{ runner.temp }}/plan/
+          retention-days: 7
 
   verify:
     name: Verify ${{ matrix.provider }} ${{ matrix.version }}
     needs: plan
     if: needs.plan.outputs.has_work == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -78,10 +107,19 @@ jobs:
       - id: secret
         name: Check provider credentials
         env:
+          PROVIDER: ${{ matrix.provider }}
+          PACKAGE: ${{ matrix.packageName }}
+          VERSION: ${{ matrix.version }}
           SECRET_NAME: ${{ matrix.secret }}
         run: |
+          outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER.json"
+          mkdir -p "$(dirname "$outcome_file")"
           if [[ -z "$API_KEY" ]]; then
-            echo "::notice title=${{ matrix.provider }} not verified::The $SECRET_NAME secret is not set."
+            echo "::notice title=$PROVIDER not verified::The $SECRET_NAME secret is not set."
+            jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" \
+              --arg detail "The $SECRET_NAME secret is not set." \
+              '{provider: $provider, packageName: $package, version: $version, outcome: "skipped", detail: $detail}' \
+              > "$outcome_file"
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
@@ -118,11 +156,15 @@ jobs:
 
       # The styal server passes OPENAI_API_KEY and ANTHROPIC_API_KEY through to
       # provider processes. Codex keeps its login in CODEX_HOME instead.
+      # A failed run is retried once: a model can skip a requested tool, and a
+      # rate limit can stop a turn. A pass on the retry is reported in the
+      # status issue but still recorded.
       - id: verify
         name: Run real provider turns
         if: steps.secret.outputs.present == 'true'
         env:
           PROVIDER: ${{ matrix.provider }}
+          PACKAGE: ${{ matrix.packageName }}
           MODEL: ${{ matrix.model }}
           VERSION: ${{ matrix.version }}
           SECRET_NAME: ${{ matrix.secret }}
@@ -132,39 +174,76 @@ jobs:
           if [[ "$PROVIDER" == "codex" ]]; then
             printenv OPENAI_API_KEY | codex login --with-api-key
           fi
+          run_verifier() {
+            local log="$RUNNER_TEMP/verify-$1.log"
+            node apps/server/scripts/verify-provider-live.ts \
+              --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" \
+              2>&1 | tee "$log"
+            local status=${PIPESTATUS[0]}
+            evidence="$(sed -n 's/^Evidence: //p' "$log" | head -n 1)"
+            if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
+              jq -r --arg attempt "$1" '"### \(.provider) \(.version) (\(.model)), attempt \($attempt)\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
+                "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
+              detail="$(jq -r '[.scenarios[] | select(.status == "failed") | "\(.name): \(.detail)"] | join("; ")' "$evidence/result.json" | cut -c1-500)"
+            else
+              detail="the verifier did not finish; see the evidence artifact"
+            fi
+            [[ -n "$detail" ]] || detail="the verifier exited with status $status"
+            return "$status"
+          }
           set +e
-          node apps/server/scripts/verify-provider-live.ts \
-            --provider "$PROVIDER" --model "$MODEL" --expect-version "$VERSION" \
-            2>&1 | tee "$RUNNER_TEMP/verify.log"
-          status=${PIPESTATUS[0]}
+          run_verifier 1
+          first=$?
+          first_detail="$detail"
+          outcome=passed
+          if [[ "$first" != 0 ]]; then
+            run_verifier 2
+            if [[ $? == 0 ]]; then
+              outcome=flaky
+              detail="first attempt failed: $first_detail"
+            else
+              outcome=failed
+            fi
+          fi
           set -e
-          evidence="$(sed -n 's/^Evidence: //p' "$RUNNER_TEMP/verify.log" | head -n 1)"
+          [[ "$outcome" == passed ]] && detail=""
           echo "evidence=$evidence" >> "$GITHUB_OUTPUT"
-          if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
-            jq -r '"### \(.provider) \(.version) (\(.model))\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
-              "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+          outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER.json"
+          jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" \
+            --arg outcome "$outcome" --arg detail "$detail" \
+            '{provider: $provider, packageName: $package, version: $version, outcome: $outcome, detail: $detail}' \
+            > "$outcome_file"
+          if [[ "$outcome" == failed ]]; then
+            echo "::error title=$PROVIDER $VERSION failed verification::$detail"
+            exit 1
           fi
-          if [[ "$status" != 0 ]]; then
-            echo "::error title=$PROVIDER $VERSION failed verification::See the job summary and the evidence artifact."
-            exit "$status"
-          fi
-          mkdir -p "$RUNNER_TEMP/canary-result"
-          jq -n --arg provider "$PROVIDER" --arg version "$VERSION" \
-            '{provider: $provider, version: $version}' \
-            > "$RUNNER_TEMP/canary-result/$PROVIDER.json"
 
-      - name: Upload result
-        if: steps.verify.outcome == 'success'
+      - name: Record an unfinished verification
+        if: always() && steps.secret.outputs.present == 'true' && steps.verify.outputs.outcome == ''
+        env:
+          PROVIDER: ${{ matrix.provider }}
+          PACKAGE: ${{ matrix.packageName }}
+          VERSION: ${{ matrix.version }}
+        run: |
+          outcome_file="$RUNNER_TEMP/canary-outcome/$PROVIDER.json"
+          mkdir -p "$(dirname "$outcome_file")"
+          jq -n --arg provider "$PROVIDER" --arg package "$PACKAGE" --arg version "$VERSION" \
+            '{provider: $provider, packageName: $package, version: $version, outcome: "failed", detail: "setup or install failed before the verifier ran; see the job log"}' \
+            > "$outcome_file"
+
+      - name: Upload outcome
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: canary-result-${{ matrix.provider }}
-          path: ${{ runner.temp }}/canary-result/
+          name: canary-outcome-${{ matrix.provider }}
+          path: ${{ runner.temp }}/canary-outcome/
           retention-days: 7
 
       # Evidence holds the server log, thread projections and events, not the
       # provider's own home directory or credentials.
       - name: Upload evidence
-        if: failure() && steps.verify.outputs.evidence != ''
+        if: always() && steps.verify.outputs.evidence != '' && steps.verify.outputs.outcome != 'passed'
         uses: actions/upload-artifact@v7
         with:
           name: canary-evidence-${{ matrix.provider }}-${{ matrix.version }}
@@ -182,25 +261,32 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Download results
+      - name: Download outcomes
         uses: actions/download-artifact@v8
         with:
-          pattern: canary-result-*
+          pattern: canary-outcome-*
           merge-multiple: true
-          path: ${{ runner.temp }}/canary-results
+          path: ${{ runner.temp }}/canary-outcomes
+
+      - name: Download plan
+        uses: actions/download-artifact@v8
+        with:
+          name: canary-plan
+          path: ${{ runner.temp }}/plan
 
       - id: results
-        name: Collect results
+        name: Collect passing results
         run: |
           shopt -s nullglob
-          files=("$RUNNER_TEMP"/canary-results/*.json)
-          if (( ${#files[@]} == 0 )); then
+          files=("$RUNNER_TEMP"/canary-outcomes/*.json)
+          jq -s '[.[] | select(.outcome == "passed" or .outcome == "flaky")]' "${files[@]}" /dev/null \
+            > "$RUNNER_TEMP/canary-results.json"
+          if [[ "$(jq length "$RUNNER_TEMP/canary-results.json")" == 0 ]]; then
             echo "No provider passed verification."
             echo "any=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "any=true" >> "$GITHUB_OUTPUT"
           fi
-          jq -s '.' "${files[@]}" > "$RUNNER_TEMP/canary-results.json"
-          echo "any=true" >> "$GITHUB_OUTPUT"
 
       # Pull requests opened with GITHUB_TOKEN do not trigger Fork CI, so an
       # app token opens this one.
@@ -238,44 +324,106 @@ jobs:
       - id: record
         name: Record versions in the model manifest
         if: steps.results.outputs.any == 'true'
+        env:
+          AFTER: ${{ needs.plan.outputs.after }}
         run: |
-          args=()
-          while IFS=$'\t' read -r provider version; do
-            args+=(--provider "$provider" --version "$version")
-          done < <(jq -r 'sort_by(.provider)[] | [.provider, .version] | @tsv' "$RUNNER_TEMP/canary-results.json")
+          args=(--after "$AFTER" --pending "$RUNNER_TEMP/plan/pending-manifest.json")
+          while IFS=$'\t' read -r provider package version; do
+            args+=(--provider "$provider" --package "$package" --version "$version")
+          done < <(jq -r 'sort_by(.provider)[] | [.provider, .packageName, .version] | @tsv' "$RUNNER_TEMP/canary-results.json")
           node scripts/provider-canary.ts record "${args[@]}"
+          if git diff --quiet -- apps/server/src/provider/model-manifest.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
           # Importing the manifest module decodes the bundled file with the server's schema.
           node --input-type=module -e "await import('./apps/server/src/provider/ModelManifest.ts')"
           vp test run apps/server/src/provider/ModelManifest.test.ts
-          summary="$(jq -r 'sort_by(.provider) | map("\(.provider) \(.version)") | join(", ")' "$RUNNER_TEMP/canary-results.json")"
+          summary="$(jq -r 'sort_by(.provider) | map("\(.packageName)@\(.version)") | join(", ")' "$RUNNER_TEMP/canary-results.json")"
           echo "summary=$summary" >> "$GITHUB_OUTPUT"
 
       - name: Open or update the pull request
-        if: steps.results.outputs.any == 'true'
+        if: steps.record.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
           GH_REPO: incognitojam/styal
-          BRANCH: automation/provider-canary
           SUMMARY: ${{ steps.record.outputs.summary }}
+          AFTER: ${{ needs.plan.outputs.after }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           title="chore(providers): verify $SUMMARY for automatic updates"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -C "$BRANCH"
+          git switch -C "$CANARY_BRANCH"
           git add apps/server/src/provider/model-manifest.json
           git commit -m "$title"
-          # The branch is regenerated from main on every run. Releases recorded
-          # by an unmerged earlier run are newer than main, so they are planned,
-          # verified and recorded again.
-          git push --force origin "$BRANCH"
+          # Rebuilt from main on every run; entries the open pull request held
+          # were carried over by the record step.
+          git push --force origin "$CANARY_BRANCH"
           body="$(printf '%s\n\n%s\n\n%s\n' \
-            "Real provider turns (tool use, checkpoint, resume, interrupt) passed for $SUMMARY on styal $(jq -r .version apps/server/package.json)." \
-            "Merging this sets \`autoUpdateVersion\` in the model manifest, so servers with automatic provider updates install up to these versions." \
+            "Real provider turns passed for $SUMMARY on styal main ($(git rev-parse --short "$GITHUB_SHA")): a tool turn, checkpoint, resume, interrupt, approval, rewind, native subagent, and follow-ups after a server restart." \
+            "Merging this adds them to \`autoUpdates\` in the model manifest. Servers newer than styal $AFTER with automatic provider updates on then install them." \
             "Canary run: $RUN_URL")"
-          number="$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          number="$(gh pr list --head "$CANARY_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
           if [[ -n "$number" ]]; then
             gh pr edit "$number" --title "$title" --body "$body"
           else
-            gh pr create --head "$BRANCH" --base main --title "$title" --body "$body"
+            gh pr create --head "$CANARY_BRANCH" --base main --title "$title" --body "$body"
           fi
+
+  # Keeps the "Provider canary status" issue in step with this run. It comments
+  # only when a new problem appears or every problem clears.
+  report:
+    name: Report
+    needs: [plan, verify, record]
+    if: ${{ !cancelled() && github.repository == 'incognitojam/styal' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
+      - name: Download plan
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: canary-plan
+          path: ${{ runner.temp }}/plan
+
+      - name: Download outcomes
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: canary-outcome-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/canary-outcomes
+
+      - name: Update the status issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN_RESULT: ${{ needs.plan.result }}
+          RECORD_RESULT: ${{ needs.record.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          args=(--run-url "$RUN_URL" --plan "$RUNNER_TEMP/plan/plan.json" --outcomes "$RUNNER_TEMP/canary-outcomes")
+          if [[ "$PLAN_RESULT" == failure ]]; then args+=(--failed-job plan); fi
+          if [[ "$RECORD_RESULT" == failure ]]; then args+=(--failed-job record); fi
+          node scripts/provider-canary.ts report "${args[@]}"
