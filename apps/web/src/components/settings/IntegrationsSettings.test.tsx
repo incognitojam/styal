@@ -48,6 +48,7 @@ vi.mock("./ProjectDefaultsSettings", () => ({ ProjectDefaultsSettings: () => nul
 vi.mock("./EnvironmentDeviceHostsSettings", () => ({
   EnvironmentDeviceHostsSettings: () => null,
 }));
+vi.mock("./DeviceIdleShutdownSetting", () => ({ DeviceIdleShutdownSetting: () => null }));
 vi.mock("./SettingsScopeContext", () => ({
   useSettingsScope: () => ({
     scope: { kind: "all", environmentIds: [] },

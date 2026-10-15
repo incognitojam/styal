@@ -34,6 +34,7 @@ import {
   failEnvironmentInternal,
   failEnvironmentScopeRequired,
 } from "../auth/http.ts";
+import { whileStreaming } from "./DeviceIdle.ts";
 import * as DeviceService from "./DeviceService.ts";
 
 const ALLOWED_PATHS: ReadonlyArray<RegExp> = [
@@ -250,7 +251,7 @@ const handler = Effect.gen(function* () {
       request,
       `${ready.hub.origin.replace(/^http/, "ws")}${upstreamPath}`,
       ready.hub.headers,
-    );
+    ).pipe(whileStreaming(ready.hostId, hubPath, upstreamSearch));
   }
   return yield* proxyDeviceHttp(
     request,

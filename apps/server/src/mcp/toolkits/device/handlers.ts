@@ -62,6 +62,7 @@ export function agentDeviceQuickStart(
     "Prefer agent-device for driving this device. simctl, adb, and xcrun remain available for anything it does not cover.",
     "For remote hosts, arrange builds, app installation, and any Metro reverse forwarding yourself. T3 provides discovery, streaming, and control only.",
     "Keep the returned --config and --session flags on every command. Other hosts can be used concurrently; opening one does not switch these commands.",
+    "Other agents may be waiting for devices. When you finish testing, hand it back with device_close; it stays booted for the next agent. A hold left idle for 5 minutes after your turn ends, with nobody watching, is released, so call device_open again before using the device in a later turn.",
     platformNotes,
   ].join("\n");
 }

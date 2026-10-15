@@ -84,6 +84,10 @@ To keep agents away from simulators, turn off **Agent device access** in
 **Settings → Integrations → Devices**. This hides the device tools from agents
 started from then on; your own Device panel is unaffected.
 
+## Idle devices
+
+Agents hand a device back when they finish testing, so other threads can use it; it stays booted. A device an agent leaves idle for 5 minutes after its turn ends, with nobody watching, is handed back automatically. Simulators and emulators styal started shut down once no agent holds them and nobody has watched them for 10 minutes, even if one is still open in a Device panel tab; devices you started yourself keep running. Change the period or choose **Never** under **Shut down idle devices** in **Settings → Integrations → Devices**, or **Settings → Devices** in the mobile app.
+
 ## Remote connections
 
 The device stream goes through the environment server, so it works over the

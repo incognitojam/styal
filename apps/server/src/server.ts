@@ -73,6 +73,7 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";
+import * as DeviceIdle from "./device/DeviceIdle.ts";
 import * as DeviceSharing from "./device/DeviceSharing.ts";
 import {
   deviceSharingRouteLayer,
@@ -435,6 +436,7 @@ const PreviewLayerLive = Layer.empty.pipe(
 );
 
 const DeviceLayerLive = DeviceService.layer.pipe(
+  DeviceIdle.wrap,
   Layer.provide(ServerSecretStore.layer),
   Layer.provide(ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provide(ServerSettingsLayerLive),

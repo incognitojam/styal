@@ -1,4 +1,5 @@
 import { EnvironmentDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
+import { DeviceIdleShutdownMinutes, DeviceIdleShutdownSetting } from "./deviceIdleShutdown.ts";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
@@ -1347,6 +1348,7 @@ export const ServerSettings = Schema.Struct({
   enableDeviceSupport: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Whether the server-local Device panel setup flow has been completed. */
   deviceOnboardingCompleted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  deviceIdleShutdownMinutes: DeviceIdleShutdownSetting,
   deviceHosts: SshDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   environmentDeviceHosts: EnvironmentDeviceHostConfigs.pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1715,6 +1717,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),
+  deviceIdleShutdownMinutes: Schema.optionalKey(Schema.NullOr(DeviceIdleShutdownMinutes)),
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),

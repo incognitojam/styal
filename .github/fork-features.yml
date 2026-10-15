@@ -1076,6 +1076,46 @@ features:
         - https://github.com/pingdotgg/t3code/pull/10856
       retire_when: Upstream supports persistent device-only access between existing environment servers through every client and isolates peer thread and driver sessions.
 
+  - id: device-idle-shutdown
+    title: Hand back idle devices and shut down unused simulators
+    status: maintained
+    prs: [832]
+    invariants:
+      - device_close releases the agent-device session device_open handed the thread, recorded when it was handed out (so an Android AVD that boots under a new id still releases), and leaves the device booted. A release the daemon does not confirm still closes and is retried by the sweep; a session agent-device no longer has, or a stopped local daemon, counts as released.
+      - An agent's hold is released once its thread has no active run or background work, nobody streams the device, and 5 minutes have passed since its last use. Sessions the user opened from the Device panel carry no claim and are never released; a connected environment releases its own sessions.
+      - Lifecycle work on one device is serialized, so a reopen waits for a release in progress and the sweep re-checks a device under its lock before acting.
+      - Powering a device off, by close, shutdown, or the sweep, first releases every agent's claim on it, including connected environments' claims named from the peer environment id, and forgets the device's boot record.
+      - A thread whose hold was released keeps the device from shutting down while it works, since it can still drive the device by its selector.
+      - Only devices this environment booted are shut down, only once no agent holds and nobody streams them for the configured idle period, and that record survives server restarts. A device shut down or replaced outside styal is forgotten when its host is next listed.
+      - The sweep starts the local hub when needed, so devices left running across a restart still stop, but acts on SSH hosts only while they are connected and leaves devices from a connected environment to that environment.
+      - "`deviceIdleShutdownMinutes` defaults to 10 and `null` turns shutdown off; web and mobile settings edit it per environment. Hand-back has no setting."
+    rationale: Agents sharing a machine's devices rarely release them, and the daemon owning their claims never exits while the server runs, so claims never go stale and unused simulators hold memory. The feature wraps `DeviceService` from its own layer and reaches upstream files only through small hooks.
+    implementation_paths:
+      - .agents/skills/test-styal-mobile/SKILL.md
+      - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
+      - apps/server/src/device/DeviceIdle.ts
+      - apps/server/src/device/DeviceSharing.ts
+      - apps/server/src/device/DeviceSharingHttp.ts
+      - apps/web/src/components/settings/DeviceIdleShutdownSetting.tsx
+      - packages/contracts/src/deviceIdleShutdown.ts
+    upstream_paths:
+      - apps/server/src/device/DeviceHubProxy.ts
+      - apps/server/src/device/DeviceService.ts
+      - apps/server/src/mcp/toolkits/device/handlers.ts
+      - apps/server/src/mcp/toolkits/device/tools.ts
+      - apps/server/src/server.ts
+      - apps/web/src/components/settings/IntegrationsSettings.tsx
+      - packages/contracts/src/index.ts
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/server/src/device/DeviceIdle.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/issues/17470
+        - https://github.com/pingdotgg/t3code/pull/18726
+      retire_when: Upstream releases device claims on close and after idle turns, and shuts down devices it booted once nobody holds or watches them, without touching devices started outside it.
+
   - id: device-panel-tabs
     title: Keep a panel tab for every live device
     status: maintained
