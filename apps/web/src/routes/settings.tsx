@@ -119,11 +119,19 @@ function SettingsContentLayout() {
   useEscapeToGoBack(navigateToMainApp);
   const { search } = useSettingsScope();
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const hasScope = !SETTINGS_DEVICE_ONLY_PATHS.has(location.pathname);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <WorkspacePageHeader electron={isElectron}>
+        <WorkspacePageHeader
+          electron={isElectron}
+          className={
+            hasScope
+              ? "h-auto flex-col items-stretch justify-center gap-1 border-b border-border/60 py-2"
+              : undefined
+          }
+        >
           <div className="flex w-full items-center gap-3">
             <SettingsBreadcrumb pathname={location.pathname} />
             {location.pathname === "/settings/general" ? (
@@ -134,8 +142,8 @@ function SettingsContentLayout() {
               </div>
             ) : null}
           </div>
+          <SettingsScopeSentence />
         </WorkspacePageHeader>
-        <SettingsScopeSentence />
 
         <div
           key={`${JSON.stringify(search)}:${restoreSignal}`}

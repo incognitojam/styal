@@ -49,8 +49,8 @@ interface SettingsScopeMenuProps {
 }
 
 /**
- * "Applying settings for <project> across <environment>" below the settings
- * header, outside the scrolling page. The two pickers are the targets a change
+ * "Applying settings for <project> across <environment>" in the settings
+ * header, below the breadcrumb. The two pickers are the targets a change
  * is written to. A project is the same project on every environment, so the
  * environment alone decides where a project override is written.
  */
@@ -67,7 +67,7 @@ export function SettingsScopeSentence() {
     onChange: scope.selectScope,
   };
   return (
-    <p className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/60 py-2 pl-(--workspace-gutter-start) pr-(--workspace-gutter-end) text-sm text-muted-foreground">
+    <p className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
       {/* Each connective stays with its picker so a wrap never strands "on". */}
       {scope.singleEnvironment ? null : (
         <span className="flex min-w-0 items-center gap-1.5">

@@ -17,7 +17,7 @@ function settingsBreadcrumbLabel(pathname: string): string | null {
 }
 
 /**
- * `Settings / Section`. The scope a change applies to lives below the header,
+ * `Settings / Section`. The scope a change applies to lives below the breadcrumb,
  * see `SettingsScopeSentence`.
  */
 export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
