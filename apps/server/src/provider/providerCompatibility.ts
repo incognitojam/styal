@@ -30,15 +30,15 @@ const StyalVersion = TrimmedNonEmptyString.pipe(
 );
 
 /**
- * One provider release the provider canary verified. It applies to servers
- * newer than `after`, the newest published styal release when the canary
- * ran: those builds contain the code it tested.
+ * One provider release the provider canary verified against the published
+ * styal build `styal`. It applies to servers whose code contains that build;
+ * see `styalBuildContains`.
  */
 const AutoUpdate = Schema.Struct({
   version: StableVersion,
   /** npm package that was installed; installs of another package are not updated. */
   package: TrimmedNonEmptyString,
-  after: StyalVersion,
+  styal: StyalVersion,
 });
 
 const Policy = Schema.Struct({
@@ -117,6 +117,20 @@ export function stableProviderVersion(
 }
 
 /**
+ * Whether a styal build at `version` contains the code of the published build
+ * `tested`. Nightlies are cut from ever newer commits on main, so a later
+ * nightly contains an earlier one. A stable release is rebuilt from some
+ * nightly of its own version, possibly older than `tested`, so it contains a
+ * nightly only of an earlier version (a stable 0.1.2 contains every
+ * 0.1.1-nightly). It contains a stable release at or before it.
+ */
+export function styalBuildContains(version: string, tested: string): boolean {
+  const isNightly = (value: string) => value.includes("-");
+  if (isNightly(version) || !isNightly(tested)) return compareSemverVersions(version, tested) >= 0;
+  return compareSemverVersions(version, tested.slice(0, tested.indexOf("-"))) > 0;
+}
+
+/**
  * The newest canary-verified version of `packageName` for this styal release,
  * or null. Only the remote manifest counts: removing an entry on `main`
  * withdraws it, which a bundled copy could not undo.
@@ -130,7 +144,7 @@ export function resolveProviderAutoUpdateVersion(
   let best: string | null = null;
   for (const entry of findPolicy(policies, driver, t3CodeVersion)?.autoUpdates ?? []) {
     if (entry.package !== packageName) continue;
-    if (compareSemverVersions(t3CodeVersion, entry.after) <= 0) continue;
+    if (!styalBuildContains(t3CodeVersion, entry.styal)) continue;
     if (best === null || compareSemverVersions(entry.version, best) > 0) best = entry.version;
   }
   return best;

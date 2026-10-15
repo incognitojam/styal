@@ -111,9 +111,9 @@ Claude Code, and OpenCode release before styal installs it automatically. A
 release that has not passed is never installed automatically, but you can
 still install the newest version yourself from **Settings → Providers**.
 
-A tested release reaches styal builds published after the test ran, so an
-environment on an older styal release receives provider updates again once
-styal itself is updated. Automatic updates wait until no threads are running or
+Each provider release is tested against the current stable and nightly styal
+builds, so an environment on an older styal build receives provider updates
+again once styal itself is updated. Automatic updates wait until no threads are running or
 waiting for you, and only cover providers installed with npm, Bun, pnpm, Yarn,
 or Volta. Providers installed with Homebrew or a native installer keep updating
 the way they always have. Turn automatic updates off with **Update providers

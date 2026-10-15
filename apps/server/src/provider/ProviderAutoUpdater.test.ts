@@ -47,7 +47,7 @@ const withAdvisory = (
 ): ServerProvider => ({ ...codex, versionAdvisory: { ...codex.versionAdvisory!, ...advisory } });
 
 const manifestWith = (
-  autoUpdates: ReadonlyArray<{ version: string; package: string; after: string }>,
+  autoUpdates: ReadonlyArray<{ version: string; package: string; styal: string }>,
 ): ModelManifest.ModelManifestData => ({
   version: 1,
   currentModels: {},
@@ -61,7 +61,7 @@ const manifestWith = (
   ],
 });
 
-const verified = manifestWith([{ version: "2.0.0", package: "@openai/codex", after: "0.0.1" }]);
+const verified = manifestWith([{ version: "2.0.0", package: "@openai/codex", styal: "0.0.1" }]);
 
 describe("decideProviderAutoUpdate", () => {
   it("installs the verified version when the installer can pin it", () => {
@@ -227,12 +227,12 @@ describe("ProviderAutoUpdater.runPass", () => {
     return Effect.gen(function* () {
       yield* runPassWith({
         manifest: manifestWith([
-          { version: "2.0.0", package: "@openai/codex-next", after: "0.0.1" },
+          { version: "2.0.0", package: "@openai/codex-next", styal: "0.0.1" },
         ]),
         installs,
       });
       yield* runPassWith({
-        manifest: manifestWith([{ version: "2.0.0", package: "@openai/codex", after: "99.0.0" }]),
+        manifest: manifestWith([{ version: "2.0.0", package: "@openai/codex", styal: "99.0.0" }]),
         installs,
       });
       assert.deepStrictEqual(installs, []);

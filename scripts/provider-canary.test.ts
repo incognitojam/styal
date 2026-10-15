@@ -6,11 +6,14 @@ import {
   CANARY_PROVIDERS,
   MANIFEST_PATH,
   addAutoUpdate,
-  collectProblems,
+  collectRun,
   planProvider,
   reconcileStatusIssue,
   recordVersions,
+  styalBuildContains,
+  type CanaryOutcome,
   type CanaryProvider,
+  type PlanOutput,
 } from "./provider-canary.ts";
 
 const NIGHTLY = "0.1.1-nightly.20261014.700";
@@ -25,14 +28,8 @@ const MANIFEST_TEXT = `{
       "t3CodeRange": ">=0.1.0",
       "recommendedRange": ">=0.159.0",
       "ranges": [
-        {
-          "range": ">=0.156.0",
-          "status": "supported"
-        },
-        {
-          "range": "<0.156.0",
-          "status": "broken"
-        }
+        { "range": ">=0.156.0", "status": "supported" },
+        { "range": "<0.156.0", "status": "broken" }
       ]
     },
     {
@@ -42,15 +39,10 @@ const MANIFEST_TEXT = `{
         {
           "version": "0.157.0",
           "package": "@openai/codex",
-          "after": "0.0.45"
+          "styal": "0.0.45"
         }
       ],
-      "ranges": [
-        {
-          "range": ">=0.156.0",
-          "status": "supported"
-        }
-      ]
+      "ranges": [{ "range": ">=0.156.0", "status": "supported" }]
     },
     {
       "driver": "opencode",
@@ -59,18 +51,12 @@ const MANIFEST_TEXT = `{
         {
           "version": "2.0.20",
           "package": "@opencode/cli",
-          "after": "${NIGHTLY}"
+          "styal": "${NIGHTLY}"
         }
       ],
       "ranges": [
-        {
-          "range": ">=2.0.18",
-          "status": "supported"
-        },
-        {
-          "range": ">=1.14.19 <2.0.0",
-          "status": "graceful"
-        }
+        { "range": ">=2.0.18", "status": "supported" },
+        { "range": ">=1.14.19 <2.0.0", "status": "graceful" }
       ]
     }
   ],
@@ -80,13 +66,20 @@ const MANIFEST_TEXT = `{
 const manifest = JSON.parse(MANIFEST_TEXT);
 const canary = (provider: string) => CANARY_PROVIDERS.find((entry) => entry.provider === provider)!;
 const NOW = new Date("2026-10-14T12:00:00.000Z");
+const codexEntry = (version: string, styal: string) => ({
+  provider: "codex",
+  packageName: "@openai/codex",
+  version,
+  styal,
+});
 
 describe("provider canary plan", () => {
-  it("verifies a supported release newer than the recorded version", () => {
+  it("verifies a supported release the build may not install yet", () => {
     expect(
-      planProvider(canary("codex"), manifest, "0.0.46", { "@openai/codex": "0.158.0" }),
+      planProvider(canary("codex"), manifest, NIGHTLY, { "@openai/codex": "0.158.0" }),
     ).toEqual({
       kind: "verify",
+      provider: "codex",
       entry: {
         provider: "codex",
         packageName: "@openai/codex",
@@ -94,26 +87,24 @@ describe("provider canary plan", () => {
         version: "0.158.0",
         model: canary("codex").model,
         secret: "OPENAI_API_KEY",
+        styal: NIGHTLY,
       },
     });
   });
 
-  it("skips a release that is already verified unless forced", () => {
-    const latest = { "@openai/codex": "0.157.0" };
-    expect(planProvider(canary("codex"), manifest, "0.0.46", latest).kind).toBe("current");
-    expect(planProvider(canary("codex"), manifest, "0.0.46", latest, true).kind).toBe("verify");
+  it("skips a release already verified for builds the tested one contains, unless forced", () => {
+    const latest = { "@opencode/cli": "2.0.20" };
+    expect(planProvider(canary("opencode"), manifest, LATER_NIGHTLY, latest).kind).toBe("current");
+    expect(planProvider(canary("opencode"), manifest, LATER_NIGHTLY, latest, true).kind).toBe(
+      "verify",
+    );
   });
 
-  it("verifies again for servers that the recorded entry does not cover", () => {
-    // The entry applies to servers after 0.0.45; one recorded for older code
-    // says nothing about builds before it.
-    const latest = { "@openai/codex": "0.157.0" };
-    expect(planProvider(canary("codex"), manifest, "0.0.44", latest).kind).toBe("verify");
-  });
-
-  it("verifies when the policy has no recorded version", () => {
-    const plan = planProvider(canary("codex"), manifest, NIGHTLY, { "@openai/codex": "0.157.0" });
-    expect(plan.kind).toBe("verify");
+  it("verifies again on a build that does not contain the verified one", () => {
+    const latest = { "@opencode/cli": "2.0.20" };
+    // Stable 0.1.1 may be rebuilt from a nightly older than the verified one.
+    expect(planProvider(canary("opencode"), manifest, "0.1.1", latest).kind).toBe("verify");
+    expect(planProvider(canary("opencode"), manifest, "0.1.2", latest).kind).toBe("current");
   });
 
   it("blocks a release outside the supported ranges, even when forced", () => {
@@ -124,11 +115,7 @@ describe("provider canary plan", () => {
       { "@openai/codex": "0.150.0" },
       true,
     );
-    expect(plan).toMatchObject({
-      kind: "blocked",
-      provider: "codex",
-      releases: "@openai/codex@0.150.0",
-    });
+    expect(plan).toMatchObject({ kind: "blocked", provider: "codex" });
     expect(plan.kind === "blocked" && plan.reason).toContain("@openai/codex@0.150.0 is broken");
   });
 
@@ -157,6 +144,13 @@ describe("provider canary plan", () => {
     expect(plan.kind).toBe("blocked");
   });
 
+  it("matches the server's rule for which builds contain a verified build", () => {
+    expect(styalBuildContains(LATER_NIGHTLY, NIGHTLY)).toBe(true);
+    expect(styalBuildContains("0.1.1", NIGHTLY)).toBe(false);
+    expect(styalBuildContains("0.1.2", NIGHTLY)).toBe(true);
+    expect(styalBuildContains("0.1.2-nightly.20261020.760", "0.1.1")).toBe(true);
+  });
+
   it("uses default models from the bundled manifest's current catalogs", () => {
     const bundled = JSON.parse(NodeFS.readFileSync(MANIFEST_PATH, "utf8"));
     for (const entry of CANARY_PROVIDERS.filter((item) => item.provider !== "opencode")) {
@@ -169,89 +163,84 @@ describe("provider canary plan", () => {
 
 describe("provider canary record", () => {
   it("adds an entry before ranges and bumps updatedAt, leaving other policies untouched", () => {
-    const next = recordVersions(
-      MANIFEST_TEXT,
-      NIGHTLY,
-      [{ provider: "codex", packageName: "@openai/codex", version: "0.158.0" }],
-      NOW,
-    );
+    const next = recordVersions(MANIFEST_TEXT, [codexEntry("0.158.0", NIGHTLY)], NOW);
     expect(next).toBe(
       MANIFEST_TEXT.replace("2026-10-11T20:00:00.000Z", NOW.toISOString()).replace(
         `"recommendedRange": ">=0.159.0",\n`,
-        `"recommendedRange": ">=0.159.0",\n      "autoUpdates": [\n        {\n          "version": "0.158.0",\n          "package": "@openai/codex",\n          "after": "${NIGHTLY}"\n        }\n      ],\n`,
+        `"recommendedRange": ">=0.159.0",\n      "autoUpdates": [\n        {\n          "version": "0.158.0",\n          "package": "@openai/codex",\n          "styal": "${NIGHTLY}"\n        }\n      ],\n`,
       ),
     );
   });
 
-  it("keeps entries for older servers and drops ones a new entry covers", () => {
-    const parsed = JSON.parse(
-      recordVersions(
-        MANIFEST_TEXT,
-        LATER_NIGHTLY,
-        [{ provider: "opencode", packageName: "@opencode/cli", version: "2.0.21" }],
-        NOW,
-      ),
+  it("keeps entries for older builds and drops ones a new entry covers", () => {
+    const opencode = (version: string, styal: string) => ({
+      provider: "opencode",
+      packageName: "@opencode/cli",
+      version,
+      styal,
+    });
+    const later = JSON.parse(
+      recordVersions(MANIFEST_TEXT, [opencode("2.0.21", LATER_NIGHTLY)], NOW),
     );
-    expect(parsed.compatibility[2].autoUpdates).toEqual([
-      { version: "2.0.20", package: "@opencode/cli", after: NIGHTLY },
-      { version: "2.0.21", package: "@opencode/cli", after: LATER_NIGHTLY },
+    expect(later.compatibility[2].autoUpdates).toEqual([
+      { version: "2.0.20", package: "@opencode/cli", styal: NIGHTLY },
+      { version: "2.0.21", package: "@opencode/cli", styal: LATER_NIGHTLY },
     ]);
-    const covering = JSON.parse(
-      recordVersions(
-        MANIFEST_TEXT,
-        NIGHTLY,
-        [{ provider: "opencode", packageName: "@opencode/cli", version: "2.0.21" }],
-        NOW,
-      ),
-    );
+    const covering = JSON.parse(recordVersions(MANIFEST_TEXT, [opencode("2.0.21", NIGHTLY)], NOW));
     expect(covering.compatibility[2].autoUpdates).toEqual([
-      { version: "2.0.21", package: "@opencode/cli", after: NIGHTLY },
+      { version: "2.0.21", package: "@opencode/cli", styal: NIGHTLY },
     ]);
+    // An older version on an older build covers builds the nightly entry does not.
+    const stable = JSON.parse(recordVersions(MANIFEST_TEXT, [opencode("2.0.19", "0.1.0")], NOW));
+    expect(stable.compatibility[2].autoUpdates).toHaveLength(2);
   });
 
   it("returns the text unchanged when the entry adds nothing", () => {
     expect(
       recordVersions(
         MANIFEST_TEXT,
-        LATER_NIGHTLY,
-        [{ provider: "opencode", packageName: "@opencode/cli", version: "2.0.20" }],
+        [
+          {
+            provider: "opencode",
+            packageName: "@opencode/cli",
+            version: "2.0.20",
+            styal: LATER_NIGHTLY,
+          },
+        ],
         NOW,
       ),
     ).toBe(MANIFEST_TEXT);
   });
 
-  it("carries entries over from an unmerged canary branch", () => {
+  it("carries the open pull request's additions over, but not entries withdrawn from main", () => {
     const pending = JSON.parse(
-      recordVersions(
-        MANIFEST_TEXT,
-        NIGHTLY,
-        [{ provider: "codex", packageName: "@openai/codex", version: "0.158.0" }],
-        NOW,
-      ),
+      recordVersions(MANIFEST_TEXT, [codexEntry("0.158.0", NIGHTLY)], NOW),
     );
-    // Today only OpenCode passed; yesterday's Codex result must survive.
+    // Main withdrew the OpenCode entry after the pull request branched.
+    const withdrawn = JSON.parse(MANIFEST_TEXT);
+    withdrawn.compatibility[2].autoUpdates = [];
+    withdrawn.updatedAt = "2026-10-14T18:00:00.000Z";
     const parsed = JSON.parse(
       recordVersions(
-        MANIFEST_TEXT,
-        LATER_NIGHTLY,
-        [{ provider: "opencode", packageName: "@opencode/cli", version: "2.0.21" }],
+        `${JSON.stringify(withdrawn, null, 2)}\n`,
+        [],
         new Date("2026-10-15T12:00:00.000Z"),
-        pending,
+        { pending, base: manifest },
       ),
     );
     expect(parsed.compatibility[0].autoUpdates).toEqual([
-      { version: "0.158.0", package: "@openai/codex", after: NIGHTLY },
+      { version: "0.158.0", package: "@openai/codex", styal: NIGHTLY },
     ]);
-    expect(parsed.compatibility[2].autoUpdates).toHaveLength(2);
+    expect(parsed.compatibility[2].autoUpdates).toEqual([]);
   });
 
-  it("keeps at most three entries per package", () => {
+  it("keeps at most three entries per package and channel", () => {
     const policy = structuredClone(manifest.compatibility[2]);
     for (const [index, version] of ["2.0.21", "2.0.22", "2.0.23"].entries()) {
       policy.autoUpdates = addAutoUpdate(policy, {
         version,
         package: "@opencode/cli",
-        after: `0.1.1-nightly.2026101${5 + index}.${731 + index}`,
+        styal: `0.1.1-nightly.2026101${5 + index}.${731 + index}`,
       });
     }
     expect(policy.autoUpdates.map((entry: { version: string }) => entry.version)).toEqual([
@@ -265,8 +254,7 @@ describe("provider canary record", () => {
     expect(() =>
       recordVersions(
         MANIFEST_TEXT,
-        NIGHTLY,
-        [{ provider: "opencode", packageName: "opencode-ai", version: "1.15.0" }],
+        [{ provider: "opencode", packageName: "opencode-ai", version: "1.15.0", styal: NIGHTLY }],
         NOW,
       ),
     ).toThrow("graceful");
@@ -276,8 +264,7 @@ describe("provider canary record", () => {
     expect(() =>
       recordVersions(
         MANIFEST_TEXT,
-        NIGHTLY,
-        [{ provider: "codex", packageName: "@openai/codex", version: "0.158.0" }],
+        [codexEntry("0.158.0", NIGHTLY)],
         new Date("2026-10-01T00:00:00.000Z"),
       ),
     ).toThrow("not newer");
@@ -295,8 +282,14 @@ describe("provider canary record", () => {
     const version = supported.range.replace(/^>=/, "");
     const next = recordVersions(
       text,
-      LATER_NIGHTLY,
-      [{ provider: "claudeAgent", packageName: "@anthropic-ai/claude-code", version }],
+      [
+        {
+          provider: "claudeAgent",
+          packageName: "@anthropic-ai/claude-code",
+          version,
+          styal: LATER_NIGHTLY,
+        },
+      ],
       new Date(Date.parse(bundled.updatedAt) + 1000),
     );
     expect(next.endsWith("}\n")).toBe(true);
@@ -308,88 +301,140 @@ describe("provider canary record", () => {
 describe("provider canary report", () => {
   const RUN = "https://github.com/incognitojam/styal/actions/runs/1";
   const LATER_RUN = "https://github.com/incognitojam/styal/actions/runs/2";
-  const failed = collectProblems({
-    blocked: [],
-    outcomes: [
-      {
-        provider: "codex",
-        packageName: "@openai/codex",
-        version: "0.163.0",
-        outcome: "failed",
-        detail: "rewind: rollback method not found",
-      },
-    ],
-    failedJobs: [],
+  const verifyPlan = (provider: string, packageName: string, version: string) => ({
+    kind: "verify" as const,
+    provider,
+    styal: NIGHTLY,
+    entry: {
+      provider,
+      packageName,
+      binary: provider,
+      version,
+      model: "m",
+      secret: "S",
+      styal: NIGHTLY,
+    },
   });
+  const outcome = (
+    provider: string,
+    packageName: string,
+    version: string,
+    result: CanaryOutcome["outcome"],
+    detail = "",
+  ): CanaryOutcome => ({ provider, packageName, version, styal: NIGHTLY, outcome: result, detail });
+  const runWith = (plans: PlanOutput["plans"], outcomes: Array<CanaryOutcome>) =>
+    collectRun({ plan: { plans }, outcomes, planResult: "success", recordResult: "skipped" });
+
+  const codexFails = (version: string) =>
+    runWith(
+      [verifyPlan("codex", "@openai/codex", version)],
+      [outcome("codex", "@openai/codex", version, "failed", "rewind: rollback method not found")],
+    );
 
   it("opens the issue on the first problem, without a separate comment", () => {
-    const update = reconcileStatusIssue(null, failed, [], RUN);
+    const update = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN);
     expect(update).toMatchObject({ state: "open" });
     expect(update?.comment).toBeUndefined();
-    expect(update?.body).toContain("@openai/codex@0.163.0** failed verification twice");
+    expect(update?.body).toContain("@openai/codex@0.163.0** on styal");
   });
 
-  it("comments only for problems the open issue does not list", () => {
-    const opened = reconcileStatusIssue(null, failed, [], RUN)!;
+  it("does not comment again while the same provider keeps failing on new releases", () => {
+    const opened = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN)!;
     const issue = { number: 5, open: true, body: opened.body };
-    expect(reconcileStatusIssue(issue, failed, [], LATER_RUN)?.comment).toBeUndefined();
+    const next = reconcileStatusIssue(issue, codexFails("0.164.0"), [], LATER_RUN);
+    expect(next?.comment).toBeUndefined();
+    expect(next?.body).toContain("0.164.0");
+  });
 
-    const blocked = collectProblems({
-      blocked: [
-        {
-          provider: "opencode",
-          releases: "@opencode/cli@3.0.0",
-          reason: "No latest release is in a supported range.",
-        },
+  it("comments for a problem with another provider", () => {
+    const opened = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN)!;
+    const issue = { number: 5, open: true, body: opened.body };
+    const run = runWith(
+      [
+        verifyPlan("codex", "@openai/codex", "0.163.0"),
+        { kind: "blocked", provider: "opencode", styal: NIGHTLY, reason: "No supported release." },
       ],
-      outcomes: [],
-      failedJobs: [],
-    });
-    const update = reconcileStatusIssue(issue, [...failed, ...blocked], [], LATER_RUN);
-    expect(update?.comment).toContain("**opencode** is not verified");
+      [outcome("codex", "@openai/codex", "0.163.0", "failed", "rewind failed")],
+    );
+    const update = reconcileStatusIssue(issue, run, [], LATER_RUN);
+    expect(update?.comment).toContain("**opencode** on styal");
     expect(update?.comment).not.toContain("codex");
   });
 
-  it("closes the issue with a comment once every problem clears, and reopens on a new one", () => {
-    const opened = reconcileStatusIssue(null, failed, [], RUN)!;
+  it("keeps problems for providers this run did not check", () => {
+    const opened = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN)!;
+    const issue = { number: 5, open: true, body: opened.body };
+    // A Claude-only dispatch passes; the Codex failure stands.
+    const claudeOnly = runWith(
+      [{ kind: "current", provider: "claudeAgent", styal: NIGHTLY, reason: "verified" }],
+      [],
+    );
+    expect(reconcileStatusIssue(issue, claudeOnly, [], LATER_RUN)).toMatchObject({ state: "open" });
+    // A failed plan checks nothing and adds its own problem.
+    const planFailed = collectRun({
+      plan: undefined,
+      outcomes: [],
+      planResult: "failure",
+      recordResult: "skipped",
+    });
+    const update = reconcileStatusIssue(issue, planFailed, [], LATER_RUN);
+    expect(update?.body).toContain("0.163.0");
+    expect(update?.comment).toContain("The **plan** job failed.");
+  });
+
+  it("reports a missing verification result as a failure", () => {
+    const run = runWith([verifyPlan("codex", "@openai/codex", "0.163.0")], []);
+    expect(run.problems).toEqual([
+      expect.objectContaining({
+        key: "failed:codex",
+        summary: expect.stringContaining("no verification result"),
+      }),
+    ]);
+  });
+
+  it("closes once every checked provider passes, and reopens on a new problem", () => {
+    const opened = reconcileStatusIssue(null, codexFails("0.163.0"), [], RUN)!;
+    const passing = runWith(
+      [verifyPlan("codex", "@openai/codex", "0.164.0")],
+      [outcome("codex", "@openai/codex", "0.164.0", "passed")],
+    );
     const closing = reconcileStatusIssue(
       { number: 5, open: true, body: opened.body },
-      [],
+      passing,
       [],
       LATER_RUN,
     );
     expect(closing).toMatchObject({ state: "closed" });
     expect(closing?.comment).toContain("Every check passed");
-    expect(reconcileStatusIssue(null, [], [], LATER_RUN)).toBeNull();
+    expect(reconcileStatusIssue(null, passing, [], LATER_RUN)).toBeNull();
 
     const reopened = reconcileStatusIssue(
       { number: 5, open: false, body: closing!.body },
-      failed,
+      codexFails("0.165.0"),
       [],
       RUN,
     );
     expect(reopened).toMatchObject({ state: "open" });
-    expect(reopened?.comment).toContain("0.163.0");
+    expect(reopened?.comment).toContain("0.165.0");
   });
 
   it("lists passes on retry and missing credentials", () => {
-    const problems = collectProblems({
-      blocked: [],
-      outcomes: [
-        {
-          provider: "claudeAgent",
-          packageName: "@anthropic-ai/claude-code",
-          version: "2.1.301",
-          outcome: "skipped",
-          detail: "The ANTHROPIC_API_KEY secret is not set.",
-        },
+    const run = runWith(
+      [verifyPlan("claudeAgent", "@anthropic-ai/claude-code", "2.1.301")],
+      [
+        outcome(
+          "claudeAgent",
+          "@anthropic-ai/claude-code",
+          "2.1.301",
+          "skipped",
+          "The ANTHROPIC_API_KEY secret is not set.",
+        ),
       ],
-      failedJobs: ["record"],
-    });
-    expect(problems.map((problem) => problem.key)).toEqual(["job:record", "skipped:claudeAgent"]);
+    );
+    expect(run.problems.map((problem) => problem.key)).toEqual(["skipped:claudeAgent"]);
     const update = reconcileStatusIssue(
       null,
-      problems,
+      run,
       ["@openai/codex@0.163.0: interrupt timed out"],
       RUN,
     );

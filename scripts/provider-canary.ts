@@ -4,13 +4,20 @@
  * records verified ones in the model manifest's `autoUpdates`, and keeps one
  * GitHub issue listing what failed.
  *
- *   node scripts/provider-canary.ts plan [--provider <id>] [--force] [--pending <manifest>]
- *   node scripts/provider-canary.ts record --after <styal> --provider <id> --package <npm> --version <x.y.z> [...]
- *   node scripts/provider-canary.ts report --run-url <url> [--plan <json>] [--outcomes <dir>] [--dry-run]
+ *   node scripts/provider-canary.ts plan [--provider <id>] [--force] [--build <version>=<ref>]
+ *     [--pending <manifest> --pending-base <manifest>] [--json <path>]
+ *   node scripts/provider-canary.ts record --provider <id> --package <npm> --version <x.y.z>
+ *     --styal <build> [...] [--pending <manifest> --pending-base <manifest>]
+ *   node scripts/provider-canary.ts report --run-url <url> [--plan <json>] [--outcomes <dir>]
+ *     [--plan-result <result>] [--record-result <result>] [--dry-run]
+ *
+ * It verifies published styal builds, not main: each verification checks out
+ * a release tag, so a recorded entry names the exact build it passed on.
  *
  * The workflow in .github/workflows/provider-canary.yml runs them around
  * apps/server/scripts/verify-provider-live.ts.
  */
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
@@ -62,7 +69,8 @@ export const CANARY_PROVIDERS: ReadonlyArray<CanaryProvider> = [
 export interface AutoUpdateEntry {
   readonly version: string;
   readonly package: string;
-  readonly after: string;
+  /** The published styal build the canary verified this release on. */
+  readonly styal: string;
 }
 
 interface Policy {
@@ -77,8 +85,11 @@ interface Manifest {
   readonly compatibility?: ReadonlyArray<Policy>;
 }
 
-/** Entries kept per package; older ones only cover styal releases that rarely run. */
-const MAX_ENTRIES_PER_PACKAGE = 3;
+/**
+ * Entries kept per package and channel. Older nightly builds are replaced by
+ * the desktop app's own updates within days, so their entries stop mattering.
+ */
+const MAX_ENTRIES_PER_CHANNEL = 3;
 
 export function findPolicyIndex(manifest: Manifest, driver: string, styalVersion: string): number {
   return (manifest.compatibility ?? []).findIndex(
@@ -92,14 +103,19 @@ export function rangeStatus(policy: Policy, version: string): string {
   );
 }
 
-/**
- * The version a server built after `after` may install for `packageName`,
- * mirroring `resolveProviderAutoUpdateVersion` on the server.
- */
-function verifiedVersion(policy: Policy, packageName: string, after: string): string | undefined {
+const isNightly = (version: string) => version.includes("-");
+
+/** Mirrors `styalBuildContains` in apps/server/src/provider/providerCompatibility.ts. */
+export function styalBuildContains(version: string, tested: string): boolean {
+  if (isNightly(version) || !isNightly(tested)) return compareSemverVersions(version, tested) >= 0;
+  return compareSemverVersions(version, tested.slice(0, tested.indexOf("-"))) > 0;
+}
+
+/** The version `build` may install for `packageName`, as the server resolves it. */
+function verifiedVersion(policy: Policy, packageName: string, build: string): string | undefined {
   let best: string | undefined;
   for (const entry of policy.autoUpdates ?? []) {
-    if (entry.package !== packageName || compareSemverVersions(entry.after, after) > 0) continue;
+    if (entry.package !== packageName || !styalBuildContains(build, entry.styal)) continue;
     if (best === undefined || compareSemverVersions(entry.version, best) > 0) best = entry.version;
   }
   return best;
@@ -107,7 +123,7 @@ function verifiedVersion(policy: Policy, packageName: string, after: string): st
 
 /**
  * Adds a verified release to a policy. An entry is dropped when another one
- * for the same package allows at least its version to at least its servers.
+ * for the same package allows at least its version to every build it covers.
  */
 export function addAutoUpdate(
   policy: Policy,
@@ -120,38 +136,53 @@ export function addAutoUpdate(
   const covers = (wide: AutoUpdateEntry, narrow: AutoUpdateEntry) =>
     wide.package === narrow.package &&
     compareSemverVersions(wide.version, narrow.version) >= 0 &&
-    compareSemverVersions(wide.after, narrow.after) <= 0;
+    styalBuildContains(narrow.styal, wide.styal);
   const existing = policy.autoUpdates ?? [];
   if (existing.some((other) => covers(other, entry))) return existing;
   const kept = [...existing.filter((other) => !covers(entry, other)), entry];
   const newest = new Set(
     kept
-      .filter((other) => other.package === entry.package)
-      .toSorted((left, right) => compareSemverVersions(right.after, left.after))
-      .slice(0, MAX_ENTRIES_PER_PACKAGE),
+      .filter(
+        (other) =>
+          other.package === entry.package && isNightly(other.styal) === isNightly(entry.styal),
+      )
+      .toSorted((left, right) => compareSemverVersions(right.styal, left.styal))
+      .slice(0, MAX_ENTRIES_PER_CHANNEL),
   );
-  return kept.filter((other) => other.package !== entry.package || newest.has(other));
+  return kept.filter(
+    (other) =>
+      other.package !== entry.package ||
+      isNightly(other.styal) !== isNightly(entry.styal) ||
+      newest.has(other),
+  );
+}
+
+/** An unmerged canary pull request's manifest and the main manifest it was built on. */
+export interface PendingManifests {
+  readonly pending: Manifest;
+  readonly base: Manifest;
 }
 
 /**
- * Entries in `pending` (an unmerged canary branch's manifest) that `manifest`
- * lacks, matched by policy driver and styal range.
+ * Entries the open canary pull request added that `manifest` lacks. Only the
+ * pull request's own additions count, so an entry withdrawn from main since
+ * is not brought back.
  */
 function pendingEntries(
   manifest: Manifest,
-  pending: Manifest,
+  { pending, base }: PendingManifests,
 ): Array<{ readonly index: number; readonly entry: AutoUpdateEntry }> {
+  const samePolicy = (left: Policy) => (right: Policy) =>
+    left.driver === right.driver && left.t3CodeRange === right.t3CodeRange;
   const found: Array<{ index: number; entry: AutoUpdateEntry }> = [];
   for (const policy of pending.compatibility ?? []) {
-    const index = (manifest.compatibility ?? []).findIndex(
-      (candidate) =>
-        candidate.driver === policy.driver && candidate.t3CodeRange === policy.t3CodeRange,
-    );
+    const index = (manifest.compatibility ?? []).findIndex(samePolicy(policy));
     if (index === -1) continue;
+    const before = (base.compatibility ?? []).find(samePolicy(policy))?.autoUpdates ?? [];
+    const known = manifest.compatibility![index]!.autoUpdates ?? [];
     for (const entry of policy.autoUpdates ?? []) {
-      const known = manifest.compatibility![index]!.autoUpdates ?? [];
-      if (!known.some((other) => NodeUtil.isDeepStrictEqual(other, entry)))
-        found.push({ index, entry });
+      const listed = (other: AutoUpdateEntry) => NodeUtil.isDeepStrictEqual(other, entry);
+      if (!before.some(listed) && !known.some(listed)) found.push({ index, entry });
     }
   }
   return found;
@@ -164,50 +195,42 @@ export interface VerifyEntry {
   readonly version: string;
   readonly model: string;
   readonly secret: string;
+  /** The styal build to verify against. */
+  readonly styal: string;
 }
 
 export type ProviderPlan =
-  | { readonly kind: "verify"; readonly entry: VerifyEntry }
+  | { readonly kind: "verify"; readonly provider: string; readonly entry: VerifyEntry }
   | { readonly kind: "current"; readonly provider: string; readonly reason: string }
-  | {
-      readonly kind: "blocked";
-      readonly provider: string;
-      /** The releases that were considered, so a report can tell repeats apart. */
-      readonly releases: string;
-      readonly reason: string;
-    };
+  | { readonly kind: "blocked"; readonly provider: string; readonly reason: string };
 
 /**
- * Plans one provider from the npm `latest` version of each of its packages,
- * for servers built after `after`. The newest version in a supported range is
- * verified when those servers may not install it yet, or always with `force`.
+ * Plans one provider on one styal build from the npm `latest` version of each
+ * of its packages. The newest version in a supported range is verified when
+ * the build may not install it yet, or always with `force`.
  */
 export function planProvider(
   canary: CanaryProvider,
   manifest: Manifest,
-  after: string,
+  build: string,
   latest: Readonly<Record<string, string>>,
   force = false,
 ): ProviderPlan {
-  const index = findPolicyIndex(manifest, canary.provider, after);
+  const index = findPolicyIndex(manifest, canary.provider, build);
   const policy = manifest.compatibility?.[index];
+  if (!policy) {
+    return {
+      kind: "blocked",
+      provider: canary.provider,
+      reason: `No ${canary.provider} compatibility policy covers styal ${build}.`,
+    };
+  }
   const candidates = canary.packageNames
     .flatMap((packageName) => {
       const version = latest[packageName];
       return version && /^\d+\.\d+\.\d+$/.test(version) ? [{ packageName, version }] : [];
     })
     .toSorted((left, right) => compareSemverVersions(right.version, left.version));
-  const releases =
-    candidates.map((candidate) => `${candidate.packageName}@${candidate.version}`).join(", ") ||
-    "no stable release found";
-  if (!policy) {
-    return {
-      kind: "blocked",
-      provider: canary.provider,
-      releases,
-      reason: `No ${canary.provider} compatibility policy covers styal ${after}.`,
-    };
-  }
   const supported = candidates.find(
     (candidate) => rangeStatus(policy, candidate.version) === "supported",
   );
@@ -221,20 +244,20 @@ export function planProvider(
     return {
       kind: "blocked",
       provider: canary.provider,
-      releases,
       reason: `No latest release is in a supported range of the policy for styal ${policy.t3CodeRange} (${described || "no stable release found"}). Review the compatibility ranges.`,
     };
   }
-  const recorded = verifiedVersion(policy, supported.packageName, after);
+  const recorded = verifiedVersion(policy, supported.packageName, build);
   if (!force && recorded !== undefined && compareSemverVersions(supported.version, recorded) <= 0) {
     return {
       kind: "current",
       provider: canary.provider,
-      reason: `${supported.packageName}@${supported.version} is already verified (${recorded}).`,
+      reason: `${supported.packageName}@${supported.version} is already verified for styal ${build} (${recorded}).`,
     };
   }
   return {
     kind: "verify",
+    provider: canary.provider,
     entry: {
       provider: canary.provider,
       packageName: supported.packageName,
@@ -242,6 +265,7 @@ export function planProvider(
       version: supported.version,
       model: canary.model,
       secret: canary.secret,
+      styal: build,
     },
   };
 }
@@ -279,29 +303,30 @@ export interface RecordEntry {
   readonly provider: string;
   readonly packageName: string;
   readonly version: string;
+  /** The styal build it was verified on. */
+  readonly styal: string;
 }
 
 /**
- * Adds verified releases to the policies that apply to servers built after
- * `after`, plus any `pending` entries from an unmerged earlier run, and bumps
- * `updatedAt`. Only the edited policies are rewritten, so the rest of the
- * file keeps its layout. Returns the text unchanged when nothing is new.
+ * Adds verified releases to the policies that apply to the builds they were
+ * verified on, plus the open canary pull request's additions, and bumps
+ * `updatedAt`. Only the edited `autoUpdates` arrays are rewritten, so the rest
+ * of the file keeps its layout. Returns the text unchanged when nothing is new.
  */
 export function recordVersions(
   text: string,
-  after: string,
   entries: ReadonlyArray<RecordEntry>,
   now: Date,
-  pending?: Manifest,
+  pending?: PendingManifests,
 ): string {
   const manifest: Manifest = JSON.parse(text);
   const policies = [...(manifest.compatibility ?? [])];
   const additions: Array<{ index: number; entry: AutoUpdateEntry }> = [];
-  for (const { provider, packageName, version } of entries) {
+  for (const { provider, packageName, version, styal } of entries) {
     if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`${provider}: ${version} is not x.y.z.`);
-    const index = findPolicyIndex(manifest, provider, after);
-    if (index === -1) throw new Error(`${provider}: no policy covers styal ${after}.`);
-    additions.push({ index, entry: { version, package: packageName, after } });
+    const index = findPolicyIndex(manifest, provider, styal);
+    if (index === -1) throw new Error(`${provider}: no policy covers styal ${styal}.`);
+    additions.push({ index, entry: { version, package: packageName, styal } });
   }
   // Pending entries go first so today's results prune them, not the reverse.
   const all = [...(pending ? pendingEntries(manifest, pending) : []), ...additions];
@@ -376,49 +401,92 @@ export interface CanaryOutcome {
   readonly provider: string;
   readonly packageName: string;
   readonly version: string;
+  readonly styal: string;
   /** `flaky` passed on its retry; `skipped` had no credentials. */
   readonly outcome: "passed" | "flaky" | "failed" | "skipped";
   readonly detail: string;
 }
 
 export interface CanaryProblem {
-  /** Stable across runs, so a problem that persists is reported once. */
+  /** One per provider and kind, so a problem that persists across releases is reported once. */
   readonly key: string;
+  /** The provider id or `job:<name>` whose evaluation can clear it. */
+  readonly scope: string;
   readonly summary: string;
 }
 
-export function collectProblems(input: {
-  readonly blocked: ReadonlyArray<{ provider: string; releases: string; reason: string }>;
+/** What the plan job wrote; absent when planning failed. */
+export interface PlanOutput {
+  readonly plans: ReadonlyArray<ProviderPlan & { readonly styal: string }>;
+}
+
+type JobResult = "success" | "failure" | "cancelled" | "skipped" | undefined;
+
+/**
+ * Problems found in one run, and the scopes this run evaluated. Problems in
+ * scopes it did not evaluate, such as other providers on a single-provider
+ * dispatch, are left as they were.
+ */
+export function collectRun(input: {
+  readonly plan: PlanOutput | undefined;
   readonly outcomes: ReadonlyArray<CanaryOutcome>;
-  readonly failedJobs: ReadonlyArray<string>;
-}): Array<CanaryProblem> {
-  return [
-    ...input.failedJobs.map((job) => ({
-      key: `job:${job}`,
-      summary: `The **${job}** job failed. See the run log.`,
-    })),
-    ...input.blocked.map((entry) => ({
-      key: `blocked:${entry.provider}:${entry.releases}`,
-      summary: `**${entry.provider}** is not verified: ${entry.reason}`,
-    })),
-    ...input.outcomes.flatMap((outcome) =>
-      outcome.outcome === "failed"
-        ? [
-            {
-              key: `failed:${outcome.provider}@${outcome.version}`,
-              summary: `**${outcome.packageName}@${outcome.version}** failed verification twice: ${outcome.detail}`,
-            },
-          ]
-        : outcome.outcome === "skipped"
-          ? [
-              {
-                key: `skipped:${outcome.provider}`,
-                summary: `**${outcome.provider}** was not verified: ${outcome.detail}`,
-              },
-            ]
-          : [],
-    ),
-  ];
+  readonly planResult: JobResult;
+  readonly recordResult: JobResult;
+}): { problems: Array<CanaryProblem>; evaluated: Set<string> } {
+  const evaluated = new Set<string>();
+  const found = new Map<string, CanaryProblem>();
+  const add = (key: string, scope: string, summary: string) => {
+    const existing = found.get(key);
+    found.set(key, {
+      key,
+      scope,
+      summary: existing ? `${existing.summary} ${summary}` : summary,
+    });
+  };
+  for (const [job, result] of [
+    ["plan", input.planResult],
+    ["record", input.recordResult],
+  ] as const) {
+    if (result !== "success" && result !== "failure") continue;
+    evaluated.add(`job:${job}`);
+    if (result === "failure") add(`job:${job}`, `job:${job}`, `The **${job}** job failed.`);
+  }
+  for (const plan of input.plan?.plans ?? []) {
+    evaluated.add(plan.provider);
+    if (plan.kind === "blocked") {
+      add(
+        `blocked:${plan.provider}`,
+        plan.provider,
+        `**${plan.provider}** on styal ${plan.styal}: ${plan.reason}`,
+      );
+      continue;
+    }
+    if (plan.kind !== "verify") continue;
+    const { entry } = plan;
+    const outcome = input.outcomes.find(
+      (candidate) => candidate.provider === entry.provider && candidate.styal === entry.styal,
+    );
+    const release = `**${entry.packageName}@${entry.version}** on styal ${entry.styal}`;
+    if (!outcome)
+      add(
+        `failed:${entry.provider}`,
+        entry.provider,
+        `${release}: no verification result was saved.`,
+      );
+    else if (outcome.outcome === "failed")
+      add(
+        `failed:${entry.provider}`,
+        entry.provider,
+        `${release} failed verification twice: ${outcome.detail}`,
+      );
+    else if (outcome.outcome === "skipped")
+      add(
+        `skipped:${entry.provider}`,
+        entry.provider,
+        `${release} was not verified: ${outcome.detail}`,
+      );
+  }
+  return { problems: [...found.values()], evaluated };
 }
 
 export interface StatusIssue {
@@ -437,19 +505,24 @@ export interface StatusIssueUpdate {
 const STATE_MARKER = /<!-- provider-canary-state (.*) -->/;
 
 /**
- * How the status issue changes after a run. A comment is posted only when a
- * problem appears that the open issue does not already list, or when every
- * problem clears and the issue closes. Returns null when nothing changes.
+ * How the status issue changes after a run. Problems this run did not
+ * evaluate carry over from the open issue. A comment is posted only when a
+ * problem appears that the open issue does not list, or when every problem
+ * clears and the issue closes. Returns null when nothing changes.
  */
 export function reconcileStatusIssue(
   issue: StatusIssue | null,
-  problems: ReadonlyArray<CanaryProblem>,
+  run: { readonly problems: ReadonlyArray<CanaryProblem>; readonly evaluated: ReadonlySet<string> },
   notes: ReadonlyArray<string>,
   runUrl: string,
 ): StatusIssueUpdate | null {
-  const previous: ReadonlyArray<string> = issue?.open
-    ? (JSON.parse(STATE_MARKER.exec(issue.body)?.[1] ?? "{}").keys ?? [])
+  const previous: ReadonlyArray<CanaryProblem> = issue?.open
+    ? (JSON.parse(STATE_MARKER.exec(issue.body)?.[1] ?? "{}").problems ?? [])
     : [];
+  const problems = [
+    ...previous.filter((problem) => !run.evaluated.has(problem.scope)),
+    ...run.problems,
+  ];
   const body = [
     problems.length > 0
       ? "The provider canary found problems that hold back automatic provider updates. This issue is updated on each run and closes when every check passes."
@@ -457,7 +530,7 @@ export function reconcileStatusIssue(
     problems.map((problem) => `- ${problem.summary}`).join("\n"),
     notes.length > 0 ? `Passed on retry:\n\n${notes.map((note) => `- ${note}`).join("\n")}` : "",
     `Last run: ${runUrl}`,
-    `<!-- provider-canary-state ${JSON.stringify({ keys: problems.map((problem) => problem.key) })} -->`,
+    `<!-- provider-canary-state ${JSON.stringify({ problems })} -->`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -466,7 +539,9 @@ export function reconcileStatusIssue(
       ? { body, state: "closed", comment: `Every check passed in ${runUrl}. Closing.` }
       : null;
   }
-  const added = problems.filter((problem) => !previous.includes(problem.key));
+  const added = problems.filter(
+    (problem) => !previous.some((existing) => existing.key === problem.key),
+  );
   return {
     body,
     state: "open",
@@ -494,21 +569,51 @@ async function fetchDistTags(packageName: string): Promise<Record<string, string
 }
 
 /**
- * The newest published styal release. Builds after it contain the code on
- * `main` now, so it bounds which servers a verification applies to.
+ * The published stable and nightly styal builds to verify, as version and git
+ * ref. Builds whose tag predates the verifier cannot run it and do not update
+ * providers automatically, so they are left out.
  */
-async function newestStyalRelease(): Promise<string> {
+async function publishedBuilds(): Promise<Array<{ styal: string; ref: string }>> {
   const tags = await fetchDistTags("@styal/cli");
-  const versions = [tags.latest, tags.nightly].filter((version) => version !== undefined);
-  const newest = versions.toSorted((left, right) => compareSemverVersions(right, left))[0];
-  if (!newest) throw new Error("Cannot find a published @styal/cli release.");
-  return newest;
+  const builds: Array<{ styal: string; ref: string }> = [];
+  for (const styal of new Set([tags.nightly, tags.latest])) {
+    if (styal === undefined) continue;
+    const ref = `v${styal}`;
+    const git = (...args: Array<string>) =>
+      NodeChildProcess.spawnSync("git", args, { cwd: ROOT, stdio: "ignore" }).status === 0;
+    if (
+      !git(
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--depth=1",
+        "origin",
+        `refs/tags/${ref}:refs/tags/${ref}`,
+      )
+    )
+      throw new Error(`Cannot fetch the ${ref} tag.`);
+    if (!git("cat-file", "-e", `${ref}:apps/server/scripts/verify-provider-live.ts`)) {
+      console.log(`styal ${styal} predates the provider canary; skipping it.`);
+      continue;
+    }
+    builds.push({ styal, ref });
+  }
+  return builds;
 }
 
-function readManifest(path: string | undefined): Manifest | undefined {
+function readJson<A>(path: string | undefined): A | undefined {
   return path && NodeFS.existsSync(path)
     ? JSON.parse(NodeFS.readFileSync(path, "utf8"))
     : undefined;
+}
+
+function readPending(
+  pendingPath: string | undefined,
+  basePath: string | undefined,
+): PendingManifests | undefined {
+  const pending = readJson<Manifest>(pendingPath);
+  const base = readJson<Manifest>(basePath);
+  return pending && base ? { pending, base } : undefined;
 }
 
 async function plan(args: ReadonlyArray<string>) {
@@ -517,7 +622,9 @@ async function plan(args: ReadonlyArray<string>) {
     options: {
       provider: { type: "string" },
       force: { type: "boolean", default: false },
+      build: { type: "string", multiple: true, default: [] },
       pending: { type: "string" },
+      "pending-base": { type: "string" },
       json: { type: "string" },
     },
   });
@@ -525,45 +632,47 @@ async function plan(args: ReadonlyArray<string>) {
     (canary) => !values.provider || canary.provider === values.provider,
   );
   if (selected.length === 0) throw new Error(`Unknown canary provider: ${values.provider}`);
+  const builds =
+    values.build.length > 0
+      ? values.build.map((value) => {
+          const [styal = "", ref = ""] = value.split("=");
+          if (!styal || !ref) throw new Error(`--build needs <version>=<ref>, got ${value}.`);
+          return { styal, ref };
+        })
+      : await publishedBuilds();
   const text = NodeFS.readFileSync(MANIFEST_PATH, "utf8");
-  const after = await newestStyalRelease();
-  const pending = readManifest(values.pending);
+  const pending = readPending(values.pending, values["pending-base"]);
   // Plan against what main will hold once the open canary pull request merges.
   const manifest: Manifest = JSON.parse(
-    pending ? recordVersions(text, after, [], new Date(), pending) : text,
+    pending ? recordVersions(text, [], new Date(), pending) : text,
   );
-  const plans: Array<ProviderPlan> = [];
+  const plans: Array<ProviderPlan & { styal: string }> = [];
+  const include: Array<VerifyEntry & { ref: string }> = [];
   for (const canary of selected) {
     const latest: Record<string, string> = {};
     for (const packageName of canary.packageNames) {
       const found = (await fetchDistTags(packageName)).latest;
       if (found) latest[packageName] = found;
     }
-    plans.push(planProvider(canary, manifest, after, latest, values.force));
+    for (const { styal, ref } of builds) {
+      const planned = planProvider(canary, manifest, styal, latest, values.force);
+      plans.push({ ...planned, styal });
+      if (planned.kind === "verify") include.push({ ...planned.entry, ref });
+      if (planned.kind === "blocked")
+        console.log(`::warning title=${canary.provider} canary blocked::${planned.reason}`);
+      else if (planned.kind === "current") console.log(`${canary.provider}: ${planned.reason}`);
+      else
+        console.log(
+          `${canary.provider}: verify ${planned.entry.packageName}@${planned.entry.version} on styal ${styal}`,
+        );
+    }
   }
-  const include = plans.flatMap((entry) => (entry.kind === "verify" ? [entry.entry] : []));
-  const blocked = plans.flatMap((entry) =>
-    entry.kind === "blocked"
-      ? [{ provider: entry.provider, releases: entry.releases, reason: entry.reason }]
-      : [],
-  );
-  console.log(`Servers newer than styal ${after} receive versions verified now.`);
-  for (const entry of plans) {
-    if (entry.kind === "blocked")
-      console.log(`::warning title=${entry.provider} canary blocked::${entry.reason}`);
-    else if (entry.kind === "current") console.log(`${entry.provider}: ${entry.reason}`);
-    else
-      console.log(
-        `${entry.entry.provider}: verify ${entry.entry.packageName}@${entry.entry.version}`,
-      );
-  }
-  const output = { after, matrix: { include }, blocked };
-  console.log(JSON.stringify(output));
+  const output = { plans, matrix: { include } };
   if (values.json) NodeFS.writeFileSync(values.json, `${JSON.stringify(output, null, 2)}\n`);
   if (process.env.GITHUB_OUTPUT) {
     NodeFS.appendFileSync(
       process.env.GITHUB_OUTPUT,
-      `matrix=${JSON.stringify({ include })}\nhas_work=${include.length > 0}\nafter=${after}\n`,
+      `matrix=${JSON.stringify({ include })}\nhas_work=${include.length > 0}\n`,
     );
   }
 }
@@ -572,29 +681,30 @@ function record(args: ReadonlyArray<string>) {
   const { values } = NodeUtil.parseArgs({
     args: [...args],
     options: {
-      after: { type: "string" },
       provider: { type: "string", multiple: true, default: [] },
       package: { type: "string", multiple: true, default: [] },
       version: { type: "string", multiple: true, default: [] },
+      styal: { type: "string", multiple: true, default: [] },
       pending: { type: "string" },
+      "pending-base": { type: "string" },
     },
   });
   const count = values.provider.length;
-  if (!values.after || values.package.length !== count || values.version.length !== count) {
-    throw new Error("record needs --after and matching --provider, --package and --version.");
+  if ([values.package, values.version, values.styal].some((list) => list.length !== count)) {
+    throw new Error("record needs matching --provider, --package, --version and --styal.");
   }
   const entries = values.provider.map((provider, index) => ({
     provider,
     packageName: values.package[index]!,
     version: values.version[index]!,
+    styal: values.styal[index]!,
   }));
   const text = NodeFS.readFileSync(MANIFEST_PATH, "utf8");
   const next = recordVersions(
     text,
-    values.after,
     entries,
     new Date(),
-    readManifest(values.pending),
+    readPending(values.pending, values["pending-base"]),
   );
   if (next === text) {
     console.log("Nothing new to record.");
@@ -602,7 +712,7 @@ function record(args: ReadonlyArray<string>) {
   }
   NodeFS.writeFileSync(MANIFEST_PATH, next);
   for (const entry of entries)
-    console.log(`Recorded ${entry.packageName}@${entry.version} for styal after ${values.after}`);
+    console.log(`Recorded ${entry.packageName}@${entry.version} for styal ${entry.styal}`);
 }
 
 async function github(path: string, init?: { method: string; body: unknown }) {
@@ -629,33 +739,33 @@ async function report(args: ReadonlyArray<string>) {
     options: {
       plan: { type: "string" },
       outcomes: { type: "string" },
-      "failed-job": { type: "string", multiple: true, default: [] },
+      "plan-result": { type: "string" },
+      "record-result": { type: "string" },
       "run-url": { type: "string" },
       "dry-run": { type: "boolean", default: false },
     },
   });
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo || !values["run-url"]) throw new Error("report needs GITHUB_REPOSITORY and --run-url.");
-  const planned =
-    values.plan && NodeFS.existsSync(values.plan)
-      ? JSON.parse(NodeFS.readFileSync(values.plan, "utf8"))
-      : { blocked: [] };
+  const outcomesDir = values.outcomes;
   const outcomes: Array<CanaryOutcome> =
-    values.outcomes && NodeFS.existsSync(values.outcomes)
-      ? NodeFS.readdirSync(values.outcomes)
+    outcomesDir && NodeFS.existsSync(outcomesDir)
+      ? NodeFS.readdirSync(outcomesDir)
           .filter((name) => name.endsWith(".json"))
-          .map((name) =>
-            JSON.parse(NodeFS.readFileSync(NodePath.join(values.outcomes!, name), "utf8")),
-          )
+          .map((name) => JSON.parse(NodeFS.readFileSync(NodePath.join(outcomesDir, name), "utf8")))
       : [];
-  const problems = collectProblems({
-    blocked: planned.blocked,
+  const run = collectRun({
+    plan: readJson<PlanOutput>(values.plan),
     outcomes,
-    failedJobs: values["failed-job"],
+    planResult: values["plan-result"] as JobResult,
+    recordResult: values["record-result"] as JobResult,
   });
   const notes = outcomes
     .filter((outcome) => outcome.outcome === "flaky")
-    .map((outcome) => `${outcome.packageName}@${outcome.version}: ${outcome.detail}`);
+    .map(
+      (outcome) =>
+        `${outcome.packageName}@${outcome.version} on styal ${outcome.styal}: ${outcome.detail}`,
+    );
 
   const issues = (await github(
     `/repos/${repo}/issues?state=all&creator=${encodeURIComponent("github-actions[bot]")}&per_page=100`,
@@ -670,7 +780,7 @@ async function report(args: ReadonlyArray<string>) {
   const issue = found
     ? { number: found.number, open: found.state === "open", body: found.body ?? "" }
     : null;
-  const update = reconcileStatusIssue(issue, problems, notes, values["run-url"]);
+  const update = reconcileStatusIssue(issue, run, notes, values["run-url"]);
   if (update === null) {
     console.log("No canary problems and no open status issue.");
     return;
@@ -719,15 +829,7 @@ if (import.meta.main) {
   else if (command === "record") record(rest);
   else if (command === "report") await report(rest);
   else {
-    console.error(
-      "Usage: provider-canary.ts plan [--provider <id>] [--force] [--pending <manifest>] [--json <path>]",
-    );
-    console.error(
-      "       provider-canary.ts record --after <styal> --provider <id> --package <npm> --version <x.y.z> [...] [--pending <manifest>]",
-    );
-    console.error(
-      "       provider-canary.ts report --run-url <url> [--plan <json>] [--outcomes <dir>] [--failed-job <name>] [--dry-run]",
-    );
+    console.error("Usage: see the comment at the top of scripts/provider-canary.ts.");
     process.exit(2);
   }
 }

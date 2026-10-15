@@ -121,8 +121,6 @@ export const make = Effect.gen(function* () {
           instanceId: provider.instanceId,
           reason,
         }).pipe(Effect.as(false));
-      if (!(yield* isEnabled)) return yield* skip("automatic updates were turned off");
-      if (yield* isHostBusy) return yield* skip("a thread is running or waiting");
       const providers = yield* providerRegistry.refreshInstance(provider.instanceId);
       const current = providers.find((candidate) => candidate.instanceId === provider.instanceId);
       const version = stableProviderVersion(provider.driver, current?.version);
@@ -136,6 +134,9 @@ export const make = Effect.gen(function* () {
         return yield* skip("the provider is already updated or no longer healthy");
       if ((yield* testedVersionFor(current)) !== targetVersion)
         return yield* skip("the verified version changed");
+      // Last, so a turn started during the checks above is still seen.
+      if (!(yield* isEnabled)) return yield* skip("automatic updates were turned off");
+      if (yield* isHostBusy) return yield* skip("a thread is running or waiting");
       return true;
     }).pipe(
       Effect.catchCause((cause) =>

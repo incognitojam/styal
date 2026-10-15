@@ -406,6 +406,8 @@ function inspect(
   }
 }
 
+const decodeTicket = Schema.decodeUnknownSync(Schema.Struct({ ticket: Schema.String }));
+
 /** Mints a single-use WebSocket ticket and returns the socket URL that carries it. */
 async function mintSocketUrl(headers: Record<string, string>): Promise<string> {
   const ticketResponse = await fetch(`${origin}/api/auth/websocket-ticket`, {
@@ -413,23 +415,23 @@ async function mintSocketUrl(headers: Record<string, string>): Promise<string> {
     headers,
   });
   NodeAssert.ok(ticketResponse.ok, `WebSocket authentication failed: ${ticketResponse.status}`);
-  const ticket = Schema.decodeUnknownSync(Schema.Struct({ ticket: Schema.String }))(
-    await ticketResponse.json(),
-  );
+  const ticket = decodeTicket(await ticketResponse.json());
   return `${origin.replace("http:", "ws:")}/ws?orchestrationProtocol=${ORCHESTRATION_PROTOCOL_VERSION}&wsTicket=${encodeURIComponent(ticket.ticket)}`;
 }
 
 /**
  * Builds a fresh RPC protocol for the current server. The RPC client reconnects
  * after an idle drop, so each connection attempt mints its own ticket; a reused
- * ticket would never open.
+ * ticket would never open. A busy CI runner can take longer than the default
+ * ten seconds to open a socket while a provider is starting, so opens get more
+ * time and a failed open is retried instead of failing every open request.
  */
 async function connect(headers: Record<string, string>) {
   const socketUrl = Effect.promise(() => mintSocketUrl(headers));
-  const socket = Socket.layerWebSocket(socketUrl).pipe(
+  const socket = Socket.layerWebSocket(socketUrl, { openTimeout: 60_000 }).pipe(
     Layer.provide(Socket.layerWebSocketConstructorGlobal),
   );
-  return RpcClient.layerProtocolSocket().pipe(
+  return RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
     Layer.provide(socket),
     Layer.provide(RpcSerialization.layerJson),
   );
