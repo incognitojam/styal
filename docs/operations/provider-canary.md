@@ -13,8 +13,9 @@ verified on nightlies of its own version. Servers read the manifest from
 copy and any fetched copy older than two days.
 
 The [Provider canary](../../.github/workflows/provider-canary.yml) workflow runs
-daily and on demand. For Codex, Claude Code, and OpenCode it finds npm releases
-that the current stable and nightly styal builds may not install yet, installs
+every six hours (00:17, 06:17, 12:17, and 18:17 UTC) and on demand. For Codex,
+Claude Code, and OpenCode it finds npm releases that the current stable and
+nightly styal builds may not install yet, installs
 each one into an isolated prefix, and runs real turns against that build's
 server, checked out from its release tag: a tool turn, its checkpoint, a
 resumed follow-up, an interrupt, an approval round trip, a rewind, a native
