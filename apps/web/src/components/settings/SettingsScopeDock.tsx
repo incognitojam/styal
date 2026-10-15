@@ -37,18 +37,38 @@ export function SettingsScopeDockProvider({
   useLayoutEffect(() => {
     const target = docked ? toolbar : source;
     if (!host || !target) return;
+    const previous = host.parentElement;
     const focused = host.contains(document.activeElement) ? document.activeElement : null;
     target.append(host);
     if (!docked && source) source.style.removeProperty("height");
     if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+
+    if (
+      !previous ||
+      previous === target ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    // Move both pickers together so wrapped labels cannot cross during docking.
+    const animation = host.animate(
+      [
+        { transform: `translateY(${docked ? 8 : -8}px)`, opacity: 0 },
+        { transform: "translateY(0px)", opacity: 1 },
+      ],
+      { duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+    );
+    return () => animation.cancel();
   }, [docked, host, source, toolbar]);
 
   useLayoutEffect(() => {
     const scroll = source?.closest<HTMLElement>("[data-settings-page-scroll]");
     if (!source || !scroll) return;
     let threshold = Infinity;
+    let wasDocked = false;
     const onScroll = () => {
       const next = scroll.scrollTop >= threshold;
+      if (next === wasDocked) return;
+      wasDocked = next;
       // Retain the sentence's space so docking cannot change the scroll position.
       if (next && !source.style.height) {
         source.style.setProperty("height", `${source.getBoundingClientRect().height}px`);

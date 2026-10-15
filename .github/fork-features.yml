@@ -3665,6 +3665,7 @@ features:
     invariants:
       - Web and desktop settings retain the original scope sentence above the content and move its project and environment pickers into the existing toolbar only after the sentence scrolls out of view; scrolling back restores the sentence without changing the toolbar height or shifting the settings content.
       - Docking moves the same mounted controls so open menus, selected values, and keyboard focus survive the transition. Narrow toolbars prioritize the scope pickers; the breadcrumb and restore-defaults action return when scrolling back to the sentence.
+      - Scope pickers glide and fade into each position for 200ms using transforms and opacity, skip motion when reduced motion is requested, and cancel interrupted transitions without shifting the settings content.
       - The scope sentence wraps on narrow screens and truncates long picker labels, stays available for unavailable scopes, preserves the environment-only Providers picker, and remains hidden on device-only pages.
     implementation_paths:
       - apps/web/src/components/settings/SettingsScopeDock.tsx

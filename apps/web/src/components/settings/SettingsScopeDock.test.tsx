@@ -4,6 +4,10 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+const motion = vi.hoisted(() => ({
+  start: vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => ({ cancel: vi.fn() })),
+}));
+
 vi.mock("./SettingsScopeSentence", () => ({
   SettingsScopeSentence: function Sentence({ compact }: { compact: boolean }) {
     const [open, setOpen] = useState(false);
@@ -30,12 +34,16 @@ let resize: () => void;
 let sourceTop: number;
 let sourceHeight: number;
 let disconnect: ReturnType<typeof vi.fn>;
+let reducedMotion: boolean;
 
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   disconnect = vi.fn();
   sourceTop = 24;
   sourceHeight = 24;
+  reducedMotion = false;
+  motion.start.mockClear();
+  vi.stubGlobal("matchMedia", () => ({ matches: reducedMotion }));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
@@ -69,6 +77,8 @@ beforeEach(async () => {
       </SettingsScopeDockProvider>,
     );
   });
+  const host = container.querySelector("[data-settings-scope-source]")!.firstElementChild!;
+  Object.assign(host, { animate: motion.start });
 });
 
 afterEach(async () => {
@@ -87,6 +97,35 @@ async function scrollTo(top: number) {
 }
 
 describe("settings scope docking", () => {
+  it("animates only threshold crossings and cancels interrupted motion", async () => {
+    expect(motion.start).not.toHaveBeenCalled();
+    await scrollTo(850);
+    expect(motion.start).toHaveBeenCalledOnce();
+    const [frames] = motion.start.mock.calls[0]!;
+    expect(frames[0]?.transform).toBe("translateY(8px)");
+    const first = motion.start.mock.results[0]!.value;
+
+    await scrollTo(900);
+    expect(motion.start).toHaveBeenCalledOnce();
+
+    await scrollTo(0);
+    expect(first.cancel).toHaveBeenCalledOnce();
+    expect(motion.start).toHaveBeenCalledTimes(2);
+    const second = motion.start.mock.results[1]!.value;
+    await act(() => root.render(null));
+    expect(second.cancel).toHaveBeenCalledOnce();
+  });
+
+  it("moves the controls immediately in both directions with reduced motion", async () => {
+    reducedMotion = true;
+    const button = container.querySelector("button")!;
+    await scrollTo(50);
+    expect(container.querySelector("header")!.contains(button)).toBe(true);
+    await scrollTo(0);
+    expect(container.querySelector("[data-settings-scope-source]")!.contains(button)).toBe(true);
+    expect(motion.start).not.toHaveBeenCalled();
+  });
+
   it("moves the same controls into the toolbar and back without losing their state", async () => {
     const button = container.querySelector("button")!;
     const source = container.querySelector<HTMLElement>("[data-settings-scope-source]")!;
