@@ -132,12 +132,11 @@ function EnvironmentDevices(props: {
   const linkUrl = useAtomValue(relayEnvironmentDiscovery.stateValueAtom).environments.get(
     device.environmentId,
   )?.environment.endpoint.httpBaseUrl;
-  const addresses = deviceSharingAddresses(
-    prepared?.httpBaseUrl ?? null,
-    [],
-    null,
-    linkUrl ? [linkUrl] : [],
-  );
+  const addresses = deviceSharingAddresses({
+    clientUrl: prepared?.httpBaseUrl ?? null,
+    directEndpoints: device.serverConfig.directEndpoints,
+    linkUrl,
+  });
   const deviceState = useDeviceState(device.environmentId);
   const configure = useAtomCommand(deviceEnvironment.configure);
   const connect = useAtomCommand(deviceEnvironment.connectEnvironment);
