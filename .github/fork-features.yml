@@ -1366,6 +1366,7 @@ features:
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
+      - apps/server/src/provider/McpToolPresentation.ts
       - apps/server/src/provider/RuntimeInstructions.ts
       - apps/server/src/provider/T3OrchestrationInstructions.ts
     tests:
@@ -1378,6 +1379,7 @@ features:
       - apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts
       - apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
+      - apps/server/src/provider/McpToolPresentation.test.ts
       - apps/server/src/provider/T3OrchestrationInstructions.test.ts
       - apps/server/src/provider/acp/AcpRuntimeModel.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
@@ -1586,6 +1588,7 @@ features:
       - apps/mobile/src/features/updates/native-app-updates.test.ts
       - apps/mobile/src/lib/appLinking.test.ts
       - apps/mobile/src/widgets/SubscriptionUsage.android.test.ts
+      - apps/server/src/cli/app.test.ts
       - apps/server/src/cli/invocation.test.ts
       - apps/server/src/cli/update.test.ts
       - apps/server/src/cloud/bootService.test.ts
@@ -1641,8 +1644,10 @@ features:
       - apps/server/src/cloud/http.ts
       - apps/server/src/cloud/publicConfig.ts
       - apps/web/src/cloud/linkEnvironment.ts
+      - apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx
       - apps/web/src/components/cloud/ConnectCliAuthSurface.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/settings/EnvironmentRow.tsx
       - infra/relay/alchemy.run.ts
       - infra/relay/src/Config.ts
       - infra/relay/src/apexRedirect.ts
@@ -1651,6 +1656,7 @@ features:
       - infra/relay/src/observability.ts
       - infra/relay/src/worker.ts
       - infra/web/alchemy.run.ts
+      - packages/client-runtime/src/connection/routes.ts
       - packages/client-runtime/src/relay/managedRelayState.ts
       - packages/shared/src/connectAuth.ts
     upstream_paths:
@@ -1660,11 +1666,14 @@ features:
       - apps/mobile/src/connection/platform.ts
       - apps/server/src/cloud/publicConfig.ts
       - apps/web/src/cloud/linkEnvironment.ts
+      - apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx
+      - apps/web/src/components/settings/EnvironmentRow.tsx
       - infra/relay/src/Config.ts
       - infra/relay/src/db.ts
       - infra/relay/src/dbConfig.ts
       - infra/relay/src/observability.ts
       - infra/relay/src/worker.ts
+      - packages/client-runtime/src/connection/routes.ts
       - packages/client-runtime/src/relay/managedRelayState.ts
       - packages/shared/src/connectAuth.ts
     tests:
