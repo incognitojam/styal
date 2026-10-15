@@ -105,6 +105,8 @@ export interface ProviderChangeRequest {
 
 /** The fields needed to keep a linked thread's pull request status live. */
 export interface ProviderChangeRequestSummary {
+  readonly autoMergeEnabled?: boolean;
+  readonly inMergeQueue?: boolean;
   readonly number: number;
   readonly title: string;
   readonly url: string;
@@ -237,6 +239,7 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly behindBy?: number;
   /** Absent from a host that does not report whether it is armed to merge this on its own. */
   readonly autoMergeEnabled?: boolean;
+  readonly inMergeQueue?: boolean;
   /** The strategy stored with an armed auto-merge, where the host reports it. */
   readonly autoMergeMethod?: PullRequestMergeMethod;
   /** Workflow runs on this head commit that still need a maintainer's approval. */

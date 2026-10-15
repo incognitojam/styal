@@ -7,6 +7,8 @@ import {
 import {
   resolveThreadPullRequestChains,
   threadPullRequestKeyOf,
+  resolvePullRequestMergeIntent,
+  pullRequestMergeIntentLabel,
 } from "@t3tools/shared/threadPullRequests";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
@@ -373,24 +375,32 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
                   </Text>
                 </View>
               ) : null}
-              {chain.layers.map((link, index) => (
-                <View key={threadPullRequestKeyOf(link)}>
-                  {index > 0 && Platform.OS !== "android" ? (
-                    <View className="ml-12 h-px bg-border" />
-                  ) : null}
-                  <SheetListRow
-                    icon="arrow.triangle.pull"
-                    title={`#${link.number} ${link.snapshot?.title ?? "Pull request"}`}
-                    subtitle={`${link.repository} · ${link.snapshot === null ? "Status pending" : link.snapshot.isDraft && link.snapshot.state === "open" ? "Draft" : link.snapshot.state}${link.watch === undefined ? "" : " · Watching"}`}
-                    onPress={() => {
-                      void tryOpenExternalUrl(link.url, "pull-request").then((opened) => {
-                        if (!opened)
-                          Alert.alert("Unable to open PR", "The pull request could not be opened.");
-                      });
-                    }}
-                  />
-                </View>
-              ))}
+              {chain.layers.map((link, index) => {
+                const mergeIntent = link.snapshot
+                  ? resolvePullRequestMergeIntent(link.snapshot)
+                  : null;
+                return (
+                  <View key={threadPullRequestKeyOf(link)}>
+                    {index > 0 && Platform.OS !== "android" ? (
+                      <View className="ml-12 h-px bg-border" />
+                    ) : null}
+                    <SheetListRow
+                      icon="arrow.triangle.pull"
+                      title={`#${link.number} ${link.snapshot?.title ?? "Pull request"}`}
+                      subtitle={`${link.repository} · ${link.snapshot === null ? "Status pending" : link.snapshot.isDraft && link.snapshot.state === "open" ? "Draft" : link.snapshot.state}${mergeIntent ? ` · ${pullRequestMergeIntentLabel(mergeIntent)}` : ""}${link.watch === undefined ? "" : " · Watching"}`}
+                      onPress={() => {
+                        void tryOpenExternalUrl(link.url, "pull-request").then((opened) => {
+                          if (!opened)
+                            Alert.alert(
+                              "Unable to open PR",
+                              "The pull request could not be opened.",
+                            );
+                        });
+                      }}
+                    />
+                  </View>
+                );
+              })}
             </View>
           ))}
         </View>

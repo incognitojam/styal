@@ -9,6 +9,9 @@ import { resolveChangeRequestPresentation } from "@t3tools/shared/sourceControl"
 import {
   resolveThreadCurrentPullRequestLink,
   resolveThreadPullRequestBadge,
+  resolvePullRequestMergeIntent,
+  pullRequestMergeIntentLabel,
+  type PullRequestMergeIntent,
 } from "@t3tools/shared/threadPullRequests";
 
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
@@ -19,6 +22,7 @@ export interface ThreadPrPresentation {
   readonly kind: "pull-request" | "stack";
   readonly others: number;
   readonly isDraft: boolean;
+  readonly mergeIntent?: PullRequestMergeIntent;
   /** Provider-side last activity, bounding when a terminal state landed. */
   readonly updatedAt: string | null;
   readonly url: string;
@@ -41,16 +45,18 @@ export function presentThreadPr(
 ): ThreadPrPresentation {
   const presentation = resolveChangeRequestPresentation(provider);
   const isDraft = pr.state === "open" && pr.isDraft === true;
+  const mergeIntent = resolvePullRequestMergeIntent(pr);
   return {
     kind: "pull-request",
     others: 0,
     number: pr.number,
     state: pr.state,
     isDraft,
+    ...(mergeIntent ? { mergeIntent } : {}),
     updatedAt: pr.updatedAt ?? null,
     url: pr.url,
     label: String(pr.number),
-    accessibilityLabel: `#${pr.number} ${presentation.longName} ${isDraft ? "draft" : pr.state}`,
+    accessibilityLabel: `#${pr.number} ${presentation.longName} ${isDraft ? "draft" : pr.state}${mergeIntent ? `, ${pullRequestMergeIntentLabel(mergeIntent)}` : ""}`,
     textClassName: isDraft ? "text-adaptive-zinc-500-400" : PR_STATE_TEXT_CLASS[pr.state],
   };
 }
@@ -79,21 +85,27 @@ export function presentThreadLinkedPullRequests(
       : linkedCount !== null
         ? `+${linkedCount}`
         : String(link.number);
+  const mergeLabel = badge.mergeIntent
+    ? isMultiple
+      ? ", all remaining pull requests awaiting merge"
+      : `, ${pullRequestMergeIntentLabel(badge.mergeIntent)}`
+    : "";
   return {
     kind: badge.kind,
     others: badge.kind === "pull-request" ? badge.others : 0,
     number: link.number,
     state,
     isDraft,
+    ...(badge.mergeIntent ? { mergeIntent: badge.mergeIntent } : {}),
     updatedAt: snapshot?.updatedAt ?? null,
     url: link.url,
     label,
     accessibilityLabel:
       badge.kind === "stack"
-        ? `${badge.layers} pull requests in stack, ${isDraft ? "draft" : (state ?? "status pending")}`
+        ? `${badge.layers} pull requests in stack, ${isDraft ? "draft" : (state ?? "status pending")}${mergeLabel}`
         : linkedCount !== null
-          ? `${linkedCount} linked pull requests, overall ${badge.state}`
-          : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}`,
+          ? `${linkedCount} linked pull requests, overall ${badge.state}${mergeLabel}`
+          : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}${mergeLabel}`,
     textClassName:
       state === null || isDraft
         ? "text-foreground-muted"

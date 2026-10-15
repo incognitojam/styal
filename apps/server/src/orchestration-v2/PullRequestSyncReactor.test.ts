@@ -370,6 +370,45 @@ function applySync(
 }
 
 describe("PullRequestSyncReactor", () => {
+  it.effect("updates and clears merge intent even when the PR's updatedAt does not move", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        let intent: Pick<PullRequestSummary, "autoMergeEnabled" | "inMergeQueue"> = {
+          autoMergeEnabled: true,
+          inMergeQueue: true,
+        };
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([makeThread("one", { pullRequests: [makeLink(7)] })]),
+          summary: (input) => Effect.succeed(makeSummary(input, intent)),
+        });
+        yield* Effect.gen(function* () {
+          const reactor = yield* startAndSweep(fixture);
+          let commands = yield* Ref.get(fixture.syncCommands);
+          assert.strictEqual(commands.at(-1)?.snapshot.autoMergeEnabled, true);
+          assert.strictEqual(commands.at(-1)?.snapshot.inMergeQueue, true);
+          yield* Ref.update(fixture.snapshots, (snapshot) => applySync(snapshot, commands));
+          intent = { autoMergeEnabled: false, inMergeQueue: false };
+          yield* sweepAgain(fixture, reactor);
+          commands = yield* Ref.get(fixture.syncCommands);
+          assert.strictEqual(commands.length, 2);
+          assert.strictEqual(commands.at(-1)?.snapshot.autoMergeEnabled, false);
+          assert.strictEqual(commands.at(-1)?.snapshot.inMergeQueue, false);
+          yield* Ref.update(fixture.snapshots, (snapshot) => applySync(snapshot, commands));
+          intent = {};
+          yield* sweepAgain(fixture, reactor);
+          commands = yield* Ref.get(fixture.syncCommands);
+          assert.strictEqual(commands.length, 3);
+          assert.strictEqual(commands.at(-1)?.snapshot.autoMergeEnabled, undefined);
+          assert.strictEqual(commands.at(-1)?.snapshot.inMergeQueue, undefined);
+          yield* Ref.update(fixture.snapshots, (snapshot) => applySync(snapshot, commands));
+          yield* sweepAgain(fixture, reactor);
+          assert.strictEqual((yield* Ref.get(fixture.syncCommands)).length, 3);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
   it.effect("retries a failed stack read after the summary becomes terminal", () =>
     Effect.scoped(
       Effect.gen(function* () {

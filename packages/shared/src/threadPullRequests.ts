@@ -277,8 +277,27 @@ export function resolveThreadPullRequestChains(
   return chains;
 }
 
+export type PullRequestMergeIntent = "auto-merge" | "queued";
+
+/** Merge intent supplements an open PR's state; old or unsupported hosts report neither. */
+export function resolvePullRequestMergeIntent(pr: {
+  readonly state?: string | null | undefined;
+  readonly isDraft?: boolean | undefined;
+  readonly autoMergeEnabled?: boolean | undefined;
+  readonly inMergeQueue?: boolean | undefined;
+}): PullRequestMergeIntent | null {
+  if (pr.state !== "open" || pr.isDraft) return null;
+  if (pr.inMergeQueue === true) return "queued";
+  return pr.autoMergeEnabled === true ? "auto-merge" : null;
+}
+
+export function pullRequestMergeIntentLabel(intent: PullRequestMergeIntent): string {
+  return intent === "queued" ? "In merge queue" : "Auto-merge enabled";
+}
+
 export type ThreadPullRequestBadge = {
   readonly state: "open" | "closed" | "merged" | "draft";
+  readonly mergeIntent?: PullRequestMergeIntent;
 } & (
   | {
       readonly kind: "stack";
@@ -302,10 +321,26 @@ export function resolveThreadPullRequestBadge(
         ? "merged"
         : "closed";
   const chains = resolveThreadPullRequestChains(visible);
+  // A dot on a stack or linked count speaks for every remaining PR. Unknown snapshots
+  // therefore keep it off, as does even one open PR with no automatic merge requested.
+  const remaining = visible.filter(
+    (link) => link.snapshot == null || link.snapshot.state === "open",
+  );
+  const intents = remaining.map((link) =>
+    link.snapshot === null ? null : resolvePullRequestMergeIntent(link.snapshot),
+  );
+  const mergeIntent =
+    intents.length > 0 && intents.every((intent) => intent !== null)
+      ? {
+          mergeIntent: intents.every((intent) => intent === "queued")
+            ? ("queued" as const)
+            : ("auto-merge" as const),
+        }
+      : {};
   if (visible.length > 1 && chains.length === 1) {
-    return { kind: "stack", layers: visible.length, state };
+    return { kind: "stack", layers: visible.length, state, ...mergeIntent };
   }
-  return { kind: "pull-request", others: visible.length - 1, state };
+  return { kind: "pull-request", others: visible.length - 1, state, ...mergeIntent };
 }
 
 /** Search terms for visible PR links, including the legacy single-link projection. */

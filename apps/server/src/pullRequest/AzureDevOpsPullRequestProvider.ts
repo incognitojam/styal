@@ -342,6 +342,7 @@ export const make = Effect.gen(function* () {
           baseBranch: pullRequest.baseBranch,
           state: pullRequest.state,
           isDraft: pullRequest.isDraft,
+          autoMergeEnabled: pullRequest.autoMergeEnabled,
           mergeability: pullRequest.mergeability,
           closedAt: pullRequest.state === "closed" ? pullRequest.closedAt : null,
           mergedAt: pullRequest.state === "merged" ? pullRequest.closedAt : null,

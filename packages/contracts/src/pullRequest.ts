@@ -739,6 +739,9 @@ export type PullRequestPreview = typeof PullRequestPreview.Type;
  * status check never loads permissions, repository settings, checks, or base comparison data.
  */
 export const PullRequestSummary = Schema.Struct({
+  /** Absent when the host did not report automatic merge intent or queue membership. */
+  autoMergeEnabled: Schema.optional(Schema.Boolean),
+  inMergeQueue: Schema.optional(Schema.Boolean),
   provider: SourceControlProviderKind,
   projectId: ProjectId,
   repository: TrimmedNonEmptyString,
@@ -909,6 +912,8 @@ export const PullRequestDetail = Schema.Struct({
    * arm something that is already armed, and a second arming is a write nobody asked for.
    */
   autoMergeEnabled: Schema.optional(Schema.Boolean),
+  /** Confirmed queue membership; absent where the host does not report it. */
+  inMergeQueue: Schema.optional(Schema.Boolean),
   /** The strategy the host will use for an armed auto-merge, where it reports one. */
   autoMergeMethod: Schema.optional(PullRequestMergeMethod),
   /** GitHub Actions runs on this head commit that are waiting for a maintainer's approval. */
