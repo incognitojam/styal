@@ -6,9 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const motion = vi.hoisted(() => ({
   start: vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => ({ cancel: vi.fn() })),
+  reducedMotion: false,
+  pathname: "/settings/general",
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  useLocation: ({ select }: { select: (location: { pathname: string }) => string }) =>
+    select({ pathname: motion.pathname }),
 }));
 
 vi.mock("./SettingsScopeSentence", () => ({
+  SETTINGS_DEVICE_ONLY_PATHS: new Set(["/settings/appearance"]),
   SettingsScopeSentence: function Sentence({ compact }: { compact: boolean }) {
     const [open, setOpen] = useState(false);
     return (
@@ -34,11 +42,10 @@ let resize: () => void;
 let sourceTop: number;
 let sourceHeight: number;
 let disconnect: ReturnType<typeof vi.fn>;
-let reducedMotion: boolean;
 
 function fixture(pageKey = "initial") {
   return (
-    <SettingsScopeDockProvider enabled>
+    <SettingsScopeDockProvider>
       <header>
         <SettingsScopeToolbar />
       </header>
@@ -54,15 +61,22 @@ beforeEach(async () => {
   disconnect = vi.fn();
   sourceTop = 24;
   sourceHeight = 24;
-  reducedMotion = false;
+  motion.reducedMotion = false;
+  motion.pathname = "/settings/general";
   motion.start.mockClear();
-  vi.stubGlobal("matchMedia", () => ({ matches: reducedMotion }));
+  vi.stubGlobal("matchMedia", () => ({ matches: motion.reducedMotion }));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
     const scroll = container.querySelector<HTMLElement>("[data-settings-page-scroll]");
+    // A pinned height wins over the sentence's natural height, as in layout.
     return this.hasAttribute("data-settings-scope-source")
-      ? new DOMRect(0, sourceTop - (scroll?.scrollTop ?? 0), 400, sourceHeight)
+      ? new DOMRect(
+          0,
+          sourceTop - (scroll?.scrollTop ?? 0),
+          400,
+          Number.parseFloat(this.style.height) || sourceHeight,
+        )
       : new DOMRect(0, 0, 400, 600);
   });
   vi.stubGlobal(
@@ -156,7 +170,7 @@ describe("settings scope docking", () => {
   });
 
   it("moves the controls immediately in both directions with reduced motion", async () => {
-    reducedMotion = true;
+    motion.reducedMotion = true;
     const button = container.querySelector("button")!;
     await scrollTo(50);
     expect(container.querySelector("header")!.contains(button)).toBe(true);
@@ -217,5 +231,52 @@ describe("settings scope docking", () => {
       true,
     );
     expect((source as HTMLElement).style.height).toBe("52px");
+  });
+
+  it("unpins the sentence when scrolling crosses back before the controls move", async () => {
+    const source = container.querySelector<HTMLElement>("[data-settings-scope-source]")!;
+    await act(() => {
+      const scroll = container.querySelector<HTMLElement>("[data-settings-page-scroll]")!;
+      scroll.scrollTop = 50;
+      scroll.dispatchEvent(new Event("scroll"));
+      scroll.scrollTop = 0;
+      scroll.dispatchEvent(new Event("scroll"));
+    });
+    expect(source.contains(container.querySelector("button"))).toBe(true);
+    expect(source.style.height).toBe("");
+    expect(motion.start).not.toHaveBeenCalled();
+  });
+
+  it("keeps the content still when the sentence changed height while docked", async () => {
+    const source = container.querySelector<HTMLElement>("[data-settings-scope-source]")!;
+    const scroll = container.querySelector<HTMLElement>("[data-settings-page-scroll]")!;
+    sourceHeight = 52;
+    await act(() => resize());
+    await scrollTo(80);
+    expect(source.style.height).toBe("52px");
+
+    // Widening the window lets the sentence fit on one line again.
+    sourceHeight = 24;
+    await act(() => resize());
+    await scrollTo(70);
+
+    expect(source.contains(container.querySelector("button"))).toBe(true);
+    expect(source.style.height).toBe("");
+    expect(scroll.scrollTop).toBe(42);
+    await act(() => resize());
+    expect(source.contains(container.querySelector("button"))).toBe(true);
+  });
+
+  it("releases the toolbar on pages without a scope", async () => {
+    await scrollTo(50);
+    const toolbar = container.querySelector<HTMLElement>("[data-settings-scope-toolbar]")!;
+    expect(toolbar.className).not.toContain("hidden");
+
+    motion.pathname = "/settings/appearance";
+    await act(() => root.render(fixture("appearance")));
+
+    expect(container.querySelector("[data-settings-scope-source]")).toBeNull();
+    expect(toolbar.className).toContain("hidden");
+    expect(container.querySelector("button")).toBeNull();
   });
 });

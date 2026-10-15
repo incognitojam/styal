@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-
 import { useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
@@ -33,8 +34,35 @@ import {
   isSettingsSearchScopeAvailable,
 } from "../components/settings/settingsSearch";
 
-function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void }) {
+/** Shrinks to its icon while docked scope pickers share the toolbar. */
+function RestoreDeviceDefaultsButton({
+  compact,
+  onRestored,
+}: {
+  compact: boolean;
+  onRestored: () => void;
+}) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
+  if (compact) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Restore device defaults"
+              disabled={changedSettingLabels.length === 0}
+              onClick={() => void restoreDefaults()}
+            />
+          }
+        >
+          <RotateCcwIcon className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">Restore device defaults</TooltipPopup>
+      </Tooltip>
+    );
+  }
   return (
     <Button
       size="xs"
@@ -125,14 +153,8 @@ function SettingsToolbar({ pathname, onRestored }: { pathname: string; onRestore
         </div>
         <SettingsScopeToolbar />
         {pathname === "/settings/general" ? (
-          <div
-            className={
-              docked
-                ? "ms-auto hidden shrink-0 items-center @min-[56rem]/settings-toolbar:flex"
-                : "ms-auto flex shrink-0 items-center"
-            }
-          >
-            <RestoreDeviceDefaultsButton onRestored={onRestored} />
+          <div className="ms-auto flex shrink-0 items-center">
+            <RestoreDeviceDefaultsButton compact={docked} onRestored={onRestored} />
           </div>
         ) : null}
       </div>
@@ -146,20 +168,19 @@ function SettingsContentLayout() {
   useEscapeToGoBack(navigateToMainApp);
   const { search } = useSettingsScope();
   const [restoreSignal, setRestoreSignal] = useState(0);
-  const hasScope = !SETTINGS_DEVICE_ONLY_PATHS.has(location.pathname);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <SettingsScopeDockProvider
-          key={`${location.pathname}:${JSON.stringify(search)}:${restoreSignal}`}
-          enabled={hasScope}
-        >
+        <SettingsScopeDockProvider>
           <SettingsToolbar
             pathname={location.pathname}
             onRestored={() => setRestoreSignal((value) => value + 1)}
           />
-          <div className="min-h-0 flex flex-1 flex-col">
+          <div
+            key={`${JSON.stringify(search)}:${restoreSignal}`}
+            className="min-h-0 flex flex-1 flex-col"
+          >
             <SettingsScopeBoundary pathname={location.pathname}>
               <Outlet />
             </SettingsScopeBoundary>

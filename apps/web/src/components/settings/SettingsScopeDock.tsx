@@ -8,11 +8,11 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "@tanstack/react-router";
 
-import { SettingsScopeSentence } from "./SettingsScopeSentence";
+import { SETTINGS_DEVICE_ONLY_PATHS, SettingsScopeSentence } from "./SettingsScopeSentence";
 
 interface SettingsScopeDockValue {
-  readonly enabled: boolean;
   readonly docked: boolean;
   readonly setSource: (element: HTMLDivElement | null) => void;
   readonly setToolbar: (element: HTMLDivElement | null) => void;
@@ -21,18 +21,13 @@ interface SettingsScopeDockValue {
 const SettingsScopeDockContext = createContext<SettingsScopeDockValue | null>(null);
 
 /** Move one mounted set of menus, retaining their open state and keyboard focus. */
-export function SettingsScopeDockProvider({
-  enabled,
-  children,
-}: {
-  enabled: boolean;
-  children: ReactNode;
-}) {
+export function SettingsScopeDockProvider({ children }: { children: ReactNode }) {
   const [source, setSource] = useState<HTMLDivElement | null>(null);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   const [docked, setDocked] = useState(false);
   const dockedRef = useRef(false);
-  const animateNextMove = useRef(false);
+  // The docked state a scroll crossing is moving to; any other move stays still.
+  const animateNextMove = useRef<boolean | null>(null);
   const [host] = useState(() =>
     typeof document === "undefined" ? null : document.createElement("div"),
   );
@@ -42,13 +37,14 @@ export function SettingsScopeDockProvider({
     if (!host || !target) return;
     const previous = host.parentElement;
     // Replacing page content also reparents the host; only a scroll crossing animates.
-    const animate = animateNextMove.current && previous === (docked ? source : toolbar);
-    animateNextMove.current = false;
+    const animate = animateNextMove.current === docked && previous === (docked ? source : toolbar);
+    animateNextMove.current = null;
     const focused = host.contains(document.activeElement) ? document.activeElement : null;
     target.append(host);
-    if (!docked && source) source.style.removeProperty("height");
+    if (!docked && source) releaseSourceHeight(source);
     if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
 
+    // Panel animations default to off, so only the OS preference disables this short cue.
     if (!animate || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     // Move both pickers together so wrapped labels cannot cross during docking.
     const animation = host.animate(
@@ -69,11 +65,13 @@ export function SettingsScopeDockProvider({
       const next = scroll.scrollTop >= threshold;
       if (next === dockedRef.current) return;
       dockedRef.current = next;
-      animateNextMove.current = animate;
+      animateNextMove.current = animate ? next : null;
       // Retain the sentence's space so docking cannot change the scroll position.
       if (next && !source.style.height) {
         source.style.setProperty("height", `${source.getBoundingClientRect().height}px`);
       }
+      // Crossing back within one frame never moved the controls out.
+      if (!next && source.contains(host)) source.style.removeProperty("height");
       setDocked(next);
     };
     const onScroll = () => updateDocked(true);
@@ -94,10 +92,14 @@ export function SettingsScopeDockProvider({
     return () => {
       observer.disconnect();
       scroll.removeEventListener("scroll", onScroll);
+      // Each page starts with its sentence in place; device-only pages have none.
+      dockedRef.current = false;
+      animateNextMove.current = null;
+      setDocked(false);
     };
-  }, [source]);
+  }, [host, source]);
 
-  const value = useMemo(() => ({ enabled, docked, setSource, setToolbar }), [enabled, docked]);
+  const value = useMemo(() => ({ docked, setSource, setToolbar }), [docked]);
 
   return (
     <SettingsScopeDockContext value={value}>
@@ -107,6 +109,22 @@ export function SettingsScopeDockProvider({
   );
 }
 
+/**
+ * Unpins the sentence's space after the controls return. A resize while docked
+ * can leave the pin taller or shorter than the sentence, so the scroll position
+ * absorbs the difference instead of the content jumping.
+ */
+function releaseSourceHeight(source: HTMLElement) {
+  if (!source.style.height) return;
+  const scroll = source.closest<HTMLElement>("[data-settings-page-scroll]");
+  const pinned = source.getBoundingClientRect().height;
+  const scrollTop = scroll?.scrollTop ?? 0;
+  source.style.removeProperty("height");
+  const shift = pinned - source.getBoundingClientRect().height;
+  // Browsers with scroll anchoring may already have compensated.
+  if (scroll && shift !== 0 && scroll.scrollTop === scrollTop) scroll.scrollTop = scrollTop - shift;
+}
+
 export function useSettingsScopeDocked() {
   return useContext(SettingsScopeDockContext)?.docked ?? false;
 }
@@ -114,9 +132,9 @@ export function useSettingsScopeDocked() {
 /** The original sentence position also marks when its menus should enter the toolbar. */
 export function SettingsScopeInline() {
   const dock = useContext(SettingsScopeDockContext);
-  if (!dock) return <SettingsScopeSentence />;
-  const { enabled, setSource } = dock;
-  if (!enabled) return null;
+  const pathname = useLocation({ select: (location) => location.pathname });
+  if (!dock || SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
+  const { setSource } = dock;
   return <div ref={setSource} data-settings-scope-source />;
 }
 

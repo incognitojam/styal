@@ -1,5 +1,4 @@
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
-import { useLocation } from "@tanstack/react-router";
 import { ChevronDownIcon, LayersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -57,9 +56,8 @@ interface SettingsScopeMenuProps {
  */
 export function SettingsScopeSentence({ compact = false }: { compact?: boolean }) {
   const scope = useOptionalSettingsScope();
-  const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
-  if (scope === null || SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
+  if (scope === null) return null;
   const props: SettingsScopeMenuProps = {
     value: scope.search,
     singleEnvironment: scope.singleEnvironment,
@@ -83,14 +81,16 @@ export function SettingsScopeSentence({ compact = false }: { compact?: boolean }
         </span>
       )}
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className={compact ? "hidden" : "shrink-0"}>
-          {/* A legacy checkout link names one environment without `machine`. */}
-          {scope.singleEnvironment
-            ? "Applying settings on"
-            : scope.search.machine || scope.scope.kind === "checkout"
-              ? "on"
-              : "across"}
-        </span>
+        {compact ? null : (
+          <span className="shrink-0">
+            {/* A legacy checkout link names one environment without `machine`. */}
+            {scope.singleEnvironment
+              ? "Applying settings on"
+              : scope.search.machine || scope.scope.kind === "checkout"
+                ? "on"
+                : "across"}
+          </span>
+        )}
         <EnvironmentScopeMenu {...props} />
       </span>
     </p>
