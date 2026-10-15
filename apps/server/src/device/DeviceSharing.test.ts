@@ -131,9 +131,10 @@ const fixture = Effect.gen(function* () {
   // Peer commands the target finished handling, as "operation:status".
   const commands = yield* Queue.unbounded<string>();
   let inventoryUnavailable = false;
-  // Device streams from the hub stay open until the test closes them.
-  const hubStreams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  // Hub device streams and daemon artifact downloads stay open until the test closes them.
+  const openStreams: ReadableStreamDefaultController<Uint8Array>[] = [];
   let readyGate: Deferred.Deferred<void> | null = null;
+  const readyStarted = yield* Deferred.make<void>();
   let handler: (request: Request) => Promise<Response>;
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
@@ -184,6 +185,18 @@ const fixture = Effect.gen(function* () {
         }
         return HttpClientResponse.fromWeb(request, response);
       }
+      if (request.url.endsWith("/stream.mjpeg") || request.url.includes("/artifacts/"))
+        return HttpClientResponse.fromWeb(
+          request,
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start: (controller) => {
+                openStreams.push(controller);
+                controller.enqueue(new TextEncoder().encode("chunk"));
+              },
+            }),
+          ),
+        );
       if (request.url.startsWith("http://daemon.test")) {
         daemonRequests.push({
           url: request.url,
@@ -195,19 +208,6 @@ const fixture = Effect.gen(function* () {
         });
         return HttpClientResponse.fromWeb(request, Response.json({ ok: true }));
       }
-      if (request.url.endsWith("/stream.mjpeg"))
-        return HttpClientResponse.fromWeb(
-          request,
-          new Response(
-            new ReadableStream<Uint8Array>({
-              start: (controller) => {
-                hubStreams.push(controller);
-                controller.enqueue(new TextEncoder().encode("frame"));
-              },
-            }),
-            { headers: { "content-type": "multipart/x-mixed-replace" } },
-          ),
-        );
       if (inventoryUnavailable)
         return HttpClientResponse.fromWeb(request, new Response(null, { status: 503 }));
       const response = request.url.includes("/api/devices")
@@ -305,9 +305,13 @@ const fixture = Effect.gen(function* () {
     }),
     platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
     ensureReady: () =>
-      Effect.suspend(() => (readyGate ? Deferred.await(readyGate) : Effect.void)).pipe(
-        Effect.as(ready),
-      ),
+      Effect.suspend(() =>
+        readyGate
+          ? Deferred.succeed(readyStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(readyGate)),
+            )
+          : Effect.void,
+      ).pipe(Effect.as(ready)),
     ensureAgentReady: () => Effect.succeed(ready),
     current: Effect.succeed(ready),
     currentAgent: Effect.sync(() => daemon),
@@ -403,7 +407,8 @@ const fixture = Effect.gen(function* () {
     setInventoryUnavailable: (value: boolean) => {
       inventoryUnavailable = value;
     },
-    hubStreams,
+    openStreams,
+    readyStarted,
     setReadyGate: (gate: Deferred.Deferred<void> | null) => {
       readyGate = gate;
     },
@@ -1298,35 +1303,21 @@ it.effect("counts another environment as using devices only while it uses them",
   }).pipe(Effect.scoped),
 );
 
-it.effect("counts a device stream for as long as its response stays open", () =>
+it.effect("does not count a person watching a shared device", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
-    const watch = () =>
-      Effect.promise(() =>
-        f.handler(
-          new Request(
-            "http://orion.test/api/device-share/hub/vendor/serve-sim/helper/sim/stream.mjpeg",
-            { headers: { authorization: `Bearer ${f.grant.token}` } },
-          ),
+    const response = yield* Effect.promise(() =>
+      f.handler(
+        new Request(
+          "http://orion.test/api/device-share/hub/vendor/serve-sim/helper/sim/stream.mjpeg",
+          { headers: { authorization: `Bearer ${f.grant.token}` } },
         ),
-      );
-    const response = yield* watch();
+      ),
+    );
     expect(response.status).toBe(200);
-    const reader = response.body!.getReader();
-    yield* Effect.promise(() => reader.read());
     yield* TestClock.adjust("1 hour");
-    expect(yield* f.target.environmentsUsingDevices).toBe(1);
-    f.hubStreams[0]!.close();
-    while (!(yield* Effect.promise(() => reader.read())).done);
-    yield* Effect.yieldNow;
-    // No device session is held, so the ended stream is no longer use.
     expect(yield* f.target.environmentsUsingDevices).toBe(0);
-
-    // A viewer that disconnects mid-stream stops counting too.
-    const abandoned = yield* watch();
-    yield* Effect.promise(() => abandoned.body!.cancel());
-    yield* Effect.yieldNow;
-    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+    yield* Effect.promise(() => response.body!.cancel());
   }).pipe(Effect.scoped),
 );
 
@@ -1348,6 +1339,7 @@ it.effect("counts a device command while it is still running", () =>
         },
       })
       .pipe(Effect.forkChild);
+    yield* Deferred.await(f.readyStarted);
     yield* TestClock.adjust("10 minutes");
     expect(yield* f.target.environmentsUsingDevices).toBe(1);
     yield* Deferred.succeed(gate, undefined);
@@ -1356,31 +1348,7 @@ it.effect("counts a device command while it is still running", () =>
   }).pipe(Effect.scoped),
 );
 
-it.effect("keeps counting a stream that outlives a release", () =>
-  Effect.gen(function* () {
-    const f = yield* fixture;
-    const peer = { subject: `device-host:${sourceId}`, sessionId: f.grant.sessionId };
-    const response = yield* Effect.promise(() =>
-      f.handler(
-        new Request(
-          "http://orion.test/api/device-share/hub/vendor/serve-sim/helper/sim/stream.mjpeg",
-          { headers: { authorization: `Bearer ${f.grant.token}` } },
-        ),
-      ),
-    );
-    yield* f.target.command(peer, { operation: "release" });
-    yield* f.target.command(peer, {
-      operation: "detail",
-      input: { hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" },
-    });
-    expect(yield* f.target.environmentsUsingDevices).toBe(1);
-    yield* Effect.promise(() => response.body!.cancel());
-    yield* Effect.yieldNow;
-    expect(yield* f.target.environmentsUsingDevices).toBe(0);
-  }).pipe(Effect.scoped),
-);
-
-it.effect("counts agent requests forwarded to the device environment as use", () =>
+it.effect("counts an agent request for as long as it stays open", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     yield* f.connect;
@@ -1391,17 +1359,38 @@ it.effect("counts agent requests forwarded to the device environment as use", ()
       platform: "android",
     });
     const { agentDevice } = yield* host.ensureAgentReady(() => Effect.void);
+    const download = () =>
+      Effect.promise(() =>
+        f.handler(
+          new Request("http://orion.test/api/device-share/agent/artifacts/recording", {
+            headers: { authorization: `Bearer ${agentDevice.token}` },
+          }),
+        ),
+      );
     yield* TestClock.adjust("10 minutes");
     expect(yield* f.target.environmentsUsingDevices).toBe(0);
-    const response = yield* Effect.promise(() =>
-      f.handler(
-        new Request("http://orion.test/api/device-share/agent/health", {
-          headers: { authorization: `Bearer ${agentDevice.token}` },
-        }),
-      ),
-    );
-    expect(response.status).toBe(200);
-    yield* Effect.promise(() => response.text());
+
+    // An agent that disconnects mid-download stops counting once the window passes.
+    const abandoned = yield* download();
+    expect(abandoned.status).toBe(200);
+    yield* Effect.promise(() => abandoned.body!.cancel());
+    yield* TestClock.adjust("10 minutes");
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
+
+    const response = yield* download();
+    const reader = response.body!.getReader();
+    yield* Effect.promise(() => reader.read());
+    yield* TestClock.adjust("1 hour");
     expect(yield* f.target.environmentsUsingDevices).toBe(1);
+    // Releasing the devices does not stop counting a request that is still open.
+    yield* f.target.command(
+      { subject: `device-host:${sourceId}`, sessionId: f.grant.sessionId },
+      { operation: "release" },
+    );
+    expect(yield* f.target.environmentsUsingDevices).toBe(1);
+    f.openStreams.at(-1)!.close();
+    while (!(yield* Effect.promise(() => reader.read())).done);
+    yield* TestClock.adjust("10 minutes");
+    expect(yield* f.target.environmentsUsingDevices).toBe(0);
   }).pipe(Effect.scoped),
 );

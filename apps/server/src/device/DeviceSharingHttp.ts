@@ -108,7 +108,6 @@ const proxy = errors(
     const upgrade = request.headers.upgrade?.toLowerCase() === "websocket";
     const sharing = yield* DeviceSharing.DeviceSharing;
     let target: { origin: string; headers?: Readonly<Record<string, string>> };
-    let sourceId: string;
     if (agent) {
       // Agents hold a separate credential that reaches only this proxy, never peer commands.
       const token = agentToken(request);
@@ -117,10 +116,11 @@ const proxy = errors(
       if (upgrade || !isAllowedAgentRequest(path, request.method))
         return HttpServerResponse.empty({ status: 404 });
       target = resolved;
-      sourceId = resolved.sourceId;
+      // Counts until the request scope closes, so a long agent request counts until it ends.
+      // Hub requests are a person viewing or driving the device, which a restart can resume.
+      yield* sharing.beginUse(resolved.sourceId);
     } else {
-      const session = yield* authenticate;
-      sourceId = session.subject.slice("device-host:".length);
+      yield* authenticate;
       if (!isAllowedDeviceHubRequest(path, request.method, upgrade))
         return HttpServerResponse.empty({ status: 404 });
       target = yield* sharing.hubTarget;
@@ -138,8 +138,6 @@ const proxy = errors(
       delete params.token;
       jsonBody = { ...body, params };
     }
-    // Counts until the request scope closes, so a stream counts for as long as it stays open.
-    yield* sharing.beginUse(sourceId);
     return yield* upgrade
       ? proxyDeviceWebSocket(request, upstream.replace(/^http/, "ws"))
       : proxyDeviceHttp(request, upstream, target.origin, target.headers, jsonBody);

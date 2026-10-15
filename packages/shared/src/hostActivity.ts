@@ -61,10 +61,7 @@ export function describeHostActivity(
   if (waiting)
     lines.push(`${plural(waiting, "thread")} waiting for input or approval will be interrupted.`);
   if (terminals) lines.push(`${plural(terminals, "terminal session")} will be interrupted.`);
-  if (deviceUsers)
-    lines.push(
-      `Devices in use by ${plural(deviceUsers, "other environment")} will be disconnected.`,
-    );
+  if (deviceUsers) lines.push("Devices in use by other environments will be disconnected.");
   if (uncheckedTerminals)
     lines.push(
       `Could not check ${plural(uncheckedTerminals, "terminal session")} for running commands.`,

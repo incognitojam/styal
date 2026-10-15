@@ -60,7 +60,7 @@ describe("describeHostActivity", () => {
   it("treats other environments using shared devices as running work", () => {
     expect(describeHostActivity([{ ...idle, environmentsUsingDevices: 2 }], options)).toEqual({
       concern: "running",
-      lines: ["Devices in use by 2 other environments will be disconnected."],
+      lines: ["Devices in use by other environments will be disconnected."],
       incomplete: false,
     });
   });
