@@ -36,6 +36,19 @@ let sourceHeight: number;
 let disconnect: ReturnType<typeof vi.fn>;
 let reducedMotion: boolean;
 
+function fixture(pageKey = "initial") {
+  return (
+    <SettingsScopeDockProvider enabled>
+      <header>
+        <SettingsScopeToolbar />
+      </header>
+      <div key={pageKey} data-settings-page-scroll>
+        <SettingsScopeInline />
+      </div>
+    </SettingsScopeDockProvider>
+  );
+}
+
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   disconnect = vi.fn();
@@ -66,16 +79,7 @@ beforeEach(async () => {
   document.body.append(container);
   root = createRoot(container);
   await act(() => {
-    root.render(
-      <SettingsScopeDockProvider enabled>
-        <header>
-          <SettingsScopeToolbar />
-        </header>
-        <div data-settings-page-scroll>
-          <SettingsScopeInline />
-        </div>
-      </SettingsScopeDockProvider>,
-    );
+    root.render(fixture());
   });
   const host = container.querySelector("[data-settings-scope-source]")!.firstElementChild!;
   Object.assign(host, { animate: motion.start });
@@ -97,6 +101,41 @@ async function scrollTo(top: number) {
 }
 
 describe("settings scope docking", () => {
+  it("replaces page content without entrance motion and still animates subsequent scrolling", async () => {
+    const button = container.querySelector("button")!;
+    for (const page of ["general", "providers", "general-again"]) {
+      await act(() => root.render(fixture(page)));
+      expect(container.querySelector("[data-settings-scope-source]")!.contains(button)).toBe(true);
+    }
+    expect(motion.start).not.toHaveBeenCalled();
+
+    await scrollTo(50);
+    expect(container.querySelector("header")!.contains(button)).toBe(true);
+    expect(motion.start).toHaveBeenCalledOnce();
+
+    await act(() => root.render(fixture("replacement-while-docked")));
+    expect(container.querySelector("[data-settings-scope-source]")!.contains(button)).toBe(true);
+    expect(motion.start).toHaveBeenCalledOnce();
+    await scrollTo(50);
+    expect(motion.start).toHaveBeenCalledTimes(2);
+  });
+
+  it("establishes placement after layout changes without animating", async () => {
+    sourceTop = -60;
+    await act(() => resize());
+    expect(container.querySelector("header")!.contains(container.querySelector("button"))).toBe(
+      true,
+    );
+    sourceTop = 24;
+    await act(() => resize());
+    expect(
+      container
+        .querySelector("[data-settings-scope-source]")!
+        .contains(container.querySelector("button")),
+    ).toBe(true);
+    expect(motion.start).not.toHaveBeenCalled();
+  });
+
   it("animates only threshold crossings and cancels interrupted motion", async () => {
     expect(motion.start).not.toHaveBeenCalled();
     await scrollTo(850);

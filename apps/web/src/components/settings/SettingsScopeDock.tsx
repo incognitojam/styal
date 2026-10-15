@@ -4,6 +4,7 @@ import {
   useContext,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -30,6 +31,8 @@ export function SettingsScopeDockProvider({
   const [source, setSource] = useState<HTMLDivElement | null>(null);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   const [docked, setDocked] = useState(false);
+  const dockedRef = useRef(false);
+  const animateNextMove = useRef(false);
   const [host] = useState(() =>
     typeof document === "undefined" ? null : document.createElement("div"),
   );
@@ -38,17 +41,15 @@ export function SettingsScopeDockProvider({
     const target = docked ? toolbar : source;
     if (!host || !target) return;
     const previous = host.parentElement;
+    // Replacing page content also reparents the host; only a scroll crossing animates.
+    const animate = animateNextMove.current && previous === (docked ? source : toolbar);
+    animateNextMove.current = false;
     const focused = host.contains(document.activeElement) ? document.activeElement : null;
     target.append(host);
     if (!docked && source) source.style.removeProperty("height");
     if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
 
-    if (
-      !previous ||
-      previous === target ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    )
-      return;
+    if (!animate || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     // Move both pickers together so wrapped labels cannot cross during docking.
     const animation = host.animate(
       [
@@ -64,23 +65,25 @@ export function SettingsScopeDockProvider({
     const scroll = source?.closest<HTMLElement>("[data-settings-page-scroll]");
     if (!source || !scroll) return;
     let threshold = Infinity;
-    let wasDocked = false;
-    const onScroll = () => {
+    const updateDocked = (animate: boolean) => {
       const next = scroll.scrollTop >= threshold;
-      if (next === wasDocked) return;
-      wasDocked = next;
+      if (next === dockedRef.current) return;
+      dockedRef.current = next;
+      animateNextMove.current = animate;
       // Retain the sentence's space so docking cannot change the scroll position.
       if (next && !source.style.height) {
         source.style.setProperty("height", `${source.getBoundingClientRect().height}px`);
       }
       setDocked(next);
     };
+    const onScroll = () => updateDocked(true);
     const measure = () => {
       threshold =
         scroll.scrollTop +
         source.getBoundingClientRect().bottom -
         scroll.getBoundingClientRect().top;
-      onScroll();
+      // Initial layout and page replacements establish placement without entrance motion.
+      updateDocked(false);
     };
     // Geometry is measured on layout changes; scrolling only compares two numbers.
     const observer = new ResizeObserver(measure);
