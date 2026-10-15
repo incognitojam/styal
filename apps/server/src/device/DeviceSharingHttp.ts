@@ -1,9 +1,15 @@
-import { AuthDeviceOperateScope, DeviceError, DevicePeerCommand } from "@t3tools/contracts";
+import {
+  AuthDeviceOperateScope,
+  DeviceError,
+  DevicePeerCommand,
+  LOCAL_DEVICE_HOST_ID,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { whileStreaming } from "./DeviceIdle.ts";
 import * as DeviceSharing from "./DeviceSharing.ts";
 import {
   isAllowedDeviceHubRequest,
@@ -139,7 +145,9 @@ const proxy = errors(
       jsonBody = { ...body, params };
     }
     return yield* upgrade
-      ? proxyDeviceWebSocket(request, upstream.replace(/^http/, "ws"))
+      ? proxyDeviceWebSocket(request, upstream.replace(/^http/, "ws")).pipe(
+          whileStreaming(LOCAL_DEVICE_HOST_ID, path, url.value.searchParams),
+        )
       : proxyDeviceHttp(request, upstream, target.origin, target.headers, jsonBody);
   }),
 );

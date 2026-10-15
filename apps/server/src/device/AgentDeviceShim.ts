@@ -13,6 +13,10 @@ import * as Path from "effect/Path";
 
 const SHIM_DIR = "device/bin";
 
+/** Sessions handed back or over; the launcher refuses them until device_open hands them out again. */
+export const releasedAgentSessionsPath = (stateDir: string, path: Path.Path) =>
+  path.join(stateDir, "device", "released-sessions.json");
+
 export const ensureAgentDeviceShim = Effect.fn("AgentDeviceShim.ensure")(function* (input: {
   readonly entryPath: string;
   readonly stateDir: string;
@@ -25,15 +29,23 @@ export const ensureAgentDeviceShim = Effect.fn("AgentDeviceShim.ensure")(functio
   const shimDir = path.join(input.stateDir, SHIM_DIR);
   yield* fs.makeDirectory(shimDir, { recursive: true });
   const launcherPath = path.join(shimDir, "agent-device-launcher.mjs");
+  const releasedPath = releasedAgentSessionsPath(input.stateDir, path);
   // Desktop may reuse Electron as Node, but provider environments strip its Node-mode flag.
   yield* fs.writeFileString(
     launcherPath,
     `import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 const args = process.argv.slice(2);
 const informational = args.length === 1 && ["help", "--help", "-h", "--version", "version"].includes(args[0]);
 const hasValue = flag => { const index = args.indexOf(flag); return index >= 0 && !!args[index + 1] && !args[index + 1].startsWith("--"); };
 if (!informational && !(hasValue("--config") && hasValue("--session"))) {
   console.error("Call device_open first and include its --config and --session flags.");
+  process.exit(1);
+}
+let released = [];
+try { released = JSON.parse(readFileSync(${JSON.stringify(releasedPath)}, "utf8")); } catch {}
+if (!informational && released.includes(args[args.indexOf("--session") + 1])) {
+  console.error("This device was handed back or to another thread. Call device_open again to keep using a device.");
   process.exit(1);
 }
 const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };

@@ -3,6 +3,7 @@ import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
+import { DeviceIdleShutdownSetting } from "./DeviceIdleShutdownSetting";
 /**
  * Integrations settings - preferences for surfaces styal embeds rather than
  * owns. Browser is the first section: the defaults a preview tab opens at,
@@ -851,6 +852,7 @@ function DeviceIntegrationControls({
           </>
         }
       />
+      <DeviceIdleShutdownSetting disabled={projectScope || !environmentId || !enabled} />
       {environmentId ? (
         <DeviceHostUpdates
           state={{ ...state, hosts: state.hosts.filter((host) => host.kind === "local") }}

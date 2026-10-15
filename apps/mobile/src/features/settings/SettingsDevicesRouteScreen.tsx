@@ -4,17 +4,26 @@ import {
   offlineDeviceShares,
 } from "@t3tools/client-runtime/state/device";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentDeviceHostConfig } from "@t3tools/contracts";
+import {
+  DEVICE_IDLE_SHUTDOWN_CHOICES,
+  deviceIdleShutdownLabel,
+  type DeviceIdleShutdownMinutes,
+  type EnvironmentDeviceHostConfig,
+} from "@t3tools/contracts";
+import { Pressable } from "react-native";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Option from "effect/Option";
 import { ScreenScrollView } from "../../components/ScreenScrollView";
 import { AppText } from "../../components/AppText";
+import { ControlPillMenu } from "../../components/ControlPill";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
+import { serverEnvironment } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { SettingsControlRow } from "./components/SettingsControlRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -141,6 +150,7 @@ function EnvironmentDevices(props: {
   const configure = useAtomCommand(deviceEnvironment.configure);
   const connect = useAtomCommand(deviceEnvironment.connectEnvironment);
   const disconnect = useAtomCommand(deviceEnvironment.disconnectEnvironment);
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings);
   // "configure" or the agent environment ID, so each row shows progress only for its own work.
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -176,6 +186,18 @@ function EnvironmentDevices(props: {
           onValueChange={(agentAccessEnabled) =>
             perform("configure", () =>
               configure({ environmentId: device.environmentId, input: { agentAccessEnabled } }),
+            )
+          }
+        />
+        <IdleShutdownRow
+          minutes={device.serverConfig.settings.deviceIdleShutdownMinutes}
+          disabled={busy || !device.serverConfig.settings.enableDeviceSupport}
+          onSelect={(deviceIdleShutdownMinutes) =>
+            perform("configure", () =>
+              updateSettings({
+                environmentId: device.environmentId,
+                input: { patch: { deviceIdleShutdownMinutes } },
+              }),
             )
           }
         />
@@ -215,6 +237,41 @@ function EnvironmentDevices(props: {
         </AppText>
       ) : null}
     </>
+  );
+}
+
+function IdleShutdownRow(props: {
+  minutes: DeviceIdleShutdownMinutes | null;
+  disabled: boolean;
+  onSelect: (minutes: DeviceIdleShutdownMinutes | null) => void;
+}) {
+  const label = deviceIdleShutdownLabel(props.minutes);
+  return (
+    <SettingsControlRow
+      icon={{ ios: "moon.zzz", android: "smartphone" }}
+      label="Shut down idle devices"
+      subtitle="Devices styal started stop once no agent or viewer uses them."
+      disabled={props.disabled}
+    >
+      <ControlPillMenu
+        actions={DEVICE_IDLE_SHUTDOWN_CHOICES.map((choice) => ({
+          id: String(choice),
+          title: deviceIdleShutdownLabel(choice),
+          state: choice === props.minutes ? "on" : "off",
+        }))}
+        onPressAction={({ nativeEvent }) =>
+          props.onSelect(nativeEvent.event === "null" ? null : Number(nativeEvent.event))
+        }
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Shut down idle devices, ${label}`}
+          disabled={props.disabled}
+        >
+          <AppText className="text-base text-foreground-muted">{label}</AppText>
+        </Pressable>
+      </ControlPillMenu>
+    </SettingsControlRow>
   );
 }
 

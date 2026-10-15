@@ -27,6 +27,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { DeviceActivity } from "./DeviceIdle.ts";
 import * as DeviceService from "./DeviceService.ts";
 import {
   environmentDeviceHostId,
@@ -190,6 +191,15 @@ const make = Effect.gen(function* () {
     )
       return yield* unavailable("This session is not a device access grant.");
     agents.delete(sessionId);
+    if (session) {
+      // The source cannot release its claims once its access is gone, so release them here.
+      const sourceId = session.subject.slice("device-host:".length);
+      const prefix = devicePeerThreadPrefix(sourceId);
+      (yield* DeviceActivity).notePeer(prefix, sourceId);
+      const { sessions: open } = yield* devices.state;
+      for (const entry of open.filter((candidate) => candidate.threadId.startsWith(prefix)))
+        yield* devices.close({ threadId: entry.threadId, hostId: LOCAL_DEVICE_HOST_ID });
+    }
     yield* auth.revokeSession(sessionId).pipe(Effect.mapError(sharingError));
   });
   const connect = Effect.fn("DeviceSharing.connect")(function* (
@@ -313,6 +323,8 @@ const make = Effect.gen(function* () {
     if (input.operation === "identify")
       return { environmentId, sourceEnvironmentId: EnvironmentId.make(sourceId) };
     const prefix = devicePeerThreadPrefix(sourceId);
+    // The owning side names this environment's claims when it powers a device off or revokes it.
+    (yield* DeviceActivity).notePeer(prefix, sourceId);
     const thread = (id: string) => ThreadId.make(`${prefix}${id}`);
     if (input.operation === "stop-agent") {
       agents.delete(session.sessionId);
@@ -410,6 +422,10 @@ const make = Effect.gen(function* () {
       }
       agents.set(sessionId, { ...entry, checkedAt: now });
     }
+    // The source's agents drive devices through this proxy, so its requests are their use.
+    yield* (yield* DeviceActivity).touchThreads((threadId) =>
+      threadId.startsWith(devicePeerThreadPrefix(entry.sourceId)),
+    );
     // Read without the lifecycle lock so proxied requests neither wait on device work nor
     // publish state. The daemon's port and token change when it restarts.
     const endpoint = yield* devices.currentAgentEndpoint(LOCAL_DEVICE_HOST_ID);

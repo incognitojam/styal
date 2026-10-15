@@ -66,5 +66,5 @@ on Android. For a remote backend, use its reachable origin.
 
 Confirm the intended projects appear, exercise the affected flow, and capture
 evidence. Retain the app and environment while iterating. At teardown, remove
-the disposable connection, close the AgentDevice session, call `device_close`,
-and stop only your backend and Metro processes.
+the disposable connection, call `device_close` to hand the device back (it also
+ends the AgentDevice session), and stop only your backend and Metro processes.

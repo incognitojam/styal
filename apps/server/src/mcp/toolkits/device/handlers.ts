@@ -14,6 +14,7 @@ import * as ServerConfig from "../../../config.ts";
 import { ensureAgentDeviceShim } from "../../../device/AgentDeviceShim.ts";
 import { nodeRuntimeUnavailableMessage } from "@t3tools/shared/nodeRuntime";
 
+import { DeviceActivity } from "../../../device/DeviceIdle.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { DeviceScreenshotToolkit, DeviceStandardToolkit, DeviceToolkit } from "./tools.ts";
@@ -62,6 +63,7 @@ export function agentDeviceQuickStart(
     "Prefer agent-device for driving this device. simctl, adb, and xcrun remain available for anything it does not cover.",
     "For remote hosts, arrange builds, app installation, and any Metro reverse forwarding yourself. T3 provides discovery, streaming, and control only.",
     "Keep the returned --config and --session flags on every command. Other hosts can be used concurrently; opening one does not switch these commands.",
+    "Other agents may need devices. When you finish testing, hand it back with device_close; it stays booted for the next agent. While your turn is not running, another agent may take the device; commands then report that it was handed over, so call device_open again.",
     platformNotes,
   ].join("\n");
 }
@@ -195,7 +197,24 @@ const handlers = {
         [...state.sessions, ...(state.externalSessions ?? [])],
         scope.thread.threadId,
       );
-      const target = yield* pickDevice(state.devices, openInOtherThreads, input);
+      // Prefer a free device; otherwise take one a thread holds but is not using.
+      const reclaimable = yield* (yield* DeviceActivity).reclaimable(scope.thread.threadId);
+      const target = yield* pickDevice(state.devices, openInOtherThreads, input).pipe(
+        Effect.catch((error) =>
+          reclaimable.length === 0
+            ? Effect.fail(error)
+            : pickDevice(
+                state.devices,
+                openInOtherThreads.filter(
+                  (ref) =>
+                    !reclaimable.some(
+                      (idle) => idle.hostId === ref.hostId && idle.deviceId === ref.deviceId,
+                    ),
+                ),
+                input,
+              ),
+        ),
+      );
       // Resolve consent and agent connectivity before booting or registering a session.
       const agentArgs = yield* devices.agentTarget({
         threadId: scope.thread.threadId,
@@ -240,7 +259,7 @@ const handlers = {
         device,
         agentDevice: { command, targetArgs },
         quickStart: [
-          ...(isListed(openInOtherThreads, target)
+          ...(isListed(openInOtherThreads, target) && !isListed(reclaimable, target)
             ? [
                 "Another thread also has this device open, and its agent may be driving it. Coordinate with the user before changing apps or state.",
               ]
