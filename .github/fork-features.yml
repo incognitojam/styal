@@ -3736,6 +3736,35 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15604
       retire_when: Upstream provides equivalent capability-specific update guidance that distinguishes legacy service migration from foreground starts while preserving direct updates for managed services.
 
+  - id: settings-scope-persistent-header
+    title: Keep settings scope visible while scrolling
+    status: maintained
+    prs: [849]
+    invariants:
+      - Web and desktop settings retain the original scope sentence above the content and move its project and environment pickers into the existing toolbar only after the sentence scrolls out of view; scrolling back restores the sentence without changing the toolbar height or shifting the settings content.
+      - Docking moves the same mounted controls so open menus, selected values, and keyboard focus survive the transition. Narrow toolbars prioritize the scope pickers; the breadcrumb and restore-defaults action return when scrolling back to the sentence.
+      - Scope pickers glide and fade into each position for 200ms only when scrolling changes docking; page entry, tab changes, and layout measurements do not replay the animation. Motion uses transforms and opacity, respects reduced motion, and cancels interrupted transitions without shifting the settings content.
+      - The scope sentence wraps on narrow screens and truncates long picker labels, stays available for unavailable scopes, preserves the environment-only Providers picker, and remains hidden on device-only pages.
+    implementation_paths:
+      - apps/web/src/components/settings/SettingsScopeDock.tsx
+      - apps/web/src/components/settings/SettingsScopeSentence.tsx
+      - apps/web/src/components/settings/settingsLayout.tsx
+      - apps/web/src/routes/settings.tsx
+    upstream_paths:
+      - apps/web/src/components/settings/SettingsScopeSentence.tsx
+      - apps/web/src/components/settings/settingsLayout.tsx
+      - apps/web/src/routes/settings.tsx
+    tests:
+      - apps/web/src/components/settings/SettingsScopeDock.test.tsx
+      - apps/web/src/components/settings/settingsLayout.test.tsx
+      - apps/web/src/components/settings/settingsScopeAxis.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
+        - https://github.com/pingdotgg/t3code/pull/13139
+      retire_when: Upstream keeps settings scope pickers visible and usable while scrolling without losing responsive wrapping or scope recovery.
+
   - id: settled-shelf-auto-collapse
     title: Close the settled shelf once the user moves on
     status: maintained
