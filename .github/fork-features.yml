@@ -2363,7 +2363,7 @@ features:
   - id: pending-question-answer-history
     title: Keep submitted question answers visible outside collapsed work
     status: maintained
-    prs: []
+    prs: [839]
     rationale: Restore the visibility behavior imported from upstream 11363 that the V2 timeline rewrite lost. At upstream 00cdceb196edf661652dee6efe983c0d40662971, answered questions still join tool groups and turn folds. Discussion 16965 tracks discoverability; 17227 was closed pending approval for folding and user-bubble changes, while 18544 changes readability within the work log.
     invariants:
       - Submitted question and answer history keeps its own expandable row on web, desktop, and mobile while surrounding work runs and after the turn completes.
