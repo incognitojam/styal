@@ -1,3 +1,4 @@
+import * as Dialog from "./Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import { sessionHasLegacyPermissions } from "@t3tools/contracts";
@@ -5,7 +6,6 @@ import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert } from "react-native";
 
 import { environmentCatalog } from "../connection/catalog";
 import { useEnvironments } from "../state/environments";
@@ -119,7 +119,7 @@ export function PermissionUpdateNotice() {
         // Remember for this launch even if persistent storage is unavailable.
       });
     };
-    Alert.alert(
+    Dialog.alert(
       `Permissions have changed for ${environment.label}`,
       "This connection still uses the old permissions, so some actions may no longer be available. Pair again using a new link with the permissions you need.",
       [{ text: "Got it", onPress: dismiss }],
