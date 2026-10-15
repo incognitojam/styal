@@ -1,11 +1,16 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import * as Context from "effect/Context";
 import * as Data from "effect/Data";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
+import {
+  GraphQL,
+  GraphQLClient,
+  GraphQLClientError,
+  GraphQLGroup,
+  GraphQLResolver,
+} from "effect/graphql";
 import * as Option from "effect/Option";
-import * as Request from "effect/Request";
 import * as RequestResolver from "effect/RequestResolver";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -23,25 +28,28 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 
-import * as GitHubApi from "./GitHubApi.ts";
+import * as GitHubRest from "./GitHubRest.ts";
+import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubChangeRequestTemplate from "./gitHubChangeRequestTemplate.ts";
+import * as GitHubGraphQlClient from "./gitHubGraphQlClient.ts";
 import {
-  decodeGitHubIssueListJson,
-  decodeGitHubIssuePageJson,
   gitHubIssueFromPages,
-  GITHUB_ISSUE_GRAPHQL_QUERY,
-  GITHUB_ISSUE_LIST_GRAPHQL_QUERY,
+  LenientGitHubIssues,
+  toGitHubIssueList,
+  toGitHubIssuePage,
   type GitHubIssuePage,
   type NormalizedGitHubIssue,
   type NormalizedGitHubIssueSummary,
 } from "./gitHubIssues.ts";
 import {
-  decodeGitHubPullRequestEntries,
+  normalizeGitHubPullRequestRecord,
   type NormalizedGitHubPullRequestRecord,
 } from "./gitHubPullRequests.ts";
 import {
-  buildGitHubReferenceQuery,
-  decodeGitHubReferenceResponseJson,
+  MAX_REFERENCES_PER_REQUEST,
+  splitRepository,
+  toGitHubResolvedReference,
+  missingGitHubReference,
 } from "./gitHubReferences.ts";
 import {
   gitHubApiHostForRemote,
@@ -72,6 +80,31 @@ import * as SourceControlHost from "@t3tools/source-control-core/server/SourceCo
 import { readSourceControlHostSettings } from "@t3tools/source-control-core/client/definition";
 
 import * as GitHubClient from "../client/definition.ts";
+import {
+  PullRequestByNumber,
+  PullRequestNode,
+  PullRequestsByHead,
+} from "./sourceControlProvider.graphql.ts";
+import { GitHubIssue, GitHubReference } from "./sourceControlProvider.graphql.ts";
+
+/**
+ * The generated head lookup with its rows left undecoded, so `listByHead` decodes them one at a
+ * time: a row whose fields no longer decode is skipped rather than failing every lookup that
+ * shared its document.
+ */
+const LenientPullRequestsByHead = GraphQL.query(PullRequestsByHead.name, {
+  // The template, not the joined text: `GraphQLResolver.aliased` repeats it per lookup.
+  document: PullRequestsByHead.template!,
+  variables: PullRequestsByHead.variables,
+  result: Schema.Struct({
+    repository: Schema.NullOr(
+      Schema.Struct({
+        pullRequests: Schema.Struct({ nodes: Schema.NullOr(Schema.Array(Schema.Unknown)) }),
+      }),
+    ),
+  }),
+});
+const decodePullRequestNode = Schema.decodeUnknownOption(PullRequestNode);
 
 const decodeLinkSubject = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
@@ -234,7 +267,7 @@ function environmentTokenVariable(environment: NodeJS.ProcessEnv): string | null
  * token is checked against the API, since `gh auth status` may not know it.
  */
 export const makeDiscovery = Effect.gen(function* () {
-  const api = yield* GitHubApi.GitHubApi;
+  const api = yield* GitHubRest.GitHubRest;
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
   const process = sourceControlHost.process;
   const environment = yield* HostProcess.Environment;
@@ -343,13 +376,14 @@ class GitHubFailure extends Data.TaggedError("GitHubFailure")<{
 }> {}
 
 const failure = (detail: string, cause?: unknown) => new GitHubFailure({ detail, cause });
+const isGitHubApiResponseError = Schema.is(GitHubRequestPolicy.GitHubApiResponseError);
 
 const PULL_REQUEST_NOT_FOUND = "Pull request not found. Check the PR number or URL and try again.";
 const REPOSITORY_NOT_FOUND = "Repository not found. Check the owner and name and try again.";
 
 /** `notFound` names what was missing, which only the operation knows. */
 function fromGitHubApiError(
-  error: GitHubApi.GitHubApiError,
+  error: GitHubRequestPolicy.GitHubApiError,
   notFound = PULL_REQUEST_NOT_FOUND,
 ): GitHubFailure {
   switch (error._tag) {
@@ -414,10 +448,10 @@ const decodeViewerLogin = decodeJsonResult(Schema.Struct({ login: TrimmedNonEmpt
 
 type PullRequestListState = "open" | "closed" | "merged" | "all";
 
-/** The pull request fields every read selects, in GraphQL. */
-const PULL_REQUEST_NODE_SELECTION =
-  "number title url baseRefName headRefName headRefOid state isDraft mergedAt closedAt updatedAt isCrossRepository headRepository { name nameWithOwner } headRepositoryOwner { login }";
-const GRAPHQL_STATES: Record<PullRequestListState, ReadonlyArray<string>> = {
+const GRAPHQL_STATES: Record<
+  PullRequestListState,
+  NonNullable<PullRequestsByHead.Variables["states"]>
+> = {
   open: ["OPEN"],
   closed: ["CLOSED"],
   merged: ["MERGED"],
@@ -451,69 +485,34 @@ const HEAD_LOOKUP_MAX_RESPONSE_BYTES = 16_000_000;
  */
 const OWNER_HEAD_SCAN_LIMIT = 100;
 
-class PullRequestsByHeadRead extends Request.Class<
-  {
-    readonly host: string;
-    readonly owner: string;
-    readonly name: string;
-    readonly headRefName: string;
-    readonly state: PullRequestListState;
-    readonly limit: number;
-    readonly allowReserve: boolean;
-  },
-  ReadonlyArray<NormalizedGitHubPullRequestRecord>,
-  GitHubFailure
-> {}
-
-/** One aliased `pullRequests` connection per lookup, each head and state passed as a variable. */
-function buildPullRequestsByHeadQuery(
-  lookups: ReadonlyArray<Pick<PullRequestsByHeadRead, "headRefName" | "state" | "limit">>,
-): { readonly document: string; readonly variables: Record<string, unknown> } {
-  const variables: Record<string, unknown> = {};
-  const declarations: string[] = ["$owner: String!", "$name: String!"];
-  const selections: string[] = [];
-  for (const [index, lookup] of lookups.entries()) {
-    variables[`h${index}`] = lookup.headRefName;
-    variables[`s${index}`] = GRAPHQL_STATES[lookup.state];
-    declarations.push(`$h${index}: String!`, `$s${index}: [PullRequestState!]`);
-    // `gh pr list` orders the same way, so a head with more matches than the limit keeps the
-    // same rows.
-    selections.push(
-      `    h${index}: pullRequests(headRefName: $h${index}, states: $s${index}, first: ${lookup.limit}, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${PULL_REQUEST_NODE_SELECTION} } }`,
-    );
-  }
-  return {
-    document: `query PullRequestsByHead(${declarations.join(", ")}) {\n  repository(owner: $owner, name: $name) {\n${selections.join("\n")}\n  }\n}`,
-    variables,
-  };
+function trimmed(value: string): string | null {
+  const text = value.trim();
+  return text.length > 0 ? text : null;
 }
 
-const PULL_REQUEST_BY_NUMBER_QUERY = `query PullRequestByNumber($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) { ${PULL_REQUEST_NODE_SELECTION} }
-  }
-}`;
-
-const decodePullRequestsByHead = decodeJsonResult(
-  Schema.Struct({
-    data: Schema.Struct({
-      repository: Schema.NullOr(
-        Schema.Record(
-          Schema.String,
-          Schema.NullOr(Schema.Struct({ nodes: Schema.Array(Schema.Unknown) })),
-        ),
-      ),
-    }),
-  }),
-);
-
-const decodePullRequestByNumber = decodeJsonResult(
-  Schema.Struct({
-    data: Schema.Struct({
-      repository: Schema.NullOr(Schema.Struct({ pullRequest: Schema.NullOr(Schema.Unknown) })),
-    }),
-  }),
-);
+/**
+ * A pull request as every read reports it, or null for a row this cannot use: a number below
+ * one, a blank title, URL or branch name, or an `updatedAt` that is not a date. A list skips a
+ * null, so one such row cannot hide the rest. The generated schema already holds every row to
+ * GitHub's own types, with `state` as a lenient enum.
+ */
+function toPullRequestRecord(node: PullRequestNode): NormalizedGitHubPullRequestRecord | null {
+  const title = trimmed(node.title);
+  const url = trimmed(node.url);
+  const baseRefName = trimmed(node.baseRefName);
+  const headRefName = trimmed(node.headRefName);
+  const updatedAt = DateTime.make(node.updatedAt);
+  if (node.number < 1 || !title || !url || !baseRefName || !headRefName) return null;
+  if (Option.isNone(updatedAt)) return null;
+  return normalizeGitHubPullRequestRecord({
+    ...node,
+    title,
+    url,
+    baseRefName,
+    headRefName,
+    updatedAt: Option.some(DateTime.toUtc(updatedAt.value)),
+  });
+}
 
 /** The local branch a pull request checks out into, the way `gh pr checkout` names it. */
 export function pullRequestCheckoutBranchName(input: {
@@ -537,7 +536,7 @@ const contextHost = (context: SourceControlProvider.SourceControlProviderContext
   context === undefined ? undefined : new URL(context.provider.baseUrl).host;
 
 export const make = Effect.gen(function* () {
-  const api = yield* GitHubApi.GitHubApi;
+  const api = yield* GitHubRest.GitHubRest;
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
   const process = sourceControlHost.process;
   const environment = yield* HostProcess.Environment;
@@ -596,74 +595,54 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const graphqlJson = <A>(
-    input: GitHubApi.GitHubGraphQlInput,
-    decode: (raw: string) => Result.Result<A, unknown>,
+  const client = yield* GraphQLClient.make(
+    GraphQLGroup.make(
+      LenientPullRequestsByHead,
+      PullRequestByNumber,
+      LenientGitHubIssues,
+      GitHubIssue,
+      GitHubReference,
+    ).middleware(GitHubGraphQlClient.GitHubGraphQlAuth),
+  ).pipe(Effect.provide(GitHubGraphQlClient.layer));
+
+  /**
+   * Runs a generated read against `target`. GitHub's refusals and `errors` fail the way REST
+   * ones do; an answer that does not decode is a `decodeDetail` failure.
+   */
+  const graphqlRead = <A, E, R>(
+    target: GitHubGraphQlClient.GitHubGraphQlTarget["Service"],
     decodeDetail: string,
-    notFoundDetail?: string,
+    notFoundDetail: string | undefined,
+    effect: Effect.Effect<A, E, R>,
   ) =>
-    api.graphql(input).pipe(
-      Effect.mapError((error) => fromGitHubApiError(error, notFoundDetail)),
-      Effect.flatMap((raw) => {
-        const decoded = decode(raw);
-        return Result.isSuccess(decoded)
-          ? Effect.succeed(decoded.success)
-          : Effect.fail(failure(decodeDetail, decoded.failure));
-      }),
+    effect.pipe(
+      GitHubGraphQlClient.call(target),
+      Effect.mapError((error) =>
+        GraphQLClientError.isGraphQLClientError(error) ||
+        (isGitHubApiResponseError(error) &&
+          error.status === 200 &&
+          error.githubErrors === undefined)
+          ? failure(decodeDetail, error)
+          : fromGitHubApiError(error as GitHubRequestPolicy.GitHubApiError, notFoundDetail),
+      ),
     );
 
-  const rest = (input: GitHubApi.GitHubRestInput, notFoundDetail?: string) =>
+  const rest = (input: GitHubRest.GitHubRestInput, notFoundDetail?: string) =>
     api.rest(input).pipe(Effect.mapError((error) => fromGitHubApiError(error, notFoundDetail)));
 
-  const headResolver = RequestResolver.makeGrouped<PullRequestsByHeadRead, string>({
-    key: ({ request, context }) =>
-      [
-        request.host,
-        request.owner,
-        request.name,
-        String(request.allowReserve),
-        Context.getOrElse(context, GitHubApi.PinnedGitHubCredential, () => null)
-          ?.credentialFingerprint ?? "",
-        Context.getOrElse(context, SourceControlRateLimit.CredentialScope, () => ""),
-      ].join("\0"),
-    resolver: (entries) => {
-      const [first] = entries;
-      const { host, owner, name, allowReserve } = first.request;
-      const query = buildPullRequestsByHeadQuery(entries.map((entry) => entry.request));
-      return graphqlJson(
-        {
-          host,
-          operation: "listPullRequestsByHead",
-          query: query.document,
-          variables: { owner, name, ...query.variables },
-          allowReserve,
-          // Up to 50 heads of 100 rows each. A default branch such as `main` can match a hundred
-          // fork pull requests, so the usual cap would cut the answer short.
-          maxResponseBytes: HEAD_LOOKUP_MAX_RESPONSE_BYTES,
-        },
-        decodePullRequestsByHead,
-        "GitHub returned an invalid change request list.",
-      ).pipe(
-        Effect.flatMap((decoded) =>
-          decoded.data.repository === null
-            ? Effect.fail(notFound("The repository could not be read."))
-            : Effect.succeed(decoded.data.repository),
-        ),
-        Effect.map((aliases) => {
-          for (const [index, entry] of entries.entries()) {
-            const alias = aliases[`h${index}`];
-            entry.completeUnsafe(
-              Exit.succeed(alias == null ? [] : decodeGitHubPullRequestEntries(alias.nodes)),
-            );
-          }
-        }),
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            for (const entry of entries) entry.completeUnsafe(Exit.failCause(cause));
-          }),
-        ),
-      );
-    },
+  /**
+   * Head lookups to one host under one credential share aliased documents: the resolver batches by
+   * the host's endpoint and `batchKey`. Each lookup has its own `repository` root, so lookups on
+   * different repositories may share a document, and a repository GitHub cannot find fails only
+   * its own. Interactive and background lookups never share one, since they use separate
+   * resolvers, so a document is sent under one reserve setting.
+   */
+  const referenceResolver = GraphQLResolver.aliased(client.GitHubReference, {
+    batchKey: GitHubGraphQlClient.batchKey,
+  }).pipe(RequestResolver.batchN(MAX_REFERENCES_PER_REQUEST));
+
+  const headResolver = GraphQLResolver.aliased(client.PullRequestsByHead, {
+    batchKey: GitHubGraphQlClient.batchKey,
   }).pipe(RequestResolver.batchN(HEAD_LOOKUPS_PER_DOCUMENT));
   const interactiveHeadResolver = headResolver.pipe(
     RequestResolver.setDelay(HEAD_LOOKUP_BATCH_WINDOW),
@@ -693,16 +672,34 @@ export const make = Effect.gen(function* () {
     // owner is matched on the rows it returns.
     const ownerMatch = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
     const headRefName = ownerMatch?.[2] ?? input.headSelector.trim();
-    const rows = yield* Effect.request(
-      new PullRequestsByHeadRead({
-        ...locator,
-        headRefName,
-        state: input.state,
-        limit: ownerMatch ? OWNER_HEAD_SCAN_LIMIT : limit,
+    const result = yield* graphqlRead(
+      {
+        host: locator.host,
+        operation: "listPullRequestsByHead",
         allowReserve: input.allowReserve,
-      }),
-      input.allowReserve ? interactiveHeadResolver : backgroundHeadResolver,
+        // Up to 50 heads of 100 rows each. A default branch such as `main` can match a hundred
+        // fork pull requests, so the usual cap would cut the answer short.
+        maxResponseBytes: HEAD_LOOKUP_MAX_RESPONSE_BYTES,
+      },
+      "GitHub returned an invalid change request list.",
+      undefined,
+      GraphQLResolver.request(
+        {
+          owner: locator.owner,
+          name: locator.name,
+          head: headRefName,
+          states: GRAPHQL_STATES[input.state],
+          first: ownerMatch ? OWNER_HEAD_SCAN_LIMIT : limit,
+        },
+        input.allowReserve ? interactiveHeadResolver : backgroundHeadResolver,
+      ),
     );
+    if (result.repository === null) return yield* notFound("The repository could not be read.");
+    const rows = (result.repository.pullRequests.nodes ?? []).flatMap((entry) => {
+      const node = Option.getOrNull(decodePullRequestNode(entry));
+      const record = node === null ? null : toPullRequestRecord(node);
+      return record === null ? [] : [record];
+    });
     if (!ownerMatch) return rows;
     const headOwner = ownerMatch[1]!.toLowerCase();
     return rows
@@ -737,21 +734,20 @@ export const make = Effect.gen(function* () {
       }
       const locator = parsed.kind === "url" ? parsed.locator : yield* resolveRepository(input);
       const decodeDetail = "GitHub returned an invalid pull request.";
-      const decoded = yield* graphqlJson(
-        {
-          host: locator.host,
-          operation: "getPullRequest",
-          query: PULL_REQUEST_BY_NUMBER_QUERY,
-          variables: { owner: locator.owner, name: locator.name, number: parsed.number },
-          allowReserve: true,
-        },
-        decodePullRequestByNumber,
+      const result = yield* graphqlRead(
+        { host: locator.host, operation: "getPullRequest", allowReserve: true },
         decodeDetail,
+        undefined,
+        client.PullRequestByNumber({
+          owner: locator.owner,
+          name: locator.name,
+          number: parsed.number,
+        }),
       );
-      const node = decoded.data.repository?.pullRequest;
+      const node = result.repository?.pullRequest;
       if (node == null) return yield* notFound("The pull request does not exist.");
-      const [record] = decodeGitHubPullRequestEntries([node]);
-      if (record === undefined)
+      const record = toPullRequestRecord(node);
+      if (record === null)
         return yield* failure(decodeDetail, new Error("Malformed pull request."));
       return record;
     },
@@ -1150,20 +1146,17 @@ export const make = Effect.gen(function* () {
     listIssues: (input) =>
       Effect.gen(function* () {
         const locator = yield* resolveRepository({ cwd: input.cwd });
-        const issues = yield* graphqlJson(
-          {
-            host: locator.host,
-            operation: "listIssues",
-            query: GITHUB_ISSUE_LIST_GRAPHQL_QUERY,
-            variables: {
+        const issues = yield* graphqlRead(
+          { host: locator.host, operation: "listIssues" },
+          "GitHub returned an invalid issue list.",
+          REPOSITORY_NOT_FOUND,
+          client
+            .GitHubIssues({
               owner: locator.owner,
               name: locator.name,
               first: Math.min(Math.max(input.limit ?? DEFAULT_ISSUE_LIST_LIMIT, 1), 100),
-            },
-          },
-          decodeGitHubIssueListJson,
-          "GitHub returned an invalid issue list.",
-          REPOSITORY_NOT_FOUND,
+            })
+            .pipe(Effect.map(toGitHubIssueList)),
         );
         return issues.map(toIssueSummary);
       }).pipe(Effect.mapError(providerError("listIssues", input.cwd))),
@@ -1174,16 +1167,18 @@ export const make = Effect.gen(function* () {
         const pages: GitHubIssuePage[] = [];
         let after: string | null = null;
         for (let page = 0; page < ISSUE_COMMENT_PAGES; page++) {
-          const read: GitHubIssuePage | null = yield* graphqlJson(
-            {
-              host: locator.host,
-              operation: "getIssue",
-              query: GITHUB_ISSUE_GRAPHQL_QUERY,
-              variables: { owner: locator.owner, name: locator.name, number: input.number, after },
-            },
-            decodeGitHubIssuePageJson,
+          const read: GitHubIssuePage | null = yield* graphqlRead(
+            { host: locator.host, operation: "getIssue" },
             "GitHub returned an invalid issue.",
             missing,
+            client
+              .GitHubIssue({
+                owner: locator.owner,
+                name: locator.name,
+                number: input.number,
+                after,
+              })
+              .pipe(Effect.map(toGitHubIssuePage)),
           );
           if (read === null) return yield* failure(missing);
           pages.push(read);
@@ -1201,23 +1196,48 @@ export const make = Effect.gen(function* () {
       }).pipe(
         Effect.mapError(providerError("getIssue", input.cwd, { reference: String(input.number) })),
       ),
-    resolveReferences: (input) => {
-      const built = buildGitHubReferenceQuery(input.references);
-      if (built === null) return Effect.succeed([]);
-      // A partial answer is the normal one: the host nulls a reference nobody can see, and
-      // reports it in `errors` beside the references that did resolve.
-      return graphqlJson(
-        {
-          host: input.host,
-          operation: "resolveReferences",
-          query: built.query,
-          variables: built.variables,
-          acceptPartialData: true,
+    resolveReferences: (input) =>
+      Effect.forEach(
+        input.references.slice(0, MAX_REFERENCES_PER_REQUEST),
+        (reference) => {
+          const split = splitRepository(reference.repository);
+          if (split === null) return Effect.succeed(null);
+          return GraphQLResolver.request(
+            { ...split, number: reference.number },
+            referenceResolver,
+          ).pipe(
+            Effect.map((result) => toGitHubResolvedReference(reference, result)),
+            Effect.catchIf(GitHubGraphQlClient.isNotFoundOnly, () =>
+              Effect.succeed(missingGitHubReference(reference)),
+            ),
+            Effect.catchIf(
+              (error) =>
+                GraphQLClientError.isGraphQLClientError(error) &&
+                (error.reason._tag === "ResponseError" || error.reason._tag === "DecodeError"),
+              () => Effect.succeed(null),
+            ),
+          );
         },
-        (raw) => decodeGitHubReferenceResponseJson(raw, built.aliases),
-        "GitHub returned invalid reference data.",
-      ).pipe(Effect.mapError(providerError("resolveReferences", input.cwd)));
-    },
+        { concurrency: "unbounded" },
+      ).pipe(
+        GitHubGraphQlClient.call({ host: input.host, operation: "resolveReferences" }),
+        Effect.map((references) =>
+          references.flatMap((reference) => (reference === null ? [] : [reference])),
+        ),
+        Effect.mapError((error) =>
+          providerError(
+            "resolveReferences",
+            input.cwd,
+          )(
+            GraphQLClientError.isGraphQLClientError(error) ||
+              (isGitHubApiResponseError(error) &&
+                error.status === 200 &&
+                error.githubErrors === undefined)
+              ? failure("GitHub returned invalid reference data.", error)
+              : fromGitHubApiError(error),
+          ),
+        ),
+      ),
     checkoutChangeRequest: (input) =>
       checkoutPullRequest(input).pipe(
         Effect.mapError(

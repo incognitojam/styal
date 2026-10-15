@@ -1,20 +1,20 @@
 import { removeAgentCredits } from "@t3tools/source-control-core/server/mergeMessage";
 import { makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
-import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
-import * as Request from "effect/Request";
+import { GraphQLClient, GraphQLClientError, GraphQLGroup, GraphQLResolver } from "effect/graphql";
+import { HttpClient } from "effect/http";
 import * as RequestResolver from "effect/RequestResolver";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 import {
   resolvePullRequestAuthorFilter,
   PositiveInt,
@@ -44,85 +44,58 @@ import {
 
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
-import * as GitHubApi from "./GitHubApi.ts";
-import { readGraphQlPages } from "./githubGraphQl.ts";
+import * as GitHubRest from "./GitHubRest.ts";
+import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
+import * as GitHubGraphQlClient from "./gitHubGraphQlClient.ts";
+import { PullRequestBatchesGraphQLGroup } from "./pullRequestBatches.graphql.ts";
+import { PullRequestMutationsGraphQLGroup } from "./pullRequestMutations.graphql.ts";
+import { PullRequestReadsGraphQLGroup, type PullRequestCore } from "./pullRequestReads.graphql.ts";
+import { PullRequestReviewsGraphQLGroup } from "./pullRequestReviews.graphql.ts";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import {
-  ACTOR_AVATARS_GRAPHQL_QUERY,
-  ADD_REACTION_GRAPHQL_MUTATION,
-  AUTO_MERGE_PERMISSIONS_GRAPHQL_QUERY,
-  BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY,
+  toAutoMergePermissions,
+  toBranchProtectionRequiredChecks,
+  decodeBranchRulesJson,
+  requiredChecksFromContexts,
+  toWorkflowApprovalSuites,
   buildReviewSubmission,
   buildReviewerRequest,
-  buildSetFilesViewedGraphQlMutation,
-  decodeActorAvatarsJson,
-  decodeAutoMergePermissionsJson,
-  decodeBranchProtectionRequiredChecksJson,
-  decodeBranchRulesJson,
-  decodePullRequestActivityJson,
-  decodePullRequestCheckContextsJson,
-  decodePullRequestCoreJson,
   decodeCommitFilesJson,
-  pullRequestCheckContextsGraphQlQuery,
   pullRequestChecksFromContexts,
-  pullRequestListGraphQlQuery,
-  pullRequestSummaryGraphQlQuery,
-  PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
-  PULL_REQUEST_HEADS_GRAPHQL_QUERY,
-  decodeWorkflowApprovalSuitesJson,
-  WORKFLOW_APPROVAL_SUITES_GRAPHQL_QUERY,
-  pullRequestCoreGraphQlQuery,
   type GitHubPullRequestCore,
-  type GitHubPullRequestSummary,
   type GitHubPullRequestWatchFingerprint,
-  decodePullRequestPreviewJson,
-  PULL_REQUEST_PREVIEW_GRAPHQL_QUERY,
+  isSubjectOfPullRequest,
+  LenientPullRequestList,
+  LenientPullRequestListEnterprise,
+  LenientPullRequestSearchEnterprise,
+  LenientPullRequestSearch,
+  pageRows,
+  pullRequestLookup,
+  toActorAvatars,
+  toLabelCandidates,
+  toPullRequestActivityPage,
+  toPullRequestCheckContextsPage,
+  toPullRequestCore,
+  toPullRequestFilesViewedPage,
+  toPullRequestHeads,
+  toPullRequestNodeId,
+  toPullRequestPreview,
+  toPullRequestRows,
+  toPullRequestSummary,
+  toPullRequestWatchFingerprint,
+  toReviewDismissalsPage,
+  toReviewerCandidates,
+  toReviewThreadCommentsPage,
+  toReviewThreadPage,
+  toStackMembership,
+  toViewerPermissions,
   decodePullRequestFilesJson,
-  decodePullRequestFilesViewedJson,
-  decodePullRequestHeadsJson,
-  decodePullRequestListJson,
-  decodePullRequestNodeIdJson,
-  requiredChecksFromContexts,
-  decodePullRequestSearchJson,
   decodePullRequestStacksJson,
-  decodePullRequestStatsJson,
-  decodePullRequestSummariesJson,
-  decodePullRequestWatchFingerprintsJson,
-  decodeReactionSubjectScopeJson,
-  decodeReviewerCandidatesJson,
-  decodeLabelCandidatesJson,
   buildLabelRequest,
-  LABEL_CANDIDATES_GRAPHQL_QUERY,
-  decodeReviewDismissalsJson,
-  decodeReviewThreadCommentsJson,
-  decodeReviewThreadsJson,
-  buildPullRequestStatsGraphQlQuery,
-  buildPullRequestSummariesGraphQlQuery,
-  buildPullRequestWatchFingerprintsGraphQlQuery,
-  buildPullRequestStackMembershipsGraphQlQuery,
-  decodePullRequestStackMembershipsJson,
-  pullRequestSearchGraphQlQuery,
   PULL_REQUEST_SEARCH_MAX_ROWS,
-  PULL_REQUEST_FILES_VIEWED_GRAPHQL_QUERY,
-  PULL_REQUEST_NODE_ID_GRAPHQL_QUERY,
-  REACTION_SUBJECT_PULL_REQUEST_GRAPHQL_QUERY,
-  REMOVE_REACTION_GRAPHQL_MUTATION,
-  REVERT_PULL_REQUEST_GRAPHQL_MUTATION,
   gitHubReactionContent,
-  RESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION,
-  REVIEWER_CANDIDATES_GRAPHQL_QUERY,
-  REVIEW_THREAD_COMMENTS_GRAPHQL_QUERY,
-  REVIEW_DISMISSALS_GRAPHQL_QUERY,
-  REVIEW_THREAD_REPLY_GRAPHQL_MUTATION,
-  REVIEW_THREADS_GRAPHQL_QUERY,
   reviewThreadConversation,
-  UNRESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION,
-  UPDATE_ISSUE_COMMENT_GRAPHQL_MUTATION,
-  UPDATE_PULL_REQUEST_GRAPHQL_MUTATION,
-  UPDATE_REVIEW_COMMENT_GRAPHQL_MUTATION,
-  VIEWER_PERMISSIONS_GRAPHQL_QUERY,
-  decodeViewerPermissionsJson,
   type GitHubBranchRulePolicy,
   type GitHubPullRequestActivity,
   type GitHubPullRequestActivityPage,
@@ -381,7 +354,7 @@ export type GitHubPullRequestApiError =
   | GitHubBranchDeletionRefusedError
   | GitHubStackActionError
   | GitHubMergeHeadChangedError
-  | GitHubApi.GitHubApiError
+  | GitHubRequestPolicy.GitHubApiError
   | GitHubPullRequestReadError
   | GitHubDiffCursorError
   | GitHubDiffCommitError
@@ -396,6 +369,11 @@ export type GitHubPullRequestApiError =
   | SourceControlRateLimit.SourceControlRateLimitPausedError
   | GitHubViewerLoginUnavailableError
   | GitHubPullRequestUpdatedAtUnavailableError;
+
+const isGraphQlClientError = (error: unknown): error is GraphQLClientError.GraphQLClientError =>
+  GraphQLClientError.isGraphQLClientError(error);
+
+const { isNotFoundOnly } = GitHubGraphQlClient;
 
 /** A large pull request can produce a multi-megabyte patch; past this it is truncated. */
 const DIFF_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -447,6 +425,8 @@ const DIFF_FILES_PAGE_SIZE = 100;
  * hundred files: beyond this the read stops and says it was cut short.
  */
 const FILES_VIEWED_MAX_PAGES = 5;
+/** Files cleared or restored per request; a reader rarely ticks more than a page of them at once. */
+const FILES_VIEWED_PER_REQUEST = 100;
 
 /**
  * How many pull requests' node ids are remembered at once. A long-lived server sees far more of
@@ -484,39 +464,16 @@ export interface GitHubPullRequestStat {
 }
 
 /**
- * Aliased lookups per request, and requests at once. Measured over a hundred rows: one request
- * carrying all hundred takes ~5.2s, four of twenty-five in parallel ~2.1s.
+ * Aliased lookups per request. Measured over a hundred rows: one request carrying all hundred
+ * takes ~5.2s, four of twenty-five in parallel ~2.1s. `GitHubRequestPolicy` bounds how many run at once.
  */
 const STAT_ALIASES_PER_REQUEST = 25;
-const STAT_REQUEST_CONCURRENCY = 4;
 /**
  * How long a summary read waits for company. The background sync asks for every linked pull
  * request at once, and each read reaches the resolver after its own cache check, so a batch
  * needs a moment longer than one scheduler tick to gather them.
  */
 const SUMMARY_BATCH_WINDOW = "10 millis";
-
-class PullRequestSummaryRead extends Request.Class<
-  {
-    readonly cwd: string;
-    readonly repository: string;
-    readonly host: string;
-    readonly number: number;
-  },
-  ProviderChangeRequestSummary,
-  GitHubPullRequestApiError
-> {}
-
-class PullRequestWatchFingerprintRead extends Request.Class<
-  {
-    readonly cwd: string;
-    readonly repository: string;
-    readonly host: string;
-    readonly number: number;
-  },
-  GitHubPullRequestWatchFingerprint | null,
-  GitHubPullRequestApiError
-> {}
 
 export interface GitHubPullRequestSearchBatch {
   /** Rows across every repository asked for, newest update first, each naming its own. */
@@ -1127,17 +1084,6 @@ function searchQuery(input: {
   ].join(" ");
 }
 
-const MERGE_MESSAGE_GRAPHQL_QUERY = `
-query PullRequestMergeMessage($owner: String!, $name: String!, $number: Int!, $method: PullRequestMergeMethod!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      isMergeQueueEnabled
-      headRefOid
-      viewerMergeBodyText(mergeType: $method)
-    }
-  }
-}`;
-
 /** The two revisions a file is expanded between: a pull request's base and head, or a commit's parent and itself. */
 const decodeRevisionRefs = Schema.decodeUnknownOption(
   Schema.fromJsonString(
@@ -1150,165 +1096,34 @@ const decodeRevisionRefs = Schema.decodeUnknownOption(
   ),
 );
 
-const decodeMergeMessageResponse = Schema.decodeUnknownResult(
-  Schema.fromJsonString(
-    Schema.Struct({
-      data: Schema.Struct({
-        repository: Schema.Struct({
-          pullRequest: Schema.Struct({
-            isMergeQueueEnabled: Schema.Boolean,
-            headRefOid: Schema.String,
-            viewerMergeBodyText: Schema.String,
-          }),
-        }),
-      }),
-    }),
-  ),
-);
-const decodeMergeMessage = (raw: string) =>
-  Result.map(decodeMergeMessageResponse(raw), (response) => response.data.repository.pullRequest);
-
-/** What `gh pr merge` and `gh pr update-branch` read before they act. */
-const ACTION_STATE_GRAPHQL_QUERY = `
-query PullRequestActionState($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      id
-      headRefOid
-      isMergeQueueEnabled
-      mergeStateStatus
-      baseRef { compare(headRef: $headRef) { behindBy } }
-    }
-  }
-}`;
-
-const decodeActionStateResponse = Schema.decodeUnknownResult(
-  Schema.fromJsonString(
-    Schema.Struct({
-      data: Schema.Struct({
-        repository: Schema.Struct({
-          pullRequest: Schema.Struct({
-            id: Schema.String,
-            headRefOid: Schema.String,
-            isMergeQueueEnabled: Schema.optional(Schema.Boolean),
-            mergeStateStatus: Schema.optional(Schema.NullOr(Schema.String)),
-            baseRef: Schema.optional(
-              Schema.NullOr(
-                Schema.Struct({ compare: Schema.NullOr(Schema.Struct({ behindBy: Schema.Int })) }),
-              ),
-            ),
-          }),
-        }),
-      }),
-    }),
-  ),
-);
-const decodeActionState = (raw: string) =>
-  Result.map(decodeActionStateResponse(raw), (response) => response.data.repository.pullRequest);
-
-const MERGE_PULL_REQUEST_GRAPHQL_MUTATION = `mutation($input: MergePullRequestInput!) {
-  mergePullRequest(input: $input) { clientMutationId }
-}`;
-const ENABLE_AUTO_MERGE_GRAPHQL_MUTATION = `mutation($input: EnablePullRequestAutoMergeInput!) {
-  enablePullRequestAutoMerge(input: $input) { clientMutationId }
-}`;
-
-const BRANCH_TO_DELETE_GRAPHQL_QUERY = `query PullRequestBranchToDelete($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      state
-      headRefName
-      baseRefName
-      headRefOid
-      headRepository { id }
-    }
-  }
-}`;
-const decodeBranchToDelete = Schema.decodeUnknownResult(
-  Schema.fromJsonString(
-    Schema.Struct({
-      data: Schema.Struct({
-        repository: Schema.Struct({
-          pullRequest: Schema.Struct({
-            state: Schema.Literals(["OPEN", "CLOSED", "MERGED"]),
-            headRefName: Schema.String,
-            baseRefName: Schema.String,
-            headRefOid: Schema.String,
-            headRepository: Schema.NullOr(Schema.Struct({ id: Schema.String })),
-          }),
-        }),
-      }),
-    }),
-  ),
-);
-const SOURCE_BRANCH_GRAPHQL_QUERY = `query PullRequestSourceBranch($repositoryId: ID!, $ref: String!) {
-  node(id: $repositoryId) {
-    ... on Repository {
-      defaultBranchRef { name }
-      ref(qualifiedName: $ref) { target { oid } }
-    }
-  }
-}`;
-const decodeSourceBranch = Schema.decodeUnknownResult(
-  Schema.fromJsonString(
-    Schema.Struct({
-      data: Schema.Struct({
-        node: Schema.NullOr(
-          Schema.Struct({
-            defaultBranchRef: Schema.NullOr(Schema.Struct({ name: Schema.String })),
-            ref: Schema.NullOr(Schema.Struct({ target: Schema.Struct({ oid: Schema.String }) })),
-          }),
-        ),
-      }),
-    }),
-  ),
-);
-const DELETE_BRANCH_GRAPHQL_MUTATION = `mutation($input: UpdateRefsInput!) {
-  updateRefs(input: $input) { clientMutationId }
-}`;
-const DISABLE_AUTO_MERGE_GRAPHQL_MUTATION = `mutation($pullRequestId: ID!) {
-  disablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId }) { clientMutationId }
-}`;
-const UPDATE_BRANCH_GRAPHQL_MUTATION = `mutation($pullRequestId: ID!, $expectedHeadOid: GitObjectID!, $updateMethod: PullRequestBranchUpdateMethod!) {
-  updatePullRequestBranch(input: { pullRequestId: $pullRequestId, expectedHeadOid: $expectedHeadOid, updateMethod: $updateMethod }) { clientMutationId }
-}`;
-const READY_FOR_REVIEW_GRAPHQL_MUTATION = `mutation($pullRequestId: ID!) {
-  markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) { clientMutationId }
-}`;
-const CONVERT_TO_DRAFT_GRAPHQL_MUTATION = `mutation($pullRequestId: ID!) {
-  convertPullRequestToDraft(input: { pullRequestId: $pullRequestId }) { clientMutationId }
-}`;
-const CLOSE_PULL_REQUEST_GRAPHQL_MUTATION = `mutation($pullRequestId: ID!) {
-  closePullRequest(input: { pullRequestId: $pullRequestId }) { clientMutationId }
-}`;
-const REOPEN_PULL_REQUEST_GRAPHQL_MUTATION = `mutation($pullRequestId: ID!) {
-  reopenPullRequest(input: { pullRequestId: $pullRequestId }) { clientMutationId }
-}`;
-const ADD_COMMENT_GRAPHQL_MUTATION = `mutation($subjectId: ID!, $body: String!) {
-  addComment(input: { subjectId: $subjectId, body: $body }) { clientMutationId }
-}`;
-
 const GRAPHQL_MERGE_METHODS = {
   merge: "MERGE",
   squash: "SQUASH",
   rebase: "REBASE",
 } as const satisfies Record<PullRequestMergeMethod, string>;
 
+/** Every GraphQL read and write this module makes, through GitHub's auth and rate limits. */
+const PullRequestGraphQLGroup = GraphQLGroup.merge(
+  PullRequestBatchesGraphQLGroup,
+  GraphQLGroup.make(
+    LenientPullRequestSearch,
+    LenientPullRequestList,
+    LenientPullRequestListEnterprise,
+    LenientPullRequestSearchEnterprise,
+  ),
+  PullRequestReadsGraphQLGroup,
+  PullRequestReviewsGraphQLGroup,
+  PullRequestMutationsGraphQLGroup,
+).middleware(GitHubGraphQlClient.GitHubGraphQlAuth);
+
 /** States in which `gh pr merge --auto` merges at once instead of arming auto-merge. */
 const IMMEDIATELY_MERGEABLE = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 
-/** The mutations that only need the pull request's node id. */
-const SIMPLE_ACTION_MUTATIONS = {
-  "disable-auto-merge": DISABLE_AUTO_MERGE_GRAPHQL_MUTATION,
-  ready: READY_FOR_REVIEW_GRAPHQL_MUTATION,
-  draft: CONVERT_TO_DRAFT_GRAPHQL_MUTATION,
-  close: CLOSE_PULL_REQUEST_GRAPHQL_MUTATION,
-  reopen: REOPEN_PULL_REQUEST_GRAPHQL_MUTATION,
-} as const satisfies Partial<Record<PullRequestAction, string>>;
-
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const api = yield* GitHubApi.GitHubApi;
+  const api = yield* GitHubRest.GitHubRest;
+  const policy = yield* GitHubRequestPolicy.GitHubRequestPolicy;
+  const httpClient = yield* HttpClient.HttpClient;
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const revalidateChecks = yield* makeChecksRevalidator;
@@ -1355,7 +1170,7 @@ export const make = Effect.gen(function* () {
               const response = yield* api
                 .rest({ host, operation: "getRoutingIdentity", path: "user", allowReserve: true })
                 .pipe(
-                  Effect.provideService(GitHubApi.PinnedGitHubCredential, credential),
+                  Effect.provideService(GitHubRequestPolicy.PinnedGitHubCredential, credential),
                   Effect.provideService(SourceControlRateLimit.CredentialScope, key),
                 );
               const identity = yield* decodeRoutingIdentity(response.body).pipe(
@@ -1384,7 +1199,7 @@ export const make = Effect.gen(function* () {
       Effect.flatMap(({ host, token, accountId, viewer, credentialFingerprint }) =>
         use({ accountId, viewer, credentialFingerprint }).pipe(
           Effect.provideService(SourceControlRateLimit.CredentialScope, credentialFingerprint),
-          Effect.provideService(GitHubApi.PinnedGitHubCredential, {
+          Effect.provideService(GitHubRequestPolicy.PinnedGitHubCredential, {
             host,
             token,
             credentialFingerprint,
@@ -1396,6 +1211,103 @@ export const make = Effect.gen(function* () {
     captureVerifiedCredential(input).pipe(
       Effect.map(({ accountId, viewer }) => ({ accountId, viewer })),
     );
+
+  const client = yield* GraphQLClient.make(PullRequestGraphQLGroup).pipe(
+    Effect.provide(GitHubGraphQlClient.layer),
+  );
+
+  const readError = (cwd: string, operation: string, cause: unknown) =>
+    new GitHubPullRequestReadError({ cwd, operation, cause });
+
+  /**
+   * Runs one generated GraphQL call against `host`, reported as `operation`. GitHub's `errors`
+   * fail it as a not found, or a response error with GitHub's messages; an answer that does not
+   * decode is a read error against `operation`.
+   */
+  const graphql =
+    (input: {
+      readonly cwd: string;
+      readonly host: string;
+      readonly operation: string;
+      readonly allowReserve?: boolean | undefined;
+    }) =>
+    <A, E, R>(
+      effect: Effect.Effect<A, E, R>,
+    ): Effect.Effect<
+      A,
+      | Exclude<E, GraphQLClientError.GraphQLClientError>
+      | GitHubRequestPolicy.GitHubApiNotFoundError
+      | GitHubRequestPolicy.GitHubApiResponseError
+      | GitHubPullRequestReadError,
+      Exclude<R, GitHubGraphQlClient.GitHubGraphQlTarget>
+    > =>
+      effect.pipe(
+        GitHubGraphQlClient.call({
+          host: input.host,
+          operation: input.operation,
+          ...(input.allowReserve === true ? { allowReserve: true } : {}),
+        }),
+        Effect.mapError((error) =>
+          isGraphQlClientError(error)
+            ? readError(input.cwd, input.operation, error)
+            : (error as Exclude<typeof error, GraphQLClientError.GraphQLClientError>),
+        ),
+      );
+
+  /** Fails a read GitHub answered with nothing for the pull request it was asked about. */
+  const found =
+    (input: { readonly host: string; readonly operation: string }) =>
+    <A>(value: A | null): Effect.Effect<A, GitHubRequestPolicy.GitHubApiNotFoundError> =>
+      value === null
+        ? Effect.fail(
+            new GitHubRequestPolicy.GitHubApiNotFoundError({
+              host: GitHubRequestPolicy.normalizeHost(input.host),
+              operation: input.operation,
+            }),
+          )
+        : Effect.succeed(value);
+
+  /**
+   * The pages of a cursor connection, read one after another until GitHub has no more,
+   * `maxPages` have been read, or `until` is satisfied. `truncated` says pages remained when
+   * reading stopped; a cursor GitHub hands back a second time stops the read as truncated too.
+   */
+  const readPages = <Page, E, R>(
+    stream: Stream.Stream<Page, E | GraphQLClientError.GraphQLClientError, R>,
+    options: {
+      readonly cwd: string;
+      readonly operation: string;
+      readonly hasNextPage: (page: NoInfer<Page>) => boolean;
+      readonly maxPages?: number;
+      readonly until?: (pages: ReadonlyArray<NoInfer<Page>>) => boolean;
+    },
+  ) =>
+    Effect.gen(function* () {
+      const pages: Page[] = [];
+      let repeated = false;
+      yield* stream.pipe(
+        // `pages` fails a cursor GitHub hands back unchanged, which would page forever.
+        Stream.catch((error) =>
+          isGraphQlClientError(error) && error.reason._tag === "PaginationError"
+            ? Stream.sync(() => {
+                repeated = true;
+              }).pipe(Stream.drain)
+            : Stream.fail(error),
+        ),
+        Stream.runForEachWhile((page) =>
+          Effect.sync(() => {
+            pages.push(page);
+            return (
+              options.hasNextPage(page) &&
+              pages.length < (options.maxPages ?? Infinity) &&
+              options.until?.(pages) !== true
+            );
+          }),
+        ),
+      );
+      const last = pages.at(-1);
+      return { pages, truncated: repeated || (last !== undefined && options.hasNextPage(last)) };
+    });
 
   /**
    * The pull request's own node id, which is what a mutation against the pull request itself is
@@ -1424,15 +1336,10 @@ export const make = Effect.gen(function* () {
       nodeIds.set(key, held);
       return Effect.succeed(held);
     }
-    return graphqlRead({
-      cwd: input.cwd,
-      host: input.host,
-      operation: input.operation,
-      allowReserve: true,
-      variables: { owner, name, number: input.number },
-      query: PULL_REQUEST_NODE_ID_GRAPHQL_QUERY,
-      decode: decodePullRequestNodeIdJson,
-    }).pipe(
+    return client.PullRequestNodeId({ owner, name, number: input.number }).pipe(
+      graphql({ ...input, allowReserve: true }),
+      Effect.map(toPullRequestNodeId),
+      Effect.flatMap(found(input)),
       Effect.tap((nodeId) =>
         Effect.sync(() => {
           if (nodeIds.size >= NODE_ID_CACHE_CAPACITY) {
@@ -1460,27 +1367,10 @@ export const make = Effect.gen(function* () {
     readonly operation: string;
   }) => {
     const { owner, name } = parseRepositorySelector(input.repository);
-    return graphqlRead({
-      cwd: input.cwd,
-      host: input.host,
-      operation: input.operation,
-      allowReserve: true,
-      variables: { owner, name, number: input.number, subjectId: input.subjectId },
-      query: REACTION_SUBJECT_PULL_REQUEST_GRAPHQL_QUERY,
-      decode: decodeReactionSubjectScopeJson,
-    });
+    return client
+      .PullRequestSubject({ owner, name, number: input.number, subjectId: input.subjectId })
+      .pipe(graphql({ ...input, allowReserve: true }), Effect.map(isSubjectOfPullRequest));
   };
-
-  /** A GraphQL mutation whose answer is not read back; a GraphQL error fails it. */
-  const graphql = (input: {
-    readonly host: string;
-    readonly operation: string;
-    readonly query: string;
-    readonly variables: Readonly<Record<string, unknown>>;
-  }) => api.graphql(input).pipe(Effect.asVoid);
-
-  const readError = (cwd: string, operation: string, cause: unknown) =>
-    new GitHubPullRequestReadError({ cwd, operation, cause });
 
   /** Decodes an answer, reporting a failure against the read that made it. */
   const decodeWith = <A>(
@@ -1494,26 +1384,6 @@ export const make = Effect.gen(function* () {
       ? Effect.succeed(decoded.success)
       : Effect.fail(readError(cwd, operation, decoded.failure));
   };
-
-  /** A GraphQL read whose answer is decoded, reporting a failure against the read that made it. */
-  const graphqlRead = <A>(input: {
-    readonly cwd: string;
-    readonly host: string;
-    readonly operation: string;
-    readonly allowReserve?: boolean | undefined;
-    readonly variables?: Readonly<Record<string, unknown>>;
-    readonly query: string;
-    readonly decode: (raw: string) => Result.Result<A, unknown>;
-  }): Effect.Effect<A, GitHubPullRequestApiError> =>
-    api
-      .graphql({
-        host: input.host,
-        operation: input.operation,
-        query: input.query,
-        ...(input.variables === undefined ? {} : { variables: input.variables }),
-        ...(input.allowReserve === true ? { allowReserve: true } : {}),
-      })
-      .pipe(Effect.flatMap((raw) => decodeWith(input.cwd, input.operation, input.decode, raw)));
 
   /** A REST read whose JSON answer is decoded the same way. */
   const restRead = <A>(input: {
@@ -1710,14 +1580,14 @@ export const make = Effect.gen(function* () {
       }
       return { url: decodedFile.value.download_url.toString(), size: decodedFile.value.size };
     });
+  /** `isRequired` is asked for on github.com only: an older Enterprise server may not know it. */
+  const asksRequired = (host: string) => host.toLowerCase() === "github.com";
+
   /**
    * Every check context of the head commit, a page at a time, for a rollup the detail read cut at
    * its first hundred. Each page names the head it read, so a push mid-walk fails rather than
    * mixing two revisions' checks.
    */
-  type CheckContextsPage = Result.Result.Success<
-    ReturnType<typeof decodePullRequestCheckContextsJson>
-  >;
   const readAllCheckContexts = (
     input: Parameters<GitHubPullRequestApi["Service"]["getPullRequestDetail"]>[0],
     allowReserve: boolean,
@@ -1725,31 +1595,46 @@ export const make = Effect.gen(function* () {
   ) =>
     Effect.gen(function* () {
       const { owner, name } = parseRepositorySelector(input.repository);
-      const { pages, truncated } = yield* readGraphQlPages(
-        (after, previous: ReadonlyArray<CheckContextsPage>) =>
-          graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "getPullRequestDetail",
-            allowReserve,
-            variables: { owner, name, number: input.number, after },
-            query: pullRequestCheckContextsGraphQlQuery(input.host, askRequired),
-            decode: decodePullRequestCheckContextsJson,
-          }).pipe(
-            // Each page names the head it read, so a push mid-walk fails rather than mixing
-            // two revisions' checks.
-            Effect.filterOrFail(
-              (page) => previous.length === 0 || page.headSha === previous[0]!.headSha,
-              () =>
-                readError(
-                  input.cwd,
-                  "getPullRequestDetail",
-                  new Error("Pull request head changed while reading checks."),
-                ),
-            ),
+      const target = { ...input, operation: "getPullRequestDetail", allowReserve };
+      let headSha: string | null = null;
+      const { pages, truncated } = yield* readPages(
+        GraphQLClient.pages(client.PullRequestCheckContexts, {
+          variables: {
+            owner,
+            name,
+            number: input.number,
+            required: askRequired ?? asksRequired(input.host),
+          },
+          connection: (result) => {
+            const page = toPullRequestCheckContextsPage(result);
+            if (page === null) return null;
+            headSha ??= page.headSha;
+            return {
+              ...page,
+              // Past the first page a different head is a push mid-walk.
+              changed: page.headSha !== headSha,
+              pageInfo: { hasNextPage: page.nextCursor !== null, endCursor: page.nextCursor },
+            };
+          },
+        }).pipe(
+          Stream.mapEffect((page) =>
+            page.changed
+              ? Effect.fail(
+                  readError(
+                    input.cwd,
+                    "getPullRequestDetail",
+                    new Error("Pull request head changed while reading checks."),
+                  ),
+                )
+              : Effect.succeed(page),
           ),
-        { maxPages: CHECK_CONTEXT_PAGES, nextCursor: (page) => page.nextCursor },
-      );
+        ),
+        {
+          ...target,
+          maxPages: CHECK_CONTEXT_PAGES,
+          hasNextPage: (page) => page.nextCursor !== null,
+        },
+      ).pipe(graphql(target));
       return {
         headSha: pages[0]?.headSha ?? null,
         contexts: pages.flatMap((page) => page.contexts),
@@ -1759,24 +1644,32 @@ export const make = Effect.gen(function* () {
 
   const getPullRequestDetail: GitHubPullRequestApi["Service"]["getPullRequestDetail"] = (input) => {
     const { owner, name } = parseRepositorySelector(input.repository);
+    const operation = "getPullRequestDetail";
     return SourceControlRateLimit.Interactive.pipe(
       Effect.flatMap((allowReserve) => {
-        const readCore = (includeDeployments: boolean) =>
-          graphqlRead({
-            allowReserve,
-            cwd: input.cwd,
-            host: input.host,
-            operation: "getPullRequestDetail",
-            variables: {
-              owner,
-              name,
-              number: input.number,
-              headRef: `refs/pull/${input.number}/head`,
-            },
-            query: pullRequestCoreGraphQlQuery(input.host, includeDeployments),
-            decode: decodePullRequestCoreJson,
-          });
-        // Deployment access is optional; retry rejected reads once without deployment fields.
+        const decodeCore = <A extends PullRequestCore.Result, E, R>(read: Effect.Effect<A, E, R>) =>
+          read.pipe(
+            graphql({ ...input, operation, allowReserve }),
+            Effect.map(toPullRequestCore),
+            Effect.flatMap(found({ ...input, operation })),
+          );
+        const readCore = (deployments: boolean) => {
+          const variables = {
+            owner,
+            name,
+            number: input.number,
+            headRef: `refs/pull/${input.number}/head`,
+            required: asksRequired(input.host),
+          };
+          if (asksRequired(input.host)) {
+            return deployments
+              ? decodeCore(client.PullRequestCore({ ...variables, deployments: true }))
+              : decodeCore(client.PullRequestCoreWithoutDeployments(variables));
+          }
+          return deployments
+            ? decodeCore(client.PullRequestCoreEnterprise({ ...variables, deployments: true }))
+            : decodeCore(client.PullRequestCoreEnterpriseWithoutDeployments(variables));
+        };
         return readCore(true).pipe(
           Effect.catchTags({
             GitHubApiResponseError: () => readCore(false),
@@ -1793,7 +1686,7 @@ export const make = Effect.gen(function* () {
                   () =>
                     readError(
                       input.cwd,
-                      "getPullRequestDetail",
+                      operation,
                       new Error("Pull request head changed while reading checks."),
                     ),
                 ),
@@ -1825,22 +1718,28 @@ export const make = Effect.gen(function* () {
       const { owner, name } = parseRepositorySelector(input.repository);
       const countHeads = (pages: ReadonlyArray<{ readonly heads: ReadonlyArray<unknown> }>) =>
         pages.reduce((total, page) => total + page.heads.length, 0);
-      const { pages, truncated } = yield* readGraphQlPages(
-        (after) =>
-          graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "listWorkflowRunsRequiringApproval",
-            allowReserve: true,
-            variables: { owner, name, head: input.headBranch, after },
-            query: PULL_REQUEST_HEADS_GRAPHQL_QUERY,
-            decode: decodePullRequestHeadsJson,
-          }),
+      const target = {
+        ...input,
+        operation: "listWorkflowRunsRequiringApproval",
+        allowReserve: true,
+      };
+      const { pages, truncated } = yield* readPages(
+        GraphQLClient.pages(client.PullRequestHeads, {
+          variables: { owner, name, head: input.headBranch },
+          connection: (result) => {
+            const page = toPullRequestHeads(result);
+            return {
+              ...page,
+              pageInfo: { hasNextPage: page.nextCursor !== null, endCursor: page.nextCursor },
+            };
+          },
+        }),
         {
-          nextCursor: (page) => page.nextCursor,
+          ...target,
+          hasNextPage: (page) => page.nextCursor !== null,
           until: (pages) => countHeads(pages) > workflowApprovalLimit,
         },
-      );
+      ).pipe(graphql(target));
       return { heads: pages.flatMap((page) => page.heads), truncated };
     });
 
@@ -1854,23 +1753,29 @@ export const make = Effect.gen(function* () {
   }) =>
     Effect.gen(function* () {
       const { owner, name } = parseRepositorySelector(input.repository);
-      const { pages } = yield* readGraphQlPages(
-        (after) =>
-          graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "listWorkflowRunsRequiringApproval",
-            allowReserve: true,
-            variables: { owner, name, oid: input.headSha, after },
-            query: WORKFLOW_APPROVAL_SUITES_GRAPHQL_QUERY,
-            decode: (raw) => decodeWorkflowApprovalSuitesJson(raw, input.headBranch),
-          }),
+      const target = {
+        ...input,
+        operation: "listWorkflowRunsRequiringApproval",
+        allowReserve: true,
+      };
+      const { pages } = yield* readPages(
+        GraphQLClient.pages(client.WorkflowApprovalSuites, {
+          variables: { owner, name, oid: input.headSha },
+          connection: (result) => {
+            const page = toWorkflowApprovalSuites(result, input.headBranch);
+            return {
+              ...page,
+              pageInfo: { hasNextPage: page.nextCursor !== null, endCursor: page.nextCursor },
+            };
+          },
+        }),
         {
-          nextCursor: (page) => page.nextCursor,
+          ...target,
+          hasNextPage: (page) => page.nextCursor !== null,
           until: (pages) =>
             pages.reduce((total, page) => total + page.runs.length, 0) > workflowApprovalLimit,
         },
-      );
+      ).pipe(graphql(target));
       return pages.flatMap((page) => page.runs);
     });
 
@@ -1947,166 +1852,128 @@ export const make = Effect.gen(function* () {
       ).pipe(Effect.map(([, approvals]) => approvals));
     };
 
-  /** One pull request's summary, through the same aliased query the batch uses. */
-  const viewPullRequestSummary = (input: PullRequestSummaryRead) => {
-    const { owner, name } = parseRepositorySelector(input.repository);
-    return graphqlRead({
-      cwd: input.cwd,
-      host: input.host,
-      operation: "getPullRequestSummary",
-      variables: { owner, name, number: input.number },
-      query: pullRequestSummaryGraphQlQuery(input.host === "github.com"),
-      decode: decodePullRequestSummariesJson,
-    }).pipe(
-      Effect.flatMap((summaries) => {
-        const summary = summaries.get(0);
-        return summary === undefined
-          ? Effect.fail(
-              readError(
-                input.cwd,
-                "getPullRequestSummary",
-                new Error(`GitHub answered nothing for ${input.repository}#${input.number}.`),
-              ),
-            )
-          : Effect.succeed(summary);
+  /** The mutations that only need the pull request's node id. */
+  const simpleActionMutations = {
+    "disable-auto-merge": (pullRequestId: string) =>
+      client.DisablePullRequestAutoMerge({ pullRequestId }).pipe(Effect.asVoid),
+    ready: (pullRequestId: string) =>
+      client.MarkPullRequestReadyForReview({ pullRequestId }).pipe(Effect.asVoid),
+    draft: (pullRequestId: string) =>
+      client.ConvertPullRequestToDraft({ pullRequestId }).pipe(Effect.asVoid),
+    close: (pullRequestId: string) =>
+      client.ClosePullRequest({ pullRequestId }).pipe(Effect.asVoid),
+    reopen: (pullRequestId: string) =>
+      client.ReopenPullRequest({ pullRequestId }).pipe(Effect.asVoid),
+  } satisfies Partial<Record<PullRequestAction, unknown>>;
+
+  /**
+   * Runs batched lookups for one read on `host`. The resolver groups them by host and credential.
+   * GitHub saying one pull request does not exist fails that lookup as not found; any other client
+   * failure is a read error against `operation`, and a request policy failure (a rate limit, a
+   * refused credential) passes through as itself.
+   */
+  const batchedRead = <A, E, R>(
+    input: { readonly cwd: string; readonly host: string; readonly operation: string },
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<
+    A,
+    | Exclude<E, GraphQLClientError.GraphQLClientError>
+    | GitHubPullRequestReadError
+    | GitHubRequestPolicy.GitHubApiNotFoundError,
+    Exclude<R, GitHubGraphQlClient.GitHubGraphQlTarget>
+  > =>
+    effect.pipe(
+      Effect.provideService(GitHubGraphQlClient.GitHubGraphQlTarget, {
+        host: input.host,
+        operation: input.operation,
       }),
+      Effect.mapError((error) =>
+        !isGraphQlClientError(error)
+          ? (error as Exclude<E, GraphQLClientError.GraphQLClientError>)
+          : isNotFoundOnly(error)
+            ? new GitHubRequestPolicy.GitHubApiNotFoundError({
+                host: input.host,
+                operation: input.operation,
+              })
+            : readError(input.cwd, input.operation, error),
+      ),
     );
-  };
 
   /**
    * Summaries asked for together, on one host under one credential, share aliased GraphQL reads
-   * of twenty-five: the background sync reads every linked pull request each minute, and one
-   * `gh pr view` apiece is most of what it spends. Whatever the batch cannot answer — a selector
-   * GraphQL cannot address, a pull request GitHub returned nothing for — is read on its own.
+   * of twenty-five: the background sync reads every linked pull request each minute, and one read
+   * apiece is most of what it spends. A pull request GitHub cannot find fails on its own; the
+   * rest of its batch still answers.
    */
-  const summaryResolver = RequestResolver.makeGrouped<PullRequestSummaryRead, string>({
-    key: ({ request, context }) =>
-      JSON.stringify([
-        request.host.toLowerCase(),
-        Context.getOrElse(context, GitHubApi.PinnedGitHubCredential, () => null)
-          ?.credentialFingerprint ?? null,
-        Context.getOrElse(context, SourceControlRateLimit.CredentialScope, () => ""),
-      ]),
-    resolver: (entries) => {
-      const [first] = entries;
-      const batchable = entries.filter(
-        (entry) => buildPullRequestSummariesGraphQlQuery([entry.request]) !== null,
-      );
-      // Stack membership rides along where GitHub serves stacks, so the background sync can skip
-      // the REST stack read for pull requests that are in none.
-      const document = buildPullRequestSummariesGraphQlQuery(
-        batchable.map((entry) => entry.request),
-        first.request.host === "github.com",
-      );
-      const batched =
-        document === null
-          ? Effect.succeed(new Map<number, GitHubPullRequestSummary>())
-          : graphqlRead({
-              cwd: first.request.cwd,
-              host: first.request.host,
-              operation: "getPullRequestSummary",
-              ...document,
-              decode: decodePullRequestSummariesJson,
-            });
-      return batched.pipe(
-        // A GraphQL error anywhere fails the whole document — one repository gone or out of
-        // reach — so a batch that could not be read leaves every entry to its own read. A paused
-        // budget is the exception: reading one at a time would only spend what is being saved.
-        Effect.catchCauseIf(
-          (cause) =>
-            !Cause.hasInterruptsOnly(cause) &&
-            !Cause.findErrorOption(cause).pipe(
-              Option.exists((error) => error._tag === "SourceControlRateLimitPausedError"),
-            ),
-          (cause) =>
-            Effect.logDebug("batched pull request summary read failed", { cause }).pipe(
-              Effect.as(new Map<number, GitHubPullRequestSummary>()),
-            ),
-        ),
-        Effect.flatMap((summaries) => {
-          const unanswered = entries.filter((entry) => {
-            const summary = summaries.get(batchable.indexOf(entry));
-            if (summary === undefined) return true;
-            entry.completeUnsafe(Exit.succeed(summary));
-            return false;
-          });
-          return Effect.forEach(
-            unanswered,
-            (entry) =>
-              viewPullRequestSummary(entry.request).pipe(
-                Effect.exit,
-                Effect.map((exit) => entry.completeUnsafe(exit)),
-              ),
-            { concurrency: STAT_REQUEST_CONCURRENCY, discard: true },
-          );
-        }),
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            for (const entry of entries) entry.completeUnsafe(Exit.failCause(cause));
-          }),
-        ),
-      );
-    },
+  const summaryResolver = GraphQLResolver.aliased(client.PullRequestSummary, {
+    batchKey: GitHubGraphQlClient.batchKey,
+  }).pipe(
+    RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
+    RequestResolver.batchN(STAT_ALIASES_PER_REQUEST),
+  );
+  const summaryEnterpriseResolver = GraphQLResolver.aliased(client.PullRequestSummaryEnterprise, {
+    batchKey: GitHubGraphQlClient.batchKey,
   }).pipe(
     RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
     RequestResolver.batchN(STAT_ALIASES_PER_REQUEST),
   );
   const getPullRequestSummary: GitHubPullRequestApi["Service"]["getPullRequestSummary"] = (input) =>
-    Effect.request(new PullRequestSummaryRead(input), summaryResolver);
+    Effect.gen(function* () {
+      const lookup = pullRequestLookup(input);
+      if (lookup === null) {
+        return yield* new GitHubRepositorySelectorError({
+          cwd: input.cwd,
+          operation: "getPullRequestSummary",
+        });
+      }
+      const result = yield* input.host.toLowerCase() === "github.com"
+        ? GraphQLResolver.request({ ...lookup, stacks: true }, summaryResolver)
+        : GraphQLResolver.request(lookup, summaryEnterpriseResolver);
+      const pullRequest = result.repository?.pullRequest;
+      if (pullRequest == null) {
+        return yield* new GitHubRequestPolicy.GitHubApiNotFoundError({
+          host: input.host,
+          operation: "getPullRequestSummary",
+        });
+      }
+      return toPullRequestSummary(pullRequest);
+    }).pipe((effect) => batchedRead({ ...input, operation: "getPullRequestSummary" }, effect));
 
   // Every watched pull request on a host in one read per pass. A pull request the batch has no
-  // answer for gets null, and its watch reads it in full; a failed batch fails every entry.
-  const watchFingerprintResolver = RequestResolver.makeGrouped<
-    PullRequestWatchFingerprintRead,
-    string
-  >({
-    key: ({ request, context }) =>
-      JSON.stringify([
-        request.host.toLowerCase(),
-        Context.getOrElse(context, GitHubApi.PinnedGitHubCredential, () => null)
-          ?.credentialFingerprint ?? null,
-        Context.getOrElse(context, SourceControlRateLimit.CredentialScope, () => ""),
-      ]),
-    resolver: (entries) => {
-      const [first] = entries;
-      const batchable = entries.filter(
-        (entry) => buildPullRequestWatchFingerprintsGraphQlQuery([entry.request]) !== null,
-      );
-      const document = buildPullRequestWatchFingerprintsGraphQlQuery(
-        batchable.map((entry) => entry.request),
-      );
-      const read =
-        document === null
-          ? Effect.succeed(new Map<number, GitHubPullRequestWatchFingerprint>())
-          : graphqlRead({
-              cwd: first.request.cwd,
-              host: first.request.host,
-              operation: "getPullRequestWatchFingerprint",
-              ...document,
-              decode: decodePullRequestWatchFingerprintsJson,
-            });
-      return read.pipe(
-        Effect.map((fingerprints) => {
-          for (const entry of entries) {
-            const index = batchable.indexOf(entry);
-            entry.completeUnsafe(
-              Exit.succeed(index === -1 ? null : (fingerprints.get(index) ?? null)),
-            );
-          }
-        }),
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            for (const entry of entries) entry.completeUnsafe(Exit.failCause(cause));
-          }),
-        ),
-      );
-    },
+  // answer for gets null, and its watch reads it in full; a failed request fails every entry.
+  const watchFingerprintResolver = GraphQLResolver.aliased(client.PullRequestWatchFingerprint, {
+    batchKey: GitHubGraphQlClient.batchKey,
   }).pipe(
     RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
     RequestResolver.batchN(STAT_ALIASES_PER_REQUEST),
   );
   const getPullRequestWatchFingerprint: GitHubPullRequestApi["Service"]["getPullRequestWatchFingerprint"] =
-    (input) => Effect.request(new PullRequestWatchFingerprintRead(input), watchFingerprintResolver);
+    (input) => {
+      const lookup = pullRequestLookup(input);
+      if (lookup === null) return Effect.succeed(null);
+      return GraphQLResolver.request(lookup, watchFingerprintResolver).pipe(
+        Effect.map((result) => {
+          const pullRequest = result.repository?.pullRequest;
+          return pullRequest == null ? null : toPullRequestWatchFingerprint(pullRequest);
+        }),
+        Effect.catchIf(isNotFoundOnly, () => Effect.succeed(null)),
+        (effect) => batchedRead({ ...input, operation: "getPullRequestWatchFingerprint" }, effect),
+      );
+    };
+
+  // Rows already on a page, enriched with what the listing query leaves out. They are many, so
+  // their lookups share aliased requests of twenty-five, four at a time.
+  const statsResolver = GraphQLResolver.aliased(client.PullRequestStats, {
+    batchKey: GitHubGraphQlClient.batchKey,
+  }).pipe(RequestResolver.batchN(STAT_ALIASES_PER_REQUEST));
+  const stackMembershipResolver = GraphQLResolver.aliased(client.PullRequestStackMembership, {
+    batchKey: GitHubGraphQlClient.batchKey,
+  }).pipe(RequestResolver.batchN(STAT_ALIASES_PER_REQUEST));
+  // A burst of ticks is one request, each file under its own alias. GitHub has no bulk form of
+  // `markFileAsViewed`/`unmarkFileAsViewed`, which each take a single path.
+  const setFileViewedResolver = GraphQLResolver.aliased(client.SetFileViewed, {
+    batchKey: GitHubGraphQlClient.batchKey,
+  }).pipe(RequestResolver.batchN(FILES_VIEWED_PER_REQUEST));
 
   /**
    * A GitHub Actions run, and the jobs that did not pass once it completed. REST reads: they
@@ -2181,7 +2048,19 @@ export const make = Effect.gen(function* () {
           }),
         );
       }
-      /** Pages of up to a hundred until `rows` have arrived or GitHub has no more. */
+      const target = { cwd: input.cwd, host: input.host, operation: "listPullRequests" };
+      const toPage = (
+        page: ReturnType<typeof toPullRequestRows>,
+      ): GitHubPullRequestListPage & { readonly pageInfo: GraphQLClient.PageInfo } => ({
+        items: page.rows.map((row) => row.item),
+        rawCount: page.rawCount,
+        endCursor: page.endCursor,
+        pageInfo: { hasNextPage: page.endCursor !== null, endCursor: page.endCursor },
+      });
+      /**
+       * Pages of up to a hundred until `rows` have arrived or GitHub has no more. Each page asks
+       * for only the rows still missing, so the last one does not overshoot.
+       */
       const collect = (
         rows: number,
         page: (
@@ -2192,49 +2071,67 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const countRows = (pages: ReadonlyArray<GitHubPullRequestListPage>) =>
             pages.reduce((total, read) => total + read.rawCount, 0);
-          const { pages, truncated } = yield* readGraphQlPages(
-            (after, pages: ReadonlyArray<GitHubPullRequestListPage>) =>
-              page(after, rows - countRows(pages)),
-            {
-              nextCursor: (read) => read.endCursor,
-              until: (pages) => countRows(pages) >= rows,
-            },
-          );
-          // `truncated` also covers a cursor GitHub repeated before `rows` arrived.
+          const pages: GitHubPullRequestListPage[] = [];
+          const seen = new Set<string>();
+          let after: string | null = null;
+          let truncated = false;
+          while (true) {
+            const read: GitHubPullRequestListPage = yield* page(after, rows - countRows(pages));
+            pages.push(read);
+            const next = read.endCursor;
+            if (next === null) break;
+            // `truncated` also covers a cursor GitHub repeated before `rows` arrived.
+            if (seen.has(next) || countRows(pages) >= rows) {
+              truncated = true;
+              break;
+            }
+            seen.add(next);
+            after = next;
+          }
           return {
             items: pages.flatMap((read) => read.items),
             rawCount: countRows(pages),
             truncated,
           };
         });
+      const stacks = input.host.toLowerCase() === "github.com";
+      const searchRows = (variables: typeof LenientPullRequestSearch.variables.Type) =>
+        stacks
+          ? client.PullRequestSearch(variables)
+          : client.PullRequestSearchEnterprise(variables);
+      const listRows = (variables: typeof LenientPullRequestList.variables.Type) =>
+        stacks ? client.PullRequestList(variables) : client.PullRequestListEnterprise(variables);
       const read = (
         continues: boolean,
         requestedRows = input.limit + 1,
       ): Effect.Effect<GitHubPullRequestListBatch, GitHubPullRequestApiError> =>
         collect(requestedRows, (after, rows) =>
-          continues
-            ? graphqlRead({
-                cwd: input.cwd,
-                host: input.host,
-                operation: "listPullRequests",
+          (continues
+            ? searchRows({
                 // The reader's own words are in the query.
-                variables: { q: query, after },
-                query: pullRequestSearchGraphQlQuery(
-                  rows,
-                  false,
-                  true,
-                  input.host === "github.com",
-                ),
-                decode: decodePullRequestSearchJson,
-              })
-            : graphqlRead({
-                cwd: input.cwd,
-                host: input.host,
-                operation: "listPullRequests",
-                variables: { owner, name, states: LIST_STATES[input.state], after },
-                query: pullRequestListGraphQlQuery(rows, false, input.host === "github.com"),
-                decode: decodePullRequestListJson,
-              }),
+                q: query,
+                first: pageRows(rows),
+                after,
+                // Stack badges come from their own batched read below, for the rows that stay.
+                stacks: false,
+                queue: stacks,
+                stats: true,
+              }).pipe(Effect.map((result) => toPage(toPullRequestRows(result.search))))
+            : listRows({
+                owner,
+                name,
+                states: LIST_STATES[input.state],
+                first: pageRows(rows),
+                after,
+                stacks: false,
+                queue: stacks,
+                stats: true,
+              }).pipe(
+                // A repository the viewer cannot see answers as an empty page, which is what
+                // `gh pr list` printed for it too.
+                Effect.map((result) => toPage(toPullRequestRows(result.repository?.pullRequests))),
+              )
+          ).pipe(graphql(target)),
         ).pipe(
           Effect.flatMap(({ items: rawItems, rawCount, truncated: cutShort }) => {
             const items = continues
@@ -2287,44 +2184,39 @@ export const make = Effect.gen(function* () {
         ),
         Effect.flatMap((batch) => {
           // Match the search query's host support, and enrich only rows that survived paging.
-          if (input.host !== "github.com" || batch.items.length === 0) return Effect.succeed(batch);
-          const chunks: Array<ReadonlyArray<GitHubPullRequestListItem>> = [];
-          for (let start = 0; start < batch.items.length; start += STAT_ALIASES_PER_REQUEST) {
-            chunks.push(batch.items.slice(start, start + STAT_ALIASES_PER_REQUEST));
-          }
+          if (!stacks || batch.items.length === 0) return Effect.succeed(batch);
           return Effect.forEach(
-            chunks,
-            (chunk) => {
-              const document = buildPullRequestStackMembershipsGraphQlQuery(
-                input.repository,
-                chunk.map((item) => item.number),
-              );
-              if (document === null) return Effect.succeed(chunk);
-              return graphqlRead({
-                cwd: input.cwd,
-                host: input.host,
-                operation: "listPullRequestStackMemberships",
-                ...document,
-                decode: decodePullRequestStackMembershipsJson,
-              }).pipe(
-                Effect.map((memberships) =>
-                  chunk.map((item, index) => {
-                    const stack = memberships.get(index);
-                    return stack === undefined ? item : { ...item, stack };
-                  }),
-                ),
+            batch.items,
+            (item) => {
+              const lookup = pullRequestLookup({
+                repository: input.repository,
+                number: item.number,
+              });
+              if (lookup === null) return Effect.succeed(item);
+              return GraphQLResolver.request(lookup, stackMembershipResolver).pipe(
+                Effect.map((result) => {
+                  const pullRequest = result.repository?.pullRequest;
+                  const stack = pullRequest == null ? undefined : toStackMembership(pullRequest);
+                  return stack === undefined ? item : { ...item, stack };
+                }),
                 // Optional badges must not take down a listing that already read successfully.
-                Effect.catch(() =>
+                Effect.catch((error) =>
                   Effect.logWarning("Pull request stack membership enrichment failed", {
                     operation: "listPullRequestStackMemberships",
                     host: input.host,
-                    rows: chunk.length,
-                  }).pipe(Effect.as(chunk)),
+                    error: error._tag,
+                  }).pipe(Effect.as(item)),
                 ),
               );
             },
-            { concurrency: STAT_REQUEST_CONCURRENCY },
-          ).pipe(Effect.map((chunks) => ({ ...batch, items: chunks.flat() })));
+            { concurrency: "unbounded" },
+          ).pipe(
+            Effect.provideService(GitHubGraphQlClient.GitHubGraphQlTarget, {
+              host: input.host,
+              operation: "listPullRequestStackMemberships",
+            }),
+            Effect.map((items) => ({ ...batch, items })),
+          );
         }),
       );
     },
@@ -2343,62 +2235,63 @@ export const make = Effect.gen(function* () {
       // per-repository read does — up to GitHub's own ceiling on a search page, past which
       // `hasNextPage` is what says there is more.
       const rows = Math.min(input.limit + 1, PULL_REQUEST_SEARCH_MAX_ROWS);
-      return graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "searchPullRequests",
-        variables: { q: query, after: null },
-        query: pullRequestSearchGraphQlQuery(
-          rows,
-          input.host === "github.com",
-          false,
-          input.host === "github.com",
-        ),
-        decode: decodePullRequestSearchJson,
+      const githubDotCom = input.host.toLowerCase() === "github.com";
+      const search = (variables: typeof LenientPullRequestSearch.variables.Type) =>
+        githubDotCom
+          ? client.PullRequestSearch(variables)
+          : client.PullRequestSearchEnterprise(variables);
+      return search({
+        q: query,
+        first: rows,
+        stacks: githubDotCom,
+        queue: githubDotCom,
+        stats: false,
       }).pipe(
-        Effect.map((batch) => ({
-          items: batch.items.slice(0, input.limit),
-          truncated: batch.rawCount > input.limit || batch.hasNextPage,
-        })),
+        graphql({ ...input, operation: "searchPullRequests" }),
+        Effect.map(({ search }) => {
+          const page = toPullRequestRows(search);
+          // A search row names its repository; one that does not cannot be placed on a page.
+          const items = page.rows.flatMap(({ item, repository }) =>
+            repository === null ? [] : [{ ...item, repository }],
+          );
+          return {
+            items: items.slice(0, input.limit),
+            truncated: page.rawCount > input.limit || page.hasNextPage,
+          };
+        }),
       );
     },
 
-    listPullRequestStats: (input) => {
-      const chunks: Array<ReadonlyArray<{ readonly repository: string; readonly number: number }>> =
-        [];
-      for (let start = 0; start < input.changeRequests.length; start += STAT_ALIASES_PER_REQUEST) {
-        chunks.push(input.changeRequests.slice(start, start + STAT_ALIASES_PER_REQUEST));
-      }
-      return Effect.forEach(
-        chunks,
-        (chunk) => {
-          const document = buildPullRequestStatsGraphQlQuery(chunk);
-          if (document === null) {
-            return Effect.fail(
-              new GitHubRepositorySelectorError({
-                cwd: input.cwd,
-                operation: "listPullRequestStats",
-              }),
-            );
-          }
-          return graphqlRead({
+    listPullRequestStats: (input) =>
+      Effect.gen(function* () {
+        const lookups = input.changeRequests.map((changeRequest) => ({
+          changeRequest,
+          lookup: pullRequestLookup(changeRequest),
+        }));
+        if (lookups.some(({ lookup }) => lookup === null)) {
+          return yield* new GitHubRepositorySelectorError({
             cwd: input.cwd,
-            host: input.host,
             operation: "listPullRequestStats",
-            ...document,
-            decode: decodePullRequestStatsJson,
-          }).pipe(
-            Effect.map((stats) =>
-              chunk.flatMap((changeRequest, index) => {
-                const stat = stats.get(index);
-                return stat === undefined ? [] : [{ ...changeRequest, ...stat }];
+          });
+        }
+        // A repository or pull request GitHub answered nothing for is left out, which leaves the
+        // row with whatever it already had.
+        const stats = yield* Effect.forEach(
+          lookups,
+          ({ changeRequest, lookup }) =>
+            GraphQLResolver.request(lookup!, statsResolver).pipe(
+              Effect.map((result) => {
+                const pullRequest = result.repository?.pullRequest;
+                return pullRequest == null
+                  ? []
+                  : [{ ...changeRequest, ...pullRequest } satisfies GitHubPullRequestStat];
               }),
+              Effect.catchIf(isNotFoundOnly, () => Effect.succeed([])),
             ),
-          );
-        },
-        { concurrency: STAT_REQUEST_CONCURRENCY },
-      ).pipe(Effect.map((results) => results.flat()));
-    },
+          { concurrency: "unbounded" },
+        );
+        return stats.flat();
+      }).pipe((effect) => batchedRead({ ...input, operation: "listPullRequestStats" }, effect)),
 
     getPullRequestSummary,
     getPullRequestWatchFingerprint,
@@ -2407,14 +2300,14 @@ export const make = Effect.gen(function* () {
     getPullRequestDetail,
     getPullRequestPreview: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      return graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "getPullRequestPreview",
-        variables: { owner, name, number: input.number },
-        query: PULL_REQUEST_PREVIEW_GRAPHQL_QUERY,
-        decode: decodePullRequestPreviewJson,
-      });
+      const operation = "getPullRequestPreview";
+      return client
+        .PullRequestPreview({ owner, name, number: input.number })
+        .pipe(
+          graphql({ ...input, operation }),
+          Effect.map(toPullRequestPreview),
+          Effect.flatMap(found({ ...input, operation })),
+        );
     },
     listWorkflowRunsRequiringApproval,
 
@@ -2463,27 +2356,28 @@ export const make = Effect.gen(function* () {
           allowedMergeMethods: null,
         })),
       );
-      const classicPolicy = graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "getBranchPolicy.branchProtection",
-        variables: { owner, name, qualifiedName: `refs/heads/${input.baseBranch}` },
-        query: BRANCH_PROTECTION_REQUIRED_CHECKS_GRAPHQL_QUERY,
-        decode: decodeBranchProtectionRequiredChecksJson,
-      }).pipe(
-        Effect.map((policy) => ({
-          available: true as const,
-          contexts: policy.requiredChecks,
-          requiresUpToDateBranch: policy.requiresUpToDateBranch,
-        })),
-        // A schema without branchProtectionRule, or a policy this viewer cannot read, is unknown
-        // for this source rather than evidence that no classic required checks exist.
-        Effect.orElseSucceed(() => ({
-          available: false as const,
-          contexts: [],
-          requiresUpToDateBranch: undefined,
-        })),
-      );
+      const classicPolicy = client
+        .BranchProtectionRequiredChecks({
+          owner,
+          name,
+          qualifiedName: `refs/heads/${input.baseBranch}`,
+        })
+        .pipe(
+          graphql({ ...input, operation: "getBranchPolicy.branchProtection" }),
+          Effect.map(toBranchProtectionRequiredChecks),
+          Effect.map((policy) => ({
+            available: true as const,
+            contexts: policy.requiredChecks,
+            requiresUpToDateBranch: policy.requiresUpToDateBranch,
+          })),
+          // A schema without branchProtectionRule, or a policy this viewer cannot read, is unknown
+          // for this source rather than evidence that no classic required checks exist.
+          Effect.orElseSucceed(() => ({
+            available: false as const,
+            contexts: [],
+            requiresUpToDateBranch: undefined,
+          })),
+        );
       return Effect.all([rulesetPolicy, classicPolicy], { concurrency: 2 }).pipe(
         Effect.flatMap(([rulesets, classic]) => {
           if (!rulesets.available && !classic.available) {
@@ -2553,13 +2447,11 @@ export const make = Effect.gen(function* () {
         let reviewsAfter: string | null = null;
         let withComments = true;
         let withReviews = true;
+        const target = { ...input, operation: "getPullRequestActivity" };
         // Both remark lists page on their own; a page asks only for the ones with more to give.
         for (let page = 0; page < HUNDRED_ROW_PAGES && (withComments || withReviews); page++) {
-          const read: GitHubPullRequestActivityPage = yield* graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "getPullRequestActivity",
-            variables: {
+          const read: GitHubPullRequestActivityPage = yield* client
+            .PullRequestActivity({
               owner,
               name,
               number: input.number,
@@ -2568,10 +2460,12 @@ export const make = Effect.gen(function* () {
               commentsAfter,
               withReviews,
               reviewsAfter,
-            },
-            query: PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
-            decode: decodePullRequestActivityJson,
-          });
+            })
+            .pipe(
+              graphql(target),
+              Effect.map(toPullRequestActivityPage),
+              Effect.flatMap(found(target)),
+            );
           if (page === 0) {
             author = read.author ?? null;
             commits = read.commits ?? [];
@@ -2652,31 +2546,28 @@ export const make = Effect.gen(function* () {
 
     getReviewThreadComments: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      return graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "getReviewThreadComments",
-        variables: {
+      return client
+        .ReviewThreadComments({
           owner,
           name,
           number: input.number,
           threadId: input.threadId,
-          cursor: input.cursor,
-        },
-        query: REVIEW_THREAD_COMMENTS_GRAPHQL_QUERY,
-        decode: decodeReviewThreadCommentsJson,
-      }).pipe(
-        Effect.flatMap(({ belongsToPullRequest, comments, nextCursor }) =>
-          belongsToPullRequest
-            ? Effect.succeed({ comments, nextCursor })
-            : Effect.fail(
-                new GitHubSubjectScopeError({
-                  cwd: input.cwd,
-                  operation: "getReviewThreadComments",
-                }),
-              ),
-        ),
-      );
+          after: input.cursor,
+        })
+        .pipe(
+          graphql({ ...input, operation: "getReviewThreadComments" }),
+          Effect.map(toReviewThreadCommentsPage),
+          Effect.flatMap(({ belongsToPullRequest, comments, nextCursor }) =>
+            belongsToPullRequest
+              ? Effect.succeed({ comments, nextCursor })
+              : Effect.fail(
+                  new GitHubSubjectScopeError({
+                    cwd: input.cwd,
+                    operation: "getReviewThreadComments",
+                  }),
+                ),
+          ),
+        );
     },
 
     getPullRequestFile,
@@ -2684,17 +2575,13 @@ export const make = Effect.gen(function* () {
     listReviewThreadComments: (input) =>
       Effect.gen(function* () {
         const { owner, name } = parseRepositorySelector(input.repository);
+        const target = { ...input, operation: "listReviewThreadComments" };
         const threadPage = (
-          cursor: string | null,
+          after: string | null,
         ): Effect.Effect<GitHubReviewThreadPage, GitHubPullRequestApiError> =>
-          graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "listReviewThreadComments",
-            variables: { owner, name, number: input.number, cursor },
-            query: REVIEW_THREADS_GRAPHQL_QUERY,
-            decode: decodeReviewThreadsJson,
-          });
+          client
+            .ReviewThreads({ owner, name, number: input.number, after })
+            .pipe(graphql(target), Effect.map(toReviewThreadPage), Effect.flatMap(found(target)));
         const entries: GitHubReviewThreadEntry[] = [];
         const avatarsByLogin = new Map<string, string>();
         const botLogins = new Set<string>();
@@ -2740,22 +2627,27 @@ export const make = Effect.gen(function* () {
         // ordinarily accrues. Followed so a review whose event fell past that page still finds
         // its reason.
         if (dismissalCursor !== null) {
-          const { pages } = yield* readGraphQlPages(
-            (cursor) =>
-              graphqlRead({
-                cwd: input.cwd,
-                host: input.host,
-                operation: "listReviewThreadComments",
-                variables: { owner, name, number: input.number, cursor },
-                query: REVIEW_DISMISSALS_GRAPHQL_QUERY,
-                decode: decodeReviewDismissalsJson,
-              }),
-            {
-              from: dismissalCursor,
-              maxPages: HUNDRED_ROW_PAGES,
-              nextCursor: (read) => read.nextCursor,
-            },
-          );
+          let after: string | null = dismissalCursor;
+          const pages: Array<{
+            readonly dismissalsByReviewId: ReadonlyMap<string, string>;
+          }> = [];
+          const seen = new Set<string>();
+          // Carries on from the thread read's own cursor, which `GraphQLClient.pages` cannot.
+          while (after !== null && pages.length < HUNDRED_ROW_PAGES && !seen.has(after)) {
+            seen.add(after);
+            const read: {
+              readonly dismissalsByReviewId: ReadonlyMap<string, string>;
+              readonly nextCursor: string | null;
+            } = yield* client
+              .ReviewDismissals({ owner, name, number: input.number, after })
+              .pipe(
+                graphql(target),
+                Effect.map(toReviewDismissalsPage),
+                Effect.flatMap(found(target)),
+              );
+            pages.push(read);
+            after = read.nextCursor;
+          }
           for (const read of pages)
             for (const [id, message] of read.dismissalsByReviewId)
               dismissalsByReviewId.set(id, message);
@@ -2793,14 +2685,9 @@ export const make = Effect.gen(function* () {
       if (input.ids.length === 0) {
         return Effect.succeed(new Map<string, string>());
       }
-      return graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "listActorAvatars",
-        variables: { ids: input.ids },
-        query: ACTOR_AVATARS_GRAPHQL_QUERY,
-        decode: decodeActorAvatarsJson,
-      });
+      return client
+        .ActorAvatars({ ids: input.ids })
+        .pipe(graphql({ ...input, operation: "listActorAvatars" }), Effect.map(toActorAvatars));
     },
 
     getViewerAccess: (input) => {
@@ -2808,24 +2695,18 @@ export const make = Effect.gen(function* () {
       const variables = { owner, name, number: input.number };
       return Effect.all(
         [
-          graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "getViewerAccess",
-            ...(input.allowReserve === true ? { allowReserve: true } : {}),
-            variables,
-            query: VIEWER_PERMISSIONS_GRAPHQL_QUERY,
-            decode: decodeViewerPermissionsJson,
-          }),
-          graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "getAutoMergeAccess",
-            ...(input.allowReserve === true ? { allowReserve: true } : {}),
-            variables,
-            query: AUTO_MERGE_PERMISSIONS_GRAPHQL_QUERY,
-            decode: decodeAutoMergePermissionsJson,
-          }).pipe(Effect.orElseSucceed(() => null)),
+          client
+            .ViewerPermissions(variables)
+            .pipe(
+              graphql({ ...input, operation: "getViewerAccess" }),
+              Effect.map(toViewerPermissions),
+              Effect.flatMap(found({ ...input, operation: "getViewerAccess" })),
+            ),
+          client.AutoMergePermissions(variables).pipe(
+            graphql({ ...input, operation: "getAutoMergeAccess" }),
+            Effect.map(toAutoMergePermissions),
+            Effect.orElseSucceed(() => null),
+          ),
         ],
         { concurrency: 2 },
       ).pipe(
@@ -2837,15 +2718,14 @@ export const make = Effect.gen(function* () {
 
     listReviewerCandidates: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      return graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "listReviewerCandidates",
-        allowReserve: true,
-        variables: { owner, name, number: input.number },
-        query: REVIEWER_CANDIDATES_GRAPHQL_QUERY,
-        decode: decodeReviewerCandidatesJson,
-      });
+      const operation = "listReviewerCandidates";
+      return client
+        .ReviewerCandidates({ owner, name, number: input.number })
+        .pipe(
+          graphql({ ...input, operation, allowReserve: true }),
+          Effect.map(toReviewerCandidates),
+          Effect.flatMap(found({ ...input, operation })),
+        );
     },
 
     setReviewerRequest: (input) => {
@@ -2865,15 +2745,14 @@ export const make = Effect.gen(function* () {
 
     listLabelCandidates: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      return graphqlRead({
-        cwd: input.cwd,
-        host: input.host,
-        operation: "listLabelCandidates",
-        allowReserve: true,
-        variables: { owner, name, number: input.number },
-        query: LABEL_CANDIDATES_GRAPHQL_QUERY,
-        decode: decodeLabelCandidatesJson,
-      });
+      const operation = "listLabelCandidates";
+      return client
+        .LabelCandidates({ owner, name, number: input.number })
+        .pipe(
+          graphql({ ...input, operation, allowReserve: true }),
+          Effect.map(toLabelCandidates),
+          Effect.flatMap(found({ ...input, operation })),
+        );
     },
 
     setLabels: (input) => {
@@ -2916,28 +2795,22 @@ export const make = Effect.gen(function* () {
             });
           }
           const { owner, name } = parseRepositorySelector(input.repository);
-          const response = yield* graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "deletePullRequestBranch",
-            allowReserve: true,
-            query: BRANCH_TO_DELETE_GRAPHQL_QUERY,
-            variables: { owner, name, number: input.number },
-            decode: decodeBranchToDelete,
-          });
-          const branch = response.data.repository.pullRequest;
+          const target = { ...input, operation: "deletePullRequestBranch" };
+          const branch = yield* client
+            .PullRequestBranchToDelete({ owner, name, number: input.number })
+            .pipe(
+              graphql({ ...target, allowReserve: true }),
+              Effect.map((result) => result.repository?.pullRequest ?? null),
+              Effect.flatMap(found(target)),
+            );
           if (branch.state === "OPEN") {
             return yield* new GitHubBranchDeletionRefusedError({
               number: input.number,
               reason: "open-pr",
             });
           }
-          if (
-            branch.headRepository === null ||
-            !branch.headRepository.id ||
-            !branch.headRefName ||
-            !branch.headRefOid
-          ) {
+          const repositoryId = branch.headRepository?.id;
+          if (!repositoryId || !branch.headRefName || !branch.headRefOid) {
             return yield* new GitHubBranchDeletionRefusedError({
               number: input.number,
               reason: "source-unavailable",
@@ -2950,22 +2823,17 @@ export const make = Effect.gen(function* () {
             });
           }
           const ref = `refs/heads/${branch.headRefName}`;
-          const source = yield* graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "deletePullRequestBranch",
-            allowReserve: true,
-            query: SOURCE_BRANCH_GRAPHQL_QUERY,
-            variables: { repositoryId: branch.headRepository.id, ref },
-            decode: decodeSourceBranch,
-          });
-          const repository = source.data.node;
+          const source = yield* client
+            .PullRequestSourceBranch({ repositoryId, ref })
+            .pipe(graphql({ ...target, allowReserve: true }));
+          const repository = source.node?.__typename === "Repository" ? source.node : null;
           if (repository === null) {
             return yield* new GitHubBranchDeletionRefusedError({
               number: input.number,
               reason: "source-unavailable",
             });
           }
+          // Already gone, which is what was asked for.
           if (repository.ref === null) return;
           if (
             repository.defaultBranchRef === null ||
@@ -2976,19 +2844,16 @@ export const make = Effect.gen(function* () {
               reason: "unsafe-branch",
             });
           }
-          if (repository.ref.target.oid !== branch.headRefOid) {
+          if (repository.ref.target?.oid !== branch.headRefOid) {
             return yield* new GitHubBranchDeletionRefusedError({
               number: input.number,
               reason: "head-changed",
             });
           }
-          yield* graphql({
-            host: input.host,
-            operation: "deletePullRequestBranch",
-            query: DELETE_BRANCH_GRAPHQL_MUTATION,
-            variables: {
+          yield* client
+            .DeletePullRequestBranch({
               input: {
-                repositoryId: branch.headRepository.id,
+                repositoryId,
                 refUpdates: [
                   {
                     name: ref,
@@ -2997,26 +2862,26 @@ export const make = Effect.gen(function* () {
                   },
                 ],
               },
-            },
-          });
+            })
+            .pipe(graphql(target));
         });
       }
       if (input.stackNumber !== undefined)
         return runGitHubStackAction({ ...input, stackNumber: input.stackNumber }).pipe(
-          Effect.provideService(GitHubApi.GitHubApi, api),
+          Effect.provideService(GitHubRest.GitHubRest, api),
+          Effect.provideService(GitHubRequestPolicy.GitHubRequestPolicy, policy),
+          Effect.provideService(HttpClient.HttpClient, httpClient),
           Effect.provideService(SourceControlHost.SourceControlHost, sourceControlHost),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
         );
       if (input.action === "revert") {
         return pullRequestNodeId({ ...input, operation: "revertPullRequest" }).pipe(
           Effect.flatMap((pullRequestId) =>
-            graphql({
-              host: input.host,
-              operation: "revertPullRequest",
-              query: REVERT_PULL_REQUEST_GRAPHQL_MUTATION,
-              variables: { pullRequestId },
-            }),
+            client
+              .RevertPullRequest({ pullRequestId })
+              .pipe(graphql({ ...input, operation: "revertPullRequest" })),
           ),
+          Effect.asVoid,
         );
       }
       if (input.action === "approve-workflows") {
@@ -3118,15 +2983,11 @@ export const make = Effect.gen(function* () {
         );
       }
       const action = input.action;
-      if (action in SIMPLE_ACTION_MUTATIONS) {
+      if (action in simpleActionMutations) {
+        const mutate = simpleActionMutations[action as keyof typeof simpleActionMutations];
         return pullRequestNodeId({ ...input, operation: "runPullRequestAction" }).pipe(
           Effect.flatMap((pullRequestId) =>
-            graphql({
-              host: input.host,
-              operation: "runPullRequestAction",
-              query: SIMPLE_ACTION_MUTATIONS[action as keyof typeof SIMPLE_ACTION_MUTATIONS],
-              variables: { pullRequestId },
-            }),
+            mutate(pullRequestId).pipe(graphql({ ...input, operation: "runPullRequestAction" })),
           ),
         );
       }
@@ -3138,53 +2999,47 @@ export const make = Effect.gen(function* () {
         const { owner, name } = parseRepositorySelector(input.repository);
         // Read fresh rather than from the node id cache: merging and updating act on the head
         // as it stands now, and the merge queue decides which mutation a merge is.
-        const readActionState = graphqlRead({
-          cwd: input.cwd,
-          host: input.host,
-          operation: "runPullRequestAction",
-          allowReserve: true,
-          query: ACTION_STATE_GRAPHQL_QUERY,
-          variables: {
+        const target = { ...input, operation: "runPullRequestAction" };
+        const readActionState = client
+          .PullRequestActionState({
             owner,
             name,
             number: input.number,
             headRef: `refs/pull/${input.number}/head`,
-          },
-          decode: decodeActionState,
-        });
+          })
+          .pipe(
+            graphql({ ...target, allowReserve: true }),
+            Effect.map((result) => result.repository?.pullRequest ?? null),
+            Effect.flatMap(found(target)),
+          );
         const state = yield* readActionState;
         if (action === "update-branch") {
           // Already current is done, the way `gh pr update-branch` reports it.
           if (state.baseRef?.compare?.behindBy === 0) return;
           // GitHub updates with a merge commit unless asked to rebase, which is its own default.
-          return yield* graphql({
-            host: input.host,
-            operation: "runPullRequestAction",
-            query: UPDATE_BRANCH_GRAPHQL_MUTATION,
-            variables: {
+          return yield* client
+            .UpdatePullRequestBranch({
               pullRequestId: state.id,
               expectedHeadOid: state.headRefOid,
               updateMethod: input.updateMethod === "rebase" ? "REBASE" : "MERGE",
-            },
-          });
+            })
+            .pipe(graphql(target), Effect.asVoid);
         }
         let body: string | undefined;
         let expectedHead: string | undefined;
         if (input.removeAgentCreditsOnMerge === true && input.mergeMethod !== "rebase") {
-          const message = yield* graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "runPullRequestAction",
-            allowReserve: true,
-            query: MERGE_MESSAGE_GRAPHQL_QUERY,
-            variables: {
+          const message = yield* client
+            .PullRequestMergeMessage({
               owner,
               name,
               number: input.number,
               method: input.mergeMethod === "squash" ? "SQUASH" : "MERGE",
-            },
-            decode: decodeMergeMessage,
-          });
+            })
+            .pipe(
+              graphql({ ...target, allowReserve: true }),
+              Effect.map((result) => result.repository?.pullRequest ?? null),
+              Effect.flatMap(found(target)),
+            );
           // GitHub's merge queue chooses its own message and ignores custom text.
           if (!message.isMergeQueueEnabled) {
             const cleaned = removeAgentCredits(message.viewerMergeBodyText);
@@ -3209,22 +3064,18 @@ export const make = Effect.gen(function* () {
           state.isMergeQueueEnabled === true ||
           (action === "enable-auto-merge" &&
             !IMMEDIATELY_MERGEABLE.has(state.mergeStateStatus?.toUpperCase() ?? ""));
-        yield* graphql({
-          host: input.host,
-          operation: "runPullRequestAction",
-          query: auto ? ENABLE_AUTO_MERGE_GRAPHQL_MUTATION : MERGE_PULL_REQUEST_GRAPHQL_MUTATION,
-          variables: {
-            input: {
-              pullRequestId: state.id,
-              mergeMethod: GRAPHQL_MERGE_METHODS[input.mergeMethod ?? "merge"],
-              ...(pinnedHead === undefined ? {} : { expectedHeadOid: pinnedHead }),
-              ...(body === undefined ? {} : { commitBody: body }),
-            },
-          },
-        }).pipe(
-          // A push between the read above and the mutation is refused by GitHub in its own
-          // wording, so a refused pinned merge reads the head again to say why, and otherwise
-          // keeps the original failure.
+        const merge = {
+          pullRequestId: state.id,
+          mergeMethod: GRAPHQL_MERGE_METHODS[input.mergeMethod ?? "merge"],
+          ...(pinnedHead === undefined ? {} : { expectedHeadOid: pinnedHead }),
+          ...(body === undefined ? {} : { commitBody: body }),
+        };
+        yield* (
+          auto
+            ? client.EnablePullRequestAutoMerge({ input: merge }).pipe(Effect.asVoid)
+            : client.MergePullRequest({ input: merge }).pipe(Effect.asVoid)
+        ).pipe(
+          graphql(target),
           Effect.catchTags({
             GitHubApiResponseError: (error) =>
               pinnedHead === undefined
@@ -3247,13 +3098,11 @@ export const make = Effect.gen(function* () {
     commentOnPullRequest: (input) =>
       pullRequestNodeId({ ...input, operation: "commentOnPullRequest" }).pipe(
         Effect.flatMap((subjectId) =>
-          graphql({
-            host: input.host,
-            operation: "commentOnPullRequest",
-            query: ADD_COMMENT_GRAPHQL_MUTATION,
-            variables: { subjectId, body: input.body },
-          }),
+          client
+            .AddComment({ subjectId, body: input.body })
+            .pipe(graphql({ ...input, operation: "commentOnPullRequest" })),
         ),
+        Effect.asVoid,
       ),
 
     submitReview: (input) => {
@@ -3276,27 +3125,31 @@ export const make = Effect.gen(function* () {
     },
 
     replyToReviewThread: (input) =>
-      graphql({
-        host: input.host,
-        operation: "replyToReviewThread",
-        query: REVIEW_THREAD_REPLY_GRAPHQL_MUTATION,
-        variables: { threadId: input.threadId, body: input.body },
-      }),
+      client
+        .AddReviewThreadReply({ threadId: input.threadId, body: input.body })
+        .pipe(graphql({ ...input, operation: "replyToReviewThread" }), Effect.asVoid),
 
     getPullRequestFilesViewed: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
-      return readGraphQlPages(
-        (after) =>
-          graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "getPullRequestFilesViewed",
-            variables: { owner, name, number: input.number, after },
-            query: PULL_REQUEST_FILES_VIEWED_GRAPHQL_QUERY,
-            decode: decodePullRequestFilesViewedJson,
-          }),
-        { maxPages: FILES_VIEWED_MAX_PAGES, nextCursor: (page) => page.nextCursor },
+      const target = { ...input, operation: "getPullRequestFilesViewed" };
+      return readPages(
+        GraphQLClient.pages(client.PullRequestFilesViewed, {
+          variables: { owner, name, number: input.number },
+          connection: (result) => {
+            const page = toPullRequestFilesViewedPage(result);
+            return {
+              ...page,
+              pageInfo: { hasNextPage: page.nextCursor !== null, endCursor: page.nextCursor },
+            };
+          },
+        }),
+        {
+          ...target,
+          maxPages: FILES_VIEWED_MAX_PAGES,
+          hasNextPage: (page) => page.nextCursor !== null,
+        },
       ).pipe(
+        graphql(target),
         Effect.map(({ pages, truncated }) => ({
           files: pages.flatMap((page) => page.files),
           truncated,
@@ -3306,25 +3159,30 @@ export const make = Effect.gen(function* () {
 
     setPullRequestFilesViewed: (input) => {
       if (input.files.length === 0) return Effect.void;
-      return pullRequestNodeId({ ...input, operation: "setPullRequestFilesViewed" }).pipe(
-        Effect.flatMap((pullRequestId) => {
-          const mutation = buildSetFilesViewedGraphQlMutation(pullRequestId, input.files);
-          return mutation === null
-            ? Effect.void
-            : graphql({ host: input.host, operation: "setPullRequestFilesViewed", ...mutation });
-        }),
+      const target = { ...input, operation: "setPullRequestFilesViewed" };
+      return pullRequestNodeId(target).pipe(
+        Effect.flatMap((pullRequestId) =>
+          // One aliased document for the burst: top-level mutation fields run in write order,
+          // so the last word about a path is the one that sticks.
+          Effect.forEach(
+            input.files,
+            (file) =>
+              GraphQLResolver.request(
+                { pullRequestId, path: file.path, viewed: file.viewed },
+                setFileViewedResolver,
+              ),
+            { concurrency: "unbounded", discard: true },
+          ),
+        ),
+        graphql(target),
       );
     },
 
     setReviewThreadResolution: (input) =>
-      graphql({
-        host: input.host,
-        operation: "setReviewThreadResolution",
-        query: input.resolved
-          ? RESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION
-          : UNRESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION,
-        variables: { threadId: input.threadId },
-      }),
+      (input.resolved
+        ? client.ResolveReviewThread({ threadId: input.threadId }).pipe(Effect.asVoid)
+        : client.UnresolveReviewThread({ threadId: input.threadId }).pipe(Effect.asVoid)
+      ).pipe(graphql({ ...input, operation: "setReviewThreadResolution" })),
 
     setReaction: (input) => {
       const givenSubjectId = input.subjectId;
@@ -3348,33 +3206,31 @@ export const make = Effect.gen(function* () {
               ),
             );
       return subjectId.pipe(
-        Effect.flatMap((subjectId) =>
-          graphql({
-            host: input.host,
-            operation: "setReaction",
-            query: input.reacted ? ADD_REACTION_GRAPHQL_MUTATION : REMOVE_REACTION_GRAPHQL_MUTATION,
-            variables: { subjectId, content: gitHubReactionContent(input.content) },
-          }),
-        ),
+        Effect.flatMap((subjectId) => {
+          const variables = { subjectId, content: gitHubReactionContent(input.content) };
+          return (
+            input.reacted
+              ? client.AddReaction(variables).pipe(Effect.asVoid)
+              : client.RemoveReaction(variables).pipe(Effect.asVoid)
+          ).pipe(graphql({ ...input, operation: "setReaction" }));
+        }),
       );
     },
 
     updatePullRequest: (input) =>
       pullRequestNodeId({ ...input, operation: "updatePullRequest" }).pipe(
         Effect.flatMap((pullRequestId) =>
-          graphql({
-            host: input.host,
-            operation: "updatePullRequest",
-            query: UPDATE_PULL_REQUEST_GRAPHQL_MUTATION,
-            // A field the caller did not name is left out of the request entirely, so GitHub
-            // keeps the words that are there rather than being asked for an empty one.
-            variables: {
+          client
+            .UpdatePullRequest({
               pullRequestId,
+              // A field the caller did not name is left out of the request entirely, so GitHub
+              // keeps the words that are there rather than being asked for an empty one.
               ...(input.title === undefined ? {} : { title: input.title }),
               ...(input.body === undefined ? {} : { body: input.body }),
-            },
-          }),
+            })
+            .pipe(graphql({ ...input, operation: "updatePullRequest" })),
         ),
+        Effect.asVoid,
       ),
 
     updateComment: (input) =>
@@ -3396,17 +3252,14 @@ export const make = Effect.gen(function* () {
                 }),
               ),
         ),
-        Effect.flatMap((commentId) =>
-          graphql({
-            host: input.host,
-            operation: "updateComment",
-            query:
-              input.kind === "issue-comment"
-                ? UPDATE_ISSUE_COMMENT_GRAPHQL_MUTATION
-                : UPDATE_REVIEW_COMMENT_GRAPHQL_MUTATION,
-            variables: { commentId, body: input.body },
-          }),
-        ),
+        Effect.flatMap((commentId) => {
+          const variables = { commentId, body: input.body };
+          return (
+            input.kind === "issue-comment"
+              ? client.UpdateIssueComment(variables).pipe(Effect.asVoid)
+              : client.UpdateReviewComment(variables).pipe(Effect.asVoid)
+          ).pipe(graphql({ ...input, operation: "updateComment" }));
+        }),
       ),
   });
 });

@@ -17,6 +17,7 @@ export interface FakeGitHubApiRequest {
   readonly path: string;
   /** The GraphQL document, for a GraphQL request. */
   readonly query?: string;
+  readonly operationName?: string;
   readonly variables?: Readonly<Record<string, unknown>>;
 }
 
@@ -46,11 +47,9 @@ export async function startFakeGitHubApi(
   const requests: FakeGitHubApiRequest[] = [];
   const pageInfo = { hasNextPage: false, endCursor: null };
   const connection = (nodes: ReadonlyArray<unknown>) => ({ nodes, pageInfo });
-  const repository = (fields: Record<string, unknown>) => ({
-    data: { repository: fields },
-    rateLimit: RATE_LIMIT,
-  });
+  const repository = (fields: Record<string, unknown>) => ({ repository: fields });
   const detail = (pr: FakeGitHubPullRequest) => ({
+    __typename: "PullRequest",
     id: `PR_${pr.number}`,
     number: pr.number,
     title: pr.title,
@@ -58,17 +57,31 @@ export async function startFakeGitHubApi(
     body: "A synthetic pull request for end-to-end tests.",
     state: pr.state ?? "OPEN",
     isDraft: false,
-    author: { login: "e2e-user" },
+    author: {
+      __typename: "User",
+      id: "USER_e2e",
+      login: "e2e-user",
+      name: "E2E User",
+      avatarUrl: "https://example.invalid/e2e-user.png",
+    },
     repository: { nameWithOwner: "e2e-org/demo-app" },
     headRefName: `change-${pr.number}`,
     baseRefName: "main",
     headRefOid: pr.headSha,
     isCrossRepository: false,
-    headRepositoryOwner: { login: "e2e-org" },
+    headRepositoryOwner: { __typename: "Organization", login: "e2e-org" },
+    headRepository: { nameWithOwner: "e2e-org/demo-app", viewerPermission: "WRITE" },
+    headRef: { id: `REF_${pr.number}` },
     mergeable: "MERGEABLE",
     mergeStateStatus: pr.blocked ? "BLOCKED" : "CLEAN",
     isMergeQueueEnabled: false,
     autoMergeRequest: null,
+    isInMergeQueue: false,
+    reviewDecision: null,
+    mergedAt: pr.state === "MERGED" ? "2026-10-01T00:00:00Z" : null,
+    closedAt: pr.state === "MERGED" ? "2026-10-01T00:00:00Z" : null,
+    stack: null,
+    stackEntry: null,
     additions: 4,
     deletions: 1,
     changedFiles: 1,
@@ -82,9 +95,12 @@ export async function startFakeGitHubApi(
     baseRef: { compare: { behindBy: 0 } },
     reviewRequests: connection([]),
     labels: connection([]),
+    latestReviews: connection([]),
+    timelineItems: { nodes: [], pageInfo: { hasPreviousPage: false } },
     commits: connection([
       {
         commit: {
+          deployments: connection([]),
           statusCheckRollup: {
             state: "SUCCESS",
             contexts: connection(
@@ -94,6 +110,9 @@ export async function startFakeGitHubApi(
                 isRequired: check.required,
                 status: "COMPLETED",
                 conclusion: "SUCCESS",
+                startedAt: null,
+                completedAt: null,
+                checkSuite: { workflowRun: null },
                 detailsUrl: `https://github.com/e2e-org/demo-app/actions/runs/${pr.number}`,
               })),
             ),
@@ -103,151 +122,152 @@ export async function startFakeGitHubApi(
     ]),
   });
 
-  const answerGraphQl = (request: FakeGitHubApiRequest): unknown => {
-    const query = request.query ?? "";
-    const pr = pullRequests.find((item) => item.number === request.variables?.number);
-    if (pullRequests.length > 0) {
-      if (query.includes("search(query:")) {
-        const q = String(request.variables?.q ?? "");
+  // Each case answers the fields selected by the corresponding generated operation.
+  const answerOperation = (
+    operationName: string | undefined,
+    variables: Readonly<Record<string, unknown>>,
+  ): Record<string, unknown> | undefined => {
+    const pr = pullRequests.find((item) => item.number === variables.number);
+    switch (operationName) {
+      case "PullRequestsByHead":
+        // The synthetic workspace's branch has no linked pull request.
+        return repository({ pullRequests: connection([]) });
+      case "GitHubIssues":
+        return repository({
+          issues: connection(
+            issues.map((issue) => ({
+              number: issue.number,
+              title: issue.title,
+              url: issue.url,
+              state: issue.state,
+              updatedAt: "2026-10-01T00:00:00Z",
+              labels: connection([]),
+            })),
+          ),
+        });
+      case "GitHubIssue": {
+        const issue = issues.find((item) => item.number === variables.number);
+        return repository({
+          issue: issue
+            ? {
+                ...issue,
+                author: { __typename: "User", ...issue.author },
+                comments: connection(
+                  issue.comments.map((comment) => ({
+                    ...comment,
+                    author: { __typename: "User", ...comment.author },
+                  })),
+                ),
+              }
+            : null,
+        });
+      }
+      case "PullRequestSearch": {
+        const q = String(variables.q ?? "");
         const number = /"#?(\d+)"/.exec(q)?.[1] ?? /\/pull\/(\d+)/.exec(q)?.[1];
         return {
-          data: {
-            search: connection(
-              pullRequests
-                .filter((item) => number === undefined || item.number === Number(number))
-                .map(detail),
-            ),
-          },
-          rateLimit: RATE_LIMIT,
-        };
-      }
-      if (/^query PullRequest(Stats|Summaries)\(/.test(query)) {
-        return {
-          data: Object.fromEntries(
-            Object.keys(request.variables ?? {})
-              .filter((key) => /^s\d+_number$/.test(key))
-              .map((key) => {
-                const item = pullRequests.find(
-                  (candidate) => candidate.number === request.variables?.[key],
-                );
-                return [key.split("_")[0], { pullRequest: item ? detail(item) : null }];
-              }),
+          search: connection(
+            pullRequests
+              .filter((item) => number === undefined || item.number === Number(number))
+              .map(detail),
           ),
-          rateLimit: RATE_LIMIT,
         };
       }
-      if (query.includes("branchProtectionRule")) {
-        const required = [...new Set(pullRequests.flatMap((item) => item.requiredChecks ?? []))];
+      case "PullRequestList":
+        return repository({ pullRequests: connection(pullRequests.map(detail)) });
+      case "PullRequestSummary":
+      case "PullRequestActionState":
+      case "PullRequestCheckContexts":
+      case "AutoMergePermissions":
+        return repository({ pullRequest: pr ? detail(pr) : null });
+      case "PullRequestCore":
+      case "ViewerPermissions":
+        return repository({
+          mergeCommitAllowed: true,
+          squashMergeAllowed: true,
+          rebaseMergeAllowed: true,
+          viewerPermission: "WRITE",
+          pullRequest: pr ? detail(pr) : null,
+        });
+      case "BranchProtectionRequiredChecks":
         return repository({
           ref: {
             branchProtectionRule: {
-              requiredStatusCheckContexts: required,
+              requiredStatusCheckContexts: [
+                ...new Set(pullRequests.flatMap((item) => item.requiredChecks ?? [])),
+              ],
               requiresStrictStatusChecks: false,
             },
           },
         });
-      }
-      if (query.includes("checkSuites(first:")) {
-        return repository({ object: { checkSuites: connection([]) } });
-      }
-      if (query.includes("mergePullRequest(input:")) {
-        const input = request.variables?.input as {
-          pullRequestId: string;
-          expectedHeadOid?: string;
+      case "WorkflowApprovalSuites":
+        return repository({ object: { __typename: "Commit", checkSuites: connection([]) } });
+      case "PullRequestActivity":
+        return repository({
+          pullRequest: pr
+            ? {
+                author: detail(pr).author,
+                comments: connection([]),
+                reviews: connection([]),
+                commits: connection([]),
+              }
+            : null,
+        });
+      case "ReviewThreads":
+        return {
+          viewer: { login: "e2e-user" },
+          ...repository({
+            pullRequest: pr
+              ? {
+                  ...detail(pr),
+                  reviewThreads: { ...connection([]), totalCount: 0 },
+                  reactionGroups: [],
+                  comments: connection([]),
+                  reviews: connection([]),
+                  reviewDismissals: connection([]),
+                  commits: connection([]),
+                }
+              : null,
+          }),
         };
+      case "MergePullRequest": {
+        const input = variables.input as { pullRequestId: string; expectedHeadOid?: string };
         const merging = pullRequests.find((item) => `PR_${item.number}` === input.pullRequestId);
         if (!merging) return undefined;
-        if (input.expectedHeadOid !== merging.headSha) {
-          return { errors: [{ message: "Head branch was modified" }] };
-        }
         merging.state = "MERGED";
-        return { data: { mergePullRequest: { clientMutationId: null } } };
+        return { mergePullRequest: { clientMutationId: null } };
       }
-      if (pr) {
-        if (query.includes("viewerMergeBodyText")) {
-          return repository({
-            pullRequest: { ...detail(pr), viewerMergeBodyText: "Merge change" },
-          });
-        }
-        if (query.includes("$withComments:")) {
-          return repository({
-            pullRequest: {
-              author: { login: "e2e-user" },
-              comments: connection([]),
-              reviews: connection([]),
-              commits: connection([]),
-            },
-          });
-        }
-        if (query.includes("reviewThreads(first:")) {
-          return repository({ pullRequest: { reviewThreads: connection([]) } });
-        }
-        if (query.includes("pullRequest(number:")) {
-          return repository({
-            mergeCommitAllowed: true,
-            squashMergeAllowed: true,
-            rebaseMergeAllowed: true,
-            viewerPermission: "WRITE",
-            pullRequest: detail(pr),
-          });
-        }
+      default:
+        return undefined;
+    }
+  };
+
+  const answerGraphQl = (request: FakeGitHubApiRequest): unknown => {
+    const variables = request.variables ?? {};
+    if (request.operationName === "MergePullRequest") {
+      const input = variables.input as { pullRequestId: string; expectedHeadOid?: string };
+      const merging = pullRequests.find((item) => `PR_${item.number}` === input.pullRequestId);
+      if (merging && input.expectedHeadOid !== merging.headSha) {
+        return { errors: [{ message: "Head branch was modified" }] };
       }
     }
-    if (query.includes("issues(first:")) {
-      return {
-        data: {
-          repository: {
-            issues: {
-              nodes: issues.map((issue) => ({
-                number: issue.number,
-                title: issue.title,
-                url: issue.url,
-                state: issue.state,
-                updatedAt: "2026-10-01T00:00:00Z",
-                labels: { nodes: [] },
-              })),
-            },
-          },
-          rateLimit: RATE_LIMIT,
-        },
-      };
+    // effect/graphql repeats a generated operation's root selections and variables under
+    // `_0_`, `_1_`, ... prefixes. Answer each lookup independently and preserve its aliases.
+    const prefixes = [
+      ...new Set(Object.keys(variables).flatMap((key) => /^_\d+_/.exec(key) ?? [])),
+    ];
+    const data: Record<string, unknown> = {};
+    for (const prefix of prefixes.length === 0 ? [""] : prefixes) {
+      const lookup = Object.fromEntries(
+        Object.entries(variables)
+          .filter(([key]) => key.startsWith(prefix))
+          .map(([key, value]) => [key.slice(prefix.length), value]),
+      );
+      const answer = answerOperation(request.operationName, lookup);
+      if (answer === undefined) return undefined;
+      for (const [key, value] of Object.entries(answer)) data[`${prefix}${key}`] = value;
     }
-    if (query.startsWith("query PullRequestsByHead(")) {
-      // No pull requests: every aliased head lookup (`h0`, `h1`, ...) comes back empty.
-      const aliases = Object.keys(request.variables ?? {}).filter((name) => /^h\d+$/.test(name));
-      return {
-        data: {
-          repository: Object.fromEntries(aliases.map((alias) => [alias, { nodes: [] }])),
-          rateLimit: RATE_LIMIT,
-        },
-      };
-    }
-    if (query.includes("issue(number:")) {
-      const issue = issues.find((candidate) => candidate.number === request.variables?.number);
-      return {
-        data: {
-          repository: {
-            issue:
-              issue === undefined
-                ? null
-                : {
-                    number: issue.number,
-                    title: issue.title,
-                    url: issue.url,
-                    state: issue.state,
-                    body: issue.body,
-                    author: issue.author,
-                    comments: {
-                      pageInfo: { hasNextPage: false, endCursor: null },
-                      nodes: issue.comments,
-                    },
-                  },
-          },
-          rateLimit: RATE_LIMIT,
-        },
-      };
-    }
-    return undefined;
+    return { data, rateLimit: RATE_LIMIT };
   };
 
   const server = NodeHttp.createServer((incoming, response) => {
@@ -260,9 +280,15 @@ export async function startFakeGitHubApi(
       if (method === "POST" && path === "/graphql") {
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
           readonly query: string;
+          readonly operationName?: string;
           readonly variables?: Record<string, unknown>;
         };
-        request = { ...request, query: body.query, variables: body.variables ?? {} };
+        request = {
+          ...request,
+          query: body.query,
+          ...(body.operationName === undefined ? {} : { operationName: body.operationName }),
+          variables: body.variables ?? {},
+        };
       }
       requests.push(request);
       const answer =
@@ -277,7 +303,7 @@ export async function startFakeGitHubApi(
                 ? []
                 : undefined;
       if (answer === undefined) {
-        const message = `fake GitHub API: unsupported request ${method} ${path}${
+        const message = `fake GitHub API: unsupported request ${method} ${path} ${request.operationName ?? ""}${
           request.query === undefined ? "" : `\n${request.query}`
         }`;
         process.stderr.write(`${message}\n`);

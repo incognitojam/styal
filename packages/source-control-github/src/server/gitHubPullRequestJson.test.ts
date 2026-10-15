@@ -1,44 +1,258 @@
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  buildPullRequestSummariesGraphQlQuery,
-  buildPullRequestWatchFingerprintsGraphQlQuery,
-  decodePullRequestSummariesJson,
-  decodePullRequestWatchFingerprintsJson,
   buildReviewSubmission,
-  buildPullRequestStackMembershipsGraphQlQuery,
-  decodePullRequestStackMembershipsJson,
   buildReviewerRequest,
   applyRequiredCheckPolicy,
-  decodeBranchProtectionRequiredChecksJson,
-  decodeAutoMergePermissionsJson,
-  buildSetFilesViewedGraphQlMutation,
-  decodePullRequestActivityJson,
+  toBranchProtectionRequiredChecks,
+  toAutoMergePermissions,
+  pullRequestLookup,
+  toPullRequestSummary,
+  toPullRequestWatchFingerprint,
   decodePullRequestDetailJson,
   decodePullRequestFilesJson,
-  decodePullRequestFilesViewedJson,
-  decodePullRequestListJson,
-  decodePullRequestNodeIdJson,
-  decodePullRequestSearchJson,
   requiredChecksFromContexts,
   decodeBranchRulesJson,
   narrowMergeCapabilities,
   decodePullRequestStacksJson,
-  decodeLabelCandidatesJson,
-  decodeReviewerCandidatesJson,
-  decodeReviewThreadCommentsJson,
-  decodeReviewThreadsJson,
-  decodeViewerPermissionsJson,
+  toWorkflowApprovalSuites,
   markRequiredChecks,
-  decodeWorkflowApprovalSuitesJson,
+  LenientPullRequestList,
+  LenientPullRequestSearch,
   reviewThreadConversation,
-  REVIEW_THREADS_GRAPHQL_QUERY,
-  pullRequestCoreGraphQlQuery,
-  pullRequestSummaryGraphQlQuery,
-  pullRequestSearchGraphQlQuery,
-  pullRequestListGraphQlQuery,
+  toLabelCandidates,
+  toPullRequestActivityPage,
+  toPullRequestCore,
+  toPullRequestFilesViewedPage,
+  toPullRequestNodeId,
+  toPullRequestRows,
+  toReviewerCandidates,
+  toReviewThreadCommentsPage,
+  toCanWrite,
+  toReviewThreadPage,
+  toViewerPermissions,
 } from "./gitHubPullRequestJson.ts";
+import { PullRequestSummary, PullRequestWatchFingerprint } from "./pullRequestBatches.graphql.ts";
+import {
+  AutoMergePermissions,
+  BranchProtectionRequiredChecks,
+  WorkflowApprovalSuites,
+  LabelCandidates,
+  PullRequestActivity,
+  PullRequestCore,
+  PullRequestFilesViewed,
+  PullRequestNodeId,
+  ReviewerCandidates,
+  ViewerPermissions,
+} from "./pullRequestReads.graphql.ts";
+import { ReviewThreadComments, ReviewThreads } from "./pullRequestReviews.graphql.ts";
+
+/**
+ * A GitHub answer (`{ data }` as JSON) through a generated operation's result schema and then its
+ * mapping, the way the client decodes and the API maps. A mapping's null (nothing found) fails.
+ */
+const through =
+  <S extends Schema.Codec<unknown, unknown>, A>(schema: S, map: (result: S["Type"]) => A | null) =>
+  (raw: string): Result.Result<A, unknown> => {
+    const decoded = Schema.decodeUnknownResult(schema)(
+      (JSON.parse(raw) as { readonly data: unknown }).data,
+    );
+    if (Result.isFailure(decoded)) return Result.fail(decoded.failure);
+    const mapped = map(decoded.success);
+    return mapped === null ? Result.fail("not found") : Result.succeed(mapped);
+  };
+
+const decodeBranchProtectionRequiredChecksJson = through(
+  BranchProtectionRequiredChecks.result,
+  toBranchProtectionRequiredChecks,
+);
+const decodeAutoMergePermissionsJson = through(AutoMergePermissions.result, toAutoMergePermissions);
+const decodeWorkflowApprovalSuitesJson = (raw: string, branch: string) =>
+  through(WorkflowApprovalSuites.result, (result) => toWorkflowApprovalSuites(result, branch))(raw);
+/** An account as a selection with `__typename` answers it: GitHub always sends the type. */
+const user = (login: string, fields: Record<string, unknown> = {}) => ({
+  __typename: "User",
+  login,
+  ...fields,
+});
+
+/** A listing row with every field the row selection asks for, as GitHub always answers it. */
+const row = (fields: Record<string, unknown>) => ({
+  autoMergeRequest: null,
+  number: 1,
+  title: "Add the pull requests page",
+  url: "https://github.com/pingdotgg/t3code/pull/1",
+  author: null,
+  headRefName: "feat/page",
+  baseRefName: "main",
+  state: "OPEN",
+  isDraft: false,
+  mergeable: "UNKNOWN",
+  reviewDecision: null,
+  latestReviews: { nodes: [] },
+  createdAt: "2026-07-01T00:00:00Z",
+  updatedAt: "2026-07-02T00:00:00Z",
+  mergedAt: null,
+  repository: { nameWithOwner: "pingdotgg/t3code" },
+  reviewRequests: { nodes: [] },
+  labels: { nodes: [] },
+  commits: { nodes: [] },
+  ...fields,
+});
+
+const listPage = (page: ReturnType<typeof toPullRequestRows>) => ({
+  items: page.rows.map((row) => ({
+    ...row.item,
+    ...(row.repository === null ? {} : { repository: row.repository }),
+  })),
+  rawCount: page.rawCount,
+});
+const decodePullRequestListJson = through(LenientPullRequestList.result, (result) =>
+  listPage(toPullRequestRows(result.repository?.pullRequests)),
+);
+const decodePullRequestSearchJson = through(LenientPullRequestSearch.result, (result) =>
+  listPage(toPullRequestRows(result.search)),
+);
+const decodePullRequestActivityJson = through(
+  PullRequestActivity.result,
+  toPullRequestActivityPage,
+);
+const decodePullRequestCoreJson = through(PullRequestCore.result, toPullRequestCore);
+/**
+ * Fills in what every review read answers with, so each fixture below says only what it is about:
+ * a page with no more after it, an actor typed as a person, no reactions, no edits.
+ */
+// Fixtures are loose JSON on purpose: each one writes only the fields its test is about.
+type Json = Record<string, any>;
+const LAST_PAGE = { hasNextPage: false, endCursor: null };
+const nodesIn = (connection: Json | null | undefined): ReadonlyArray<Json> =>
+  connection?.["nodes"] ?? [];
+const actor = (raw: Json | null | undefined) =>
+  raw === null || raw === undefined ? null : { __typename: "User", avatarUrl: "", ...raw };
+const reactionGroups = (groups: ReadonlyArray<Json> | undefined) =>
+  (groups ?? []).map(({ reactors, ...group }) => ({
+    viewerHasReacted: false,
+    ...group,
+    reactors: {
+      totalCount: 0,
+      ...reactors,
+      nodes: nodesIn(reactors).map((node) => ({ __typename: "User", ...node })),
+    },
+  }));
+const remark = ({ author, reactionGroups: groups, ...raw }: Json) => ({
+  body: "",
+  lastEditedAt: null,
+  url: "https://github.com/acme/web/pull/1#discussion",
+  ...raw,
+  author: actor(author),
+  reactionGroups: reactionGroups(groups),
+});
+const threadCommentsOf = ({ nodes, ...connection }: Json) => ({
+  totalCount: (nodes ?? []).length,
+  pageInfo: LAST_PAGE,
+  ...connection,
+  nodes: (nodes ?? []).map(remark),
+});
+const requestedReviewer = (raw: Json | null) =>
+  raw === null
+    ? null
+    : "login" in raw
+      ? { name: null, ...actor(raw) }
+      : { __typename: "Team", ...raw };
+const reviewCommit = ({ commit: { authors, ...commit } }: Json) => ({
+  commit: {
+    messageHeadline: "",
+    committedDate: "",
+    additions: 0,
+    deletions: 0,
+    parents: { totalCount: 1 },
+    ...commit,
+    authors: {
+      nodes: nodesIn(authors).map((author) => ({
+        name: null,
+        avatarUrl: "",
+        user: null,
+        ...author,
+      })),
+    },
+  },
+});
+const withReviewDefaults = (raw: string): string => {
+  const { data } = JSON.parse(raw) as { data: Json };
+  const pr = data["repository"]?.["pullRequest"];
+  if (pr?.["reviewThreads"] !== undefined) {
+    const {
+      reviewThreads,
+      author,
+      reactionGroups: groups,
+      comments,
+      reviews,
+      reviewRequests,
+      latestReviews,
+      commits,
+      ...rest
+    } = pr;
+    data["repository"]["pullRequest"] = {
+      viewerCanUpdate: true,
+      viewerDidAuthor: false,
+      reviewDismissals: { pageInfo: LAST_PAGE, nodes: [] },
+      ...rest,
+      author: actor(author),
+      reactionGroups: reactionGroups(groups),
+      comments: { nodes: nodesIn(comments).map(remark) },
+      reviews: { nodes: nodesIn(reviews).map(remark) },
+      reviewRequests: {
+        nodes: nodesIn(reviewRequests).map((node) => ({
+          requestedReviewer: requestedReviewer(node["requestedReviewer"]),
+        })),
+      },
+      latestReviews: {
+        nodes: nodesIn(latestReviews).map((node) => ({
+          state: "COMMENTED",
+          ...node,
+          author: actor(node["author"]),
+        })),
+      },
+      commits: { nodes: nodesIn(commits).map(reviewCommit) },
+      reviewThreads: {
+        totalCount: nodesIn(reviewThreads).length,
+        pageInfo: LAST_PAGE,
+        ...reviewThreads,
+        nodes: nodesIn(reviewThreads).map((thread) => ({
+          isResolved: false,
+          isOutdated: false,
+          line: null,
+          diffSide: "RIGHT",
+          ...thread,
+          comments: threadCommentsOf(thread["comments"]),
+        })),
+      },
+    };
+  }
+  if (data["node"] !== undefined && data["node"] !== null) {
+    data["node"] = {
+      __typename: "PullRequestReviewThread",
+      ...data["node"],
+      comments: threadCommentsOf(data["node"]["comments"]),
+    };
+  }
+  data["viewer"] ??= { login: "viewer" };
+  return JSON.stringify({ data });
+};
+const decodeReviewThreadsJson = (raw: string) =>
+  through(ReviewThreads.result, toReviewThreadPage)(withReviewDefaults(raw));
+const decodeReviewThreadCommentsJson = (raw: string) =>
+  through(ReviewThreadComments.result, toReviewThreadCommentsPage)(withReviewDefaults(raw));
+const decodeViewerPermissionsJson = through(ViewerPermissions.result, toViewerPermissions);
+const decodeLabelCandidatesJson = through(LabelCandidates.result, toLabelCandidates);
+const decodeReviewerCandidatesJson = through(ReviewerCandidates.result, toReviewerCandidates);
+const decodePullRequestNodeIdJson = through(PullRequestNodeId.result, toPullRequestNodeId);
+const decodePullRequestFilesViewedJson = through(
+  PullRequestFilesViewed.result,
+  toPullRequestFilesViewedPage,
+);
 
 /**
  * Rows as a repository's own GraphQL list answers them. Entries may use flat shapes for brevity:
@@ -49,30 +263,27 @@ function listJson(entries: ReadonlyArray<Record<string, unknown>>): string {
     data: {
       repository: {
         pullRequests: {
-          pageInfo: { hasNextPage: false },
-          nodes: entries.map(({ reviewRequests, latestReviews, checks, ...entry }) => ({
-            number: 1,
-            title: "Add the pull requests page",
-            url: "https://github.com/pingdotgg/t3code/pull/1",
-            headRefName: "feat/page",
-            baseRefName: "main",
-            createdAt: "2026-07-01T00:00:00Z",
-            updatedAt: "2026-07-02T00:00:00Z",
-            ...(reviewRequests === undefined
-              ? {}
-              : {
-                  reviewRequests: {
-                    nodes: (reviewRequests as ReadonlyArray<unknown>).map((requestedReviewer) => ({
-                      requestedReviewer,
-                    })),
-                  },
-                }),
-            ...(latestReviews === undefined ? {} : { latestReviews: { nodes: latestReviews } }),
-            ...(checks === undefined
-              ? {}
-              : { commits: { nodes: [{ commit: { statusCheckRollup: { state: checks } } }] } }),
-            ...entry,
-          })),
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: entries.map(({ reviewRequests, latestReviews, checks, ...entry }) =>
+            row({
+              ...(reviewRequests === undefined
+                ? {}
+                : {
+                    reviewRequests: {
+                      nodes: (reviewRequests as ReadonlyArray<unknown>).map(
+                        (requestedReviewer) => ({
+                          requestedReviewer,
+                        }),
+                      ),
+                    },
+                  }),
+              ...(latestReviews === undefined ? {} : { latestReviews: { nodes: latestReviews } }),
+              ...(checks === undefined
+                ? {}
+                : { commits: { nodes: [{ commit: { statusCheckRollup: { state: checks } } }] } }),
+              ...entry,
+            }),
+          ),
         },
       },
     },
@@ -109,7 +320,14 @@ describe("pull request list decoding", () => {
   it("keeps user review requests and drops team ones, which are not logins", () => {
     const [entry] = expectSuccess(
       decodePullRequestListJson(
-        listJson([{ reviewRequests: [{ login: "octocat" }, { slug: "web-platform" }] }]),
+        listJson([
+          {
+            reviewRequests: [
+              { __typename: "User", login: "octocat" },
+              { __typename: "Team", slug: "web-platform" },
+            ],
+          },
+        ]),
       ),
     ).items;
     expect(entry?.reviewRequestLogins).toEqual(["octocat"]);
@@ -140,22 +358,22 @@ describe("pull request list decoding", () => {
         listJson([
           {
             reviewDecision: null,
-            latestReviews: [{ author: { login: "macroscopeapp" }, state: "APPROVED" }],
+            latestReviews: [{ author: user("macroscopeapp"), state: "APPROVED" }],
           },
           {
             reviewDecision: "REVIEW_REQUIRED",
             latestReviews: [
-              { author: { login: "octocat" }, state: "APPROVED" },
-              { author: { login: "hubot" }, state: "CHANGES_REQUESTED" },
+              { author: user("octocat"), state: "APPROVED" },
+              { author: user("hubot"), state: "CHANGES_REQUESTED" },
             ],
           },
           {
             reviewDecision: "APPROVED",
-            latestReviews: [{ author: { login: "hubot" }, state: "CHANGES_REQUESTED" }],
+            latestReviews: [{ author: user("hubot"), state: "CHANGES_REQUESTED" }],
           },
           {
             reviewDecision: null,
-            latestReviews: [{ author: { login: "octocat" }, state: "COMMENTED" }],
+            latestReviews: [{ author: user("octocat"), state: "COMMENTED" }],
           },
         ]),
       ),
@@ -211,6 +429,7 @@ describe("pull request listing merge intent", () => {
       ]),
     );
     const nodes = raw.data.repository.pullRequests.nodes;
+    delete nodes[3].autoMergeRequest;
     const search = JSON.stringify({
       data: {
         search: {
@@ -218,7 +437,7 @@ describe("pull request listing merge intent", () => {
             ...node,
             repository: { nameWithOwner: "example/demo" },
           })),
-          pageInfo: { hasNextPage: false },
+          pageInfo: { hasNextPage: false, endCursor: null },
         },
       },
     });
@@ -241,12 +460,8 @@ describe("pull request listing merge intent", () => {
   });
 
   it("reads intent in the existing row query, reserving queue membership for github.com", () => {
-    for (const query of [pullRequestSearchGraphQlQuery(20), pullRequestListGraphQlQuery(20)]) {
-      expect(query).toContain("autoMergeRequest { mergeMethod }");
-      expect(query).not.toContain("isInMergeQueue");
-    }
-    expect(pullRequestSearchGraphQlQuery(20, false, false, true)).toContain("isInMergeQueue");
-    expect(pullRequestListGraphQlQuery(20, false, true)).toContain("isInMergeQueue");
+    expect(LenientPullRequestSearch.document).toContain("autoMergeRequest");
+    expect(LenientPullRequestList.document).toContain("isInMergeQueue@include(if:$queue)");
   });
 });
 
@@ -255,20 +470,16 @@ describe("pull request search decoding", () => {
     return JSON.stringify({
       data: {
         search: {
-          pageInfo: { hasNextPage: false },
-          nodes: rollupStates.map((state, index) => ({
-            number: index + 1,
-            title: "Add the pull requests page",
-            url: "https://github.com/pingdotgg/t3code/pull/1",
-            headRefName: "feat/page",
-            baseRefName: "main",
-            createdAt: "2026-07-01T00:00:00Z",
-            updatedAt: "2026-07-02T00:00:00Z",
-            repository: { nameWithOwner: "pingdotgg/t3code" },
-            commits: {
-              nodes: [{ commit: { statusCheckRollup: state === null ? null : { state } } }],
-            },
-          })),
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: rollupStates.map((state, index) =>
+            row({
+              __typename: "PullRequest",
+              number: index + 1,
+              commits: {
+                nodes: [{ commit: { statusCheckRollup: state === null ? null : { state } } }],
+              },
+            }),
+          ),
         },
       },
     });
@@ -281,8 +492,6 @@ describe("pull request search decoding", () => {
     const batch = expectSuccess(decodePullRequestSearchJson(JSON.stringify(raw)));
     expect(batch.items[0]?.stack).toEqual({ number: 3, size: 2, position: 1, base: "main" });
     expect(batch.items[1]?.stack).toBeUndefined();
-    expect(pullRequestSearchGraphQlQuery(20, true)).toContain("stackEntry");
-    expect(pullRequestSearchGraphQlQuery(20)).not.toContain("stackEntry");
   });
 
   it("maps the rollup enum the search answers with onto the same three words", () => {
@@ -305,20 +514,102 @@ describe("pull request search decoding", () => {
 });
 
 describe("pull request detail decoding", () => {
+  /** A check run or commit status as the core read's `CheckContext` fragment answers it. */
+  const check = (fields: Record<string, unknown>) =>
+    fields["__typename"] === "StatusContext"
+      ? {
+          context: "",
+          state: "PENDING",
+          targetUrl: null,
+          createdAt: "2026-07-01T00:00:00Z",
+          description: null,
+          ...fields,
+        }
+      : {
+          __typename: "CheckRun",
+          name: "",
+          status: "COMPLETED",
+          conclusion: null,
+          startedAt: null,
+          completedAt: null,
+          detailsUrl: null,
+          checkSuite: { workflowRun: null },
+          ...fields,
+        };
+  /** A check run owned by a workflow, which is how the core read names the workflow. */
+  const inWorkflow = ({ workflowName, ...fields }: Record<string, unknown>) =>
+    check({
+      ...fields,
+      checkSuite: { workflowRun: { workflow: { name: workflowName } } },
+    });
+
+  /** The core read's answer for pull request 7, with `rollup` as its head commit's checks. */
+  const coreJson = (
+    rollup: ReadonlyArray<Record<string, unknown>>,
+    pullRequest: Record<string, unknown> = {},
+  ) =>
+    JSON.stringify({
+      data: {
+        repository: {
+          mergeCommitAllowed: true,
+          squashMergeAllowed: true,
+          rebaseMergeAllowed: true,
+          viewerPermission: "WRITE",
+          pullRequest: {
+            number: 7,
+            title: "Detail",
+            url: "https://github.com/pingdotgg/t3code/pull/7",
+            body: "Body",
+            state: "OPEN",
+            isDraft: false,
+            mergeable: "MERGEABLE",
+            mergeStateStatus: "UNKNOWN",
+            reviewDecision: null,
+            additions: 0,
+            deletions: 0,
+            changedFiles: 0,
+            createdAt: "2026-07-01T00:00:00Z",
+            updatedAt: "2026-07-05T00:00:00Z",
+            mergedAt: null,
+            closedAt: null,
+            headRefName: "feat/detail",
+            baseRefName: "main",
+            headRefOid: "abc123",
+            isCrossRepository: false,
+            headRepositoryOwner: null,
+            headRepository: null,
+            headRef: null,
+            author: null,
+            autoMergeRequest: null,
+            viewerCanUpdate: true,
+            viewerDidAuthor: false,
+            viewerCanUpdateBranch: false,
+            baseRef: null,
+            reviewRequests: { nodes: [] },
+            labels: { nodes: [] },
+            commits: {
+              nodes: [
+                {
+                  commit: {
+                    statusCheckRollup: {
+                      contexts: { nodes: rollup, pageInfo: { hasNextPage: false } },
+                    },
+                  },
+                },
+              ],
+            },
+            ...pullRequest,
+          },
+        },
+      },
+    });
+  const detailOf = (
+    rollup: ReadonlyArray<Record<string, unknown>>,
+    pullRequest?: Record<string, unknown>,
+  ) => expectSuccess(decodePullRequestCoreJson(coreJson(rollup, pullRequest)));
+
+  /** The conversation the activity read carries, in the flat shape the tests below write. */
   const detailJson = JSON.stringify({
-    number: 7,
-    title: "Detail",
-    url: "https://github.com/pingdotgg/t3code/pull/7",
-    headRefName: "feat/detail",
-    baseRefName: "main",
-    createdAt: "2026-07-01T00:00:00Z",
-    updatedAt: "2026-07-05T00:00:00Z",
-    body: "Body",
-    statusCheckRollup: [
-      { __typename: "CheckRun", name: "build", status: "IN_PROGRESS" },
-      { __typename: "CheckRun", name: "test", status: "COMPLETED", conclusion: "FAILURE" },
-      { __typename: "StatusContext", context: "ci/legacy", state: "SUCCESS" },
-    ],
     comments: [{ id: "c1", body: "second", createdAt: "2026-07-04T00:00:00Z" }],
     reviews: [
       { id: "r1", body: "first", state: "CHANGES_REQUESTED", submittedAt: "2026-07-03T00:00:00Z" },
@@ -343,8 +634,30 @@ describe("pull request detail decoding", () => {
       data: {
         repository: {
           pullRequest: {
-            comments: { nodes: raw["comments"] ?? [] },
-            reviews: { nodes: raw["reviews"] ?? [] },
+            author: null,
+            comments: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: ((raw["comments"] ?? []) as ReadonlyArray<Record<string, unknown>>).map(
+                (comment) => ({
+                  lastEditedAt: null,
+                  url: "https://github.com/c",
+                  author: null,
+                  ...comment,
+                }),
+              ),
+            },
+            reviews: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: ((raw["reviews"] ?? []) as ReadonlyArray<Record<string, unknown>>).map(
+                (review) => ({
+                  lastEditedAt: null,
+                  url: "https://github.com/r",
+                  author: null,
+                  submittedAt: null,
+                  ...review,
+                }),
+              ),
+            },
             commits: {
               nodes: ((raw["commits"] ?? []) as ReadonlyArray<Record<string, unknown>>).map(
                 ({ authors, ...commit }) => ({
@@ -353,8 +666,10 @@ describe("pull request detail decoding", () => {
                     authors: {
                       nodes: ((authors ?? []) as ReadonlyArray<Record<string, unknown>>).map(
                         ({ login, ...author }) => ({
+                          name: null,
+                          email: null,
                           ...author,
-                          ...(login === undefined ? {} : { user: { login } }),
+                          user: login === undefined ? null : { login },
                         }),
                       ),
                     },
@@ -375,7 +690,11 @@ describe("pull request detail decoding", () => {
     }));
 
   it("maps check-run status and commit-status state onto one vocabulary", () => {
-    const detail = expectSuccess(decodePullRequestDetailJson(detailJson));
+    const detail = detailOf([
+      check({ name: "build", status: "IN_PROGRESS" }),
+      check({ name: "test", status: "COMPLETED", conclusion: "FAILURE" }),
+      check({ __typename: "StatusContext", context: "ci/legacy", state: "SUCCESS" }),
+    ]);
     expect(detail.checks.map((check) => [check.name, check.status])).toEqual([
       ["build", "pending"],
       ["test", "failure"],
@@ -384,42 +703,23 @@ describe("pull request detail decoding", () => {
   });
 
   it("keeps what branch protection requires, and asks for it on github.com only", () => {
-    const raw = JSON.parse(detailJson) as Record<string, unknown>;
-    const detail = expectSuccess(
-      decodePullRequestDetailJson(
-        JSON.stringify({
-          ...raw,
-          statusCheckRollup: [
-            { __typename: "CheckRun", name: "test", status: "IN_PROGRESS", isRequired: true },
-            { __typename: "StatusContext", context: "bot", state: "PENDING", isRequired: false },
-            { __typename: "StatusContext", context: "legacy", state: "SUCCESS" },
-          ],
-        }),
-      ),
-    );
+    const detail = detailOf([
+      check({ name: "test", status: "IN_PROGRESS", isRequired: true }),
+      check({ __typename: "StatusContext", context: "bot", state: "PENDING", isRequired: false }),
+      // Enterprise Server is not asked, so the field is absent rather than false.
+      check({ __typename: "StatusContext", context: "legacy", state: "SUCCESS" }),
+    ]);
     expect(detail.checks.map((check) => check.required)).toEqual([true, false, undefined]);
-    expect(pullRequestCoreGraphQlQuery("github.com")).toContain("isRequired");
-    expect(pullRequestCoreGraphQlQuery("github.example.com")).not.toContain("isRequired");
+    expect(PullRequestCore.document).toContain(
+      "isRequired(pullRequestNumber:$number)@include(if:$required)",
+    );
   });
 
   it("keeps a workflow waiting for approval out of the passing state", () => {
-    const raw = JSON.parse(detailJson) as Record<string, unknown>;
-    const detail = expectSuccess(
-      decodePullRequestDetailJson(
-        JSON.stringify({
-          ...raw,
-          statusCheckRollup: [
-            { __typename: "CheckRun", name: "build", status: "COMPLETED", conclusion: "SUCCESS" },
-            {
-              __typename: "CheckRun",
-              name: "contributor tests",
-              status: "COMPLETED",
-              conclusion: "ACTION_REQUIRED",
-            },
-          ],
-        }),
-      ),
-    );
+    const detail = detailOf([
+      check({ name: "build", status: "COMPLETED", conclusion: "SUCCESS" }),
+      check({ name: "contributor tests", status: "COMPLETED", conclusion: "ACTION_REQUIRED" }),
+    ]);
 
     expect(detail.checks.map((check) => check.status)).toEqual(["success", "action-required"]);
     expect(detail.checksState).toBe("pending");
@@ -444,6 +744,7 @@ describe("pull request detail decoding", () => {
             data: {
               repository: {
                 object: {
+                  __typename: "Commit",
                   checkSuites: {
                     pageInfo: { hasNextPage: true, endCursor: "next" },
                     nodes: [
@@ -473,26 +774,32 @@ describe("pull request detail decoding", () => {
   });
 
   it("reads an auto-merge request and strategy, its null as off and its absence as neither", () => {
-    const raw = JSON.parse(detailJson) as Record<string, unknown>;
-    const armed = (entry: Record<string, unknown>) =>
-      expectSuccess(decodePullRequestDetailJson(JSON.stringify({ ...raw, ...entry })));
-
+    expect(detailOf([], { autoMergeRequest: { mergeMethod: "SQUASH" } })).toMatchObject({
+      autoMergeEnabled: true,
+      autoMergeMethod: "squash",
+    });
+    expect(detailOf([], { autoMergeRequest: null }).autoMergeEnabled).toBe(false);
+    // A detail read that never asked about auto-merge does not claim it is unarmed.
     expect(
-      armed({ autoMergeRequest: { enabledBy: { login: "octocat" }, mergeMethod: "SQUASH" } }),
-    ).toMatchObject({ autoMergeEnabled: true, autoMergeMethod: "squash" });
-    expect(armed({ autoMergeRequest: null }).autoMergeEnabled).toBe(false);
-    // `gh` not answering for the field at all is not GitHub saying the merge is unarmed.
-    expect(armed({}).autoMergeEnabled).toBeUndefined();
-    expect(armed({ isInMergeQueue: true }).inMergeQueue).toBe(true);
-    expect(armed({ isInMergeQueue: false }).inMergeQueue).toBe(false);
-    expect(armed({}).inMergeQueue).toBeUndefined();
+      expectSuccess(
+        decodePullRequestDetailJson(
+          JSON.stringify({
+            number: 7,
+            title: "Detail",
+            url: "https://github.com/pingdotgg/t3code/pull/7",
+            headRefName: "feat/detail",
+            baseRefName: "main",
+            createdAt: "2026-07-01T00:00:00Z",
+            updatedAt: "2026-07-05T00:00:00Z",
+          }),
+        ),
+      ).autoMergeEnabled,
+    ).toBeUndefined();
   });
 
   it("keeps repository-policy readiness separate from conflict-only mergeability", () => {
-    const raw = JSON.parse(detailJson) as Record<string, unknown>;
     const readiness = (mergeStateStatus: string) =>
-      expectSuccess(decodePullRequestDetailJson(JSON.stringify({ ...raw, mergeStateStatus })))
-        .mergeReadiness;
+      detailOf([], { mergeStateStatus }).mergeReadiness;
 
     expect(readiness("CLEAN")).toBe("ready");
     expect(readiness("UNSTABLE")).toBe("ready");
@@ -502,20 +809,23 @@ describe("pull request detail decoding", () => {
   });
 
   it("marks only the check contexts GitHub reports as required", () => {
-    const checks = expectSuccess(decodePullRequestDetailJson(detailJson)).checks.map((check) =>
+    const checks = detailOf([
+      check({ name: "build", conclusion: "SUCCESS" }),
+      check({ name: "test", status: "IN_PROGRESS" }),
+      check({ __typename: "StatusContext", context: "ci/legacy", state: "SUCCESS" }),
+    ]).checks.map((check) =>
       check.name === "build" ? { ...check, url: "https://example.test/checks/build" } : check,
     );
     const required = requiredChecksFromContexts([
       // A re-run changed the run URL between the two reads; its stable context name still
       // identifies it as the same required check.
       {
-        __typename: "CheckRun",
         name: "build",
         detailsUrl: "https://example.test/checks/build-rerun",
         isRequired: true,
       },
-      { __typename: "CheckRun", name: "test", isRequired: false },
-      { __typename: "StatusContext", context: "ci/legacy", targetUrl: null, isRequired: true },
+      { name: "test", isRequired: false },
+      { context: "ci/legacy", targetUrl: null, isRequired: true },
     ]);
 
     expect(
@@ -528,7 +838,11 @@ describe("pull request detail decoding", () => {
   });
 
   it("adds an expected row when configured policy has no reported check", () => {
-    const checks = expectSuccess(decodePullRequestDetailJson(detailJson)).checks;
+    const checks = detailOf([
+      check({ name: "build", conclusion: "SUCCESS" }),
+      check({ name: "test", status: "IN_PROGRESS" }),
+      check({ __typename: "StatusContext", context: "ci/legacy", state: "SUCCESS" }),
+    ]).checks;
 
     expect(applyRequiredCheckPolicy(checks, [])).toEqual(checks);
     expect(applyRequiredCheckPolicy(checks, ["build", "security", "security", " "])).toEqual([
@@ -701,34 +1015,24 @@ describe("pull request detail decoding", () => {
   it("shows a re-running check once, as the run that is happening now", () => {
     // What `statusCheckRollup` reports while a workflow is being re-run: the same check twice,
     // the finished run and the one that replaced it, with no id to tell them apart.
-    const raw = JSON.parse(detailJson) as Record<string, unknown>;
-    const detail = expectSuccess(
-      decodePullRequestDetailJson(
-        JSON.stringify({
-          ...raw,
-          statusCheckRollup: [
-            {
-              __typename: "CheckRun",
-              name: "Prepare PR size config",
-              workflowName: "PR Size",
-              status: "COMPLETED",
-              conclusion: "SUCCESS",
-              startedAt: "2026-08-11T16:06:20Z",
-              completedAt: "2026-08-11T16:06:25Z",
-            },
-            {
-              __typename: "CheckRun",
-              name: "Prepare PR size config",
-              workflowName: "PR Size",
-              status: "IN_PROGRESS",
-              conclusion: "",
-              startedAt: "2026-08-11T17:01:04Z",
-              completedAt: "0001-01-01T00:00:00Z",
-            },
-          ],
-        }),
-      ),
-    );
+    const detail = detailOf([
+      inWorkflow({
+        name: "Prepare PR size config",
+        workflowName: "PR Size",
+        status: "COMPLETED",
+        conclusion: "SUCCESS",
+        startedAt: "2026-08-11T16:06:20Z",
+        completedAt: "2026-08-11T16:06:25Z",
+      }),
+      inWorkflow({
+        name: "Prepare PR size config",
+        workflowName: "PR Size",
+        status: "IN_PROGRESS",
+        conclusion: null,
+        startedAt: "2026-08-11T17:01:04Z",
+        completedAt: "0001-01-01T00:00:00Z",
+      }),
+    ]);
 
     expect(detail.checks.map((check) => [check.name, check.status])).toEqual([
       ["Prepare PR size config", "pending"],
@@ -740,7 +1044,6 @@ describe("pull request detail decoding", () => {
     // A workflow on both `push` and `pull_request` runs the same check twice on one commit. The
     // `pull_request` run finished after the `push` run started, and the `push` run is still going.
     const finished = {
-      __typename: "CheckRun",
       name: "check",
       workflowName: "Checks",
       status: "COMPLETED",
@@ -751,17 +1054,14 @@ describe("pull request detail decoding", () => {
     const running = {
       ...finished,
       status: "IN_PROGRESS",
-      conclusion: "",
+      conclusion: null,
       startedAt: "2026-10-08T04:06:13Z",
       completedAt: "0001-01-01T00:00:00Z",
     };
     // A run still queued has not started either, so it carries no time at all.
     const queued = { ...running, status: "QUEUED", startedAt: "0001-01-01T00:00:00Z" };
-    const raw = JSON.parse(detailJson) as Record<string, unknown>;
-    const checksOf = (statusCheckRollup: ReadonlyArray<object>) => {
-      const detail = expectSuccess(
-        decodePullRequestDetailJson(JSON.stringify({ ...raw, statusCheckRollup })),
-      );
+    const checksOf = (rollup: ReadonlyArray<Record<string, unknown>>) => {
+      const detail = detailOf(rollup.map(inWorkflow));
       return [detail.checks.map((check) => [check.name, check.status]), detail.checksState];
     };
 
@@ -828,12 +1128,14 @@ describe("pull request detail decoding", () => {
     },
   );
 
-  it("drops a review that carries neither a body nor a state", () => {
+  it("drops a review that carries no body and no verdict", () => {
     const raw = JSON.parse(detailJson) as Record<string, unknown>;
     const detail = expectSuccess(
       activity({
         ...raw,
-        reviews: [{ id: "r3", body: "  ", submittedAt: "2026-07-07T00:00:00Z" }],
+        reviews: [
+          { id: "r3", body: "  ", state: "COMMENTED", submittedAt: "2026-07-07T00:00:00Z" },
+        ],
       }),
     );
     expect(detail.comments.map((comment) => comment.id)).toEqual(["c1"]);
@@ -1029,8 +1331,8 @@ describe("review thread decoding", () => {
           requested: [
             {
               combinedSlug: "pingdotgg/ping-devs",
-              name: "Ping Devs",
-              avatarUrl: "https://avatars.githubusercontent.com/t/6692390?s=400&v=4",
+              teamName: "Ping Devs",
+              teamAvatarUrl: "https://avatars.githubusercontent.com/t/6692390?s=400&v=4",
             },
           ],
           reviewed: [
@@ -1061,7 +1363,12 @@ describe("review thread decoding", () => {
     // such as a mannequin. Failing on it would take the whole response down, comments included.
     const result = expectSuccess(
       decodeReviewThreadsJson(
-        reviewJson({ requested: [{}, { login: "julius", avatarUrl: "https://avatars/j.png" }] }),
+        reviewJson({
+          requested: [
+            { __typename: "Mannequin" },
+            { login: "julius", avatarUrl: "https://avatars/j.png" },
+          ],
+        }),
       ),
     );
 
@@ -1283,7 +1590,7 @@ describe("repository access decoding", () => {
           mergeCommitAllowed: true,
           squashMergeAllowed: false,
           rebaseMergeAllowed: true,
-          ...(viewerPermission === undefined ? {} : { viewerPermission }),
+          viewerPermission: viewerPermission ?? null,
         },
       },
     });
@@ -1317,7 +1624,7 @@ describe("repository access decoding", () => {
   it("withholds write where gh names no permission, which is not a standing it gave", () => {
     // The one place an unknown answer is not granted: a Merge button a reader cannot use wastes
     // the press, where a missing one still leaves the pull request open on its host.
-    expect(expectSuccess(decodeViewerPermissionsJson(repositoryJson())).canWrite).toBe(false);
+    expect(toCanWrite(undefined)).toBe(false);
   });
 
   it("grants write and triage to a GitHub App, which GitHub answers with a null permission", () => {
@@ -1346,7 +1653,7 @@ describe("viewer permission decoding", () => {
         decodeViewerPermissionsJson(
           viewerJson({
             viewerPermission: "READ",
-            pullRequest: { viewerCanUpdate: true, viewerDidAuthor: true },
+            pullRequest: { viewerCanUpdate: true, viewerDidAuthor: true, headRepository: null },
           }),
         ),
       ),
@@ -1384,7 +1691,7 @@ describe("viewer permission decoding", () => {
         decodeViewerPermissionsJson(
           viewerJson({
             viewerPermission: "READ",
-            pullRequest: { viewerCanUpdate: false, viewerDidAuthor: false },
+            pullRequest: { viewerCanUpdate: false, viewerDidAuthor: false, headRepository: null },
           }),
         ),
       ),
@@ -1402,7 +1709,11 @@ describe("viewer permission decoding", () => {
     // A node the viewer cannot see comes back null. Updating is a permission, so an unknown
     // answer grants it and lets the host refuse; authorship is a fact about who wrote the change,
     // and claiming it for someone who did not is how an author's own rules get handed out.
-    expect(expectSuccess(decodeViewerPermissionsJson(viewerJson({ pullRequest: null })))).toEqual({
+    expect(
+      expectSuccess(
+        decodeViewerPermissionsJson(viewerJson({ viewerPermission: "READ", pullRequest: null })),
+      ),
+    ).toEqual({
       mergeCapabilities: { merge: true, squash: false, rebase: true },
       canWrite: false,
       canTriage: false,
@@ -1417,7 +1728,7 @@ describe("viewer permission decoding", () => {
       decodeViewerPermissionsJson(
         viewerJson({
           viewerPermission: "TRIAGE",
-          pullRequest: { viewerCanUpdate: false, viewerDidAuthor: false },
+          pullRequest: { viewerCanUpdate: false, viewerDidAuthor: false, headRepository: null },
         }),
       ),
     );
@@ -1465,7 +1776,12 @@ describe("label candidate decoding", () => {
 
   it("keeps a worn label the repository no longer defines, so it can be taken off", () => {
     const list = expectSuccess(
-      decodeLabelCandidatesJson(labelsJson({ defined: [{ name: "bug" }], applied: ["legacy"] })),
+      decodeLabelCandidatesJson(
+        labelsJson({
+          defined: [{ name: "bug", color: "d73a4a", description: null }],
+          applied: ["legacy"],
+        }),
+      ),
     );
     expect(list.candidates.map((label) => [label.name, label.isApplied])).toEqual([
       ["legacy", true],
@@ -1736,31 +2052,33 @@ describe("decodePullRequestNodeIdJson", () => {
   });
 });
 
-describe("REVIEW_THREADS_GRAPHQL_QUERY", () => {
+describe("ReviewThreads", () => {
   it("caps the initial query after the 104-point rate-limit regression", () => {
-    const match = REVIEW_THREADS_GRAPHQL_QUERY.match(
-      /reviewThreads\(first: (\d+)[\s\S]*?comments\(first: (\d+)\)/u,
+    const match = ReviewThreads.document.match(
+      /reviewThreads\(first:(\d+)[\s\S]*?\.\.\.ThreadComment[\s\S]*$/u,
     );
+    const comments = ReviewThreads.document.match(/comments\(first:(\d+)\)\{totalCount/u);
 
     expect(match).not.toBeNull();
-    if (match === null) throw new Error("expected review-thread connections");
-    expect(Number(match[1]) * Number(match[2])).toBeLessThanOrEqual(1_000);
+    expect(comments).not.toBeNull();
+    if (match === null || comments === null) throw new Error("expected review-thread connections");
+    expect(Number(match[1]) * Number(comments[1])).toBeLessThanOrEqual(1_000);
   });
 
   it("asks for reactionGroups on the pull request itself, its comments, its reviews and each thread's comments", () => {
-    expect(REVIEW_THREADS_GRAPHQL_QUERY.match(/reactionGroups/g)).toHaveLength(4);
+    // The fragment is spread once per subject: the pull request, its comments, its reviews, and
+    // each thread's comments (through `ThreadComment`).
+    expect(ReviewThreads.document.match(/\.\.\.Reactions\b/g)).toHaveLength(4);
+    expect(ReviewThreads.document.match(/reactionGroups/g)).toHaveLength(1);
     // The reviews connection is new: only reactions were ever wanted off it.
-    expect(REVIEW_THREADS_GRAPHQL_QUERY).toContain("reviews(first:");
+    expect(ReviewThreads.document).toContain("reviews(first:");
   });
 
   it("bounds the nested review-comment reaction fan-out", () => {
-    const nestedPageSizes = REVIEW_THREADS_GRAPHQL_QUERY.match(
-      /reviewThreads\(first: (\d+),[\s\S]*?comments\(first: (\d+)\)[\s\S]*?reactionGroups/,
+    const threadPageSize = Number(ReviewThreads.document.match(/reviewThreads\(first:(\d+)/)?.[1]);
+    const commentPageSize = Number(
+      ReviewThreads.document.match(/comments\(first:(\d+)\)\{totalCount/)?.[1],
     );
-    expect(nestedPageSizes).not.toBeNull();
-    const threadPageSize = Number(nestedPageSizes?.[1]);
-    const commentPageSize = Number(nestedPageSizes?.[2]);
-
     // GitHub charges nested connections from their declared worst-case parent fan-out. Keeping
     // this product bounded prevents one activity refresh from consuming ~100 GraphQL points.
     expect(threadPageSize * commentPageSize).toBeLessThanOrEqual(250);
@@ -1779,12 +2097,25 @@ describe("reviewer candidate decoding", () => {
         repository: {
           assignableUsers: {
             pageInfo: { hasNextPage: input.hasNextPage ?? false },
-            nodes: input.assignable,
+            nodes: input.assignable.map((node) =>
+              node === null ? null : { name: null, avatarUrl: "", ...node },
+            ),
           },
           pullRequest: {
-            author: input.author === undefined ? null : { login: input.author },
+            author: input.author === undefined ? null : { __typename: "User", login: input.author },
             reviewRequests: {
-              nodes: (input.requested ?? []).map((requestedReviewer) => ({ requestedReviewer })),
+              nodes: (input.requested ?? []).map((requestedReviewer) => ({
+                requestedReviewer:
+                  requestedReviewer === null
+                    ? null
+                    : "slug" in requestedReviewer
+                      ? {
+                          __typename: "Team",
+                          teamAvatarUrl: null,
+                          ...requestedReviewer,
+                        }
+                      : { __typename: "User", name: null, avatarUrl: "", ...requestedReviewer },
+              })),
             },
           },
         },
@@ -1835,7 +2166,7 @@ describe("reviewer candidate decoding", () => {
       decodeReviewerCandidatesJson(
         candidatesJson({
           assignable: [{ login: "octocat" }],
-          requested: [{ slug: "reviewers", combinedSlug: "acme/reviewers", name: "Reviewers" }],
+          requested: [{ slug: "reviewers", combinedSlug: "acme/reviewers", teamName: "Reviewers" }],
         }),
       ),
     );
@@ -2162,47 +2493,6 @@ describe("decodePullRequestFilesViewedJson", () => {
   });
 });
 
-describe("buildSetFilesViewedGraphQlMutation", () => {
-  it("asks for nothing when nothing was pressed", () => {
-    expect(buildSetFilesViewedGraphQlMutation("PR_1", [])).toBeNull();
-  });
-
-  it("clears and restores in one document, each file under its own alias", () => {
-    const mutation = buildSetFilesViewedGraphQlMutation("PR_1", [
-      { path: "src/a.ts", viewed: true },
-      { path: "src/b.ts", viewed: false },
-    ]);
-    expect(mutation).not.toBeNull();
-    if (mutation === null) return;
-    expect(mutation.query).toContain(
-      "mutation($pullRequestId: ID!, $f0_path: String!, $f1_path: String!)",
-    );
-    expect(mutation.query).toContain(
-      "f0: markFileAsViewed(input: { pullRequestId: $pullRequestId, path: $f0_path })",
-    );
-    expect(mutation.query).toContain(
-      "f1: unmarkFileAsViewed(input: { pullRequestId: $pullRequestId, path: $f1_path })",
-    );
-    expect(mutation.variables).toEqual({
-      pullRequestId: "PR_1",
-      f0_path: "src/a.ts",
-      f1_path: "src/b.ts",
-    });
-  });
-
-  it("keeps a path out of the document, so one cannot be read as part of it", () => {
-    const mutation = buildSetFilesViewedGraphQlMutation("PR_1", [
-      { path: '") { __typename } evil: markFileAsViewed(input: { path: "x', viewed: true },
-    ]);
-    expect(mutation).not.toBeNull();
-    if (mutation === null) return;
-    expect(mutation.query).not.toContain("evil");
-    expect(mutation.variables.f0_path).toBe(
-      '") { __typename } evil: markFileAsViewed(input: { path: "x',
-    );
-  });
-});
-
 describe("host-native stack decoding", () => {
   /** A stack as the preview lists it, bottom to top, with the fields it answers today. */
   function stack(overrides: Record<string, unknown> = {}) {
@@ -2307,127 +2597,100 @@ describe("host-native stack decoding", () => {
   });
 });
 
-describe("pull request stack membership batches", () => {
-  it("maps aliases while skipping missing pull requests and incomplete memberships", () => {
-    const memberships = expectSuccess(
-      decodePullRequestStackMembershipsJson(
-        JSON.stringify({
-          data: {
-            s0: {
-              pullRequest: {
-                stack: { number: 3, size: 2, baseRefName: "main" },
-                stackEntry: { position: 1 },
-              },
-            },
-            s1: null,
-            s2: { pullRequest: null },
-            s3: { pullRequest: { stack: null, stackEntry: null } },
-            s4: { pullRequest: { stack: { number: 3, size: 2, baseRefName: "main" } } },
-          },
-        }),
-      ),
-    );
-    expect([...memberships]).toEqual([[0, { number: 3, size: 2, base: "main", position: 1 }]]);
-  });
+/** A pull request as the generated batch operations decode it from GitHub's answer. */
+const decodeSummaryResult = Schema.decodeUnknownSync(PullRequestSummary.result);
+const decodeSummary = (pullRequest: object) =>
+  decodeSummaryResult({ repository: { pullRequest } }).repository!.pullRequest!;
+const decodeWatchedResult = Schema.decodeUnknownSync(PullRequestWatchFingerprint.result);
+const decodeWatched = (pullRequest: object) =>
+  decodeWatchedResult({ repository: { pullRequest } }).repository!.pullRequest!;
 
-  it("refuses malformed responses and unsafe query selectors", () => {
-    expect(Result.isFailure(decodePullRequestStackMembershipsJson('{"errors":[]}'))).toBe(true);
-    expect(buildPullRequestStackMembershipsGraphQlQuery('acme/web") { x } #', [1])).toBeNull();
-    expect(buildPullRequestStackMembershipsGraphQlQuery("acme/web", [0])).toBeNull();
-    expect(buildPullRequestStackMembershipsGraphQlQuery("acme/web", [1.5])).toBeNull();
-    expect(buildPullRequestStackMembershipsGraphQlQuery("acme/web", [])).toBeNull();
-    expect(buildPullRequestStackMembershipsGraphQlQuery("acme/web", [7, 8])?.variables).toEqual({
-      s0_owner: "acme",
-      s0_name: "web",
-      s0_number: 7,
-      s1_owner: "acme",
-      s1_name: "web",
-      s1_number: 8,
+describe("pull request lookups", () => {
+  it("refuses what GitHub cannot name, so one bad row cannot fail a whole batch", () => {
+    expect(pullRequestLookup({ repository: "acme/web", number: 7 })).toEqual({
+      owner: "acme",
+      name: "web",
+      number: 7,
     });
+    expect(pullRequestLookup({ repository: 'acme/web") { x } #', number: 1 })).toBeNull();
+    expect(pullRequestLookup({ repository: "acme/web", number: 0 })).toBeNull();
+    expect(pullRequestLookup({ repository: "acme/web", number: 1.5 })).toBeNull();
+    expect(pullRequestLookup({ repository: "acme/web", number: 2 ** 31 })).toBeNull();
   });
 });
 
 describe("batched pull request summaries", () => {
-  it("preserves true, false and unknown merge intent without asking Enterprise for queue fields", () => {
-    const refs = [{ repository: "acme/web", number: 7 }];
-    expect(buildPullRequestSummariesGraphQlQuery(refs, true)?.query).toContain("isInMergeQueue");
-    expect(buildPullRequestSummariesGraphQlQuery(refs)?.query).not.toContain("isInMergeQueue");
-    expect(buildPullRequestSummariesGraphQlQuery(refs)?.query).toContain("autoMergeRequest");
-    expect(pullRequestCoreGraphQlQuery("github.com")).toContain("isInMergeQueue");
-    expect(pullRequestCoreGraphQlQuery("github.example.com")).not.toContain("isInMergeQueue");
-    expect(pullRequestSummaryGraphQlQuery(true)).toContain("isInMergeQueue");
-    expect(pullRequestSummaryGraphQlQuery()).not.toContain("isInMergeQueue");
-    const entry = (number: number, extra: Record<string, unknown>) => ({
-      pullRequest: {
-        number,
-        title: "Merge intent",
-        url: `https://github.com/acme/web/pull/${number}`,
-        headRefName: `feature-${number}`,
-        baseRefName: "main",
-        state: "OPEN",
-        updatedAt: "2026-08-24T00:00:00Z",
-        ...extra,
-      },
-    });
-    const result = expectSuccess(
-      decodePullRequestSummariesJson(
-        JSON.stringify({
-          data: {
-            s0: entry(7, {
-              autoMergeRequest: { enabledAt: "2026-08-24T00:00:00Z" },
-              isInMergeQueue: true,
+  const summary = (fields: Record<string, unknown>) => ({
+    autoMergeRequest: null,
+    number: 7,
+    title: "Merged",
+    url: "https://github.com/acme/web/pull/7",
+    state: "MERGED",
+    isDraft: false,
+    mergeable: "UNKNOWN",
+    reviewDecision: null,
+    additions: 0,
+    deletions: 0,
+    changedFiles: 0,
+    updatedAt: "2026-08-24T00:00:00Z",
+    mergedAt: "2026-08-24T00:00:00Z",
+    closedAt: "2026-08-24T00:00:00Z",
+    headRefName: "feat/seven",
+    baseRefName: "main",
+    author: { __typename: "Bot", login: "renovate", avatarUrl: "https://a/r.png" },
+    latestReviews: { nodes: [] },
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] },
+    ...fields,
+  });
+
+  it("preserves enabled and disabled merge intent in generated summaries", () => {
+    const base = {
+      number: 7,
+      title: "Merge intent",
+      url: "https://github.com/acme/web/pull/7",
+      headRefName: "feature",
+      baseRefName: "main",
+      state: "OPEN",
+      isDraft: false,
+      mergeable: "UNKNOWN",
+      reviewDecision: null,
+      additions: 0,
+      deletions: 0,
+      changedFiles: 0,
+      updatedAt: "2026-08-24T00:00:00Z",
+      mergedAt: null,
+      closedAt: null,
+      author: null,
+      latestReviews: { nodes: [] },
+      commits: { nodes: [] },
+    };
+    const decode = through(PullRequestSummary.result, (result) =>
+      result.repository?.pullRequest ? toPullRequestSummary(result.repository.pullRequest) : null,
+    );
+    for (const enabled of [true, false]) {
+      expect(
+        expectSuccess(
+          decode(
+            JSON.stringify({
+              data: {
+                repository: {
+                  pullRequest: {
+                    ...base,
+                    autoMergeRequest: enabled ? { enabledAt: "2026-08-24T00:00:00Z" } : null,
+                    isInMergeQueue: enabled,
+                  },
+                },
+              },
             }),
-            s1: entry(8, { autoMergeRequest: null, isInMergeQueue: false }),
-            s2: entry(9, {}),
-          },
-        }),
-      ),
-    );
-    expect(result.get(0)).toMatchObject({ autoMergeEnabled: true, inMergeQueue: true });
-    expect(result.get(1)).toMatchObject({ autoMergeEnabled: false, inMergeQueue: false });
-    expect(result.get(2)).not.toHaveProperty("autoMergeEnabled");
-    expect(result.get(2)).not.toHaveProperty("inMergeQueue");
+          ),
+        ),
+      ).toMatchObject({ autoMergeEnabled: enabled, inMergeQueue: enabled });
+    }
   });
 
-  it("refuses a repository GraphQL cannot address, rather than writing it into the document", () => {
-    expect(
-      buildPullRequestSummariesGraphQlQuery([{ repository: 'acme/web") { x } #', number: 1 }]),
-    ).toBeNull();
-    expect(
-      buildPullRequestSummariesGraphQlQuery([{ repository: "acme/web", number: 0 }]),
-    ).toBeNull();
-    expect(buildPullRequestSummariesGraphQlQuery([])).toBeNull();
-  });
-
-  it("files each answer by its alias and skips what GitHub or the decoder could not give", () => {
-    const decoded = decodePullRequestSummariesJson(
-      JSON.stringify({
-        data: {
-          s0: {
-            pullRequest: {
-              number: 7,
-              title: "Merged",
-              url: "https://github.com/acme/web/pull/7",
-              author: { __typename: "Bot", login: "renovate", avatarUrl: "https://a/r.png" },
-              headRefName: "feat/seven",
-              baseRefName: "main",
-              state: "MERGED",
-              mergedAt: "2026-08-24T00:00:00Z",
-              closedAt: "2026-08-24T00:00:00Z",
-              updatedAt: "2026-08-24T00:00:00Z",
-              commits: { nodes: [{ commit: { statusCheckRollup: { state: "FAILURE" } } }] },
-            },
-          },
-          s1: { pullRequest: null },
-          s2: { pullRequest: { number: 9 } },
-          rateLimit: { cost: 1 },
-        },
-      }),
-    );
-    expect(Result.isSuccess(decoded)).toBe(true);
-    if (!Result.isSuccess(decoded)) return;
-    expect([...decoded.success.keys()]).toEqual([0]);
-    expect(decoded.success.get(0)).toMatchObject({
+  it("maps GitHub's fields to the summary a linked thread keeps", () => {
+    const mapped = toPullRequestSummary(decodeSummary(summary({})));
+    expect(mapped).toMatchObject({
       number: 7,
       state: "merged",
       mergedAt: "2026-08-24T00:00:00Z",
@@ -2436,70 +2699,28 @@ describe("batched pull request summaries", () => {
       mergeability: "unknown",
       additions: 0,
     });
-    // The document did not ask about stacks, so the summary does not claim an answer.
-    expect(decoded.success.get(0)).not.toHaveProperty("stack");
+    // The read did not ask about stacks, so the summary does not claim an answer.
+    expect(mapped).not.toHaveProperty("stack");
   });
 
-  it("reads stack membership only where the document asked for it", () => {
+  it("reads stack membership only where the read asked for it", () => {
     expect(
-      buildPullRequestSummariesGraphQlQuery([{ repository: "acme/web", number: 7 }], true)?.query,
-    ).toContain("stack { number size baseRefName } stackEntry { position }");
+      toPullRequestSummary(decodeSummary(summary({ stack: null, stackEntry: null }))).stack,
+    ).toBeNull();
     expect(
-      buildPullRequestSummariesGraphQlQuery([{ repository: "acme/web", number: 7 }])?.query,
-    ).not.toContain("stack {");
-    const pullRequest = (number: number, stack: Record<string, unknown>) => ({
-      pullRequest: {
-        number,
-        title: "Stacked",
-        url: `https://github.com/acme/web/pull/${number}`,
-        headRefName: `feat/${number}`,
-        baseRefName: "main",
-        state: "OPEN",
-        updatedAt: "2026-08-24T00:00:00Z",
-        ...stack,
-      },
-    });
-    const decoded = expectSuccess(
-      decodePullRequestSummariesJson(
-        JSON.stringify({
-          data: {
-            s0: pullRequest(7, { stack: null, stackEntry: null }),
-            s1: pullRequest(8, {
-              stack: { number: 3, size: 2, baseRefName: "main" },
-              stackEntry: { position: 2 },
-            }),
-          },
-        }),
-      ),
-    );
-    expect(decoded.get(0)?.stack).toBeNull();
-    expect(decoded.get(1)?.stack).toEqual({ number: 3, size: 2, base: "main", position: 2 });
+      toPullRequestSummary(
+        decodeSummary(
+          summary({
+            stack: { number: 3, size: 2, baseRefName: "main" },
+            stackEntry: { position: 2 },
+          }),
+        ),
+      ).stack,
+    ).toEqual({ number: 3, size: 2, base: "main", position: 2 });
   });
 });
 
 describe("pull request watch fingerprints", () => {
-  it("asks for every pull request in one aliased read, and refuses an unsafe selector", () => {
-    const document = buildPullRequestWatchFingerprintsGraphQlQuery([
-      { repository: "pingdotgg/t3code", number: 7 },
-      { repository: "pingdotgg/lakebed", number: 8 },
-    ]);
-    expect(document?.query).toContain(
-      "w0: repository(owner: $w0_owner, name: $w0_name) { pullRequest(number: $w0_number)",
-    );
-    expect(document?.query).toContain("w1: repository(owner: $w1_owner, name: $w1_name)");
-    expect(document?.variables).toEqual({
-      w0_owner: "pingdotgg",
-      w0_name: "t3code",
-      w0_number: 7,
-      w1_owner: "pingdotgg",
-      w1_name: "lakebed",
-      w1_number: 8,
-    });
-    expect(
-      buildPullRequestWatchFingerprintsGraphQlQuery([{ repository: 'evil") { x', number: 1 }]),
-    ).toBeNull();
-  });
-
   it("moves status with checks and remarks with comments, each without the other", () => {
     const pullRequest = (input: {
       readonly running: number;
@@ -2532,20 +2753,9 @@ describe("pull request watch fingerprints", () => {
         ],
       },
     });
-    const decode = (...pullRequests: ReadonlyArray<object | null>) => {
-      const decoded = decodePullRequestWatchFingerprintsJson(
-        JSON.stringify({
-          data: Object.fromEntries(
-            pullRequests.map((value, index) => [`w${index}`, { pullRequest: value }]),
-          ),
-        }),
-      );
-      if (!Result.isSuccess(decoded)) throw new Error("fingerprints did not decode");
-      return decoded.success;
-    };
-    const base = { running: 2, failed: 0, commentEditedAt: null, reviews: 1 };
     const fingerprint = (input: Parameters<typeof pullRequest>[0]) =>
-      decode(pullRequest(input)).get(0)!;
+      toPullRequestWatchFingerprint(decodeWatched(pullRequest(input)));
+    const base = { running: 2, failed: 0, commentEditedAt: null, reviews: 1 };
     const before = fingerprint(base);
     const checkFinished = fingerprint({ ...base, running: 1, failed: 1 });
     const summaryEdited = fingerprint({ ...base, commentEditedAt: "2026-10-05T23:47:43Z" });
@@ -2556,7 +2766,5 @@ describe("pull request watch fingerprints", () => {
     expect(summaryEdited.remarks).not.toBe(before.remarks);
     expect(summaryEdited.status).toBe(before.status);
     expect(replied.remarks).not.toBe(before.remarks);
-    // A pull request GitHub had no answer for is left for a full read.
-    expect(decode(null, pullRequest(base)).has(0)).toBe(false);
   });
 });

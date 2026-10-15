@@ -2057,6 +2057,8 @@ features:
       - packages/shared/src/composerContextReferences.ts
       - packages/source-control-github/src/server/GitHubSourceControlProvider.ts
       - packages/source-control-github/src/server/gitHubIssues.ts
+      - packages/source-control-github/src/server/sourceControlProvider.graphql
+      - packages/source-control-github/src/server/sourceControlProvider.graphql.ts
     upstream_paths:
       - apps/mobile/src/components/ComposerContextSheet.tsx
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
@@ -2132,6 +2134,8 @@ features:
     implementation_paths:
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
+      - packages/source-control-github/src/server/pullRequestReviews.graphql
+      - packages/source-control-github/src/server/pullRequestReviews.graphql.ts
     upstream_paths:
       - apps/server/src/pullRequest/PullRequestService.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
@@ -2165,8 +2169,11 @@ features:
       - apps/web/src/lib/openPullRequestLink.ts
       - apps/web/src/markdown-github-references.ts
       - packages/shared/src/markdownPipeline.ts
-      - packages/source-control-github/src/server/GitHubApi.ts
+      - packages/source-control-github/src/server/GitHubRequestPolicy.ts
+      - packages/source-control-github/src/server/gitHubGraphQlClient.ts
       - packages/source-control-github/src/server/gitHubReferences.ts
+      - packages/source-control-github/src/server/sourceControlProvider.graphql
+      - packages/source-control-github/src/server/sourceControlProvider.graphql.ts
     upstream_paths:
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatMarkdown.tsx
@@ -3618,6 +3625,8 @@ features:
       - packages/source-control-core/src/server/PullRequestProvider.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+      - packages/source-control-github/src/server/pullRequestReads.graphql.ts
     upstream_paths:
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
       - packages/contracts/src/pullRequest.ts
@@ -3812,7 +3821,7 @@ features:
       - After a refused action, the next detail read goes to the host, so retrying a merge uses the current head.
       - A merge refused because the head moved reports that new commits were pushed instead of the generic access hint.
       - Hosts that do not report a head commit, older clients, and older servers merge as before.
-    rationale: Upstream single pull request merges run plain `gh pr merge`, which merges whatever the head is when the command runs. Upstream pins a head only when it removes agent credits from the merge message, and then pins the head it reads at merge time.
+    rationale: Upstream pins a single pull request merge to a head only when removing agent credits from its merge message, and then pins the head read at merge time. The fork also guards against pushes since the reader last loaded the pull request.
     implementation_paths:
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
@@ -3868,6 +3877,12 @@ features:
       - packages/shared/src/threadPullRequests.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
+      - packages/source-control-github/src/server/pullRequestBatches.graphql
+      - packages/source-control-github/src/server/pullRequestBatches.graphql.ts
+      - packages/source-control-github/src/server/pullRequestListings.graphql
+      - packages/source-control-github/src/server/pullRequestListings.graphql.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+      - packages/source-control-github/src/server/pullRequestReads.graphql.ts
     upstream_paths:
       - apps/mobile/src/state/thread-pr-presentation.ts
       - apps/web/src/components/ThreadStatusIndicators.tsx
@@ -3969,6 +3984,8 @@ features:
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+      - packages/source-control-github/src/server/pullRequestReads.graphql.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
       - apps/server/src/pullRequest/PullRequestService.ts
@@ -5312,6 +5329,8 @@ features:
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
       - packages/source-control-github/src/server/gitHubConditionalChecks.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+      - packages/source-control-github/src/server/pullRequestReads.graphql.ts
     upstream_paths:
       - apps/server/src/ws.ts
       - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
