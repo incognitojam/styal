@@ -1,9 +1,26 @@
 import type { ConfirmDialogThreadActivity } from "@t3tools/contracts";
 import { hostActivityReasonLabels } from "@t3tools/shared/hostActivity";
+import { CircleHelpIcon, MessageSquareIcon, RadioIcon } from "lucide-react";
 import { deriveProjectIdentity } from "../projectIdentity";
-import { groupHostActivityThreads } from "./HostActivityThreadList.logic";
+import { groupHostActivityThreads, type HostActivityGroup } from "./HostActivityThreadList.logic";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectMonogram } from "./ProjectMonogram";
+
+const activityIcons = {
+  Running: MessageSquareIcon,
+  Monitoring: RadioIcon,
+  "Waiting for input or approval": CircleHelpIcon,
+};
+
+function ActivityHeading({ label }: { readonly label: HostActivityGroup }) {
+  const Icon = activityIcons[label];
+  return (
+    <h4 className="mb-2 flex items-start gap-2 text-sm font-medium text-foreground">
+      <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <span>{label}</span>
+    </h4>
+  );
+}
 
 function ActivityProjectIcon({ activity }: { readonly activity: ConfirmDialogThreadActivity }) {
   const { thread, environmentId } = activity;
@@ -33,7 +50,7 @@ export function HostActivityThreadList({
             <div className="space-y-5">
               {host.groups.map((group) => (
                 <section aria-label={group.label} key={group.label}>
-                  <h4 className="mb-2 text-sm font-medium text-foreground">{group.label}</h4>
+                  <ActivityHeading label={group.label} />
                   <div className="space-y-3">
                     {group.projects.map((project) => {
                       const first = project.activity[0]!;
