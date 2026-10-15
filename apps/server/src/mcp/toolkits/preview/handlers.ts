@@ -27,6 +27,8 @@ import {
 } from "../../../attachmentStore.ts";
 import { resolveAttachmentRelativePath } from "../../../attachmentPaths.ts";
 import * as ServerConfig from "../../../config.ts";
+import * as AnalyticsService from "../../../telemetry/AnalyticsService.ts";
+import * as FeatureUsage from "../../../telemetry/FeatureUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import { PreviewSnapshotToolkit, PreviewStandardToolkit, PreviewToolkit } from "./tools.ts";
@@ -231,10 +233,35 @@ const handlers = {
     }),
 } satisfies Parameters<typeof PreviewToolkit.toLayer>[0];
 
-const { preview_snapshot, ...standardHandlers } = handlers;
+const observedHandlers = Effect.gen(function* () {
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  const observe = <A, E, R>(action: PreviewAutomationOperation, effect: Effect.Effect<A, E, R>) =>
+    FeatureUsage.observe({ feature: "browser-tools", action, source: "agent" }, effect).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+    );
+  return {
+    preview_status: (input) => observe("status", handlers.preview_status(input)),
+    preview_open: (input) => observe("open", handlers.preview_open(input)),
+    preview_navigate: (input) => observe("navigate", handlers.preview_navigate(input)),
+    preview_resize: (input) => observe("resize", handlers.preview_resize(input)),
+    preview_set_appearance: (input) =>
+      observe("setColorScheme", handlers.preview_set_appearance(input)),
+    preview_click: (input) => observe("click", handlers.preview_click(input)),
+    preview_type: (input) => observe("type", handlers.preview_type(input)),
+    preview_press: (input) => observe("press", handlers.preview_press(input)),
+    preview_scroll: (input) => observe("scroll", handlers.preview_scroll(input)),
+    preview_evaluate: (input) => observe("evaluate", handlers.preview_evaluate(input)),
+    preview_wait_for: (input) => observe("waitFor", handlers.preview_wait_for(input)),
+    preview_recording_start: (input) =>
+      observe("recordingStart", handlers.preview_recording_start(input)),
+    preview_recording_stop: (input) =>
+      observe("recordingStop", handlers.preview_recording_stop(input)),
+  } satisfies Parameters<typeof PreviewStandardToolkit.toLayer>[0];
+});
 
-export const PreviewStandardToolkitHandlersLive = PreviewStandardToolkit.toLayer(standardHandlers);
+export const PreviewStandardToolkitHandlersLive = PreviewStandardToolkit.toLayer(observedHandlers);
 
+// Snapshot observation includes output encoding and optional file saving in McpHttpServer.
 export const PreviewSnapshotToolkitHandlersLive = PreviewSnapshotToolkit.toLayer({
-  preview_snapshot,
+  preview_snapshot: handlers.preview_snapshot,
 });

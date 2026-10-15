@@ -32,6 +32,7 @@ interface RecordedBatchRequest {
         readonly serverMode?: string;
         readonly t3CodeVersion?: string;
         readonly t3CodeRepository?: string;
+        readonly featureUsageVersion?: number;
       };
     }>;
   } | null;
@@ -50,6 +51,7 @@ interface RecordedBatchBody {
       readonly serverMode?: string;
       readonly t3CodeVersion?: string;
       readonly t3CodeRepository?: string;
+      readonly featureUsageVersion?: number;
     };
   }>;
 }
@@ -233,7 +235,8 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
               event.properties.serverArch === "arm64" &&
               event.properties.serverAppVersion === event.properties.t3CodeVersion &&
               event.properties.serverMode === "web" &&
-              event.properties.t3CodeRepository === "incognitojam/styal",
+              event.properties.t3CodeRepository === "incognitojam/styal" &&
+              event.properties.featureUsageVersion === 1,
           ),
         ),
         true,

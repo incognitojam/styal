@@ -4,6 +4,10 @@ The T3 Code server sends product usage events to PostHog, associated with a hash
 installation identifier. Events include the provider, model, reasoning effort, permission mode,
 turn result, duration, and main-agent token totals when available.
 
+Agent browser usage includes the operation name, whether it succeeded, failed, or was cancelled,
+and its duration. It does not include visited URLs, page content, screenshots, selectors, typed
+input, or evaluated code.
+
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 
