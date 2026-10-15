@@ -769,6 +769,7 @@ features:
       - Startup history repairs index their temporary event lookups so upgrading large imported histories does not repeatedly scan every repair for each event.
       - Legacy history metadata rewrites preserve JSON byte alignment where possible, avoiding writes of unchanged SQLite overflow pages; ordering updates preserve each historical event's own payload.
       - Imported native V2 sessions remain stopped while durable native conversation references remain resumable; process sessions, pending effects, and runtime requests never migrate.
+      - Resuming imported V1 history records a visible context handoff on its receiving run, including the selected target model and available source metadata, even before any V2 run has completed.
       - Fork imports retain history through the chosen source run even when ancestors are deleted, excluded, not yet imported, or fail during the batch. Materialized history keeps original fork lineage and never duplicates when an ancestor is imported later.
     implementation_paths:
       - apps/server/src/dataImport/LegacyHistoryWriter.ts
@@ -826,8 +827,10 @@ features:
       - apps/server/src/dataImport/LegacyImportPreview.test.ts
       - apps/server/src/dataImport/LegacyImportTurnPromptLinks.test.ts
       - apps/server/src/dataImport/V2HistoryImport.test.ts
+      - apps/server/src/orchestration-v2/Orchestrator.imported-handoff.test.ts
       - apps/server/src/orchestration-v2/legacy/legacyPayloadEncoding.test.ts
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
+      - apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
       - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.test.ts
       - apps/web/src/components/import/useHistoryImport.test.ts
       - apps/web/src/components/import/useLegacyImport.test.ts

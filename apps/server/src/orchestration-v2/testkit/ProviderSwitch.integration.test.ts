@@ -2613,15 +2613,17 @@ describe("orchestration v2 provider switching", () => {
         );
         assert.equal(recoveryHandoff?.strategy, "full_thread_summary");
         assert.include(recoveryHandoff?.summaryText ?? "", failedPrompt);
-        if (queueBeforeFailure) {
-          const handoffItem = projection.turnItems.find(
-            (item) => item.type === "handoff" && item.runId === projection.runs[1]?.id,
-          );
-          assert.equal(
-            handoffItem?.type === "handoff" ? handoffItem.contextHandoffId : null,
-            recoveryHandoff?.id,
-          );
-        }
+        assert.lengthOf(
+          projection.turnItems.filter((item) => item.type === "handoff"),
+          2,
+        );
+        const handoffItem = projection.turnItems.find(
+          (item) => item.type === "handoff" && item.runId === projection.runs[1]?.id,
+        );
+        assert.equal(
+          handoffItem?.type === "handoff" ? handoffItem.contextHandoffId : null,
+          recoveryHandoff?.id,
+        );
         assert.include(turns[1]?.text ?? "", "Context handoff (manual_context):");
         assert.include(turns[1]?.text ?? "", "imported release marker is violet");
         assert.include(turns[1]?.text ?? "", "I will remember violet.");

@@ -720,6 +720,29 @@ export function appendContextHandoffId(
   return handoffId === null ? handoffIds : Array.from(new Set([...handoffIds, handoffId]));
 }
 
+function legacyHandoffSource(
+  projection: Pick<OrchestrationV2ThreadProjection, "thread" | "providerThreads">,
+  target: ModelSelection,
+) {
+  const sourceThread = projection.providerThreads.find(
+    (thread) => thread.id === projection.thread.activeProviderThreadId,
+  );
+  const sourceInstanceId =
+    sourceThread?.providerInstanceId ??
+    (modelSelectionsEqual(projection.thread.modelSelection, target)
+      ? undefined
+      : projection.thread.modelSelection.instanceId);
+  const sourceSelection =
+    sourceThread?.nativeMetadata?.modelSelection ??
+    (projection.thread.modelSelection.instanceId === sourceInstanceId
+      ? projection.thread.modelSelection
+      : undefined);
+  return {
+    fromProviderInstanceIds: sourceInstanceId === undefined ? [] : [sourceInstanceId],
+    fromModelSelections: sourceSelection === undefined ? [] : [sourceSelection],
+  };
+}
+
 function rootProviderThreadsForProvider(
   projection: Pick<OrchestrationV2ThreadProjection, "providerThreads" | "thread">,
   providerInstanceId: ModelSelection["instanceId"],
@@ -5332,6 +5355,42 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             occurredAt: now,
             payload: legacyImportHandoff,
           });
+          yield* emitEvent({
+            type: "turn-item.updated",
+            threadId: command.threadId,
+            runId,
+            nodeId: rootNodeId,
+            providerInstanceId: modelSelection.instanceId,
+            occurredAt: now,
+            payload: {
+              id: idAllocator.derive.runSignalTurnItem({
+                runId,
+                signal: `context-handoff:${legacyImportHandoff.id}`,
+              }),
+              threadId: command.threadId,
+              runId,
+              nodeId: rootNodeId,
+              providerThreadId,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: turnItem.ordinal - 1,
+              status: "completed",
+              title: "Imported context",
+              startedAt: now,
+              completedAt: now,
+              updatedAt: now,
+              type: "handoff",
+              contextHandoffId: legacyImportHandoff.id,
+              fromProviderThreadIds: legacyImportHandoff.fromProviderThreadIds,
+              toProviderThreadId: legacyImportHandoff.toProviderThreadId,
+              ...legacyHandoffSource(projection, modelSelection),
+              toProviderInstanceId: modelSelection.instanceId,
+              toModel: modelSelection.model,
+              strategy: legacyImportHandoff.strategy,
+              summary: legacyImportHandoff.summaryText,
+            },
+          });
         }
         yield* emitEvent({
           type: "run.created",
@@ -5980,7 +6039,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.context ? { context: command.context } : {}),
         attachments: command.attachments,
       };
-      const activeHandoff = portableForkHandoff ?? mergeBackHandoff ?? providerSwitchHandoff;
+      const activeHandoff =
+        portableForkHandoff ??
+        mergeBackHandoff ??
+        providerSwitchHandoff ??
+        legacyImportRecoveryHandoff;
       const handoffSourceRuns =
         portableForkHandoff !== null
           ? sourceRun === null
@@ -6021,7 +6084,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   ? "Fork context"
                   : providerSwitchHandoff !== null
                     ? "Provider handoff"
-                    : "Merge-back context",
+                    : mergeBackHandoff !== null
+                      ? "Merge-back context"
+                      : "Imported context",
               startedAt: now,
               completedAt: now,
               updatedAt: now,
@@ -6034,6 +6099,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ),
               toProviderInstanceId: modelSelection.instanceId,
               fromModelSelections: handoffFromModelSelections,
+              ...(activeHandoff === legacyImportRecoveryHandoff
+                ? legacyHandoffSource(projection, modelSelection)
+                : {}),
               toModel: modelSelection.model,
               strategy: activeHandoff.strategy,
               summary: activeHandoff.summaryText,
