@@ -16,10 +16,8 @@
 import type { ServerProvider } from "@t3tools/contracts";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
-import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 
@@ -69,15 +67,12 @@ export function decideProviderAutoUpdate(
     : null;
 }
 
-export class ProviderAutoUpdater extends Context.Service<
-  ProviderAutoUpdater,
-  {
-    /** One pass over every provider instance; exposed for tests. */
-    readonly runPass: Effect.Effect<void>;
-    /** Forks the periodic passes into the caller's scope. */
-    readonly start: Effect.Effect<void, never, Scope.Scope>;
-  }
->()("@styal/cli/provider/ProviderAutoUpdater") {}
+export interface ProviderAutoUpdater {
+  /** One pass over every provider instance; exposed for tests. */
+  readonly runPass: Effect.Effect<void>;
+  /** Forks the periodic passes into the caller's scope. */
+  readonly start: Effect.Effect<void, never, Scope.Scope>;
+}
 
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
@@ -162,7 +157,5 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  return ProviderAutoUpdater.of({ runPass, start });
+  return { runPass, start } satisfies ProviderAutoUpdater;
 });
-
-export const layer = Layer.effect(ProviderAutoUpdater, make);
