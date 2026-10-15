@@ -652,7 +652,7 @@ features:
   - id: completion-sounds
     title: Configurable thread notification sounds
     status: maintained
-    prs: [5, 7, 19, 72, 249, 250, 742]
+    prs: [5, 7, 19, 72, 249, 250, 742, 846]
     invariants:
       - Users can independently select, preview, and disable sounds for completion, input, and approval events; the sound choices are nested under the Notification sounds switch and disabled while it is off.
       - System notifications, in-app notifications, and notification sounds are independent switches; the system notification and sound switches together set the persisted notification mode.
