@@ -50,19 +50,13 @@ const client = McpSchema.McpServerClient.of({
   },
   getClient: Effect.die("unused"),
 });
-const makeTestLayer = (
-  analyticsLayer: Layer.Layer<AnalyticsService.AnalyticsService> = AnalyticsService.AnalyticsService
-    .layerTest,
-) =>
-  McpHttpServer.PreviewToolkitRegistrationLive.pipe(
-    Layer.provideMerge(McpServer.McpServer.layer),
-    Layer.provideMerge(PreviewAutomationBroker.layer),
-    Layer.provideMerge(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" }),
-    ),
-    Layer.provideMerge(NodeServices.layer),
-    Layer.provide(analyticsLayer),
-  );
+const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
+  Layer.provide(AnalyticsService.AnalyticsService.layerTest),
+  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(PreviewAutomationBroker.layer),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" })),
+  Layer.provideMerge(NodeServices.layer),
+);
 const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provide(
@@ -74,8 +68,6 @@ const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.
     ),
   ),
 );
-
-const TestLayer = makeTestLayer();
 
 const snapshotResult = {
   url: "http://example.test/",
@@ -424,16 +416,8 @@ it.effect("saves the snapshot PNG on request and reports its path", () =>
   ).pipe(Effect.provide(TestLayer)),
 );
 
-it.effect("reports a tagged error when the screenshot cannot be saved", () => {
-  const outcomes: Array<unknown> = [];
-  const analytics = Layer.succeed(AnalyticsService.AnalyticsService, {
-    record: (_event, properties) =>
-      Effect.sync(() => {
-        outcomes.push(properties?.outcome);
-      }),
-    flush: Effect.void,
-  });
-  return Effect.scoped(
+it.effect("reports a tagged error when the screenshot cannot be saved", () =>
+  Effect.scoped(
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
@@ -444,7 +428,6 @@ it.effect("reports a tagged error when the screenshot cannot be saved", () => {
       const snapshot = yield* callSnapshot({ save: true });
 
       expect(snapshot.isError).toBe(true);
-      expect(outcomes).toEqual(["failure"]);
       expect(snapshot.content).toEqual([
         { type: "text", text: "Preview snapshot failed: PreviewScreenshotSaveError." },
       ]);
@@ -452,8 +435,8 @@ it.effect("reports a tagged error when the screenshot cannot be saved", () => {
         error: { _tag: "PreviewScreenshotSaveError", operation: "snapshot", failureCount: 1 },
       });
     }),
-  ).pipe(Effect.provide(makeTestLayer(analytics)));
-});
+  ).pipe(Effect.provide(TestLayer)),
+);
 
 it.effect(
   "registers the pull request toolkit and surfaces a missing capability as a tool error",
@@ -893,56 +876,3 @@ it.effect("registers annotated tools and preserves authenticated request context
     }),
   ).pipe(Effect.provide(TestLayer)),
 );
-
-it.effect("records one browser usage event per tool, excluding internal status reads", () => {
-  const recorded: Array<{
-    event: string;
-    properties: Readonly<Record<string, unknown>> | undefined;
-  }> = [];
-  const analytics = Layer.succeed(AnalyticsService.AnalyticsService, {
-    record: (event, properties) =>
-      Effect.sync(() => {
-        recorded.push({ event, properties });
-      }),
-    flush: Effect.void,
-  });
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const server = yield* McpServer.McpServer;
-      // A browser call without an attached host is still a measured failed attempt.
-      expect((yield* callSnapshot({})).isError).toBe(true);
-      const inputs = yield* serveSnapshots("usage-client", snapshotResult);
-      const clicked = yield* server
-        .callTool({ name: "preview_click", arguments: { locator: "button" } })
-        .pipe(
-          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-          Effect.provideService(McpSchema.McpServerClient, client),
-        );
-      expect(clicked.isError).toBe(false);
-      // The click and its favicon/status metadata request both ran.
-      expect(inputs).toHaveLength(2);
-      expect(recorded).toEqual([
-        {
-          event: "feature.used",
-          properties: {
-            feature: "browser-tools",
-            action: "snapshot",
-            source: "agent",
-            outcome: "failure",
-            durationMs: expect.any(Number),
-          },
-        },
-        {
-          event: "feature.used",
-          properties: {
-            feature: "browser-tools",
-            action: "click",
-            source: "agent",
-            outcome: "success",
-            durationMs: expect.any(Number),
-          },
-        },
-      ]);
-    }),
-  ).pipe(Effect.provide(makeTestLayer(analytics)));
-});

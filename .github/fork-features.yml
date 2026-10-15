@@ -1628,16 +1628,19 @@ features:
       - apps/server/src/mcp/McpHttpServer.ts
       - apps/server/src/mcp/toolkits/preview/handlers.ts
       - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/telemetry/BrowserFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
     upstream_paths:
       - apps/server/src/telemetry/AnalyticsService.ts
     tests:
-      - apps/server/src/mcp/McpHttpServer.test.ts
+      - apps/server/src/mcp/BrowserFeatureUsage.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15913
+        - https://github.com/pingdotgg/t3code/pull/15921
       retire_when: Upstream provides equivalent anonymous feature-adoption events with outcome, opt-out, and rollout-aware coverage.
 
   - id: fork-managed-link
