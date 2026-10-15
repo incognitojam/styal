@@ -126,6 +126,7 @@ const BUILT_IN_PROVIDERS = [
   "opencode",
   "antigravity",
 ] as const;
+const TERMINAL_SUBAGENT_STATUSES = new Set(["completed", "failed", "cancelled", "interrupted"]);
 const TERMINAL_RUN_STATUSES = new Set([
   "completed",
   "interrupted",
@@ -965,13 +966,29 @@ try {
               "Provider subagent verification",
               `This is an automated provider check. Use ${tool} to start exactly one subagent with this task: "Reply with exactly ${subagentToken} and nothing else." Do not use delegate_task or any styal tool. When the subagent finishes, reply with exactly the subagent's answer.`,
             );
-            const { projection, run } = yield* waitForRunEnd(
+            const { run } = yield* waitForRunEnd(threadId, messageId, "the subagent turn");
+            if (run.status !== "completed") fail(`Run ended ${run.status}`);
+            // Claude Code can run the subagent in the background and end its turn; the
+            // answer then arrives in a later run once the subagent finishes.
+            const projection = yield* waitFor(
               threadId,
-              messageId,
-              "the subagent turn",
+              "the native subagent to finish and its answer to be reported",
+              (current) => {
+                const native = current.subagents.filter(
+                  (task) => task.origin === "provider_native",
+                );
+                const settled =
+                  native.length > 0 &&
+                  native.every((task) => TERMINAL_SUBAGENT_STATUSES.has(task.status)) &&
+                  current.runs.every((entry) => TERMINAL_RUN_STATUSES.has(entry.status));
+                const reported = current.messages.some(
+                  (message) => message.role === "assistant" && message.text.includes(subagentToken),
+                );
+                const failed = native.some((task) => task.status !== "completed");
+                return settled && (reported || failed) ? current : undefined;
+              },
             );
             inspect("native-subagent", projection, logOffset);
-            if (run.status !== "completed") fail(`Run ended ${run.status}`);
             const native = projection.subagents.filter(
               (task) => task.origin === "provider_native" && task.driver === snapshot.driver,
             );
@@ -983,8 +1000,12 @@ try {
               fail(`Native subagent status: ${native.map((task) => task.status).join(", ")}`);
             if (projection.subagents.some((task) => task.origin === "app_owned"))
               fail("The agent used styal's delegate_task instead of its own subagent tool");
-            if (!assistantText(projection, run).includes(subagentToken))
-              fail("The parent reply did not contain the subagent's token");
+            if (
+              !projection.messages.some(
+                (message) => message.role === "assistant" && message.text.includes(subagentToken),
+              )
+            )
+              fail("The parent never reported the subagent's token");
             scenario("native-subagent").detail = `${native.length} native subagent(s) completed`;
             return threadId;
           }),
