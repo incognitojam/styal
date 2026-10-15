@@ -33,6 +33,10 @@ interface RecordedBatchRequest {
         readonly t3CodeVersion?: string;
         readonly t3CodeRepository?: string;
         readonly featureUsageVersion?: number;
+        readonly browserSessionUsageVersion?: number;
+        readonly deviceUsageVersion?: number;
+        readonly buildKind?: string;
+        readonly releaseChannel?: string;
       };
     }>;
   } | null;
@@ -52,6 +56,10 @@ interface RecordedBatchBody {
       readonly t3CodeVersion?: string;
       readonly t3CodeRepository?: string;
       readonly featureUsageVersion?: number;
+      readonly browserSessionUsageVersion?: number;
+      readonly deviceUsageVersion?: number;
+      readonly buildKind?: string;
+      readonly releaseChannel?: string;
     };
   }>;
 }
@@ -236,7 +244,11 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
               event.properties.serverAppVersion === event.properties.t3CodeVersion &&
               event.properties.serverMode === "web" &&
               event.properties.t3CodeRepository === "incognitojam/styal" &&
-              event.properties.featureUsageVersion === 1,
+              event.properties.featureUsageVersion === 1 &&
+              event.properties.browserSessionUsageVersion === 1 &&
+              event.properties.deviceUsageVersion === 1 &&
+              event.properties.buildKind === "test" &&
+              event.properties.releaseChannel === "unknown",
           ),
         ),
         true,
@@ -252,7 +264,10 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       });
       const telemetryLayer = AnalyticsService.layer.pipe(Layer.provideMerge(serverConfigLayer));
       const configLayer = ConfigProvider.layer(
-        ConfigProvider.fromUnknown({ T3CODE_POSTHOG_HOST: "http://localhost" }),
+        ConfigProvider.fromUnknown({
+          T3CODE_POSTHOG_HOST: "http://localhost",
+          T3CODE_TELEMETRY_ENABLED: true,
+        }),
       );
       const runtimeLayer = telemetryLayer.pipe(
         Layer.provide(configLayer),
@@ -288,46 +303,48 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
     }),
   );
 
-  it.effect("does not send batch requests when telemetry is disabled", () =>
-    Effect.gen(function* () {
-      const capturedPaths: Array<string> = [];
-      const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3-telemetry-disabled-",
-      });
-      const telemetryLayer = AnalyticsService.layer.pipe(Layer.provideMerge(serverConfigLayer));
-      const configLayer = ConfigProvider.layer(
-        ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: false,
-          T3CODE_POSTHOG_KEY: "phc_test_key",
-          T3CODE_POSTHOG_HOST: "http://localhost",
-        }),
-      );
-      const batchServerLayer = HttpServer.serve(
-        Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          capturedPaths.push(request.url);
-          return HttpServerResponse.jsonUnsafe({});
-        }),
-      );
-      const runtimeLayer = telemetryLayer.pipe(
-        Layer.provide(configLayer),
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(HostProcessPlatform, "linux"),
-            Layer.succeed(HostProcessArchitecture, "arm64"),
+  it.effect.each([false, undefined])(
+    "does not send batches when disabled or in an unopted-in test process (%s)",
+    (enabled) =>
+      Effect.gen(function* () {
+        const capturedPaths: Array<string> = [];
+        const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
+          prefix: "t3-telemetry-disabled-",
+        });
+        const telemetryLayer = AnalyticsService.layer.pipe(Layer.provideMerge(serverConfigLayer));
+        const configLayer = ConfigProvider.layer(
+          ConfigProvider.fromUnknown({
+            ...(enabled === undefined ? {} : { T3CODE_TELEMETRY_ENABLED: enabled }),
+            T3CODE_POSTHOG_KEY: "phc_test_key",
+            T3CODE_POSTHOG_HOST: "http://localhost",
+          }),
+        );
+        const batchServerLayer = HttpServer.serve(
+          Effect.gen(function* () {
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            capturedPaths.push(request.url);
+            return HttpServerResponse.jsonUnsafe({});
+          }),
+        );
+        const runtimeLayer = telemetryLayer.pipe(
+          Layer.provide(configLayer),
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(HostProcessPlatform, "linux"),
+              Layer.succeed(HostProcessArchitecture, "arm64"),
+            ),
           ),
-        ),
-        Layer.provideMerge(NodeHttpServer.layerTest),
-      );
+          Layer.provideMerge(NodeHttpServer.layerTest),
+        );
 
-      yield* Effect.gen(function* () {
-        yield* Layer.launch(batchServerLayer).pipe(Effect.forkScoped);
-        const analytics = yield* AnalyticsService.AnalyticsService;
-        yield* analytics.record("test.disabled", { index: 1 });
-        yield* analytics.flush;
-      }).pipe(Effect.provide(runtimeLayer));
+        yield* Effect.gen(function* () {
+          yield* Layer.launch(batchServerLayer).pipe(Effect.forkScoped);
+          const analytics = yield* AnalyticsService.AnalyticsService;
+          yield* analytics.record("test.disabled", { index: 1 });
+          yield* analytics.flush;
+        }).pipe(Effect.provide(runtimeLayer));
 
-      assert.deepEqual(capturedPaths, []);
-    }),
+        assert.deepEqual(capturedPaths, []);
+      }),
   );
 });

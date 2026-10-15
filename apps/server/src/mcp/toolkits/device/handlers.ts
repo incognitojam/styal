@@ -16,6 +16,7 @@ import { nodeRuntimeUnavailableMessage } from "@t3tools/shared/nodeRuntime";
 
 import { DeviceActivity } from "../../../device/DeviceIdle.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
+import * as DeviceFeatureUsage from "../../../telemetry/DeviceFeatureUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { DeviceScreenshotToolkit, DeviceStandardToolkit, DeviceToolkit } from "./tools.ts";
 
@@ -323,8 +324,12 @@ export function pngDimensions(png: Uint8Array): { width: number; height: number 
 
 const { device_screenshot, ...standardHandlers } = handlers;
 
-export const DeviceStandardToolkitHandlersLive = DeviceStandardToolkit.toLayer(standardHandlers);
+export const DeviceStandardToolkitHandlersLive = DeviceStandardToolkit.toLayer(
+  DeviceFeatureUsage.observeHandlers(standardHandlers),
+);
 
-export const DeviceScreenshotToolkitHandlersLive = DeviceScreenshotToolkit.toLayer({
-  device_screenshot,
-});
+export const DeviceScreenshotToolkitHandlersLive = DeviceScreenshotToolkit.toLayer(
+  Effect.map(DeviceFeatureUsage.snapshotObserver, (observe) => ({
+    device_screenshot: (input) => observe(device_screenshot(input)),
+  })),
+);

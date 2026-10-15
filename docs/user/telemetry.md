@@ -6,13 +6,17 @@ turn result, duration, and main-agent token totals when available.
 
 Agent browser usage includes the operation name, whether it succeeded, failed, or was cancelled,
 and its duration. It does not include visited URLs, page content, screenshots, selectors, typed
-input, or evaluated code.
+input, or evaluated code. Creating a browser tab explicitly also records a manual browser-session
+event. Device panel actions and agent device tools record their operation and outcome, whether the
+device is local or remote when known, and its platform when reported. Device names, identifiers,
+screenshots and action arguments are not collected.
 
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 
 To disable collection, set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before
-starting it. This stops product events from being recorded or sent.
+starting it. This stops product events from being recorded or sent. Test and CI processes default to
+collection disabled; `T3CODE_TELEMETRY_ENABLED=true` explicitly enables it.
 
 ## Error reports
 
