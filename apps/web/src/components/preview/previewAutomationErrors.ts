@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   type PreviewAutomationHost,
+  type PreviewAutomationFailureStage,
   PreviewAutomationOperation,
   PreviewAutomationRecordingTransferError,
   PreviewAutomationRecordingDesktopUpdateRequiredError,
@@ -13,7 +14,10 @@ import {
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { previewAutomationFailureReason } from "@t3tools/shared/previewErrorDiagnostics";
+import {
+  previewAutomationFailureReason,
+  previewAutomationFailureStage,
+} from "@t3tools/shared/previewErrorDiagnostics";
 
 export interface PreviewAutomationOperationContext {
   readonly requestId: PreviewAutomationRequest["requestId"];
@@ -227,6 +231,23 @@ export type PreviewAutomationHostError = typeof PreviewAutomationHostError.Type;
 
 const isPreviewAutomationHostError = Schema.is(PreviewAutomationHostError);
 
+function hostErrorFailureStage(
+  error: PreviewAutomationHostError,
+): PreviewAutomationFailureStage | undefined {
+  switch (error._tag) {
+    case "PreviewAutomationOverlayTimeoutError":
+      return "webview-registration";
+    case "PreviewAutomationNavigationTimeoutError":
+      return "navigation";
+    case "PreviewAutomationViewportTimeoutError":
+      return "viewport-render";
+    case "PreviewAutomationOperationError":
+      return previewAutomationFailureStage(error.cause);
+    default:
+      return undefined;
+  }
+}
+
 export function serializePreviewAutomationHostError(
   error: PreviewAutomationHostError,
 ): NonNullable<PreviewAutomationResponse["error"]> {
@@ -237,10 +258,12 @@ export function serializePreviewAutomationHostError(
     ),
   );
   const reason = previewAutomationFailureReason(error);
+  const stage = hostErrorFailureStage(error);
   return {
     _tag: "responseTag" in error ? error.responseTag : error._tag,
     message: error.message,
     ...(reason === undefined ? {} : { failureReason: reason }),
+    ...(stage === undefined ? {} : { failureStage: stage }),
     ...(Object.keys(detail).length === 0 ? {} : { detail }),
   };
 }

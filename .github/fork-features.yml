@@ -1832,6 +1832,7 @@ features:
     prs: []
     invariants:
       - Browser automation failures carry only allowlisted error kinds and network codes across the client boundary; arbitrary causes, messages, URLs, selectors, and evaluated scripts remain excluded from this diagnostic field.
+      - Browser automation failures also carry an allowlisted client step, such as page capture or viewport rendering, so the agent's error names where the client stopped without exposing page content.
       - Release server builds report every Error or Fatal log entry, and every RPC handler defect, as a PostHog `$exception` event through the analytics delivery path, sharing its identity and opt-out.
       - Reports carry only the thrown value and log message, scrubbed of home directories, user names, emails, URL credentials and queries, and token-like strings; log annotations are never sent.
       - Operators can disable reports alone with `T3CODE_ERROR_REPORTING_ENABLED=false`; development servers do not report unless it is set to true.

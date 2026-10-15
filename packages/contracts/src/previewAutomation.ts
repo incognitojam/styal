@@ -668,6 +668,24 @@ export const PreviewAutomationFailureReason = Schema.Literals([
 ]);
 export type PreviewAutomationFailureReason = typeof PreviewAutomationFailureReason.Type;
 
+/** Fixed names for the client step where a preview operation stopped. */
+export const PreviewAutomationFailureStage = Schema.Literals([
+  "webview-registration",
+  "navigation",
+  "viewport-render",
+  "control-session",
+  "page-capture",
+]);
+export type PreviewAutomationFailureStage = typeof PreviewAutomationFailureStage.Type;
+
+const failureStageDescriptions: Record<PreviewAutomationFailureStage, string> = {
+  "webview-registration": "waiting for the browser tab to start in the desktop app",
+  navigation: "waiting for the page to load",
+  "viewport-render": "waiting for the browser tab to render",
+  "control-session": "attaching to the browser tab",
+  "page-capture": "capturing the page image",
+};
+
 export const PreviewAutomationResponse = Schema.Struct({
   clientId: PreviewAutomationClientId,
   connectionId: PreviewAutomationConnectionId,
@@ -681,6 +699,7 @@ export const PreviewAutomationResponse = Schema.Struct({
       // Accept future client codes without rejecting the whole response. The server
       // narrows this to its known allowlist before using it in diagnostics.
       failureReason: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
+      failureStage: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
       detail: Schema.optional(Schema.Unknown),
     }),
   ),
@@ -740,6 +759,7 @@ const PreviewAutomationRequestErrorFields = {
 
 const PreviewAutomationRemoteDiagnosticFields = {
   failureReason: Schema.optional(PreviewAutomationFailureReason),
+  failureStage: Schema.optional(PreviewAutomationFailureStage),
   remoteTag: TrimmedNonEmptyString,
   remoteMessageLength: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   remoteDetailKind: Schema.optional(
@@ -750,6 +770,7 @@ const PreviewAutomationRemoteDiagnosticFields = {
 
 const PreviewAutomationOptionalRemoteDiagnosticFields = {
   failureReason: Schema.optional(PreviewAutomationFailureReason),
+  failureStage: Schema.optional(PreviewAutomationFailureStage),
   remoteTag: Schema.optional(TrimmedNonEmptyString),
   remoteMessageLength: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   remoteDetailKind: Schema.optional(
@@ -809,8 +830,13 @@ export class PreviewAutomationTimeoutError extends Schema.TaggedError<PreviewAut
   },
 ) {
   override get message(): string {
-    const summary = `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms.`;
-    return summary;
+    if (this.failureStage !== undefined) {
+      return `Preview automation ${this.operation} timed out while ${failureStageDescriptions[this.failureStage]}.`;
+    }
+    // Without a remote tag, the client never answered within the request deadline.
+    return this.remoteTag === undefined
+      ? `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms waiting for the desktop app to respond.`
+      : `Preview automation ${this.operation} timed out after ${this.timeoutMs}ms.`;
   }
 }
 
@@ -834,8 +860,12 @@ export class PreviewAutomationExecutionError extends Schema.TaggedError<PreviewA
   },
 ) {
   override get message(): string {
+    const stage =
+      this.failureStage === undefined
+        ? ""
+        : ` while ${failureStageDescriptions[this.failureStage]}`;
     const reason = this.failureReason === undefined ? "" : ` (${this.failureReason})`;
-    return `Preview automation ${this.operation} failed${reason} on client ${this.clientId}.`;
+    return `Preview automation ${this.operation} failed${stage}${reason} on client ${this.clientId}.`;
   }
 }
 

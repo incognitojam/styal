@@ -124,6 +124,50 @@ it.effect.each(["ERR_CONNECTION_REFUSED", "FutureBrowserError-synthetic-secret",
     ),
 );
 
+it.effect.each([
+  [
+    "PreviewAutomationTimeoutError",
+    "viewport-render",
+    "Preview automation snapshot timed out while waiting for the browser tab to render.",
+  ],
+  [
+    "PreviewAutomationExecutionError",
+    "page-capture",
+    "Preview automation snapshot failed while capturing the page image (TimeoutError) on client client-1.",
+  ],
+  [
+    "PreviewAutomationExecutionError",
+    "future-stage-synthetic-secret",
+    "Preview automation snapshot failed (TimeoutError) on client client-1.",
+  ],
+] as const)("names the client step for %s at stage %s", ([tag, failureStage, message]) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker;
+      const requests = requestsFrom(yield* broker.connect(makeHost()));
+      yield* Stream.runForEach(requests, (request) =>
+        broker.respond({
+          clientId: "client-1",
+          connectionId: request.connectionId,
+          requestId: request.requestId,
+          ok: false,
+          error: {
+            _tag: tag,
+            message: "Client detail.",
+            failureReason: "TimeoutError",
+            failureStage,
+          },
+        }),
+      ).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      const error = yield* broker
+        .invoke<void>({ scope, operation: "snapshot", input: {} })
+        .pipe(Effect.flip);
+      expect(error.message).toBe(message);
+    }),
+  ),
+);
+
 it.effect("atomically registers a connected host and correlates its response", () =>
   Effect.scoped(
     Effect.gen(function* () {
