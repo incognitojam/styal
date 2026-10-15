@@ -4388,7 +4388,7 @@ features:
   - id: web-build-update-notice
     title: Offer a refresh when a new web build is deployed
     status: maintained
-    prs: []
+    prs: [858]
     invariants:
       - Production browser clients compare the loaded build with a fresh manifest from the page's own origin, independently of paired environments; every build, including rebuilds of one commit, has a distinct identifier.
       - A changed build shows a manual refresh action in the sidebar without interrupting work; a rollback to the loaded build clears the notice, while failed or malformed checks preserve the last known state.
