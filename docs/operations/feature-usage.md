@@ -1,5 +1,9 @@
 # Feature usage
 
+Monitor [Styal Feature Usage & Browser Health](https://eu.posthog.com/project/120501/dashboard/1026404) in PostHog. It includes adoption, daily rollout coverage, calls by action, outcomes, and successful-call latency by action and server version. Its default date range is 30 days; the date selector applies to every insight.
+
+The dashboard reports adoption as unavailable until it sees an instrumented active cohort. Empty browser charts before the instrumentation ships are expected. Use common metadata filters such as server version or platform; filtering on browser-only properties such as action or outcome removes the active-turn denominator and invalidates adoption.
+
 `feature.used` events use the existing PostHog identity, delivery queue, and telemetry opt-out. Start with `feature = browser-tools` and `source = agent`; other features need explicit instrumentation before their absence means anything. This does not measure manual Browser panel use.
 
 For adoption, count distinct reporting identities that successfully perform an action, excluding `status` probes. Compare them with distinct identities with `provider.turn.completed` in the same period. Restrict both cohorts to `featureUsageVersion = 1`, and intersect the feature cohort with the active cohort. The version property is attached to every analytics event, so earlier installations cannot silently enter the denominator. Keep the release/version breakdown when comparing periods across rollout.
