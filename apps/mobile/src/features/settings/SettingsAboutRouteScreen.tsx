@@ -1,8 +1,9 @@
+import * as Dialog from "../../components/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import * as Application from "expo-application";
 import Constants from "expo-constants";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -74,7 +75,7 @@ function AppSettingsSection() {
       // apply immediately instead of prompting.
       await runAppUpdateCheck({
         applyMode: "immediate",
-        onFailure: (message) => Alert.alert("Update failed", message),
+        onFailure: (message) => Dialog.alert("Update failed", message),
         onStateChange: setUpdateState,
       });
     } finally {

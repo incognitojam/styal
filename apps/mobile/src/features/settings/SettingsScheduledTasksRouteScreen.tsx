@@ -1,3 +1,4 @@
+import * as Dialog from "../../components/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthOrchestrationOperateScope,
@@ -36,7 +37,7 @@ import {
 } from "react";
 import { useFocusEffect, useNavigation, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Alert, AppState, Platform, Pressable, TextInput as RNTextInput, View } from "react-native";
+import { AppState, Platform, Pressable, TextInput as RNTextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "../../components/Button";
@@ -449,10 +450,10 @@ function SettingsScheduledTaskEditorScreen({ title }: { readonly title: string }
   const preventRemove = !saved && (hasChanges || saving);
   usePreventRemove(preventRemove, ({ data }) => {
     if (saving) {
-      Alert.alert("Saving task", "Wait for the task to finish saving before leaving.");
+      Dialog.alert("Saving task", "Wait for the task to finish saving before leaving.");
       return;
     }
-    Alert.alert("Discard changes?", "Your unsaved changes will be lost.", [
+    Dialog.alert("Discard changes?", "Your unsaved changes will be lost.", [
       { text: "Keep editing", style: "cancel" },
       {
         text: "Discard changes",
@@ -623,7 +624,7 @@ function TaskForm({
 
   const failure = (title: string, result: AtomCommandResult<unknown, unknown>) => {
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      Alert.alert(title, String(squashAtomCommandFailure(result)));
+      Dialog.alert(title, String(squashAtomCommandFailure(result)));
     }
   };
 
@@ -649,7 +650,7 @@ function TaskForm({
       draft.schedule.mode === "webhook" &&
       parseMaxDeliveryAge(draft.schedule.maxDeliveryAgeMinutes) === undefined
     ) {
-      Alert.alert(
+      Dialog.alert(
         "Invalid age limit",
         `Enter whole minutes from 1 to ${MAX_WEBHOOK_DELIVERY_AGE_MINUTES}, or leave it blank.`,
       );
@@ -663,14 +664,14 @@ function TaskForm({
       !schedule ||
       (draft.workspace === "existing_worktree" && !draft.checkoutPath.trim())
     ) {
-      Alert.alert(
+      Dialog.alert(
         "Incomplete task",
         "Add a name, prompt, project, model, valid schedule, and checkout path if needed.",
       );
       return;
     }
     if (!projects.some((project) => project.id === draft.projectId)) {
-      Alert.alert("Project unavailable", "Choose a project in this environment.");
+      Dialog.alert("Project unavailable", "Choose a project in this environment.");
       return;
     }
     const input: ScheduledTaskUpsertInput = {
@@ -1103,7 +1104,7 @@ function WebhookScheduleDetails({
             accessibilityState={{ disabled: disabled || rotating }}
             disabled={disabled || rotating}
             onPress={() =>
-              Alert.alert("Rotate URL?", "The current URL stops working immediately.", [
+              Dialog.alert("Rotate URL?", "The current URL stops working immediately.", [
                 { text: "Cancel", style: "cancel" },
                 {
                   text: "Rotate",
@@ -1113,7 +1114,7 @@ function WebhookScheduleDetails({
                     void rotate({ environmentId, input: { id: task.id } }).then((result) => {
                       setRotating(false);
                       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-                        Alert.alert(
+                        Dialog.alert(
                           "Could not rotate URL",
                           String(squashAtomCommandFailure(result)),
                         );
@@ -1175,7 +1176,7 @@ function EnvironmentTasks({
   });
   const failure = (title: string, result: AtomCommandResult<unknown, unknown>) => {
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      Alert.alert(title, String(squashAtomCommandFailure(result)));
+      Dialog.alert(title, String(squashAtomCommandFailure(result)));
     }
   };
 
@@ -1268,7 +1269,7 @@ function EnvironmentTasks({
                 if (action === "edit") {
                   onEdit(task);
                 } else if (action === "delete") {
-                  Alert.alert("Delete task?", task.title, [
+                  Dialog.alert("Delete task?", task.title, [
                     { text: "Cancel", style: "cancel" },
                     {
                       text: "Delete",

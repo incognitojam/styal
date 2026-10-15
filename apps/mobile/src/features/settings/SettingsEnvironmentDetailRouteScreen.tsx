@@ -1,3 +1,4 @@
+import * as Dialog from "../../components/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {

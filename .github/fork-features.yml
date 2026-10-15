@@ -2615,8 +2615,9 @@ features:
   - id: mobile-provider-accounts-overview
     title: Mobile provider accounts list every provider
     status: maintained
-    prs: []
+    prs: [815]
     invariants:
+      - Hidden account emails retain the shared same-shaped placeholder and platform-appropriate blur, with explicit reveal controls.
       - Mobile Provider accounts lists every configured provider with its icon, usable providers before turned-off ones; providers that sign in through their own CLI show a status line and no sign-in control.
       - A turned-off or missing provider says why instead of showing a disabled sign-in row, and Sign in, Change account, Sign out, credentials and docs rows each use a distinct icon.
     rationale: Upstream lists only providers with in-app sign-in, so Claude and Codex users see their providers missing, and every action reuses the same person icon. Compared with upstream revision 7ac952c630ef8a60d14ca8f6a0c7adce33db4bae on October 14, 2026.

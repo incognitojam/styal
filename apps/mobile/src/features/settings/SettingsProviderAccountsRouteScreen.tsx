@@ -1,3 +1,4 @@
+import * as Dialog from "../../components/Dialog";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -8,7 +9,6 @@ import { redactedPlaceholder } from "@t3tools/shared/redactedText";
 import { useRef, useState } from "react";
 import { BlurView } from "expo-blur";
 import {
-  Alert,
   Linking,
   Platform,
   Pressable,
@@ -17,6 +17,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -375,7 +376,7 @@ function ProviderAccount({
           tone="danger"
           disabled={disabled || state === null}
           onPress={() =>
-            Alert.alert(
+            Dialog.alert(
               "Sign out?",
               `Running threads sharing this sign-in on ${environment.label} will stop. Thread history is kept.`,
               [
