@@ -660,14 +660,13 @@ features:
       - Fresh settings play upstream completion and attention sounds with system notifications off; legacy Resolve or Chime migrates to T3 completion, and Avanti remains Avanti, with notifications and sound enabled unless a notification mode was explicitly saved.
       - Legacy None stays disabled, Resolve is retired, and Avanti retains its normalized playback level.
       - Departures is an original chime synthesised for styal, so it carries no third-party notice.
-      - The opt-in web and desktop PR announcer speaks real PR numbers digit by digit using bundled Daniel recordings and Claude's wording; the original v4 recordings remain available for comparison.
+      - Opt-in PR announcements sit under Notification sounds on web and desktop, share the notification audio context, and speak PR numbers digit by digit from bundled phrase recordings.
       - Live announcements use existing shell snapshots without extra polling, establish silent baselines on connection and new links, and deduplicate the same PR across threads and environments. Missing host data is not a new transition, and passing checks alone do not imply merge readiness.
       - Pending announcements coalesce per host, repository, and PR number. Playback uses one opening and closing chime per batch, survives navigation, and stops or drops stale work when disabled, disconnected, unlinked, or superseded. A Stop action is available during playback.
     implementation_paths:
       - apps/web/src/announcer.ts
       - apps/web/src/components/PullRequestAnnouncerCoordinator.tsx
       - apps/web/src/components/ThreadNotificationCoordinator.tsx
-      - apps/web/src/components/settings/AnnouncerPreview.tsx
       - apps/web/src/components/settings/NotificationSettings.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/threadNotifications.ts

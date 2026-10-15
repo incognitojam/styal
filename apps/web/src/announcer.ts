@@ -1,68 +1,12 @@
 import {
+  PULL_REQUEST_ANNOUNCEMENT_KINDS,
   pullRequestAnnouncementText,
   type PullRequestAnnouncement,
-  type PullRequestAnnouncementKind,
 } from "@t3tools/client-runtime/pull-request-announcements";
 
 import openingUrl from "./assets/notification-departures.mp3";
 import closingUrl from "./assets/announcer/close.mp3";
-import readyUrl from "./assets/announcer/ready.mp3";
-import arrivedUrl from "./assets/announcer/arrived.mp3";
-import ciFailureUrl from "./assets/announcer/ci-failure.mp3";
-import mergeConflictUrl from "./assets/announcer/merge-conflict.mp3";
-import stackDelayedUrl from "./assets/announcer/stack-delayed.mp3";
-import changesRequestedUrl from "./assets/announcer/changes-requested.mp3";
-import cancelledUrl from "./assets/announcer/cancelled.mp3";
-import queueFailureUrl from "./assets/announcer/queue-failure.mp3";
-
-// Claude's v4 preview recordings use fixed example PR numbers, not live PR state.
-export const ANNOUNCER_SAMPLES = [
-  {
-    id: "ready",
-    label: "Ready to depart, awaiting a member of train crew",
-    text: "Pull request 8 3 1 is ready to depart. It is awaiting a member of train crew.",
-    url: readyUrl,
-  },
-  { id: "arrived", label: "Has arrived", text: "Pull request 8 3 1 has arrived.", url: arrivedUrl },
-  {
-    id: "ci-failure",
-    label: "Delayed due to a CI failure",
-    text: "Pull request 8 3 1 is delayed. This is due to a CI failure.",
-    url: ciFailureUrl,
-  },
-  {
-    id: "merge-conflict",
-    label: "Delayed due to a merge conflict",
-    text: "Pull request 8 3 1 is delayed. This is due to a merge conflict.",
-    url: mergeConflictUrl,
-  },
-  {
-    id: "stack-delayed",
-    label: "Delayed due to a slower running train ahead",
-    text: "Pull request 8 3 2 is delayed. This is due to a slower running train ahead.",
-    url: stackDelayedUrl,
-  },
-  {
-    id: "changes-requested",
-    label: "Held at a red signal",
-    text: "Pull request 8 3 1 is being held at a red signal.",
-    url: changesRequestedUrl,
-  },
-  {
-    id: "cancelled",
-    label: "Cancelled",
-    text: "We are sorry to announce that pull request 8 3 1 has been cancelled.",
-    url: cancelledUrl,
-  },
-  {
-    id: "queue-failure",
-    label: "Delayed due to a problem in the merge queue",
-    text: "Pull request 8 3 1 is delayed. This is due to a problem in the merge queue.",
-    url: queueFailureUrl,
-  },
-] as const;
-
-type AnnouncerSample = (typeof ANNOUNCER_SAMPLES)[number];
+import { loadNotificationBuffer, runningNotificationAudio } from "./threadNotifications";
 
 const phraseUrls = import.meta.glob<string>("./assets/announcer/phrases/*.mp3", {
   eager: true,
@@ -72,13 +16,11 @@ const phraseUrls = import.meta.glob<string>("./assets/announcer/phrases/*.mp3", 
 
 function phraseUrl(name: string) {
   const url = phraseUrls[`./assets/announcer/phrases/${name}.mp3`];
-  if (!url) throw new Error(name);
+  if (!url) throw new Error(`Missing announcer phrase ${name}`);
   return url;
 }
 
-interface PlaybackRequest {
-  readonly key: string;
-  readonly kind: PullRequestAnnouncementKind;
+interface PlaybackRequest extends PullRequestAnnouncement {
   readonly text: string;
   readonly urls: ReadonlyArray<string>;
   readonly live: boolean;
@@ -92,7 +34,6 @@ interface PlaybackState {
 
 function requestFor(announcement: PullRequestAnnouncement, live: boolean): PlaybackRequest {
   const { number, kind } = announcement;
-  if (!Number.isSafeInteger(number) || number < 1) throw new RangeError("Pull request");
   return {
     ...announcement,
     text: pullRequestAnnouncementText(number, kind),
@@ -109,12 +50,11 @@ function requestFor(announcement: PullRequestAnnouncement, live: boolean): Playb
 
 /** One opening and closing chime around each drained batch, shared by live events and previews. */
 function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
-  let context: AudioContext | undefined;
   let run: AbortController | undefined;
   let lastRequest: PlaybackRequest | undefined;
   let active: { request: PlaybackRequest; controller: AbortController } | undefined;
+  let previews = 0;
   const pending = new Map<string, PlaybackRequest>();
-  const buffers = new Map<string, Promise<AudioBuffer>>();
 
   const publish = (
     playing: boolean,
@@ -122,27 +62,8 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
     error: string | null = null,
   ) => onChange({ playing, current, error });
 
-  function load(audio: AudioContext, url: string) {
-    let buffer = buffers.get(url);
-    if (!buffer) {
-      buffer = fetch(url)
-        .then((response) => {
-          if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-          return response.arrayBuffer();
-        })
-        .then((data) => audio.decodeAudioData(data))
-        .catch((error: unknown) => {
-          buffers.delete(url);
-          throw error;
-        });
-      buffers.set(url, buffer);
-    }
-    return buffer;
-  }
-
   async function prepare(audio: AudioContext, request: PlaybackRequest) {
-    const parts = await Promise.all(request.urls.map((url) => load(audio, url)));
-    if (parts.length === 1) return parts[0]!;
+    const parts = await Promise.all(request.urls.map((url) => loadNotificationBuffer(audio, url)));
     // Overlap only the 180 ms echo tails so separately recorded words do not add pauses.
     const overlap = Math.round(audio.sampleRate * 0.18);
     const length =
@@ -158,7 +79,13 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
     return sentence;
   }
 
-  async function play(audio: AudioContext, buffer: AudioBuffer, signal: AbortSignal, volume = 1) {
+  /** Resolves when the sound ends, or after `overlap` seconds while it keeps ringing. */
+  async function play(
+    audio: AudioContext,
+    buffer: AudioBuffer,
+    signal: AbortSignal,
+    { volume = 1, overlap }: { volume?: number; overlap?: number } = {},
+  ) {
     if (signal.aborted) return;
     const source = audio.createBufferSource();
     const gain = audio.createGain();
@@ -180,6 +107,7 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
       );
       signal.addEventListener("abort", abort, { once: true });
       source.start();
+      if (overlap !== undefined) setTimeout(resolve, overlap * 1000);
     });
   }
 
@@ -187,7 +115,10 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
     const { signal } = controller;
     try {
       while (pending.size > 0 && !signal.aborted) {
-        await play(audio, await load(audio, openingUrl), signal);
+        // The voice starts as the chime's last note rings out, like a station PA.
+        await play(audio, await loadNotificationBuffer(audio, openingUrl), signal, {
+          overlap: 1.9,
+        });
         while (pending.size > 0 && !signal.aborted) {
           const request = pending.values().next().value;
           if (!request) break;
@@ -208,7 +139,9 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
         }
         if (!signal.aborted) {
           publish(true);
-          await play(audio, await load(audio, closingUrl), signal, 10 ** (-2 / 20));
+          await play(audio, await loadNotificationBuffer(audio, closingUrl), signal, {
+            volume: 10 ** (-2 / 20),
+          });
         }
         // Anything queued during the closing chime begins a new batch.
       }
@@ -216,12 +149,12 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
         run = undefined;
         publish(false);
       }
-    } catch (error) {
+    } catch {
       if (run !== controller) return;
       pending.clear();
       run = undefined;
       active = undefined;
-      publish(false, null, String(error));
+      publish(false, null, "The announcement could not be played.");
     }
   }
 
@@ -235,41 +168,28 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
   }
 
   function enqueue(request: PlaybackRequest) {
-    if (!context || context.state !== "running") return;
+    const audio = runningNotificationAudio();
+    if (!audio) return;
     pending.set(request.key, request);
     if (run) return;
     run = new AbortController();
     lastRequest = request;
     publish(true);
-    void drain(context, run);
+    void drain(audio, run);
   }
 
   return {
-    async unlock() {
-      try {
-        context ??= new AudioContext();
-        await context.resume();
-      } catch (error) {
-        publish(false, null, String(error));
-      }
-    },
-    preview(sample: AnnouncerSample, number: number | null) {
-      enqueue(
-        number === null
-          ? {
-              key: `preview:${sample.id}`,
-              kind: sample.id,
-              text: sample.text,
-              urls: [sample.url],
-              live: false,
-            }
-          : requestFor({ key: "preview", number, kind: sample.id }, false),
-      );
+    /** Plays a sample announcement, stepping through the vocabulary on each press. */
+    preview() {
+      const kind =
+        PULL_REQUEST_ANNOUNCEMENT_KINDS[previews++ % PULL_REQUEST_ANNOUNCEMENT_KINDS.length]!;
+      enqueue(requestFor({ key: "preview", number: 831, kind }, false));
     },
     announce(announcement: PullRequestAnnouncement) {
       enqueue(requestFor(announcement, true));
     },
-    reconcile(current: ReadonlyMap<string, PullRequestAnnouncementKind | null>) {
+    /** Drops queued or playing live announcements whose PR no longer has that status. */
+    reconcile(current: ReadonlyMap<string, PullRequestAnnouncement["kind"] | null>) {
       for (const [key, request] of pending) {
         if (request.live && current.get(key) !== request.kind) pending.delete(key);
       }
@@ -286,12 +206,6 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
       }
     },
     stop,
-    release() {
-      stop();
-      buffers.clear();
-      void context?.close().catch(() => undefined);
-      context = undefined;
-    },
   };
 }
 

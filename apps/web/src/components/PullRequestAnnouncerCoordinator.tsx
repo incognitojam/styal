@@ -38,18 +38,8 @@ function LiveAnnouncements() {
     announcerPlayer.reconcile(current);
   }, [sources]);
 
-  useEffect(() => {
-    const unlock = () => {
-      void announcerPlayer.unlock();
-    };
-    document.addEventListener("pointerdown", unlock);
-    document.addEventListener("keydown", unlock);
-    return () => {
-      document.removeEventListener("pointerdown", unlock);
-      document.removeEventListener("keydown", unlock);
-      announcerPlayer.stop();
-    };
-  }, []);
+  // Turning the announcer or notification sounds off unmounts this and silences playback.
+  useEffect(() => () => announcerPlayer.stop(), []);
   return null;
 }
 
@@ -67,11 +57,11 @@ export function PullRequestAnnouncerCoordinator() {
       if (toastId.current !== null) toastManager.close(toastId.current);
       toastId.current = null;
       if (playback.error)
-        toastManager.add({ title: "Announcer", description: playback.error, type: "error" });
+        toastManager.add({ title: "PR announcements", description: playback.error, type: "error" });
       return;
     }
     const options = {
-      title: "Announcer",
+      title: "PR announcement",
       description: playback.current?.text,
       timeout: 0,
       actionProps: { children: "Stop", onClick: () => announcerPlayer.stop() },
@@ -84,7 +74,6 @@ export function PullRequestAnnouncerCoordinator() {
   useEffect(
     () => () => {
       if (toastId.current !== null) toastManager.close(toastId.current);
-      announcerPlayer.release();
     },
     [],
   );

@@ -99,24 +99,39 @@ export function unlockNotificationAudio() {
   return audioContext.resume().catch(() => undefined);
 }
 
+/** The shared context once a gesture has unlocked it; sounds and announcements both play here. */
+export function runningNotificationAudio() {
+  return audioContext?.state === "running" ? audioContext : undefined;
+}
+
+/** Decodes each sample once; a failed load is forgotten so the next play retries it. */
+export function loadNotificationBuffer(context: AudioContext, url: string) {
+  let buffer = buffers.get(url);
+  if (!buffer) {
+    buffer = fetch(url)
+      .then((response) => {
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        return response.arrayBuffer();
+      })
+      .then((data) => context.decodeAudioData(data))
+      .catch((error: unknown) => {
+        buffers.delete(url);
+        throw error;
+      });
+    buffers.set(url, buffer);
+  }
+  return buffer;
+}
+
 export async function playNotificationSound(
   kind: "completion" | "input",
   shouldPlay: () => boolean,
   sound: NotificationSound = kind === "completion" ? "t3-completion" : "t3-input",
 ) {
-  if (!audioContext || audioContext.state !== "running") return;
-  const context = audioContext;
-  if (sound === "none") return;
-  const url = NOTIFICATION_SOUND_URLS[sound];
+  const context = runningNotificationAudio();
+  if (!context || sound === "none") return;
   try {
-    let buffer = buffers.get(url);
-    if (!buffer) {
-      buffer = fetch(url)
-        .then((response) => response.arrayBuffer())
-        .then((data) => context.decodeAudioData(data));
-      buffers.set(url, buffer);
-    }
-    const decoded = await buffer;
+    const decoded = await loadNotificationBuffer(context, NOTIFICATION_SOUND_URLS[sound]);
     if (!shouldPlay() || context.state !== "running") return;
     const source = context.createBufferSource();
     source.buffer = decoded;
@@ -126,6 +141,6 @@ export async function playNotificationSound(
     gain.connect(context.destination);
     source.start();
   } catch {
-    buffers.delete(url);
+    // A failed sample stays silent; loadNotificationBuffer retries it next time.
   }
 }

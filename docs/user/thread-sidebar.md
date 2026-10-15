@@ -294,22 +294,17 @@ preferences become T3 completion, and Avanti stays Avanti, with notifications an
 sound enabled. An existing None preference stays off. Any previously saved
 notification mode takes precedence over this migration.
 
-### PR announcer
+### PR announcements
 
-On web and desktop, enable **Announcer** under **Settings → General** with
-**Notification sounds** on to hear railway-style announcements for linked pull
-requests. It announces merges, closures, failed checks, merge conflicts,
-requested changes, and delays behind an open lower layer in a known stack.
-It starts with changes observed after you connect; opening the app does not
-replay existing PR states. Updates arrive through the environment's normal PR
-refreshes while the app is open.
+On web and desktop, turn on **PR announcements** under **Settings → General →
+Notification sounds** to hear railway-style announcements for linked pull
+requests: merges, closures, failed checks, merge conflicts, requested changes,
+and delays behind an open lower layer in a stack. The speaker button plays a
+sample, stepping through the announcements on each press.
 
-Use **Preview** with a PR number to hear the recorded voice spell its digits,
-or **Announcer v4** to compare the original examples. Several PRs play in order
-with one closing chime after the queue finishes. **Stop** clears playback and
-the queue; turning off Announcer or Notification sounds also stops it.
-"Ready to depart" and merge-queue problems are available as previews while
-their live signals are not yet supported. Native mobile playback is not available.
+Only changes observed while the app is open are announced; opening the app does
+not replay existing PR states. Several PRs play in turn between one opening and
+one closing chime. Use **Stop** on the announcement toast to silence it.
 
 ## Snooze until later
 

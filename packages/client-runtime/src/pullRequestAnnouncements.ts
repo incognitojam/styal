@@ -1,15 +1,16 @@
 import type { ThreadPullRequestLink, ThreadPullRequestSnapshot } from "@t3tools/contracts";
 import { normalizeThreadPullRequestKey } from "@t3tools/shared/threadPullRequests";
 
-export type PullRequestAnnouncementKind =
-  | "ready"
-  | "arrived"
-  | "ci-failure"
-  | "merge-conflict"
-  | "stack-delayed"
-  | "changes-requested"
-  | "cancelled"
-  | "queue-failure";
+/** What the announcer can say live, in the order the settings preview steps through them. */
+export const PULL_REQUEST_ANNOUNCEMENT_KINDS = [
+  "arrived",
+  "ci-failure",
+  "merge-conflict",
+  "stack-delayed",
+  "changes-requested",
+  "cancelled",
+] as const;
+export type PullRequestAnnouncementKind = (typeof PULL_REQUEST_ANNOUNCEMENT_KINDS)[number];
 
 export interface PullRequestAnnouncement {
   readonly key: string;
@@ -23,22 +24,19 @@ interface PullRequestAnnouncementSource {
   readonly links: ReadonlyArray<ThreadPullRequestLink>;
 }
 
-// Wording from Claude's v4 recordings; numbers are always spoken digit by digit.
+/** The written form of an announcement, shown while it plays; the recording reads the number digit by digit. */
 export function pullRequestAnnouncementText(number: number, kind: PullRequestAnnouncementKind) {
-  const digits = String(number).split("").join(" ");
   const prefix =
     kind === "cancelled"
-      ? `We are sorry to announce that pull request ${digits}`
-      : `Pull request ${digits}`;
+      ? `We are sorry to announce that pull request #${number}`
+      : `Pull request #${number}`;
   const endings = {
-    ready: "is ready to depart. It is awaiting a member of train crew.",
     arrived: "has arrived.",
     "ci-failure": "is delayed. This is due to a CI failure.",
     "merge-conflict": "is delayed. This is due to a merge conflict.",
     "stack-delayed": "is delayed. This is due to a slower running train ahead.",
     "changes-requested": "is being held at a red signal.",
     cancelled: "has been cancelled.",
-    "queue-failure": "is delayed. This is due to a problem in the merge queue.",
   } satisfies Record<PullRequestAnnouncementKind, string>;
   return `${prefix} ${endings[kind]}`;
 }

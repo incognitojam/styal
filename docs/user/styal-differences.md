@@ -207,10 +207,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   styal lets you independently select and preview those sounds, Avanti, or Departures for
   completion, input, and approval alerts, or silence an event. Sounds are on by default; T3 Code
   starts with alerts off. [Completion sounds](./thread-sidebar.md#completion-sounds).
-- **A PR announcer on web and desktop.** Optional railway announcements read linked PR
-  updates and speak their numbers digit by digit. T3 Code has no equivalent as of
+- **PR announcements on web and desktop.** Optional railway-style announcements speak
+  linked PR merges, closures, and blockers. T3 Code has no equivalent as of
   [revision 42da166](https://github.com/pingdotgg/t3code/tree/42da166d131017335a1158d0b379dd68b8985796).
-  [PR announcer](./thread-sidebar.md#pr-announcer).
+  [PR announcements](./thread-sidebar.md#pr-announcements).
 - **Relevant outage notices.** Sidebar notices surface GitHub, Claude, and OpenAI incidents relevant
   to your projects and providers. Alerts are configurable.
   [GitHub](./source-control.md), [Claude](./providers-claude.md),

@@ -6,6 +6,7 @@ import {
   type NotificationSound,
 } from "@t3tools/contracts/settings";
 
+import { announcerPlayer } from "../../announcer";
 import {
   hasDesktopNotifications,
   hasNotificationSound,
@@ -21,7 +22,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsRow, SettingsSubRow, SettingsSubRows, SettingResetButton } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-import { AnnouncerPreview } from "./AnnouncerPreview";
 
 const SOUND_SETTINGS = [
   { key: "completionSound", id: "completion-sound", label: "Completion sound", kind: "completion" },
@@ -197,9 +197,45 @@ export function NotificationSettings() {
               }
             />
           ))}
+          <SettingsSubRow
+            {...searchableSetting("pr-announcements")}
+            disabled={!soundEnabled}
+            description="Railway-style announcements when a linked pull request merges, closes, fails checks, or is held up."
+            control={
+              <>
+                <Switch
+                  checked={settings.pullRequestAnnouncerEnabled}
+                  disabled={!soundEnabled}
+                  onCheckedChange={(checked) => {
+                    void unlockNotificationAudio();
+                    updateSettings({ pullRequestAnnouncerEnabled: checked });
+                  }}
+                  aria-label="PR announcements"
+                />
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost-muted"
+                        size="icon-sm"
+                        aria-label="Preview PR announcements"
+                        disabled={!soundEnabled}
+                        onClick={async () => {
+                          await unlockNotificationAudio();
+                          announcerPlayer.preview();
+                        }}
+                      >
+                        <Volume2Icon />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="top">Preview</TooltipPopup>
+                </Tooltip>
+              </>
+            }
+          />
         </SettingsSubRows>
       </SettingsRow>
-      <AnnouncerPreview />
     </>
   );
 }
