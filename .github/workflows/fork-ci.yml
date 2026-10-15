@@ -275,6 +275,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: browser-calibration-${{ matrix.platform }}
+          include-hidden-files: true
           path: |
             .scratch/preview-calibration/*.png
             .scratch/preview-calibration/measurements.json

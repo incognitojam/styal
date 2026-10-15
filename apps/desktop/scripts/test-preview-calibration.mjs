@@ -13,7 +13,7 @@ const desktopDir = NodeURL.fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = NodePath.resolve(desktopDir, "../..");
 const outputDir = NodePath.join(repoRoot, ".scratch", "preview-calibration");
 const require = NodeModule.createRequire(NodePath.join(desktopDir, "package.json"));
-const ignored = NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch"], {
+const ignored = NodeChildProcess.spawnSync("git", ["check-ignore", "-q", ".scratch/"], {
   cwd: repoRoot,
 });
 if (ignored.status !== 0)
