@@ -243,7 +243,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   preferences in a separate step.[^import-comparison] Credentials and active sessions remain separate.
   [Import T3 Code data](./importing-t3-code-data.md).
 
-## Desktop updates
+## App updates
+
+- **Refresh when a new web build is available.** The web app and previews detect a new deployment
+  and offer a refresh when you are ready, keeping your composer text drafts and saved connections.
+  T3 Code has no deployment refresh notice as of
+  [revision 42da166](https://github.com/pingdotgg/t3code/tree/42da166d131017335a1158d0b379dd68b8985796).
+  [Web app updates](./updating.md#web-app-updates).
 
 - **Updates ready for your next launch.** styal downloads updates in the background and installs
   them when you quit. The sidebar shows an icon only when you can restart to update immediately;
