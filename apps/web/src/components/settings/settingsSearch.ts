@@ -386,6 +386,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
+    id: "announcer-preview",
+    title: "Announcer v4",
+    to: "/settings/general",
+    searchTerms: ["announcer departures railway pull request audio sound preview"],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

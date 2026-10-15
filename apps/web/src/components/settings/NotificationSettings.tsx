@@ -21,6 +21,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsRow, SettingsSubRow, SettingsSubRows, SettingResetButton } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import { AnnouncerPreview } from "./AnnouncerPreview";
 
 const SOUND_SETTINGS = [
   { key: "completionSound", id: "completion-sound", label: "Completion sound", kind: "completion" },
@@ -198,6 +199,7 @@ export function NotificationSettings() {
           ))}
         </SettingsSubRows>
       </SettingsRow>
+      <AnnouncerPreview />
     </>
   );
 }
