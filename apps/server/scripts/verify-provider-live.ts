@@ -405,8 +405,8 @@ function inspect(
   }
 }
 
-/** Mints a WebSocket ticket and builds a fresh RPC protocol for the current server. */
-async function connect(headers: Record<string, string>) {
+/** Mints a single-use WebSocket ticket and returns the socket URL that carries it. */
+async function mintSocketUrl(headers: Record<string, string>): Promise<string> {
   const ticketResponse = await fetch(`${origin}/api/auth/websocket-ticket`, {
     method: "POST",
     headers,
@@ -415,9 +415,19 @@ async function connect(headers: Record<string, string>) {
   const ticket = Schema.decodeUnknownSync(Schema.Struct({ ticket: Schema.String }))(
     await ticketResponse.json(),
   );
-  const socket = Socket.layerWebSocket(
-    `${origin.replace("http:", "ws:")}/ws?orchestrationProtocol=${ORCHESTRATION_PROTOCOL_VERSION}&wsTicket=${encodeURIComponent(ticket.ticket)}`,
-  ).pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal));
+  return `${origin.replace("http:", "ws:")}/ws?orchestrationProtocol=${ORCHESTRATION_PROTOCOL_VERSION}&wsTicket=${encodeURIComponent(ticket.ticket)}`;
+}
+
+/**
+ * Builds a fresh RPC protocol for the current server. The RPC client reconnects
+ * after an idle drop, so each connection attempt mints its own ticket; a reused
+ * ticket would never open.
+ */
+async function connect(headers: Record<string, string>) {
+  const socketUrl = Effect.promise(() => mintSocketUrl(headers));
+  const socket = Socket.layerWebSocket(socketUrl).pipe(
+    Layer.provide(Socket.layerWebSocketConstructorGlobal),
+  );
   return RpcClient.layerProtocolSocket().pipe(
     Layer.provide(socket),
     Layer.provide(RpcSerialization.layerJson),
@@ -879,7 +889,12 @@ try {
               `This is an automated provider check. Run this exact shell command: echo rewind > ${rewindFile}\nThen reply with DONE.`,
               "full-access",
               // File restore is refused in a checkout other threads share, so use a worktree.
-              { type: "worktree", baseRef: projectBranch },
+              // A named branch skips the model-generated rename, which is not under test.
+              {
+                type: "worktree",
+                baseRef: projectBranch,
+                branch: `canary/rewind-${NodeCrypto.randomUUID().slice(0, 8)}`,
+              },
             );
             const turn = yield* waitForRunEnd(threadId, messageId, "the turn to rewind");
             if (turn.run.status !== "completed") fail(`Run ended ${turn.run.status}`);
