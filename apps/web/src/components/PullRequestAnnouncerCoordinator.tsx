@@ -89,7 +89,8 @@ export function PullRequestAnnouncerCoordinator() {
       description: <AnnouncementBoard lines={playback.lines} />,
       timeout: 0,
       actionProps: { children: "Stop", onClick: () => announcerPlayer.stop() },
-      data: { hideCopyButton: true },
+      // Dismissing the board silences it too, so playback never continues without its toast.
+      data: { hideCopyButton: true, onClose: () => announcerPlayer.stop() },
     };
     if (toastId.current === null) toastId.current = toastManager.add(options);
     else toastManager.update(toastId.current, options);
