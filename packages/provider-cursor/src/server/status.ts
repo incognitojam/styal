@@ -27,6 +27,8 @@ const CURSOR_PRESENTATION = {
   displayName: "Cursor",
   supportsConversationRollback: false,
   showInteractionModeToggle: true,
+  // Auto runs Cursor's Auto-review on each action.
+  reviewsAutoMode: true,
 } as const;
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],

@@ -3187,7 +3187,7 @@ features:
     prs: [928, 930, 943]
     invariants:
       - The built-in default permission mode for new threads stays Full access, as upstream; Auto as the default is the user's choice.
-      - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, and Grok report one. An unloaded snapshot or an older server counts as no reviewer.
+      - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, Cursor, and Grok report one. An unloaded snapshot or an older server counts as no reviewer.
       - Web and mobile drafts follow their selected provider until the user picks a mode; the server's bootstrap thread uses the same resolution. Picking Auto for one thread keeps Auto on every provider.
       - The provider canary's auto scenario fails a release whose Auto turn asks for approval of a routine workspace write, or whose provider does not report applying Auto; providers without reviewsAutoMode skip it.
       - provider.turn.completed reports approvalRequests, the command, file, and permission approvals the turn raised, alongside its runtimeMode.
@@ -3206,6 +3206,7 @@ features:
       - packages/contracts/src/server.ts
       - packages/provider-core/src/server/ProviderAdapter.ts
       - packages/provider-core/src/server/snapshotProbe.ts
+      - packages/provider-cursor/src/server/status.ts
       - packages/provider-grok/src/server/status.ts
     upstream_paths:
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
