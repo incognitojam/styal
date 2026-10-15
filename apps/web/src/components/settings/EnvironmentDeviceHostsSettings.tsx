@@ -130,7 +130,8 @@ function SharedDevices(props: {
   const clientUrl = useEnvironmentHttpBaseUrl(device.environmentId);
   const linkUrl = useRelayEnvironmentDiscovery().environments.get(device.environmentId)?.environment
     .endpoint.httpBaseUrl;
-  // The desktop advertises all addresses; its saved default only sets their order.
+  // The desktop's Network settings add its saved default, which only sets the
+  // order, and its other addresses as fallbacks after the reported ones.
   const isDesktopServer =
     device.environmentId === usePrimaryEnvironmentId() && window.desktopBridge !== undefined;
   const networkAccess = useEnvironmentQuery(isDesktopServer ? desktopNetworkAccessStateAtom : null);
@@ -142,12 +143,13 @@ function SharedDevices(props: {
         defaultEndpointKey,
       )
     : null;
-  const addresses = deviceSharingAddresses(
+  const addresses = deviceSharingAddresses({
     clientUrl,
-    networkAccess.data?.advertisedEndpoints,
+    directEndpoints: device.serverConfig?.directEndpoints,
+    desktopEndpoints: networkAccess.data?.advertisedEndpoints,
     desktopDefaultEndpoint,
-    linkUrl ? [linkUrl] : [],
-  );
+    linkUrl,
+  });
   const deviceState = useDeviceState(device.environmentId);
   return (
     <div>

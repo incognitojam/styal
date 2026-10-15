@@ -3,6 +3,7 @@ import {
   type DeviceToolVersions,
   type EnvironmentDeviceHostConfig,
   type EnvironmentId,
+  type ServerDirectEndpoint,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
@@ -197,26 +198,37 @@ export function deviceSharingErrorMessage(cause: Cause.Cause<unknown>) {
     : "Device access could not be changed. Reconnect both environments and try again.";
 }
 
-/** Addresses the agent environment can try, with the client's address first. */
-export function deviceSharingAddresses(
-  clientUrl: string | null,
-  endpoints: ReadonlyArray<AdvertisedEndpoint> = [],
-  desktopDefaultEndpoint?: AdvertisedEndpoint | null,
-  additionalUrls: ReadonlyArray<string> = [],
-): readonly [string, ...string[]] | null {
+const usableDesktopEndpoint = (endpoint: AdvertisedEndpoint) =>
+  endpoint.status !== "unavailable" && endpoint.reachability !== "loopback";
+
+/**
+ * Addresses the agent environment can try for the device environment, in
+ * order: the client's own address, the desktop app's default network address,
+ * the LAN and tailnet addresses the device environment's server reports
+ * listening on, the desktop app's other network addresses, then styal Link.
+ */
+export function deviceSharingAddresses(input: {
+  readonly clientUrl: string | null;
+  /** `directEndpoints` from the device environment's server config. */
+  readonly directEndpoints?: ReadonlyArray<ServerDirectEndpoint> | undefined;
+  /** Only for the desktop app's own server, from its Network settings. */
+  readonly desktopEndpoints?: ReadonlyArray<AdvertisedEndpoint> | undefined;
+  readonly desktopDefaultEndpoint?: AdvertisedEndpoint | null | undefined;
+  readonly linkUrl?: string | undefined;
+}): readonly [string, ...string[]] | null {
   const urls = new Set<string>();
   const candidates = [
-    clientUrl,
-    desktopDefaultEndpoint?.status !== "unavailable" &&
-    desktopDefaultEndpoint?.reachability !== "loopback"
-      ? desktopDefaultEndpoint?.httpBaseUrl
+    input.clientUrl,
+    input.desktopDefaultEndpoint && usableDesktopEndpoint(input.desktopDefaultEndpoint)
+      ? input.desktopDefaultEndpoint.httpBaseUrl
       : null,
-    ...endpoints
-      .filter(
-        (endpoint) => endpoint.status !== "unavailable" && endpoint.reachability !== "loopback",
-      )
+    ...(input.directEndpoints ?? []).map((endpoint) => endpoint.httpBaseUrl),
+    // Desktop addresses stay as fallbacks: a LAN hostname override, a custom
+    // address, or an older server without reported addresses has no other source.
+    ...(input.desktopEndpoints ?? [])
+      .filter(usableDesktopEndpoint)
       .map((endpoint) => endpoint.httpBaseUrl),
-    ...additionalUrls,
+    input.linkUrl,
   ];
   for (const candidate of candidates) {
     if (!candidate) continue;
