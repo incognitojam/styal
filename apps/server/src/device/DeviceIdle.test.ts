@@ -48,6 +48,7 @@ const fixture = Effect.fn("fixture")(function* (
     enableAgentDeviceAccess: true,
   });
   const releaseError = yield* Ref.make<string | null>(null);
+  const sessionErrors = new Map<string, string>();
   const busy = new Set<string>();
   const releasedNames = yield* Ref.make<ReadonlyArray<string>>([]);
   const ledgerSaves = { count: 0 };
@@ -87,7 +88,7 @@ const fixture = Effect.fn("fixture")(function* (
         );
         calls.push(`release ${body.params.session}`);
         if (options.gate) yield* Deferred.await(options.gate);
-        const code = yield* Ref.get(releaseError);
+        const code = sessionErrors.get(body.params.session) ?? (yield* Ref.get(releaseError));
         return HttpClientResponse.fromWeb(
           request,
           code === null
@@ -177,6 +178,7 @@ const fixture = Effect.fn("fixture")(function* (
     ...idle,
     settings,
     releaseError,
+    sessionErrors,
     daemonRunning,
     starts,
     calls,
@@ -288,6 +290,61 @@ describe("hand-back", () => {
       yield* Ref.set(daemonRunning, false);
       yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
       expect(calls.filter((call) => call === release("thread-1"))).toHaveLength(3);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("retries later session names after an earlier session was already absent", () =>
+    Effect.gen(function* () {
+      const { service, calls, sessionErrors } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      yield* agentOpen(service, threadId, "emulator-5554");
+      sessionErrors.set(sessionName("thread-1"), "SESSION_NOT_FOUND");
+      sessionErrors.set(sessionName("thread-1", "emulator-5554"), "DOWN");
+      yield* service.close({ threadId });
+
+      sessionErrors.delete(sessionName("thread-1", "emulator-5554"));
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      expect(calls).toEqual([
+        release("thread-1"),
+        release("thread-1", "emulator-5554"),
+        release("thread-1", "emulator-5554"),
+        "shutdown",
+      ]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("reopening does not confirm cleanup of an unresolved session", () =>
+    Effect.gen(function* () {
+      const { service, calls, releaseError } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      yield* Ref.set(releaseError, "CLEANUP_FAILED");
+      yield* service.close({ threadId });
+      yield* Ref.set(releaseError, "SESSION_NOT_FOUND");
+      yield* agentOpen(service, threadId, "emulator-5554");
+      yield* service.close({ threadId });
+      const attempted = calls.filter((call) => call === release("thread-1")).length;
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      expect(calls.filter((call) => call === release("thread-1"))).toHaveLength(attempted + 1);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("an uncertain missing session does not block cleanup of later sessions", () =>
+    Effect.gen(function* () {
+      const { service, calls, sessionErrors } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      yield* agentOpen(service, threadId, "emulator-5554");
+      sessionErrors.set(sessionName("thread-1"), "CLEANUP_FAILED");
+      sessionErrors.set(sessionName("thread-1", "emulator-5554"), "DOWN");
+      yield* service.close({ threadId });
+      sessionErrors.set(sessionName("thread-1"), "SESSION_NOT_FOUND");
+      sessionErrors.delete(sessionName("thread-1", "emulator-5554"));
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      expect(calls.filter((call) => call === release("thread-1"))).toHaveLength(3);
+      expect(calls.filter((call) => call === release("thread-1", "emulator-5554"))).toHaveLength(2);
     }).pipe(Effect.scoped),
   );
 

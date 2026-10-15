@@ -279,19 +279,20 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       ? Effect.succeed(false)
       : options.threadBusy(hold.threadId).pipe(Effect.map((busy) => !busy));
 
-  /** Ends the hold's agent-device sessions. Succeeds when none is left on the daemon. */
+  /** Attempts every session independently and returns only names whose cleanup remains uncertain. */
   const releaseClaim = Effect.fn("DeviceIdle.releaseClaim")(function* (
     hold: Hold,
-    retrying: boolean,
+    uncertain: ReadonlySet<string>,
   ) {
     // Peer sessions run on this environment's own daemon.
     const endpoint = yield* options.agentEndpoint(
       hold.threadId.startsWith(PEER_THREAD_PREFIX) ? LOCAL_DEVICE_HOST_ID : hold.hostId,
     );
     // No daemon means no claims: they belong to the daemon that is gone.
-    if (!endpoint) return;
+    if (!endpoint) return [];
+    const pending: string[] = [];
     for (const name of hold.names) {
-      const reply = yield* HttpClientRequest.post(`${endpoint.baseUrl}/rpc`).pipe(
+      const result = yield* HttpClientRequest.post(`${endpoint.baseUrl}/rpc`).pipe(
         HttpClientRequest.bearerToken(endpoint.token),
         HttpClientRequest.setHeader("x-agent-device-token", endpoint.token),
         HttpClientRequest.bodyJson({
@@ -304,45 +305,42 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
         Effect.flatMap(HttpClientResponse.schemaBodyJson(AgentDeviceRpcReply)),
         Effect.scoped,
         Effect.timeout(RELEASE_TIMEOUT),
+        Effect.result,
       );
-      // A session no command used again is already gone.
-      if ("result" in reply ? !reply.result.ok : reply.error.data?.code !== "SESSION_NOT_FOUND")
-        return yield* Effect.fail(reply);
-      // A close that failed during platform cleanup can drop the session but keep its claim.
-      if (retrying && "error" in reply) {
-        yield* Effect.logWarning("Device claim may stay held until its daemon restarts", {
+      const reply = result._tag === "Success" ? result.success : null;
+      const absent =
+        reply !== null && "error" in reply && reply.error.data?.code === "SESSION_NOT_FOUND";
+      if (reply && ("result" in reply ? reply.result.ok : absent && !uncertain.has(name))) continue;
+      // Failed platform cleanup can remove the session while retaining its claim.
+      // Keep that uncertainty per name, without preventing cleanup of later names.
+      pending.push(name);
+      yield* Effect.logWarning(
+        absent
+          ? "Device claim may stay held until its daemon restarts"
+          : "Could not release device session; will retry",
+        {
           threadId: hold.threadId,
           hostId: hold.hostId,
           deviceId: hold.deviceId,
-        });
-        return yield* Effect.fail(reply);
-      }
+          session: name,
+          cause: result._tag === "Failure" ? result.failure : reply,
+        },
+      );
     }
+    return pending;
   });
 
-  /** Releases a hold. A claim the daemon does not confirm is kept for the next reclaim or power-off. */
-  const release = (hold: Hold) =>
-    setReleased(hold.names, true).pipe(
-      Effect.andThen(
-        releaseClaim(hold, unreleased.has(holdKey(hold.threadId, hold.hostId, hold.deviceId))),
-      ),
-      Effect.result,
-      Effect.flatMap((result) => {
-        const key = holdKey(hold.threadId, hold.hostId, hold.deviceId);
-        holds.delete(key);
-        if (result._tag === "Success") {
-          unreleased.delete(key);
-          return Effect.void;
-        }
-        unreleased.set(key, hold);
-        return Effect.logWarning("Could not release device; will retry", {
-          threadId: hold.threadId,
-          hostId: hold.hostId,
-          deviceId: hold.deviceId,
-          cause: result.failure,
-        });
-      }),
-    );
+  /** Releases a hold, retaining only unconfirmed session names for the next hand-over or power-off. */
+  const release = Effect.fn("DeviceIdle.release")(function* (hold: Hold) {
+    const key = holdKey(hold.threadId, hold.hostId, hold.deviceId);
+    const uncertain = new Set(unreleased.get(key)?.names ?? []);
+    const names = [...new Set([...hold.names, ...uncertain])];
+    yield* setReleased(names, true);
+    const pending = yield* releaseClaim({ ...hold, names }, uncertain);
+    holds.delete(key);
+    if (pending.length > 0) unreleased.set(key, { ...hold, names: pending });
+    else unreleased.delete(key);
+  });
 
   /** Retries claims on a device whose release was not confirmed. */
   const retryUnreleased = (hostId: string, deviceId: string) =>
@@ -439,7 +437,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
             ...(holds.get(opened)?.names ?? []),
             ...(unreleased.get(opened)?.names ?? []),
           ];
-          unreleased.delete(opened);
+          // Reissuing launcher permission does not confirm earlier daemon cleanup.
           holds.set(opened, {
             threadId: session.threadId,
             hostId: session.hostId,
