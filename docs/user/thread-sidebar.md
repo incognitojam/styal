@@ -298,8 +298,10 @@ notification mode takes precedence over this migration.
 
 On web and desktop, turn on **PR announcements** under **Settings → General →
 Notification sounds** to hear railway-style announcements for linked pull
-requests: merges, closures, failed checks, merge conflicts, requested changes,
-and delays behind an open lower layer in a stack. The speaker button plays a
+requests: checks passing on a pull request that is waiting for you, merges,
+closures, failed checks, merge conflicts, requested changes, and delays behind an
+open lower layer in a stack. A pull request with auto-merge turned on, or already
+in a merge queue, is announced when it merges rather than when its checks pass. The speaker button plays a
 sample, stepping through the announcements on each press.
 
 Only changes observed while the app is open are announced; opening the app does

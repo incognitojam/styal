@@ -3,6 +3,7 @@ import { normalizeThreadPullRequestKey } from "@t3tools/shared/threadPullRequest
 
 /** What the announcer can say live, in the order the settings preview steps through them. */
 export const PULL_REQUEST_ANNOUNCEMENT_KINDS = [
+  "ready",
   "arrived",
   "ci-failure",
   "merge-conflict",
@@ -31,6 +32,7 @@ export function pullRequestAnnouncementText(number: number, kind: PullRequestAnn
       ? `We are sorry to announce that pull request #${number}`
       : `Pull request #${number}`;
   const endings = {
+    ready: "is ready to depart. It is awaiting a member of train crew.",
     arrived: "has arrived.",
     "ci-failure": "is delayed. This is due to a CI failure.",
     "merge-conflict": "is delayed. This is due to a merge conflict.",
@@ -51,6 +53,23 @@ interface Observation {
   readonly kind: PullRequestAnnouncementKind | null;
 }
 
+/** The single announcement a PR's current state warrants, most decisive first. */
+function announcementKind(
+  snapshot: ThreadPullRequestSnapshot,
+  blockedByStack: boolean,
+): PullRequestAnnouncementKind | null {
+  if (snapshot.state === "merged") return "arrived";
+  if (snapshot.state === "closed") return "cancelled";
+  if (snapshot.isDraft) return null;
+  if (snapshot.mergeability === "conflicting") return "merge-conflict";
+  if (snapshot.checksState === "failing") return "ci-failure";
+  if (snapshot.reviewDecision === "changes-requested") return "changes-requested";
+  if (snapshot.checksState !== "passing") return null;
+  if (blockedByStack) return "stack-delayed";
+  // An armed auto-merge or a queued merge needs nobody; its arrival is the news.
+  return snapshot.autoMergeEnabled === true || snapshot.inMergeQueue === true ? null : "ready";
+}
+
 function observe(link: ThreadPullRequestLink, previous?: Observation): Observation | null {
   if (link.snapshot === null) return null;
   const incoming = link.snapshot;
@@ -69,24 +88,8 @@ function observe(link: ThreadPullRequestLink, previous?: Observation): Observati
   };
   const layer = link.stack?.layers.findIndex((item) => item.number === link.number) ?? -1;
   const blockedByStack =
-    layer > 0 && link.stack?.layers.slice(0, layer).some((item) => item.state === "open");
-  const kind =
-    snapshot.state === "merged"
-      ? "arrived"
-      : snapshot.state === "closed"
-        ? "cancelled"
-        : snapshot.isDraft
-          ? null
-          : snapshot.mergeability === "conflicting"
-            ? "merge-conflict"
-            : snapshot.checksState === "failing"
-              ? "ci-failure"
-              : snapshot.reviewDecision === "changes-requested"
-                ? "changes-requested"
-                : snapshot.checksState === "passing" && blockedByStack
-                  ? "stack-delayed"
-                  : null;
-  return { snapshot, kind };
+    layer > 0 && link.stack!.layers.slice(0, layer).some((item) => item.state === "open");
+  return { snapshot, kind: announcementKind(snapshot, blockedByStack) };
 }
 
 function isNewTransition(previous: Observation, next: Observation) {
@@ -112,6 +115,9 @@ function isNewTransition(previous: Observation, next: Observation) {
       );
     case "stack-delayed":
       return true;
+    // Waiting on a person, whether checks just passed or a blocker just cleared.
+    case "ready":
+      return previous.snapshot.checksState !== undefined;
     default:
       return false;
   }

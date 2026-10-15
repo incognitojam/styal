@@ -200,7 +200,7 @@ export function NotificationSettings() {
           <SettingsSubRow
             {...searchableSetting("pr-announcements")}
             disabled={!soundEnabled}
-            description="Railway-style announcements when a linked pull request merges, closes, fails checks, or is held up."
+            description="Railway-style announcements when a linked pull request is ready for you, merges, closes, fails checks, or is held up."
             control={
               <>
                 <Switch

@@ -16,6 +16,7 @@ output.mkdir(parents=True, exist_ok=True)
 phrases = {
     'prefix': 'Pull request',
     'cancelled-prefix': 'We are sorry to announce that pull request',
+    'ready': 'is ready to depart. It is awaiting a member of train crew.',
     'arrived': 'has arrived.',
     'ci-failure': 'is delayed. This is due to a CI failure.',
     'merge-conflict': 'is delayed. This is due to a merge conflict.',
