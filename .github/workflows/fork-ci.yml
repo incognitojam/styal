@@ -118,7 +118,7 @@ jobs:
             --head "$GITHUB_SHA"
 
   # Lint, typecheck, and the desktop build each get a runner so they run side by
-  # side instead of one after another. `Fork Check` passes only when all three do.
+  # side instead of one after another. `Fork Check` also requires browser calibration.
   lint:
     name: Fork Lint
     needs: changes
@@ -242,22 +242,79 @@ jobs:
       - name: Verify preload bundle output
         run: node apps/desktop/scripts/verify-preload-bundle.mjs
 
+  preview_calibration:
+    name: Fork Browser Calibration (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.run_ci == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            runner: ubuntu-24.04
+          - platform: macOS
+            runner: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Install Electron display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0 libnss3 libasound2t64 libgbm1
+
+      - name: Setup cached dependencies
+        uses: ./.github/actions/setup-deps
+
+      - name: Ignore calibration artifacts
+        run: echo '.scratch/' >> .git/info/exclude
+
+      - name: Capture calibration snapshots (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a vp run --filter @t3tools/desktop test:preview-calibration
+
+      - name: Capture calibration snapshots (macOS)
+        if: runner.os == 'macOS'
+        run: vp run --filter @t3tools/desktop test:preview-calibration
+
+      - name: Upload calibration snapshots and measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-calibration-${{ matrix.platform }}
+          include-hidden-files: true
+          path: |
+            .scratch/preview-calibration/*.png
+            .scratch/preview-calibration/measurements.json
+          if-no-files-found: ignore
+          retention-days: 14
+
   # Rulesets require this job by its name, `Fork Check`.
   check:
     name: Fork Check
-    needs: [changes, lint, typecheck, build]
+    needs: [changes, lint, typecheck, build, preview_calibration]
     if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Require change classification and ledger validation to pass
         run: test '${{ needs.changes.result }}' = success
 
-      - name: Require lint, typecheck, and build to pass
+      - name: Require lint, typecheck, build, and browser calibration to pass
         if: needs.changes.outputs.run_ci == 'true'
         run: |
           test '${{ needs.lint.result }}' = success
           test '${{ needs.typecheck.result }}' = success
           test '${{ needs.build.result }}' = success
+          test '${{ needs.preview_calibration.result }}' = success
 
   test_server:
     name: Fork Test (Server ${{ matrix.shard }}/${{ strategy.job-total }})
