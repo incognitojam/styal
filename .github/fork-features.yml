@@ -827,7 +827,6 @@ features:
       - apps/server/src/dataImport/LegacyImportPreview.test.ts
       - apps/server/src/dataImport/LegacyImportTurnPromptLinks.test.ts
       - apps/server/src/dataImport/V2HistoryImport.test.ts
-      - apps/server/src/orchestration-v2/Orchestrator.imported-handoff.test.ts
       - apps/server/src/orchestration-v2/legacy/legacyPayloadEncoding.test.ts
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
       - apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
