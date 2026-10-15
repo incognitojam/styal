@@ -22,16 +22,18 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
   const single = hosts.length === 1 ? hosts[0]! : null;
   const unchecked = hosts.filter((host) => host.activity === null);
   const { concern, lines, incomplete } = describeHostActivity(
-    // Continuation is chosen per host, so continuable threads only count on
-    // hosts that asked for it.
-    hosts.map(({ activity, continueRunningThreads }) =>
-      activity && !continueRunningThreads ? { ...activity, continuableSessions: 0 } : activity,
+    hosts.map(
+      ({ activity, continueRunningThreads, serverLabel }) =>
+        activity && {
+          ...activity,
+          continueRunningThreads,
+          ...(hosts.length > 1 ? { hostLabel: serverLabel } : {}),
+        },
     ),
     {
       uncheckedHostsLine: single
         ? `Could not check the ${single.serverLabel} for running work.`
         : `Could not check ${labels(unchecked)} for running work.`,
-      continueRunningThreads: true,
     },
   );
   const desktopApps = hosts.filter((host) => host.desktopApp);

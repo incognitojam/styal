@@ -1,6 +1,7 @@
 import { HostActivity } from "@t3tools/contracts";
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
 import { describeHostActivity, hostActivityQuestion } from "@t3tools/shared/hostActivity";
+import type { HostActivityCheck } from "@t3tools/shared/hostActivity";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -12,7 +13,7 @@ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
 
 export type ShutdownAction = "quit" | "restart";
-export type ActivityCheck = HostActivity | null;
+export type ActivityCheck = HostActivityCheck | null;
 
 export function shutdownConfirmation(
   checks: ReadonlyArray<ActivityCheck>,
@@ -32,7 +33,7 @@ export function shutdownConfirmation(
     : lines;
   return {
     message: title ?? `${action === "quit" ? "Quit" : "Restart"}${hostActivityQuestion[concern]}`,
-    detail: `${detail.join("\n")} Make sure you're ready before continuing.`,
+    detail: `${detail.join("\n")}\n\nMake sure you're ready before continuing.`,
     confirmLabel: action === "quit" ? "Quit" : "Restart",
   };
 }
@@ -103,9 +104,13 @@ const make = Effect.gen(function* () {
                   tokens.delete(key);
                   return null;
                 }
-                return yield* response.json.pipe(
+                const activity = yield* response.json.pipe(
                   Effect.flatMap(Schema.decodeUnknownEffect(HostActivity)),
                 );
+                return {
+                  ...activity,
+                  ...(instances.length > 1 ? { hostLabel: yield* instance.label } : {}),
+                };
               }).pipe(
                 Effect.timeout("3 seconds"),
                 Effect.catchCause(() => Effect.succeed(null)),

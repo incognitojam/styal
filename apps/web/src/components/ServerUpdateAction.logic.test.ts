@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { ThreadId } from "@t3tools/contracts";
 
 import { type ServerUpdateHost, serverUpdateConfirmation } from "./ServerUpdateAction.logic";
 
@@ -26,6 +27,34 @@ function host(overrides: Partial<ServerUpdateHost> = {}): ServerUpdateHost {
 }
 
 describe("serverUpdateConfirmation", () => {
+  it("names threads on each server and only promises continuation where requested", () => {
+    const activity = {
+      ...idle,
+      activeSessions: 1,
+      continuableSessions: 1,
+      threads: [
+        {
+          threadId: ThreadId.make("release"),
+          title: "Check the release",
+          projectTitle: "Sample project",
+          reasons: ["running" as const],
+          continuable: true,
+        },
+      ],
+    };
+    const message = serverUpdateConfirmation([
+      host({ serverLabel: "Laptop", activity, continueRunningThreads: true }),
+      host({ serverLabel: "Lab server", activity, continueRunningThreads: false }),
+    ]);
+    expect(message).toContain(
+      "• Check the release (Sample project · Laptop)\n  Running a turn; Continues after restart",
+    );
+    expect(message).toContain(
+      "• Check the release (Sample project · Lab server)\n  Running a turn",
+    );
+    expect(message?.match(/Continues after restart/g)).toHaveLength(1);
+  });
+
   it("does not ask when the server is idle", () => {
     expect(confirmation()).toBeNull();
   });
@@ -40,6 +69,8 @@ describe("serverUpdateConfirmation", () => {
         "Update the Lab server with running work?",
         "2 threads will be interrupted.",
         "1 terminal session will be interrupted.",
+        "",
+        "Thread names and activity reasons are unavailable from this server.",
       ].join("\n"),
     );
   });
@@ -55,6 +86,8 @@ describe("serverUpdateConfirmation", () => {
         "Update the Lab server with running work?",
         "1 thread will be interrupted.",
         "1 thread will continue after the restart.",
+        "",
+        "Thread names and activity reasons are unavailable from this server.",
       ].join("\n"),
     );
   });
@@ -97,6 +130,9 @@ describe("serverUpdateConfirmation", () => {
         "Update the servers on Laptop, Office, Idle with running work?",
         "1 thread will be interrupted.",
         "1 thread will continue after the restart.",
+        "",
+        "Thread names and activity reasons are unavailable for Laptop.",
+        "Thread names and activity reasons are unavailable for Office.",
       ].join("\n"),
     );
   });

@@ -130,14 +130,16 @@ export function ConfirmDialogHost() {
       }}
     >
       <AlertDialogPopup>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{copy.title}</AlertDialogTitle>
-          {copy.description ? (
-            <AlertDialogDescription className="whitespace-pre-line">
-              {copy.description}
-            </AlertDialogDescription>
-          ) : null}
-        </AlertDialogHeader>
+        <div className="min-h-0 overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy.title}</AlertDialogTitle>
+            {copy.description ? (
+              <AlertDialogDescription className="whitespace-pre-line">
+                {copy.description}
+              </AlertDialogDescription>
+            ) : null}
+          </AlertDialogHeader>
+        </div>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button variant={confirmVariant} onClick={onConfirm}>

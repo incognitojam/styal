@@ -663,12 +663,36 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
-/** Fresh host activity; counts cover all clients connected to this environment. */
+export const HostActivityThread = Schema.Struct({
+  threadId: ThreadId,
+  title: Schema.String,
+  projectTitle: Schema.NullOr(Schema.String),
+  reasons: Schema.Array(
+    Schema.Literals([
+      "preparing",
+      "starting",
+      "running",
+      "input",
+      "approval",
+      "waiting",
+      "command",
+      "monitor",
+      "subagent",
+      "background_task",
+    ]),
+  ),
+  continuable: Schema.Boolean,
+});
+export type HostActivityThread = typeof HostActivityThread.Type;
+
+/** Fresh host activity; counts and thread details cover all connected clients. */
 export const HostActivity = Schema.Struct({
   activeSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   /** Active threads that thread continuation resumes after a restart, when enabled. */
   continuableSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   waitingSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Omitted by older servers; an empty list means no affected threads. */
+  threads: Schema.optionalKey(Schema.Array(HostActivityThread)),
   terminalsRequiringConfirmation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   terminalsWithUnknownActivity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   /** Other environments currently using this environment's shared devices. */

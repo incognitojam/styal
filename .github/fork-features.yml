@@ -853,7 +853,7 @@ features:
     invariants:
       - Nightly release previews retain curated highlights and footer filtering while showing newest entries with counts and links to styal releases.
       - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
-      - In-app shutdown dialogs appear only for active or unknown work and name the threads and terminal sessions that will be interrupted; inspection warnings appear only for activity that could not be checked.
+      - In-app shutdown dialogs appear only for active or unknown work and list affected threads with project/environment labels and specific turn, input, approval, or background-work reasons from the same snapshot as the counts; older servers retain counts and explicitly report unavailable details. Terminal activity is counted and inspection warnings appear only for activity that could not be checked.
       - Manual desktop quits and restarts check every owned backend; active or unknown host activity requires confirmation, and cancellation preserves windows and downloaded updates.
       - Shutdown confirmation has one renderer-wide host, including on recovery screens; cancelling an update restart dismisses the request without reopening it. Failed presentation alone arms a subsequent Quit override that preserves cleanup, cannot be consumed by restart actions, and clears when the renderer recovers or displays a dialog.
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
@@ -882,6 +882,7 @@ features:
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
       - apps/web/src/confirmDialog.ts
+      - packages/contracts/src/environmentHttp.ts
       - packages/contracts/src/ipc.ts
       - packages/shared/src/hostActivity.ts
     upstream_paths:
@@ -911,6 +912,7 @@ features:
       - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
       - apps/web/src/confirmDialog.test.ts
       - apps/web/src/state/desktopUpdate.test.ts
+      - packages/contracts/src/environmentHttp.test.ts
       - packages/shared/src/hostActivity.test.ts
     upstream:
       status: partial

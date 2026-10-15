@@ -74,5 +74,18 @@ describe("HostActivity", () => {
       terminalsWithUnknownActivity: 0,
     });
     expect(activity.environmentsUsingDevices).toBe(0);
+    expect(activity.threads).toBeUndefined();
+  });
+
+  it("distinguishes a checked empty thread list from older servers without details", () => {
+    const activity = decodeHostActivity({
+      activeSessions: 0,
+      continuableSessions: 0,
+      waitingSessions: 0,
+      threads: [],
+      terminalsRequiringConfirmation: 0,
+      terminalsWithUnknownActivity: 0,
+    });
+    expect(activity.threads).toEqual([]);
   });
 });
