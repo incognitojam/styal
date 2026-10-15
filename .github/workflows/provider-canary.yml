@@ -7,6 +7,9 @@ name: Provider canary
 on:
   schedule:
     - cron: "17 6 * * *"
+  # TEMPORARY: test runs from the feature branch. Remove before merging.
+  push:
+    branches: [styal/auto-provider-updates]
   workflow_dispatch:
     inputs:
       provider:
@@ -257,7 +260,7 @@ jobs:
   record:
     name: Record verified versions
     needs: [plan, verify]
-    if: ${{ !cancelled() && needs.plan.outputs.has_work == 'true' }}
+    if: ${{ !cancelled() && github.event_name != 'push' && needs.plan.outputs.has_work == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -426,4 +429,5 @@ jobs:
           args=(--run-url "$RUN_URL" --plan "$RUNNER_TEMP/plan/plan.json" --outcomes "$RUNNER_TEMP/canary-outcomes")
           if [[ "$PLAN_RESULT" == failure ]]; then args+=(--failed-job plan); fi
           if [[ "$RECORD_RESULT" == failure ]]; then args+=(--failed-job record); fi
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then args+=(--dry-run); fi
           node scripts/provider-canary.ts report "${args[@]}"
