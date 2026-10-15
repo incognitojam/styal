@@ -210,6 +210,14 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
+/** A provider's user-level transcript cleanup setting, rather than an effective session policy. */
+export const ServerProviderHistoryRetention = Schema.Struct({
+  status: Schema.Literals(["configured", "default"]),
+  days: PositiveInt,
+  settingsPath: TrimmedNonEmptyString,
+});
+export type ServerProviderHistoryRetention = typeof ServerProviderHistoryRetention.Type;
+
 export const ServerProvider = Schema.Struct({
   // Routing key for the configured instance this snapshot represents. This
   // is the only stable identity consumers may use for provider routing.
@@ -278,6 +286,7 @@ export const ServerProvider = Schema.Struct({
   workspaceSnapshots: Schema.optionalKey(Schema.Array(ServerProviderWorkspaceSnapshot)),
   // Absent when the driver has no notion of subscription usage.
   usageLimits: Schema.optional(ServerProviderUsageLimits),
+  historyRetention: Schema.optional(ServerProviderHistoryRetention),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),

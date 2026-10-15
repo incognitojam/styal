@@ -38,6 +38,10 @@ by Usage. Accounts sharing a history directory count once.
 When your app and server support different providers, usage totals may cover only the providers
 your app understands. Update the app to include newly supported providers.
 
+On web and desktop, **View provider history cleanup settings** opens **Settings → Providers**
+for the selected environment. Select a Claude instance to inspect its user-level cleanup rule
+and source file. Provider cleanup can remove session files that contribute to these totals.
+
 On web and desktop, use the environment dropdown to filter costs, tokens, and limits. All
 environments are selected by default. The dropdown shows which environments are still scanning;
 results appear as each one responds.

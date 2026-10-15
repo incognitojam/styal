@@ -68,6 +68,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   without a saved or project model uses Claude Code with Opus 5.5, and Claude is listed first in the
   model picker. T3 Code prefers Codex as of
   [revision ed0f7b9](https://github.com/pingdotgg/t3code/tree/ed0f7b908b2e7b3a22e6fd82a73794c2fe6ee06e).
+
+- **Visible Claude history cleanup rules.** Provider settings show each Claude instance's
+  user-level session cleanup period and source file, with a link from Usage. Compared with
+  [T3 Code revision 42da166](https://github.com/pingdotgg/t3code/tree/42da166d131017335a1158d0b379dd68b8985796).
+  [Claude session history cleanup](./providers-claude.md#session-history-cleanup).
+
 - **Claude Code starts with Opus 5.5.** New Claude Code threads select Opus 5.5 when the installed
   CLI supports it; older installations use an available Claude model. T3 Code defaults to Fable 5.1
   as of [revision f5ef0dd](https://github.com/pingdotgg/t3code/tree/f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc0618).

@@ -58,6 +58,7 @@ import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
+import { ProviderHistorySettings } from "./ProviderHistorySettings";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -1107,6 +1108,10 @@ export function ProviderInstanceCard({
         >
           {runtimeFields}
         </SettingsSection>
+      ) : null}
+
+      {instance.driver === "claudeAgent" ? (
+        <ProviderHistorySettings retention={liveProvider?.historyRetention} />
       ) : null}
 
       <SettingsSection

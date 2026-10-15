@@ -2,6 +2,7 @@ import { ChatGptUsageButton } from "../settings/ChatGptUsageButton";
 import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
+import { Link } from "@tanstack/react-router";
 import {
   ProviderDriverKind,
   USAGE_CONTRACT_VERSION,
@@ -637,6 +638,22 @@ export function UsagePage() {
                     />
                   </div>
                 </section>
+
+                <p className="text-xs text-muted-foreground">
+                  Totals depend on available session files.{" "}
+                  <Link
+                    to="/settings/providers"
+                    search={() => {
+                      const environment =
+                        selectedEnvironments.length === 1 ? selectedEnvironments[0] : undefined;
+                      return environment ? { environmentId: environment.environmentId } : {};
+                    }}
+                    className="underline underline-offset-4 hover:text-foreground"
+                  >
+                    View provider history cleanup settings
+                  </Link>
+                  .
+                </p>
 
                 <section className="flex flex-col gap-2">
                   <h2 className="text-sm font-medium text-foreground">Totals</h2>

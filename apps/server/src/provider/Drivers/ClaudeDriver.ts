@@ -70,6 +70,7 @@ import {
   makeClaudeContinuationGroupKey,
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
+import { readClaudeHistoryRetention } from "./ClaudeHistoryRetention.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
@@ -229,7 +230,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
                   ),
               ),
             ),
-            Effect.map(stampIdentity),
+            Effect.flatMap((snapshot) =>
+              readClaudeHistoryRetention(configDir).pipe(
+                Effect.map((historyRetention) => stampIdentity({ ...snapshot, historyRetention })),
+              ),
+            ),
           ),
         ),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
@@ -248,7 +253,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
             Effect.flatMap((manifest) =>
               makePendingClaudeProvider(settings.provider, resolveClaudeModelCatalog(manifest)),
             ),
-            Effect.map(stampIdentity),
+            Effect.flatMap((snapshot) =>
+              readClaudeHistoryRetention(configDir).pipe(
+                Effect.map((historyRetention) => stampIdentity({ ...snapshot, historyRetention })),
+              ),
+            ),
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
           ),
         checkProvider,
         enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
