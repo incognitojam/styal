@@ -752,7 +752,7 @@ features:
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: review-needed
-    prs: [294, 297, 298, 300, 306, 347, 349, 379, 478]
+    prs: [294, 297, 298, 300, 306, 347, 349, 379, 478, 842]
     rationale: Upstream V2 supplies canonical orchestration and messages-only automatic V1 migration, but the maintained T3 import flow must retain full recorded history and costs. The batch explicitly preserves these values, converts V1 history at the boundary, imports native V2 projections through inert canonical events, and materializes unavailable fork ancestors.
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
