@@ -34,6 +34,7 @@ const CAPABILITIES: PullRequestCapabilities = {
   comment: true,
   actions: [...definition.changeRequestActions],
   mergeMethods: ["merge", "squash", "rebase"],
+  deleteBranch: true,
   updateMethods: ["merge", "rebase"],
   search: true,
   reactions: true,
@@ -72,6 +73,7 @@ export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequest
   return {
     ...(access.canWrite ? { stackRebase: true } : {}),
     actions: [
+      ...(access.canDeleteBranch === true ? (["delete-branch"] as const) : []),
       ...(access.canWrite ? (["merge"] as const) : []),
       // GitHub answers these per pull request: enabling also depends on the repository setting
       // and on there being an unmet requirement, while an author may disable an armed merge even
