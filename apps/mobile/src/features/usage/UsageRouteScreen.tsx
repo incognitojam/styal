@@ -1,3 +1,4 @@
+import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { EnvironmentId, USAGE_CONTRACT_VERSION, type UsageProviderKind } from "@t3tools/contracts";
@@ -31,7 +32,7 @@ import {
   USAGE_EMISSIONS_GRAMS_PER_1K_OUTPUT_TOKENS,
 } from "@t3tools/shared/usageFormat";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Alert, Platform, Pressable, RefreshControl, View } from "react-native";
+import { Alert, Platform, Pressable, RefreshControl, View } from "react-native";
 import Animated, {
   FadeIn,
   ReduceMotion,
@@ -434,7 +435,7 @@ function UsageUpdating({
           pointerEvents="none"
           className="absolute right-4 top-4 h-5 max-w-[55%] flex-row items-center gap-1.5"
         >
-          <ActivityIndicator size="small" colorClassName="accent-adaptive-sky-600-400" />
+          <AppActivityIndicator size="small" colorClassName="accent-adaptive-sky-600-400" />
           <Text className="shrink text-sm text-adaptive-sky-600-400" numberOfLines={1}>
             {label}
           </Text>
