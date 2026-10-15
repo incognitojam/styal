@@ -1,4 +1,5 @@
 import { resolveProviderInteractionMode } from "../../state/legacy-plan-mode";
+import { Toolbar } from "../../components/Toolbar";
 import * as Dialog from "../../components/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
@@ -9,7 +10,7 @@ import {
   pastedTextDisposition,
   replaceTextSelection,
 } from "@t3tools/client-runtime/text-paste";
-import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
+import { NativeStackScreenOptions } from "../../native/StackHeader";
 import {
   CommonActions,
   StackActions,
@@ -1940,13 +1941,13 @@ export function NewTaskDraftScreen(props: {
           title: "New thread",
         }}
       />
-      <NativeHeaderToolbar placement="left">
-        <NativeHeaderToolbar.Button
+      <Toolbar placement="left">
+        <Toolbar.Button
           accessibilityLabel="Cancel new task"
           label="Cancel"
           onPress={closeNewTask}
         />
-      </NativeHeaderToolbar>
+      </Toolbar>
 
       {heroViewport}
       <KeyboardStickyView
