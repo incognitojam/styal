@@ -44,6 +44,7 @@ jobs:
 
           run_ci=true
           ledger_changed=false
+          canary_workflow_changed=false
           changed_files="$RUNNER_TEMP/fork-ci-changed-files.txt"
 
           if git rev-parse --verify "$BASE_SHA^{commit}" >/dev/null 2>&1 &&
@@ -55,6 +56,7 @@ jobs:
               case "$changed_file" in
                 *.md | docs/*) ;;
                 .github/fork-features.yml) ledger_changed=true ;;
+                .github/workflows/provider-canary.yml) canary_workflow_changed=true ;;
                 *) run_ci=true ;;
               esac
             done < "$changed_files"
@@ -64,11 +66,12 @@ jobs:
 
           echo "run_ci=$run_ci" >> "$GITHUB_OUTPUT"
           echo "ledger_changed=$ledger_changed" >> "$GITHUB_OUTPUT"
+          echo "canary_workflow_changed=$canary_workflow_changed" >> "$GITHUB_OUTPUT"
 
-      # Ledger edits need validation and the tests that read the checked-in ledger,
-      # including the Settings badge guard, even when application jobs skip.
-      - name: Setup ledger dependencies
-        if: steps.filter.outputs.run_ci == 'false' && steps.filter.outputs.ledger_changed == 'true'
+      # Standalone maintenance changes keep their own checks without application
+      # builds and tests. All other workflow, action, and source changes run full CI.
+      - name: Setup maintenance-check dependencies
+        if: steps.filter.outputs.run_ci == 'false' && (steps.filter.outputs.ledger_changed == 'true' || steps.filter.outputs.canary_workflow_changed == 'true')
         uses: ./.github/actions/setup-deps
 
       - name: Check ledger-only changes
@@ -77,6 +80,12 @@ jobs:
           vp fmt --check .github/fork-features.yml
           vp run --filter @t3tools/scripts ledger:check
           vp test run scripts/fork-feature-ledger.test.ts apps/web/src/components/settings/forkFeatures.test.ts
+
+      - name: Check provider canary workflow changes
+        if: steps.filter.outputs.run_ci == 'false' && steps.filter.outputs.canary_workflow_changed == 'true'
+        run: |
+          vp fmt --check .github/workflows/provider-canary.yml
+          vp test run scripts/provider-canary.test.ts
 
   intake:
     name: Fork Intake Audit
