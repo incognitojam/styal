@@ -18,6 +18,7 @@ import { FetchHttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { cli } from "../binCli.ts";
+import { pairCli } from "../binPair.ts";
 import {
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
@@ -96,7 +97,8 @@ describe("pair tailscale local target", () => {
   });
 });
 
-const runCli = (args: ReadonlyArray<string>) => Command.runWith(cli, { version: "0.0.0" })(args);
+const runCli = (args: ReadonlyArray<string>) =>
+  Command.runWith(args[0] === "pair" ? pairCli : cli, { version: "0.0.0" })(args);
 
 const provideCliTestLayers = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.provide(effect, Layer.mergeAll(CliRuntimeLayer, TestConsole.layer));

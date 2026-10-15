@@ -2426,6 +2426,28 @@ features:
         - https://github.com/pingdotgg/t3code/pull/18425
       retire_when: Upstream's mobile Provider accounts screen shows every provider with its sign-in source and gives each action its own icon.
 
+  - id: pair-cli-startup
+    title: Load pairing without the full server CLI
+    status: maintained
+    prs: [852]
+    invariants:
+      - Direct pair invocations load the existing pairing command without evaluating unrelated server CLI commands, preserving pairing flags, global settings, help, version, token storage, and Tailscale occupancy and identity checks.
+      - Completion requests and invocations with flags before the command retain the full CLI tree.
+    rationale: Pairing only needs its own command and runtime layers; evaluating every server command adds avoidable startup latency before local discovery or Tailscale checks begin.
+    implementation_paths:
+      - apps/server/src/binPair.ts
+    upstream_paths:
+      - apps/server/src/bin.ts
+      - apps/server/src/binCli.ts
+      - apps/server/src/cli/pair.ts
+    tests:
+      - apps/server/src/cli/pair.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
+      retire_when: Upstream dispatches pairing without loading unrelated server commands while preserving the full CLI's parser and runtime behavior.
+
   - id: pending-question-answer-drafts
     title: Keep unsubmitted question answers when the chat view remounts
     status: maintained
