@@ -15,6 +15,7 @@ import { browserCommand } from "./cli/browser.ts";
 import { driveCommand } from "./cli/drive.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
+import { keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
 import { projectCommand } from "./cli/project.ts";
 import { serveCommand, startCommand } from "./cli/server.ts";
 import { updateCommand } from "./cli/update.ts";
@@ -91,6 +92,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
 export const cli = makeCli();
 
 export function runCli() {
+  keepOutboundFetchOnHttp1();
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provide(layerCliRuntime),
