@@ -18,39 +18,47 @@ function labels(hosts: ReadonlyArray<ServerUpdateHost>): string {
  * the update can start without asking. Desktop app updates always confirm
  * because they relaunch the remote app.
  */
-export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>): string | null {
+export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>) {
   const single = hosts.length === 1 ? hosts[0]! : null;
   const unchecked = hosts.filter((host) => host.activity === null);
-  const { concern, lines, incomplete } = describeHostActivity(
-    // Continuation is chosen per host, so continuable threads only count on
-    // hosts that asked for it.
-    hosts.map(({ activity, continueRunningThreads }) =>
-      activity && !continueRunningThreads ? { ...activity, continuableSessions: 0 } : activity,
+  const { concern, lines, incomplete, threadActivity } = describeHostActivity(
+    hosts.map(
+      ({ activity, continueRunningThreads, serverLabel }) =>
+        activity && {
+          ...activity,
+          continueRunningThreads,
+          ...(hosts.length > 1 ? { hostLabel: serverLabel } : {}),
+        },
     ),
     {
       uncheckedHostsLine: single
         ? `Could not check the ${single.serverLabel} for running work.`
         : `Could not check ${labels(unchecked)} for running work.`,
-      continueRunningThreads: true,
     },
   );
   const desktopApps = hosts.filter((host) => host.desktopApp);
   if (desktopApps.length > 0) {
-    return [
-      single
-        ? `Update the styal desktop app that runs the ${single.serverLabel}?`
-        : `Update the styal desktop ${desktopApps.length === 1 ? "app" : "apps"} on ${labels(desktopApps)}?`,
-      desktopApps.length === 1
-        ? "It will close and relaunch on that machine."
-        : "They will close and relaunch on those machines.",
-      ...lines,
-    ].join("\n");
+    return {
+      message: [
+        single
+          ? `Update the styal desktop app that runs the ${single.serverLabel}?`
+          : `Update the styal desktop ${desktopApps.length === 1 ? "app" : "apps"} on ${labels(desktopApps)}?`,
+        desktopApps.length === 1
+          ? "It will close and relaunch on that machine."
+          : "They will close and relaunch on those machines.",
+        ...lines,
+      ].join("\n"),
+      threadActivity,
+    };
   }
   if (concern === null) return null;
   const target = single ? single.serverLabel : `servers on ${labels(hosts)}`;
-  return [
-    `Update the ${target}${hostActivityQuestion[concern]}`,
-    ...lines,
-    ...(incomplete ? ["Running threads and terminals may be interrupted."] : []),
-  ].join("\n");
+  return {
+    message: [
+      `Update the ${target}${hostActivityQuestion[concern]}`,
+      ...lines,
+      ...(incomplete ? ["Running threads and terminals may be interrupted."] : []),
+    ].join("\n"),
+    threadActivity,
+  };
 }

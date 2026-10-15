@@ -21,6 +21,7 @@ import type {
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { HostActivityThread } from "./environmentHttp.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
 
@@ -1129,10 +1130,19 @@ export const DesktopDiscordPresenceActivity = Schema.Struct({
 });
 export type DesktopDiscordPresenceActivity = typeof DesktopDiscordPresenceActivity.Type;
 
+export const ConfirmDialogThreadActivitySchema = Schema.Struct({
+  thread: HostActivityThread,
+  environmentId: Schema.optionalKey(EnvironmentId),
+  hostLabel: Schema.NullOr(Schema.String),
+  continuesAfterRestart: Schema.Boolean,
+});
+export type ConfirmDialogThreadActivity = typeof ConfirmDialogThreadActivitySchema.Type;
+
 export const DesktopShutdownConfirmationRequestSchema = Schema.Struct({
   requestId: Schema.Int,
   message: Schema.String,
   confirmLabel: Schema.optional(Schema.String),
+  threadActivity: Schema.optionalKey(Schema.Array(ConfirmDialogThreadActivitySchema)),
 });
 export type DesktopShutdownConfirmationRequest =
   typeof DesktopShutdownConfirmationRequestSchema.Type;
@@ -1393,6 +1403,7 @@ export interface ConfirmDialogOptions {
   readonly variant?: ConfirmDialogVariant;
   /** Names the action on the confirm button. Defaults to "Confirm". */
   readonly confirmLabel?: string;
+  readonly threadActivity?: ReadonlyArray<ConfirmDialogThreadActivity>;
 }
 
 /**
