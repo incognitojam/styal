@@ -75,7 +75,7 @@ function SettingsPathChip({ path }: { readonly path: string }) {
   return (
     <div className="inline-flex max-w-full min-w-0 items-center gap-0.5 rounded-md border border-border/70 bg-muted/40 py-0.5 pr-0.5 pl-2">
       {/* Keep the file name visible; only the directory truncates. */}
-      <code className="flex min-w-0 font-mono text-[11px] text-foreground/80">
+      <code className="flex min-w-0 font-mono text-2xs text-foreground/80">
         <span className="truncate">{path.slice(0, fileNameStart)}</span>
         <span className="shrink-0">{path.slice(fileNameStart)}</span>
       </code>
@@ -85,8 +85,8 @@ function SettingsPathChip({ path }: { readonly path: string }) {
             <Button
               type="button"
               size="icon-xs"
-              variant="ghost"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
+              variant="ghost-muted"
+              className="shrink-0"
               onClick={() => copyToClipboard(path)}
               aria-label="Copy settings file path"
             >
