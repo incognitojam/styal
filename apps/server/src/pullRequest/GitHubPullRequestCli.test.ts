@@ -501,10 +501,10 @@ layer("GitHubPullRequestCli.layer", (it) => {
       ).pipe(Effect.forkChild);
       yield* TestClock.adjust("10 millis");
       const [seven, eight] = yield* Fiber.join(reads);
-      assert.strictEqual(seven.autoMergeEnabled, true);
-      assert.strictEqual(seven.inMergeQueue, true);
-      assert.strictEqual(eight.autoMergeEnabled, false);
-      assert.strictEqual(eight.inMergeQueue, false);
+      assert.strictEqual(seven?.autoMergeEnabled, true);
+      assert.strictEqual(seven?.inMergeQueue, true);
+      assert.strictEqual(eight?.autoMergeEnabled, false);
+      assert.strictEqual(eight?.inMergeQueue, false);
 
       assert.deepStrictEqual(
         {
