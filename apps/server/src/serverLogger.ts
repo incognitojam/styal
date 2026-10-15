@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as SharedObservability from "@t3tools/shared/observability";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -11,6 +12,7 @@ import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
 
 export const layer = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
+  const hostName = yield* HostProcess.Hostname;
   const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
   // Loggers are installed before the services that deliver reports exist, so
   // error entries wait in this sink until ErrorReporting.layer drains it.
@@ -25,7 +27,7 @@ export const layer = Effect.gen(function* () {
           url: config.otlpLogsUrl,
           exportInterval: `${logs.exportIntervalMs} millis`,
           headers: logs.headers,
-          resource: ServerConfig.otlpResource(config),
+          resource: ServerConfig.otlpResource(config, hostName),
         });
 
   // `Logger.layer` writes the whole logger set rather than adding to it, so
