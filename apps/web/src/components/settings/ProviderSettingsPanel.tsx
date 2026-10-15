@@ -1,6 +1,7 @@
 import { SettingsGroup } from "./SettingsGroup";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
+import { Link } from "@tanstack/react-router";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
@@ -1290,6 +1291,19 @@ export function EnvironmentProviderSettings({
             )}
           </div>
         </SettingsGroup>
+        <p className="px-3 text-xs text-muted-foreground sm:px-4">
+          Provider update checks and automatic updates are in{" "}
+          <Link
+            to="/settings/general"
+            hash={searchableSetting("provider-update-checks").id}
+            hashScrollIntoView={false}
+            state={{ settingsTargetHighlight: true }}
+            className="text-foreground underline underline-offset-2"
+          >
+            General
+          </Link>
+          .
+        </p>
       </SettingsSection>
 
       <UsageProviderSettings
