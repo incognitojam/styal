@@ -1291,7 +1291,7 @@ export function EnvironmentProviderSettings({
             )}
           </div>
         </SettingsGroup>
-        <p className="px-3 text-xs text-muted-foreground sm:px-4">
+        <p className="mt-3 px-3 text-xs text-muted-foreground sm:px-4">
           Provider update checks and automatic updates are in{" "}
           <Link
             to="/settings/general"
