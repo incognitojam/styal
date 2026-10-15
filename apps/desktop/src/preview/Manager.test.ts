@@ -314,6 +314,7 @@ type TestDisplayMediaHandler = (
 
 interface TestHostWebContents {
   readonly id: number;
+  readonly getZoomFactor: () => number;
   readonly mainFrame: { readonly frameTreeNodeId: number };
   readonly executeJavaScript: ReturnType<typeof vi.fn>;
   readonly isDestroyed: () => boolean;
@@ -334,6 +335,7 @@ const makeTestHostWebContents = (): TestHostWebContents => {
     mainFrame: { frameTreeNodeId: 7 },
     executeJavaScript: vi.fn(async () => true),
     isDestroyed: () => false,
+    getZoomFactor: () => 1,
     session: {
       setDisplayMediaRequestHandler: vi.fn((next: TestDisplayMediaHandler) => {
         handler = next;
@@ -349,6 +351,7 @@ const makeTestPreviewWebContents = (
   hostWebContents: TestHostWebContents = makeTestHostWebContents(),
 ) => {
   const setBackgroundThrottling = vi.fn<(enabled: boolean) => void>();
+  let debuggerAttached = false;
   return {
     id,
     mainFrame: { routingId: id },
@@ -373,14 +376,34 @@ const makeTestPreviewWebContents = (
     setIgnoreMenuShortcuts: vi.fn(),
     setWindowOpenHandler: vi.fn(),
     debugger: {
-      isAttached: () => false,
-      attach: vi.fn(),
+      isAttached: () => debuggerAttached,
+      attach: vi.fn(() => {
+        debuggerAttached = true;
+      }),
+      detach: vi.fn(() => {
+        debuggerAttached = false;
+      }),
       sendCommand: vi.fn(async () => undefined),
       on: vi.fn(),
       off: vi.fn(),
     },
     capturePage,
   } as unknown as TestPreviewWebContents;
+};
+
+const makeTestViewportWebContents = (id = 42, host = makeTestHostWebContents()) => {
+  const guest = makeTestPreviewWebContents(
+    async () => ({
+      toJPEG: () => Buffer.from("frame"),
+      getSize: () => ({ width: 512, height: 320 }),
+    }),
+    id,
+    host,
+  );
+  vi.mocked(guest.debugger.sendCommand).mockImplementation(async (method) =>
+    method === "Runtime.evaluate" ? { result: { value: { width: 1280, height: 800 } } } : undefined,
+  );
+  return guest;
 };
 
 /** Two ready tabs (41, 42) sharing one window, so they contend for the single display-media slot. */
@@ -1875,6 +1898,60 @@ describe("PreviewManager", () => {
         }),
       ),
   );
+
+  for (const { pageZoom, nativeWidth, nativeHeight } of [
+    { pageZoom: 0.9, nativeWidth: 1152, nativeHeight: 720 },
+    { pageZoom: 1.1, nativeWidth: 1408, nativeHeight: 880 },
+  ]) {
+    effectIt.effect(
+      `preserves the requested CSS viewport at page zoom ${pageZoom} across window zoom changes`,
+      () =>
+        withManager((manager) =>
+          Effect.gen(function* () {
+            let windowZoom = 0.8;
+            const host = { ...makeTestHostWebContents(), getZoomFactor: () => windowZoom };
+            const guest = makeTestViewportWebContents(42, host);
+            fromId.mockReturnValue(guest);
+            yield* manager.createTab("tab_window_zoom");
+            yield* manager.registerWebview("tab_window_zoom", 42);
+            yield* pageZoom < 1
+              ? manager.zoomOut("tab_window_zoom")
+              : manager.zoomIn("tab_window_zoom");
+            const presentation = { width: 1280, height: 800, scale: 0.5 / pageZoom };
+            yield* manager.setViewportPresentation("tab_window_zoom", presentation);
+            const sendCommand = guest.debugger.sendCommand;
+            expect(sendCommand).toHaveBeenCalledWith("Emulation.setDeviceMetricsOverride", {
+              width: nativeWidth,
+              height: nativeHeight,
+              deviceScaleFactor: 0,
+              mobile: false,
+              scale: presentation.scale * 0.8,
+            });
+
+            windowZoom = 1.2;
+            yield* manager.reapplyZoom();
+            expect(sendCommand).toHaveBeenCalledWith("Emulation.setDeviceMetricsOverride", {
+              width: nativeWidth,
+              height: nativeHeight,
+              deviceScaleFactor: 0,
+              mobile: false,
+              scale: presentation.scale * 1.2,
+            });
+            expect(guest.setZoomFactor).toHaveBeenLastCalledWith(pageZoom);
+
+            windowZoom = 1;
+            yield* manager.reapplyZoom();
+            expect(sendCommand).toHaveBeenCalledWith("Emulation.setDeviceMetricsOverride", {
+              width: nativeWidth,
+              height: nativeHeight,
+              deviceScaleFactor: 0,
+              mobile: false,
+              scale: presentation.scale,
+            });
+          }),
+        ),
+    );
+  }
 
   effectIt.effect("re-applies opaque base and color scheme across webview swaps", () =>
     withManager((manager) =>
@@ -4866,6 +4943,354 @@ describe("PreviewManager", () => {
           });
         }),
       ),
+  );
+
+  effectIt.effect("keeps cursor coordinates logical while clicking a fitted surface", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const host = { ...makeTestHostWebContents(), getZoomFactor: () => 0.8 };
+        const guest = makeTestViewportWebContents(42, host);
+        fromId.mockReturnValue(guest);
+        const points: Array<{ phase: string; x: number; y: number }> = [];
+        yield* manager.subscribePointerEvents(({ phase, x, y }) =>
+          Effect.sync(() => {
+            points.push({ phase, x, y });
+          }),
+        );
+        yield* manager.createTab("tab_fitted_click");
+        yield* manager.registerWebview("tab_fitted_click", 42);
+        yield* manager.setViewportPresentation("tab_fitted_click", {
+          width: 1280,
+          height: 800,
+          scale: 0.5,
+        });
+        const click = yield* manager
+          .automationClick("tab_fitted_click", { x: 120, y: 80 })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(200);
+        yield* Fiber.join(click);
+        expect(points).toEqual([
+          { phase: "move", x: 120, y: 80 },
+          { phase: "click", x: 120, y: 80 },
+        ]);
+        for (const type of ["mousePressed", "mouseReleased"]) {
+          expect(guest.debugger.sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+            type,
+            x: 48,
+            y: 32,
+            button: "left",
+            clickCount: 1,
+          });
+        }
+      }),
+    ),
+  );
+
+  for (const scenario of [
+    { name: "a fill-to-fitted resize", before: 1, after: 0.5, windowZoom: 1, nextWindowZoom: 1 },
+    { name: "a fitted-to-fill resize", before: 0.5, after: 1, windowZoom: 1, nextWindowZoom: 1 },
+    { name: "a window zoom change", before: 0.5, after: 0.5, windowZoom: 0.8, nextWindowZoom: 1.2 },
+  ]) {
+    effectIt.effect(`clicks use the applied surface scale while ${scenario.name} is queued`, () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          let windowZoom = scenario.windowZoom;
+          const moved = yield* Deferred.make<void>();
+          const host = { ...makeTestHostWebContents(), getZoomFactor: () => windowZoom };
+          const guest = makeTestViewportWebContents(42, host);
+          fromId.mockReturnValue(guest);
+          yield* manager.subscribePointerEvents(({ phase }) =>
+            phase === "move" ? Deferred.succeed(moved, undefined).pipe(Effect.asVoid) : Effect.void,
+          );
+          yield* manager.createTab("tab_queued_scale");
+          yield* manager.registerWebview("tab_queued_scale", 42);
+          yield* manager.setViewportPresentation("tab_queued_scale", {
+            width: 1280,
+            height: 800,
+            scale: scenario.before,
+          });
+          const sendCommand = vi.mocked(guest.debugger.sendCommand);
+          sendCommand.mockClear();
+          const click = yield* manager
+            .automationClick("tab_queued_scale", { x: 120, y: 80 })
+            .pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(moved);
+          windowZoom = scenario.nextWindowZoom;
+          const refresh = yield* (
+            scenario.windowZoom !== scenario.nextWindowZoom
+              ? manager.reapplyZoom()
+              : manager.setViewportPresentation("tab_queued_scale", {
+                  width: 1280,
+                  height: 800,
+                  scale: scenario.after,
+                })
+          ).pipe(Effect.forkChild({ startImmediately: true }));
+          yield* TestClock.adjust(0);
+          yield* TestClock.adjust(200);
+          yield* Fiber.join(click);
+          yield* Fiber.join(refresh);
+          const appliedScale = scenario.before < 1 ? scenario.before * scenario.windowZoom : 1;
+          for (const type of ["mousePressed", "mouseReleased"]) {
+            expect(sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+              type,
+              x: 120 * appliedScale,
+              y: 80 * appliedScale,
+              button: "left",
+              clickCount: 1,
+            });
+          }
+          const updates = sendCommand.mock.calls.filter(([method]) =>
+            method.startsWith("Emulation."),
+          );
+          if (scenario.after >= 1) {
+            expect(updates.at(-1)).toEqual(["Emulation.clearDeviceMetricsOverride"]);
+          } else {
+            expect(updates.at(-1)).toEqual([
+              "Emulation.setDeviceMetricsOverride",
+              {
+                width: 1280,
+                height: 800,
+                deviceScaleFactor: 0,
+                mobile: false,
+                scale: scenario.after * scenario.nextWindowZoom,
+              },
+            ]);
+          }
+          const releaseIndex = sendCommand.mock.calls.findIndex(
+            ([method, params]) =>
+              method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased",
+          );
+          const updateIndex = sendCommand.mock.calls.findIndex(([method]) =>
+            method.startsWith("Emulation."),
+          );
+          expect(updateIndex).toBeGreaterThan(releaseIndex);
+        }),
+      ),
+    );
+  }
+
+  effectIt.effect("restores page zoom and refreshes other fitted tabs while one tab is busy", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const enteredEvaluation = Promise.withResolvers<void>();
+        const evaluation = Promise.withResolvers<unknown>();
+        const otherRefreshed = Promise.withResolvers<void>();
+        let windowZoom = 1;
+        const host = { ...makeTestHostWebContents(), getZoomFactor: () => windowZoom };
+        const first = makeTestViewportWebContents(42, host);
+        const second = makeTestViewportWebContents(43, host);
+        vi.mocked(first.debugger.sendCommand).mockImplementation(async (method, params) => {
+          if (method === "Runtime.evaluate" && params?.expression === "hold") {
+            enteredEvaluation.resolve();
+            return evaluation.promise;
+          }
+          return undefined;
+        });
+        fromId.mockImplementation((id) => (id === 42 ? first : second));
+        yield* manager.createTab("tab_busy_fitted");
+        yield* manager.registerWebview("tab_busy_fitted", 42);
+        yield* manager.setViewportPresentation("tab_busy_fitted", {
+          width: 1280,
+          height: 800,
+          scale: 0.5,
+        });
+        yield* manager.createTab("tab_other_zoom");
+        yield* manager.registerWebview("tab_other_zoom", 43);
+        yield* manager.zoomIn("tab_other_zoom");
+        yield* manager.setViewportPresentation("tab_other_zoom", {
+          width: 1280,
+          height: 800,
+          scale: 0.25,
+        });
+        vi.mocked(second.debugger.sendCommand).mockImplementation(async (method) => {
+          if (method === "Emulation.setDeviceMetricsOverride") otherRefreshed.resolve();
+          return undefined;
+        });
+        const busy = yield* manager
+          .automationEvaluate("tab_busy_fitted", { expression: "hold" })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => enteredEvaluation.promise);
+        vi.mocked(first.debugger.sendCommand).mockClear();
+        vi.mocked(second.debugger.sendCommand).mockClear();
+        vi.mocked(second.setZoomFactor).mockClear();
+        windowZoom = 1.2;
+        const refresh = yield* manager
+          .reapplyZoom()
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => otherRefreshed.promise);
+        expect(second.setZoomFactor).toHaveBeenCalledWith(1.1);
+        expect(second.debugger.sendCommand).toHaveBeenCalledWith(
+          "Emulation.setDeviceMetricsOverride",
+          {
+            width: 1408,
+            height: 880,
+            deviceScaleFactor: 0,
+            mobile: false,
+            scale: 0.3,
+          },
+        );
+        expect(first.debugger.sendCommand).not.toHaveBeenCalledWith(
+          "Emulation.setDeviceMetricsOverride",
+          expect.anything(),
+        );
+        evaluation.resolve({ result: { value: true } });
+        yield* Fiber.join(busy);
+        yield* Fiber.join(refresh);
+        expect(first.debugger.sendCommand).toHaveBeenLastCalledWith(
+          "Emulation.setDeviceMetricsOverride",
+          {
+            width: 1280,
+            height: 800,
+            deviceScaleFactor: 0,
+            mobile: false,
+            scale: 0.6,
+          },
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect("zoom refresh does not overwrite a resize queued during recording startup", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const startupEntered = Promise.withResolvers<void>();
+        const startup = Promise.withResolvers<boolean>();
+        const host = makeTestHostWebContents();
+        host.executeJavaScript.mockImplementation(async () => {
+          startupEntered.resolve();
+          return startup.promise;
+        });
+        const guest = makeTestPreviewWebContents(
+          async () => ({
+            toJPEG: () => Buffer.from("frame"),
+            getSize: () => ({ width: 640, height: 400 }),
+          }),
+          42,
+          host,
+        );
+        fromId.mockReturnValue(guest);
+        yield* manager.createTab("tab_recording_resize");
+        yield* manager.registerWebview("tab_recording_resize", 42);
+        yield* manager.setViewportPresentation("tab_recording_resize", {
+          width: 1280,
+          height: 800,
+          scale: 0.5,
+        });
+        const recording = yield* manager
+          .startRecording("tab_recording_resize")
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => startupEntered.promise);
+        const resize = yield* manager
+          .setViewportPresentation("tab_recording_resize", {
+            width: 1440,
+            height: 900,
+            scale: 0.25,
+          })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(0);
+        const refresh = yield* manager
+          .reapplyZoom()
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(0);
+        startup.resolve(true);
+        yield* Fiber.join(recording);
+        yield* Fiber.join(resize);
+        yield* Fiber.join(refresh);
+        const metrics = vi
+          .mocked(guest.debugger.sendCommand)
+          .mock.calls.filter(([method]) => method === "Emulation.setDeviceMetricsOverride");
+        expect(metrics.at(-1)?.[1]).toMatchObject({ width: 1440, height: 900, scale: 0.25 });
+        yield* manager.stopRecording("tab_recording_resize");
+      }),
+    ),
+  );
+
+  effectIt.effect("a refresh queued on a detached session cannot alter its replacement", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let windowZoom = 0.8;
+        let devToolsOpen = false;
+        let onDetach: ((event: unknown, reason: string) => void) | undefined;
+        const entered = Promise.withResolvers<void>();
+        const evaluation = Promise.withResolvers<unknown>();
+        const fallback = yield* Deferred.make<void>();
+        const moved = yield* Deferred.make<void>();
+        const guest = makeTestViewportWebContents(42, {
+          ...makeTestHostWebContents(),
+          getZoomFactor: () => windowZoom,
+        });
+        Object.assign(guest, { isDevToolsOpened: () => devToolsOpen });
+        Object.assign(guest.debugger, {
+          on: vi.fn((event: string, listener: typeof onDetach) => {
+            if (event === "detach") onDetach = listener;
+          }),
+        });
+        const sendCommand = vi.mocked(guest.debugger.sendCommand);
+        sendCommand.mockImplementation(async (method, params) => {
+          if (method !== "Runtime.evaluate") return undefined;
+          if (params?.expression === "hold") {
+            entered.resolve();
+            return evaluation.promise;
+          }
+          return { result: { value: { width: 1280, height: 800 } } };
+        });
+        fromId.mockReturnValue(guest);
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          state.viewportFallback
+            ? Deferred.succeed(fallback, undefined).pipe(Effect.asVoid)
+            : Effect.void,
+        );
+        yield* manager.subscribePointerEvents(({ phase }) =>
+          phase === "move" ? Deferred.succeed(moved, undefined).pipe(Effect.asVoid) : Effect.void,
+        );
+        yield* manager.createTab("tab_replaced_session");
+        yield* manager.registerWebview("tab_replaced_session", 42);
+        const presentation = { width: 1280, height: 800, scale: 0.5 };
+        yield* manager.setViewportPresentation("tab_replaced_session", presentation);
+        const oldAction = yield* manager
+          .automationEvaluate("tab_replaced_session", { expression: "hold" })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => entered.promise);
+        const oldRefresh = yield* manager
+          .reapplyZoom()
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(0);
+        devToolsOpen = true;
+        guest.debugger.detach();
+        onDetach?.({}, "DevTools opened");
+        yield* Deferred.await(fallback);
+        devToolsOpen = false;
+        yield* manager.setViewportPresentation("tab_replaced_session", presentation);
+        const newAction = yield* manager
+          .automationClick("tab_replaced_session", { x: 120, y: 80 })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.await(moved);
+        sendCommand.mockClear();
+        windowZoom = 1.2;
+        evaluation.resolve({ result: { value: true } });
+        yield* Fiber.join(oldAction);
+        yield* Fiber.join(oldRefresh);
+        expect(
+          sendCommand.mock.calls.filter(([method]) => method.startsWith("Emulation.")),
+        ).toEqual([]);
+        yield* TestClock.adjust(200);
+        yield* Fiber.join(newAction);
+        expect(sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          x: 48,
+          y: 32,
+          button: "left",
+          clickCount: 1,
+        });
+        yield* manager.reapplyZoom();
+        expect(sendCommand).toHaveBeenLastCalledWith("Emulation.setDeviceMetricsOverride", {
+          ...presentation,
+          scale: 0.6,
+          deviceScaleFactor: 0,
+          mobile: false,
+        });
+      }),
+    ),
   );
 
   effectIt.effect("types in background webviews and enables native key input", () =>

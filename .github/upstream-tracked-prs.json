@@ -17,6 +17,10 @@
       "reason": "Imported early from its unmerged commits; when it merges, the queue takes it and must reconcile with that import and the styal naming from fork #425."
     },
     {
+      "pr": 10536,
+      "reason": "Natural-sized desktop browser presets still inherit the main window's zoom in their measured CSS viewport when fit scale is 1. Fork #833 fixes the fitted device-metrics path, including independent page zoom, but leaves the natural-sized path for this upstream work. Evaluate its host/page zoom composition at chronological intake; do not apply it unchanged to the fork's fitted CDP dimensions, capture coordinates, or session-applied input scale (ledger preview-surface-continuity)."
+    },
+    {
       "pr": 11488,
       "reason": "Imported provisionally as one snapshot: cancelling an incoming-share task picker discards its durable inbox entry, so it stays dismissed after relaunch and identical content can be shared again. The fork retains its Stack imports and layout, documents the discard retry dependency, and adds a cancellation/relaunch regression while preserving attachment ownership checks. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and fork adaptations, verify cancellation, relaunch, re-sharing, and a route covering the picker, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
       "snapshot": {

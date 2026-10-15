@@ -456,6 +456,7 @@ interface BrowserControlSession {
   // this reference: `wc.debugger` throws once the WebContents is destroyed.
   readonly debugger: Electron.Debugger;
   readonly semaphore: Semaphore.Semaphore;
+  readonly appliedViewportScale: Ref.Ref<number>;
   readonly scope: Scope.Closeable;
   readonly onDetach: (event: Electron.Event, reason: string) => void;
   readonly onMessage: (
@@ -1396,6 +1397,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         }
         const createControlSession = Effect.fn("PreviewManager.createControlSession")(function* () {
           const semaphore = yield* Semaphore.make(1);
+          const appliedViewportScale = yield* Ref.make(1);
           const scope = yield* Scope.fork(parentScope, "sequential");
           const wcDebugger = wc.debugger;
           const handleDebuggerMessage = Effect.fnUntraced(function* (
@@ -1488,6 +1490,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             webContentsId: wc.id,
             debugger: wcDebugger,
             semaphore,
+            appliedViewportScale,
             scope,
             onDetach,
             onMessage,
@@ -1551,25 +1554,39 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     wc: Electron.WebContents,
     presentation: ViewportPresentation,
+    control: BrowserControlSession,
   ) {
     if (presentation.scale >= 1) {
       yield* attemptPromise(
         { operation: "clearViewportPresentation", tabId, webContentsId: wc.id },
-        () => wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride"),
+        () => control.debugger.sendCommand("Emulation.clearDeviceMetricsOverride"),
       );
+      yield* Ref.set(control.appliedViewportScale, 1);
       return;
     }
+    // The renderer measures the panel in host CSS pixels, while CDP scales
+    // into native view coordinates. Window zoom changes that conversion.
+    const scale = yield* attempt(
+      { operation: "readViewportPresentationScale", tabId, webContentsId: wc.id },
+      () => presentation.scale * (wc.hostWebContents?.getZoomFactor() ?? 1),
+    );
+    const zoomFactor = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.zoomFactor ?? 1;
     yield* attemptPromise(
       { operation: "setViewportPresentation", tabId, webContentsId: wc.id },
       () =>
-        wc.debugger.sendCommand("Emulation.setDeviceMetricsOverride", {
-          width: presentation.width,
-          height: presentation.height,
+        control.debugger.sendCommand("Emulation.setDeviceMetricsOverride", {
+          // CDP dimensions are in DIP; the guest divides them by its page zoom
+          // to obtain the requested CSS viewport used by locators and crops.
+          width: Math.max(1, Math.round(presentation.width * zoomFactor)),
+          height: Math.max(1, Math.round(presentation.height * zoomFactor)),
           deviceScaleFactor: 0,
           mobile: false,
-          scale: presentation.scale,
+          scale,
         }),
     );
+    // Desired presentation can change while an action holds the semaphore.
+    // Input must use only the scale successfully applied to this CDP session.
+    yield* Ref.set(control.appliedViewportScale, scale);
   });
 
   const pushAction = (tabId: string, event: PreviewAutomationActionEvent) =>
@@ -1617,6 +1634,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       send: SendCommand,
       sendCleanup: SendCommand,
       checkControl: Effect.Effect<void, PreviewManagerError>,
+      inputScale: number,
     ) => Effect.Effect<A, PreviewManagerError>,
   ) {
     const sequence = yield* nextCounter(actionSequenceRef);
@@ -1679,7 +1697,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           );
         },
       );
-      return yield* use(send, sendCleanup, checkControl);
+      return yield* use(
+        send,
+        sendCleanup,
+        checkControl,
+        yield* Ref.get(control.appliedViewportScale),
+      );
     });
     const finalize = Effect.fn("PreviewManager.finalizeControlAction")(function* (
       exit: Exit.Exit<A, PreviewManagerError>,
@@ -2975,7 +2998,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
    */
   const reapplyZoom = Effect.fn("PreviewManager.reapplyZoom")(function* () {
     const tabIds = Array.from((yield* SynchronizedRef.get(tabsRef)).keys());
+    // Restore every guest before waiting on a tab's automation semaphore.
     yield* Effect.forEach(tabIds, assertTabZoom, { discard: true });
+    yield* Effect.forEach(
+      tabIds,
+      (tabId) =>
+        Effect.gen(function* () {
+          const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
+          if (presentation && presentation.scale < 1) {
+            yield* refreshViewportPresentation(tabId).pipe(Effect.ignore);
+          }
+        }),
+      { concurrency: "unbounded", discard: true },
+    );
   });
 
   const applyZoom = Effect.fn("PreviewManager.applyZoom")(function* (
@@ -3038,7 +3073,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           if (current?.webContentsId !== wc.id) return;
           const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
           if (presentation) {
-            yield* sendViewportPresentation(tabId, wc, presentation);
+            yield* sendViewportPresentation(tabId, wc, presentation, control);
           }
           if (current.colorScheme !== "system") {
             yield* attemptPromise(
@@ -3070,6 +3105,32 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
     }).pipe(Effect.ignore);
 
+  const refreshViewportPresentation = Effect.fn("PreviewManager.refreshViewportPresentation")(
+    function* (tabId: string, expectedPresentation?: ViewportPresentation) {
+      const webContentsId = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.webContentsId;
+      if (webContentsId == null) return;
+      const wc = webContents.fromId(webContentsId);
+      if (!wc || wc.isDestroyed()) return;
+      if (wc.isDevToolsOpened() && !wc.debugger.isAttached()) return;
+      const control = yield* ensureControlSession(wc);
+      yield* control.semaphore.withPermit(
+        Effect.gen(function* () {
+          const currentTab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+          const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
+          if (
+            currentTab?.webContentsId !== wc.id ||
+            (yield* SynchronizedRef.get(controlSessionsRef)).get(wc.id) !== control ||
+            !control.debugger.isAttached() ||
+            !presentation ||
+            (expectedPresentation !== undefined && presentation !== expectedPresentation)
+          )
+            return;
+          yield* sendViewportPresentation(tabId, wc, presentation, control);
+        }),
+      );
+    },
+  );
+
   const setViewportPresentation = Effect.fn("PreviewManager.setViewportPresentation")(function* (
     tabId: string,
     presentation: ViewportPresentation,
@@ -3092,22 +3153,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         );
       }),
     );
-    const webContentsId = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.webContentsId;
-    if (webContentsId == null) return;
-    const wc = webContents.fromId(webContentsId);
-    if (!wc || wc.isDestroyed()) return;
-    if (wc.isDevToolsOpened() && !wc.debugger.isAttached()) {
-      return;
-    }
-    const control = yield* ensureControlSession(wc);
-    yield* control.semaphore.withPermit(
-      Effect.gen(function* () {
-        const currentTab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
-        const latest = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
-        if (currentTab?.webContentsId !== wc.id || latest !== presentation) return;
-        yield* sendViewportPresentation(tabId, wc, presentation);
-      }),
-    );
+    yield* refreshViewportPresentation(tabId, presentation);
   });
 
   const setColorScheme = Effect.fn("PreviewManager.setColorScheme")(function* (
@@ -4190,6 +4236,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     input: PreviewAutomationClickInput,
     send: SendCommand,
+    inputScale: number,
   ) {
     yield* prepareAutomationInput(send, true);
     const point = yield* resolveClickPoint(tabId, send, input);
@@ -4229,15 +4276,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     });
     yield* Effect.sleep(AGENT_CURSOR_CLICK_LEAD_MS);
     yield* expectAgentInput(tabId, { kind: "pointer", ...point, button: 0 });
+    // CDP mouse input targets the scaled surface; locators, cursor overlays,
+    // and the guest's human-input events use logical page coordinates.
+    const inputPoint = { x: point.x * inputScale, y: point.y * inputScale };
     yield* send("Input.dispatchMouseEvent", {
       type: "mousePressed",
-      ...point,
+      ...inputPoint,
       button: "left",
       clickCount: 1,
     });
     yield* send("Input.dispatchMouseEvent", {
       type: "mouseReleased",
-      ...point,
+      ...inputPoint,
       button: "left",
       clickCount: 1,
     });
@@ -4248,8 +4298,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationClickInput,
   ) {
     const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "click", (send) =>
-      performAutomationClick(tabId, input, send),
+    yield* withControlSession(tabId, wc, "click", (send, _sendCleanup, _checkControl, inputScale) =>
+      performAutomationClick(tabId, input, send, inputScale),
     );
   });
 
