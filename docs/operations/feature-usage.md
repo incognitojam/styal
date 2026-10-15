@@ -8,7 +8,7 @@ The dashboard reports adoption as unavailable until it sees an instrumented acti
 
 Additional measured operations are:
 
-- `browser-sessions`, `source = user`: explicit tab creation from the Browser panel, command palette, chat/file links, and terminal links. Success means the session was created, not that the page loaded. Reopening an existing tab and clicking or navigating inside it are not measured. Older clients and agent-created tabs omit the explicit user marker and do not enter this count.
+- `browser-sessions`, `source = user`: tab creation from the Browser panel, command palette, chat/file links, terminal links, discovered ports, and user-run project scripts configured to open a preview. Success means the session was created, not that the page loaded. Reopening an existing tab and clicking or navigating inside it are not measured. Older clients and agent-created tabs omit the explicit user marker and do not enter this count.
 - `devices`, `source = user`: Device panel open, close, shutdown and device actions from a client that reports its surface. Requests forwarded from another environment and older clients without a surface remain unattributed instead of being counted again as manual use.
 - `devices`, `source = agent`: public list, open, close and screenshot tools, including failed selection and unavailable hosts. Agent-device CLI interactions are not measured. Exclude discovery (`list`) and cleanup (`close`/`shutdown`) when reporting successful adoption; use `open`, `snapshot` and deliberate device actions. Failure reasons are bounded categories, never error messages.
 

@@ -1678,6 +1678,7 @@ features:
       - Device panel operations and public agent device tools record bounded usage and outcomes without names, device identifiers, arguments, or images; discovery is distinct from adoption and environment forwarding is not counted again as a manual action.
       - Events carry separate instrumentation versions and explicit build context; test and CI collection defaults off while the shared telemetry opt-out still disables all feature events.
     implementation_paths:
+      - .github/workflows/desktop-macos-preview.yml
       - .github/workflows/fork-cli-archives.yml
       - .github/workflows/fork-js-bundle.yml
       - apps/server/src/mcp/McpHttpServer.ts
@@ -1706,6 +1707,7 @@ features:
       - apps/server/src/telemetry/BuildContext.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/web/src/components/preview/addBrowserSurface.test.ts
       - apps/web/src/components/preview/openPreviewSession.test.ts
       - apps/web/src/components/preview/openTerminalLinkInPreview.test.ts
     upstream:
