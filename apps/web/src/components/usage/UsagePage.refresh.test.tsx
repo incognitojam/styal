@@ -15,6 +15,7 @@ vi.mock("@effect/atom-react", () => ({
     atom === "keybindings" ? DEFAULT_RESOLVED_KEYBINDINGS : state.presentations,
 }));
 vi.mock("@tanstack/react-router", () => ({
+  Link: "a",
   useNavigate: () => vi.fn(),
   useCanGoBack: () => false,
 }));
