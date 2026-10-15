@@ -4,7 +4,7 @@ import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import { useState } from "react";
 import { View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { environmentCatalog } from "../../connection/catalog";
 import { networkReports } from "../../state/network-reports";
 import { useAtomCommand } from "../../state/use-atom-command";

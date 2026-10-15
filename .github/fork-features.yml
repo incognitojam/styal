@@ -2622,7 +2622,7 @@ features:
       - A turned-off or missing provider says why instead of showing a disabled sign-in row, and Sign in, Change account, Sign out, credentials and docs rows each use a distinct icon.
     rationale: Upstream lists only providers with in-app sign-in, so Claude and Codex users see their providers missing, and every action reuses the same person icon. Compared with upstream revision 7ac952c630ef8a60d14ca8f6a0c7adce33db4bae on October 14, 2026.
     implementation_paths:
-      - apps/mobile/src/components/AppSymbol.tsx
+      - apps/mobile/src/components/ui/AppSymbol.tsx
       - apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx
       - apps/mobile/src/features/settings/providerAccountStatus.ts
     upstream_paths:
@@ -2994,14 +2994,14 @@ features:
       - Project actions can select desktop, database, and deployment roles in addition to the upstream icon set through the validated project-file contract.
       - Web and mobile use the same role vocabulary in action menus and completed action activity instead of falling back to generic or platform-inconsistent symbols.
     implementation_paths:
-      - apps/mobile/src/components/AppSymbol.tsx
+      - apps/mobile/src/components/ui/AppSymbol.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/projectScriptEditor.tsx
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/t3ProjectFile.ts
     upstream_paths:
-      - apps/mobile/src/components/AppSymbol.tsx
+      - apps/mobile/src/components/ui/AppSymbol.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/projectScriptEditor.tsx
@@ -4086,14 +4086,14 @@ features:
       - Each new connection is checked again, so a second old pairing or a Link route added later is handled in the same launch; checks queued behind a running one collapse to the newest connection, a result about an older connection never raises the notice, and the notice shows at most once per environment per launch and closes on web once a later check drops the pairing.
     rationale: Upstream keeps recorded grants unchanged across the permission split (pingdotgg/t3code#10298). A pairing next to a Link route only shadows Link's current grant on the LAN, and Link learns the same LAN address with its own credential.
     implementation_paths:
-      - apps/mobile/src/components/PermissionUpdateNotice.tsx
+      - apps/mobile/src/features/connection/PermissionUpdateNotice.tsx
       - apps/web/src/components/PermissionUpdateNotice.tsx
       - packages/client-runtime/src/connection/legacyPairing.ts
       - packages/client-runtime/src/connection/registry.ts
       - packages/client-runtime/src/connection/routes.ts
       - packages/client-runtime/src/state/connections.ts
     upstream_paths:
-      - apps/mobile/src/components/PermissionUpdateNotice.tsx
+      - apps/mobile/src/features/connection/PermissionUpdateNotice.tsx
       - apps/web/src/components/PermissionUpdateNotice.tsx
       - packages/client-runtime/src/connection/registry.ts
       - packages/client-runtime/src/connection/routes.ts

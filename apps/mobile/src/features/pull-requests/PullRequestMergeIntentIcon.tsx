@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import { View } from "react-native";
 import type { PullRequestMergeIntent } from "@t3tools/shared/threadPullRequests";
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 
 export function PullRequestMergeIntentIcon({
   mergeIntent,

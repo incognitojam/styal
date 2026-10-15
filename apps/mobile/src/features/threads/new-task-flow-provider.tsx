@@ -1,4 +1,4 @@
-import * as Dialog from "../../components/Dialog";
+import * as Dialog from "../../components/ui/Dialog";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {

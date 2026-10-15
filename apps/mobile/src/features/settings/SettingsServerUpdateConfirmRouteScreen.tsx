@@ -10,8 +10,8 @@ import { useEffect, useState } from "react";
 import { Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
-import { ScreenContent } from "../../components/ScreenContent";
+import { AppText as Text } from "../../components/ui/AppText";
+import { ScreenContent } from "../../components/ui/ScreenContent";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { cn } from "../../lib/cn";
 import { NativeStackScreenOptions } from "../../native/StackHeader";

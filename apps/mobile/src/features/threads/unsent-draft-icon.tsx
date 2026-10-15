@@ -1,4 +1,4 @@
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 
 /** Marks a thread whose composer holds unsent text, in the amber used for drafts. */
 export function UnsentDraftIcon() {

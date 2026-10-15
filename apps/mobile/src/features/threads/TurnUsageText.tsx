@@ -1,7 +1,7 @@
 import { usageFigureText, type TurnUsageView } from "@t3tools/shared/turnUsage";
 import { Alert, Pressable } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { useTurnUsageFigure } from "../../state/use-turn-usage";
 
 /**

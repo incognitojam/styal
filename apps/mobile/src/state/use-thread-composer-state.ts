@@ -1,6 +1,6 @@
 import { continuedResponseWorkStartedAt } from "@t3tools/client-runtime/work-log/presentation";
 import { attachmentBatchLimitError } from "@t3tools/client-runtime/state/attachments";
-import * as Dialog from "../components/Dialog";
+import * as Dialog from "../components/ui/Dialog";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { readEnvironmentScope } from "./session";
 import type { ComposerTextPaste } from "../native/T3ComposerEditor.types";

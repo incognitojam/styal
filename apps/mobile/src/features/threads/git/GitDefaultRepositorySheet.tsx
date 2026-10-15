@@ -6,10 +6,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AsyncResult } from "effect/reactivity";
 import * as Cause from "effect/Cause";
 
-import { AndroidSheetHeader } from "../../../components/AndroidScreenHeader";
-import { SymbolView } from "../../../components/AppSymbol";
-import { AppText as Text } from "../../../components/AppText";
-import { ErrorBanner } from "../../../components/ErrorBanner";
+import { AndroidSheetHeader } from "../../../components/ui/AndroidScreenHeader";
+import { SymbolView } from "../../../components/ui/AppSymbol";
+import { AppText as Text } from "../../../components/ui/AppText";
+import { ErrorBanner } from "../../../components/ui/ErrorBanner";
 import { cn } from "../../../lib/cn";
 import { sourceControlEnvironment } from "../../../state/sourceControl";
 import { useAtomCommand } from "../../../state/use-atom-command";
