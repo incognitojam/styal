@@ -3127,6 +3127,7 @@ export function GeneralSettingsPanel() {
           serverScoped
           settingKeys={["autoUpdateProviders"]}
           {...searchableSetting("provider-auto-updates")}
+          forkFeature="provider-auto-updates"
           description="Install provider CLI updates while no threads are running, once styal has tested the new version."
           status={
             !supportsProviderAutoUpdates
