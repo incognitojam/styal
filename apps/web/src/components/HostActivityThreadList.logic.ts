@@ -51,7 +51,7 @@ export function groupHostActivityThreads(
       group = { label, projects: [] };
       host.groups.push(group);
     }
-    const projectKey = item.thread.project?.id ?? item.thread.projectTitle ?? "";
+    const projectKey = item.thread.project?.id ?? "";
     let project = group.projects.find((candidate) => candidate.key === projectKey);
     if (!project) {
       project = { key: projectKey, activity: [] };

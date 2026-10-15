@@ -24,10 +24,11 @@ function ActivityHeading({ label }: { readonly label: HostActivityGroup }) {
 
 function ActivityProjectIcon({ activity }: { readonly activity: ConfirmDialogThreadActivity }) {
   const { thread, environmentId } = activity;
-  if (thread.project && environmentId) {
+  if (!thread.project) return null;
+  if (environmentId) {
     return <ProjectFavicon project={{ ...thread.project, environmentId }} className="size-3.5" />;
   }
-  const identity = deriveProjectIdentity(thread.projectTitle ?? "");
+  const identity = deriveProjectIdentity(thread.project.title);
   return <ProjectMonogram text={identity.monogram} color={identity.color} className="size-3.5" />;
 }
 
@@ -54,7 +55,7 @@ export function HostActivityThreadList({
                   <div className="space-y-3">
                     {group.projects.map((project) => {
                       const first = project.activity[0]!;
-                      const projectTitle = first.thread.project?.title ?? first.thread.projectTitle;
+                      const projectTitle = first.thread.project?.title;
                       return (
                         <div key={project.key}>
                           {projectTitle ? (

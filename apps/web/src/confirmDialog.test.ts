@@ -95,7 +95,6 @@ describe("confirm dialog coordinator", () => {
         thread: {
           threadId: ThreadId.make("preview"),
           title: "Watch the preview build",
-          projectTitle: "Sample project",
           reasons: ["monitor"],
           continuable: true,
         },

@@ -19,7 +19,6 @@ describe("DesktopShutdownConfirmationRequestSchema", () => {
           thread: {
             threadId: "preview",
             title: "Watch the preview build",
-            projectTitle: "Sample project",
             reasons: ["monitor"],
             continuable: false,
           },

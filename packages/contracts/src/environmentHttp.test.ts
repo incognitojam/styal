@@ -84,7 +84,6 @@ describe("HostActivity", () => {
         {
           threadId: "release",
           title: "Review the release",
-          projectTitle: project.title,
           project,
           reasons: ["running"],
           continuable: false,
@@ -95,6 +94,26 @@ describe("HostActivity", () => {
     expect(activity.threads?.[0]?.project).toEqual(project);
     expect(activity.threads?.[0]?.title).toBe("Review the release");
   });
+  it("keeps counts and threads when a newer server sends an unknown reason", () => {
+    const activity = decodeHostActivity({
+      activeSessions: 1,
+      continuableSessions: 0,
+      waitingSessions: 0,
+      terminalsRequiringConfirmation: 0,
+      terminalsWithUnknownActivity: 0,
+      threads: [
+        {
+          threadId: "release",
+          title: "Review the release",
+          reasons: ["future_reason", "subagent"],
+          continuable: false,
+        },
+      ],
+    });
+    expect(activity.activeSessions).toBe(1);
+    expect(activity.threads?.[0]?.reasons).toEqual(["subagent"]);
+  });
+
   it("reads activity from servers that predate shared device use", () => {
     const activity = decodeHostActivity({
       activeSessions: 0,

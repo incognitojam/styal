@@ -40,7 +40,6 @@ describe("serverUpdateConfirmation", () => {
         {
           threadId: ThreadId.make("release"),
           title: "Check the release",
-          projectTitle: "Sample project",
           reasons: ["running" as const],
           continuable: true,
         },

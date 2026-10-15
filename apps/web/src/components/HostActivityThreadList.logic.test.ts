@@ -17,7 +17,6 @@ function activity(
     thread: {
       threadId: ThreadId.make(id),
       title: `Thread ${id}`,
-      projectTitle: "Sample project",
       reasons,
       continuable: false,
     },

@@ -135,7 +135,14 @@ export function ConfirmDialogHost() {
       }}
     >
       <AlertDialogPopup>
-        <div className={threadActivity?.length ? "shrink-0" : "min-h-0 overflow-y-auto"}>
+        {/* With a thread list, a long description scrolls within 40% of the viewport so the list keeps room. */}
+        <div
+          className={
+            threadActivity?.length
+              ? "max-h-[40dvh] shrink-0 overflow-y-auto"
+              : "min-h-0 overflow-y-auto"
+          }
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{copy.title}</AlertDialogTitle>
             {copy.description ? (

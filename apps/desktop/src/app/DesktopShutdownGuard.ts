@@ -33,7 +33,7 @@ export function shutdownConfirmation(
     : lines;
   return {
     message: title ?? `${action === "quit" ? "Quit" : "Restart"}${hostActivityQuestion[concern]}`,
-    detail: detail.join("\n"),
+    detail: `${detail.join("\n")} Make sure you're ready before continuing.`,
     confirmLabel: action === "quit" ? "Quit" : "Restart",
     ...(threadActivity.length ? { threadActivity } : {}),
   };

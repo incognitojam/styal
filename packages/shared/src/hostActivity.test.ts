@@ -111,7 +111,6 @@ describe("describeHostActivity", () => {
 const namedThread: HostActivityThread = {
   threadId: ThreadId.make("thread"),
   title: "Check the release",
-  projectTitle: "Sample project",
   reasons: ["running", "monitor"],
   continuable: true,
 };
@@ -160,7 +159,7 @@ describe("host thread descriptions", () => {
     ]);
   });
   it("keeps unnamed threads visible when a title or project is unavailable", () => {
-    const unnamed = { ...namedThread, title: "", projectTitle: null };
+    const unnamed = { ...namedThread, title: "" };
     const activity = describeHostActivity(
       [
         {

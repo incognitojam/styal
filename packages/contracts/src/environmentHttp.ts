@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
@@ -665,10 +666,30 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
+const HostActivityReason = Schema.Literals([
+  "preparing",
+  "starting",
+  "running",
+  "input",
+  "approval",
+  "waiting",
+  "command",
+  "monitor",
+  "subagent",
+  "background_task",
+]);
+
+/** Drops reasons this build does not know, so a newer server cannot break the check. */
+const HostActivityReasons = Schema.Array(Schema.String).pipe(
+  Schema.decodeTo(Schema.Array(HostActivityReason), {
+    decode: SchemaGetter.transform((reasons) => reasons.filter(Schema.is(HostActivityReason))),
+    encode: SchemaGetter.passthroughSupertype(),
+  }),
+);
+
 export const HostActivityThread = Schema.Struct({
   threadId: ThreadId,
   title: Schema.String,
-  projectTitle: Schema.NullOr(Schema.String),
   /** Saved project identity, including icon overrides, for shutdown dialogs. */
   project: Schema.optionalKey(
     Schema.Struct({
@@ -679,20 +700,7 @@ export const HostActivityThread = Schema.Struct({
       projectIcon: Schema.NullOr(ProjectIconOverride),
     }),
   ),
-  reasons: Schema.Array(
-    Schema.Literals([
-      "preparing",
-      "starting",
-      "running",
-      "input",
-      "approval",
-      "waiting",
-      "command",
-      "monitor",
-      "subagent",
-      "background_task",
-    ]),
-  ),
+  reasons: HostActivityReasons,
   continuable: Schema.Boolean,
 });
 export type HostActivityThread = typeof HostActivityThread.Type;

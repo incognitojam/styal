@@ -1,7 +1,7 @@
 import { ProjectId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
-import { summarizeHostSessions } from "./HostActivity.ts";
+import { summarizeHostSessions, withProjects } from "./HostActivity.ts";
 
 const thread = (id: string) => ({
   id: ThreadId.make(id),
@@ -17,7 +17,7 @@ describe("host session activity", () => {
       activeSessions: 0,
       continuableSessions: 0,
       waitingSessions: 0,
-      threads: [],
+      affected: [],
     });
   });
   it("deduplicates a running provider thread and its background work", () => {
@@ -30,13 +30,15 @@ describe("host session activity", () => {
       activeSessions: 1,
       continuableSessions: 0,
       waitingSessions: 0,
-      threads: [
+      affected: [
         {
-          threadId: active.id,
-          title: active.title,
-          projectTitle: null,
-          reasons: ["running", "monitor"],
-          continuable: false,
+          projectId: "project",
+          thread: {
+            threadId: active.id,
+            title: active.title,
+            reasons: ["running", "monitor"],
+            continuable: false,
+          },
         },
       ],
     });
@@ -78,7 +80,7 @@ const pendingRequest = (kind: "user_input" | "permission") => ({
 });
 
 const sampleProject = {
-  id: ProjectId.make("project"),
+  projectId: ProjectId.make("project"),
   title: "Sample project",
   workspaceRoot: "/workspace/sample",
   faviconPath: "brand/icon.svg",
@@ -117,65 +119,73 @@ describe("host thread details", () => {
         },
       ],
       new Set(["running", "input", "background"]),
-      new Map([["project", sampleProject]]),
     );
     expect(activity).toMatchObject({
       activeSessions: 4,
       waitingSessions: 3,
       continuableSessions: 2,
     });
-    expect(activity.threads).toEqual(
+    expect(withProjects(activity.affected, [sampleProject])).toEqual(
       [
         {
           threadId: "preparing",
           title: "Thread preparing",
-          projectTitle: "Sample project",
           reasons: ["preparing"],
           continuable: false,
         },
         {
           threadId: "starting",
           title: "Thread starting",
-          projectTitle: "Sample project",
           reasons: ["starting"],
           continuable: false,
         },
         {
           threadId: "running",
           title: "Thread running",
-          projectTitle: "Sample project",
           reasons: ["running"],
           continuable: true,
         },
         {
           threadId: "input",
           title: "Thread input",
-          projectTitle: "Sample project",
           reasons: ["input"],
           continuable: false,
         },
         {
           threadId: "approval",
           title: "Thread approval",
-          projectTitle: "Sample project",
           reasons: ["approval"],
           continuable: false,
         },
         {
           threadId: "waiting",
           title: "Thread waiting",
-          projectTitle: "Sample project",
           reasons: ["waiting"],
           continuable: false,
         },
         {
           threadId: "background",
           title: "Thread background",
-          projectTitle: "Sample project",
           reasons: ["monitor", "command", "subagent", "background_task"],
           continuable: true,
         },
-      ].map((thread) => ({ ...thread, project: sampleProject })),
+      ].map((thread) => ({
+        ...thread,
+        project: {
+          id: sampleProject.projectId,
+          title: sampleProject.title,
+          workspaceRoot: sampleProject.workspaceRoot,
+          faviconPath: sampleProject.faviconPath,
+          projectIcon: sampleProject.projectIcon,
+        },
+      })),
     );
+  });
+
+  it("leaves project identity off threads whose project is gone", () => {
+    const { affected } = summarizeHostSessions([{ ...thread("running"), status: "running" }]);
+    expect(withProjects(affected, [])).toEqual([
+      { threadId: "running", title: "Thread running", reasons: ["running"], continuable: false },
+    ]);
   });
 });

@@ -140,7 +140,6 @@ describe("DesktopShutdownGuard", () => {
             {
               threadId: ThreadId.make(`thread-${port}`),
               title: "Check the release",
-              projectTitle: "Sample project",
               reasons: [port === "3773" ? "running" : "monitor"],
               continuable: false,
             },
@@ -259,7 +258,7 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Quit with running work?",
         detail:
-          "1 thread will be interrupted.\n1 terminal session will be interrupted.\n\nThread names and activity reasons are unavailable from this server.",
+          "1 thread will be interrupted.\n1 terminal session will be interrupted.\n\nThread names and activity reasons are unavailable from this server. Make sure you're ready before continuing.",
         confirmLabel: "Quit",
       },
     );
@@ -276,7 +275,7 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Restart with running work?",
         detail:
-          "2 terminal sessions will be interrupted.\nCould not check 1 terminal session for running commands.\n\nRestarting will stop any work hosted by this app.",
+          "2 terminal sessions will be interrupted.\nCould not check 1 terminal session for running commands.\n\nRestarting will stop any work hosted by this app. Make sure you're ready before continuing.",
         confirmLabel: "Restart",
       },
     );
@@ -290,7 +289,7 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Quit?",
         detail:
-          "Could not check 1 terminal session for running commands.\n\nQuitting will stop any work hosted by this app.",
+          "Could not check 1 terminal session for running commands.\n\nQuitting will stop any work hosted by this app. Make sure you're ready before continuing.",
         confirmLabel: "Quit",
       },
     );
@@ -299,7 +298,7 @@ describe("shutdown confirmation copy", () => {
     assert.deepEqual(Guard.shutdownConfirmation([{ ...idle, waitingSessions: 1 }], "restart"), {
       message: "Restart with waiting threads?",
       detail:
-        "1 thread waiting for input or approval will be interrupted.\n\nThread names and activity reasons are unavailable from this server.",
+        "1 thread waiting for input or approval will be interrupted.\n\nThread names and activity reasons are unavailable from this server. Make sure you're ready before continuing.",
       confirmLabel: "Restart",
     });
   });
