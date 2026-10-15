@@ -41,6 +41,14 @@
       "reason": "Fixes the V2 regression where messages sent during context compaction are rejected as steering instead of queued across web, mobile and server. Wait for upstream to merge it, then take it at chronological intake; an early import conflicts with pending upstream orchestration and composer changes."
     },
     {
+      "pr": 13600,
+      "reason": "preview_snapshot times out or returns a stale image when the desktop window is minimized, hidden, covered, or on another macOS Space, because the occluded guest does not present a fresh frame. Agents see this as a page-capture failure. Take it at chronological intake; the fork's capture retry and timeout handling in apps/desktop/src/preview/Manager.ts must be reconciled with its Page.captureScreenshot path."
+    },
+    {
+      "pr": 13608,
+      "reason": "Proactive panels re-select a thread's pull request tab every time the thread is entered, hiding a Browser or Device tab the user or an agent was using. This PR leaves an existing PR tab alone on re-entry. At intake, adapt its existing-tab check to the fork's PR tab matching (ledger entry with fork #531) so sidebar-created tabs whose IDs include the host are also recognised; otherwise re-entry still steals focus. Closing the PR tab and re-entering still reopens it, and a newly linked PR still takes focus from an active Browser tab."
+    },
+    {
       "pr": 14291,
       "reason": "Makes upstream's repository identity honour gh repo set-default, which the fork's resolver has done since fork #123, including `owner/repo` values. When it merges, take upstream's version and keep the fork's rule that the branch's tracking remote does not count (ledger pull-request-association-continuity)."
     },
