@@ -71,7 +71,7 @@ describe("HostActivity", () => {
       title: "Sample project",
       workspaceRoot: "/workspace/sample",
       faviconPath: "brand/icon.svg",
-      projectIcon: { kind: "emoji", emoji: "🌿" },
+      projectIcon: { kind: "emoji" as const, emoji: "🌿" },
     };
     const activity = decodeHostActivity({
       environmentId: "laptop",
