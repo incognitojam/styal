@@ -23,7 +23,7 @@ import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
 import { Alert, Linking, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { Button } from "../../components/Button";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
@@ -316,7 +316,7 @@ export function ResetCredits(props: {
         </View>
       ) : null}
       {credits.availableCount > 0 ? (
-        <MaterialButton
+        <Button
           label="Use reset"
           tone="primary"
           onPress={confirm}
