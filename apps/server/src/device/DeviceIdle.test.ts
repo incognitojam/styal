@@ -38,7 +38,10 @@ const decodeRpcBody = Schema.decodeUnknownSync(
  */
 const fixture = Effect.fn("fixture")(function* (
   saved: Ref.Ref<BootRecords>,
-  options: { readonly gate?: Deferred.Deferred<void> } = {},
+  options: {
+    readonly gate?: Deferred.Deferred<void>;
+    readonly saveGate?: Deferred.Deferred<void>;
+  } = {},
 ) {
   const settings = yield* Ref.make({
     ...DEFAULT_SERVER_SETTINGS,
@@ -46,6 +49,8 @@ const fixture = Effect.fn("fixture")(function* (
   });
   const releaseError = yield* Ref.make<string | null>(null);
   const busy = new Set<string>();
+  const releasedNames = yield* Ref.make<ReadonlyArray<string>>([]);
+  const ledgerSaves = { count: 0 };
   const daemonRunning = yield* Ref.make(true);
   const starts: string[] = [];
   const calls: string[] = [];
@@ -147,7 +152,19 @@ const fixture = Effect.fn("fixture")(function* (
     Effect.provideService(HttpClient.HttpClient, httpClient),
   );
   const idle = yield* DeviceIdle.make(inner, {
-    ledger: { load: Ref.get(saved), save: (records) => Ref.set(saved, records) },
+    ledger: {
+      load: Ref.get(saved),
+      save: (records) =>
+        Effect.gen(function* () {
+          ledgerSaves.count++;
+          if (options.saveGate) yield* Deferred.await(options.saveGate);
+          yield* Ref.set(saved, records);
+        }),
+    },
+    releasedSessions: {
+      load: Ref.get(releasedNames),
+      save: (names) => Ref.set(releasedNames, names),
+    },
     agentEndpoint: () =>
       Ref.get(daemonRunning).pipe(Effect.map((running) => (running ? agentDevice : null))),
     environmentId: OWN_ENVIRONMENT,
@@ -156,13 +173,26 @@ const fixture = Effect.fn("fixture")(function* (
   const bootElsewhere = () => {
     booted = true;
   };
-  return { ...idle, settings, releaseError, daemonRunning, starts, calls, busy, bootElsewhere };
+  return {
+    ...idle,
+    settings,
+    releaseError,
+    daemonRunning,
+    starts,
+    calls,
+    busy,
+    releasedNames,
+    ledgerSaves,
+    bootElsewhere,
+  };
 });
 
 const threadId = ThreadId.make("thread-1");
 const thread2 = ThreadId.make("thread-2");
+const sessionName = (thread: string, deviceId = "Pixel_API_35") =>
+  agentDeviceSession(thread, LOCAL_DEVICE_HOST_ID, deviceId);
 const release = (thread: string, deviceId = "Pixel_API_35") =>
-  `release ${agentDeviceSession(thread, LOCAL_DEVICE_HOST_ID, deviceId)}`;
+  `release ${sessionName(thread, deviceId)}`;
 const withShutdown = { shutdownAfter: Duration.minutes(10), agentAccess: true };
 
 /** What the device_open tool does: target the agent session, then open the device. */
@@ -241,6 +271,26 @@ describe("hand-back", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("keeps retrying an uncertain claim after failed cleanup removes its session", () =>
+    Effect.gen(function* () {
+      const { service, calls, releaseError, daemonRunning } = yield* fixture(
+        yield* Ref.make<BootRecords>([]),
+      );
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      yield* Ref.set(releaseError, "CLEANUP_FAILED");
+      yield* service.close({ threadId });
+      yield* Ref.set(releaseError, "SESSION_NOT_FOUND");
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      expect(calls.filter((call) => call === release("thread-1"))).toHaveLength(3);
+
+      yield* Ref.set(daemonRunning, false);
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      expect(calls.filter((call) => call === release("thread-1"))).toHaveLength(3);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("an agent opening a device another thread holds but is not using takes it over", () =>
     Effect.gen(function* () {
       const { service, activity, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
@@ -287,12 +337,38 @@ describe("hand-back", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("does not hand a connected environment's device to a local agent", () =>
+    Effect.gen(function* () {
+      const { service, activity, calls, bootElsewhere } = yield* fixture(
+        yield* Ref.make<BootRecords>([]),
+      );
+      bootElsewhere();
+      yield* service.configure({ enabled: true });
+      const prefix = devicePeerThreadPrefix("agent-environment");
+      const peerThread = ThreadId.make(`${prefix}peer-thread`);
+      activity.notePeer(prefix, "agent-environment");
+      yield* service.open({
+        threadId: peerThread,
+        deviceId: "emulator-5554",
+        platform: "android",
+      });
+      yield* TestClock.adjust("1 hour");
+      expect(yield* activity.reclaimable(threadId)).toEqual([]);
+      yield* agentOpen(service, threadId, "emulator-5554");
+      expect(calls).toEqual([]);
+      expect(yield* threads(service)).toEqual([peerThread, threadId]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("a reopen waits for a hand-over in progress instead of being dropped by it", () =>
     Effect.gen(function* () {
       const gate = yield* Deferred.make<void>();
-      const { service, calls } = yield* fixture(yield* Ref.make<BootRecords>([]), { gate });
+      const { service, calls, releasedNames } = yield* fixture(yield* Ref.make<BootRecords>([]), {
+        gate,
+      });
       yield* service.configure({ enabled: true });
       yield* agentOpen(service);
+      yield* agentOpen(service, threadId, "emulator-5554");
 
       const takingOver = yield* agentOpen(service, thread2, "emulator-5554").pipe(Effect.forkChild);
       while (calls.length === 0) yield* Effect.yieldNow;
@@ -303,6 +379,60 @@ describe("hand-back", () => {
       yield* Fiber.join(reopening);
       // thread-1 reopened after the hand-over finished, and took the idle device back.
       expect(yield* threads(service)).toEqual([threadId]);
+      expect(yield* Ref.get(releasedNames)).not.toContain(sessionName("thread-1", "emulator-5554"));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("released sessions stay refused until device_open hands them out again", () =>
+    Effect.gen(function* () {
+      const { service, releasedNames } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      yield* agentOpen(service, thread2, "emulator-5554");
+      // thread-1 lost the device to thread-2, so its session is refused.
+      expect(yield* Ref.get(releasedNames)).toEqual([sessionName("thread-1")]);
+      // device_open hands thread-1 a session again and takes the device back.
+      yield* agentOpen(service, threadId, "emulator-5554");
+      expect(yield* Ref.get(releasedNames)).toEqual([
+        sessionName("thread-1"),
+        sessionName("thread-2", "emulator-5554"),
+      ]);
+      yield* agentOpen(service, thread2, "emulator-5554");
+      expect(yield* Ref.get(releasedNames)).toContain(sessionName("thread-1", "emulator-5554"));
+      expect(yield* Ref.get(releasedNames)).not.toContain(sessionName("thread-2", "emulator-5554"));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("an explicit open does not take a device someone is watching", () =>
+    Effect.gen(function* () {
+      const { service, activity, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      yield* activity.watch(LOCAL_DEVICE_HOST_ID, "emulator-5554");
+      yield* agentOpen(service, thread2, "emulator-5554");
+      expect(calls).toEqual([]);
+      expect(yield* threads(service)).toEqual([threadId, thread2]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("an Android device's AVD name and serial share one lock while it boots", () =>
+    Effect.gen(function* () {
+      const saveGate = yield* Deferred.make<void>();
+      const { service, calls, ledgerSaves } = yield* fixture(yield* Ref.make<BootRecords>([]), {
+        saveGate,
+      });
+      yield* service.configure({ enabled: true });
+      const opening = yield* agentOpen(service).pipe(Effect.forkChild);
+      while (ledgerSaves.count === 0) yield* Effect.yieldNow;
+      const stopping = yield* service
+        .shutdown({ deviceId: "emulator-5554", platform: "android" })
+        .pipe(Effect.forkChild);
+      for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+      expect(calls).not.toContain("shutdown");
+      yield* Deferred.succeed(saveGate, undefined);
+      yield* Fiber.join(opening);
+      yield* Fiber.join(stopping);
+      expect(calls).toContain("shutdown");
     }).pipe(Effect.scoped),
   );
 

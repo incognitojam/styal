@@ -1081,9 +1081,10 @@ features:
     status: maintained
     prs: [832]
     invariants:
-      - device_close releases every agent-device session device_open handed the thread for that device, recorded when each was handed out (so an Android AVD that boots under a new id still releases), and leaves the device booted. A release the daemon does not confirm still closes and is retried on the next hand-over or power-off; a session agent-device no longer has, or a stopped local daemon, counts as released.
-      - When an agent opens a device, other threads' holds on it are released if their thread is not working (a connected environment's, if its agent sent no command for 5 minutes). device_open prefers a free device and takes an idle-held one only when none is free, never one someone is watching. Opening a device from the Device panel never takes it from an agent, and holds are never released on a timer.
-      - Lifecycle work on one device is serialized, so a reopen waits for a hand-over or release in progress.
+      - device_close releases every agent-device session device_open handed the thread for that device, recorded when each was handed out (so an Android AVD that boots under a new id still releases), and leaves the device booted. A release the daemon does not confirm still closes and is retried on the next hand-over or power-off; a missing session after failed cleanup remains uncertain until a successful release or stopped daemon confirms it.
+      - When an agent opens a device nobody is watching, other local threads' holds on it are released if their thread is not working. Connected environments' holds are not reclaimed. device_open prefers a free device and takes an idle-held one only when none is free, never one someone is watching. Opening a device from the Device panel never takes it from an agent, and holds are never released on a timer.
+      - A session handed back or over is refused by the agent-device launcher, with a message to call device_open, until device_open hands it out again; agent-device itself does not stop a released session driving the device by its selector.
+      - Lifecycle work on one device is serialized, an Android device by AVD name across its boot, so a reopen waits for a hand-over or release in progress. Hand-over happens within an environment, not across connected environments.
       - Powering a device off, by close, shutdown, or the sweep, first releases every agent's claim on it, including connected environments' claims named from the peer environment id, and forgets the device's boot record. Revoking a peer's grant on the device environment closes that peer's sessions.
       - Only devices this environment booted are shut down, only once no working thread holds them and nobody has streamed them for the configured idle period, and that record survives server restarts. A device shut down or replaced outside styal is forgotten when its host is next listed.
       - The sweep starts the local hub when needed, so devices left running across a restart still stop, but acts on SSH hosts only while they are connected and leaves devices from a connected environment to that environment.
@@ -1092,12 +1093,14 @@ features:
     implementation_paths:
       - .agents/skills/test-styal-mobile/SKILL.md
       - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
+      - apps/server/src/device/AgentDeviceShim.ts
       - apps/server/src/device/DeviceIdle.ts
       - apps/server/src/device/DeviceSharing.ts
       - apps/server/src/device/DeviceSharingHttp.ts
       - apps/web/src/components/settings/DeviceIdleShutdownSetting.tsx
       - packages/contracts/src/deviceIdleShutdown.ts
     upstream_paths:
+      - apps/server/src/device/AgentDeviceShim.ts
       - apps/server/src/device/DeviceHubProxy.ts
       - apps/server/src/device/DeviceService.ts
       - apps/server/src/mcp/toolkits/device/handlers.ts
@@ -1107,6 +1110,7 @@ features:
       - packages/contracts/src/index.ts
       - packages/contracts/src/settings.ts
     tests:
+      - apps/server/src/device/AgentDeviceShim.test.ts
       - apps/server/src/device/DeviceIdle.test.ts
       - apps/server/src/device/DeviceSharing.test.ts
     upstream:
@@ -1143,8 +1147,8 @@ features:
     prs: [681]
     invariants:
       - device_list reports devices that other threads have open, separately from the calling thread's own devices.
-      - device_open without a device id opens a booted device no other thread has open; when every booted device is open elsewhere it returns an error naming them instead of taking one over.
-      - Opening another thread's device by id still works, and its quick start warns that another agent may be driving it.
+      - device_open without a device id opens a booted device no other thread has open. When every booted device is open elsewhere, it takes one whose holders are not working and that nobody is watching, handing it over (see device-idle-shutdown); otherwise it returns an error naming them instead of taking one over.
+      - Opening another thread's device by id still works. Its quick start warns that another agent may be driving it, unless the device was handed over from an idle thread.
     rationale: Several agents share one machine's simulators and emulators. Upstream returns only the calling thread's devices, so an agent could load its own build onto an app another agent was testing.
     implementation_paths:
       - .agents/skills/test-styal-mobile/SKILL.md
