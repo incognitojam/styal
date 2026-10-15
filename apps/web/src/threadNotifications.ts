@@ -109,10 +109,7 @@ export function loadNotificationBuffer(context: AudioContext, url: string) {
   let buffer = buffers.get(url);
   if (!buffer) {
     buffer = fetch(url)
-      .then((response) => {
-        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-        return response.arrayBuffer();
-      })
+      .then((response) => response.arrayBuffer())
       .then((data) => context.decodeAudioData(data))
       .catch((error: unknown) => {
         buffers.delete(url);
