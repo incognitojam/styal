@@ -93,6 +93,10 @@ jobs:
             --pending-base "$RUNNER_TEMP/plan/pending-base-manifest.json")
           if [[ -n "$PROVIDER" ]]; then args+=(--provider "$PROVIDER"); fi
           if [[ "$FORCE" == "true" ]]; then args+=(--force); fi
+          # TEMPORARY: test this branch as if it were the published nightly.
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            args+=(--build "$(npm view @styal/cli dist-tags.nightly)=$GITHUB_SHA")
+          fi
           node scripts/provider-canary.ts plan "${args[@]}"
 
       - name: Upload plan
