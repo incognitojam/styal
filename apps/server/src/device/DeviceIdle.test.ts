@@ -348,6 +348,32 @@ describe("hand-back", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("pending cleanup does not revoke a reopened device held by a working thread", () =>
+    Effect.gen(function* () {
+      const { service, calls, releaseError, busy, releasedNames } = yield* fixture(
+        yield* Ref.make<BootRecords>([]),
+      );
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      yield* agentOpen(service, threadId, "emulator-5554");
+      yield* Ref.set(releaseError, "CLEANUP_FAILED");
+      yield* service.close({ threadId });
+      yield* Ref.set(releaseError, "SESSION_NOT_FOUND");
+      yield* agentOpen(service, threadId, "emulator-5554");
+      busy.add(threadId);
+      calls.length = 0;
+
+      yield* agentOpen(service, thread2, "emulator-5554");
+      expect(calls).toEqual([]);
+      expect(yield* Ref.get(releasedNames)).not.toContain(sessionName("thread-1", "emulator-5554"));
+
+      busy.delete(threadId);
+      yield* agentOpen(service, thread2, "emulator-5554");
+      expect(calls).toContain(release("thread-1", "emulator-5554"));
+      expect(yield* Ref.get(releasedNames)).toContain(sessionName("thread-1", "emulator-5554"));
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("an agent opening a device another thread holds but is not using takes it over", () =>
     Effect.gen(function* () {
       const { service, activity, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));

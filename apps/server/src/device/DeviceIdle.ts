@@ -342,11 +342,17 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     else unreleased.delete(key);
   });
 
-  /** Retries claims on a device whose release was not confirmed. */
+  /** Retries orphaned claims; a reopened hold retains its uncertainty until it is eligible for release. */
   const retryUnreleased = (hostId: string, deviceId: string) =>
-    Effect.forEach([...unreleased.values()].filter(onDevice(hostId, deviceId)), release, {
-      discard: true,
-    });
+    Effect.forEach(
+      [...unreleased.values()].filter(
+        (hold) =>
+          onDevice(hostId, deviceId)(hold) &&
+          !holds.has(holdKey(hold.threadId, hold.hostId, hold.deviceId)),
+      ),
+      release,
+      { discard: true },
+    );
 
   /** Releases every claim on a device before it powers off; one held on a powered-off device never clears. */
   const releaseDevice = Effect.fn("DeviceIdle.releaseDevice")(function* (
