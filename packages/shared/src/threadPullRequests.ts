@@ -291,8 +291,8 @@ export function resolvePullRequestMergeIntent(pr: {
   return pr.autoMergeEnabled === true ? "auto-merge" : null;
 }
 
-export function pullRequestMergeIntentLabel(intent: PullRequestMergeIntent): string {
-  return intent === "queued" ? "In merge queue" : "Auto-merge enabled";
+export function pullRequestMergeIntentLabel(intent: PullRequestMergeIntent | null): string {
+  return intent === null ? "" : intent === "queued" ? "In merge queue" : "Auto-merge enabled";
 }
 
 export type ThreadPullRequestBadge = {
@@ -323,18 +323,16 @@ export function resolveThreadPullRequestBadge(
   const chains = resolveThreadPullRequestChains(visible);
   // A dot on a stack or linked count speaks for every remaining PR. Unknown snapshots
   // therefore keep it off, as does even one open PR with no automatic merge requested.
-  const remaining = visible.filter(
-    (link) => link.snapshot == null || link.snapshot.state === "open",
-  );
-  const intents = remaining.map((link) =>
-    link.snapshot === null ? null : resolvePullRequestMergeIntent(link.snapshot),
-  );
-  const mergeIntent =
-    intents.length > 0 && intents.every((intent) => intent !== null)
+  const remaining = visible
+    .map((link) => link.snapshot)
+    .filter((snapshot) => snapshot === null || snapshot.state === "open");
+  const mergeIntent: { mergeIntent?: PullRequestMergeIntent } =
+    remaining.length > 0 &&
+    remaining.every((snapshot) => snapshot && resolvePullRequestMergeIntent(snapshot))
       ? {
-          mergeIntent: intents.every((intent) => intent === "queued")
-            ? ("queued" as const)
-            : ("auto-merge" as const),
+          mergeIntent: remaining.every((snapshot) => snapshot?.inMergeQueue)
+            ? "queued"
+            : "auto-merge",
         }
       : {};
   if (visible.length > 1 && chains.length === 1) {

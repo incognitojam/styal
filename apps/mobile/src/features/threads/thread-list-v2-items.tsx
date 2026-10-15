@@ -50,6 +50,7 @@ import {
   resolveThreadListV2SwipeActions,
   type ThreadListV2Status,
 } from "./threadListV2";
+import { PullRequestMergeIntentIcon } from "./pull-request-merge-intent-icon";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { UnsentDraftIcon } from "./unsent-draft-icon";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
@@ -1122,24 +1123,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         )}
         {pr ? (
           <View className="flex-row items-center gap-1" accessibilityLabel={pr.accessibilityLabel}>
-            <View className="relative">
-              <SymbolView
-                name={pr.kind === "stack" ? "square.3.layers.3d" : "arrow.triangle.pull"}
-                size={12}
-                tintColorClassName={
-                  pr.state === null || pr.isDraft
-                    ? rowAppearance.mutedIconTintClassName
-                    : pr.state === "open"
-                      ? "accent-adaptive-emerald-600-400"
-                      : pr.state === "closed"
-                        ? "accent-adaptive-rose-600-400"
-                        : "accent-adaptive-violet-600-400"
-                }
-              />
-              {pr.mergeIntent ? (
-                <View className="absolute -top-0.5 -right-0.5 size-1 rounded-full bg-adaptive-emerald-600-400" />
-              ) : null}
-            </View>
+            <PullRequestMergeIntentIcon
+              name={pr.kind === "stack" ? "square.3.layers.3d" : "arrow.triangle.pull"}
+              size={12}
+              mergeIntent={pr.mergeIntent}
+              tintColorClassName={
+                pr.state === null || pr.isDraft
+                  ? rowAppearance.mutedIconTintClassName
+                  : pr.state === "open"
+                    ? "accent-adaptive-emerald-600-400"
+                    : pr.state === "closed"
+                      ? "accent-adaptive-rose-600-400"
+                      : "accent-adaptive-violet-600-400"
+              }
+            />
             <Text
               accessibilityLabel={pr.accessibilityLabel}
               className={cn("text-xs", pr.textClassName)}

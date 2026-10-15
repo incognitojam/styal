@@ -3346,6 +3346,7 @@ features:
     rationale: Automatic merge intent helps users see which work has been handed to the host without changing thread lifecycle or treating an open pull request as merged.
     implementation_paths:
       - apps/mobile/src/features/threads/git/GitOverviewSheet.tsx
+      - apps/mobile/src/features/threads/pull-request-merge-intent-icon.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/state/thread-pr-presentation.ts
       - apps/server/src/orchestration-v2/PullRequestSyncReactor.ts
