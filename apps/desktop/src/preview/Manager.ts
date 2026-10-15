@@ -1570,12 +1570,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       { operation: "readViewportPresentationScale", tabId, webContentsId: wc.id },
       () => presentation.scale * (wc.hostWebContents?.getZoomFactor() ?? 1),
     );
+    const zoomFactor = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.zoomFactor ?? 1;
     yield* attemptPromise(
       { operation: "setViewportPresentation", tabId, webContentsId: wc.id },
       () =>
         control.debugger.sendCommand("Emulation.setDeviceMetricsOverride", {
-          width: presentation.width,
-          height: presentation.height,
+          // CDP dimensions are in DIP; the guest divides them by its page zoom
+          // to obtain the requested CSS viewport used by locators and crops.
+          width: Math.max(1, Math.round(presentation.width * zoomFactor)),
+          height: Math.max(1, Math.round(presentation.height * zoomFactor)),
           deviceScaleFactor: 0,
           mobile: false,
           scale,
@@ -3116,6 +3119,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           const presentation = (yield* Ref.get(viewportPresentationsRef)).get(tabId);
           if (
             currentTab?.webContentsId !== wc.id ||
+            (yield* SynchronizedRef.get(controlSessionsRef)).get(wc.id) !== control ||
+            !control.debugger.isAttached() ||
             !presentation ||
             (expectedPresentation !== undefined && presentation !== expectedPresentation)
           )
