@@ -1614,6 +1614,12 @@ export const make = Effect.gen(function* () {
             updatedAt: changeRequest.updatedAt,
             observedAt,
             ...(changeRequest.isDraft === undefined ? {} : { isDraft: changeRequest.isDraft }),
+            ...(changeRequest.autoMergeEnabled === undefined
+              ? {}
+              : { autoMergeEnabled: changeRequest.autoMergeEnabled }),
+            ...(changeRequest.inMergeQueue === undefined
+              ? {}
+              : { inMergeQueue: changeRequest.inMergeQueue }),
             ...(changeRequest.author === undefined ? {} : { author: changeRequest.author }),
             ...(changeRequest.additions === undefined
               ? {}
@@ -1734,6 +1740,9 @@ export const make = Effect.gen(function* () {
               ? {}
               : { baseComparison: changeRequest.baseComparison }),
             ...(changeRequest.behindBy === undefined ? {} : { behindBy: changeRequest.behindBy }),
+            ...(changeRequest.inMergeQueue === undefined
+              ? {}
+              : { inMergeQueue: changeRequest.inMergeQueue }),
             ...(changeRequest.autoMergeEnabled === undefined
               ? {}
               : { autoMergeEnabled: changeRequest.autoMergeEnabled }),
@@ -3020,6 +3029,9 @@ export const make = Effect.gen(function* () {
     url: detail.url,
     state: detail.state,
     isDraft: detail.isDraft,
+    // Assign unknown too: a new observation must not retain a previous true.
+    autoMergeEnabled: detail.autoMergeEnabled,
+    inMergeQueue: detail.inMergeQueue,
     author: detail.author,
     additions: detail.additions,
     deletions: detail.deletions,

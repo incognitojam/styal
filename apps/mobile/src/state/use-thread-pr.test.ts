@@ -17,6 +17,25 @@ const pullRequest: NonNullable<VcsStatusResult["pr"]> = {
 };
 
 describe("presentThreadPr", () => {
+  it("announces merge intent without changing the open color, and ignores stale terminal intent", () => {
+    expect(
+      presentThreadPr({ ...pullRequest, state: "open", autoMergeEnabled: true }, undefined),
+    ).toMatchObject({
+      mergeIntent: "auto-merge",
+      accessibilityLabel: "#3774 pull request open, Auto-merge enabled",
+      textClassName: "text-adaptive-emerald-600-400",
+    });
+    expect(
+      presentThreadPr({ ...pullRequest, state: "open", inMergeQueue: true }, undefined),
+    ).toMatchObject({
+      mergeIntent: "queued",
+      accessibilityLabel: "#3774 pull request open, In merge queue",
+    });
+    expect(
+      presentThreadPr({ ...pullRequest, autoMergeEnabled: true, inMergeQueue: true }, undefined),
+    ).not.toHaveProperty("mergeIntent");
+  });
+
   it("uses the compact pull request number label without a hash prefix", () => {
     expect(presentThreadPr(pullRequest, undefined)).toMatchObject({
       label: "3774",
@@ -74,6 +93,20 @@ function linkedPr(
 }
 
 describe("presentThreadLinkedPullRequests", () => {
+  it("marks linked counts only when every remaining PR has merge intent", () => {
+    const first = linkedPr(1);
+    const second = linkedPr(2);
+    const armed = { ...first, snapshot: { ...first.snapshot!, autoMergeEnabled: true } };
+    expect(presentThreadLinkedPullRequests([armed, second])).not.toHaveProperty("mergeIntent");
+    const queued = { ...second, snapshot: { ...second.snapshot!, inMergeQueue: true } };
+    expect(presentThreadLinkedPullRequests([armed, queued])).toMatchObject({
+      mergeIntent: "auto-merge",
+      label: "+2",
+      accessibilityLabel:
+        "2 linked pull requests, overall open, all remaining pull requests awaiting merge",
+    });
+  });
+
   it("renders unsynced links with neutral pending status", () => {
     expect(presentThreadLinkedPullRequests([linkedPr(1, { snapshot: null })])).toMatchObject({
       number: 1,

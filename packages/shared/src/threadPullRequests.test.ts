@@ -298,6 +298,35 @@ describe("resolveThreadPullRequestChains", () => {
 });
 
 describe("chain selection and badge state", () => {
+  it("marks a stack only when every remaining PR requests automatic merge", () => {
+    const bottom = link(1, { snapshot: snapshot({ headBranch: "base", state: "merged" }) });
+    const top = link(2, { snapshot: snapshot({ baseBranch: "base", autoMergeEnabled: true }) });
+    expect(resolveThreadPullRequestBadge([bottom, top])).toMatchObject({
+      state: "open",
+      mergeIntent: "auto-merge",
+    });
+    const queued = link(2, { snapshot: snapshot({ baseBranch: "base", inMergeQueue: true }) });
+    expect(resolveThreadPullRequestBadge([bottom, queued])).toMatchObject({
+      mergeIntent: "queued",
+    });
+    const open = link(3);
+    for (const other of [
+      open,
+      { ...open, snapshot: null },
+      link(3, { snapshot: snapshot({ isDraft: true, autoMergeEnabled: true }) }),
+    ]) {
+      expect(resolveThreadPullRequestBadge([top, other])).not.toHaveProperty("mergeIntent");
+    }
+    expect(resolveThreadPullRequestBadge([top, queued])).toMatchObject({
+      mergeIntent: "auto-merge",
+    });
+    expect(
+      resolveThreadPullRequestBadge([
+        link(1, { snapshot: snapshot({ state: "merged", autoMergeEnabled: true }) }),
+      ]),
+    ).not.toHaveProperty("mergeIntent");
+  });
+
   it.each([
     ["open", false, "open", false, "open"],
     ["closed", false, "closed", false, "closed"],

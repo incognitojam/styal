@@ -457,6 +457,8 @@ layer("GitHubPullRequestCli.layer", (it) => {
       const node = (number: number) => ({
         number,
         title: `Pull request ${number}`,
+        autoMergeRequest: number === 7 ? { enabledAt: "2026-08-24T12:34:56.000Z" } : null,
+        isInMergeQueue: number === 7,
         url: `https://github.com/acme/web/pull/${number}`,
         author: { __typename: "User", login: "octocat", name: "Octo Cat", avatarUrl: null },
         baseRefName: "main",
@@ -499,6 +501,10 @@ layer("GitHubPullRequestCli.layer", (it) => {
       ).pipe(Effect.forkChild);
       yield* TestClock.adjust("10 millis");
       const [seven, eight] = yield* Fiber.join(reads);
+      assert.strictEqual(seven?.autoMergeEnabled, true);
+      assert.strictEqual(seven?.inMergeQueue, true);
+      assert.strictEqual(eight?.autoMergeEnabled, false);
+      assert.strictEqual(eight?.inMergeQueue, false);
 
       assert.deepStrictEqual(
         {
@@ -543,6 +549,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
               JSON.stringify({
                 number: 7,
                 title: "Reuse the summary",
+                autoMergeRequest: { mergeMethod: "SQUASH" },
                 url: "https://github.com/acme/web/pull/7",
                 author: { login: "octocat", name: "Octo Cat" },
                 baseRefName: "main",
@@ -580,6 +587,8 @@ layer("GitHubPullRequestCli.layer", (it) => {
       const summary = yield* Fiber.join(read);
 
       assert.strictEqual(summary.headBranch, "feat/summary");
+      assert.strictEqual(summary.autoMergeEnabled, true);
+      assert.strictEqual(summary.inMergeQueue, undefined);
       assert.strictEqual(summary.checksState, "passing");
       assert.strictEqual(mockedExecute.mock.calls.length, 2);
       expect(callAt(1).args).toEqual([

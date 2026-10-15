@@ -24,11 +24,15 @@ import {
   resolveThreadCurrentPullRequestLink,
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
+  resolvePullRequestMergeIntent,
+  pullRequestMergeIntentLabel,
+  type PullRequestMergeIntent,
   type ThreadPullRequestBadge,
 } from "@t3tools/shared/threadPullRequests";
 import { useRender } from "@base-ui/react/use-render";
 import { type ReactNode, type AnimationEvent, type MouseEvent, type ReactElement } from "react";
 import { cn } from "../lib/utils";
+import { PullRequestMergeIntentIcon } from "./pullRequest/PullRequestMergeIntentIcon";
 
 import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
 import { useEnvironmentQuery } from "../state/query";
@@ -48,7 +52,7 @@ import {
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { pullRequestListLines, type PullRequestListLine } from "./pullRequest/pullRequestListLines";
+import { pullRequestListLines } from "./pullRequest/pullRequestListLines";
 import {
   PULL_REQUEST_STATE_PRESENTATION,
   PullRequestGlyph,
@@ -64,6 +68,7 @@ export interface PrStatusIndicator {
   tooltipLead: string;
   tooltipTitle: string;
   url: string;
+  mergeIntent?: PullRequestMergeIntent;
 }
 
 export interface TerminalStatusIndicator {
@@ -145,6 +150,10 @@ export function linkedPullRequestSnapshotStatus(
       title: snapshot.title,
       state: snapshot.state,
       isDraft: snapshot.isDraft,
+      ...(snapshot.autoMergeEnabled === undefined
+        ? {}
+        : { autoMergeEnabled: snapshot.autoMergeEnabled }),
+      ...(snapshot.inMergeQueue === undefined ? {} : { inMergeQueue: snapshot.inMergeQueue }),
       headRef: snapshot.headBranch,
       baseRef: snapshot.baseBranch,
       ...(snapshot.updatedAt === null ? {} : { updatedAt: snapshot.updatedAt }),
@@ -163,6 +172,7 @@ export interface ThreadPullRequestBadgePresentation {
   readonly toneClassName: string;
   readonly label: string;
   readonly text: string | number;
+  readonly mergeIntent?: PullRequestMergeIntent;
 }
 
 /** Resolve the complete badge appearance before rendering it in the sidebar or composer. */
@@ -184,21 +194,24 @@ export function resolveThreadPullRequestBadgePresentation({
     return {
       Icon: PullRequestGlyph.stack,
       toneClassName: aggregate.toneClassName,
-      label: `Stack of ${badge.layers} pull requests, ${aggregate.label.toLowerCase()}`,
+      label: `Stack of ${badge.layers} pull requests, ${aggregate.label.toLowerCase()}${badge.mergeIntent ? ", all remaining pull requests awaiting merge" : ""}`,
       text: badge.layers,
+      ...(badge.mergeIntent ? { mergeIntent: badge.mergeIntent } : {}),
     };
   }
   if (number === undefined || url === undefined) return null;
 
   const tooltip = status?.tooltip ?? `PR #${number}, status pending`;
+  const mergeIntent = badge?.mergeIntent ?? status?.mergeIntent;
   if (badge?.kind === "pull-request" && badge.others > 0) {
     // Unrelated links fold into one state, so a count of merged PRs reads as merged.
     const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
     return {
       Icon: aggregate.Icon,
       toneClassName: aggregate.toneClassName,
-      label: `${tooltip}, and ${badge.others} more linked; overall ${aggregate.label.toLowerCase()}`,
+      label: `${tooltip}, and ${badge.others} more linked; overall ${aggregate.label.toLowerCase()}${badge.mergeIntent ? ", all remaining pull requests awaiting merge" : ""}`,
       text: `+${badge.others + 1}`,
+      ...(badge.mergeIntent ? { mergeIntent: badge.mergeIntent } : {}),
     };
   }
   return {
@@ -206,6 +219,7 @@ export function resolveThreadPullRequestBadgePresentation({
     toneClassName: status?.colorClass ?? "text-muted-foreground",
     label: tooltip,
     text: number,
+    ...(mergeIntent ? { mergeIntent } : {}),
   };
 }
 
@@ -302,7 +316,10 @@ function PullRequestBadge({
         <span
           className={cn("contents font-normal text-xs tabular-nums", presentation.toneClassName)}
         >
-          <presentation.Icon aria-hidden className="size-3 shrink-0" />
+          <PullRequestMergeIntentIcon
+            Icon={presentation.Icon}
+            mergeIntent={presentation.mergeIntent}
+          />
           {/* An element, not bare text: bare text takes its line box from the control, which
               inherits the row's size, so beside a text-sm title it sat below the other meta. */}
           <span>{presentation.text}</span>
@@ -326,6 +343,7 @@ function PullRequestBadge({
               url={url}
               title={status?.tooltipTitle ?? presentation.label}
               presentation={presentation}
+              mergeIntent={presentation.mergeIntent}
               onOpenPullRequest={onOpenPullRequest}
             />
           </ul>
@@ -365,6 +383,7 @@ export function ThreadPullRequestsMiniList({
             state: fallback.state,
             isDraft: fallback.isDraft === true,
           })}
+          mergeIntent={resolvePullRequestMergeIntent(fallback) ?? undefined}
           onOpenPullRequest={onOpenPullRequest}
         />
       </ul>
@@ -374,6 +393,7 @@ export function ThreadPullRequestsMiniList({
     <ul className="flex flex-col gap-1">
       {lines.map((line) => {
         const snapshot = line.link.snapshot;
+        const mergeIntent = snapshot ? resolvePullRequestMergeIntent(snapshot) : null;
         const presentation = resolvePullRequestState({
           state: snapshot?.state ?? "open",
           isDraft: snapshot?.isDraft === true,
@@ -385,6 +405,7 @@ export function ThreadPullRequestsMiniList({
             url={line.link.url}
             title={snapshot?.title ?? line.link.repository}
             presentation={presentation}
+            mergeIntent={mergeIntent ?? undefined}
             depth={line.depth}
             onOpenPullRequest={onOpenPullRequest}
           >
@@ -405,6 +426,7 @@ function ThreadPullRequestMiniListItem({
   url,
   title,
   presentation,
+  mergeIntent,
   depth = 0,
   onOpenPullRequest,
   children,
@@ -413,6 +435,7 @@ function ThreadPullRequestMiniListItem({
   url: string;
   title: string;
   presentation: Pick<ThreadPullRequestBadgePresentation, "Icon" | "toneClassName"> | null;
+  mergeIntent?: PullRequestMergeIntent | undefined;
   depth?: number;
   onOpenPullRequest?: ((event: MouseEvent<HTMLAnchorElement>, url: string) => void) | undefined;
   children?: ReactNode;
@@ -420,12 +443,16 @@ function ThreadPullRequestMiniListItem({
   const Icon = presentation?.Icon ?? PullRequestGlyph.pullRequest;
   const content = (
     <>
-      <Icon
-        aria-hidden
-        className={cn("size-3 shrink-0", presentation?.toneClassName ?? "stroke-muted-foreground")}
-      />
+      <span className={presentation?.toneClassName ?? "text-muted-foreground"}>
+        <PullRequestMergeIntentIcon Icon={Icon} mergeIntent={mergeIntent} />
+      </span>
       <span className="shrink-0 font-mono tabular-nums">#{number}</span>
       <span className="min-w-0 truncate text-foreground/75">{title}</span>
+      {mergeIntent ? (
+        <span className="shrink-0 text-3xs text-muted-foreground">
+          {pullRequestMergeIntentLabel(mergeIntent)}
+        </span>
+      ) : null}
       {children}
     </>
   );
@@ -457,7 +484,8 @@ export function prStatusIndicator(
   const presentation = resolveChangeRequestPresentation(provider);
   const state = resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true });
 
-  const tooltipLead = `${presentation.shortName} #${pr.number} - ${state.label}`;
+  const mergeIntent = resolvePullRequestMergeIntent(pr);
+  const tooltipLead = `${presentation.shortName} #${pr.number} - ${state.label}${mergeIntent ? ` · ${pullRequestMergeIntentLabel(mergeIntent)}` : ""}`;
   return {
     label: `${presentation.shortName} ${state.label.toLowerCase()}`,
     colorClass: state.toneClassName,
@@ -466,6 +494,7 @@ export function prStatusIndicator(
     tooltipLead,
     tooltipTitle: pr.title,
     url: pr.url,
+    ...(mergeIntent ? { mergeIntent } : {}),
   };
 }
 

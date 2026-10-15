@@ -362,6 +362,9 @@ describe("pull request detail decoding", () => {
     expect(armed({ autoMergeRequest: null }).autoMergeEnabled).toBe(false);
     // `gh` not answering for the field at all is not GitHub saying the merge is unarmed.
     expect(armed({}).autoMergeEnabled).toBeUndefined();
+    expect(armed({ isInMergeQueue: true }).inMergeQueue).toBe(true);
+    expect(armed({ isInMergeQueue: false }).inMergeQueue).toBe(false);
+    expect(armed({}).inMergeQueue).toBeUndefined();
   });
 
   it("keeps repository-policy readiness separate from conflict-only mergeability", () => {
@@ -2153,6 +2156,45 @@ describe("pull request stack membership batches", () => {
 });
 
 describe("batched pull request summaries", () => {
+  it("preserves true, false and unknown merge intent without asking Enterprise for queue fields", () => {
+    const refs = [{ repository: "acme/web", number: 7 }];
+    expect(buildPullRequestSummariesGraphQlQuery(refs, true)).toContain("isInMergeQueue");
+    expect(buildPullRequestSummariesGraphQlQuery(refs)).not.toContain("isInMergeQueue");
+    expect(buildPullRequestSummariesGraphQlQuery(refs)).toContain("autoMergeRequest");
+    expect(pullRequestCoreGraphQlQuery("github.com")).toContain("isInMergeQueue");
+    expect(pullRequestCoreGraphQlQuery("github.example.com")).not.toContain("isInMergeQueue");
+    const entry = (number: number, extra: Record<string, unknown>) => ({
+      pullRequest: {
+        number,
+        title: "Merge intent",
+        url: `https://github.com/acme/web/pull/${number}`,
+        headRefName: `feature-${number}`,
+        baseRefName: "main",
+        state: "OPEN",
+        updatedAt: "2026-08-24T00:00:00Z",
+        ...extra,
+      },
+    });
+    const result = expectSuccess(
+      decodePullRequestSummariesJson(
+        JSON.stringify({
+          data: {
+            s0: entry(7, {
+              autoMergeRequest: { enabledAt: "2026-08-24T00:00:00Z" },
+              isInMergeQueue: true,
+            }),
+            s1: entry(8, { autoMergeRequest: null, isInMergeQueue: false }),
+            s2: entry(9, {}),
+          },
+        }),
+      ),
+    );
+    expect(result.get(0)).toMatchObject({ autoMergeEnabled: true, inMergeQueue: true });
+    expect(result.get(1)).toMatchObject({ autoMergeEnabled: false, inMergeQueue: false });
+    expect(result.get(2)).not.toHaveProperty("autoMergeEnabled");
+    expect(result.get(2)).not.toHaveProperty("inMergeQueue");
+  });
+
   it("refuses a repository GraphQL cannot address, rather than writing it into the document", () => {
     expect(
       buildPullRequestSummariesGraphQlQuery([{ repository: 'acme/web") { x } #', number: 1 }]),

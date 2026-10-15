@@ -1919,6 +1919,9 @@ export const make = Effect.gen(function* () {
             closedAt: detail.closedAt ?? null,
             mergedAt: detail.mergedAt ?? null,
             isDraft: detail.isDraft,
+            ...(detail.autoMergeEnabled === undefined
+              ? {}
+              : { autoMergeEnabled: detail.autoMergeEnabled }),
             author: detail.author,
             additions: detail.additions,
             deletions: detail.deletions,

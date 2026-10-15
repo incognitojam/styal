@@ -50,6 +50,7 @@ import {
   resolveThreadListV2SwipeActions,
   type ThreadListV2Status,
 } from "./threadListV2";
+import { PullRequestMergeIntentIcon } from "./pull-request-merge-intent-icon";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { UnsentDraftIcon } from "./unsent-draft-icon";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
@@ -971,6 +972,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const showDraftIcon = props.hasUnsentDraft === true && !selected;
   const threadAccessibilityLabel = [
     thread.title,
+    pr?.mergeIntent ? pr.accessibilityLabel : null,
     showDraftIcon ? "unsent draft" : null,
     props.hasQueuedMessages ? "messages queued to send" : null,
   ]
@@ -1121,9 +1123,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         )}
         {pr ? (
           <View className="flex-row items-center gap-1" accessibilityLabel={pr.accessibilityLabel}>
-            <SymbolView
+            <PullRequestMergeIntentIcon
               name={pr.kind === "stack" ? "square.3.layers.3d" : "arrow.triangle.pull"}
               size={12}
+              mergeIntent={pr.mergeIntent}
               tintColorClassName={
                 pr.state === null || pr.isDraft
                   ? rowAppearance.mutedIconTintClassName

@@ -5003,6 +5003,41 @@ it.effect(
     }),
 );
 
+it.effect("carries merge intent into linked summaries and clears it on a newer detail read", () =>
+  Effect.gen(function* () {
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    for (const intent of [false, undefined]) {
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakeProvider("github", {
+            getChangeRequestSummary: () =>
+              Effect.succeed({
+                ...changeRequest(1, "2026-07-02T00:00:00Z"),
+                autoMergeEnabled: true,
+                inMergeQueue: true,
+              }),
+            getChangeRequest: () =>
+              Effect.succeed({
+                ...hostedChangeRequest("body", 4),
+                ...(intent === undefined ? {} : { autoMergeEnabled: intent, inMergeQueue: intent }),
+              }),
+          }),
+        ],
+      });
+      const before = yield* service.summary(reference);
+      assert.strictEqual(before.autoMergeEnabled, true);
+      assert.strictEqual(before.inMergeQueue, true);
+      yield* service.detail(reference);
+      const after = yield* service.summary(reference);
+      assert.strictEqual(after.autoMergeEnabled, intent);
+      assert.strictEqual(after.inMergeQueue, intent);
+    }
+  }),
+);
+
 it.effect("reuses an observed merged state for strict settlement reads", () =>
   Effect.gen(function* () {
     const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };

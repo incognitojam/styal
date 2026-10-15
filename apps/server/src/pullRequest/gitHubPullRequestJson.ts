@@ -620,6 +620,7 @@ const RawDetailSchema = Schema.Struct({
   body: Schema.optional(Schema.String),
   changedFiles: Schema.optional(Schema.Int),
   closedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  isInMergeQueue: Schema.optional(Schema.NullOr(Schema.Boolean)),
   /** The standing instruction and strategy GitHub will use once requirements are met. */
   autoMergeRequest: Schema.optional(
     Schema.NullOr(Schema.Struct({ mergeMethod: Schema.optional(Schema.NullOr(Schema.String)) })),
@@ -926,17 +927,18 @@ export const PULL_REQUEST_DETAIL_JSON_FIELDS = `${PULL_REQUEST_LIST_JSON_FIELDS}
 
 /**
  * Pull refs let the comparison share the detail read without first resolving a fork branch.
- * `isRequired` is asked for on github.com only: an older Enterprise server may not know it, and
- * an unknown field fails the whole read.
+ * `isRequired` and `isInMergeQueue` are asked for on github.com only: an older Enterprise
+ * server may not know them, and an unknown field fails the whole read.
  */
 export const pullRequestCoreGraphQlQuery = (host: string) => {
-  const required =
-    host.toLowerCase() === "github.com" ? " isRequired(pullRequestNumber: $number)" : "";
+  const isGitHubDotCom = host.toLowerCase() === "github.com";
+  const required = isGitHubDotCom ? " isRequired(pullRequestNumber: $number)" : "";
+  const mergeQueue = isGitHubDotCom ? " isInMergeQueue" : "";
   return `query($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission
     pullRequest(number: $number) {
-      number title url body state isDraft mergeable mergeStateStatus reviewDecision
+      number title url body state isDraft${mergeQueue} mergeable mergeStateStatus reviewDecision
       additions deletions changedFiles createdAt updatedAt mergedAt closedAt
       headRefName baseRefName headRefOid isCrossRepository
       headRepositoryOwner { login }
@@ -1446,6 +1448,7 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly mergeReadiness?: PullRequestMergeReadiness;
   /** Absent where `gh` did not answer for auto-merge at all, which is not the same as off. */
   readonly autoMergeEnabled?: boolean;
+  readonly inMergeQueue?: boolean;
   /** Absent where auto-merge is off or GitHub did not report the stored strategy. */
   readonly autoMergeMethod?: PullRequestMergeMethod;
 }
@@ -1932,6 +1935,7 @@ function toDetail(raw: Schema.Schema.Type<typeof RawDetailSchema>): GitHubPullRe
     ...(raw.mergeStateStatus === undefined
       ? {}
       : { mergeReadiness: toMergeReadiness(raw.mergeStateStatus) }),
+    ...(raw.isInMergeQueue == null ? {} : { inMergeQueue: raw.isInMergeQueue }),
     // A JSON null is GitHub saying "nobody armed this"; a missing key is GitHub not saying, and
     // the difference survives here rather than being flattened into false.
     ...(raw.autoMergeRequest === undefined
@@ -2170,7 +2174,7 @@ const STACK_MEMBERSHIP_SELECTION = "stack { number size baseRefName } stackEntry
 
 const PULL_REQUEST_SUMMARY_SELECTION =
   "number title url state isDraft mergeable reviewDecision additions deletions changedFiles " +
-  "updatedAt mergedAt closedAt headRefName baseRefName " +
+  "updatedAt mergedAt closedAt headRefName baseRefName autoMergeRequest { enabledAt } " +
   "author { __typename login avatarUrl ... on User { name } } " +
   "latestReviews(first: 20) { nodes { state author { login } } } " +
   "commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }";
@@ -2181,7 +2185,7 @@ const PULL_REQUEST_SUMMARY_SELECTION =
  */
 export function buildPullRequestSummariesGraphQlQuery(
   changeRequests: ReadonlyArray<{ readonly repository: string; readonly number: number }>,
-  includeStacks = false,
+  isGitHubDotCom = false,
 ): string | null {
   if (changeRequests.length === 0) return null;
   const selections: string[] = [];
@@ -2191,13 +2195,15 @@ export function buildPullRequestSummariesGraphQlQuery(
     if (!REPOSITORY_PART.test(owner) || !REPOSITORY_PART.test(name)) return null;
     if (!Number.isSafeInteger(changeRequest.number) || changeRequest.number <= 0) return null;
     selections.push(
-      `  s${index}: repository(owner: "${owner}", name: "${name}") { pullRequest(number: ${changeRequest.number}) { ${PULL_REQUEST_SUMMARY_SELECTION}${includeStacks ? ` ${STACK_MEMBERSHIP_SELECTION}` : ""} } }`,
+      `  s${index}: repository(owner: "${owner}", name: "${name}") { pullRequest(number: ${changeRequest.number}) { ${PULL_REQUEST_SUMMARY_SELECTION}${isGitHubDotCom ? ` isInMergeQueue ${STACK_MEMBERSHIP_SELECTION}` : ""} } }`,
     );
   }
   return `query PullRequestSummaries {\n${selections.join("\n")}\n}`;
 }
 
 const RawSummarySchema = Schema.Struct({
+  isInMergeQueue: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  autoMergeRequest: RawDetailSchema.fields.autoMergeRequest,
   ...RawSearchItemSchema.fields,
   changedFiles: Schema.optional(Schema.NullOr(Schema.Int)),
   additions: Schema.optional(Schema.NullOr(Schema.Int)),
@@ -2220,6 +2226,8 @@ const decodeSummaries = decodeJsonResult(
 const decodeSummaryEntry = Schema.decodeUnknownExit(RawSummarySchema);
 
 export interface GitHubPullRequestSummary {
+  readonly autoMergeEnabled?: boolean;
+  readonly inMergeQueue?: boolean;
   readonly number: number;
   readonly title: string;
   readonly url: string;
@@ -2265,6 +2273,10 @@ export function decodePullRequestSummariesJson(
       baseBranch: pr.baseRefName,
       state: toState(pr),
       isDraft: pr.isDraft ?? false,
+      ...(pr.isInMergeQueue == null ? {} : { inMergeQueue: pr.isInMergeQueue }),
+      ...(pr.autoMergeRequest === undefined
+        ? {}
+        : { autoMergeEnabled: pr.autoMergeRequest !== null }),
       closedAt: trimmed(pr.closedAt),
       mergedAt: trimmed(pr.mergedAt),
       updatedAt: pr.updatedAt,

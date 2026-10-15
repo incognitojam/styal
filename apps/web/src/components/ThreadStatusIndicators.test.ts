@@ -676,6 +676,31 @@ describe("prStatusIndicator", () => {
 });
 
 describe("resolveThreadPullRequestBadgePresentation", () => {
+  it("keeps the open glyph and color while identifying automatic merge intent", () => {
+    const fixture = status().pr;
+    if (!fixture) throw new Error("Expected pull request fixture");
+    for (const [extra, mergeIntent, label] of [
+      [{ autoMergeEnabled: true }, "auto-merge", "Auto-merge enabled"],
+      [{ inMergeQueue: true }, "queued", "In merge queue"],
+    ] as const) {
+      const pr = { ...fixture, state: "open" as const, ...extra };
+      const indicator = prStatusIndicator(pr, undefined);
+      expect(indicator?.tooltip).toContain(label);
+      expect(
+        resolveThreadPullRequestBadgePresentation({
+          badge: { kind: "pull-request", others: 0, state: "open", mergeIntent },
+          number: pr.number,
+          url: pr.url,
+          status: indicator,
+        }),
+      ).toMatchObject({
+        Icon: PullRequestGlyph.pullRequest,
+        toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+        mergeIntent,
+      });
+    }
+  });
+
   const url = "https://github.com/pingdotgg/t3code/pull/42";
 
   it("returns the pending pull-request badge when no snapshot is available", () => {
