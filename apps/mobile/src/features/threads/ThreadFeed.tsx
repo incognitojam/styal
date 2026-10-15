@@ -27,6 +27,7 @@ import {
   type MessageId,
   type OrchestrationV2ProjectedTurnItem,
   type RunId,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { TurnSummaryView } from "@t3tools/shared/turnUsage";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
@@ -300,6 +301,8 @@ export interface ThreadFeedProps {
   readonly onEditPendingMessage: ((message: QueuedThreadMessage) => void) | null;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  /** Null until a queued creation reaches the server; see `useThreadSelection`. */
+  readonly detailThreadRef: ScopedThreadRef | null;
   readonly threadTitle: string;
   readonly workspaceRoot?: string | null;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
@@ -2295,10 +2298,12 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       restartContinuationOfRunId: RunId;
       resumesResponse: boolean;
     }> = [];
+    const detailThreadRef = props.detailThreadRef;
     return Atom.make((get) => {
-      const projection = get(
-        environmentThreadDetails.threadAtom(scopeThreadRef(props.environmentId, props.threadId)),
-      )?.projection;
+      const projection =
+        detailThreadRef === null
+          ? undefined
+          : get(environmentThreadDetails.threadAtom(detailThreadRef))?.projection;
       const runs = projection?.runs ?? [];
       const runsById = new Map(runs.map((run) => [run.id, run]));
       const next = runs.flatMap((run) =>
@@ -2328,7 +2333,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         previous = next;
       return previous;
     });
-  }, [props.environmentId, props.threadId]);
+  }, [props.detailThreadRef]);
   const restartRuns = useAtomValue(restartRunsAtom);
   const continuedRunRoots = useMemo(() => deriveFeedContinuedRunRoots(restartRuns), [restartRuns]);
   const navigation = useNavigation();
