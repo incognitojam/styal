@@ -567,7 +567,8 @@ const attempt = <A, E, R>(name: ScenarioName, body: Effect.Effect<A, E, R>) => {
     ),
     Effect.ensuring(
       Effect.sync(() => {
-        scenario(name).seconds += Math.round((Date.now() - startedAt) / 100) / 10;
+        const entry = scenario(name);
+        entry.seconds = Math.round((entry.seconds + (Date.now() - startedAt) / 1000) * 10) / 10;
       }),
     ),
   );
