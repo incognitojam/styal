@@ -22,7 +22,7 @@ changes_shipped_code() {
 # overridden in a squash/import commit with a Release-Note: skip/include trailer;
 # unknown values keep the default so a typo cannot silently hide a change.
 should_list_release_change() {
-  local sha="$1" shipped note paths=() path changes
+  local sha="$1" shipped note paths=() path changes old_versions new_versions
   shipped=$(list_shipped_paths "$sha")
   [[ -n "$shipped" ]] || return 1
 
@@ -55,9 +55,13 @@ should_list_release_change() {
     | grep -E '^[-+]' | grep -vE '^(---|\+\+\+)' || true)
   [[ -n "$changes" ]] || return 0
   if printf '%s\n' "$changes" \
-    | grep -qvE '^[-+][[:space:]]*("version"|version): "[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?",?$'; then
+    | grep -qvE '^[-+][[:space:]]*("version"|version): (repoEnv\.T3CODE_MOBILE_VERSION \?\? )?"[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?",?$'; then
     return 0
   fi
+  # Version expressions must stay the same; only their fallback value is bookkeeping.
+  old_versions=$(printf '%s\n' "$changes" | grep '^-' | sed -E 's/^-//; s/"[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?"/"VERSION"/' | sort)
+  new_versions=$(printf '%s\n' "$changes" | grep '^+' | sed -E 's/^\+//; s/"[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?"/"VERSION"/' | sort)
+  [[ "$old_versions" == "$new_versions" ]] || return 0
   return 1
 }
 

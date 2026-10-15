@@ -228,7 +228,7 @@ const config: ExpoConfig = {
   slug: "styal",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "2.3.0",
+  version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.3.0",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay

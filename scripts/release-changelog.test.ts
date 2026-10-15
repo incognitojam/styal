@@ -386,6 +386,35 @@ it.each([
     listed: false,
   },
   {
+    name: "mobile override fallback bookkeeping",
+    before: {
+      "apps/mobile/app.config.ts": '  version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.3.0",\n',
+    },
+    after: {
+      "apps/mobile/app.config.ts": '  version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.4.0",\n',
+    },
+    message: "chore(mobile): update version",
+    listed: false,
+  },
+  {
+    name: "introducing a mobile version override",
+    before: { "apps/mobile/app.config.ts": '  version: "2.3.0",\n' },
+    after: {
+      "apps/mobile/app.config.ts": '  version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.3.0",\n',
+    },
+    message: "chore(mobile): update version",
+    listed: true,
+  },
+  {
+    name: "removing a mobile version override",
+    before: {
+      "apps/mobile/app.config.ts": '  version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.3.0",\n',
+    },
+    after: { "apps/mobile/app.config.ts": '  version: "2.3.0",\n' },
+    message: "chore(mobile): update version",
+    listed: true,
+  },
+  {
     name: "package prerelease version bookkeeping",
     before: { "packages/shared/package.json": '{\n  "version": "1.0.0-nightly.1"\n}\n' },
     after: { "packages/shared/package.json": '{\n  "version": "1.0.0-nightly.2"\n}\n' },

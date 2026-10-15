@@ -280,6 +280,10 @@ and `VERCEL_ORG_ID` secrets. It also respects the optional `VERCEL_TEAM_SLUG`
 variable. The Vercel project's root directory must be `apps/marketing`.
 Git deployments remain disabled in `apps/marketing/vercel.ts`.
 
+## Mobile TestFlight and store releases
+
+The fork keeps its production iOS TestFlight and Android APK build automation and committed mobile version. See [styal mobile releases](./mobile-release.md) for build, version override, and distribution instructions.
+
 ## Android APK mirror
 
 `.github/workflows/mobile-android-apk.yml` checks Google Play hourly and publishes the newest
