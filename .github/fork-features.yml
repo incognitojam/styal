@@ -752,7 +752,7 @@ features:
   - id: data-import-from-t3-code
     title: T3 Code migration in setup and Settings
     status: review-needed
-    prs: [294, 297, 298, 300, 306, 347, 349, 379, 478]
+    prs: [294, 297, 298, 300, 306, 347, 349, 379, 478, 842]
     rationale: Upstream V2 supplies canonical orchestration and messages-only automatic V1 migration, but the maintained T3 import flow must retain full recorded history and costs. The batch explicitly preserves these values, converts V1 history at the boundary, imports native V2 projections through inert canonical events, and materializes unavailable fork ancestors.
     invariants:
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
@@ -769,6 +769,7 @@ features:
       - Startup history repairs index their temporary event lookups so upgrading large imported histories does not repeatedly scan every repair for each event.
       - Legacy history metadata rewrites preserve JSON byte alignment where possible, avoiding writes of unchanged SQLite overflow pages; ordering updates preserve each historical event's own payload.
       - Imported native V2 sessions remain stopped while durable native conversation references remain resumable; process sessions, pending effects, and runtime requests never migrate.
+      - Resuming imported V1 history records a visible context handoff on its receiving run, including the selected target model and available source metadata, even before any V2 run has completed.
       - Fork imports retain history through the chosen source run even when ancestors are deleted, excluded, not yet imported, or fail during the batch. Materialized history keeps original fork lineage and never duplicates when an ancestor is imported later.
     implementation_paths:
       - apps/server/src/dataImport/LegacyHistoryWriter.ts
@@ -828,6 +829,7 @@ features:
       - apps/server/src/dataImport/V2HistoryImport.test.ts
       - apps/server/src/orchestration-v2/legacy/legacyPayloadEncoding.test.ts
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
+      - apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
       - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.test.ts
       - apps/web/src/components/import/useHistoryImport.test.ts
       - apps/web/src/components/import/useLegacyImport.test.ts
