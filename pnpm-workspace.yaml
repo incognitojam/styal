@@ -206,6 +206,7 @@ overrides:
   expo-glass-effect: 58.0.3
   expo-blur: 58.0.3
   expo-audio: 58.0.4
+  "@expo/ui": 58.0.11
   "@electron/notarize": 2.5.0
   expo-sharing: 58.0.13
   expo-widgets: 58.0.11
@@ -344,6 +345,7 @@ patchedDependencies:
   react-native-keyboard-controller@1.22.6: patches/react-native-keyboard-controller@1.22.6.patch
   # Android: a nested WebView hands a vertical drag to its scrolling parent at the page's edge.
   react-native-webview@14.0.1: patches/react-native-webview@14.0.1.patch
+  "@expo/ui@58.0.11": patches/@expo__ui@58.0.11.patch
 
 peerDependencyRules:
   allowAny:
