@@ -2556,12 +2556,14 @@ features:
   - id: preview-surface-continuity
     title: Preserve responsive preview presentation and ownership
     status: maintained
-    prs: [193, 197, 198, 217]
+    prs: [193, 197, 198, 217, 833]
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback. Presentation accounts for independent desktop window and page zoom, including zoom changes, so the requested CSS viewport fits its visible and captured surface.
       - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots capture the displayed surface rather than tiling it, and annotation crops and automation clicks are given in logical page coordinates and mapped into that surface.
       - Floating browser and device previews remain visible but do not send pointer or keyboard input to their page or device; dragging anywhere on the view-only surface moves the frame, double-clicking it opens that source in the right panel, and its frame controls remain usable.
     implementation_paths:
+      - .github/workflows/fork-ci.yml
+      - apps/desktop/scripts/test-preview-calibration.mjs
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/BrowserSurfaceSlot.tsx
       - apps/web/src/browser/HostedBrowserWebview.tsx
@@ -2578,6 +2580,7 @@ features:
       - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
       - apps/web/src/components/preview/usePreviewBridge.ts
     tests:
+      - apps/desktop/scripts/preview-calibration/main.mjs
       - apps/desktop/src/preview/Manager.test.ts
       - apps/web/src/browser/browserSurfaceStore.test.ts
       - apps/web/src/browser/hostedBrowserWebviewStyle.test.ts
