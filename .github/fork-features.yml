@@ -268,6 +268,7 @@ features:
     prs: [535, 601]
     invariants:
       - An async Claude Bash launch stays running until its task notification updates the original canonical command item and tool node with completed, failed, or cancelled status on web and mobile.
+      - A background Bash call that Claude does not execute (native non-execution metadata) or whose launch returns an error result ends with that result, cancelled or failed, and does not count as pending background work for Stop or the Waiting strip.
       - The original command keeps its source item, node, run, provider-turn ownership, and ordinal; completion reads persisted output on expansion, using the provider summary when the output file cannot be read.
       - A later provider wake reports the task outcome in its own response without moving the launching row into the wake run or promoting a shell command to a subagent.
       - An empty authoritative task roster does not discard command correlation before a delayed completion arrives.

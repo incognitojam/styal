@@ -49,6 +49,7 @@ import * as Stream from "effect/Stream";
 import { Tool } from "effect/unstable/ai";
 import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeCompaction";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { pendingBackgroundTurnItems } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import { makeClaudeProcessSpawner } from "../../provider/Layers/ClaudeProcess.ts";
@@ -2475,6 +2476,126 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           );
         }),
       ).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+  );
+
+  it.effect.each([
+    {
+      name: "a cancelled launch ends cancelled",
+      isError: true,
+      nonExecutionKind: "cancelled",
+      expected: "cancelled",
+    },
+    {
+      name: "a cancelled launch without an error flag ends cancelled",
+      isError: false,
+      nonExecutionKind: "cancelled",
+      expected: "cancelled",
+    },
+    {
+      name: "an error launch ends failed",
+      isError: true,
+      nonExecutionKind: undefined,
+      expected: "failed",
+    },
+    {
+      name: "an executed launch stays running",
+      isError: false,
+      nonExecutionKind: null,
+      expected: "running",
+    },
+  ] as const)("background Bash result: $name", ({ isError, nonExecutionKind, expected }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-background-launch-result"),
+            text: "Run a background build",
+            attachments: [],
+          }),
+        );
+        const assistant = makeAssistantTextFrame({
+          uuid: "00000000-0000-4000-8000-000000000211",
+          text: "",
+        });
+        if (assistant.type !== "assistant") throw new Error("assistant fixture");
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            ...assistant,
+            message: {
+              ...assistant.message,
+              content: [
+                {
+                  type: "tool_use",
+                  id: WAKE_TOOL_USE_ID,
+                  name: "Bash",
+                  input: { command: "fixture-build", run_in_background: true },
+                },
+              ],
+            },
+          }),
+        );
+        const started = (yield* Queue.take(harness.commandReceipts)).turnItem;
+        // No task_started frame: Claude only starts a task for a launch it ran.
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "user",
+            message: {
+              role: "user",
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: WAKE_TOOL_USE_ID,
+                  is_error: isError,
+                  content:
+                    expected === "running"
+                      ? "Command running in background"
+                      : "Command was not run.",
+                },
+              ],
+            },
+            ...(nonExecutionKind === undefined
+              ? {}
+              : {
+                  tool_result_meta: [
+                    { id: WAKE_TOOL_USE_ID, non_execution_kind: nonExecutionKind },
+                  ],
+                }),
+            parent_tool_use_id: null,
+            uuid: "00000000-0000-4000-8000-000000000212",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        const result = (yield* Queue.take(harness.commandReceipts)).turnItem;
+        assert.equal(result.id, started.id);
+        assert.equal(result.status, expected);
+        assert.equal(result.completedAt === null, expected === "running");
+        const node = harness.events.findLast(
+          (event) =>
+            event.type === "node.updated" &&
+            event.node.nativeItemRef?.nativeId === WAKE_TOOL_USE_ID,
+        );
+        assert.equal(node?.type === "node.updated" ? node.node.status : undefined, expected);
+        yield* harness.offerAndWait(turnOneResult);
+        yield* Queue.take(harness.terminalReceipts);
+        // Stop and the Waiting strip read background work from active turn items.
+        assert.equal(
+          pendingBackgroundTurnItems({ turnItems: [result] }).length,
+          expected === "running" ? 1 : 0,
+        );
+        if (expected !== "running") {
+          assert.isFalse(yield* harness.hasPendingBackgroundWork);
+          return;
+        }
+        yield* harness.offerAndWait(claudeSdkFrame({ ...wakeNotification, status: "completed" }));
+        const terminal = (yield* Queue.take(harness.commandReceipts)).turnItem;
+        assert.equal(terminal.id, started.id);
+        assert.equal(terminal.status, "completed");
+      }),
+    ).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
   );
 
   it.effect(

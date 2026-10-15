@@ -6514,7 +6514,11 @@ export function makeClaudeAdapterV2(
                 nativeInput !== null &&
                 typeof nativeInput === "object" &&
                 Reflect.get(nativeInput, "run_in_background") === true;
-              if (backgroundTask !== undefined || isAsyncLaunch) {
+              // A launch that Claude did not execute or that returned an error
+              // never gets a task notification, so it ends with this result.
+              const launched =
+                toolNonExecutionKind === undefined && !isClaudeToolResultError(toolResult);
+              if (launched && (backgroundTask !== undefined || isAsyncLaunch)) {
                 if (backgroundTask !== undefined) {
                   const enriched = enrichBackgroundTask(backgroundTask);
                   yield* upsertPendingBackgroundTask(nativeThreadId, enriched);
