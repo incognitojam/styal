@@ -13,7 +13,7 @@ import {
 } from "@t3tools/shared/threadPullRequests";
 import { ControlPillMenu } from "../../components/ControlPillMenu";
 import { Button } from "../../components/Button";
-import { MaterialIconButton } from "../../components/MaterialIconButton";
+import { IconButton } from "../../components/IconButton";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { composerPullRequests } from "../../state/pull-requests";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -248,7 +248,7 @@ export function PullRequestMergeControls(props: {
           >
             {Platform.OS === "android" ? (
               <View pointerEvents="none">
-                <MaterialIconButton
+                <IconButton
                   accessibilityLabel="Merge options"
                   icon="chevron.down"
                   variant="tonal"
