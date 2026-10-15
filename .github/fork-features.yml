@@ -2429,7 +2429,7 @@ features:
   - id: pair-cli-startup
     title: Load pairing without the full server CLI
     status: maintained
-    prs: []
+    prs: [852]
     invariants:
       - Direct pair invocations load the existing pairing command without evaluating unrelated server CLI commands, preserving pairing flags, global settings, help, version, token storage, and Tailscale occupancy and identity checks.
       - Completion requests and invocations with flags before the command retain the full CLI tree.
