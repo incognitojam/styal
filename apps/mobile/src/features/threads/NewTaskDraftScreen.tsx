@@ -1,4 +1,5 @@
 import { resolveProviderInteractionMode } from "../../state/legacy-plan-mode";
+import * as Dialog from "../../components/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
@@ -18,7 +19,7 @@ import {
   type NavigationAction,
 } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { Platform, Pressable, ScrollView, View } from "react-native";
 import {
   KeyboardController,
   KeyboardStickyView,
@@ -286,7 +287,7 @@ export function NewTaskDraftScreen(props: {
     const result = await action();
     if (AsyncResult.isFailure(result)) {
       const error = Cause.squash(result.cause);
-      Alert.alert(title, error instanceof Error ? error.message : "An error occurred.");
+      Dialog.alert(title, error instanceof Error ? error.message : "An error occurred.");
     }
   };
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
@@ -305,7 +306,7 @@ export function NewTaskDraftScreen(props: {
     });
     if (AsyncResult.isFailure(result)) {
       const error = Cause.squash(result.cause);
-      Alert.alert(
+      Dialog.alert(
         "Failed to remove project",
         error instanceof Error ? error.message : "An error occurred.",
       );
@@ -825,7 +826,7 @@ export function NewTaskDraftScreen(props: {
     if (!incomingShare) {
       if (isIncomingShareUnavailable && alertedUnavailableIncomingShareIdRef.current !== shareId) {
         alertedUnavailableIncomingShareIdRef.current = shareId;
-        Alert.alert(
+        Dialog.alert(
           "Shared content unavailable",
           "The shared content is no longer in the inbox. You can continue editing this task draft.",
         );
@@ -916,7 +917,7 @@ export function NewTaskDraftScreen(props: {
         );
       }
       if (warnings.length > 0) {
-        Alert.alert("Some shared content was skipped", warnings.join("\n"));
+        Dialog.alert("Some shared content was skipped", warnings.join("\n"));
       }
       shareImportDraftBackupRef.current.delete(importKey);
     })()
@@ -924,7 +925,7 @@ export function NewTaskDraftScreen(props: {
         if (!shareImportMountedRef.current || activeShareImportTokenRef.current !== importToken) {
           return;
         }
-        Alert.alert(
+        Dialog.alert(
           "Could not import shared content",
           error instanceof Error ? error.message : "The shared content could not be saved.",
           [
@@ -969,7 +970,7 @@ export function NewTaskDraftScreen(props: {
                     if (!shareImportMountedRef.current) {
                       return;
                     }
-                    Alert.alert(
+                    Dialog.alert(
                       "Could not cancel import",
                       cancelError instanceof Error
                         ? cancelError.message
@@ -1084,7 +1085,7 @@ export function NewTaskDraftScreen(props: {
         : []),
     ];
     if (problems.length > 0) {
-      Alert.alert("Could not attach photo or video", problems.join("\n\n"));
+      Dialog.alert("Could not attach photo or video", problems.join("\n\n"));
     }
   }
 
@@ -1095,7 +1096,7 @@ export function NewTaskDraftScreen(props: {
     const maxBytes =
       selectedEnvironmentServerConfig?.environment.capabilities.fileAttachments?.maxUploadBytes;
     if (maxBytes === undefined) {
-      Alert.alert("File attachments are not available on this server.");
+      Dialog.alert("File attachments are not available on this server.");
       return;
     }
     const insertion = flow.draftKey ? captureComposerDraftInsertion(flow.draftKey) : undefined;
@@ -1117,7 +1118,7 @@ export function NewTaskDraftScreen(props: {
         : []),
     ];
     if (problems.length > 0) {
-      Alert.alert("Could not attach file", problems.join("\n\n"));
+      Dialog.alert("Could not attach file", problems.join("\n\n"));
     }
   }
 
@@ -1203,13 +1204,13 @@ export function NewTaskDraftScreen(props: {
             }
             if (flow.appendAttachments([attachment], insertion) > 0) {
               await removePersistedComposerAttachmentFile(attachment.fileUri);
-              Alert.alert(
+              Dialog.alert(
                 "Could not attach pasted text",
                 `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
               );
             }
           } catch (error) {
-            Alert.alert(
+            Dialog.alert(
               "Could not attach pasted text",
               error instanceof Error ? error.message : "Try again.",
             );
@@ -1223,7 +1224,7 @@ export function NewTaskDraftScreen(props: {
         } else if (!wouldExceedInputLimit) {
           insertPaste();
         } else {
-          Alert.alert(
+          Dialog.alert(
             wouldExceedInputLimit
               ? "Pasted text is too large for this message"
               : "Could not attach pasted text",
@@ -1299,7 +1300,7 @@ export function NewTaskDraftScreen(props: {
         modelSelection,
         selectedProject.id,
       );
-      Alert.alert(title, detail);
+      Dialog.alert(title, detail);
       return;
     }
     // T3's own limits command is answered by the thread composer; a new task would
@@ -1310,7 +1311,7 @@ export function NewTaskDraftScreen(props: {
       isUsageLimitsCommand(initialMessageText) &&
       draft.attachments.length === 0
     ) {
-      Alert.alert(
+      Dialog.alert(
         "Usage limits",
         "Send /usage-limits inside a thread, or open Settings → Usage → Limits.",
       );
@@ -1320,7 +1321,7 @@ export function NewTaskDraftScreen(props: {
     // never drops the user's files); starting anyway would upload everything
     // and have the server reject the turn.
     if (draft.attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-      Alert.alert(
+      Dialog.alert(
         "Too many attachments",
         `Remove attachments until there are at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}.`,
       );
@@ -1329,7 +1330,7 @@ export function NewTaskDraftScreen(props: {
 
     const contextBlockReason = composerContextSendBlockReason(draft.context);
     if (contextBlockReason) {
-      Alert.alert("Too much context", contextBlockReason);
+      Dialog.alert("Too much context", contextBlockReason);
       return;
     }
 
@@ -1378,7 +1379,7 @@ export function NewTaskDraftScreen(props: {
     try {
       await enqueueThreadOutboxMessage(message);
     } catch (error) {
-      Alert.alert(
+      Dialog.alert(
         "Could not queue task",
         error instanceof Error ? error.message : "The task could not be saved to the outbox.",
       );

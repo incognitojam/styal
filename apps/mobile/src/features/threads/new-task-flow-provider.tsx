@@ -1,5 +1,5 @@
+import * as Dialog from "../../components/Dialog";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert } from "react-native";
 
 import type {
   EnvironmentId,
@@ -868,7 +868,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         }
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          Alert.alert(
+          Dialog.alert(
             "Could not switch machine",
             error instanceof Error
               ? error.message

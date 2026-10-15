@@ -4,6 +4,7 @@ import {
   useTurnUsageFigure,
 } from "../../state/use-turn-usage";
 import { isSetupScriptOutsideWorktree } from "@t3tools/shared/projectScripts";
+import * as Dialog from "../../components/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
@@ -34,7 +35,7 @@ import {
   resolveProjectActions,
 } from "@t3tools/shared/projectScripts";
 import { threadUsageView, usageFigureText } from "@t3tools/shared/turnUsage";
-import { Alert, Platform, ScrollView, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useConnectionsReady } from "../../state/workspace";
 import { useEnvironmentShellReadiness } from "../../state/shell";
@@ -790,7 +791,7 @@ function ThreadRouteContent(
           scriptId: script.id,
           reason: "setup-script-outside-worktree",
         });
-        Alert.alert(
+        Dialog.alert(
           `Cannot run "${script.name}"`,
           "This action runs after a worktree is created. In a local thread it would run in the project root and could overwrite the files it sets up.",
         );
@@ -889,7 +890,7 @@ function ThreadRouteContent(
     try {
       await recoverFailedThreadDraft(creation);
     } catch (error) {
-      Alert.alert(
+      Dialog.alert(
         "Could not restore draft",
         error instanceof Error ? error.message : String(error),
       );
