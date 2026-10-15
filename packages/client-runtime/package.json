@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./pull-request-announcements": {
+      "types": "./src/pullRequestAnnouncements.ts",
+      "default": "./src/pullRequestAnnouncements.ts"
+    },
     "./composerThreadItems": {
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"

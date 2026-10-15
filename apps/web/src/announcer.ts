@@ -1,3 +1,9 @@
+import {
+  pullRequestAnnouncementText,
+  type PullRequestAnnouncement,
+  type PullRequestAnnouncementKind,
+} from "@t3tools/client-runtime/pull-request-announcements";
+
 import openingUrl from "./assets/notification-departures.mp3";
 import closingUrl from "./assets/announcer/close.mp3";
 import readyUrl from "./assets/announcer/ready.mp3";
@@ -58,15 +64,63 @@ export const ANNOUNCER_SAMPLES = [
 
 type AnnouncerSample = (typeof ANNOUNCER_SAMPLES)[number];
 
-/** Manual playback only: one opening and closing chime around each drained batch. */
-export function createAnnouncerPlayer(
-  onChange: (state: { playing: boolean; error: string | null }) => void,
-) {
+const phraseUrls = import.meta.glob<string>("./assets/announcer/phrases/*.mp3", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
+
+function phraseUrl(name: string) {
+  const url = phraseUrls[`./assets/announcer/phrases/${name}.mp3`];
+  if (!url) throw new Error(name);
+  return url;
+}
+
+interface PlaybackRequest {
+  readonly key: string;
+  readonly kind: PullRequestAnnouncementKind;
+  readonly text: string;
+  readonly urls: ReadonlyArray<string>;
+  readonly live: boolean;
+}
+
+interface PlaybackState {
+  readonly playing: boolean;
+  readonly error: string | null;
+  readonly current: PlaybackRequest | null;
+}
+
+function requestFor(announcement: PullRequestAnnouncement, live: boolean): PlaybackRequest {
+  const { number, kind } = announcement;
+  if (!Number.isSafeInteger(number) || number < 1) throw new RangeError("Pull request");
+  return {
+    ...announcement,
+    text: pullRequestAnnouncementText(number, kind),
+    urls: [
+      phraseUrl(kind === "cancelled" ? "cancelled-prefix" : "prefix"),
+      ...String(number)
+        .split("")
+        .map((digit) => phraseUrl(`digit-${digit}`)),
+      phraseUrl(kind),
+    ],
+    live,
+  };
+}
+
+/** One opening and closing chime around each drained batch, shared by live events and previews. */
+function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
   let context: AudioContext | undefined;
   let run: AbortController | undefined;
-  let disposed = false;
-  const pending = new Map<AnnouncerSample["id"], AnnouncerSample>();
+  let lastRequest: PlaybackRequest | undefined;
+  let active: { request: PlaybackRequest; controller: AbortController } | undefined;
+  const pending = new Map<string, PlaybackRequest>();
   const buffers = new Map<string, Promise<AudioBuffer>>();
+
+  const publish = (
+    playing: boolean,
+    current: PlaybackRequest | null = null,
+    error: string | null = null,
+  ) => onChange({ playing, current, error });
 
   function load(audio: AudioContext, url: string) {
     let buffer = buffers.get(url);
@@ -86,8 +140,25 @@ export function createAnnouncerPlayer(
     return buffer;
   }
 
-  async function play(audio: AudioContext, url: string, signal: AbortSignal, volume = 1) {
-    const buffer = await load(audio, url);
+  async function prepare(audio: AudioContext, request: PlaybackRequest) {
+    const parts = await Promise.all(request.urls.map((url) => load(audio, url)));
+    if (parts.length === 1) return parts[0]!;
+    // Overlap only the 180 ms echo tails so separately recorded words do not add pauses.
+    const overlap = Math.round(audio.sampleRate * 0.18);
+    const length =
+      parts.reduce((total, part) => total + part.length, 0) - overlap * (parts.length - 1);
+    const sentence = audio.createBuffer(1, length, audio.sampleRate);
+    const data = sentence.getChannelData(0);
+    let offset = 0;
+    for (const part of parts) {
+      const samples = part.getChannelData(0);
+      for (let i = 0; i < samples.length; i++) data[offset + i]! += samples[i]!;
+      offset += part.length - overlap;
+    }
+    return sentence;
+  }
+
+  async function play(audio: AudioContext, buffer: AudioBuffer, signal: AbortSignal, volume = 1) {
     if (signal.aborted) return;
     const source = audio.createBufferSource();
     const gain = audio.createGain();
@@ -112,30 +183,45 @@ export function createAnnouncerPlayer(
     });
   }
 
-  async function drain(audio: AudioContext, controller: AbortController, unlocked: Promise<void>) {
+  async function drain(audio: AudioContext, controller: AbortController) {
     const { signal } = controller;
     try {
-      await unlocked;
       while (pending.size > 0 && !signal.aborted) {
-        await play(audio, openingUrl, signal);
+        await play(audio, await load(audio, openingUrl), signal);
         while (pending.size > 0 && !signal.aborted) {
-          const sample = pending.values().next().value;
-          if (!sample) break;
-          pending.delete(sample.id);
-          await play(audio, sample.url, signal);
+          const request = pending.values().next().value;
+          if (!request) break;
+          const sentence = await prepare(audio, request);
+          if (signal.aborted) break;
+          // Updates arriving during loading replace the pending announcement for this PR.
+          if (pending.get(request.key) !== request) continue;
+          pending.delete(request.key);
+          const speech = new AbortController();
+          const abort = () => speech.abort();
+          signal.addEventListener("abort", abort, { once: true });
+          active = { request, controller: speech };
+          lastRequest = request;
+          publish(true, request);
+          await play(audio, sentence, speech.signal);
+          signal.removeEventListener("abort", abort);
+          if (active?.controller === speech) active = undefined;
         }
-        if (!signal.aborted) await play(audio, closingUrl, signal, 10 ** (-2 / 20));
+        if (!signal.aborted) {
+          publish(true);
+          await play(audio, await load(audio, closingUrl), signal, 10 ** (-2 / 20));
+        }
         // Anything queued during the closing chime begins a new batch.
       }
       if (run === controller) {
         run = undefined;
-        onChange({ playing: false, error: null });
+        publish(false);
       }
     } catch (error) {
       if (run !== controller) return;
       pending.clear();
       run = undefined;
-      onChange({ playing: false, error: String(error) });
+      active = undefined;
+      publish(false, null, String(error));
     }
   }
 
@@ -143,35 +229,82 @@ export function createAnnouncerPlayer(
     pending.clear();
     run?.abort();
     run = undefined;
-    if (!disposed) onChange({ playing: false, error: null });
+    active = undefined;
+    lastRequest = undefined;
+    publish(false);
+  }
+
+  function enqueue(request: PlaybackRequest) {
+    if (!context || context.state !== "running") return;
+    pending.set(request.key, request);
+    if (run) return;
+    run = new AbortController();
+    lastRequest = request;
+    publish(true);
+    void drain(context, run);
   }
 
   return {
-    enqueue(sample: AnnouncerSample) {
-      if (disposed) return;
+    async unlock() {
       try {
         context ??= new AudioContext();
-        // Resume synchronously in the Preview gesture before loading any assets.
-        const unlocked = context.resume();
-        pending.set(sample.id, sample);
-        if (run) {
-          void unlocked.catch(() => undefined);
-          return;
-        }
-        run = new AbortController();
-        onChange({ playing: true, error: null });
-        void drain(context, run, unlocked);
+        await context.resume();
       } catch (error) {
-        pending.clear();
-        onChange({ playing: false, error: String(error) });
+        publish(false, null, String(error));
+      }
+    },
+    preview(sample: AnnouncerSample, number: number | null) {
+      enqueue(
+        number === null
+          ? {
+              key: `preview:${sample.id}`,
+              kind: sample.id,
+              text: sample.text,
+              urls: [sample.url],
+              live: false,
+            }
+          : requestFor({ key: "preview", number, kind: sample.id }, false),
+      );
+    },
+    announce(announcement: PullRequestAnnouncement) {
+      enqueue(requestFor(announcement, true));
+    },
+    reconcile(current: ReadonlyMap<string, PullRequestAnnouncementKind | null>) {
+      for (const [key, request] of pending) {
+        if (request.live && current.get(key) !== request.kind) pending.delete(key);
+      }
+      if (active?.request.live && current.get(active.request.key) !== active.request.kind) {
+        active.controller.abort();
+      }
+      if (
+        run &&
+        pending.size === 0 &&
+        lastRequest?.live &&
+        current.get(lastRequest.key) !== lastRequest.kind
+      ) {
+        stop();
       }
     },
     stop,
-    dispose() {
-      disposed = true;
+    release() {
       stop();
       buffers.clear();
       void context?.close().catch(() => undefined);
+      context = undefined;
     },
+  };
+}
+
+let playbackState: PlaybackState = { playing: false, current: null, error: null };
+const listeners = new Set<() => void>();
+export const announcerPlayer = createAnnouncerPlayer((state) => {
+  playbackState = state;
+  for (const listener of listeners) listener();
+});
+export const getAnnouncerPlayback = () => playbackState;
+export function subscribeAnnouncerPlayback(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
   };
 }

@@ -387,9 +387,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "announcer-preview",
-    title: "Announcer v4",
+    title: "Announcer",
     to: "/settings/general",
-    searchTerms: ["announcer departures railway pull request audio sound preview"],
+    searchTerms: ["announcer departures railway pull request audio sound preview mute"],
   },
   {
     id: "time-format",
