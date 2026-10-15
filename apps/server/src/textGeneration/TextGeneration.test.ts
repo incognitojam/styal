@@ -329,6 +329,57 @@ describe("TextGeneration.make", () => {
     new TextGenerationError({ operation: "generateBranchName", detail });
 
   it.effect.each([
+    'Claude CLI command failed: {"type":"result","is_error":true,"api_error_status":429,"result":"You\'ve hit your session limit · resets later"}',
+    "Claude CLI command failed: You've hit your session limit · resets later",
+  ])("generates a title with another provider after a Claude rejection: %s", (detail) =>
+    Effect.gen(function* () {
+      const requested = createModelSelection(
+        ProviderInstanceId.make("claudeAgent"),
+        "chosen-model",
+      );
+      const calls: ModelSelection[] = [];
+      const generation = yield* makeGeneration([
+        makeStubInstance(
+          requested.instanceId,
+          makeStubTextGeneration({
+            generateThreadTitle: (input) =>
+              Effect.sync(() => calls.push(input.modelSelection)).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    new TextGenerationError({ operation: "generateThreadTitle", detail }),
+                  ),
+                ),
+              ),
+          }),
+        ),
+        makeStubInstance(
+          ProviderInstanceId.make("codex"),
+          makeStubTextGeneration({
+            generateThreadTitle: (input) =>
+              Effect.sync(() => calls.push(input.modelSelection)).pipe(
+                Effect.as({ title: "Synthetic fallback title" }),
+              ),
+          }),
+        ),
+      ]);
+
+      expect(
+        yield* generation.generateThreadTitle({
+          cwd: process.cwd(),
+          message: "Synthetic request",
+          linkedContext: "Synthetic context",
+          modelSelection: requested,
+        }),
+      ).toEqual({ title: "Synthetic fallback title" });
+      expect(calls.map((selection) => selection.instanceId)).toEqual(["claudeAgent", "codex"]);
+      expect(calls[0]).toEqual(requested);
+      expect(calls[1]?.model).toBe(
+        DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("codex")],
+      );
+    }),
+  );
+
+  it.effect.each([
     {
       label: "exhausted limits",
       signedIn: true,
