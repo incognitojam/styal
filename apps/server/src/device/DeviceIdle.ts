@@ -1,20 +1,21 @@
 /**
- * Hands idle devices back and shuts down the ones nobody holds, so agents
+ * Hands devices back on demand and shuts down the ones nobody uses, so agents
  * sharing a machine's simulators and emulators take turns instead of keeping
  * every device they ever opened.
  *
  * An agent holds a device through two records: the service's session and the
  * agent-device session `device_open` handed out, whose device claim stops other
  * threads from driving it. The daemon owning that claim never exits while the
- * server runs, so nothing else releases it. Closing a device releases both; a
- * hold left idle is released after `RELEASE_AFTER`. A device this server
- * booted that no agent holds and nobody watches shuts down after
- * `deviceIdleShutdownMinutes`; devices booted outside styal are never shut down.
+ * server runs, so nothing else releases it. Closing a device releases both.
+ * A hold whose thread is not working is released when another agent opens the
+ * device, so idle holds cost nothing until a device is actually needed. A
+ * device this server booted that nobody watches and no working thread holds
+ * shuts down after `deviceIdleShutdownMinutes`; devices booted outside styal
+ * are never shut down.
  *
- * Sessions the user opened from the Device panel carry no claim and are never
- * released here. Lives beside `DeviceService` rather than inside it: the layer
- * wraps the service's lifecycle methods and drives everything else through its
- * public interface.
+ * Sessions the user opened from the Device panel carry no claim. Lives beside
+ * `DeviceService` rather than inside it: the layer wraps the service's
+ * lifecycle methods and drives everything else through its public interface.
  */
 import {
   DeviceHostId,
@@ -54,13 +55,13 @@ import * as DeviceService from "./DeviceService.ts";
 import { environmentDeviceHostId } from "./EnvironmentDeviceHost.ts";
 
 const SWEEP_INTERVAL = Duration.minutes(1);
-/** Matches what agent-device's own help tells agents about stale leases. */
-const RELEASE_AFTER = Duration.minutes(5);
 const RELEASE_TIMEOUT = Duration.seconds(15);
-/** A claim that still will not release after this many sweeps is left to the daemon. */
-const RELEASE_ATTEMPTS = 3;
-/** Sessions a connected environment opened here; that environment releases them when idle. */
+/** A connected environment's thread counts as idle once its agent sent no command for this long. */
+const PEER_IDLE_AFTER = Duration.minutes(5);
+/** Sessions a connected environment opened here. */
 const PEER_THREAD_PREFIX = "device-peer-";
+
+type DeviceRef = { readonly hostId: DeviceHostId; readonly deviceId: DeviceId };
 
 interface DeviceActivityShape {
   /** Counts a client streaming the device for the scope's lifetime; watched devices are never idle. */
@@ -72,6 +73,8 @@ interface DeviceActivityShape {
   readonly touchThreads: (match: (threadId: ThreadId) => boolean) => Effect.Effect<void>;
   /** Remembers which environment a peer thread prefix belongs to, so its claims can be named. */
   readonly notePeer: (threadPrefix: string, environmentId: string) => void;
+  /** Devices other threads hold but are not using, which an agent open would hand over. */
+  readonly reclaimable: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<DeviceRef>>;
 }
 
 /**
@@ -85,6 +88,7 @@ export class DeviceActivity extends Context.Reference<DeviceActivityShape>(
       watch: () => Effect.void,
       touchThreads: () => Effect.void,
       notePeer: () => {},
+      reclaimable: () => Effect.succeed([]),
     }),
   },
 ) {}
@@ -133,25 +137,16 @@ const AgentDeviceRpcReply = Schema.Union([
   }),
 ]);
 
-/** An agent's hold on a device: the thread and the agent-device session names it may use. */
-interface Hold {
+/** An agent's hold on a device: the thread and every agent-device session name it was given. */
+interface Hold extends DeviceRef {
   readonly threadId: ThreadId;
-  readonly hostId: DeviceHostId;
-  readonly deviceId: DeviceId;
   readonly names: ReadonlyArray<string>;
-}
-
-/** A hold whose session was dropped. Watched until its claim is known to be released. */
-interface Released extends Hold {
-  /** The claim may still be held: the release failed, or the thread worked again since. */
-  retry: boolean;
-  attempts: number;
 }
 
 const deviceKey = (hostId: string, deviceId: string) => JSON.stringify([hostId, deviceId]);
 const holdKey = (threadId: string, hostId: string, deviceId: string) =>
   JSON.stringify([threadId, hostId, deviceId]);
-const onDevice = (hostId: string, deviceId: string) => (entry: Pick<Hold, "hostId" | "deviceId">) =>
+const onDevice = (hostId: string, deviceId: string) => (entry: DeviceRef) =>
   entry.hostId === hostId && entry.deviceId === deviceId;
 
 /** A thread still working may drive its devices at any moment. */
@@ -166,6 +161,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     readonly agentEndpoint: (hostId: DeviceHostId) => Effect.Effect<AgentDeviceEndpoint | null>;
     /** This environment's id, which connected environments use to name their claims here. */
     readonly environmentId: string;
+    readonly threadBusy: (threadId: ThreadId) => Effect.Effect<boolean>;
   },
 ) {
   const { ledger } = options;
@@ -180,7 +176,8 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   /** agent-device session names handed out by `agentTarget`, keyed by the device id asked for. */
   const targeted = new Map<string, string>();
   const holds = new Map<string, Hold>();
-  const released = new Map<string, Released>();
+  /** Claims whose release the daemon did not confirm, retried on the next reclaim or power-off. */
+  const unreleased = new Map<string, Hold>();
   const peers = new Map<string, string>();
   const locks = new Map<string, Semaphore.Semaphore>();
 
@@ -241,9 +238,17 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     };
   };
 
+  /** A local thread is idle when not working; a connected environment's, when its agent went quiet. */
+  const holderIdle = (hold: Hold) =>
+    hold.threadId.startsWith(PEER_THREAD_PREFIX)
+      ? idleFor(deviceKey(hold.hostId, hold.deviceId)).pipe(
+          Effect.map((idle) => idle >= Duration.toMillis(PEER_IDLE_AFTER)),
+        )
+      : options.threadBusy(hold.threadId).pipe(Effect.map((busy) => !busy));
+
   /** Ends the hold's agent-device sessions. Succeeds when none is left on the daemon. */
   const releaseClaim = Effect.fn("DeviceIdle.releaseClaim")(function* (hold: Hold) {
-    // The hold's host serves peer sessions through this environment's own daemon.
+    // Peer sessions run on this environment's own daemon.
     const endpoint = yield* options.agentEndpoint(
       hold.threadId.startsWith(PEER_THREAD_PREFIX) ? LOCAL_DEVICE_HOST_ID : hold.hostId,
     );
@@ -270,25 +275,32 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     }
   });
 
-  /** Releases a hold, keeping it for the sweep to retry when the daemon does not answer. */
+  /** Releases a hold. A claim the daemon does not confirm is kept for the next reclaim or power-off. */
   const release = (hold: Hold) =>
     releaseClaim(hold).pipe(
       Effect.result,
       Effect.flatMap((result) => {
         const key = holdKey(hold.threadId, hold.hostId, hold.deviceId);
         holds.delete(key);
-        const retry = result._tag === "Failure";
-        released.set(key, { ...hold, retry, attempts: retry ? 1 : 0 });
-        return retry
-          ? Effect.logWarning("Could not release device; will retry", {
-              threadId: hold.threadId,
-              hostId: hold.hostId,
-              deviceId: hold.deviceId,
-              cause: result.failure,
-            })
-          : Effect.void;
+        if (result._tag === "Success") {
+          unreleased.delete(key);
+          return Effect.void;
+        }
+        unreleased.set(key, hold);
+        return Effect.logWarning("Could not release device; will retry", {
+          threadId: hold.threadId,
+          hostId: hold.hostId,
+          deviceId: hold.deviceId,
+          cause: result.failure,
+        });
       }),
     );
+
+  /** Retries claims on a device whose release was not confirmed. */
+  const retryUnreleased = (hostId: string, deviceId: string) =>
+    Effect.forEach([...unreleased.values()].filter(onDevice(hostId, deviceId)), release, {
+      discard: true,
+    });
 
   /** Releases every claim on a device before it powers off; one held on a powered-off device never clears. */
   const releaseDevice = Effect.fn("DeviceIdle.releaseDevice")(function* (
@@ -300,17 +312,31 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       const hold = holdFor(session, state);
       if (hold) yield* release(hold);
     }
-    for (const entry of [...released.values()].filter(onDevice(hostId, deviceId))) {
-      if (entry.retry) yield* release(entry);
-    }
+    yield* retryUnreleased(hostId, deviceId);
   });
 
-  const poweredOff = (hostId: string, deviceId: string) =>
-    Effect.suspend(() => {
-      for (const [key, entry] of released)
-        if (onDevice(hostId, deviceId)(entry) && !entry.retry) released.delete(key);
-      return forget([deviceKey(hostId, deviceId)]);
-    });
+  /** Hands over a device from other threads that hold it but are not using it. */
+  const reclaim = Effect.fn("DeviceIdle.reclaim")(function* (
+    threadId: ThreadId,
+    hostId: string,
+    deviceId: string,
+  ) {
+    const state = yield* inner.state;
+    for (const session of state.sessions.filter(onDevice(hostId, deviceId))) {
+      if (session.threadId === threadId) continue;
+      const hold = holdFor(session, state);
+      if (!hold || !(yield* holderIdle(hold))) continue;
+      yield* release(hold);
+      yield* inner.close({ threadId: session.threadId, hostId, deviceId });
+      yield* Effect.logInfo("Handed device to another thread", {
+        from: session.threadId,
+        threadId,
+        hostId,
+        deviceId,
+      });
+    }
+    yield* retryUnreleased(hostId, deviceId);
+  });
 
   const agentTarget: DeviceService.DeviceService["Service"]["agentTarget"] = (input) =>
     inner.agentTarget(input).pipe(
@@ -326,6 +352,11 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   const open: DeviceService.DeviceService["Service"]["open"] = (input) =>
     Effect.scoped(
       Effect.gen(function* () {
+        const hostId = input.hostId ?? LOCAL_DEVICE_HOST_ID;
+        const asked = holdKey(input.threadId, hostId, input.deviceId);
+        const name = targeted.get(asked);
+        // Only an agent open hands a device over; the user opening a panel never does.
+        if (name) yield* reclaim(input.threadId, hostId, input.deviceId);
         const updates = yield* inner.subscribe;
         const session = yield* inner.open(input);
         const key = deviceKey(session.hostId, session.deviceId);
@@ -347,23 +378,28 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
           });
           yield* ledger.save([...booted.values()]);
         }
-        const asked = holdKey(input.threadId, session.hostId, input.deviceId);
-        const name = targeted.get(asked);
         if (name) {
           targeted.delete(asked);
           const opened = holdKey(session.threadId, session.hostId, session.deviceId);
-          released.delete(opened);
+          // A thread reopening a device keeps every session name it was given until each is released.
+          const previous = [
+            ...(holds.get(opened)?.names ?? []),
+            ...(unreleased.get(opened)?.names ?? []),
+          ];
+          unreleased.delete(opened);
           holds.set(opened, {
             threadId: session.threadId,
             hostId: session.hostId,
             deviceId: session.deviceId,
-            names: [name],
+            names: [...new Set([...previous, name])],
           });
         }
         yield* markUsed(key);
         return session;
       }),
     ).pipe(withDevice(input.hostId ?? LOCAL_DEVICE_HOST_ID, input.deviceId));
+
+  const poweredOff = (hostId: string, deviceId: string) => forget([deviceKey(hostId, deviceId)]);
 
   const closeOne = Effect.fn("DeviceIdle.closeOne")(function* (
     session: DeviceSession,
@@ -431,96 +467,67 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
         ),
       ),
     notePeer: (threadPrefix, environmentId) => void peers.set(threadPrefix, environmentId),
+    reclaimable: Effect.fn("DeviceIdle.reclaimable")(function* (threadId) {
+      const state = yield* inner.state;
+      const devices = new Map<string, DeviceRef>();
+      const busy = new Set<string>();
+      for (const session of state.sessions) {
+        if (session.threadId === threadId) continue;
+        const key = deviceKey(session.hostId, session.deviceId);
+        const hold = holdFor(session, state);
+        // Someone watching the device, or a thread working on it, keeps it.
+        if (viewers.has(key) || (hold && !(yield* holderIdle(hold)))) busy.add(key);
+        else devices.set(key, { hostId: session.hostId, deviceId: session.deviceId });
+      }
+      return [...devices].filter(([key]) => !busy.has(key)).map(([, ref]) => ref);
+    }),
   };
 
   /**
-   * Hands back agent holds idle for `RELEASE_AFTER`, retries claims that did not
-   * release, then shuts down devices this server booted that no agent holds and
-   * nobody has watched for `shutdownAfter`. A thread still working keeps its devices.
+   * Shuts down devices this server booted that nobody has watched for
+   * `shutdownAfter` and no working thread holds, releasing their claims first.
    */
   const sweep = Effect.fn("DeviceIdle.sweep")(function* (input: {
     readonly shutdownAfter: Duration.Duration | null;
     readonly agentAccess: boolean;
-    readonly threadBusy: (threadId: ThreadId) => Effect.Effect<boolean>;
   }) {
-    const handedBack: Array<DeviceSession> = [];
-    for (const session of (yield* inner.state).sessions) {
-      if (session.threadId.startsWith(PEER_THREAD_PREFIX)) continue;
-      const key = holdKey(session.threadId, session.hostId, session.deviceId);
-      if (!holds.has(key)) continue;
-      const device = deviceKey(session.hostId, session.deviceId);
-      const idle = Effect.gen(function* () {
-        // Re-check under the lock: the thread may have reopened or a viewer attached.
-        const current = (yield* inner.state).sessions.find(
-          (candidate) => holdKey(candidate.threadId, candidate.hostId, candidate.deviceId) === key,
-        );
-        const hold = holds.get(key);
-        if (!current || !hold || viewers.has(device)) return false;
-        if (yield* input.threadBusy(session.threadId)) {
-          yield* markUsed(device);
-          return false;
-        }
-        if ((yield* idleFor(device)) < Duration.toMillis(RELEASE_AFTER)) return false;
-        yield* closeOne(current, false);
-        return true;
-      });
-      if (yield* idle.pipe(withDevice(session.hostId, session.deviceId))) {
-        yield* Effect.logInfo("Released idle device", session);
-        handedBack.push(session);
-      }
-    }
-
-    // Agent access off stops the daemons, and their claims with them.
-    if (!input.agentAccess) released.clear();
-    for (const [key, entry] of released) {
-      const device = deviceKey(entry.hostId, entry.deviceId);
-      // A released thread can still drive the device by its selector; work since the release keeps it.
-      if (yield* input.threadBusy(entry.threadId)) {
-        entry.retry = true;
-        yield* markUsed(device);
-        continue;
-      }
-      if (!entry.retry || (yield* idleFor(device)) < Duration.toMillis(RELEASE_AFTER)) continue;
-      const result = yield* releaseClaim(entry).pipe(Effect.result);
-      if (result._tag === "Success") {
-        entry.retry = false;
-        entry.attempts = 0;
-      } else if (++entry.attempts >= RELEASE_ATTEMPTS) {
-        released.delete(key);
-        yield* Effect.logWarning("Giving up releasing device", {
-          threadId: entry.threadId,
-          hostId: entry.hostId,
-          deviceId: entry.deviceId,
-          cause: result.failure,
-        });
-      }
-    }
+    const state = yield* inner.state;
+    // Holds outlive their sessions only when the service dropped them, as when device support
+    // turns off; and turning agent access off stops the daemons and their claims.
+    const live = new Set(
+      state.sessions.map((session) => holdKey(session.threadId, session.hostId, session.deviceId)),
+    );
+    for (const key of holds.keys()) if (!live.has(key)) holds.delete(key);
+    if (!input.agentAccess) unreleased.clear();
 
     const stopped: Array<DeviceShutdownInput> = [];
-    if (input.shutdownAfter === null) return { handedBack, stopped };
+    if (input.shutdownAfter === null) return { stopped };
     const shutdownAfter = Duration.toMillis(input.shutdownAfter);
-    yield* prune(yield* inner.state);
-    const heldOrWorking = Effect.fn("DeviceIdle.heldOrWorking")(function* (
-      state: DeviceServiceState,
+    yield* prune(state);
+    /** A thread working on a device keeps it, and counts as use. */
+    const kept = Effect.fn("DeviceIdle.kept")(function* (
+      current: DeviceServiceState,
       hostId: string,
       deviceId: string,
     ) {
-      if (
-        state.sessions.some(
-          (session) => onDevice(hostId, deviceId)(session) && holdFor(session, state),
-        )
-      )
-        return true;
-      for (const entry of released.values())
-        if (onDevice(hostId, deviceId)(entry) && (yield* input.threadBusy(entry.threadId)))
+      for (const session of current.sessions.filter(onDevice(hostId, deviceId))) {
+        const hold = holdFor(session, current);
+        if (
+          hold &&
+          !hold.threadId.startsWith(PEER_THREAD_PREFIX) &&
+          (yield* options.threadBusy(hold.threadId))
+        ) {
+          yield* markUsed(deviceKey(hostId, deviceId));
           return true;
+        }
+      }
       return false;
     });
     for (const [key, record] of booted) {
       const stop = Effect.gen(function* () {
-        if (viewers.has(key) || !booted.has(key)) return false;
-        if (yield* heldOrWorking(yield* inner.state, record.hostId, record.deviceId)) return false;
-        if ((yield* idleFor(key)) < shutdownAfter) return false;
+        if (viewers.has(key) || !booted.has(key)) return;
+        if (yield* kept(yield* inner.state, record.hostId, record.deviceId)) return;
+        if ((yield* idleFor(key)) < shutdownAfter) return;
         // The local hub is cheap to start, and is not running after a restart. Only use a
         // remote host that is already up: probing an offline SSH host would reconnect it.
         const local =
@@ -529,14 +536,14 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
         const ready = local
           ? yield* inner.readiness(record.hostId).pipe(Effect.orElseSucceed(() => null))
           : yield* inner.currentReadiness(record.hostId);
-        if (!ready) return false;
+        if (!ready) return;
         // Re-read the host so a device shut down or replaced outside styal is dropped first.
         const listed = yield* inner.listHost(record.hostId).pipe(Effect.result);
-        if (listed._tag === "Failure") return false;
+        if (listed._tag === "Failure") return;
         yield* prune(listed.success);
-        if (!booted.has(key) || viewers.has(key)) return false;
-        if (yield* heldOrWorking(listed.success, record.hostId, record.deviceId)) return false;
-        if ((yield* idleFor(key)) < shutdownAfter) return false;
+        if (!booted.has(key) || viewers.has(key)) return;
+        if (yield* kept(listed.success, record.hostId, record.deviceId)) return;
+        if ((yield* idleFor(key)) < shutdownAfter) return;
         const target = {
           hostId: record.hostId,
           deviceId: record.deviceId,
@@ -554,11 +561,10 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
             error: result.failure.message,
           });
         }
-        return true;
       });
       yield* stop.pipe(withDevice(record.hostId, record.deviceId));
     }
-    return { handedBack, stopped };
+    return { stopped };
   });
 
   return {
@@ -593,6 +599,12 @@ const live = Layer.effectContext(
     const ledgerLock = yield* Semaphore.make(1);
     const idle = yield* make(inner, {
       environmentId: yield* environment.getEnvironmentId,
+      // An unreadable projection keeps the device.
+      threadBusy: (threadId) =>
+        projections.getThreadShell(threadId).pipe(
+          Effect.map((thread) => thread !== null && threadKeepsDevices(thread)),
+          Effect.orElseSucceed(() => true),
+        ),
       ledger: {
         load: fs.readFileString(ledgerPath).pipe(
           Effect.flatMap(Schema.decodeUnknownEffect(codec)),
@@ -627,12 +639,6 @@ const live = Layer.effectContext(
             ),
     });
 
-    // An unreadable projection keeps the device.
-    const threadBusy = (threadId: ThreadId) =>
-      projections.getThreadShell(threadId).pipe(
-        Effect.map((thread) => thread !== null && threadKeepsDevices(thread)),
-        Effect.orElseSucceed(() => true),
-      );
     const sweep = Effect.gen(function* () {
       const current = yield* settings.getSettings;
       if (!current.enableDeviceSupport) return;
@@ -642,7 +648,6 @@ const live = Layer.effectContext(
             ? null
             : Duration.minutes(current.deviceIdleShutdownMinutes),
         agentAccess: current.enableAgentDeviceAccess,
-        threadBusy,
       });
     }).pipe(
       Effect.catchCauseIf(
@@ -658,6 +663,6 @@ const live = Layer.effectContext(
   }),
 ).pipe(Layer.provide(ProjectionStore.layer));
 
-/** Puts idle hand-back and shutdown in front of a device service layer. */
+/** Puts on-demand hand-back and idle shutdown in front of a device service layer. */
 export const wrap = <E, R>(inner: Layer.Layer<DeviceService.DeviceService, E, R>) =>
   live.pipe(Layer.provide(inner));

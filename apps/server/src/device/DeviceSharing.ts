@@ -191,6 +191,15 @@ const make = Effect.gen(function* () {
     )
       return yield* unavailable("This session is not a device access grant.");
     agents.delete(sessionId);
+    if (session) {
+      // The source cannot release its claims once its access is gone, so release them here.
+      const sourceId = session.subject.slice("device-host:".length);
+      const prefix = devicePeerThreadPrefix(sourceId);
+      (yield* DeviceActivity).notePeer(prefix, sourceId);
+      const { sessions: open } = yield* devices.state;
+      for (const entry of open.filter((candidate) => candidate.threadId.startsWith(prefix)))
+        yield* devices.close({ threadId: entry.threadId, hostId: LOCAL_DEVICE_HOST_ID });
+    }
     yield* auth.revokeSession(sessionId).pipe(Effect.mapError(sharingError));
   });
   const connect = Effect.fn("DeviceSharing.connect")(function* (

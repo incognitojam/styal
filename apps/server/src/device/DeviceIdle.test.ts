@@ -45,6 +45,7 @@ const fixture = Effect.fn("fixture")(function* (
     enableAgentDeviceAccess: true,
   });
   const releaseError = yield* Ref.make<string | null>(null);
+  const busy = new Set<string>();
   const daemonRunning = yield* Ref.make(true);
   const starts: string[] = [];
   const calls: string[] = [];
@@ -150,19 +151,19 @@ const fixture = Effect.fn("fixture")(function* (
     agentEndpoint: () =>
       Ref.get(daemonRunning).pipe(Effect.map((running) => (running ? agentDevice : null))),
     environmentId: OWN_ENVIRONMENT,
+    threadBusy: (thread) => Effect.sync(() => busy.has(thread)),
   }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
   const bootElsewhere = () => {
     booted = true;
   };
-  return { ...idle, settings, releaseError, daemonRunning, starts, calls, bootElsewhere };
+  return { ...idle, settings, releaseError, daemonRunning, starts, calls, busy, bootElsewhere };
 });
 
 const threadId = ThreadId.make("thread-1");
+const thread2 = ThreadId.make("thread-2");
 const release = (thread: string, deviceId = "Pixel_API_35") =>
   `release ${agentDeviceSession(thread, LOCAL_DEVICE_HOST_ID, deviceId)}`;
-const notBusy = () => Effect.succeed(false);
-const handBackOnly = { shutdownAfter: null, agentAccess: true, threadBusy: notBusy };
-const withShutdown = { ...handBackOnly, shutdownAfter: Duration.minutes(10) };
+const withShutdown = { shutdownAfter: Duration.minutes(10), agentAccess: true };
 
 /** What the device_open tool does: target the agent session, then open the device. */
 const agentOpen = (
@@ -173,6 +174,8 @@ const agentOpen = (
   service
     .agentTarget({ threadId: thread, hostId: LOCAL_DEVICE_HOST_ID, deviceId })
     .pipe(Effect.andThen(service.open({ threadId: thread, deviceId, platform: "android" })));
+const threads = (service: DeviceService.DeviceService["Service"]) =>
+  service.state.pipe(Effect.map((state) => state.sessions.map((session) => session.threadId)));
 
 describe("hand-back", () => {
   it.effect(
@@ -192,29 +195,37 @@ describe("hand-back", () => {
       }).pipe(Effect.scoped),
   );
 
-  it.effect("closing succeeds when the daemon does not answer, and the sweep retries", () =>
+  it.effect("releases every session a thread was given when it reopened the device", () =>
     Effect.gen(function* () {
-      const { service, sweep, calls, releaseError } = yield* fixture(
-        yield* Ref.make<BootRecords>([]),
-      );
+      const { service, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
       yield* service.configure({ enabled: true });
       yield* agentOpen(service);
-      yield* Ref.set(releaseError, "DOWN");
+      yield* agentOpen(service, threadId, "emulator-5554");
       yield* service.close({ threadId });
-      expect((yield* service.state).sessions).toEqual([]);
-
-      yield* Ref.set(releaseError, null);
-      yield* TestClock.adjust("6 minutes");
-      yield* sweep(handBackOnly);
-      yield* TestClock.adjust("6 minutes");
-      yield* sweep(handBackOnly);
-      expect(calls).toEqual([release("thread-1"), release("thread-1")]);
+      expect(calls).toEqual([release("thread-1"), release("thread-1", "emulator-5554")]);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "closing succeeds when the daemon does not answer, and the claim is retried at power-off",
+    () =>
+      Effect.gen(function* () {
+        const { service, calls, releaseError } = yield* fixture(yield* Ref.make<BootRecords>([]));
+        yield* service.configure({ enabled: true });
+        yield* agentOpen(service);
+        yield* Ref.set(releaseError, "DOWN");
+        yield* service.close({ threadId });
+        expect((yield* service.state).sessions).toEqual([]);
+
+        yield* Ref.set(releaseError, null);
+        yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+        expect(calls).toEqual([release("thread-1"), release("thread-1"), "shutdown"]);
+      }).pipe(Effect.scoped),
   );
 
   it.effect("treats a session agent-device no longer has, or a stopped daemon, as released", () =>
     Effect.gen(function* () {
-      const { service, sweep, calls, releaseError, daemonRunning } = yield* fixture(
+      const { service, calls, releaseError, daemonRunning } = yield* fixture(
         yield* Ref.make<BootRecords>([]),
       );
       yield* service.configure({ enabled: true });
@@ -225,80 +236,73 @@ describe("hand-back", () => {
       yield* agentOpen(service, threadId, "emulator-5554");
       yield* Ref.set(daemonRunning, false);
       yield* service.close({ threadId });
-      yield* TestClock.adjust("6 minutes");
-      yield* sweep(handBackOnly);
-      expect(calls).toEqual([release("thread-1")]);
-      expect((yield* service.state).sessions).toEqual([]);
+      yield* service.shutdown({ deviceId: "emulator-5554", platform: "android" });
+      expect(calls).toEqual([release("thread-1"), "shutdown"]);
     }).pipe(Effect.scoped),
   );
 
-  it.effect("releases an agent's hold left idle after its thread stops working", () =>
+  it.effect("an agent opening a device another thread holds but is not using takes it over", () =>
     Effect.gen(function* () {
-      const { service, sweep, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      const { service, activity, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
       yield* service.configure({ enabled: true });
       yield* agentOpen(service);
-
-      yield* TestClock.adjust("6 minutes");
-      const busy = { ...handBackOnly, threadBusy: () => Effect.succeed(true) };
-      expect((yield* sweep(busy)).handedBack).toEqual([]);
-      // The turn just ended, so the idle period starts now.
-      yield* TestClock.adjust("4 minutes");
-      expect((yield* sweep(handBackOnly)).handedBack).toEqual([]);
-      yield* TestClock.adjust("2 minutes");
-      expect((yield* sweep(handBackOnly)).handedBack).toHaveLength(1);
+      expect(yield* activity.reclaimable(thread2)).toEqual([
+        { hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" },
+      ]);
+      yield* agentOpen(service, thread2, "emulator-5554");
       expect(calls).toEqual([release("thread-1")]);
-      expect((yield* service.state).devices[0]?.booted).toBe(true);
+      expect(yield* threads(service)).toEqual([thread2]);
     }).pipe(Effect.scoped),
   );
 
-  it.effect("leaves sessions the user opened from the Device panel alone", () =>
+  it.effect("a thread that is working, or a device someone watches, is not handed over", () =>
     Effect.gen(function* () {
-      const { service, sweep, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      const { service, activity, calls, busy } = yield* fixture(yield* Ref.make<BootRecords>([]));
       yield* service.configure({ enabled: true });
-      yield* service.open({ threadId, deviceId: "Pixel_API_35", platform: "android" });
-      yield* TestClock.adjust("1 hour");
-      expect((yield* sweep(handBackOnly)).handedBack).toEqual([]);
-      expect((yield* service.state).sessions).toHaveLength(1);
+      yield* agentOpen(service);
+      busy.add(threadId);
+      expect(yield* activity.reclaimable(thread2)).toEqual([]);
+      yield* agentOpen(service, thread2, "emulator-5554");
       expect(calls).toEqual([]);
-    }).pipe(Effect.scoped),
-  );
+      expect(yield* threads(service)).toEqual([threadId, thread2]);
 
-  it.effect("never releases or shuts down a device someone is watching", () =>
-    Effect.gen(function* () {
-      const { service, sweep, activity } = yield* fixture(yield* Ref.make<BootRecords>([]));
-      yield* service.configure({ enabled: true });
-      yield* agentOpen(service);
+      busy.delete(threadId);
       yield* Effect.scoped(
         Effect.gen(function* () {
           yield* activity.watch(LOCAL_DEVICE_HOST_ID, "emulator-5554");
-          yield* TestClock.adjust("1 hour");
-          expect(yield* sweep(withShutdown)).toEqual({ handedBack: [], stopped: [] });
+          expect(yield* activity.reclaimable(ThreadId.make("thread-3"))).toEqual([]);
         }),
       );
-      yield* TestClock.adjust("6 minutes");
-      expect((yield* sweep(withShutdown)).handedBack).toHaveLength(1);
     }).pipe(Effect.scoped),
   );
 
-  it.effect("a reopen waits for an idle release in progress instead of being dropped by it", () =>
+  it.effect("opening a device from the Device panel never takes it from an agent", () =>
     Effect.gen(function* () {
-      const gate = yield* Deferred.make<void>();
-      const { service, sweep, calls } = yield* fixture(yield* Ref.make<BootRecords>([]), { gate });
+      const { service, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
       yield* service.configure({ enabled: true });
       yield* agentOpen(service);
-      yield* TestClock.adjust("6 minutes");
+      yield* service.open({ threadId: thread2, deviceId: "emulator-5554", platform: "android" });
+      expect(calls).toEqual([]);
+      expect(yield* threads(service)).toEqual([threadId, thread2]);
+    }).pipe(Effect.scoped),
+  );
 
-      const releasing = yield* sweep(handBackOnly).pipe(Effect.forkChild);
+  it.effect("a reopen waits for a hand-over in progress instead of being dropped by it", () =>
+    Effect.gen(function* () {
+      const gate = yield* Deferred.make<void>();
+      const { service, calls } = yield* fixture(yield* Ref.make<BootRecords>([]), { gate });
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+
+      const takingOver = yield* agentOpen(service, thread2, "emulator-5554").pipe(Effect.forkChild);
       while (calls.length === 0) yield* Effect.yieldNow;
       const reopening = yield* agentOpen(service, threadId, "emulator-5554").pipe(Effect.forkChild);
       yield* Effect.yieldNow;
       yield* Deferred.succeed(gate, undefined);
-      yield* Fiber.join(releasing);
+      yield* Fiber.join(takingOver);
       yield* Fiber.join(reopening);
-
-      expect((yield* service.state).sessions).toHaveLength(1);
-      yield* service.close({ threadId });
-      expect(calls).toEqual([release("thread-1"), release("thread-1", "emulator-5554")]);
+      // thread-1 reopened after the hand-over finished, and took the idle device back.
+      expect(yield* threads(service)).toEqual([threadId]);
     }).pipe(Effect.scoped),
   );
 
@@ -330,39 +334,48 @@ describe("hand-back", () => {
 });
 
 describe("idle shutdown", () => {
-  it.effect("shuts down a device it booted once nobody has held it for the idle period", () =>
-    Effect.gen(function* () {
-      const saved = yield* Ref.make<BootRecords>([]);
-      const { service, sweep, calls } = yield* fixture(saved);
-      yield* service.configure({ enabled: true });
-      yield* agentOpen(service);
-      expect(yield* Ref.get(saved)).toEqual([pixelRecord]);
+  it.effect(
+    "shuts down a device it booted once nobody uses it, releasing the idle hold first",
+    () =>
+      Effect.gen(function* () {
+        const saved = yield* Ref.make<BootRecords>([]);
+        const { service, sweep, calls } = yield* fixture(saved);
+        yield* service.configure({ enabled: true });
+        yield* agentOpen(service);
+        expect(yield* Ref.get(saved)).toEqual([pixelRecord]);
 
-      yield* TestClock.adjust("6 minutes");
-      expect((yield* sweep(withShutdown)).stopped).toEqual([]);
-      yield* TestClock.adjust("9 minutes");
-      expect((yield* sweep(withShutdown)).stopped).toEqual([]);
-      yield* TestClock.adjust("2 minutes");
-      expect((yield* sweep(withShutdown)).stopped).toEqual([
-        { hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554", platform: "android" },
-      ]);
-      expect(calls).toEqual([release("thread-1"), "shutdown"]);
-      expect(yield* Ref.get(saved)).toEqual([]);
-    }).pipe(Effect.scoped),
+        yield* TestClock.adjust("9 minutes");
+        expect((yield* sweep(withShutdown)).stopped).toEqual([]);
+        yield* TestClock.adjust("2 minutes");
+        expect((yield* sweep(withShutdown)).stopped).toEqual([
+          { hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554", platform: "android" },
+        ]);
+        expect(calls).toEqual([release("thread-1"), "shutdown"]);
+        expect(yield* Ref.get(saved)).toEqual([]);
+      }).pipe(Effect.scoped),
   );
 
-  it.effect("keeps a device while a thread works on it after its hold was released", () =>
+  it.effect("keeps a device while the thread holding it works or someone watches it", () =>
     Effect.gen(function* () {
-      const { service, sweep } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      const { service, sweep, activity, busy } = yield* fixture(yield* Ref.make<BootRecords>([]));
       yield* service.configure({ enabled: true });
       yield* agentOpen(service);
-      yield* TestClock.adjust("6 minutes");
-      expect((yield* sweep(withShutdown)).handedBack).toHaveLength(1);
 
-      // The agent kept driving the device through its selector in a later turn.
-      const working = { ...withShutdown, threadBusy: () => Effect.succeed(true) };
-      yield* TestClock.adjust("20 minutes");
-      expect((yield* sweep(working)).stopped).toEqual([]);
+      busy.add(threadId);
+      yield* TestClock.adjust("30 minutes");
+      expect((yield* sweep(withShutdown)).stopped).toEqual([]);
+      // The turn just ended, so the idle period starts now.
+      busy.delete(threadId);
+      yield* TestClock.adjust("9 minutes");
+      expect((yield* sweep(withShutdown)).stopped).toEqual([]);
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* activity.watch(LOCAL_DEVICE_HOST_ID, "emulator-5554");
+          yield* TestClock.adjust("1 hour");
+          expect((yield* sweep(withShutdown)).stopped).toEqual([]);
+        }),
+      );
       yield* TestClock.adjust("11 minutes");
       expect((yield* sweep(withShutdown)).stopped).toHaveLength(1);
     }).pipe(Effect.scoped),

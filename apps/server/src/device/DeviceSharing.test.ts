@@ -1394,3 +1394,23 @@ it.effect("counts an agent request for as long as it stays open", () =>
     expect(yield* f.target.environmentsUsingDevices).toBe(0);
   }).pipe(Effect.scoped),
 );
+
+it.effect("revoking a grant on the device environment closes that environment's sessions", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const peer = { subject: `device-host:${sourceId}`, sessionId: f.grant.sessionId };
+    yield* f.target.command(peer, {
+      operation: "open",
+      input: {
+        threadId: ThreadId.make("thread"),
+        hostId: LOCAL_DEVICE_HOST_ID,
+        deviceId: "emulator-5554",
+        platform: "android",
+      },
+    });
+    expect((yield* f.targetDevices.state).sessions).toHaveLength(1);
+    // The source cannot release its own claims once its access is revoked.
+    yield* f.target.revokeGrant(f.grant.sessionId);
+    expect((yield* f.targetDevices.state).sessions).toEqual([]);
+  }).pipe(Effect.scoped),
+);
