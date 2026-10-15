@@ -9,9 +9,6 @@ name: Provider canary
 on:
   schedule:
     - cron: "17 6 * * *"
-  # TEMPORARY: test runs from the feature branch. Remove before merging.
-  push:
-    branches: [styal/auto-provider-updates]
   workflow_dispatch:
     inputs:
       provider:
@@ -93,10 +90,6 @@ jobs:
             --pending-base "$RUNNER_TEMP/plan/pending-base-manifest.json")
           if [[ -n "$PROVIDER" ]]; then args+=(--provider "$PROVIDER"); fi
           if [[ "$FORCE" == "true" ]]; then args+=(--force); fi
-          # TEMPORARY: test this branch as if it were the published nightly.
-          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
-            args+=(--build "$(npm view @styal/cli dist-tags.nightly)=$GITHUB_SHA")
-          fi
           node scripts/provider-canary.ts plan "${args[@]}"
 
       - name: Upload plan
@@ -276,7 +269,7 @@ jobs:
   record:
     name: Record verified versions
     needs: [plan, verify]
-    if: ${{ !cancelled() && github.event_name != 'push' && needs.plan.outputs.has_work == 'true' }}
+    if: ${{ !cancelled() && needs.plan.outputs.has_work == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -445,5 +438,4 @@ jobs:
         run: |
           args=(--run-url "$RUN_URL" --plan "$RUNNER_TEMP/plan/plan.json" --outcomes "$RUNNER_TEMP/canary-outcomes"
             --plan-result "$PLAN_RESULT" --record-result "$RECORD_RESULT")
-          if [[ "$GITHUB_EVENT_NAME" == push ]]; then args+=(--dry-run); fi
           node scripts/provider-canary.ts report "${args[@]}"
