@@ -351,6 +351,7 @@ const makeTestPreviewWebContents = (
   hostWebContents: TestHostWebContents = makeTestHostWebContents(),
 ) => {
   const setBackgroundThrottling = vi.fn<(enabled: boolean) => void>();
+  let debuggerAttached = false;
   return {
     id,
     mainFrame: { routingId: id },
@@ -375,8 +376,13 @@ const makeTestPreviewWebContents = (
     setIgnoreMenuShortcuts: vi.fn(),
     setWindowOpenHandler: vi.fn(),
     debugger: {
-      isAttached: () => false,
-      attach: vi.fn(),
+      isAttached: () => debuggerAttached,
+      attach: vi.fn(() => {
+        debuggerAttached = true;
+      }),
+      detach: vi.fn(() => {
+        debuggerAttached = false;
+      }),
       sendCommand: vi.fn(async () => undefined),
       on: vi.fn(),
       off: vi.fn(),
@@ -4973,6 +4979,203 @@ describe("PreviewManager", () => {
             clickCount: 1,
           });
         }
+      }),
+    ),
+  );
+
+  for (const scenario of [
+    { name: "a fill-to-fitted resize", before: 1, after: 0.5, windowZoom: 1, nextWindowZoom: 1 },
+    { name: "a fitted-to-fill resize", before: 0.5, after: 1, windowZoom: 1, nextWindowZoom: 1 },
+    { name: "a window zoom change", before: 0.5, after: 0.5, windowZoom: 0.8, nextWindowZoom: 1.2 },
+  ]) {
+    effectIt.effect(`clicks use the applied surface scale while ${scenario.name} is queued`, () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          let windowZoom = scenario.windowZoom;
+          let announceRefresh = false;
+          const refreshQueued = Promise.withResolvers<void>();
+          const moved = yield* Deferred.make<void>();
+          const host = { ...makeTestHostWebContents(), getZoomFactor: () => windowZoom };
+          const guest = makeTestPreviewWebContents(
+            async () => ({
+              toJPEG: () => Buffer.from("frame"),
+              getSize: () => ({ width: 512, height: 320 }),
+            }),
+            42,
+            host,
+          );
+          Object.assign(guest, {
+            isDevToolsOpened: () => {
+              if (announceRefresh) refreshQueued.resolve();
+              return false;
+            },
+          });
+          vi.mocked(guest.debugger.sendCommand).mockImplementation(async (method) =>
+            method === "Runtime.evaluate"
+              ? { result: { value: { width: 1280, height: 800 } } }
+              : undefined,
+          );
+          fromId.mockReturnValue(guest);
+          yield* manager.subscribePointerEvents(({ phase }) =>
+            phase === "move" ? Deferred.succeed(moved, undefined).pipe(Effect.asVoid) : Effect.void,
+          );
+          yield* manager.createTab("tab_queued_scale");
+          yield* manager.registerWebview("tab_queued_scale", 42);
+          yield* manager.setViewportPresentation("tab_queued_scale", {
+            width: 1280,
+            height: 800,
+            scale: scenario.before,
+          });
+          const sendCommand = vi.mocked(guest.debugger.sendCommand);
+          sendCommand.mockClear();
+          const click = yield* manager
+            .automationClick("tab_queued_scale", { x: 120, y: 80 })
+            .pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(moved);
+          windowZoom = scenario.nextWindowZoom;
+          announceRefresh = true;
+          const refresh = yield* (
+            scenario.windowZoom !== scenario.nextWindowZoom
+              ? manager.reapplyZoom()
+              : manager.setViewportPresentation("tab_queued_scale", {
+                  width: 1280,
+                  height: 800,
+                  scale: scenario.after,
+                })
+          ).pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Effect.promise(() => refreshQueued.promise);
+          expect(sendCommand.mock.calls.some(([method]) => method.startsWith("Emulation."))).toBe(
+            false,
+          );
+          yield* TestClock.adjust(200);
+          yield* Fiber.join(click);
+          yield* Fiber.join(refresh);
+          const appliedScale = scenario.before < 1 ? scenario.before * scenario.windowZoom : 1;
+          for (const type of ["mousePressed", "mouseReleased"]) {
+            expect(sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+              type,
+              x: 120 * appliedScale,
+              y: 80 * appliedScale,
+              button: "left",
+              clickCount: 1,
+            });
+          }
+        }),
+      ),
+    );
+  }
+
+  effectIt.effect("restores every tab's page zoom before waiting on a busy fitted tab", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const enteredEvaluation = Promise.withResolvers<void>();
+        const evaluation = Promise.withResolvers<unknown>();
+        const refreshQueued = Promise.withResolvers<void>();
+        let announceRefresh = false;
+        const first = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("frame"),
+          getSize: () => ({ width: 512, height: 320 }),
+        }));
+        const second = makeTestPreviewWebContents(
+          async () => ({
+            toJPEG: () => Buffer.from("frame"),
+            getSize: () => ({ width: 512, height: 320 }),
+          }),
+          43,
+        );
+        Object.assign(first, {
+          isDevToolsOpened: () => {
+            if (announceRefresh) refreshQueued.resolve();
+            return false;
+          },
+        });
+        vi.mocked(first.debugger.sendCommand).mockImplementation(async (method, params) => {
+          if (method === "Runtime.evaluate" && params?.expression === "hold") {
+            enteredEvaluation.resolve();
+            return evaluation.promise;
+          }
+          return undefined;
+        });
+        fromId.mockImplementation((id) => (id === 42 ? first : second));
+        yield* manager.createTab("tab_busy_fitted");
+        yield* manager.registerWebview("tab_busy_fitted", 42);
+        yield* manager.setViewportPresentation("tab_busy_fitted", {
+          width: 1280,
+          height: 800,
+          scale: 0.5,
+        });
+        yield* manager.createTab("tab_other_zoom");
+        yield* manager.registerWebview("tab_other_zoom", 43);
+        yield* manager.zoomIn("tab_other_zoom");
+        const busy = yield* manager
+          .automationEvaluate("tab_busy_fitted", { expression: "hold" })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => enteredEvaluation.promise);
+        vi.mocked(second.setZoomFactor).mockClear();
+        announceRefresh = true;
+        const refresh = yield* manager
+          .reapplyZoom()
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => refreshQueued.promise);
+        expect(second.setZoomFactor).toHaveBeenCalledWith(1.1);
+        evaluation.resolve({ result: { value: true } });
+        yield* Fiber.join(busy);
+        yield* Fiber.join(refresh);
+      }),
+    ),
+  );
+
+  effectIt.effect("zoom refresh does not overwrite a resize queued during recording startup", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const startupEntered = Promise.withResolvers<void>();
+        const startup = Promise.withResolvers<boolean>();
+        const host = makeTestHostWebContents();
+        host.executeJavaScript.mockImplementation(async () => {
+          startupEntered.resolve();
+          return startup.promise;
+        });
+        const guest = makeTestPreviewWebContents(
+          async () => ({
+            toJPEG: () => Buffer.from("frame"),
+            getSize: () => ({ width: 640, height: 400 }),
+          }),
+          42,
+          host,
+        );
+        fromId.mockReturnValue(guest);
+        yield* manager.createTab("tab_recording_resize");
+        yield* manager.registerWebview("tab_recording_resize", 42);
+        yield* manager.setViewportPresentation("tab_recording_resize", {
+          width: 1280,
+          height: 800,
+          scale: 0.5,
+        });
+        const recording = yield* manager
+          .startRecording("tab_recording_resize")
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => startupEntered.promise);
+        const resize = yield* manager
+          .setViewportPresentation("tab_recording_resize", {
+            width: 1440,
+            height: 900,
+            scale: 0.25,
+          })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(0);
+        const refresh = yield* manager
+          .reapplyZoom()
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(0);
+        startup.resolve(true);
+        yield* Fiber.join(recording);
+        yield* Fiber.join(resize);
+        yield* Fiber.join(refresh);
+        const metrics = vi
+          .mocked(guest.debugger.sendCommand)
+          .mock.calls.filter(([method]) => method === "Emulation.setDeviceMetricsOverride");
+        expect(metrics.at(-1)?.[1]).toMatchObject({ width: 1440, height: 900, scale: 0.25 });
+        yield* manager.stopRecording("tab_recording_resize");
       }),
     ),
   );
