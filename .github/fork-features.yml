@@ -3661,7 +3661,7 @@ features:
   - id: settings-scope-persistent-header
     title: Keep settings scope visible while scrolling
     status: maintained
-    prs: []
+    prs: [849]
     invariants:
       - Web and desktop settings keep the project and environment pickers in a fixed row beneath the page header while the settings content scrolls.
       - The scope sentence wraps on narrow screens and truncates long picker labels, stays available for unavailable scopes, preserves the environment-only Providers picker, and remains hidden on device-only pages.
