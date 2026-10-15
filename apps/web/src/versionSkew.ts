@@ -1,4 +1,9 @@
-import type { EnvironmentId, ServerConfig, ServerSelfUpdateCapability } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ServerConfig,
+  ServerInstallation,
+  ServerSelfUpdateCapability,
+} from "@t3tools/contracts";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
@@ -122,12 +127,24 @@ export function supportsServerUpdateThreadContinuation(
   return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
 }
 
-/** Manual commands require an explicit choice of how the server is run. */
+/**
+ * Manual commands require an explicit choice of how the server is run. A
+ * foreground server that proved a global npm install updates that install;
+ * any other foreground server is relaunched with the runner that started it.
+ */
 export function manualServerUpdateCommand(
   targetVersion: string,
-  installation: "service" | "foreground",
+  mode: "service" | "foreground",
+  installation?: ServerInstallation,
 ): string {
-  return `npx ${CLI_PACKAGE_NAME}@${targetVersion} ${installation === "service" ? "service update" : "serve"}`;
+  if (mode === "service") return `npx ${CLI_PACKAGE_NAME}@${targetVersion} service update`;
+  if (installation?.kind === "npm-global") {
+    const prefix = `'${installation.prefix.replaceAll("'", "'\\''")}'`;
+    return `npm install --global --prefix ${prefix} ${CLI_PACKAGE_NAME}@${targetVersion}`;
+  }
+  const runner =
+    installation?.kind === "pnpm-dlx" ? "pnpm dlx" : installation?.kind === "bunx" ? "bunx" : "npx";
+  return `${runner} ${CLI_PACKAGE_NAME}@${targetVersion} serve`;
 }
 
 /** One sentence telling the user how to resolve version skew for a server,

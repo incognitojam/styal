@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ServerInstallation } from "@t3tools/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
   isAtomCommandInterrupted,
@@ -50,6 +50,8 @@ export interface ServerUpdateTarget {
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
   readonly selfUpdate: ServerUpdateCapability | null;
+  /** How a manually updated server was installed, when the server could prove it. */
+  readonly installation?: ServerInstallation | undefined;
   /** The desktop app supervising this server accepts remote update
       requests (capabilities.desktopAppUpdate). */
   readonly desktopAppUpdate?: boolean;
@@ -252,6 +254,7 @@ export function ServerUpdateAction({
   environmentId,
   serverLabel,
   selfUpdate,
+  installation,
   desktopAppUpdate = false,
   threadContinuation = false,
   targetVersion,
@@ -307,9 +310,11 @@ export function ServerUpdateAction({
 
   if (selfUpdate === null || selfUpdate === "service-migration") {
     const serviceMigration = selfUpdate === "service-migration";
+    const globalInstall = !serviceMigration && installation?.kind === "npm-global";
     const command = manualServerUpdateCommand(
       targetVersion,
       serviceMigration ? "service" : "foreground",
+      installation,
     );
     const instructions = (
       <DialogPopup>
@@ -334,11 +339,17 @@ export function ServerUpdateAction({
                   This updates and restarts the background service, enabling future in-app updates.
                   For a custom data directory, add your existing <code>--base-dir</code> option.
                 </>
+              ) : globalInstall ? (
+                <>
+                  This updates the <code>styal</code> command installed in{" "}
+                  <code>{installation.prefix}</code>. Then stop the existing server and start it
+                  again with the same startup options.
+                </>
               ) : (
                 <>
                   If you start styal from a terminal, stop the existing server, then run this with
                   the same startup options. It starts a foreground server; it does not replace a
-                  running instance.
+                  running instance or update an installed <code>styal</code> command.
                 </>
               )}
             </p>
@@ -348,12 +359,20 @@ export function ServerUpdateAction({
                 size="xs"
                 variant="outline"
                 className="shrink-0"
-                aria-label={serviceMigration ? "Copy service update command" : "Copy start command"}
+                aria-label={
+                  serviceMigration
+                    ? "Copy service update command"
+                    : globalInstall
+                      ? "Copy update command"
+                      : "Copy start command"
+                }
                 onClick={() =>
                   copyToClipboard(command, {
                     description: serviceMigration
                       ? `Run this in a separate terminal on ${serverLabel} after active work finishes. It restarts the background service.`
-                      : `For a terminal-launched server on ${serverLabel}, stop the existing process first, then run this with the same startup options.`,
+                      : globalInstall
+                        ? `Run this on ${serverLabel}, then stop the existing server and start styal again with the same startup options.`
+                        : `For a terminal-launched server on ${serverLabel}, stop the existing process first, then run this with the same startup options.`,
                   })
                 }
               >

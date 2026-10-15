@@ -27,6 +27,43 @@ const MISMATCH_HINT =
   "Version mismatch. Try syncing the client and server to the same styal version.";
 
 describe("versionSkew", () => {
+  it("updates only the proven npm prefix and safely quotes its path", () => {
+    expect(
+      manualServerUpdateCommand("0.0.45", "foreground", {
+        kind: "npm-global",
+        prefix: "/opt/node",
+      }),
+    ).toBe("npm install --global --prefix '/opt/node' @styal/cli@0.0.45");
+    expect(
+      manualServerUpdateCommand("0.0.45", "foreground", {
+        kind: "npm-global",
+        prefix: "/opt/maria's node",
+      }),
+    ).toBe("npm install --global --prefix '/opt/maria'\\''s node' @styal/cli@0.0.45");
+  });
+
+  it("keeps runner and unknown foreground commands as relaunches", () => {
+    expect(manualServerUpdateCommand("0.0.45", "foreground")).toBe("npx @styal/cli@0.0.45 serve");
+    expect(manualServerUpdateCommand("0.0.45", "foreground", { kind: "npx" })).toBe(
+      "npx @styal/cli@0.0.45 serve",
+    );
+    expect(manualServerUpdateCommand("0.0.45", "foreground", { kind: "pnpm-dlx" })).toBe(
+      "pnpm dlx @styal/cli@0.0.45 serve",
+    );
+    expect(manualServerUpdateCommand("0.0.45", "foreground", { kind: "bunx" })).toBe(
+      "bunx @styal/cli@0.0.45 serve",
+    );
+  });
+
+  it("keeps the service migration command for every installation", () => {
+    expect(
+      manualServerUpdateCommand("0.0.45", "service", { kind: "npm-global", prefix: "/opt/node" }),
+    ).toBe("npx @styal/cli@0.0.45 service update");
+    expect(manualServerUpdateCommand("0.0.45", "service", { kind: "bunx" })).toBe(
+      "npx @styal/cli@0.0.45 service update",
+    );
+  });
+
   beforeEach(() => {
     branding.APP_VERSION = "0.0.34";
   });

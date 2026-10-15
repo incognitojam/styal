@@ -3047,6 +3047,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [setDismissedVersionMismatchKey, versionMismatchDismissKey]);
   const serverUpdateEnvironmentId = activeThread?.environmentId ?? null;
   const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
+  const versionMismatchInstallation = serverConfig?.environment.capabilities.serverInstallation;
   const versionMismatchDesktopAppUpdate = supportsDesktopAppUpdate(serverConfig);
   const versionMismatchThreadContinuation = supportsServerUpdateThreadContinuation(serverConfig);
   const serverUpdateState = useAtomValue(
@@ -3215,6 +3216,7 @@ export default function ChatView(props: ChatViewProps) {
             environmentId={serverUpdateEnvironmentId}
             serverLabel={versionMismatchServerLabel}
             selfUpdate={versionMismatchSelfUpdate}
+            installation={versionMismatchInstallation}
             desktopAppUpdate={versionMismatchDesktopAppUpdate}
             threadContinuation={versionMismatchThreadContinuation}
             targetVersion={versionMismatch.clientVersion}
@@ -3256,6 +3258,7 @@ export default function ChatView(props: ChatViewProps) {
     versionMismatchDismissKey,
     serverUpdateEnvironmentId,
     versionMismatchSelfUpdate,
+    versionMismatchInstallation,
     versionMismatchDesktopAppUpdate,
     versionMismatchThreadContinuation,
     versionMismatchServerLabel,
