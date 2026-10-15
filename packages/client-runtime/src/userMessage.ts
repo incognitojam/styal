@@ -65,7 +65,7 @@ export function resolveUserMessageIntent(
 ) {
   switch (intent) {
     case "queued_turn":
-      return { label: "Queued", steer: false, description: "Queued behind the active turn" };
+      return { label: "From queue", steer: false, description: "Queued while the agent was busy" };
     case "steer":
       return { label: "Steer", steer: true, description: "Steered the active turn" };
     case "promoted_queued_to_steer":

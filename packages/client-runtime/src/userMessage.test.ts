@@ -91,6 +91,14 @@ describe("resolveUserMessagePresentation", () => {
 });
 
 describe("resolveUserMessageIntent", () => {
+  it("keeps queued delivery history after sending", () => {
+    expect(resolveUserMessageIntent("queued_turn")).toEqual({
+      label: "From queue",
+      steer: false,
+      description: "Queued while the agent was busy",
+    });
+  });
+
   it("has no label for a message that started a turn normally", () => {
     expect(resolveUserMessageIntent("turn_start")).toBe(null);
     expect(resolveUserMessageIntent(undefined)).toBe(null);

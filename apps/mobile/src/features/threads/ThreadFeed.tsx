@@ -1426,10 +1426,19 @@ function renderFeedEntry(
           </View>
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
             {intent ? (
-              <View
-                accessible
-                accessibilityRole="text"
+              <Pressable
+                accessibilityRole="button"
                 accessibilityLabel={intent.description}
+                accessibilityHint="Explains this message's label"
+                hitSlop={8}
+                onPress={() =>
+                  Alert.alert(
+                    "Message history",
+                    message.inputIntent === "queued_turn"
+                      ? "This message was queued while the agent was busy. This label stays visible after the message leaves the queue."
+                      : intent.description,
+                  )
+                }
                 className="mr-1 flex-row items-center gap-1"
               >
                 {intent.steer ? (
@@ -1438,7 +1447,7 @@ function renderFeedEntry(
                 <Text className="font-t3-medium text-xs text-foreground-secondary">
                   {intent.label}
                 </Text>
-              </View>
+              </Pressable>
             ) : null}
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
