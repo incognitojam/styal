@@ -10,6 +10,7 @@ import {
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
+  EnvironmentId,
   ORCHESTRATION_PROTOCOL_HEADER,
   ORCHESTRATION_PROTOCOL_VERSION,
   OrchestrationV2ThreadDetailSnapshot,
@@ -31,6 +32,7 @@ import { layerHttpCompression } from "../src/http.ts";
 import * as EventSink from "../src/orchestration-v2/EventSink.ts";
 import * as EventStore from "../src/orchestration-v2/EventStore.ts";
 import * as OrchestrationHttp from "../src/orchestration-v2/http.ts";
+import * as ServerEnvironment from "../src/environment/ServerEnvironment.ts";
 import * as LegacyV1ThreadImporter from "../src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../src/orchestration-v2/ProjectStore.ts";
@@ -107,6 +109,11 @@ const auth = Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
 );
 const routes = HttpApiBuilder.layer(TransferApi).pipe(
   Layer.provide(OrchestrationHttp.layer),
+  Layer.provide(
+    Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("imported-transfer-test")),
+    }),
+  ),
   Layer.provide(auth),
   Layer.provide(layerHttpCompression),
   Layer.provide(NodeHttpPlatform.layer),

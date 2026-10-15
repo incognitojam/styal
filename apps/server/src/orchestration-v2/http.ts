@@ -7,6 +7,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "../config.ts";
@@ -20,6 +21,7 @@ import {
   failEnvironmentNotFound,
   requireEnvironmentScope,
 } from "../auth/http.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { traceLocalHandlerWork } from "../cloud/traceRelayRequest.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
@@ -36,6 +38,10 @@ import * as ProjectStore from "./ProjectStore.ts";
 import { buildActiveShellSnapshot, loadShellSnapshotParts } from "./ShellStream.ts";
 import { boundedSnapshotResponseFields } from "./ThreadStream.ts";
 import { projectThreadProjectionForWire } from "./WireProjection.ts";
+
+const isThreadTranscriptTooLargeError = Schema.is(
+  ThreadManagementService.ThreadTranscriptTooLargeError,
+);
 
 function isThreadNotFound(error: unknown): boolean {
   return (
@@ -56,6 +62,7 @@ export const layer = HttpApiBuilder.group(
   "orchestration",
   Effect.fnUntraced(function* (handlers) {
     const sql = yield* SqlClient.SqlClient;
+    const environment = yield* ServerEnvironment.ServerEnvironmentIdentity;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
     const intakeContext = yield* Effect.context<
@@ -212,6 +219,31 @@ export const layer = HttpApiBuilder.group(
             snapshotSequence: snapshot.snapshotSequence,
             projection: snapshot.projection,
           };
+        }),
+      )
+      .handle(
+        "threadTranscript",
+        Effect.fn("environment.orchestration.threadTranscript")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          return yield* threadManagement.getThreadTranscript(args.params.threadId).pipe(
+            Effect.provideService(ServerEnvironment.ServerEnvironmentIdentity, environment),
+            traceLocalHandlerWork,
+            Effect.catch(
+              Effect.fnUntraced(function* (error) {
+                if (isThreadTranscriptTooLargeError(error)) {
+                  return yield* failEnvironmentInvalidRequest("thread_transcript_too_large");
+                }
+                if (isThreadNotFound(error)) {
+                  return yield* failEnvironmentNotFound("thread_not_found");
+                }
+                return yield* failEnvironmentInternal(
+                  "orchestration_thread_snapshot_failed",
+                  error,
+                );
+              }),
+            ),
+          );
         }),
       )
       .handle(

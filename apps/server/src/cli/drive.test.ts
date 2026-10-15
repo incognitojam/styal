@@ -10,6 +10,7 @@ import {
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
+  EnvironmentId,
   ThreadId,
   OrchestrationV2ShellSnapshotJson,
   OrchestrationV2ThreadProjectionJson,
@@ -40,6 +41,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as OrchestrationHttp from "../orchestration-v2/http.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeSchemaDocument = Schema.decodeSync(
@@ -215,6 +217,11 @@ it.effect(
       let operate = false;
       const routes = HttpApiBuilder.layer(TestApi).pipe(
         Layer.provide(OrchestrationHttp.layer),
+        Layer.provide(
+          Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+            getEnvironmentId: Effect.succeed(EnvironmentId.make("synthetic-drive-environment")),
+          }),
+        ),
         Layer.provide(
           Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
             Effect.suspend(() =>
