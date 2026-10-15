@@ -11,7 +11,7 @@ import { Platform, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
-import { MaterialScreenContent } from "../../components/MaterialScreenContent";
+import { ScreenContent } from "../../components/ScreenContent";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { cn } from "../../lib/cn";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
@@ -137,7 +137,7 @@ export function SettingsServerUpdateConfirmRouteScreen({
         />
       ) : null}
       <View className="min-h-4 pt-2 android:pt-4" />
-      <MaterialScreenContent fitToContents>
+      <ScreenContent fitToContents>
         <ScrollView
           className="android:shrink android:grow-0 ios:flex-1"
           contentContainerClassName="gap-6 px-5 pb-4 pt-2"
@@ -170,7 +170,7 @@ export function SettingsServerUpdateConfirmRouteScreen({
             onPress={() => close(true)}
           />
         </View>
-      </MaterialScreenContent>
+      </ScreenContent>
     </View>
   );
 }
