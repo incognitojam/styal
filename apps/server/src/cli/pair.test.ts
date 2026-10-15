@@ -34,6 +34,7 @@ import {
   resolveDirectPairingBaseUrl,
   resolveTailscaleLocalTarget,
   ServePortOccupiedError,
+  ServesOtherEnvironmentError,
 } from "./pair.ts";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -130,10 +131,18 @@ const withTailscalePairing = <A, E, R>(
   input: {
     readonly handlers: Record<string, { readonly Proxy: string }>;
     readonly funnel?: boolean;
+    readonly foreground?: boolean;
+    readonly host?: string;
     readonly devUrl?: string;
     readonly tailscaleProbeError?: Error;
+    readonly tailscaleProbeStatus?: number;
+    readonly tailscaleEnvironmentId?: string;
   },
-  run: (baseDir: string, commands: Array<ReadonlyArray<string>>) => Effect.Effect<A, E, R>,
+  run: (
+    baseDir: string,
+    commands: Array<ReadonlyArray<string>>,
+    requests: Array<string>,
+  ) => Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
     const baseDir = yield* Effect.acquireRelease(
@@ -148,7 +157,7 @@ const withTailscalePairing = <A, E, R>(
       ),
       state: yield* makePersistedServerRuntimeState({
         config: {
-          host: "127.0.0.1",
+          host: input.host ?? "127.0.0.1",
           devUrl: input.devUrl === undefined ? undefined : new URL(input.devUrl),
         },
         port: baseState.port,
@@ -168,6 +177,9 @@ const withTailscalePairing = <A, E, R>(
               TCP: { 443: { HTTPS: true } },
               Web: { "desktop.tail.ts.net:443": { Handlers: input.handlers } },
               AllowFunnel: { "desktop.tail.ts.net:443": input.funnel ?? false },
+              ...(input.foreground
+                ? { Foreground: { session: { TCP: { 443: { HTTPS: true } } } } }
+                : {}),
             };
       return Effect.succeed(
         ChildProcessSpawner.makeHandle({
@@ -186,12 +198,14 @@ const withTailscalePairing = <A, E, R>(
       );
     });
 
-    return yield* run(baseDir, commands).pipe(
+    const requests: Array<string> = [];
+    return yield* run(baseDir, commands, requests).pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.provideService(HostProcessPlatform, "linux"),
       Effect.provideService(FetchHttpClient.Fetch, (url) => {
+        requests.push(String(url));
         expect([
-          "http://127.0.0.1:3773/.well-known/t3/environment",
+          `http://${input.host === "::1" ? "[::1]" : (input.host ?? "127.0.0.1")}:3773/.well-known/t3/environment`,
           "https://desktop.tail.ts.net/.well-known/t3/environment",
         ]).toContain(String(url));
         if (
@@ -201,9 +215,18 @@ const withTailscalePairing = <A, E, R>(
           return Promise.reject(input.tailscaleProbeError);
         }
         return Promise.resolve(
-          new Response(JSON.stringify(testDescriptor), {
-            headers: { "content-type": "application/json" },
-          }),
+          new Response(
+            JSON.stringify({
+              ...testDescriptor,
+              ...(String(url).startsWith("https:") && input.tailscaleEnvironmentId !== undefined
+                ? { environmentId: input.tailscaleEnvironmentId }
+                : {}),
+            }),
+            {
+              status: String(url).startsWith("https:") ? (input.tailscaleProbeStatus ?? 200) : 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
         );
       }),
     );
@@ -254,6 +277,7 @@ describe("styal pair", () => {
             expect(commands).toEqual([
               ["status", "--json"],
               ["serve", "status", "--json"],
+              ["serve", "status", "--json"],
             ]);
           }),
       ),
@@ -262,6 +286,11 @@ describe("styal pair", () => {
 
   it.effect.each([
     { name: "Funnel", handlers: { "/": { Proxy: "http://127.0.0.1:3773" } }, funnel: true },
+    {
+      name: "a foreground override",
+      handlers: { "/": { Proxy: "http://127.0.0.1:3773" } },
+      foreground: true,
+    },
     {
       name: "an additional route",
       handlers: {
@@ -281,17 +310,21 @@ describe("styal pair", () => {
           expect(commands).toEqual([
             ["status", "--json"],
             ["serve", "status", "--json"],
+            ["serve", "status", "--json"],
           ]);
         }),
       ),
     ),
   );
 
-  it.effect("reuses an exact private regular-server handler without changing it", () =>
+  it.effect("pairs through an exact private handler without probing HTTPS or changing it", () =>
     provideCliTestLayers(
       withTailscalePairing(
-        { handlers: { "/": { Proxy: "http://127.0.0.1:3773" } } },
-        (baseDir, commands) =>
+        {
+          handlers: { "/": { Proxy: "http://127.0.0.1:3773" } },
+          tailscaleProbeStatus: 500,
+        },
+        (baseDir, commands, requests) =>
           Effect.gen(function* () {
             yield* runCli(["pair", "--base-dir", baseDir, "--tailscale"]);
             const output =
@@ -299,11 +332,47 @@ describe("styal pair", () => {
                 (line): line is string => typeof line === "string",
               ) ?? "";
             assert.include(output, "Pairing URL: https://desktop.tail.ts.net/pair#token=");
+            assert.match(output, /Token: [A-Z2-9]+/);
             assert.notInclude(output, "Tailscale Serve now maps");
+            assert.notInclude(output, "HTTPS endpoint has not answered yet");
+            expect(requests).toEqual(["http://127.0.0.1:3773/.well-known/t3/environment"]);
             expect(commands).toEqual([
               ["status", "--json"],
               ["serve", "status", "--json"],
             ]);
+          }),
+      ),
+    ),
+  );
+
+  it.effect.each([
+    { name: "a different proxy target", proxy: "http://127.0.0.1:9000" },
+    {
+      name: "an unverified dev web origin",
+      proxy: "http://127.0.0.1:5733",
+      devUrl: "http://localhost:5733/",
+    },
+    {
+      name: "an unverified IPv4 origin on the same port",
+      proxy: "http://127.0.0.1:3773",
+      host: "::1",
+    },
+  ])("keeps the foreign environment guard for $name", ({ proxy, ...input }) =>
+    provideCliTestLayers(
+      withTailscalePairing(
+        {
+          ...input,
+          handlers: { "/": { Proxy: proxy } },
+          tailscaleEnvironmentId: "other-environment",
+        },
+        (baseDir, commands, requests) =>
+          Effect.gen(function* () {
+            const error = yield* runCli(["pair", "--base-dir", baseDir, "--tailscale"]).pipe(
+              Effect.flip,
+            );
+            expect(error).toBeInstanceOf(ServesOtherEnvironmentError);
+            expect(requests).toContain("https://desktop.tail.ts.net/.well-known/t3/environment");
+            expect(commands.every((args) => args[1] !== "--bg")).toBe(true);
           }),
       ),
     ),

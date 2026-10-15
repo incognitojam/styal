@@ -470,6 +470,12 @@ const readTailscaleServePortState = (input: {
     Effect.map((status) => (status === null ? "absent" : servePortState(status, input))),
   );
 
+/** Checks the live configuration without changing handlers or probing HTTPS. */
+export const hasExactTailscaleServe = (input: {
+  readonly servePort: number;
+  readonly proxy: string;
+}) => readTailscaleServePortState(input).pipe(Effect.map((state) => state === "exact"));
+
 export const ensureTailscaleServe = (input: {
   readonly localPort: number;
   readonly servePort?: number;

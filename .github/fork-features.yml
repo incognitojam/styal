@@ -2428,26 +2428,31 @@ features:
       retire_when: Upstream's mobile Provider accounts screen shows every provider with its sign-in source and gives each action its own icon.
 
   - id: pair-cli-startup
-    title: Load pairing without the full server CLI
+    title: Avoid redundant CLI loading and Tailscale pairing probes
     status: maintained
-    prs: [852]
+    prs: [852, 857]
     invariants:
       - Direct pair invocations load the existing pairing command without evaluating unrelated server CLI commands, preserving pairing flags, global settings, help, version, token storage, and Tailscale occupancy and identity checks.
       - Completion requests and invocations with flags before the command retain the full CLI tree.
-    rationale: Pairing only needs its own command and runtime layers; evaluating every server command adds avoidable startup latency before local discovery or Tailscale checks begin.
+      - An exact private Tailscale Serve mapping to the origin already verified during discovery is reused without HTTPS self-probes or readiness retries; different origins and nonexact mappings retain environment identity and handler ownership checks.
+    rationale: Pairing only needs its own command and runtime layers; evaluating every server command adds avoidable startup latency. Once discovery verifies a local origin and its private Serve mapping is exact, HTTPS self-probes add latency and can fail despite a usable mapping.
     implementation_paths:
       - apps/server/src/binPair.ts
+      - apps/server/src/cli/pair.ts
+      - packages/tailscale/src/tailscale.ts
     upstream_paths:
       - apps/server/src/bin.ts
       - apps/server/src/binCli.ts
       - apps/server/src/cli/pair.ts
+      - packages/tailscale/src/tailscale.ts
     tests:
       - apps/server/src/cli/pair.test.ts
+      - packages/tailscale/src/tailscale.test.ts
     upstream:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
-      retire_when: Upstream dispatches pairing without loading unrelated server commands while preserving the full CLI's parser and runtime behavior.
+      retire_when: Upstream avoids unrelated CLI loading and redundant HTTPS probes for verified exact private mappings while preserving pairing parser, runtime, identity, and ownership behavior.
 
   - id: pending-question-answer-drafts
     title: Keep unsubmitted question answers when the chat view remounts
