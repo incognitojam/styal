@@ -11,8 +11,10 @@ The [Provider canary](../../.github/workflows/provider-canary.yml) workflow runs
 daily and on demand. For Codex, Claude Code, and OpenCode it finds npm releases
 newer than the recorded version, installs each one into an isolated prefix, and
 runs real turns against `main`'s server: a tool turn, its checkpoint, a resumed
-follow-up, and an interrupt. Versions that pass are recorded in one pull request
-from `automation/provider-canary`. A release outside every supported range is
+follow-up, an interrupt, an approval round trip, a rewind, a native subagent,
+and follow-ups after a server restart. It fails on error items or server
+warnings any of them leave behind. Versions that pass are recorded in one pull
+request from `automation/provider-canary`. A release outside every supported range is
 reported as blocked; widen the ranges by hand if it should be accepted.
 
 The workflow needs:
@@ -29,6 +31,7 @@ and a fresh temporary T3 home:
 
 ```sh
 node apps/server/scripts/verify-provider-live.ts --provider claudeAgent --model claude-haiku-5-5
+node apps/server/scripts/verify-provider-live.ts --provider claudeAgent --model claude-haiku-5-5 --scenario approval
 node scripts/provider-canary.ts plan
 node scripts/provider-canary.ts record --provider codex --version 0.162.1
 ```

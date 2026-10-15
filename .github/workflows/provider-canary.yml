@@ -141,7 +141,7 @@ jobs:
           evidence="$(sed -n 's/^Evidence: //p' "$RUNNER_TEMP/verify.log" | head -n 1)"
           echo "evidence=$evidence" >> "$GITHUB_OUTPUT"
           if [[ -n "$evidence" && -f "$evidence/result.json" ]]; then
-            jq -r '"### \(.provider) \(.version) (\(.model))\n\n| Scenario | Status | Detail |\n| --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.detail) |")' \
+            jq -r '"### \(.provider) \(.version) (\(.model))\n\n| Scenario | Status | Seconds | Detail |\n| --- | --- | --- | --- |", (.scenarios[] | "| \(.name) | \(.status) | \(.seconds // "") | \(.detail) |")' \
               "$evidence/result.json" >> "$GITHUB_STEP_SUMMARY"
           fi
           if [[ "$status" != 0 ]]; then
