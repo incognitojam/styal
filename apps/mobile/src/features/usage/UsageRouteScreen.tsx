@@ -56,7 +56,7 @@ import { UsageDailyChart } from "./UsageDailyChart";
 import { toggleUsageEnvironment } from "./usageEnvironmentSelection";
 import { useRefreshLimits } from "./UsageLimitsSection";
 import { UsageLimitsSection } from "./UsageLimitsPooled";
-import { ControlPillMenu } from "../../components/ControlPill";
+import { Menu } from "../../components/Menu";
 import type { UsageChartMetric } from "./usageChartData";
 import { PROVIDER_LABEL, useProviderColors, useUsageMixColors } from "./usageProviders";
 
@@ -241,7 +241,7 @@ export function UsageRouteScreen() {
   const environmentFilter = useMemo(
     () =>
       showEnvironmentFilter ? (
-        <ControlPillMenu
+        <Menu
           accessible
           accessibilityRole="button"
           accessibilityLabel="Filter usage environments"
@@ -259,7 +259,7 @@ export function UsageRouteScreen() {
           >
             <SymbolView name={filterIcon} size={22} tintColorClassName="accent-icon" />
           </Pressable>
-        </ControlPillMenu>
+        </Menu>
       ) : null,
     [showEnvironmentFilter, environmentActions, selectEnvironment, filterIcon],
   );

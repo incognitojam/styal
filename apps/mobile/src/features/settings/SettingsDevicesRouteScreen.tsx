@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Option from "effect/Option";
 import { ScreenScrollView } from "../../components/ScreenScrollView";
 import { AppText } from "../../components/AppText";
-import { ControlPillMenu } from "../../components/ControlPill";
+import { Menu } from "../../components/Menu";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
 import { serverEnvironment } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
@@ -253,7 +253,7 @@ function IdleShutdownRow(props: {
       description="Devices styal started stop once no agent or viewer uses them."
       disabled={props.disabled}
       accessory={
-        <ControlPillMenu
+        <Menu
           actions={DEVICE_IDLE_SHUTDOWN_CHOICES.map((choice) => ({
             id: String(choice),
             title: deviceIdleShutdownLabel(choice),
@@ -270,7 +270,7 @@ function IdleShutdownRow(props: {
           >
             <AppText className="text-base text-foreground-muted">{label}</AppText>
           </Pressable>
-        </ControlPillMenu>
+        </Menu>
       }
     />
   );

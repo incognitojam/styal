@@ -3,8 +3,8 @@ import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
-import { ControlPillMenu } from "../../components/ControlPillMenu";
-import type { ControlPillMenuProps } from "../../components/ControlPillMenu.types";
+import { Menu } from "../../components/Menu";
+import type { MenuProps } from "../../components/Menu.types";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
 import {
@@ -28,7 +28,7 @@ export const PullRequestListRow = memo(
     readonly selected: boolean;
     readonly sidebar: boolean;
     readonly busy: boolean;
-    readonly getActions: (item: EnvironmentPullRequestListEntry) => ControlPillMenuProps["actions"];
+    readonly getActions: (item: EnvironmentPullRequestListEntry) => MenuProps["actions"];
     readonly onAction: (item: EnvironmentPullRequestListEntry, action: string) => void;
   }) {
     const { item } = props;
@@ -57,7 +57,7 @@ export const PullRequestListRow = memo(
           : "accent-warning-foreground";
     return (
       <View style={props.sidebar ? THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE : undefined}>
-        <ControlPillMenu
+        <Menu
           shouldOpenOnLongPress
           title={`#${item.number} · ${item.repository}`}
           actions={props.getActions(item)}
@@ -191,7 +191,7 @@ export const PullRequestListRow = memo(
               </View>
             </View>
           </Pressable>
-        </ControlPillMenu>
+        </Menu>
       </View>
     );
   },

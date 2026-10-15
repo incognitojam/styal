@@ -11,7 +11,7 @@ import {
   pullRequestMergeIntentLabel,
   resolvePullRequestMergeIntent,
 } from "@t3tools/shared/threadPullRequests";
-import { ControlPillMenu } from "../../components/ControlPillMenu";
+import { Menu } from "../../components/Menu";
 import { Button } from "../../components/Button";
 import { IconButton } from "../../components/IconButton";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
@@ -219,7 +219,7 @@ export function PullRequestMergeControls(props: {
           </Pressable>
         )}
         {methods.length > 0 || canAutoMerge ? (
-          <ControlPillMenu
+          <Menu
             title="Merge options"
             actions={[
               ...methods.map((id) => ({
@@ -269,7 +269,7 @@ export function PullRequestMergeControls(props: {
                 />
               </Pressable>
             )}
-          </ControlPillMenu>
+          </Menu>
         ) : null}
       </View>
       {permissions.connected &&

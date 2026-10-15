@@ -9,7 +9,7 @@ import { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
-import { ControlPillMenu } from "../../components/ControlPillMenu";
+import { Menu } from "../../components/Menu";
 import { PullRequestAvatar } from "./PullRequestPresentation";
 import { PullRequestCardRow } from "./PullRequestControls";
 import { PullRequestAgentRow } from "./PullRequestAgentRow";
@@ -71,7 +71,7 @@ export function PullRequestStatusMenu(props: RowProps) {
   );
   if (!actions.length) return trigger;
   return (
-    <ControlPillMenu
+    <Menu
       title="Pull request status"
       actions={actions.map((id) => ({
         id,
@@ -98,7 +98,7 @@ export function PullRequestStatusMenu(props: RowProps) {
       }}
     >
       {trigger}
-    </ControlPillMenu>
+    </Menu>
   );
 }
 
@@ -216,7 +216,7 @@ export function PullRequestBranchRow(props: RowProps) {
   );
   if (!methods.length && !canResolve) return row;
   return (
-    <ControlPillMenu
+    <Menu
       title="Branch"
       actions={[
         ...(canResolve ? [agent.menuAction("conflicts")] : []),
@@ -229,7 +229,7 @@ export function PullRequestBranchRow(props: RowProps) {
       }}
     >
       {row}
-    </ControlPillMenu>
+    </Menu>
   );
 }
 

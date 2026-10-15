@@ -1,5 +1,5 @@
 import { SymbolView } from "../../components/AppSymbol";
-import { ControlPillMenu } from "../../components/ControlPill";
+import { Menu } from "../../components/Menu";
 import type { MenuAction } from "@react-native-menu/menu";
 import * as Haptics from "expo-haptics";
 import {
@@ -65,7 +65,7 @@ interface ThreadSwipeAction {
   readonly label: string;
   readonly menu?: {
     readonly actions: MenuAction[];
-    readonly onPressAction: NonNullable<ComponentProps<typeof ControlPillMenu>["onPressAction"]>;
+    readonly onPressAction: NonNullable<ComponentProps<typeof Menu>["onPressAction"]>;
     readonly title?: string;
   };
   readonly onPress: () => void;
@@ -686,14 +686,14 @@ function SwipeActionButton(props: {
       {props.menu === undefined ? (
         button
       ) : (
-        <ControlPillMenu
+        <Menu
           actions={props.menu.actions}
           onPressAction={props.menu.onPressAction}
           title={props.menu.title}
           style={{ height: "100%", width: "100%" }}
         >
           {button}
-        </ControlPillMenu>
+        </Menu>
       )}
     </Animated.View>
   );
