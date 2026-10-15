@@ -20,6 +20,7 @@ phrases = {
     'arrived': 'has arrived.',
     'ci-failure': 'is delayed. This is due to a CI failure.',
     'merge-conflict': 'is delayed. This is due to a merge conflict.',
+    'queue-failure': 'is delayed. This is due to a problem in the merge queue.',
     'stack-delayed': 'is delayed. This is due to a slower running train ahead.',
     'changes-requested': 'is being held at a red signal.',
     'cancelled': 'has been cancelled.',

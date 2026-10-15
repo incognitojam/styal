@@ -390,7 +390,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "PR announcements",
     to: "/settings/general",
     searchTerms: [
-      "announcer railway station train voice pull request ready merged closed checks conflict",
+      "announcer railway station train voice pull request ready merged closed checks conflict merge queue",
     ],
   },
   {

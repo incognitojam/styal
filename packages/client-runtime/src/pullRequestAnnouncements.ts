@@ -7,6 +7,7 @@ export const PULL_REQUEST_ANNOUNCEMENT_KINDS = [
   "arrived",
   "ci-failure",
   "merge-conflict",
+  "queue-failure",
   "stack-delayed",
   "changes-requested",
   "cancelled",
@@ -36,6 +37,7 @@ export function pullRequestAnnouncementText(number: number, kind: PullRequestAnn
     arrived: "has arrived.",
     "ci-failure": "is delayed. This is due to a CI failure.",
     "merge-conflict": "is delayed. This is due to a merge conflict.",
+    "queue-failure": "is delayed. This is due to a problem in the merge queue.",
     "stack-delayed": "is delayed. This is due to a slower running train ahead.",
     "changes-requested": "is being held at a red signal.",
     cancelled: "has been cancelled.",
@@ -51,12 +53,15 @@ function keyOf(link: ThreadPullRequestLink) {
 interface Observation {
   readonly snapshot: ThreadPullRequestSnapshot;
   readonly kind: PullRequestAnnouncementKind | null;
+  /** Left the merge queue without merging, until it re-queues, settles, or is pushed to again. */
+  readonly ejected: boolean;
 }
 
 /** The single announcement a PR's current state warrants, most decisive first. */
 function announcementKind(
   snapshot: ThreadPullRequestSnapshot,
   blockedByStack: boolean,
+  ejected: boolean,
 ): PullRequestAnnouncementKind | null {
   if (snapshot.state === "merged") return "arrived";
   if (snapshot.state === "closed") return "cancelled";
@@ -64,6 +69,8 @@ function announcementKind(
   if (snapshot.mergeability === "conflicting") return "merge-conflict";
   if (snapshot.checksState === "failing") return "ci-failure";
   if (snapshot.reviewDecision === "changes-requested") return "changes-requested";
+  // Its own checks usually still pass after the queue's merge group fails, so this outranks ready.
+  if (ejected) return "queue-failure";
   if (snapshot.checksState !== "passing") return null;
   if (blockedByStack) return "stack-delayed";
   // An armed auto-merge or a queued merge needs nobody; its arrival is the news.
@@ -85,11 +92,20 @@ function observe(link: ThreadPullRequestLink, previous?: Observation): Observati
       incoming.mergeability === undefined || incoming.mergeability === "unknown"
         ? previous?.snapshot.mergeability
         : incoming.mergeability,
+    inMergeQueue: incoming.inMergeQueue ?? previous?.snapshot.inMergeQueue,
   };
   const layer = link.stack?.layers.findIndex((item) => item.number === link.number) ?? -1;
   const blockedByStack =
     layer > 0 && link.stack!.layers.slice(0, layer).some((item) => item.state === "open");
-  return { snapshot, kind: announcementKind(snapshot, blockedByStack) };
+  // A new push resets checks, which is a fresh attempt rather than the same ejection.
+  const ejected =
+    previous !== undefined &&
+    snapshot.state === "open" &&
+    snapshot.inMergeQueue !== true &&
+    snapshot.checksState === previous.snapshot.checksState &&
+    (previous.ejected ||
+      (previous.snapshot.inMergeQueue === true && snapshot.inMergeQueue === false));
+  return { snapshot, kind: announcementKind(snapshot, blockedByStack, ejected), ejected };
 }
 
 function isNewTransition(previous: Observation, next: Observation) {
@@ -115,6 +131,8 @@ function isNewTransition(previous: Observation, next: Observation) {
       );
     case "stack-delayed":
       return true;
+    case "queue-failure":
+      return previous.snapshot.inMergeQueue === true;
     // Waiting on a person, whether checks just passed or a blocker just cleared.
     case "ready":
       return previous.snapshot.checksState !== undefined;
