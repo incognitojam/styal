@@ -17,8 +17,8 @@ function settingsBreadcrumbLabel(pathname: string): string | null {
 }
 
 /**
- * `Settings / Section`. The scope a change applies to lives at the top of the
- * page content, see `SettingsScopeSentence`.
+ * `Settings / Section`. The scope a change applies to lives below the header,
+ * see `SettingsScopeSentence`.
  */
 export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
   const sectionLabel = settingsBreadcrumbLabel(pathname);

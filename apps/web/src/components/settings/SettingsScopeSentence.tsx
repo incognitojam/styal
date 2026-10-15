@@ -49,10 +49,10 @@ interface SettingsScopeMenuProps {
 }
 
 /**
- * "Applying settings for <project> across <environment>" at the top of a settings
- * page. The two pickers are the targets a change is written to. A project is
- * the same project on every environment, so the environment alone decides
- * where a project override is written.
+ * "Applying settings for <project> across <environment>" below the settings
+ * header, outside the scrolling page. The two pickers are the targets a change
+ * is written to. A project is the same project on every environment, so the
+ * environment alone decides where a project override is written.
  */
 export function SettingsScopeSentence() {
   const scope = useOptionalSettingsScope();
@@ -67,7 +67,7 @@ export function SettingsScopeSentence() {
     onChange: scope.selectScope,
   };
   return (
-    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-base text-muted-foreground sm:px-4">
+    <p className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 gap-y-1 border-b border-border/60 py-2 pl-(--workspace-gutter-start) pr-(--workspace-gutter-end) text-sm text-muted-foreground">
       {/* Each connective stays with its picker so a wrap never strands "on". */}
       {scope.singleEnvironment ? null : (
         <span className="flex min-w-0 items-center gap-1.5">
@@ -106,7 +106,7 @@ function ScopeMenu({
       <MenuTrigger
         aria-label={`${ariaLabel}: ${label}`}
         render={<InlineButton tone="picker" />}
-        className="min-w-0 max-w-72"
+        className="min-w-0 max-w-72 shrink"
       >
         {icon}
         <span className="min-w-0 truncate">{label}</span>

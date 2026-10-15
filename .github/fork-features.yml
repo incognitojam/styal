@@ -3658,6 +3658,31 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15604
       retire_when: Upstream provides equivalent capability-specific update guidance that distinguishes legacy service migration from foreground starts while preserving direct updates for managed services.
 
+  - id: settings-scope-persistent-header
+    title: Keep settings scope visible while scrolling
+    status: maintained
+    prs: []
+    invariants:
+      - Web and desktop settings keep the project and environment pickers in a fixed row beneath the page header while the settings content scrolls.
+      - The scope sentence wraps on narrow screens and truncates long picker labels, stays available for unavailable scopes, preserves the environment-only Providers picker, and remains hidden on device-only pages.
+    implementation_paths:
+      - apps/web/src/components/settings/SettingsScopeSentence.tsx
+      - apps/web/src/components/settings/settingsLayout.tsx
+      - apps/web/src/routes/settings.tsx
+    upstream_paths:
+      - apps/web/src/components/settings/SettingsScopeSentence.tsx
+      - apps/web/src/components/settings/settingsLayout.tsx
+      - apps/web/src/routes/settings.tsx
+    tests:
+      - apps/web/src/components/settings/settingsLayout.test.tsx
+      - apps/web/src/components/settings/settingsScopeAxis.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
+        - https://github.com/pingdotgg/t3code/pull/13139
+      retire_when: Upstream keeps settings scope pickers visible and usable while scrolling without losing responsive wrapping or scope recovery.
+
   - id: settled-shelf-auto-collapse
     title: Close the settled shelf once the user moves on
     status: maintained
