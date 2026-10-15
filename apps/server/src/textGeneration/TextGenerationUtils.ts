@@ -4,7 +4,16 @@ import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
 const RATE_LIMIT_MESSAGE =
-  /\b(?:rate[ _-]?limit(?:ed|ing|exceeded|_exceeded)?|usage[ _-]?limit(?:exceeded|_exceeded)?|too many requests|hit your limit|insufficient_quota|quota[ _-]exceeded|resource_exhausted)\b/i;
+  /\b(?:rate[ _-]?limit(?:ed|ing|exceeded|_exceeded)?|usage[ _-]?limit(?:exceeded|_exceeded)?|too many requests|hit your (?:(?:session|weekly) )?limit|insufficient_quota|quota[ _-]exceeded|resource_exhausted)\b/i;
+const decodeCliJson = Schema.decodeOption(Schema.fromJsonString(Schema.Unknown));
+const isClaudeErrorResult = Schema.is(
+  Schema.Struct({
+    type: Schema.Literals(["result"]),
+    is_error: Schema.Literals([true]),
+    api_error_status: Schema.optionalKey(Schema.Unknown),
+    result: Schema.optionalKey(Schema.String),
+  }),
+);
 
 /** Inspect error fields, excluding validation inputs and Codex's echoed prompt. */
 export function isTextGenerationRateLimitError(error: TextGenerationError): boolean {
@@ -13,6 +22,23 @@ export function isTextGenerationRateLimitError(error: TextGenerationError): bool
   while (pending.length > 0) {
     const value = pending.pop();
     if (typeof value === "string") {
+      const claudePrefix = "Claude CLI command failed:";
+      const claudeOffset = value.indexOf(claudePrefix);
+      if (claudeOffset !== -1) {
+        const decoded = decodeCliJson(value.slice(claudeOffset + claudePrefix.length).trim());
+        if (Option.isSome(decoded)) {
+          // Verbose output can echo prompts and successful messages; only inspect failed results.
+          const messages: ReadonlyArray<unknown> = Array.isArray(decoded.value)
+            ? decoded.value
+            : [decoded.value];
+          for (const message of messages) {
+            if (isClaudeErrorResult(message)) {
+              pending.push({ status: message.api_error_status, message: message.result });
+            }
+          }
+          continue;
+        }
+      }
       const prefix = "Codex CLI command failed:";
       const offset = value.indexOf(prefix);
       const detail =
