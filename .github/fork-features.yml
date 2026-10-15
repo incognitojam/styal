@@ -2360,6 +2360,36 @@ features:
       tracking: []
       retire_when: Upstream keeps unsubmitted web question answers outside the chat view component so a remount does not discard them.
 
+  - id: pending-question-answer-history
+    title: Keep submitted question answers visible outside collapsed work
+    status: maintained
+    prs: []
+    rationale: Restore the visibility behavior imported from upstream 11363 that the V2 timeline rewrite lost. At upstream 00cdceb196edf661652dee6efe983c0d40662971, answered questions still join tool groups and turn folds. Discussion 16965 tracks discoverability; 17227 was closed pending approval for folding and user-bubble changes, while 18544 changes readability within the work log.
+    invariants:
+      - Submitted question and answer history keeps its own expandable row on web, desktop, and mobile while surrounding work runs and after the turn completes.
+      - Collapsing or expanding surrounding tool activity or the completed turn does not hide the question or combine it with neighboring commands.
+      - Expanded submitted answers show question and answer details without raw request metadata.
+    implementation_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
+      - apps/mobile/src/lib/threadActivity.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.ts
+    tests:
+      - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/discussions/16965
+        - https://github.com/pingdotgg/t3code/pull/11363
+        - https://github.com/pingdotgg/t3code/pull/17227
+        - https://github.com/pingdotgg/t3code/pull/18544
+        - https://github.com/pingdotgg/t3code/pull/2829
+      retire_when: Upstream's V2 clients keep submitted question history separate from tool groups and visible outside completed-turn folds.
+
   - id: pending-question-displaced-answers
     title: Keep custom answer drafts while choosing mobile question options
     status: maintained

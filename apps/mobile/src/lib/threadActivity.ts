@@ -961,6 +961,7 @@ function groupAdjacentActivities(entries: ReadonlyArray<RawThreadFeedEntry>): Th
     const isStandaloneActivity =
       entry.activity.projectedItem.item.type === "compaction" ||
       entry.activity.projectedItem.item.type === "handoff" ||
+      entry.activity.workEntry.questionAnswer !== undefined ||
       entry.activity.projectedItem.item.type === "notification";
     if (
       isStandaloneActivity ||
@@ -1156,6 +1157,7 @@ function deriveThreadFeedRunFolds(
           (entry) =>
             ([...roots.values()].includes(runId) || entry.id !== firstAssistantId) &&
             entry.id !== terminalAssistantId &&
+            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)) &&
             !(
               entry.type === "activity-group" &&
               entry.activities.some(
