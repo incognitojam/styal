@@ -304,7 +304,8 @@ sample, stepping through the announcements on each press.
 
 Only changes observed while the app is open are announced; opening the app does
 not replay existing PR states. Several PRs play in turn between one opening and
-one closing chime. Use **Stop** on the announcement toast to silence it.
+one closing chime. A toast lists the announcements in the current run,
+highlighting the one being spoken; use **Stop** on it to silence them.
 
 ## Snooze until later
 

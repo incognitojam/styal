@@ -26,10 +26,17 @@ interface PlaybackRequest extends PullRequestAnnouncement {
   readonly live: boolean;
 }
 
+/** One line on the announcement board, from the moment it is queued until its batch ends. */
+export interface AnnouncementLine {
+  readonly key: string;
+  readonly text: string;
+  readonly status: "spoken" | "speaking" | "queued";
+}
+
 interface PlaybackState {
   readonly playing: boolean;
   readonly error: string | null;
-  readonly current: PlaybackRequest | null;
+  readonly lines: ReadonlyArray<AnnouncementLine>;
 }
 
 function requestFor(announcement: PullRequestAnnouncement, live: boolean): PlaybackRequest {
@@ -51,16 +58,29 @@ function requestFor(announcement: PullRequestAnnouncement, live: boolean): Playb
 /** One opening and closing chime around each drained batch, shared by live events and previews. */
 function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
   let run: AbortController | undefined;
-  let lastRequest: PlaybackRequest | undefined;
   let active: { request: PlaybackRequest; controller: AbortController } | undefined;
   let previews = 0;
+  // Lines already spoken in the current batch stay listed until its closing chime ends.
+  let spoken: PlaybackRequest[] = [];
   const pending = new Map<string, PlaybackRequest>();
 
-  const publish = (
-    playing: boolean,
-    current: PlaybackRequest | null = null,
-    error: string | null = null,
-  ) => onChange({ playing, current, error });
+  const line = (request: PlaybackRequest, status: AnnouncementLine["status"]) => ({
+    key: request.key,
+    text: request.text,
+    status,
+  });
+  const publish = (error: string | null = null) =>
+    onChange({
+      playing: run !== undefined,
+      error,
+      lines: run
+        ? [
+            ...spoken.map((request) => line(request, "spoken")),
+            ...(active ? [line(active.request, "speaking")] : []),
+            ...[...pending.values()].map((request) => line(request, "queued")),
+          ]
+        : [],
+    });
 
   async function prepare(audio: AudioContext, request: PlaybackRequest) {
     const parts = await Promise.all(request.urls.map((url) => loadNotificationBuffer(audio, url)));
@@ -115,6 +135,8 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
     const { signal } = controller;
     try {
       while (pending.size > 0 && !signal.aborted) {
+        spoken = [];
+        publish();
         // The voice starts as the chime's last note rings out, like a station PA.
         await play(audio, await loadNotificationBuffer(audio, openingUrl), signal, {
           overlap: 1.9,
@@ -131,14 +153,16 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
           const abort = () => speech.abort();
           signal.addEventListener("abort", abort, { once: true });
           active = { request, controller: speech };
-          lastRequest = request;
-          publish(true, request);
+          publish();
           await play(audio, sentence, speech.signal);
           signal.removeEventListener("abort", abort);
+          // A line cut off because its PR changed is not left on the board.
+          if (!speech.signal.aborted) spoken.push(request);
           if (active?.controller === speech) active = undefined;
+          publish();
         }
-        if (!signal.aborted) {
-          publish(true);
+        // A batch whose only lines were cut off ends without a closing chime.
+        if (!signal.aborted && spoken.length > 0) {
           await play(audio, await loadNotificationBuffer(audio, closingUrl), signal, {
             volume: 10 ** (-2 / 20),
           });
@@ -147,14 +171,16 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
       }
       if (run === controller) {
         run = undefined;
-        publish(false);
+        spoken = [];
+        publish();
       }
     } catch {
       if (run !== controller) return;
       pending.clear();
       run = undefined;
       active = undefined;
-      publish(false, null, "The announcement could not be played.");
+      spoken = [];
+      publish("The announcement could not be played.");
     }
   }
 
@@ -163,18 +189,20 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
     run?.abort();
     run = undefined;
     active = undefined;
-    lastRequest = undefined;
-    publish(false);
+    spoken = [];
+    publish();
   }
 
   function enqueue(request: PlaybackRequest) {
     const audio = runningNotificationAudio();
     if (!audio) return;
+    // Map order is kept, so a newer update for a queued PR replaces its line in place.
     pending.set(request.key, request);
-    if (run) return;
+    if (run) {
+      publish();
+      return;
+    }
     run = new AbortController();
-    lastRequest = request;
-    publish(true);
     void drain(audio, run);
   }
 
@@ -190,26 +218,22 @@ function createAnnouncerPlayer(onChange: (state: PlaybackState) => void) {
     },
     /** Drops queued or playing live announcements whose PR no longer has that status. */
     reconcile(current: ReadonlyMap<string, PullRequestAnnouncement["kind"] | null>) {
+      let changed = false;
       for (const [key, request] of pending) {
-        if (request.live && current.get(key) !== request.kind) pending.delete(key);
+        if (request.live && current.get(key) !== request.kind) changed = pending.delete(key);
       }
       if (active?.request.live && current.get(active.request.key) !== active.request.kind) {
         active.controller.abort();
       }
-      if (
-        run &&
-        pending.size === 0 &&
-        lastRequest?.live &&
-        current.get(lastRequest.key) !== lastRequest.kind
-      ) {
-        stop();
-      }
+      // Nothing left to say in this batch: skip the chimes rather than announce nothing.
+      if (run && spoken.length === 0 && !active && pending.size === 0) stop();
+      else if (changed) publish();
     },
     stop,
   };
 }
 
-let playbackState: PlaybackState = { playing: false, current: null, error: null };
+let playbackState: PlaybackState = { playing: false, error: null, lines: [] };
 const listeners = new Set<() => void>();
 export const announcerPlayer = createAnnouncerPlayer((state) => {
   playbackState = state;
