@@ -21,6 +21,7 @@ import {
   buildTailscaleHttpsBaseUrl,
   DEFAULT_TAILSCALE_SERVE_PORT,
   ensureTailscaleServe,
+  hasExactTailscaleServe,
   readTailscaleStatus,
   type TailscaleServeError,
 } from "@t3tools/tailscale";
@@ -377,6 +378,27 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
       servePort: input.servePort,
     });
 
+    const localTarget = resolveTailscaleLocalTarget(input.target.state);
+    if (
+      !isDevServerNotProxiableError(localTarget) &&
+      `http://${localTarget.localHost ?? "127.0.0.1"}:${localTarget.localPort}` ===
+        input.target.state.origin
+    ) {
+      // Discovery already verified this exact origin. Reusing its private
+      // mapping needs no HTTPS self-probe, which can fail even on a working tailnet.
+      const exact = yield* hasExactTailscaleServe({
+        servePort: input.servePort,
+        proxy: input.target.state.origin,
+      }).pipe(
+        Effect.mapError(
+          (cause) => new TailscaleServeFailedError({ servePort: input.servePort, cause }),
+        ),
+      );
+      if (exact) {
+        return { baseUrl, notes };
+      }
+    }
+
     // A responding endpoint must belong to this environment. The live Serve
     // configuration below decides whether its handler can be reused or repointed.
     const existing = yield* probeEnvironmentDescriptor(baseUrl);
@@ -397,7 +419,6 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
       return yield* new ServePortOccupiedError({ servePort: input.servePort });
     }
 
-    const localTarget = resolveTailscaleLocalTarget(input.target.state);
     if (isDevServerNotProxiableError(localTarget)) {
       return yield* localTarget;
     }

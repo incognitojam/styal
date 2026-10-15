@@ -14,6 +14,7 @@ import {
   buildTailscaleHttpsBaseUrl,
   disableTailscaleServe,
   ensureTailscaleServe,
+  hasExactTailscaleServe,
   isTailscaleIpv4Address,
   parseTailscaleMagicDnsName,
   parseTailscaleStatus,
@@ -379,10 +380,19 @@ describe("tailscale", () => {
     });
 
     return Effect.gen(function* () {
+      assert.isTrue(
+        yield* hasExactTailscaleServe({
+          servePort: 8443,
+          proxy: "http://127.0.0.1:13773",
+        }).pipe(Effect.provide(layer)),
+      );
       yield* ensureTailscaleServe({ localPort: 13773, servePort: 8443 }).pipe(
         Effect.provide(layer),
       );
-      assert.deepEqual(commands, [["serve", "status", "--json"]]);
+      assert.deepEqual(commands, [
+        ["serve", "status", "--json"],
+        ["serve", "status", "--json"],
+      ]);
     });
   });
 
