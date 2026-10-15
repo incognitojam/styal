@@ -85,6 +85,10 @@
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
     },
     {
+      "pr": 17022,
+      "reason": "Shows the machine icon and environment name on the empty branch line of projectless threads when projects span multiple environments. Fork #770 restored the remote machine glyph but left this newer enhancement for chronological intake. Take upstream's behavior when the queue reaches it, preserving the fork's compact rows and avoiding a duplicate remote glyph when the machine label is shown. Verify local and remote projectless threads with multiple environments, branch-bearing threads, and the single-environment case, then remove this entry."
+    },
+    {
       "pr": 17118,
       "reason": "A thread snoozed during its own run, such as an agent snoozing its thread through `t3_thread_organize` before its final reply, wakes as soon as that run completes. The fix only wakes for runs requested after the snooze. Not imported early: it builds on #16782 (`isSnoozed`), which conflicts with a chain of pending MCP changes. Take it at chronological intake; #15135 (an agent archiving its own thread fails its turn) is a related open issue it does not cover."
     },
