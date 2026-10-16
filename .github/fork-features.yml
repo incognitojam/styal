@@ -2937,6 +2937,7 @@ features:
       - apps/web/src/components/AppSidebarLayout.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/sidebar/SidebarThreadHeader.tsx
       - apps/web/src/uiStateStore.ts
     tests:
       - apps/web/src/lib/chatThreadActions.test.ts
