@@ -22,28 +22,27 @@ describe("CLI release freshness", () => {
       .fn<typeof fetch>()
       .mockImplementation(async () => Response.json({ "dist-tags": { latest: current } }));
     await checkCliReleaseFreshness("1.2.10", "latest", request);
-    expect(request).toHaveBeenCalledTimes(6);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
-  it("checks platform tags even when the launcher is missing", async () => {
+  it("checks only the launcher, not the retired platform packages", async () => {
     const request = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(
-        Response.json({ "dist-tags": { nightly: "1.2.3-nightly.20260919.100" } }),
-      );
-    await expect(
-      checkCliReleaseFreshness("1.2.3-nightly.20260918.99", "nightly", request),
-    ).rejects.toThrow("@styal/cli-darwin-arm64");
-  });
-
-  it("allows first publication and a missing channel tag", async () => {
-    const request = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockImplementation(async () => Response.json({ "dist-tags": { latest: "1.2.2" } }));
+      .mockResolvedValue(Response.json({ "dist-tags": { nightly: "1.2.3-nightly.20260919.100" } }));
     await checkCliReleaseFreshness("1.2.3-nightly.20260919.100", "nightly", request);
-    expect(request).toHaveBeenCalledTimes(6);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(String(request.mock.calls[0]?.[0])).toBe("https://registry.npmjs.org/%40styal%2Fcli");
+  });
+
+  it.each([
+    new Response(null, { status: 404 }),
+    Response.json({ "dist-tags": { latest: "1.2.2" } }),
+  ])("allows first publication and a missing channel tag", async (response) => {
+    await checkCliReleaseFreshness(
+      "1.2.3-nightly.20260919.100",
+      "nightly",
+      vi.fn<typeof fetch>().mockResolvedValue(response),
+    );
   });
 
   it.each([
@@ -156,7 +155,7 @@ ${publishCommand}
     scenario === "matching" || scenario === "unpublished" || scenario === "tarball-delay" ? 0 : 1,
   );
   expect(result.stdout.split("\n").filter((line) => line === "published")).toHaveLength(
-    scenario === "unpublished" ? 6 : 0,
+    scenario === "unpublished" ? 1 : 0,
   );
   if (scenario === "older" || scenario === "missing") {
     expect(result.stderr).toContain("Repair the channel tag before retrying");

@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       operation:
-        description: Build and verify packages, or publish previously built packages
+        description: Build and verify the npm launcher, or publish the previously built launcher
         required: true
         type: string
       dist_tag:
@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build:
-    name: Pack and verify CLI
+    name: Pack and verify npm launcher
     if: inputs.operation == 'build'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -66,18 +66,20 @@ jobs:
           path: cli-archives
       - name: Verify release bytes
         run: cd cli-archives && sha256sum --check SHA256SUMS
-      - name: Build platform packages and npm launcher
+      - name: Build npm launcher
         env:
           RELEASE_VERSION: ${{ inputs.version }}
-        run: node scripts/build-npm-platform-packages.ts --archives-dir cli-archives --version "$RELEASE_VERSION" --output-dir cli-release
-      - name: Verify npm install and legacy preflight in a clean container
+        run: node scripts/build-npm-launcher.ts --version "$RELEASE_VERSION" --output-dir cli-release
+      # The launcher downloads from the GitHub Release, which does not exist
+      # yet; the verifier serves these exact archives and SHA256SUMS instead.
+      - name: Verify npm install, archive download, and legacy preflight in a clean container
         run: |
-          docker run --rm -v "$PWD/cli-release/@styal:/artifacts:ro" -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" node:26-bookworm node /verify.mjs /artifacts /verification
-      - name: Upload npm packages
+          docker run --rm -v "$PWD/cli-release:/artifacts:ro" -v "$PWD/cli-archives:/archives:ro" -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" node:26-bookworm node /verify.mjs /artifacts /archives /verification
+      - name: Upload npm launcher
         uses: actions/upload-artifact@v7
         with:
           name: cli-package
-          path: cli-release/@styal/*.tgz
+          path: cli-release/cli.tgz
           if-no-files-found: error
           retention-days: 3
 
@@ -86,7 +88,7 @@ jobs:
     if: inputs.operation == 'publish'
     # npm OIDC publishing requires a GitHub-hosted runner.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
@@ -106,6 +108,12 @@ jobs:
         with:
           name: cli-package
           path: cli-release
+      # The launcher downloads its archive from the GitHub Release, and update
+      # checks follow the npm dist-tag, so the tag must never move first.
+      - name: Confirm the GitHub Release is published
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: curl --fail --head --location --silent --show-error "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${RELEASE_VERSION}/SHA256SUMS" --output /dev/null
       - name: Publish verified archive
         env:
           DIST_TAG: ${{ inputs.dist_tag }}
@@ -201,17 +209,9 @@ jobs:
             return 1
           }
 
-          # npm accepts these large uploads before its registry makes them readable.
-          # Submit all five first, then keep the launcher private until every exact
-          # dependency resolves with the bytes we uploaded.
-          for key in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
-            publish_or_verify "@styal/cli-$key" "./cli-release/cli-$key.tgz"
-          done
-
-          registry_deadline=$((SECONDS + 20 * 60))
-          for key in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
-            wait_for_published_bytes "@styal/cli-$key" "./cli-release/cli-$key.tgz"
-          done
-
+          # npm accepts an upload before its registry makes it readable. The
+          # launcher is small, but the job still waits until the registry serves
+          # the bytes that were uploaded.
           publish_or_verify "@styal/cli" ./cli-release/cli.tgz
+          registry_deadline=$((SECONDS + 10 * 60))
           wait_for_published_bytes "@styal/cli" ./cli-release/cli.tgz

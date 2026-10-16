@@ -286,39 +286,6 @@ jobs:
       version: ${{ needs.prepare.outputs.version }}
       operation: build
 
-  publish_cli:
-    name: Publish CLI to npm
-    needs:
-      [
-        prepare,
-        build_desktop_mac,
-        build_desktop_linux,
-        build_desktop_windows,
-        build_cli,
-        build_cli_archives,
-      ]
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.prepare.outputs.has_changes == 'true' &&
-        needs.build_desktop_mac.result == 'success' &&
-        needs.build_desktop_linux.result == 'success' &&
-        needs.build_desktop_windows.result == 'success' &&
-        needs.build_cli.result == 'success' &&
-        needs.build_cli_archives.result == 'success' &&
-        vars.STYAL_CLI_PUBLISH_ENABLED == 'true' &&
-        inputs.dry_run != true
-      }}
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/fork-cli-build.yml
-    with:
-      ref: ${{ needs.prepare.outputs.ref }}
-      version: ${{ needs.prepare.outputs.version }}
-      operation: publish
-      dist_tag: nightly
-
   release:
     name: Publish GitHub prerelease
     needs:
@@ -329,7 +296,6 @@ jobs:
         build_desktop_windows,
         build_cli,
         build_cli_archives,
-        publish_cli,
       ]
     permissions:
       contents: write
@@ -341,8 +307,7 @@ jobs:
       needs.build_desktop_linux.result == 'success' &&
       needs.build_desktop_windows.result == 'success' &&
       needs.build_cli.result == 'success' &&
-      needs.build_cli_archives.result == 'success' &&
-      (needs.publish_cli.result == 'success' || needs.publish_cli.result == 'skipped')
+      needs.build_cli_archives.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -378,7 +343,7 @@ jobs:
           merge-multiple: true
           path: release-assets
 
-      - name: Download CLI archive
+      - name: Download npm launcher
         uses: actions/download-artifact@v8
         with:
           name: cli-package
@@ -499,9 +464,34 @@ jobs:
           # A release-only retry must not overwrite a newer nightly source.
           git push origin HEAD:refs/heads/nightly
 
+  # The @styal/cli launcher downloads this version's archive from the GitHub
+  # Release, and update checks follow its dist-tag, so it publishes only after
+  # that release is live. An npm failure leaves the published release in place.
+  publish_cli:
+    name: Publish CLI to npm
+    needs: [prepare, release]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.prepare.outputs.has_changes == 'true' &&
+        needs.release.result == 'success' &&
+        vars.STYAL_CLI_PUBLISH_ENABLED == 'true' &&
+        inputs.dry_run != true
+      }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/fork-cli-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      operation: publish
+      dist_tag: nightly
+
   notify_failure:
     name: Notify Discord of failure
-    needs: [prepare, build_desktop_mac, build_desktop_linux, build_desktop_windows, release]
+    needs:
+      [prepare, build_desktop_mac, build_desktop_linux, build_desktop_windows, release, publish_cli]
     if: >-
       ${{
         always() &&
@@ -515,7 +505,9 @@ jobs:
           needs.build_desktop_windows.result == 'failure' ||
           needs.build_desktop_windows.result == 'cancelled' ||
           needs.release.result == 'failure' ||
-          needs.release.result == 'cancelled'
+          needs.release.result == 'cancelled' ||
+          needs.publish_cli.result == 'failure' ||
+          needs.publish_cli.result == 'cancelled'
         )
       }}
     runs-on: ubuntu-24.04
@@ -532,11 +524,12 @@ jobs:
           DESKTOP_LINUX_RESULT: ${{ needs.build_desktop_linux.result }}
           DESKTOP_WINDOWS_RESULT: ${{ needs.build_desktop_windows.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
+          NPM_RESULT: ${{ needs.publish_cli.result }}
         shell: bash
         run: |
           # shellcheck disable=SC2016 # Markdown backticks must remain literal.
-          description=$(printf '`%s` · `%s`\n\nPrepare: `%s`\nDesktop macOS: `%s`\nDesktop Linux: `%s`\nDesktop Windows: `%s`\nRelease: `%s`' \
-            "$COMMIT_SHA" "$ACTOR" "$PREPARE_RESULT" "$DESKTOP_MAC_RESULT" "$DESKTOP_LINUX_RESULT" "$DESKTOP_WINDOWS_RESULT" "$RELEASE_RESULT")
+          description=$(printf '`%s` · `%s`\n\nPrepare: `%s`\nDesktop macOS: `%s`\nDesktop Linux: `%s`\nDesktop Windows: `%s`\nRelease: `%s`\nnpm: `%s`' \
+            "$COMMIT_SHA" "$ACTOR" "$PREPARE_RESULT" "$DESKTOP_MAC_RESULT" "$DESKTOP_LINUX_RESULT" "$DESKTOP_WINDOWS_RESULT" "$RELEASE_RESULT" "$NPM_RESULT")
           payload=$(jq -n \
             --arg title 'Fork Nightly failed' \
             --arg url "$RUN_URL" \

@@ -1,4 +1,7 @@
-// Runs inside a disposable Node container with only the archive and this script mounted.
+// Runs inside a disposable Node container with only the npm launcher tarball,
+// the release's CLI archives, and this script mounted. The archives directory
+// stands in for the GitHub Release: it is served over local HTTP and the
+// launcher is pointed at it with STYAL_RELEASE_BASE_URL.
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
@@ -7,25 +10,60 @@ import * as NodeNet from "node:net";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 
-const archivesDirectory = process.argv[2];
-NodeAssert.ok(archivesDirectory, "Pass a directory containing one CLI archive.");
-const archive = NodePath.resolve(archivesDirectory, "cli.tgz");
-// oxlint-disable-next-line t3code/no-global-process-runtime -- This isolated install smoke exercises the actual host platform.
-const platformKey = `${process.platform}-${process.arch}`;
-const platformArchive = NodePath.resolve(archivesDirectory, `cli-${platformKey}.tgz`);
+const packageDirectory = process.argv[2];
+const releaseDirectory = process.argv[3];
+NodeAssert.ok(packageDirectory, "Pass a directory containing the cli.tgz launcher tarball.");
+NodeAssert.ok(releaseDirectory, "Pass a directory containing the CLI archives and SHA256SUMS.");
+const archive = NodePath.resolve(packageDirectory, "cli.tgz");
 const manifest = JSON.parse(
   NodeChildProcess.execFileSync("tar", ["-xOf", archive, "package/package.json"], {
     encoding: "utf8",
   }),
 );
 NodeAssert.equal(manifest.name, "@styal/cli");
-NodeAssert.deepEqual(manifest.bin, { styal: "./bin/styal.js" });
+NodeAssert.deepEqual(manifest.bin, { styal: "./bin/styal.mjs" });
+NodeAssert.equal(manifest.dependencies, undefined);
+NodeAssert.equal(manifest.optionalDependencies, undefined);
 NodeAssert.equal(manifest.repository.url, "https://github.com/incognitojam/styal");
 NodeAssert.equal(manifest.license, "MIT");
 NodeAssert.ok(!JSON.stringify(manifest).includes("catalog:"));
 NodeAssert.ok(!JSON.stringify(manifest).includes("workspace:"));
 
-const root = NodePath.resolve(process.argv[3] ?? ".scratch/cli-distribution-npm-smoke");
+// Serves `releases/download/v<version>/<asset>` from the archives directory.
+// It runs in its own process because the checks below block on execFileSync.
+const RELEASE_SERVER = `
+const NodeFS = require("node:fs");
+const NodePath = require("node:path");
+const [directory, version] = process.argv.slice(1);
+const server = require("node:http").createServer((request, response) => {
+  const prefix = "/v" + version + "/";
+  const name = request.url.startsWith(prefix) ? request.url.slice(prefix.length) : "";
+  const file = NodePath.join(directory, name);
+  if (name === "" || name.includes("/") || !NodeFS.existsSync(file)) return response.writeHead(404).end();
+  response.writeHead(200, { "content-length": NodeFS.statSync(file).size });
+  NodeFS.createReadStream(file).pipe(response);
+});
+server.listen(0, "127.0.0.1", () => process.stdout.write("port " + server.address().port + "\\n"));
+`;
+const release = NodeChildProcess.spawn(
+  process.execPath,
+  ["-e", RELEASE_SERVER, releaseDirectory, manifest.version],
+  { stdio: ["ignore", "pipe", "inherit"] },
+);
+const releaseBaseUrl = await new Promise((resolve, reject) => {
+  let buffered = "";
+  release.stdout.setEncoding("utf8");
+  release.stdout.on("data", (chunk) => {
+    buffered += chunk;
+    const lines = buffered.split("\n");
+    buffered = lines.pop() ?? "";
+    const port = lines.find((line) => line.startsWith("port "));
+    if (port) resolve(`http://127.0.0.1:${port.slice(5)}`);
+  });
+  release.once("exit", (code) => reject(new Error(`Release server exited: ${code}`)));
+});
+
+const root = NodePath.resolve(process.argv[4] ?? ".scratch/cli-distribution-npm-smoke");
 const install = NodePath.join(root, "install");
 const state = NodePath.join(root, "state");
 const project = NodePath.join(root, "project");
@@ -41,33 +79,20 @@ NodeFS.writeFileSync(
 );
 NodeChildProcess.execFileSync(
   "npm",
-  [
-    "install",
-    "--prefix",
-    install,
-    "--no-audit",
-    "--no-fund",
-    "--ignore-scripts",
-    platformArchive,
-    archive,
-  ],
+  ["install", "--prefix", install, "--no-audit", "--no-fund", "--ignore-scripts", archive],
   {
     stdio: "inherit",
   },
-);
-// A second npm operation must retain every bundled native dependency.
-NodeChildProcess.execFileSync(
-  "npm",
-  ["install", "--prefix", install, "--offline", "--ignore-scripts", "--no-audit", "--no-fund"],
-  { stdio: "inherit" },
 );
 const cli = NodePath.join(install, "node_modules", ".bin", "styal");
 const env = {
   PATH: process.env.PATH,
   HOME: NodePath.join(root, "home"),
   STYAL_HOME: state,
+  STYAL_RELEASE_BASE_URL: releaseBaseUrl,
   NO_COLOR: "1",
 };
+const runtimeDir = NodePath.join(state, "runtime/styal-executable/versions", manifest.version);
 NodeFS.mkdirSync(env.HOME, { recursive: true });
 const runCli = (...args) =>
   NodeChildProcess.execFileSync(cli, args, {
@@ -76,10 +101,19 @@ const runCli = (...args) =>
     encoding: "utf8",
     timeout: 60_000,
   });
+// The first run downloads and verifies this platform's archive.
 NodeAssert.match(
   runCli("--version"),
   new RegExp(`styal v${manifest.version.replaceAll(".", "\\.")}\\s*$`),
 );
+NodeAssert.equal(
+  NodeFS.readFileSync(NodePath.join(runtimeDir, ".install-complete"), "utf8").trim(),
+  manifest.version,
+);
+// Every later run must reuse that download, so the release goes away now.
+const releaseExited = NodeEvents.once(release, "exit");
+release.kill();
+await releaseExited;
 NodeAssert.match(runCli("--help"), /styal/);
 const preflight = (protocol) =>
   JSON.parse(
@@ -112,10 +146,8 @@ NodeAssert.equal(legacyPreflight.status, "blocked");
 NodeAssert.match(legacyPreflight.reason, /service update/);
 runCli("project", "add", project, "--title", "CLI verification", "--base-dir", state);
 
-// Exercise the native dependency installed from npm, not a workspace copy.
-const require = NodeModule.createRequire(
-  NodePath.join(install, `node_modules/@styal/cli-${platformKey}/package.json`),
-);
+// Exercise the native dependency from the downloaded archive, not a workspace copy.
+const require = NodeModule.createRequire(NodePath.join(runtimeDir, "package.json"));
 const pty = require("node-pty");
 await new Promise((resolve, reject) => {
   const terminal = pty.spawn("sh", ["-c", "printf styal-terminal-ok"], { cwd: project });
@@ -215,5 +247,5 @@ await exerciseServer(1);
 await exerciseServer(2);
 NodeAssert.ok(NodeFS.readFileSync(NodePath.join(state, "userdata/statev2.sqlite")).length > 0);
 console.log(
-  "CLI archive verified: install, executable, launcher compatibility, native terminal, pairing, and persistence across restart.",
+  "CLI launcher verified: install, verified archive download, executable, launcher compatibility, native terminal, pairing, and persistence across restart.",
 );

@@ -1,51 +1,71 @@
 # styal CLI releases
 
-Fork Nightly and Fork Release build five standalone archives, then turn those exact
-bytes into npm platform packages. `@styal/cli` is a small launcher with exact-version
-optional dependencies on `@styal/cli-{darwin-arm64,linux-x64,linux-arm64,win32-x64,win32-arm64}`.
-The installed command is `styal`. The npm bridge at `dist/bin.mjs` supports preflight
-from older service updaters.
+Fork Nightly and Fork Release build five standalone archives and attach them, with
+`SHA256SUMS`, to the GitHub Release. npm carries only `@styal/cli`, a dependency-free
+launcher (`scripts/npm-launcher/styal.mjs`). On first run it downloads its exact
+version's archive from the GitHub Release, verifies it against `SHA256SUMS`, and unpacks
+it into `<styal home>/runtime/styal-executable/versions/<version>`, the layout the install
+scripts and `styal update` use. The installed command is `styal`. The npm bridge at
+`dist/bin.mjs` supports preflight from older service updaters.
 
-## Build and verify npm packages without publishing
+The executables used to ship as `@styal/cli-<platform>` optional dependencies. npm
+accepted those large uploads and then kept them unreadable for longer than the release
+could wait, which blocked every release. Those packages keep their old versions and get
+no new ones.
+
+## Build and verify the npm launcher without publishing
 
 After building the archives described below:
 
 ```sh
-node scripts/build-npm-platform-packages.ts --archives-dir .scratch/cli-archives --version <version> --output-dir .scratch/cli-npm
+node scripts/build-npm-launcher.ts --version <version> --output-dir .scratch/cli-npm
 docker run --rm \
-  -v "$PWD/.scratch/cli-npm/@styal:/artifacts:ro" \
+  -v "$PWD/.scratch/cli-npm:/artifacts:ro" \
+  -v "$PWD/.scratch/cli-archives:/archives:ro" \
   -v "$PWD/scripts/verify-cli-package.mjs:/verify.mjs:ro" \
-  node:26-bookworm node /verify.mjs /artifacts /verification
+  node:26-bookworm node /verify.mjs /artifacts /archives /verification
 ```
 
-The builder requires all five archives. `--allow-missing` is for local verification
-of a partial build only; release workflows never use it. Publish the generated
-`.tgz` files, not package directories: npm repacking can omit bundled native files.
-Every bundled dependency is declared so later npm installs retain it. Linux
-archives target glibc and exclude incompatible musl packages.
-
-The verifier installs with scripts disabled, repeats npm install to check dependency
-retention, checks the old protocol 3 preflight refusal, exercises a native terminal,
-pairs with the bundled web server, reads a synthetic project, and checks persistence
-after restart. It mounts no host state or provider credentials.
+The archives directory must hold `SHA256SUMS` and the Linux x64 archive. The verifier
+serves it over local HTTP in place of the GitHub Release, installs the launcher with
+npm, and lets the first run download and verify the archive. It then stops that server,
+so every later check runs from the cached download. It checks the old protocol 3
+preflight refusal, including through `dist/bin.mjs`, exercises a native terminal, pairs
+with the bundled web server, reads a synthetic project, and checks persistence after
+restart. It mounts no host state or provider credentials.
 
 ## Publication setup
 
-The existing `@styal/cli` package gains five public platform packages. Before enabling
-publication for this layout, create those packages and configure trusted publishing
-for each one, as well as the launcher. Use owner `incognitojam`, repository `styal`,
-and calling workflows `fork-nightly.yml` and `fork-release.yml`. The calling workflow,
-not reusable `fork-cli-build.yml`, identifies the OIDC trust relationship. No GitHub
-environment is configured. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
+Configure trusted publishing for `@styal/cli` with owner `incognitojam`, repository
+`styal`, and calling workflows `fork-nightly.yml` and `fork-release.yml`. The calling
+workflow, not reusable `fork-cli-build.yml`, identifies the OIDC trust relationship. No
+GitHub environment is configured. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
 
-With `STYAL_CLI_PUBLISH_ENABLED` unset, CI builds and verifies packages and attaches
-all six tarballs to the release without publishing. Dry runs never publish. After
-first publication and trust setup, enable that variable. Nightlies use `nightly`;
-stable releases use `latest`. The workflow publishes all platform packages before
-the launcher, so it never advertises dependencies that have not been published.
+With `STYAL_CLI_PUBLISH_ENABLED` unset, CI builds and verifies the launcher and attaches
+its tarball to the release without publishing. Dry runs never publish. Nightlies use
+`nightly`; stable releases use `latest`.
 
-npm publication is immutable. Retries accept existing versions only when their registry integrity matches the release tarball and their channel tag points to the release version. An existing version with an older or missing channel tag fails publication; an operator must repair the tag using separate npm authentication before retrying. Before publishing or accepting any package, the workflow checks all six packages' channel tags and rejects a target older than any current tag. Registry errors fail closed; missing packages or channel tags allow first publication of a version that does not yet exist. The nightly and stable workflows serialize their respective channels throughout publication. Nightly source promotion uses a fast-forward-only push, so release-only retries cannot move the branch backward. GitHub release publication waits for CLI and desktop success.
-No publication or service migration occurs merely by preparing a branch.
+The GitHub Release publishes first and does not wait for npm. The npm job starts only
+after the release succeeded, confirms the release's `SHA256SUMS` is downloadable, and then
+publishes the launcher, so a dist-tag never points at a version whose archives cannot be
+downloaded. `styal update` and the mobile app's update check read the `@styal/cli`
+dist-tags and also confirm the release's `SHA256SUMS` exists before offering a version.
+An npm failure does not remove or roll back the GitHub Release; Fork Nightly reports it
+to Discord. Re-run the failed npm job to retry; a release whose npm job is never retried
+stays installable from the GitHub Release, but npm channels and update checks keep
+offering the previous version.
+
+npm publication is immutable. Retries accept an existing version only when its registry
+integrity matches the release tarball and its channel tag points to the release version.
+An existing version with an older or missing channel tag fails publication; an operator
+must repair the tag using separate npm authentication before retrying. Before publishing
+or accepting the package, the workflow checks the launcher's channel tag and rejects a
+target older than the current tag. Registry errors fail closed; a missing package or
+channel tag allows first publication of a version that does not yet exist. The nightly
+and stable workflows serialize their respective channels throughout publication.
+Nightly source promotion uses a fast-forward-only push, so release-only retries cannot
+move the branch backward. GitHub release publication waits for CLI and desktop build
+success. No publication or service migration occurs merely by preparing a branch.
 
 The final promotion check is installing the published exact version on fresh hosts
 and exercising service installation, restart, remote update, and rollback. Local

@@ -209,38 +209,6 @@ jobs:
       version: ${{ needs.prepare.outputs.version }}
       operation: build
 
-  publish_cli:
-    name: Publish CLI to npm
-    needs:
-      [
-        prepare,
-        build_desktop_mac,
-        build_desktop_linux,
-        build_desktop_windows,
-        build_cli,
-        build_cli_archives,
-      ]
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.build_desktop_mac.result == 'success' &&
-        needs.build_desktop_linux.result == 'success' &&
-        needs.build_desktop_windows.result == 'success' &&
-        needs.build_cli.result == 'success' &&
-        needs.build_cli_archives.result == 'success' &&
-        vars.STYAL_CLI_PUBLISH_ENABLED == 'true' &&
-        inputs.dry_run != true
-      }}
-    permissions:
-      contents: read
-      id-token: write
-    uses: ./.github/workflows/fork-cli-build.yml
-    with:
-      ref: ${{ needs.prepare.outputs.ref }}
-      version: ${{ needs.prepare.outputs.version }}
-      operation: publish
-      dist_tag: latest
-
   publish:
     name: Publish stable release
     needs:
@@ -251,7 +219,6 @@ jobs:
         build_desktop_windows,
         build_cli,
         build_cli_archives,
-        publish_cli,
       ]
     if: >-
       !cancelled() &&
@@ -259,8 +226,7 @@ jobs:
       needs.build_desktop_linux.result == 'success' &&
       needs.build_desktop_windows.result == 'success' &&
       needs.build_cli.result == 'success' &&
-      needs.build_cli_archives.result == 'success' &&
-      (needs.publish_cli.result == 'success' || needs.publish_cli.result == 'skipped')
+      needs.build_cli_archives.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -294,7 +260,7 @@ jobs:
           merge-multiple: true
           path: release-assets
 
-      - name: Download CLI archive
+      - name: Download npm launcher
         uses: actions/download-artifact@v8
         with:
           name: cli-package
@@ -402,3 +368,26 @@ jobs:
           fi
 
           git push origin --delete "refs/tags/${NEW_TAG}"
+
+  # The @styal/cli launcher downloads this version's archive from the GitHub
+  # Release, and update checks follow its dist-tag, so it publishes only after
+  # that release is live. An npm failure leaves the published release in place.
+  publish_cli:
+    name: Publish CLI to npm
+    needs: [prepare, publish]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.publish.result == 'success' &&
+        vars.STYAL_CLI_PUBLISH_ENABLED == 'true' &&
+        inputs.dry_run != true
+      }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/fork-cli-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      version: ${{ needs.prepare.outputs.version }}
+      operation: publish
+      dist_tag: latest

@@ -54,8 +54,9 @@ This starts the server and opens the local web app. Run
 `npx @styal/cli@nightly --help` for command-line options.
 
 For a persistent installation, run `npm install -g @styal/cli@nightly`. The
-installed command is `styal`. The package installs a matching prebuilt
-executable, so it needs no native compilation or install-script approval. Use
+installed command is `styal`. On its first run the package downloads the
+executable for its exact version from GitHub Releases and verifies its checksum,
+so it needs no native compilation or install-script approval. Use
 `@latest` instead of `@nightly` for stable releases once one is available.
 
 ## Standalone archive

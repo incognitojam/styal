@@ -1537,8 +1537,10 @@ features:
       - A `preview:mac` label on a pull request from a branch in this repository builds an unsigned Apple Silicon preview on every push without signing credentials; only releases are signed, through the fork's own desktop build workflow.
       - Standalone CLI archives carry the styal executable, release artwork, license, and native resource monitor, and run with isolated styal state without requiring a host Node installation.
       - npm, service updates, SSH, and WSL select styal release archives and isolated styal homes; protocol 4 prevents older npm launchers from switching into the executable layout remotely.
-      - npm publication starts only after every release artifact has passed its build verification, waits for every platform package to become readable with the uploaded integrity before exposing its launcher, and a retry accepts an existing package version only when its registry integrity matches the exact tarball being released and its channel tag points to that version.
-      - Stale release retries are rejected before npm publication or integrity acceptance when any package channel tag is newer; nightly source promotion cannot move the branch backward.
+      - The styal executables are hosted only as GitHub Release archives. npm carries only the dependency-free `@styal/cli` launcher, which downloads its exact version's archive from the styal GitHub Release into `<styal home>/runtime/styal-executable/versions/<version>`, runs it only after the download matches the release's SHA256SUMS, and keeps the legacy `dist/bin.mjs` entry for older service updaters.
+      - The GitHub Release with desktop artifacts, CLI archives, and SHA256SUMS publishes after build verification without waiting for npm; the `@styal/cli` launcher publishes to its channel dist-tag only after that release succeeded and its SHA256SUMS is downloadable, so an npm failure never blocks or rolls back the release.
+      - npm publication waits for the launcher to become readable with the uploaded integrity, and a retry accepts an existing version only when its registry integrity matches the exact tarball being released and its channel tag points to that version.
+      - Stale release retries are rejected before npm publication or integrity acceptance when the launcher's channel tag is newer; nightly source promotion cannot move the branch backward.
       - Mobile environment checks and CLI channel updates read the compact @styal/cli npm dist-tags endpoint once, reject missing, malformed, or mismatched channel versions without fallback, offer a version only after its GitHub release checksums are downloadable, and retain downgrade protection; publication and runtime discovery share the release version parser.
       - Provider compatibility policies in the model manifest select styal release versions rather than T3 Code's, because every installed build fetches the manifest from fork main. Releases up to styal 0.1.0 keep the OpenCode 1 policy their V1 orchestrator needs, and the OpenCode 2 and Pi policies start at styal 0.1.1.
       - Successful Fork CI pushes to main request a nightly of the newest eligible green commit; rejected CI completions cannot replace a pending publisher, manual requests retain the same release gates, and there is no scheduled trigger.
@@ -1643,11 +1645,12 @@ features:
       - packages/ssh/src/tunnel.ts
       - scripts/build-cli-archive.ts
       - scripts/build-desktop-artifact.ts
-      - scripts/build-npm-platform-packages.ts
+      - scripts/build-npm-launcher.ts
       - scripts/check-cli-release-freshness.ts
       - scripts/export-brand-icons.ts
       - scripts/lib/brand-assets.ts
       - scripts/lib/macos-icon-safe-area.ts
+      - scripts/npm-launcher/styal.mjs
     upstream_paths:
       - .github/workflows/desktop-macos-preview.yml
       - apps/desktop/package.json
@@ -1668,6 +1671,7 @@ features:
       - apps/web/src/components/settings/settingsLayout.tsx
       - packages/contracts/src/settings.ts
       - scripts/build-desktop-artifact.ts
+      - scripts/build-npm-launcher.ts
       - scripts/export-brand-icons.ts
       - scripts/lib/brand-assets.ts
     tests:
@@ -1700,6 +1704,7 @@ features:
       - packages/shared/src/git.test.ts
       - packages/ssh/src/runnerProcess.test.ts
       - scripts/build-desktop-artifact.test.ts
+      - scripts/build-npm-launcher.test.ts
       - scripts/check-cli-release-freshness.test.ts
       - scripts/lib/brand-assets.test.ts
       - scripts/lib/cli-external-packages.test.ts

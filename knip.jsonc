@@ -26,6 +26,8 @@
         "verify-cli-package.mjs",
         "vitest-ci-exit-reporter.ts",
       ],
+      // The `@styal/cli` npm package's files: copied into the package, never imported.
+      "ignore": ["npm-launcher/**"],
     },
     "e2e": {
       // Installed as the `gh` binary of each e2e environment.

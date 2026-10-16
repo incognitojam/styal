@@ -48,27 +48,52 @@ const InstallManifest = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
   bin: Schema.optionalKey(Schema.Struct({ [CLI_COMMAND_NAME]: Schema.String })),
-  optionalDependencies: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 });
 const decodeInstallManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(InstallManifest));
 const GLOBAL_PACKAGE_DIR = `lib/node_modules/${CLI_PACKAGE_NAME}`;
-const LAUNCHER_BIN = `./bin/${CLI_COMMAND_NAME}.js`;
-// The published layout: the launcher package, its legacy `dist/bin.mjs`
-// entry, and the per-platform executable npm installs as an optional
-// dependency. The package and command names contain no regex metacharacters.
+// The published layout: the launcher package's `bin/styal.mjs` and its legacy
+// `dist/bin.mjs` entry. The package and command names contain no regex
+// metacharacters.
 const GLOBAL_PACKAGE_ENTRY = new RegExp(
-  `^(.*)/${GLOBAL_PACKAGE_DIR}/(?:dist/bin\\.mjs|bin/${CLI_COMMAND_NAME}\\.js|node_modules/${CLI_PACKAGE_NAME}-[^/]+/${CLI_COMMAND_NAME})$`,
+  `^(.*)/${GLOBAL_PACKAGE_DIR}/(?:dist/bin\\.mjs|bin/${CLI_COMMAND_NAME}\\.mjs)$`,
 );
+
+/**
+ * The script this CLI was started through: the `@styal/cli` npm launcher that
+ * downloaded and ran this executable (it names itself in
+ * `T3CODE_NPM_LAUNCHER_PATH`), or the Node entry script of a build run from
+ * source. A standalone executable has none and reports its own path.
+ *
+ * The variable can reach processes the server spawns, so a launcher counts
+ * only when its package is this exact version: a different `styal` run from
+ * an agent's shell must not claim to be the npm install.
+ */
+const resolveEntryPath = Effect.gen(function* () {
+  const npmLauncher = (yield* HostProcess.Environment).T3CODE_NPM_LAUNCHER_PATH?.trim();
+  if (npmLauncher) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const manifest = yield* fs
+      .readFileString(path.join(path.dirname(npmLauncher), "../package.json"))
+      .pipe(Effect.flatMap(decodeInstallManifest), Effect.option);
+    if (
+      Option.isSome(manifest) &&
+      manifest.value.name === CLI_PACKAGE_NAME &&
+      manifest.value.version === packageJson.version
+    ) {
+      return npmLauncher;
+    }
+  }
+  if (yield* HostProcess.IsExecutable) return yield* HostProcess.ExecutablePath;
+  return (yield* HostProcess.Arguments)[1] ?? "";
+});
 
 /** Prove the running package and its global bin belong together before suggesting an update. */
 export const resolveServerInstallation = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const args = yield* HostProcess.Arguments;
-  const executable = yield* HostProcess.IsExecutable;
-  const executablePath = yield* HostProcess.ExecutablePath;
   const platform = yield* HostProcess.Platform;
-  const entry = yield* fs.realPath(executable ? executablePath : (args[1] ?? ""));
+  const entry = yield* fs.realPath(yield* resolveEntryPath);
   const match = GLOBAL_PACKAGE_ENTRY.exec(entry);
   if (!match) {
     const runner = detectCliRunner(entry);
@@ -94,20 +119,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
   if (manifest.name !== CLI_PACKAGE_NAME || !manifest.bin) return null;
   const bin = yield* fs.realPath(path.join(packageRoot, manifest.bin[CLI_COMMAND_NAME]));
   const globalBin = yield* fs.realPath(path.join(prefix, "bin", CLI_COMMAND_NAME));
-  if (globalBin !== bin) return null;
-  if (executable) {
-    const nativeManifest = yield* fs
-      .readFileString(path.join(path.dirname(entry), "package.json"))
-      .pipe(Effect.flatMap(decodeInstallManifest));
-    if (
-      manifest.bin[CLI_COMMAND_NAME] !== LAUNCHER_BIN ||
-      manifest.optionalDependencies?.[nativeManifest.name] !== nativeManifest.version ||
-      nativeManifest.version !== manifest.version
-    )
-      return null;
-  } else if (bin !== entry) {
-    return null;
-  }
+  if (globalBin !== bin || bin !== entry) return null;
   return { kind: "npm-global", prefix } satisfies ServerInstallation;
 }).pipe(Effect.orElseSucceed(() => null));
 
@@ -141,12 +153,8 @@ export function formatCliCommand(input: {
 
 /** `formatCliCommand` against this process's real entry path and version. */
 export const resolveCliCommand = (subcommand: string) =>
-  Effect.map(HostProcess.Arguments, (processArguments) =>
-    formatCliCommand({
-      subcommand,
-      entryPath: processArguments[1] ?? "",
-      version: packageJson.version,
-    }),
+  Effect.map(resolveEntryPath, (entryPath) =>
+    formatCliCommand({ subcommand, entryPath, version: packageJson.version }),
   );
 
 /** Quotes `value` for a POSIX shell when it needs it. */

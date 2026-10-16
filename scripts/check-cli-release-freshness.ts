@@ -1,11 +1,8 @@
 import { parseCliReleaseVersion } from "../packages/shared/src/cliReleaseVersion.ts";
 
-const packages = [
-  "@styal/cli",
-  ...["darwin-arm64", "linux-x64", "linux-arm64", "win32-x64", "win32-arm64"].map(
-    (key) => `@styal/cli-${key}`,
-  ),
-];
+// Only the launcher gets new versions. The `@styal/cli-<platform>` packages
+// earlier releases published keep their old versions and channel tags.
+const packages = ["@styal/cli"];
 
 export async function checkCliReleaseFreshness(
   version: string,
@@ -19,7 +16,7 @@ export async function checkCliReleaseFreshness(
     throw new Error(`Release version ${version} does not belong to ${tag}`);
   }
 
-  // Preflight the entire set before accepting existing bytes or publishing anything.
+  // Preflight before accepting existing bytes or publishing anything.
   // Callers serialize releases per channel for the duration of publication.
   for (const name of packages) {
     const response = await request(`https://registry.npmjs.org/${encodeURIComponent(name)}`, {

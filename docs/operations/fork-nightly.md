@@ -85,6 +85,7 @@ the release's commit link, and their response bodies are never rendered as autho
 
 ## CLI distribution
 
-Each release includes a verified `@styal/cli` npm archive. npm publication is enabled
-separately after the scope and trusted publishers are configured. See
-[CLI releases](./cli-release.md) for bootstrap and deployment verification.
+Each release includes a verified `@styal/cli` npm launcher tarball. npm publication runs
+after the GitHub prerelease is live and is enabled separately after the package's trusted
+publisher is configured. See [CLI releases](./cli-release.md) for bootstrap and deployment
+verification.

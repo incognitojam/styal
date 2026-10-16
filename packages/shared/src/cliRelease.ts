@@ -22,7 +22,7 @@ export const CLI_RELEASE_BASE_URL_ENV = "STYAL_RELEASE_BASE_URL";
  * unreachable from every installer.
  */
 // Intel macOS is outside the supported platform set.
-export const CLI_ARCHIVE_PLATFORM_KEYS = [
+const CLI_ARCHIVE_PLATFORM_KEYS = [
   "darwin-arm64",
   "linux-arm64",
   "linux-x64",
@@ -68,9 +68,10 @@ export function cliReleaseDownloadBaseUrl(
 }
 
 /**
- * The checksums asset of a release. npm tags move before the GitHub release
- * that hosts the archives is published, so update checks confirm this exists
- * before offering a version.
+ * The checksums asset of a release. The release workflows move the npm tag
+ * only after the GitHub release that hosts the archives is published, but
+ * update checks still confirm this exists before offering a version: a
+ * mirror set through the base URL can lag behind npm.
  */
 export function cliReleaseChecksumsUrl(version: string, baseUrl?: string): string {
   return `${cliReleaseDownloadBaseUrl(version, baseUrl)}/${CLI_RELEASE_CHECKSUMS_FILE}`;
