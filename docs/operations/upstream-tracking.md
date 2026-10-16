@@ -8,7 +8,7 @@ Nothing automatically syncs upstream or authorizes a promotion. Dispatch only wh
 
 When an agent performs intake in styal, pin its current thread before starting with `t3_thread_organize({ action: "pin" })`, omitting `threadId`. Keep it pinned across batches, validation, CI, and promotion waits so the ongoing work stays visible. When the requested intake is complete or the maintainer cancels it, call `t3_thread_organize({ action: "unpin" })` only if this intake added the pin; preserve a pre-existing pin. Ending a turn while intake is still pending is not completion.
 
-Before applying a batch, check for other active agent threads working on fork PRs with `t3_thread_list`. If any may land during intake, ask the maintainer whether to coordinate a landing hold, naming the affected threads and explaining that changes to `main` can invalidate candidate validation. Send no coordination messages without approval. With approval, use `t3_thread_send` to ask those agents to wait for intake promotion before landing their PRs; development and testing can continue. After verifying promotion and its ensuing CI, notify them of the new `main` SHA and ask them to rebase and rerun affected checks before landing. If intake is deferred or cancelled, notify them that the hold is released.
+Before applying a batch, check for other active agent threads working on fork PRs with `t3_thread_list`. If any may land during intake, ask the maintainer whether to coordinate a landing hold, naming the affected threads and explaining that changes to `main` can invalidate candidate validation. Send no coordination messages without approval. With approval, use `t3_thread_send` to ask those agents to wait for intake promotion before landing their PRs; development and testing can continue. Release the hold after promotion as described in [step 4](#4-promote-without-a-pr). If intake is deferred or cancelled, notify them that the hold is released.
 
 ## 1. Choose the next batch
 
@@ -113,7 +113,7 @@ The existing `Promote upstream intake` workflow is the landing path. Its current
 1. Finish the combined-batch review described above and require successful Fork CI for the exact candidate SHA.
 2. After the remote branch and exact-SHA Fork CI are ready, run the promotion command printed by the final local audit. It dispatches the workflow **from main** with the candidate branch and exact SHA.
 3. Approve the `upstream-intake-manual` environment when requested.
-4. The workflow rechecks both tips, then fast-forwards `main` without force. Verify the resulting SHA and ensuing CI.
+4. The workflow rechecks both tips, then fast-forwards `main` without force. Verify the resulting SHA and ensuing CI. If you coordinated a landing hold, notify those threads of the new `main` SHA and ask them to rebase and rerun affected checks before landing.
 
 Production mobile builds use a fingerprint runtime version, so an OTA from **Mobile EAS Production** reaches installed builds only when the Expo fingerprint is unchanged. Dependency changes can move it without any native code change. Before relying on an OTA for a batch, compare `npx fingerprint fingerprint:generate --platform <ios|android>` in `apps/mobile` before and after the batch; if it moved, the JavaScript changes reach users only through new production builds, from upstream's next mobile version bump or a `mode=build` dispatch.
 
