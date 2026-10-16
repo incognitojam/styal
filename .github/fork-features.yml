@@ -3719,11 +3719,15 @@ features:
       - Foreground start commands are labeled as starts and preserve guidance to reuse the existing data directory and startup options rather than implying that launching another process updates a running server.
       - A foreground server that proves it runs from a global npm install of `@styal/cli` (the prefix's `bin/styal` resolves to the running launcher, and the platform executable matches the launcher version) advertises that prefix, and its instructions copy `npm install --global --prefix '<prefix>' @styal/cli@<version>`; servers started by npx, pnpm dlx, or bunx get `serve` through the same runner, and unproven installs, including Windows, keep the npx `serve` start command. The service migration command does not change with the installation.
       - In-app server updates check the server's host activity first; idle servers update without a dialog, while active or waiting threads, running terminal commands, or a failed check require confirmation, and cancelling leaves the server running.
+      - Mobile environment updates check host activity the same way but always confirm, in a sheet that lists the affected threads by project; dismissing the sheet cancels the update.
       - When thread continuation is requested, the confirmation says a thread will continue only if the same selection the continuation step uses includes it; every other active thread is described as interrupted.
       - Continuation after an update also covers settled threads whose background work (monitors, background shells, subagents) is live; after the restart they receive a prompt to restart that work instead of a promptless turn continuation.
       - A turn the restart cut short is recorded as interrupted before its continuation turn starts, rather than closed as completed when the resumed session reports ready.
     rationale: Upstream leaves threads asleep after a restart even when their background work, such as a monitor or background shell, was still running. The fork prompts those threads to restart the work after an in-app update, because the update stopped work the user had left running and the restart is usually short. A thread the user settles has no live work to restart, since settling stops its provider session.
     implementation_paths:
+      - apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx
+      - apps/mobile/src/features/settings/SettingsServerUpdateConfirmRouteScreen.tsx
+      - apps/mobile/src/features/settings/serverUpdateConfirmation.ts
       - apps/server/src/cli/invocation.ts
       - apps/server/src/environment/HostActivity.ts
       - apps/server/src/serverRuntimeStartup.ts
@@ -3740,6 +3744,7 @@ features:
       - apps/web/src/components/settings/ConnectionsSettings.tsx
       - apps/web/src/versionSkew.ts
     tests:
+      - apps/mobile/src/features/settings/serverUpdateConfirmation.test.ts
       - apps/server/src/cli/invocation.test.ts
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/environment/ServerEnvironment.test.ts

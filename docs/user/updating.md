@@ -141,8 +141,9 @@ mobile. They need provider update checks on.
 
 To update an environment from your phone, open **Settings → Environments** and
 select it. **Check for updates** finds the latest release on that environment's
-current release channel. Keep the app open while the environment updates and
-reconnects. Hosts that cannot update remotely show instructions for updating on
+current release channel. Updating asks for confirmation first and lists any
+threads the update would interrupt or continue. Keep the app open while the
+environment updates and reconnects. Hosts that cannot update remotely show instructions for updating on
 the machine instead.
 
 The same page lets you refresh provider status and update supported providers.
