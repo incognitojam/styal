@@ -12,6 +12,7 @@ import { McpSchema, McpServer } from "effect/unstable/ai";
 
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 
@@ -101,6 +102,7 @@ const DeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
 });
 
 const TestLayer = McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+  Layer.provide(AnalyticsService.AnalyticsService.layerTest),
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(DeviceServiceMock),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" })),
@@ -171,6 +173,7 @@ it.effect("rejects unavailable agent access before booting or opening a device",
     Effect.scoped,
     Effect.provide(
       McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+        Layer.provide(AnalyticsService.AnalyticsService.layerTest),
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(unavailable),
         Layer.provide(NodeServices.layer),
@@ -267,6 +270,7 @@ it.effect("reports another thread's device and does not open it unless named", (
     Effect.scoped,
     Effect.provide(
       McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+        Layer.provide(AnalyticsService.AnalyticsService.layerTest),
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(service),
         Layer.provide(

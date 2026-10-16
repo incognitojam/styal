@@ -21,6 +21,8 @@ import * as DeviceHost from "./DeviceHost.ts";
 import { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
 
 import * as DeviceService from "./DeviceService.ts";
+import * as ClientFeatureUsage from "../telemetry/ClientFeatureUsage.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -734,4 +736,81 @@ it.effect("failed manual installation leaves lifecycle state unchanged and can b
     expect(starts).toEqual([]);
     expect(agentStarts).toEqual([]);
   }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "tracks a real client device boot and close without counting discovery or host relays",
+  () =>
+    Effect.gen(function* () {
+      const { service, requests } = yield* fixture();
+      const events: Array<{ event: string; properties: unknown }> = [];
+      const analytics = AnalyticsService.AnalyticsService.of({
+        record: (event, properties) =>
+          Effect.sync(() => {
+            events.push({ event, properties });
+          }),
+        flush: Effect.void,
+      });
+      const observed = yield* ClientFeatureUsage.devices({
+        surface: "mobile",
+        clientOs: "Android",
+      }).pipe(
+        Effect.provideService(DeviceService.DeviceService, service),
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+      yield* observed.configure({ enabled: true });
+      const input = {
+        threadId: ThreadId.make("adoption-device-thread"),
+        deviceId: "Pixel_API_35",
+        platform: "android" as const,
+      };
+      const session = yield* observed.open(input);
+      expect(session.deviceId).toBe("emulator-5554");
+      expect(requests.filter((url) => url.endsWith("/boot"))).toHaveLength(1);
+      yield* observed.list;
+      yield* observed.close({ threadId: input.threadId });
+      expect((yield* observed.state).sessions).toHaveLength(0);
+      expect(events).toEqual([
+        {
+          event: "feature.used",
+          properties: {
+            feature: "devices",
+            action: "open",
+            source: "user",
+            outcome: "success",
+            durationMs: 0,
+            devicePlatform: "android",
+            deviceLocation: "local",
+            surface: "mobile",
+            clientOs: "Android",
+          },
+        },
+        {
+          event: "feature.used",
+          properties: {
+            feature: "devices",
+            action: "close",
+            source: "user",
+            outcome: "success",
+            durationMs: 0,
+            surface: "mobile",
+            clientOs: "Android",
+          },
+        },
+      ]);
+      const relay = yield* ClientFeatureUsage.devices({}).pipe(
+        Effect.provideService(DeviceService.DeviceService, service),
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+      yield* relay.open({ ...input, deviceId: "emulator-5554" });
+      expect(events).toHaveLength(2);
+      expect((yield* relay.state).sessions).toHaveLength(1);
+      yield* observed.configure({ enabled: false });
+      const failed = yield* observed.open(input).pipe(Effect.result);
+      expect(failed._tag).toBe("Failure");
+      expect(events.at(-1)).toMatchObject({
+        event: "feature.used",
+        properties: { feature: "devices", action: "open", outcome: "failure" },
+      });
+    }).pipe(Effect.scoped),
 );

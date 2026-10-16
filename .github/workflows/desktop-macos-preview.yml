@@ -128,6 +128,7 @@ jobs:
         name: Build unsigned macOS DMG
         shell: bash
         env:
+          STYAL_RELEASE_BUILD: "1"
           T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: ${{ steps.resource_monitor_cache.outputs.cache-hit == 'true' }}
           PREVIEW_VERSION: ${{ steps.version.outputs.version }}
         run: |

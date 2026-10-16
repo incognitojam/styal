@@ -65,6 +65,7 @@ export async function openUrlInPreview<E>(input: {
     environmentId: input.threadRef.environmentId,
     input: {
       threadId: input.threadRef.threadId,
+      usageSource: "user",
       url: input.url,
       // Built here rather than via `openPreviewSession` because this path
       // maps the result differently, so the configured defaults have to be

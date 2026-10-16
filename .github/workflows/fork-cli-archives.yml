@@ -108,6 +108,7 @@ jobs:
       # Each platform rebuilds the bundle it embeds, so each uploads its own maps.
       - name: Build executable on its native architecture
         env:
+          STYAL_RELEASE_BUILD: "1"
           VP_NODE_VERSION: "26.8.2"
           POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
           POSTHOG_SOURCEMAPS_PROJECT_ID: ${{ vars.POSTHOG_SOURCEMAPS_PROJECT_ID }}
