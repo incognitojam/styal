@@ -2907,6 +2907,7 @@ features:
     invariants:
       - Reopening the sidebar does not discard the user's project filter.
       - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project.
+      - While the filter names a project, thread rows in every section omit the project icon and name, and grouped threads show no project header, with grouping on or off. Clearing the filter restores them.
     implementation_paths:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx

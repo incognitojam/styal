@@ -151,7 +151,8 @@ cannot drag or move threads within it. Your saved order returns when you turn it
 Use the menu below the sidebar search to show a single project. While a project is
 selected, **New thread** creates the thread there without asking. The **new thread
 in current project** shortcut uses the open thread's project, or the selected
-project when no thread is open. Choose **All projects** to clear the filter.
+project when no thread is open. Thread rows and project headers leave out the project
+name while a project is selected. Choose **All projects** to clear the filter.
 
 ## Group threads by project
 

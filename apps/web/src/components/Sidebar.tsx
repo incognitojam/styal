@@ -1175,8 +1175,8 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
 const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
-  // Cards under a project header: the header names the project, so the
-  // title moves up to the status line.
+  // Rows whose project is named by a header or the project filter. Cards
+  // move the title up to the status line; slim rows drop the favicon.
   grouped: boolean;
   // Grouped cards whose project has no branched threads (typically a folder
   // without git): the branch line would be empty, so the row is one line.
@@ -1885,15 +1885,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             {accessibleTitle}
             {/* Settled history recedes: dimmed favicon at rest, restored on
               hover so the tail stays scannable when you're hunting. */}
-            <span
-              className={cn(
-                "shrink-0 transition-opacity",
-                (!props.isActive || variantAction === "unsettle") &&
-                  "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
-              )}
-            >
-              {props.project ? <ProjectFavicon project={props.project} className="size-4" /> : null}
-            </span>
+            {props.grouped ? null : (
+              <span
+                className={cn(
+                  "shrink-0 transition-opacity",
+                  (!props.isActive || variantAction === "unsettle") &&
+                    "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+                )}
+              >
+                {props.project ? (
+                  <ProjectFavicon project={props.project} className="size-4" />
+                ) : null}
+              </span>
+            )}
             {draftIndicator}
             {title}
             {pinIndicator}
@@ -2808,6 +2812,8 @@ export default function Sidebar() {
           ),
     [scopedProjectGroup],
   );
+  // The filter names the one project shown, so rows and group headers omit it.
+  const projectScoped = scopedProjectGroup !== null;
   // A persisted scope whose project is gone falls back to all projects, but
   // only after every catalog environment has a live project snapshot. Cached
   // or disconnected environments cannot establish that the project is gone.
@@ -4058,7 +4064,12 @@ export default function Sidebar() {
     items.push({ kind: "marker", marker: "active-placeholder" });
     let activeGroup: string | undefined;
     for (const row of activeRows) {
-      if (row.kind === "thread" && row.group !== undefined && row.group !== activeGroup) {
+      if (
+        !projectScoped &&
+        row.kind === "thread" &&
+        row.group !== undefined &&
+        row.group !== activeGroup
+      ) {
         activeGroup = row.group;
         items.push({ kind: "project-header", group: row.group });
       }
@@ -4081,6 +4092,7 @@ export default function Sidebar() {
     activeThreads,
     groupThreadsByProject,
     pinnedThreads,
+    projectScoped,
     renderedSettledThreads,
     settledThreads.length,
     snoozedThreads.length,
@@ -5559,9 +5571,10 @@ export default function Sidebar() {
                         const isCard =
                           section === "active" || section === "pinned" || section === "working";
                         const rowVariant = isCard ? "card" : "slim";
-                        const grouped = groupThreadsByProject && section === "active";
+                        const groupedByHeader = groupThreadsByProject && section === "active";
+                        const grouped = groupedByHeader || projectScoped;
                         const compact =
-                          grouped && branchlessActiveGroups.has(threadProjectGroup(thread));
+                          groupedByHeader && branchlessActiveGroups.has(threadProjectGroup(thread));
                         return (
                           <SidebarThreadRow
                             // Fade between card and compact rows while the outer
