@@ -113,6 +113,14 @@
       "reason": "Background-service installs check their channel hourly and install when nothing is running, reusing `cli/update.ts` release discovery. The fork's discovery reads npm dist-tags and confirms the release checksums are downloadable (fork #741), so keep the fork's `resolveNewestVersion` rather than upstream's GitHub API paging when this is taken in; hourly checks from many hosts would exhaust GitHub's anonymous API quota. Depends on #17585."
     },
     {
+      "pr": 17670,
+      "reason": "Imported provisionally as one snapshot: shell code blocks with several lines, including backslash continuations, get a Run action that confirms the script and sends it as one bracketed paste, so a command reading input cannot consume the lines after it. The fork keeps its own code block wrapper, terminal status sync and surface disposal, because the upstream code the PR builds on has not been taken in, and adds the jsdom setup the new ChatMarkdown tests need plus a terminal guide paragraph. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile amendments and those adaptations, verify a continued command, a script whose first line reads input, cancelling the confirmation and a shell without bracketed paste, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "d02e292610ea5eff171d388211ba3ede2f0467a0",
+        "head": "d6ff90c39d47183e57080878958e8e2d9e125637"
+      }
+    },
+    {
       "pr": 17710,
       "reason": "The PR detail panel shows generic success notifications such as Pull request merged without identifying the PR, repository, or project. Upstream replaces blocking confirmations with inline confirmation and removes success toasts for actions whose results are visible in the panel; revert and error toasts remain. Take it at chronological intake and verify merge, ready/draft, close/reopen, branch update, auto-merge, and workflow approval update the panel without a redundant success toast. Quick-action and stack notifications are outside this change and still need a separate context review. Remove this entry once the change is recorded."
     },
