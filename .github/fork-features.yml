@@ -1186,6 +1186,7 @@ features:
       - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once loads its files in that tier order, by path within each tier, since their import lines are not known until they load.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
       - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order.
+      - Explicit web and desktop sort choices emit bounded client-usage events for the owning environment; default rendering is not counted as a choice and file paths are never reported.
     rationale: Upstream orders files by relevance only in the web pull request Code tab, by name patterns alone, without tier labels, collapsed generated files, or a way back to alphabetical order (upstream #6039). The fork moved that ordering into shared code so turn, working-tree, and branch diffs and mobile review read the same way, and lets repository `linguist-generated` attributes mark generated files.
     implementation_paths:
       - .gitattributes
@@ -1200,6 +1201,7 @@ features:
       - apps/web/src/components/diffs/useReviewFilePatches.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
       - apps/web/src/diffPanelStore.ts
+      - apps/web/src/forkClientUsage.ts
       - packages/shared/src/diffFileOrder.ts
       - packages/shared/src/generatedFiles.ts
     upstream_paths:
@@ -1706,7 +1708,7 @@ features:
     prs: [840, 859]
     rationale: Maintainers need observed feature adoption to evaluate the cost of retaining fork behavior.
     invariants:
-      - Web deployment refresh requests are counted as usage separately from visible notice exposure, with an event-local instrumentation version and the paired environment's telemetry opt-out.
+      - Allowlisted client interactions share one reporting method and event-local instrumentation version, with socket-scoped attribution and the paired environment's telemetry opt-out; diff-order selections, opened time explanations, and web refresh requests are counted separately from visible update-notice exposure, with no content or identifiers.
       - Agent browser tools emit one structural feature.used event per public operation, including failures and cancellation, with action, outcome, and duration but no operation arguments or results.
       - Internal metadata reads do not inflate agent usage, and telemetry failures never change the operation's result.
       - Device panel operations and public agent device tools record bounded usage and outcomes without names, device identifiers, arguments, or images; discovery is distinct from adoption and environment forwarding is not counted again as a manual action.
@@ -1724,7 +1726,8 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/server/src/telemetry/DeviceFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
-      - apps/server/src/telemetry/WebBuildUpdateUsage.ts
+      - apps/web/src/forkClientUsage.ts
+      - packages/contracts/src/forkClientUsage.ts
       - apps/server/src/ws.ts
       - apps/server/vite.config.ts
     upstream_paths:
@@ -1737,6 +1740,7 @@ features:
       - apps/server/src/telemetry/AnalyticsService.test.ts
       - apps/server/src/telemetry/BuildContext.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
     upstream:
       status: tracking
       tracking:
@@ -2298,12 +2302,14 @@ features:
       - Times without a date take the occurrence nearest to when the message was sent, unless a tense cue in the same sentence ("next", "merged") points the other way and the nearest occurrence is more than three hours on the wrong side.
       - Durations such as "finished in 36 seconds" and single-digit zone-less clocks such as "2:48" are not marked.
       - Timeline labels ending in a punctuation colon retain their clock and explicit zone; extra colon-separated tokens and file line/column references stay unmarked.
+      - Opening a time explanation emits a structural client-usage event through the message's environment, without sending the time, timezone, message content, or identifiers.
     implementation_paths:
       - apps/server/src/environment/ServerEnvironment.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/MentionedTimeChip.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/markdown-mentioned-times.ts
+      - apps/web/src/forkClientUsage.ts
       - apps/web/src/timestampFormat.ts
       - packages/client-runtime/src/mentionedTimes.ts
       - packages/contracts/src/environment.ts
@@ -4628,7 +4634,8 @@ features:
       - A changed build shows a manual refresh action in the sidebar without interrupting work; a rollback to the loaded build clears the notice, while failed or malformed checks preserve the last known state.
       - Checks pause while hidden or offline, resume on visibility, focus, or connectivity changes, and never overlap; Electron keeps its native updater and development builds keep HMR.
     implementation_paths:
-      - apps/server/src/telemetry/WebBuildUpdateUsage.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/web/src/forkClientUsage.ts
       - apps/web/public/_headers
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/WebBuildUpdateProvider.tsx
@@ -4643,7 +4650,7 @@ features:
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/vite.config.ts
     tests:
-      - apps/server/src/telemetry/WebBuildUpdateUsage.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/webBuildUpdate.test.ts
       - apps/web/src/webBuildUpdateUsage.test.ts
     upstream:

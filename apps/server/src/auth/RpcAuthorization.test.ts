@@ -27,7 +27,7 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverReportClientActivity)).toBe(
       AuthOrchestrationReadScope,
     );
-    expect(requiredScopeForRpcMethod(WS_METHODS.serverReportWebBuildUpdateUsage)).toBe(
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverReportForkClientUsage)).toBe(
       AuthOrchestrationReadScope,
     );
     expect(requiredScopeForRpcMethod(WS_METHODS.serverReportHostPowerState)).toBe(

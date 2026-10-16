@@ -4,7 +4,6 @@ import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as ClientFeatureUsage from "./telemetry/ClientFeatureUsage.ts";
 import { recordClientNetworkReports } from "./telemetry/ClientNetworkReports.ts";
-import * as WebBuildUpdateUsage from "./telemetry/WebBuildUpdateUsage.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as NodeCrypto from "node:crypto";
 
@@ -1244,9 +1243,7 @@ const makeWsRpcLayer = (
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const analytics = yield* AnalyticsService.AnalyticsService;
-      const webBuildUpdateUsage = yield* WebBuildUpdateUsage.WebBuildUpdateUsage.pipe(
-        Effect.provide(WebBuildUpdateUsage.layer),
-      );
+      const reportForkClientUsage = yield* ClientFeatureUsage.reporter(clientAnalyticsProps);
       // Client-origin attribution (#7774): every thread/turn the connecting
       // client starts is credited to its surface + app version. Best-effort:
       // attribution must never fail the user's command.
@@ -2783,8 +2780,7 @@ const makeWsRpcLayer = (
             recordClientNetworkReports(input, analytics, originProps),
             { "rpc.aggregate": "server" },
           ),
-        [WS_METHODS.serverReportWebBuildUpdateUsage]: (input) =>
-          webBuildUpdateUsage.report(input, clientAnalyticsProps),
+        [WS_METHODS.serverReportForkClientUsage]: reportForkClientUsage,
         [WS_METHODS.serverReportHostPowerState]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverReportHostPowerState,

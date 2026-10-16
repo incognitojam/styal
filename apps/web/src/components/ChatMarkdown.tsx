@@ -2881,11 +2881,11 @@ function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
 }
 
 function MarkdownMentionedTime(props: { encoded: unknown; children: ReactNode }) {
-  const { mentionedTimeAnchor } = use(ChatMarkdownRendererContext);
+  const { mentionedTimeAnchor, environmentId } = use(ChatMarkdownRendererContext);
   const time = useMemo(() => readMentionedTime(props.encoded), [props.encoded]);
   if (time === null || mentionedTimeAnchor === null) return props.children;
   return (
-    <MentionedTimeChip time={time} anchor={mentionedTimeAnchor}>
+    <MentionedTimeChip environmentId={environmentId} time={time} anchor={mentionedTimeAnchor}>
       {props.children}
     </MentionedTimeChip>
   );

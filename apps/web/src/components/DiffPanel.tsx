@@ -97,6 +97,7 @@ import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices
 import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
 
 import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
+import { reportForkClientUsage } from "../forkClientUsage";
 import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
 import { DiffFileStatus } from "./diffs/DiffFileStatus";
 
@@ -950,6 +951,11 @@ export default function DiffPanel({
                 pressed={diffSortMode === "smart"}
                 onPressedChange={(pressed) => {
                   setDiffSortMode(pressed ? "smart" : "alphabetical");
+                  void reportForkClientUsage(activeThread?.environmentId, {
+                    feature: "diff-file-review-order",
+                    action: pressed ? "relevance_selected" : "alphabetical_selected",
+                    view: "changes",
+                  });
                 }}
               />
             }

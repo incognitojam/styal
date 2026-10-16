@@ -35,6 +35,7 @@ import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDet
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
 import { diffFileTier, orderDiffFiles } from "~/lib/diffFileOrder";
 import { useDiffPanelStore } from "~/diffPanelStore";
+import { reportForkClientUsage } from "~/forkClientUsage";
 import {
   buildFileDiffRenderKey,
   fnv1a32,
@@ -1307,6 +1308,11 @@ function PullRequestCodeTab({
                 pressed={diffSortMode === "smart"}
                 onPressedChange={(pressed) => {
                   setDiffSortMode(pressed ? "smart" : "alphabetical");
+                  void reportForkClientUsage(environmentId, {
+                    feature: "diff-file-review-order",
+                    action: pressed ? "relevance_selected" : "alphabetical_selected",
+                    view: "pull_request",
+                  });
                 }}
               />
             }

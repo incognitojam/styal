@@ -5,8 +5,8 @@ import { isElectron } from "../env";
 import { watchWebBuildUpdates } from "../webBuildUpdate";
 import { createWebBuildUpdateUsage } from "../webBuildUpdateUsage";
 import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
-import { primaryServerConfigAtom, serverEnvironment } from "../state/server";
-import { appAtomRegistry } from "../rpc/atomRegistry";
+import { primaryServerConfigAtom } from "../state/server";
+import { reportForkClientUsage } from "../forkClientUsage";
 import type { WebBuildUpdateUsageAction } from "@t3tools/contracts";
 
 const WebBuildUpdateContext = createContext({
@@ -20,14 +20,14 @@ export function WebBuildUpdateProvider({ children }: { readonly children: ReactN
   const [usage] = useState(() => createWebBuildUpdateUsage(() => window.location.reload()));
   const environmentId = useAtomValue(primaryEnvironmentIdAtom);
   const serverConfig = useAtomValue(primaryServerConfigAtom);
-  const supported = serverConfig?.environment.capabilities.webBuildUpdateUsage === true;
+  const supported = serverConfig?.environment.capabilities.forkClientUsage === true;
   const report = useMemo(
     () =>
       environmentId && supported
         ? (action: WebBuildUpdateUsageAction) =>
-            serverEnvironment.reportWebBuildUpdateUsage.run(appAtomRegistry, {
-              environmentId,
-              input: { action },
+            reportForkClientUsage(environmentId, {
+              feature: "web-build-update-notice",
+              action,
             })
         : undefined,
     [environmentId, supported],

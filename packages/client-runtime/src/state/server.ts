@@ -994,9 +994,9 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
-    reportWebBuildUpdateUsage: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:web-build-update-usage",
-      tag: WS_METHODS.serverReportWebBuildUpdateUsage,
+    reportForkClientUsage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:fork-client-usage",
+      tag: WS_METHODS.serverReportForkClientUsage,
     }),
     updateStateAtom,
     settingsValueAtom,

@@ -12,7 +12,7 @@ import {
   ChatGptHandoffState,
 } from "./providerSetup.ts";
 import * as Schema from "effect/Schema";
-import { WebBuildUpdateUsageInput } from "./webBuildUpdate.ts";
+import { ForkClientUsageInput } from "./forkClientUsage.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
@@ -514,7 +514,7 @@ export const WS_METHODS = {
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
   serverSignalProcess: "server.signalProcess",
   serverReportClientActivity: "server.reportClientActivity",
-  serverReportWebBuildUpdateUsage: "server.reportWebBuildUpdateUsage",
+  serverReportForkClientUsage: "server.reportForkClientUsage",
   serverReportHostPowerState: "server.reportHostPowerState",
   serverReportNetworkConditions: "server.reportNetworkConditions",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
@@ -976,8 +976,8 @@ const WsServerReportNetworkConditionsRpc = Rpc.make(WS_METHODS.serverReportNetwo
   error: EnvironmentAuthorizationError,
 });
 
-const WsServerReportWebBuildUpdateUsageRpc = Rpc.make(WS_METHODS.serverReportWebBuildUpdateUsage, {
-  payload: WebBuildUpdateUsageInput,
+const WsServerReportForkClientUsageRpc = Rpc.make(WS_METHODS.serverReportForkClientUsage, {
+  payload: ForkClientUsageInput,
   error: EnvironmentAuthorizationError,
 });
 
@@ -1973,7 +1973,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,
-  WsServerReportWebBuildUpdateUsageRpc,
+  WsServerReportForkClientUsageRpc,
   WsServerReportHostPowerStateRpc,
   WsServerReportNetworkConditionsRpc,
   WsServerGetBackgroundPolicyRpc,

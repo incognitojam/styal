@@ -1,0 +1,22 @@
+import * as Schema from "effect/Schema";
+
+export const WebBuildUpdateUsageAction = Schema.Literals(["notice_shown", "refresh_requested"]);
+export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
+
+/** Closed UI observations only: content, paths and identifiers stay in the client. */
+export const ForkClientUsageInput = Schema.Union([
+  Schema.Struct({
+    feature: Schema.Literal("web-build-update-notice"),
+    action: WebBuildUpdateUsageAction,
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("diff-file-review-order"),
+    action: Schema.Literals(["relevance_selected", "alphabetical_selected"]),
+    view: Schema.Literals(["changes", "pull_request"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("mentioned-time-chips"),
+    action: Schema.Literal("details_opened"),
+  }),
+]);
+export type ForkClientUsageInput = typeof ForkClientUsageInput.Type;

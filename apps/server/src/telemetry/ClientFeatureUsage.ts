@@ -1,9 +1,31 @@
-import { LOCAL_DEVICE_HOST_ID } from "@t3tools/contracts";
+import { LOCAL_DEVICE_HOST_ID, type ForkClientUsageInput } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import * as DeviceService from "../device/DeviceService.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as FeatureUsage from "./FeatureUsage.ts";
+
+/** Buffer allowlisted client observations using this socket's attribution and opt-out. */
+export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  return (input: ForkClientUsageInput) => {
+    if (client.surface !== "web" && client.surface !== "desktop") return Effect.void;
+    if (input.feature === "web-build-update-notice" && client.surface !== "web") {
+      return Effect.void;
+    }
+    const exposed = input.feature === "web-build-update-notice" && input.action === "notice_shown";
+    return analytics
+      .record(exposed ? "feature.exposed" : "feature.used", {
+        ...input,
+        source: exposed ? "system" : "user",
+        forkClientUsageVersion: 1,
+        surface: client.surface,
+        ...(client.clientOs ? { clientOs: client.clientOs } : {}),
+        ...(client.clientAppVersion ? { clientAppVersion: client.clientAppVersion } : {}),
+      })
+      .pipe(Effect.ignoreCause);
+  };
+});
 
 /** Observe Device panel operations without counting environment relays as user choices. */
 export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
