@@ -140,6 +140,10 @@
       "types": "./src/toolRowPresentation.ts",
       "import": "./src/toolRowPresentation.ts"
     },
+    "./terminalOutput": {
+      "types": "./src/terminalOutput.ts",
+      "import": "./src/terminalOutput.ts"
+    },
     "./toolOutput": {
       "types": "./src/toolOutput.ts",
       "import": "./src/toolOutput.ts"
