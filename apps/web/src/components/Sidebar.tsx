@@ -216,6 +216,7 @@ import {
   shouldClearProjectScope,
   resolveWorkingStartedAt,
   groupActiveThreadsForSidebar,
+  groupWorkingThreadsForSidebar,
   resolveSidebarProjectDrop,
   sidebarListItemId,
   sidebarMarkerId,
@@ -830,10 +831,11 @@ function SidebarSectionHeader(props: {
   );
 }
 
-// Heads a run of active threads from one project when the sidebar groups by
-// project. The rows below it drop their own project label. Dragging the
-// header reorders projects; its rows collapse until the drop.
+// Heads a run of active or Working threads from one project when the sidebar
+// groups by project. The rows below it drop their own project label. Dragging
+// an active header reorders projects; its rows collapse until the drop.
 function SidebarProjectGroupHeader(props: {
+  id: string;
   group: string;
   project: ProjectFaviconProject | null;
   label: string;
@@ -841,7 +843,7 @@ function SidebarProjectGroupHeader(props: {
   onContextMenu: (group: string, position: { x: number; y: number }) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: sidebarListItemId({ kind: "project-header", group: props.group }),
+    id: props.id,
     disabled: { draggable: !props.draggable },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
@@ -3108,7 +3110,14 @@ export default function Sidebar() {
           )
         : optimisticActive,
       // Newest send first; finishing and waking again do not move a row.
-      workingThreads: sortWorkingThreadsBySend(working),
+      // Grouped projects follow the saved order, then the project list, so
+      // a send never reorders the headers.
+      workingThreads: groupThreadsByProject
+        ? groupWorkingThreadsForSidebar(sortWorkingThreadsBySend(working), threadProjectGroup, [
+            ...orderedProjectGroupKeys,
+            ...unsortedProjectGroups.map((group) => group.projectKey),
+          ])
+        : sortWorkingThreadsBySend(working),
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozedThreads: snoozed.toSorted(
         (left, right) =>
@@ -3128,6 +3137,7 @@ export default function Sidebar() {
     snoozeWakeTick,
     threadProjectGroup,
     threads,
+    unsortedProjectGroups,
     workingShelfEnabled,
   ]);
 
@@ -4012,18 +4022,31 @@ export default function Sidebar() {
     [confirmAndUnpinThread],
   );
 
-  const branchlessActiveGroups = useMemo(() => {
-    const branchless = new Set<string>();
-    if (!groupThreadsByProject) return branchless;
-    const branched = new Set<string>();
-    for (const thread of workingThreads) {
-      const group = threadProjectGroup(thread);
-      if (thread.branch) branched.add(group);
-      else branchless.add(group);
-    }
-    for (const group of branched) branchless.delete(group);
-    return branchless;
-  }, [workingThreads, groupThreadsByProject, threadProjectGroup]);
+  // Project groups where no thread in the section carries a branch render
+  // one-line rows, so a group never mixes row heights.
+  const branchlessGroups = useCallback(
+    (sectionThreads: readonly EnvironmentThreadShell[]) => {
+      const branchless = new Set<string>();
+      if (!groupThreadsByProject) return branchless;
+      const branched = new Set<string>();
+      for (const thread of sectionThreads) {
+        const group = threadProjectGroup(thread);
+        if (thread.branch) branched.add(group);
+        else branchless.add(group);
+      }
+      for (const group of branched) branchless.delete(group);
+      return branchless;
+    },
+    [groupThreadsByProject, threadProjectGroup],
+  );
+  const branchlessActiveGroups = useMemo(
+    () => branchlessGroups(activeThreads),
+    [activeThreads, branchlessGroups],
+  );
+  const branchlessWorkingGroups = useMemo(
+    () => branchlessGroups(workingThreads),
+    [workingThreads, branchlessGroups],
+  );
 
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
@@ -4066,7 +4089,14 @@ export default function Sidebar() {
     }
     if (workingThreads.length > 0) {
       items.push({ kind: "marker", marker: "working-header" });
-      items.push(...rowsOf(visibleWorkingThreads, "working"));
+      let workingGroup: string | undefined;
+      for (const row of rowsOf(visibleWorkingThreads, "working")) {
+        if (row.kind === "thread" && row.group !== undefined && row.group !== workingGroup) {
+          workingGroup = row.group;
+          items.push({ kind: "working-project-header", group: row.group });
+        }
+        items.push(row);
+      }
     }
     if (snoozedThreads.length > 0) {
       items.push({ kind: "marker", marker: "snoozed-header" });
@@ -5559,9 +5589,14 @@ export default function Sidebar() {
                         const isCard =
                           section === "active" || section === "pinned" || section === "working";
                         const rowVariant = isCard ? "card" : "slim";
-                        const grouped = groupThreadsByProject && section === "active";
+                        const grouped =
+                          groupThreadsByProject && (section === "active" || section === "working");
                         const compact =
-                          grouped && branchlessActiveGroups.has(threadProjectGroup(thread));
+                          grouped &&
+                          (section === "working"
+                            ? branchlessWorkingGroups
+                            : branchlessActiveGroups
+                          ).has(threadProjectGroup(thread));
                         return (
                           <SidebarThreadRow
                             // Fade between card and compact rows while the outer
@@ -5707,7 +5742,10 @@ export default function Sidebar() {
                           items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
                           continue;
                         }
-                        if (item.kind === "project-header") {
+                        if (
+                          item.kind === "project-header" ||
+                          item.kind === "working-project-header"
+                        ) {
                           // Threads whose project record has not loaded yet
                           // group under their physical key.
                           const group =
@@ -5716,10 +5754,11 @@ export default function Sidebar() {
                           items.push(
                             <SidebarProjectGroupHeader
                               key={sidebarListItemId(item)}
+                              id={sidebarListItemId(item)}
                               group={item.group}
                               project={group ?? null}
                               label={group?.displayName ?? "Unknown project"}
-                              draggable={optimisticDrop === null}
+                              draggable={item.kind === "project-header" && optimisticDrop === null}
                               onContextMenu={handleProjectGroupContextMenu}
                             />,
                           );

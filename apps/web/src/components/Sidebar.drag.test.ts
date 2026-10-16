@@ -39,7 +39,7 @@ function layout(
     const height =
       item.kind === "thread"
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
-        : item.kind === "project-header"
+        : item.kind === "project-header" || item.kind === "working-project-header"
           ? 24 * scale
           : item.marker === "pinned-header" || item.marker === "pinned-divider"
             ? 0
@@ -1061,6 +1061,55 @@ describe("project-grouped drag projection", () => {
     const headerA = sidebarListItemId(header("A"));
     const headerB = sidebarListItemId(header("B"));
     expect(projectedTops("b2", "a2")).toEqual([headerA, "a1", "a2", headerB, "b1"]);
+  });
+  describe("with a grouped Working shelf", () => {
+    const workingHeader = (group: string): SidebarListItem => ({
+      kind: "working-project-header",
+      group,
+    });
+    const workingRow = (key: string, group: string): SidebarListItem => ({
+      kind: "thread",
+      key,
+      section: "working",
+      group,
+    });
+    const withWorking = [
+      ...items.slice(0, -2),
+      marker("working-header"),
+      workingHeader("B"),
+      workingRow("wb", "B"),
+      workingHeader("A"),
+      workingRow("wa", "A"),
+      ...items.slice(-2),
+    ];
+    const shelfIds = [
+      sidebarMarkerId("working-header"),
+      sidebarListItemId(workingHeader("B")),
+      "wb",
+      sidebarListItemId(workingHeader("A")),
+      "wa",
+    ];
+    const input = { items: withWorking, settledOrder: [], settledExpanded: true };
+
+    it("keeps the shelf's project headers in place while an active row moves", () => {
+      const result = preview(input, "a2", "a1");
+      expect(result.get("a1")?.y).toBe(83);
+      for (const id of shelfIds) expect(result.get(id)).toEqual(stationary);
+    });
+
+    it("moves the shelf as a block when a project header moves", () => {
+      const headerA = sidebarListItemId(header("A"));
+      const result = preview(input, headerA, "b2");
+      const shelf = shelfIds.map((id) => result.get(id));
+      expect(shelf.every((transform) => transform?.scaleY === 1)).toBe(true);
+      expect(new Set(shelf.map((transform) => transform?.y)).size).toBe(1);
+    });
+
+    it("never takes a drop on a Working project header", () => {
+      expect(
+        resolveSidebarDropTarget(withWorking, "a1", sidebarListItemId(workingHeader("A"))),
+      ).toBeNull();
+    });
   });
 });
 
