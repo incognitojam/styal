@@ -4,7 +4,12 @@ import {
   formatComposerContextHref,
   formatComposerContextReference,
 } from "@t3tools/shared/composerContextReferences";
-import { markdownWithHtml, markdownWithLiteralHtml } from "../lib/markdownDocument";
+import {
+  markdownWithHtml,
+  markdownWithLiteralHtml,
+  markdownWithTableBreaks,
+} from "../lib/markdownDocument";
+
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Platform, Share, StyleSheet, View } from "react-native";
 import {
@@ -142,9 +147,13 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   const { renderImage, resolveImageSource } = props;
   const parseRawHtml = props.parseRawHtml ?? true;
   const markdown = useMemo(
-    () => (parseRawHtml ? markdownWithHtml : markdownWithLiteralHtml)(props.markdown),
+    () =>
+      markdownWithTableBreaks(
+        (parseRawHtml ? markdownWithHtml : markdownWithLiteralHtml)(props.markdown),
+      ),
     [parseRawHtml, props.markdown],
   );
+
   const { themeAppearance } = useAppearancePreferences();
   const [documentAssets, setDocumentAssets] = useState<DocumentAssetsEvent["assets"]>([]);
   const onDocumentAssets = useCallback(({ assets }: DocumentAssetsEvent) => {
