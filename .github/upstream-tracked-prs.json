@@ -127,6 +127,14 @@
     {
       "pr": 18053,
       "reason": "One sidebar action updates outdated providers on every connected environment, then servers behind the target version, then this desktop app. Not imported early: it needs #9786's environment maintenance scope, and its sidebar and server-update changes are built on the manual download and check animation that fork #358 and #754 removed (ledger desktop-background-updates, server-update-guidance). When taken in: route servers through the fork's `useServerUpdates` host-activity confirmation without a second dialog, and replace its `registry.npmjs.org/t3/<version>` availability check with the fork's `@styal/cli` lookup in `packages/shared/src/cliRelease.ts`, which also confirms the release checksums are downloadable (fork #741)."
+    },
+    {
+      "pr": 19426,
+      "reason": "Imported provisionally as one snapshot: the quick connection health check waits 6 s and extends up to 15 s while frames still arrive, the RPC session counts frames on arrival, and an iOS refocus without a background visit no longer probes or resubscribes. The fork kept the cached websocket-ticket timeout at 3 s with #13687's 7 s same-token retry instead of raising it to 6 s, since 6 s plus the retry would leave 2 s of the 15 s setup deadline. When it merges, compare the frozen base-to-head diff with the final upstream change, reconcile the ticket timeout with however upstream combined it with #13687, rerun the supervisor, session and mobile wakeup tests, then clear the snapshot marker with that intake. If it closes without merging, review whether to remove the change or retain it as maintained fork behavior and record that decision before clearing the marker.",
+      "snapshot": {
+        "base": "dd5c7bd09e83bbeb7c3f63aa787e6ffdd3cc6221",
+        "head": "b57afe0fa54f4769fdcdf3d38e67bd8c08e74b3e"
+      }
     }
   ]
 }
