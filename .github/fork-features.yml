@@ -877,7 +877,6 @@ features:
       - apps/server/src/environment/HostActivity.ts
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/ConfirmDialogHost.tsx
-      - apps/web/src/components/HostActivityThreadList.logic.ts
       - apps/web/src/components/HostActivityThreadList.tsx
       - apps/web/src/components/ServerUpdateAction.logic.ts
       - apps/web/src/components/ServerUpdateAction.tsx
@@ -912,7 +911,6 @@ features:
       - apps/server/src/auth/PairingGrantStore.test.ts
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/terminal/Manager.test.ts
-      - apps/web/src/components/HostActivityThreadList.logic.test.ts
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/components/ServerUpdateAction.test.tsx
       - apps/web/src/components/desktopUpdate.logic.test.ts

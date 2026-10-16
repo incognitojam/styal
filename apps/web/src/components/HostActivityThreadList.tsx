@@ -1,7 +1,10 @@
 import type { ConfirmDialogThreadActivity } from "@t3tools/contracts";
-import { hostActivityReasonLabels } from "@t3tools/shared/hostActivity";
+import {
+  groupHostActivityThreads,
+  hostActivityReasonLabels,
+  hostActivityReasonTone,
+} from "@t3tools/shared/hostActivity";
 import { deriveProjectIdentity } from "../projectIdentity";
-import { groupHostActivityThreads, hostActivityReasonTone } from "./HostActivityThreadList.logic";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectMonogram } from "./ProjectMonogram";
 import { Badge } from "./ui/badge";
