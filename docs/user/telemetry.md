@@ -13,6 +13,15 @@ names, identifiers, screenshots and action arguments are not collected.
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 
+Web, desktop, and mobile clients also summarize how each connection to a remote server behaved while
+the app was open: time connected and reconnecting, drops, failed connection attempts, how long
+reconnecting took, heartbeat round-trip times, and the amount and peak rate of data received and
+sent. Each summary names the network type, such as Wi-Fi or cellular, and how the client reached the
+server, such as styal Link, LAN, or Tailscale. It does not include network or carrier names, IP
+addresses, or location. Each server receives only the summaries of its own connections and sends
+them as usage events. The mobile app keeps its own copy in **Settings → About → Diagnostics** either
+way.
+
 To disable collection, set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before
 starting it. This stops product events from being recorded or sent. Test and CI processes default to
 collection disabled; `T3CODE_TELEMETRY_ENABLED=true` explicitly enables it.

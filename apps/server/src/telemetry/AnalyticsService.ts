@@ -95,10 +95,15 @@ const TelemetryEnvConfig = Config.all({
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
   {
-    /** Record an anonymous event for best-effort buffered delivery. */
+    /**
+     * Record an anonymous event for best-effort buffered delivery. `capturedAt`
+     * backdates an event that describes an earlier period, such as a report a
+     * client could only send after reconnecting.
+     */
     readonly record: (
       event: string,
       properties?: Readonly<Record<string, unknown>>,
+      options?: { readonly capturedAt?: DateTime.Utc },
     ) => Effect.Effect<void>;
 
     /** Flush all currently queued telemetry events. */
@@ -160,8 +165,9 @@ export const make = Effect.gen(function* () {
     uuid: string,
     event: string,
     properties?: Readonly<Record<string, unknown>>,
+    capturedAt?: DateTime.Utc,
   ) =>
-    Effect.flatMap(DateTime.now, (now) =>
+    Effect.flatMap(capturedAt === undefined ? DateTime.now : Effect.succeed(capturedAt), (now) =>
       Ref.modify(bufferRef, (current) => {
         const appended = [
           ...current,
@@ -280,7 +286,7 @@ export const make = Effect.gen(function* () {
   });
 
   const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
-    function* (event, properties) {
+    function* (event, properties, options) {
       if (!telemetryConfig.enabled || !telemetryConfig.posthogKey || !identifier) return;
 
       // Telemetry is best effort: an event without a uuid is not sent. The
@@ -288,7 +294,12 @@ export const make = Effect.gen(function* () {
       const uuid = yield* Effect.exit(crypto.randomUUIDv7);
       if (Exit.isFailure(uuid)) return;
 
-      const enqueueResult = yield* enqueueBufferedEvent(uuid.value, event, properties);
+      const enqueueResult = yield* enqueueBufferedEvent(
+        uuid.value,
+        event,
+        properties,
+        options?.capturedAt,
+      );
       if (enqueueResult.dropped) {
         yield* Effect.logDebug("analytics buffer full; dropping oldest event", {
           size: enqueueResult.size,

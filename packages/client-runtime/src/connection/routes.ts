@@ -11,7 +11,7 @@ import {
   type ConnectionCatalogEntry,
   type ConnectionRoute,
 } from "./catalog.ts";
-import { BearerConnectionTarget, type ConnectionTarget } from "./model.ts";
+import { BearerConnectionTarget, type ConnectionTarget, type PreparedConnection } from "./model.ts";
 
 /**
  * A saved environment can hold several routes: T3 Connect, direct URLs (LAN,
@@ -75,14 +75,21 @@ export function routeHttpBaseUrl(route: ConnectionRoute): string | null {
   return profile?._tag === "BearerConnectionProfile" ? profile.httpBaseUrl : null;
 }
 
-function routeHostname(route: ConnectionRoute): string | null {
-  const httpBaseUrl = routeHttpBaseUrl(route);
+function hostnameOf(httpBaseUrl: string | null): string | null {
   if (httpBaseUrl === null) return null;
   try {
     return new URL(httpBaseUrl).hostname;
   } catch {
     return null;
   }
+}
+
+function directRouteKind(httpBaseUrl: string | null): ConnectionRouteKind {
+  const hostname = hostnameOf(httpBaseUrl);
+  if (hostname === null) return "public";
+  if (isLocalLoopbackHost(hostname)) return "loopback";
+  if (isTailnetHost(hostname)) return "tailnet";
+  return isPrivateNetworkHost(hostname) ? "lan" : "public";
 }
 
 export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind {
@@ -92,13 +99,21 @@ export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind
     case "SshConnectionTarget":
       return "ssh";
     case "PrimaryConnectionTarget":
-    case "BearerConnectionTarget": {
-      const hostname = routeHostname(route);
-      if (hostname === null) return "public";
-      if (isLocalLoopbackHost(hostname)) return "loopback";
-      if (isTailnetHost(hostname)) return "tailnet";
-      return isPrivateNetworkHost(hostname) ? "lan" : "public";
-    }
+    case "BearerConnectionTarget":
+      return directRouteKind(routeHttpBaseUrl(route));
+  }
+}
+
+/** The kind of route a prepared connection uses. */
+export function preparedConnectionRouteKind(connection: PreparedConnection): ConnectionRouteKind {
+  switch (connection.target._tag) {
+    case "RelayConnectionTarget":
+      return "relay";
+    case "SshConnectionTarget":
+      return "ssh";
+    case "PrimaryConnectionTarget":
+    case "BearerConnectionTarget":
+      return directRouteKind(connection.httpBaseUrl);
   }
 }
 
@@ -184,7 +199,7 @@ export function connectionRouteLabel(route: ConnectionRoute): string {
         : "SSH";
     }
     case "public":
-      return routeHostname(route) ?? "Remote link";
+      return hostnameOf(routeHttpBaseUrl(route)) ?? "Remote link";
   }
 }
 

@@ -15,6 +15,7 @@ import * as PlatformConnectionSource from "../platform/source.ts";
 import * as RelayEnvironmentDiscovery from "../relay/discovery.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as RpcSession from "../rpc/session.ts";
+import * as NetworkReports from "../networkReports/service.ts";
 
 export const watchDiscoveredCompatibility = Effect.fn("connection.watchDiscoveredCompatibility")(
   function* () {
@@ -89,7 +90,9 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
     Effect.gen(function* () {
       const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
       const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
+      const networkReports = yield* NetworkReports.NetworkReports;
       yield* watchDiscoveredCompatibility().pipe(Effect.forkScoped);
+      yield* networkReports.follow(registry);
       yield* registry.start;
       yield* platformSource.registrations.pipe(
         Stream.runForEach(registry.reconcilePlatform),
@@ -100,6 +103,8 @@ export function layerWithOptions(options: RpcSession.RpcSessionOptions) {
   return connectionStartupLayer.pipe(
     Layer.provideMerge(connectionServicesLayer),
     Layer.provideMerge(RemoteEnvironmentAuthorization.layer),
+    // Sessions read their socket meters from here, so it sits below the driver.
+    Layer.provideMerge(NetworkReports.layer),
   );
 }
 

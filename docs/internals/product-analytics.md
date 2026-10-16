@@ -36,6 +36,20 @@ Thread lifecycle events (`client.thread.settled`, `unsettled`, `archived`,
 counts only explicit settles; settled states a client derives from inactivity or a
 merged pull request do not emit it.
 
+`client.network.report` summarizes up to 15 minutes of foreground use of one
+environment on one network type and route. Its event time is when the window
+ended, so reports a client could only send after a dead zone land in the period
+they describe. Aggregate by `networkKind` and `routeKind`, weighting by
+`durationMs`: availability is summed `connectedMs` over summed `durationMs`.
+Per-window round-trip percentiles cannot be combined into an overall percentile.
+`drops` counts sessions that failed after answering in the foreground. A socket
+the operating system closed while the app was in the background is found on
+return; it appears as `initialConnectMs` instead, so every resume does not read
+as a network failure.
+A send whose response was lost is repeated, so rare duplicates are possible.
+Byte counts are payload sizes before WebSocket compression, and text frames count
+UTF-16 code units.
+
 Provider send and completion counts need not match. Providers can emit synthetic
 turns without a send request. Collection is best effort, with no scan or backfill
 of provider history.

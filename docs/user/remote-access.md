@@ -223,6 +223,19 @@ Include the diagnostic message and trace ID when reporting a persistent failure.
 For a connection that still fails after linking, check the date and time on both
 devices. For server version warnings, follow [Updating styal](./updating.md).
 
+## Check how connections held up
+
+The mobile app keeps a report for each stretch of use on one network, up to 15
+minutes long, for 7 days. Open **Settings → About → Diagnostics** to see totals
+for each network type and the individual reports: how much of the time styal was
+connected, drops and how long reconnecting took, heartbeat round-trip times, and
+data received and sent. Use it to check a commute or a weak signal afterwards.
+
+A report ends when the app goes to the background or the network type or route
+changes. Data figures count message sizes before compression, so they are close
+to, but not the same as, what a carrier counts. Connections to a server on the
+same device are not reported.
+
 ## Using the Desktop App as a Remote Only
 
 If a computer should only drive work running elsewhere, turn off its local environment. In the
