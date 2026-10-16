@@ -105,6 +105,10 @@
       "reason": "Background-service installs check their channel hourly and install when nothing is running, reusing `cli/update.ts` release discovery. The fork's discovery reads npm dist-tags and confirms the release checksums are downloadable (fork #741), so keep the fork's `resolveNewestVersion` rather than upstream's GitHub API paging when this is taken in; hourly checks from many hosts would exhaust GitHub's anonymous API quota. Depends on #17585."
     },
     {
+      "pr": 17710,
+      "reason": "The PR detail panel shows generic success notifications such as Pull request merged without identifying the PR, repository, or project. Upstream replaces blocking confirmations with inline confirmation and removes success toasts for actions whose results are visible in the panel; revert and error toasts remain. Take it at chronological intake and verify merge, ready/draft, close/reopen, branch update, auto-merge, and workflow approval update the panel without a redundant success toast. Quick-action and stack notifications are outside this change and still need a separate context review. Remove this entry once the change is recorded."
+    },
+    {
       "pr": 17711,
       "reason": "Supersedes #10845, which upstream closed: Usage \u2192 Limits keeps one email signed in to two workspaces, such as a ChatGPT Plus plan and a Business workspace or a Claude login in two orgs, as two accounts instead of merging their quotas. Follow-up to #10300."
     },
