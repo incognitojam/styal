@@ -1,5 +1,8 @@
 import * as Schema from "effect/Schema";
 
+/** Bump when extending the vocabulary; clients require the complete version before reporting. */
+export const FORK_CLIENT_USAGE_VERSION = 1;
+
 export const WebBuildUpdateUsageAction = Schema.Literals(["notice_shown", "refresh_requested"]);
 export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
 

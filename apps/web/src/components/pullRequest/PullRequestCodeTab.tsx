@@ -35,7 +35,6 @@ import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDet
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
 import { diffFileTier, orderDiffFiles } from "~/lib/diffFileOrder";
 import { useDiffPanelStore } from "~/diffPanelStore";
-import { reportForkClientUsage } from "~/forkClientUsage";
 import {
   buildFileDiffRenderKey,
   fnv1a32,
@@ -100,6 +99,7 @@ import {
   usePullRequestReviewStore,
   type PendingReviewComment,
 } from "./pullRequestReviewStore";
+import { reportForkClientUsage } from "~/forkClientUsage";
 
 /** Everything pinned to one line of one file: what is already there, and what is being added. */
 interface ReviewAnnotationGroup {

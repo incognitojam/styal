@@ -1,4 +1,8 @@
-import { LOCAL_DEVICE_HOST_ID, type ForkClientUsageInput } from "@t3tools/contracts";
+import {
+  FORK_CLIENT_USAGE_VERSION,
+  LOCAL_DEVICE_HOST_ID,
+  type ForkClientUsageInput,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import * as DeviceService from "../device/DeviceService.ts";
@@ -18,7 +22,7 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
       .record(exposed ? "feature.exposed" : "feature.used", {
         ...input,
         source: exposed ? "system" : "user",
-        forkClientUsageVersion: 1,
+        forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
         surface: client.surface,
         ...(client.clientOs ? { clientOs: client.clientOs } : {}),
         ...(client.clientAppVersion ? { clientAppVersion: client.clientAppVersion } : {}),

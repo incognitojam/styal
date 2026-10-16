@@ -7,7 +7,7 @@ import { createWebBuildUpdateUsage } from "../webBuildUpdateUsage";
 import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { primaryServerConfigAtom } from "../state/server";
 import { reportForkClientUsage } from "../forkClientUsage";
-import type { WebBuildUpdateUsageAction } from "@t3tools/contracts";
+import { FORK_CLIENT_USAGE_VERSION, type WebBuildUpdateUsageAction } from "@t3tools/contracts";
 
 const WebBuildUpdateContext = createContext({
   available: false,
@@ -20,11 +20,13 @@ export function WebBuildUpdateProvider({ children }: { readonly children: ReactN
   const [usage] = useState(() => createWebBuildUpdateUsage(() => window.location.reload()));
   const environmentId = useAtomValue(primaryEnvironmentIdAtom);
   const serverConfig = useAtomValue(primaryServerConfigAtom);
-  const supported = serverConfig?.environment.capabilities.forkClientUsage === true;
+  const supported =
+    (serverConfig?.environment.capabilities.forkClientUsageVersion ?? 0) >=
+    FORK_CLIENT_USAGE_VERSION;
   const report = useMemo(
     () =>
       environmentId && supported
-        ? (action: WebBuildUpdateUsageAction) =>
+        ? async (action: WebBuildUpdateUsageAction) =>
             reportForkClientUsage(environmentId, {
               feature: "web-build-update-notice",
               action,

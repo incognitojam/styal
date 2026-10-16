@@ -5,7 +5,7 @@ import {
   resolveMentionedTime,
   type ResolvedMentionedTime,
 } from "@t3tools/client-runtime/mentioned-times";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useRef } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { reportForkClientUsage } from "../../forkClientUsage";
@@ -35,15 +35,18 @@ export function MentionedTimeChip(props: {
 }) {
   const { time, anchor } = props;
   const resolved = useMemo(() => resolveMentionedTime(time, anchor), [time, anchor]);
+  const reported = useRef(false);
   if (resolved === null) return props.children;
   return (
     <Tooltip
       onOpenChange={(open, details) => {
-        if (open && !details.isCanceled) {
-          void reportForkClientUsage(props.environmentId, {
+        if (open && !details.isCanceled && !reported.current) {
+          const pending = reportForkClientUsage(props.environmentId, {
             feature: "mentioned-time-chips",
             action: "details_opened",
           });
+          // Unsupported servers leave the chip eligible if support arrives later.
+          if (pending) reported.current = true;
         }
       }}
     >

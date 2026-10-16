@@ -28,7 +28,6 @@ export * from "./checkpointDiff.ts";
 export * from "./model.ts";
 export * from "./keybindings.ts";
 export * from "./server.ts";
-export * from "./forkClientUsage.ts";
 export * from "./settings.ts";
 export * from "./git.ts";
 export * from "./vcs.ts";
@@ -69,3 +68,4 @@ export * from "./worktreeSetup.ts";
 
 export * from "./commandOutput.ts";
 export * from "./secretRequest.ts";
+export * from "./forkClientUsage.ts";

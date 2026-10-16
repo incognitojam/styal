@@ -1,18 +1,25 @@
-import type { EnvironmentId, ForkClientUsageInput } from "@t3tools/contracts";
+import {
+  FORK_CLIENT_USAGE_VERSION,
+  type EnvironmentId,
+  type ForkClientUsageInput,
+} from "@t3tools/contracts";
 
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { serverEnvironment } from "./state/server";
 
-/** Best-effort reporting through the environment that owns the interaction. */
-export async function reportForkClientUsage(
+/** Best-effort reporting through the owning environment; unsupported vocabularies return nothing. */
+export function reportForkClientUsage(
   environmentId: EnvironmentId | null | undefined,
   input: ForkClientUsageInput,
-): Promise<void> {
+) {
   try {
     if (!environmentId) return;
     const config = appAtomRegistry.get(serverEnvironment.configValueAtom(environmentId));
-    if (config?.environment.capabilities.forkClientUsage !== true) return;
-    await serverEnvironment.reportForkClientUsage.run(appAtomRegistry, { environmentId, input });
+    if ((config?.environment.capabilities.forkClientUsageVersion ?? 0) < FORK_CLIENT_USAGE_VERSION)
+      return;
+    return serverEnvironment.reportForkClientUsage
+      .run(appAtomRegistry, { environmentId, input })
+      .catch(() => {});
   } catch {
     // A disconnected or older server must never affect the interaction.
   }
