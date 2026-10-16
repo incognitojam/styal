@@ -41,7 +41,8 @@ environment on one network type and route. Its event time is when the window
 ended, so reports a client could only send after a dead zone land in the period
 they describe. Aggregate by `networkKind` and `routeKind`, weighting by
 `durationMs`: availability is summed `connectedMs` over summed `durationMs`.
-Per-window round-trip percentiles cannot be combined into an overall percentile.
+Per-window round-trip percentiles cannot be combined into an overall percentile;
+reconnect times can, because `recoveryMs` lists each recovery's duration.
 `drops` counts sessions that failed after answering in the foreground. A socket
 the operating system closed while the app was in the background is found on
 return; it appears as `initialConnectMs` instead, so every resume does not read

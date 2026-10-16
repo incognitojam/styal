@@ -20,6 +20,7 @@ const QUIET: NetworkReportMetrics = {
   routeSwitches: 0,
   routeSwitchBacks: 0,
   recoveries: 0,
+  recoveryMs: [],
   heartbeats: 0,
   heartbeatReplies: 0,
   bytesReceived: 0,
@@ -42,8 +43,7 @@ const TRAIN: NetworkReportMetrics = {
   routeSwitches: 2,
   routeSwitchBacks: 1,
   recoveries: 2,
-  recoveryP50Ms: 8_000,
-  recoveryMaxMs: 31_000,
+  recoveryMs: [31_000, 8_000],
   heartbeats: 170,
   heartbeatReplies: 168,
   rttP50Ms: 140,
@@ -79,6 +79,13 @@ describe("describeNetworkReport", () => {
         setupTimeouts: 3,
       }).map((line) => line.text),
     ).toEqual(["Connected 0% of 10m", "4 failed attempts (3 timed out)", "No heartbeat answered"]);
+  });
+
+  it("shows a reconnect that finished in the window after its drop", () => {
+    expect(describeNetworkReport({ ...QUIET, recoveryMs: [38_000] })[1]).toEqual({
+      text: "Reconnected in 38s",
+      trouble: true,
+    });
   });
 
   it("does not round a window with an outage up to 100%", () => {

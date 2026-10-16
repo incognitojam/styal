@@ -135,6 +135,7 @@ describe("NetworkReportCollector", () => {
         dropsStoppedResponding: 1,
         failedAttempts: 1,
         recoveries: 0,
+        recoveryMs: [],
         heartbeats: 2,
         heartbeatReplies: 2,
         rttP50Ms: 120,
@@ -155,6 +156,7 @@ describe("NetworkReportCollector", () => {
         offlineMs: 0,
         ...NO_FAILURES,
         recoveries: 0,
+        recoveryMs: [],
         heartbeats: 0,
         heartbeatReplies: 0,
         bytesReceived: 0,
@@ -174,8 +176,7 @@ describe("NetworkReportCollector", () => {
         ...NO_FAILURES,
         // Measured from the drop, across the dead zone.
         recoveries: 1,
-        recoveryP50Ms: 26_500,
-        recoveryMaxMs: 26_500,
+        recoveryMs: [26_500],
         heartbeats: 0,
         heartbeatReplies: 0,
         bytesReceived: 0,
@@ -239,7 +240,7 @@ describe("NetworkReportCollector", () => {
         initialConnectMs: 1_500,
         drops: 1,
         recoveries: 1,
-        recoveryP50Ms: 2_000,
+        recoveryMs: [2_000],
       }),
     ]);
   });

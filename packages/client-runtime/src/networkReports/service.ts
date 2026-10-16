@@ -163,7 +163,7 @@ export const make = Effect.gen(function* () {
       // Oldest first, so a long backlog arrives in order.
       const pending = (yield* SubscriptionRef.get(reports))
         .filter((report) => report.environmentId === environmentId && !report.delivered)
-        .reverse()
+        .toReversed()
         .slice(0, MAX_NETWORK_REPORTS_PER_REQUEST);
       if (pending.length === 0) return;
       const now = yield* Clock.currentTimeMillis;

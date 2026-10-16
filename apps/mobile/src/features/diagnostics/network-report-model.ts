@@ -83,7 +83,8 @@ export function describeNetworkReport(
       trouble: false,
     },
   ];
-  if (metrics.drops > 0 || metrics.failedAttempts > 0) {
+  // A reconnect can land in the window after its drop, so it shows on its own too.
+  if (metrics.drops > 0 || metrics.failedAttempts > 0 || metrics.recoveryMs.length > 0) {
     const failures = [
       ...(metrics.drops > 0 ? [describeDrops(metrics)] : []),
       ...(metrics.failedAttempts > 0
@@ -94,11 +95,14 @@ export function describeNetworkReport(
           ]
         : []),
     ];
-    if (metrics.recoveryP50Ms !== undefined && metrics.recoveryMaxMs !== undefined) {
+    const recoveries = [...metrics.recoveryMs].sort((left, right) => left - right);
+    if (recoveries.length > 0) {
+      const median = recoveries[Math.ceil(recoveries.length / 2) - 1]!;
+      const slowest = recoveries[recoveries.length - 1]!;
       failures.push(
-        metrics.recoveries === 1
-          ? `reconnected in ${formatDuration(metrics.recoveryP50Ms)}`
-          : `reconnected in ${formatDuration(metrics.recoveryP50Ms)} (slowest ${formatDuration(metrics.recoveryMaxMs)})`,
+        recoveries.length === 1
+          ? `${failures.length === 0 ? "Reconnected" : "reconnected"} in ${formatDuration(median)}`
+          : `${failures.length === 0 ? "Reconnected" : "reconnected"} in ${formatDuration(median)} (slowest ${formatDuration(slowest)})`,
       );
     }
     lines.push({ text: failures.join(" · "), trouble: true });

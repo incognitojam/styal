@@ -25,6 +25,8 @@ export const NetworkReportRouteKind = Schema.Literals([
 ]);
 export type NetworkReportRouteKind = typeof NetworkReportRouteKind.Type;
 
+export const MAX_RECOVERY_SAMPLES = 20;
+
 /**
  * One window of foreground use of one environment under a single network type
  * and route. Durations are milliseconds; byte counts are message payload sizes
@@ -58,10 +60,14 @@ export const NetworkReportMetrics = Schema.Struct({
   routeSwitches: NonNegativeInt,
   /** Returns to the route switched away from, after the switched-to session failed. */
   routeSwitchBacks: NonNegativeInt,
-  /** Connections restored after a drop, and how long each took from the drop. */
+  /** Connections restored after a drop. */
   recoveries: NonNegativeInt,
-  recoveryP50Ms: Schema.optionalKey(NonNegativeInt),
-  recoveryMaxMs: Schema.optionalKey(NonNegativeInt),
+  /**
+   * How long each recovery took from its drop, in order, for at most the first
+   * `MAX_RECOVERY_SAMPLES`. Individual values let reports be combined into
+   * percentiles across windows.
+   */
+  recoveryMs: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(MAX_RECOVERY_SAMPLES)),
   heartbeats: NonNegativeInt,
   heartbeatReplies: NonNegativeInt,
   rttP50Ms: Schema.optionalKey(NonNegativeInt),

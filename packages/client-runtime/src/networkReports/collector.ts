@@ -1,7 +1,8 @@
-import type {
-  EnvironmentId,
-  NetworkReportMetrics,
-  NetworkReportNetworkKind,
+import {
+  type EnvironmentId,
+  MAX_RECOVERY_SAMPLES,
+  type NetworkReportMetrics,
+  type NetworkReportNetworkKind,
 } from "@t3tools/contracts";
 import { RpcMessage } from "effect/rpc";
 import type * as Socket from "effect/socket/Socket";
@@ -156,7 +157,6 @@ class ReportWindow {
 
   metrics(endedAt: number): NetworkReportMetrics {
     const rtts = sorted(this.rtts);
-    const recoveries = sorted(this.recoveries);
     return {
       durationMs: Math.round(endedAt - this.startedAt),
       networkKind: this.networkKind,
@@ -177,13 +177,8 @@ class ReportWindow {
       setupTimeouts: this.setupTimeouts,
       routeSwitches: this.routeSwitches,
       routeSwitchBacks: this.routeSwitchBacks,
-      recoveries: recoveries.length,
-      ...(recoveries.length === 0
-        ? {}
-        : {
-            recoveryP50Ms: percentile(recoveries, 0.5),
-            recoveryMaxMs: percentile(recoveries, 1),
-          }),
+      recoveries: this.recoveries.length,
+      recoveryMs: this.recoveries.slice(0, MAX_RECOVERY_SAMPLES).map(Math.round),
       heartbeats: this.heartbeats,
       heartbeatReplies: this.heartbeatReplies,
       ...(rtts.length === 0
