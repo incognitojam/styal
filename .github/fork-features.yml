@@ -1706,6 +1706,7 @@ features:
     prs: [840, 859]
     rationale: Maintainers need observed feature adoption to evaluate the cost of retaining fork behavior.
     invariants:
+      - Web deployment refresh requests are counted as usage separately from visible notice exposure, with an event-local instrumentation version and the paired environment's telemetry opt-out.
       - Agent browser tools emit one structural feature.used event per public operation, including failures and cancellation, with action, outcome, and duration but no operation arguments or results.
       - Internal metadata reads do not inflate agent usage, and telemetry failures never change the operation's result.
       - Device panel operations and public agent device tools record bounded usage and outcomes without names, device identifiers, arguments, or images; discovery is distinct from adoption and environment forwarding is not counted again as a manual action.
@@ -1723,6 +1724,7 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/server/src/telemetry/DeviceFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/telemetry/WebBuildUpdateUsage.ts
       - apps/server/src/ws.ts
       - apps/server/vite.config.ts
     upstream_paths:
@@ -4621,16 +4623,19 @@ features:
     status: maintained
     prs: [858]
     invariants:
+      - Visible notices emit feature.exposed and explicit refresh clicks emit feature.used through one supported paired environment with the shared opt-out; polls, hidden sidebars, deployment identifiers, and composer content are not collected, and telemetry cannot prevent a refresh.
       - Production browser clients compare the loaded build with a fresh manifest from the page's own origin, independently of paired environments; every build, including rebuilds of one commit, has a distinct identifier.
       - A changed build shows a manual refresh action in the sidebar without interrupting work; a rollback to the loaded build clears the notice, while failed or malformed checks preserve the last known state.
       - Checks pause while hidden or offline, resume on visibility, focus, or connectivity changes, and never overlap; Electron keeps its native updater and development builds keep HMR.
     implementation_paths:
+      - apps/server/src/telemetry/WebBuildUpdateUsage.ts
       - apps/web/public/_headers
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/WebBuildUpdateProvider.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/src/components/sidebar/SidebarWebUpdatePill.tsx
       - apps/web/src/webBuildUpdate.ts
+      - apps/web/src/webBuildUpdateUsage.ts
       - apps/web/vite.config.ts
       - apps/web/vite/buildMetadata.ts
     upstream_paths:
@@ -4638,7 +4643,9 @@ features:
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/vite.config.ts
     tests:
+      - apps/server/src/telemetry/WebBuildUpdateUsage.test.ts
       - apps/web/src/webBuildUpdate.test.ts
+      - apps/web/src/webBuildUpdateUsage.test.ts
     upstream:
       status: tracking
       tracking:

@@ -178,6 +178,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),
   /** Server can persist and stream revisioned web/desktop composer drafts. */
   composerDraftSync: Schema.optionalKey(Schema.Boolean),
+  /** Server accepts web deployment notice and refresh observations. */
+  webBuildUpdateUsage: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.pull-request.link / .unlink, exposes `pullRequests` on
       threads, and routes PullRequestRef.host across projects on the same host. Same
       version-skew contract as threadSettlement. */

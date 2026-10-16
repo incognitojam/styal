@@ -4,6 +4,7 @@ import type {
   DeviceActionType,
   DevicePlatform,
   PreviewAutomationOperation,
+  WebBuildUpdateUsageAction,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -16,6 +17,11 @@ import * as AnalyticsService from "./AnalyticsService.ts";
 // Extend this union at the feature's entry point. Never pass tool arguments or
 // results: usage properties are a fixed vocabulary, independent of user data.
 type FeatureUsage =
+  | {
+      readonly feature: "web-build-update-notice";
+      readonly action: WebBuildUpdateUsageAction;
+      readonly source: "user" | "system";
+    }
   | {
       readonly feature: "browser-tools";
       readonly action: PreviewAutomationOperation;
@@ -69,10 +75,17 @@ export const observe = <A, E, R>(
       Effect.onExit((exit) =>
         Effect.gen(function* () {
           const finishedAt = yield* Clock.currentTimeMillis;
-          yield* analytics.record("feature.used", {
+          const event =
+            usage.feature === "web-build-update-notice" && usage.action === "notice_shown"
+              ? "feature.exposed"
+              : "feature.used";
+          yield* analytics.record(event, {
             feature: usage.feature,
             action: usage.action,
             source: usage.source,
+            ...(usage.feature === "web-build-update-notice"
+              ? { webBuildUpdateUsageVersion: 1 }
+              : {}),
             ...(usage.feature === "devices" &&
             Exit.isFailure(exit) &&
             !Cause.hasInterruptsOnly(exit.cause)
