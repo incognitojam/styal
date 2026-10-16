@@ -124,21 +124,21 @@ describe("createPullRequestAnnouncementTracker", () => {
       ).toEqual([[], ["#1 ready"]]);
     });
 
-    it("stays silent for a PR that will merge on its own, which is announced on arrival", () => {
+    it("stays silent for a PR that will merge on its own, which is announced on departure", () => {
       expect(
         announce(
           [link(1, { autoMergeEnabled: true })],
           [link(1, { checksState: "passing", autoMergeEnabled: true })],
           [link(1, { checksState: "passing", autoMergeEnabled: true, state: "merged" })],
         ),
-      ).toEqual([[], [], ["#1 arrived"]]);
+      ).toEqual([[], [], ["#1 departed"]]);
       expect(
         announce(
           [link(1, { inMergeQueue: true })],
           [link(1, { checksState: "passing", inMergeQueue: true })],
           [link(1, { checksState: "passing", inMergeQueue: false, state: "merged" })],
         ),
-      ).toEqual([[], [], ["#1 arrived"]]);
+      ).toEqual([[], [], ["#1 departed"]]);
     });
 
     it("treats a host that does not report auto-merge as not armed", () => {
@@ -190,7 +190,7 @@ describe("createPullRequestAnnouncementTracker", () => {
           [queued()],
           [queued({ inMergeQueue: false, state: "merged" })],
         ),
-      ).toEqual([[], ["#1 queue-failure"], [], ["#1 arrived"]]);
+      ).toEqual([[], ["#1 queue-failure"], [], ["#1 departed"]]);
       expect(
         announce(
           [queued()],
@@ -231,7 +231,7 @@ describe("createPullRequestAnnouncementTracker", () => {
       ]).announcements.map(({ number, kind }) => `#${number} ${kind}`);
     const stale = link(1);
     expect(read(stale, link(1))).toEqual([]);
-    expect(read(stale, link(1, { state: "merged" }))).toEqual(["#1 arrived"]);
+    expect(read(stale, link(1, { state: "merged" }))).toEqual(["#1 departed"]);
   });
 
   it("stays silent across a reconnect and for links that are dismissed or not yet synced", () => {

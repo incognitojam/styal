@@ -4,7 +4,7 @@ import { normalizeThreadPullRequestKey } from "@t3tools/shared/threadPullRequest
 /** What the announcer can say live, in the order the settings preview steps through them. */
 export const PULL_REQUEST_ANNOUNCEMENT_KINDS = [
   "ready",
-  "arrived",
+  "departed",
   "ci-failure",
   "merge-conflict",
   "queue-failure",
@@ -34,7 +34,7 @@ export function pullRequestAnnouncementText(number: number, kind: PullRequestAnn
       : `Pull request #${number}`;
   const endings = {
     ready: "is ready to depart. It is awaiting a member of train crew.",
-    arrived: "has arrived.",
+    departed: "has departed.",
     "ci-failure": "is delayed. This is due to a CI failure.",
     "merge-conflict": "is delayed. This is due to a merge conflict.",
     "queue-failure": "is delayed. This is due to a problem in the merge queue.",
@@ -63,7 +63,7 @@ function announcementKind(
   blockedByStack: boolean,
   ejected: boolean,
 ): PullRequestAnnouncementKind | null {
-  if (snapshot.state === "merged") return "arrived";
+  if (snapshot.state === "merged") return "departed";
   if (snapshot.state === "closed") return "cancelled";
   if (snapshot.isDraft) return null;
   if (snapshot.mergeability === "conflicting") return "merge-conflict";
@@ -73,7 +73,7 @@ function announcementKind(
   if (ejected) return "queue-failure";
   if (snapshot.checksState !== "passing") return null;
   if (blockedByStack) return "stack-delayed";
-  // An armed auto-merge or a queued merge needs nobody; its arrival is the news.
+  // An armed auto-merge or a queued merge needs nobody; its departure is the news.
   return snapshot.autoMergeEnabled === true || snapshot.inMergeQueue === true ? null : "ready";
 }
 
@@ -111,7 +111,7 @@ function observe(link: ThreadPullRequestLink, previous?: Observation): Observati
 function isNewTransition(previous: Observation, next: Observation) {
   if (previous.kind === next.kind || next.kind === null) return false;
   switch (next.kind) {
-    case "arrived":
+    case "departed":
     case "cancelled":
       return previous.snapshot.state !== next.snapshot.state;
     case "ci-failure":

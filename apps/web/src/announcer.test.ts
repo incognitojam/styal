@@ -83,25 +83,25 @@ afterEach(() => announcer.announcerPlayer.stop());
 
 it("plays queued PRs in turn between one opening and one closing chime, listing every line", async () => {
   const { announcerPlayer } = announcer;
-  announcerPlayer.announce({ key: "a", number: 1, kind: "arrived" });
+  announcerPlayer.announce({ key: "a", number: 1, kind: "departed" });
   announcerPlayer.announce({ key: "b", number: 2, kind: "ci-failure" });
   await settle();
   expect(labels()).toEqual(["opening"]);
   expect(board()).toEqual([
-    "queued: Pull request #1 has arrived.",
+    "queued: Pull request #1 has departed.",
     "queued: Pull request #2 is delayed. This is due to a CI failure.",
   ]);
 
   await finish();
   expect(labels()).toEqual(["opening", "sentence"]);
   expect(board()).toEqual([
-    "speaking: Pull request #1 has arrived.",
+    "speaking: Pull request #1 has departed.",
     "queued: Pull request #2 is delayed. This is due to a CI failure.",
   ]);
 
   await finish();
   expect(board()).toEqual([
-    "spoken: Pull request #1 has arrived.",
+    "spoken: Pull request #1 has departed.",
     "speaking: Pull request #2 is delayed. This is due to a CI failure.",
   ]);
 
@@ -109,7 +109,7 @@ it("plays queued PRs in turn between one opening and one closing chime, listing 
   expect(labels()).toEqual(["opening", "sentence", "sentence", "closing"]);
   // Spoken lines stay up through the closing chime.
   expect(board()).toEqual([
-    "spoken: Pull request #1 has arrived.",
+    "spoken: Pull request #1 has departed.",
     "spoken: Pull request #2 is delayed. This is due to a CI failure.",
   ]);
 
@@ -120,12 +120,12 @@ it("plays queued PRs in turn between one opening and one closing chime, listing 
 it("replaces a queued PR's line in place when its status changes again", async () => {
   const { announcerPlayer } = announcer;
   announcerPlayer.announce({ key: "a", number: 1, kind: "ci-failure" });
-  announcerPlayer.announce({ key: "b", number: 2, kind: "arrived" });
+  announcerPlayer.announce({ key: "b", number: 2, kind: "departed" });
   announcerPlayer.announce({ key: "a", number: 1, kind: "merge-conflict" });
   await settle();
   expect(board()).toEqual([
     "queued: Pull request #1 is delayed. This is due to a merge conflict.",
-    "queued: Pull request #2 has arrived.",
+    "queued: Pull request #2 has departed.",
   ]);
 });
 
@@ -143,24 +143,24 @@ it("skips the chimes when every queued line goes stale before it is spoken", asy
 it("cuts off a line whose PR changed mid-speech and leaves it off the board", async () => {
   const { announcerPlayer } = announcer;
   announcerPlayer.announce({ key: "a", number: 1, kind: "ci-failure" });
-  announcerPlayer.announce({ key: "b", number: 2, kind: "arrived" });
+  announcerPlayer.announce({ key: "b", number: 2, kind: "departed" });
   await settle();
   await finish();
   announcerPlayer.reconcile(
     new Map([
       ["a", null],
-      ["b", "arrived"],
+      ["b", "departed"],
     ]),
   );
   await settle();
   expect(audio.sounds[1]!.stopped).toBe(true);
-  expect(board()).toEqual(["speaking: Pull request #2 has arrived."]);
+  expect(board()).toEqual(["speaking: Pull request #2 has departed."]);
 });
 
 it("stops everything at once, including what is queued", async () => {
   const { announcerPlayer } = announcer;
-  announcerPlayer.announce({ key: "a", number: 1, kind: "arrived" });
-  announcerPlayer.announce({ key: "b", number: 2, kind: "arrived" });
+  announcerPlayer.announce({ key: "a", number: 1, kind: "departed" });
+  announcerPlayer.announce({ key: "b", number: 2, kind: "departed" });
   await settle();
   await finish();
   announcerPlayer.stop();
@@ -171,7 +171,7 @@ it("stops everything at once, including what is queued", async () => {
 
 it("says nothing until a gesture has unlocked notification audio", async () => {
   audio.running = false;
-  announcer.announcerPlayer.announce({ key: "a", number: 1, kind: "arrived" });
+  announcer.announcerPlayer.announce({ key: "a", number: 1, kind: "departed" });
   await settle();
   expect(labels()).toEqual([]);
   expect(announcer.getAnnouncerPlayback().playing).toBe(false);

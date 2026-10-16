@@ -1,9 +1,13 @@
-"""Regenerate bundled announcer fragments with macOS Daniel and FFmpeg."""
+"""Regenerate bundled announcer fragments with macOS Daniel and FFmpeg.
+
+Pass phrase names to render only those, e.g. `departed`; with none, every phrase is rendered.
+"""
 
 import array
 import os
 from pathlib import Path
 import subprocess
+import sys
 import wave
 
 root = Path(__file__).resolve().parents[3]
@@ -17,7 +21,7 @@ phrases = {
     'prefix': 'Pull request',
     'cancelled-prefix': 'We are sorry to announce that pull request',
     'ready': 'is ready to depart. It is awaiting a member of train crew.',
-    'arrived': 'has arrived.',
+    'departed': 'has departed.',
     'ci-failure': 'is delayed. This is due to a CI failure.',
     'merge-conflict': 'is delayed. This is due to a merge conflict.',
     'queue-failure': 'is delayed. This is due to a problem in the merge queue.',
@@ -26,7 +30,10 @@ phrases = {
     'cancelled': 'has been cancelled.',
     **{f'digit-{i}': str(i) for i in range(10)},
 }
+only = set(sys.argv[1:])
 for name, text in phrases.items():
+    if only and name not in only:
+        continue
     aiff = scratch / f'{name}.aiff'
     subprocess.run(['say', '-v', 'Daniel', '-r', '160', '-o', str(aiff), text], check=True)
     raw = subprocess.check_output(['ffmpeg','-v','error','-i',str(aiff),'-ar','44100','-ac','1','-f','s16le','-'])
