@@ -38,7 +38,8 @@ Run `styal start` to start the server and open the local web app, or `styal serv
 for a headless server. Running `styal` without a subcommand, or `styal help`,
 shows its help. Run `styal update` to install a newer version and choose whether
 to restart an installed background service. `styal uninstall` removes the managed
-runtime and service while keeping projects, threads, and settings.
+runtime and service while keeping projects, threads, and settings. `styal doctor`
+reclaims database space ([details](./background-service.md#reclaim-database-space)).
 
 If `styal start` reports an already running server, connect to that server
 instead. Stop it before starting a replacement, or use a different `--base-dir`
