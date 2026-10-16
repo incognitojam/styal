@@ -81,9 +81,12 @@ reporting that address.
 
 styal connects over the first route that answers. Away from home, a LAN
 address that does not answer is checked briefly and skipped. It is only tried
-again, after the other routes, if none of them connect. While connected over a
-later route, styal checks the earlier ones when your network changes, when you
-return to the app, and every minute, and moves back as soon as one works.
+again, after the other routes, if none of them connect and the connection is not
+just slow. While connected over a later route, styal checks the earlier ones
+when your network changes, when you return to the app, and every minute, and
+moves back as soon as one works. If a route styal moved to drops within a few
+minutes, styal waits at least five minutes before trying it again, and longer
+each time it drops.
 
 On web and desktop, select the route count under the machine's name in
 **Settings → Connections** to see its routes. Drag a route to change the order,

@@ -1271,6 +1271,32 @@ describe("RpcSessionFactory", () => {
     ),
   );
 
+  it.effect("leaves the network hint off a relay socket that opened and then closed", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect({
+        ...PREPARED,
+        target: new RelayConnectionTarget({
+          environmentId: TARGET.environmentId,
+          label: TARGET.label,
+        }),
+      });
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(socket);
+      yield* Fiber.join(readyFiber);
+
+      // The socket reached the server, so DNS and the firewall are not why it closed.
+      socket.close(1006, "");
+      const error = yield* Effect.flip(session.closed);
+      expect(error).toMatchObject({
+        reason: "transport",
+        message: "Test environment disconnected.",
+      });
+    }),
+  );
+
   it.effect.each([
     { relay: false, label: "direct" },
     { relay: true, label: "relay" },

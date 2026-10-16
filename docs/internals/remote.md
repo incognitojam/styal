@@ -29,15 +29,21 @@ A saved environment holds an ordered list of routes, and the
 the first that works. Each direct route is first checked with the public
 descriptor, so a saved LAN address that a different machine answers on another
 network receives no credential. That check is not proof of a working route:
-when every route stays silent, each is still tried. A route that fails to
-connect, including a blocked one such as a signed-out T3 Connect, moves on to
-the next; only an incompatible server stops the walk, because it is the same
-server on every route. While connected over a later route the
+when every route stays silent, or the ones that answered are blocked, the
+silent ones are still tried. After a transient failure they are not, because
+on a slow network a full attempt on each silent route costs more than the
+retry, which checks every route again. A route that fails to connect,
+including a blocked one such as a signed-out T3 Connect, moves on to the next;
+only an incompatible server stops the walk, because it is the same server on
+every route. While connected over a later route the
 [supervisor](../../packages/client-runtime/src/connection/supervisor.ts)
 preflights the earlier ones and replaces the session when one would connect.
 Preflight includes authorization so a route that answers but rejects this
-client never costs a working session; a route that still fails afterwards is
-held back for a cooldown so a flaky network cannot bounce the connection.
+client never costs a working session. One quick answer says little on a slow
+or lossy network, so a route that still fails to connect, or whose session
+drops within five minutes of the switch, is held back for a cooldown that
+doubles on each repeat and is tried last while it lasts. Otherwise a flaky
+tailnet path on a train bounces the connection every few minutes.
 
 A connected server reports the LAN and tailnet addresses it is bound to, and the
 client saves them as learned routes. A learned route reuses the credential of

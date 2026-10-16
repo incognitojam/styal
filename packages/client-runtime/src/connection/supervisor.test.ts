@@ -2305,6 +2305,129 @@ describe("EnvironmentSupervisor routes", () => {
     }),
   );
 
+  it.effect("stays on T3 Connect longer each time a switched-to LAN session drops", () =>
+    Effect.gen(function* () {
+      const lanAnswers = yield* Ref.make(false);
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          route.target._tag === "BearerConnectionTarget"
+            ? Ref.get(lanAnswers).pipe(Effect.map((answers) => (answers ? "answered" : "silent")))
+            : Effect.succeed("unchecked"),
+        prepare: (_attempt, target) => Effect.succeed(preparedFor(target)),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      const connected = Effect.fnUntraced(function* (generation: number) {
+        yield* awaitState(
+          supervisor.state,
+          (state) => state.phase === "connected" && state.generation === generation,
+        );
+        return Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target._tag;
+      });
+      // A dropped session backs off for 2 s before it reconnects.
+      const dropSession = Effect.gen(function* () {
+        yield* harness.closeLatestSession();
+        yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+        yield* TestClock.adjust("2 seconds");
+      });
+      const stillConnected = Effect.fnUntraced(function* (generation: number) {
+        yield* Effect.yieldNow;
+        expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+          phase: "connected",
+          generation,
+        });
+      });
+
+      expect(yield* connected(1)).toBe("RelayConnectionTarget");
+      yield* Ref.set(lanAnswers, true);
+      yield* TestClock.adjust("60 seconds");
+      expect(yield* connected(2)).toBe("BearerConnectionTarget");
+
+      // The LAN keeps answering its check, but its session drops a minute
+      // after the switch. The reconnect tries T3 Connect first.
+      yield* TestClock.adjust("60 seconds");
+      yield* dropSession;
+      expect(yield* connected(3)).toBe("RelayConnectionTarget");
+
+      // The periodic check leaves the session alone for five minutes.
+      yield* TestClock.adjust("4 minutes");
+      yield* stillConnected(3);
+      yield* TestClock.adjust("1 minute");
+      expect(yield* connected(4)).toBe("BearerConnectionTarget");
+
+      // A second drop doubles the wait to ten minutes.
+      yield* TestClock.adjust("60 seconds");
+      yield* dropSession;
+      expect(yield* connected(5)).toBe("RelayConnectionTarget");
+      yield* TestClock.adjust("9 minutes");
+      yield* stillConnected(5);
+      yield* TestClock.adjust("1 minute");
+      expect(yield* connected(6)).toBe("BearerConnectionTarget");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("switches straight back to a LAN whose session held before it dropped", () =>
+    Effect.gen(function* () {
+      const lanAnswers = yield* Ref.make(false);
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          route.target._tag === "BearerConnectionTarget"
+            ? Ref.get(lanAnswers).pipe(Effect.map((answers) => (answers ? "answered" : "silent")))
+            : Effect.succeed("unchecked"),
+        prepare: (_attempt, target) => Effect.succeed(preparedFor(target)),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 1,
+      );
+      yield* Ref.set(lanAnswers, true);
+      yield* TestClock.adjust("60 seconds");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 2,
+      );
+
+      // The server restarts after the LAN session has run for ten minutes.
+      yield* TestClock.adjust("10 minutes");
+      yield* harness.closeLatestSession();
+      yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+      yield* TestClock.adjust("2 seconds");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 3,
+      );
+      expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target._tag).toBe(
+        "BearerConnectionTarget",
+      );
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("backs off instead of trying a silent LAN after T3 Connect failed transiently", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          Effect.succeed(route.target._tag === "BearerConnectionTarget" ? "silent" : "unchecked"),
+        prepare: (_attempt, target) =>
+          target._tag === "RelayConnectionTarget"
+            ? Effect.fail(transient("Relay environment connection timed out."))
+            : Effect.succeed(preparedFor(target)),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      const state = yield* awaitState(supervisor.state, (value) => value.phase === "backoff");
+      expect(state.lastFailure?.detail).toBe("Relay environment connection timed out.");
+      // Only T3 Connect reached the resolver.
+      expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+    }),
+  );
+
   it.effect("stays on the preferred route without checking other routes", () =>
     Effect.gen(function* () {
       const checks = yield* Ref.make(0);
