@@ -24,6 +24,10 @@ if (
     const { runPairCli } = await import("./binPair.ts");
     await runPairCli();
   } else {
+    // Before anything reads stdin: the desktop app's Windows launcher starts
+    // the CLI without one. Never for the fast paths, whose stdin is a pipe.
+    const { attachConsoleStdin } = await import("./cli/consoleStdin.ts");
+    attachConsoleStdin();
     const { runCli } = await import("./binCli.ts");
     runCli();
   }
