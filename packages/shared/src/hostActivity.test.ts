@@ -35,9 +35,7 @@ describe("describeHostActivity", () => {
     ).toEqual({
       concern: "running",
       lines: [
-        "2 threads will be interrupted.",
-        "1 thread waiting for input or approval will be interrupted.",
-        "1 terminal session will be interrupted.",
+        "3 threads and 1 terminal session will be interrupted.",
         "",
         "Thread names and activity reasons are unavailable from this server.",
         "Thread names and activity reasons are unavailable from this server.",

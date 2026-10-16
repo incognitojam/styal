@@ -24,21 +24,30 @@ function activity(
 }
 
 describe("groupHostActivityThreads", () => {
-  it("groups by current activity, keeping mixed work in one place and preserving its reasons", () => {
+  it("lists interrupted threads before threads that continue, grouping each by project", () => {
+    const project = {
+      id: ProjectId.make("project-a"),
+      title: "Sample project",
+      workspaceRoot: "/workspace/a",
+      faviconPath: null,
+      projectIcon: null,
+    };
+    const inProject = (item: ConfirmDialogThreadActivity) => ({
+      ...item,
+      thread: { ...item.thread, project },
+    });
+    const continuing = {
+      ...inProject(activity("continuing", ["running"])),
+      continuesAfterRestart: true,
+    };
     const waiting = activity("waiting", ["input", "monitor"]);
-    const monitor = activity("monitor", ["monitor"]);
-    const mixed = activity("mixed", ["running", "monitor"]);
-    const command = activity("command", ["command"]);
-    const groups = groupHostActivityThreads([waiting, monitor, mixed, command])[0]!.groups;
-    expect(groups.map((group) => group.label)).toEqual([
-      "Running",
-      "Monitoring",
-      "Waiting for input or approval",
-    ]);
-    expect(groups.map((group) => group.projects.flatMap((project) => project.activity))).toEqual([
-      [mixed, command],
-      [monitor],
-      [waiting],
+    const command = inProject(activity("command", ["command"]));
+    const monitor = inProject(activity("monitor", ["monitor"]));
+    const sections = groupHostActivityThreads([continuing, waiting, command, monitor])[0]!.sections;
+    expect(sections.map((section) => section.continues)).toEqual([false, true]);
+    expect(sections.map((section) => section.projects.map((entry) => entry.activity))).toEqual([
+      [[waiting], [command, monitor]],
+      [[continuing]],
     ]);
   });
 
@@ -57,7 +66,9 @@ describe("groupHostActivityThreads", () => {
     };
     const hosts = groupHostActivityThreads([first, second]);
     expect(hosts.map((host) => host.label)).toEqual(["Laptop", "Lab server"]);
-    expect(hosts.map((host) => host.groups[0]!.projects[0]!.activity)).toEqual([[first], [second]]);
+    expect(
+      hosts.map((host) => host.sections.flatMap((section) => section.projects[0]!.activity)),
+    ).toEqual([[first], [second]]);
   });
 
   it("shares a project heading without merging distinct projects with the same name", () => {
@@ -89,7 +100,7 @@ describe("groupHostActivityThreads", () => {
         project: { ...project, id: ProjectId.make("project-b"), workspaceRoot: "/workspace/b" },
       },
     };
-    const projects = groupHostActivityThreads([first, third, second])[0]!.groups[0]!.projects;
+    const projects = groupHostActivityThreads([first, third, second])[0]!.sections[0]!.projects;
     expect(projects.map((entry) => entry.activity)).toEqual([[first, second], [third]]);
   });
 });

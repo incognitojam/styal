@@ -42,10 +42,14 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
       message: [
         single
           ? `Update the styal desktop app that runs the ${single.serverLabel}?`
-          : `Update the styal desktop ${desktopApps.length === 1 ? "app" : "apps"} on ${labels(desktopApps)}?`,
-        desktopApps.length === 1
-          ? "It will close and relaunch on that machine."
-          : "They will close and relaunch on those machines.",
+          : desktopApps.length < hosts.length
+            ? `Update the servers on ${labels(hosts)}?`
+            : `Update the styal desktop apps on ${labels(desktopApps)}?`,
+        desktopApps.length < hosts.length
+          ? `The styal desktop ${desktopApps.length === 1 ? "app" : "apps"} on ${labels(desktopApps)} will close and relaunch.`
+          : desktopApps.length === 1
+            ? "It will close and relaunch on that machine."
+            : "They will close and relaunch on those machines.",
         ...lines,
       ].join("\n"),
       threadActivity,

@@ -1,39 +1,36 @@
 import type { ConfirmDialogThreadActivity } from "@t3tools/contracts";
 
-export type HostActivityGroup = "Running" | "Monitoring" | "Waiting for input or approval";
+type Reason = ConfirmDialogThreadActivity["thread"]["reasons"][number];
+
+export type HostActivityTone = "warning" | "info" | "secondary";
 
 type ProjectGroup = {
   key: string;
   activity: ConfirmDialogThreadActivity[];
 };
 
-type ActivityGroup = {
-  label: HostActivityGroup;
+type Section = {
+  continues: boolean;
   projects: ProjectGroup[];
 };
 
 type HostGroup = {
   key: string;
   label: string | null;
-  groups: ActivityGroup[];
+  sections: Section[];
 };
 
-const groupOrder: ReadonlyArray<HostActivityGroup> = [
-  "Running",
-  "Monitoring",
-  "Waiting for input or approval",
-];
-
-function activityGroup({ thread }: ConfirmDialogThreadActivity): HostActivityGroup {
-  if (thread.reasons.some((reason) => ["input", "approval", "waiting"].includes(reason))) {
-    return "Waiting for input or approval";
-  }
-  return thread.reasons.length > 0 && thread.reasons.every((reason) => reason === "monitor")
-    ? "Monitoring"
-    : "Running";
+/** Waiting threads need the user, turns are live work, and the rest runs in the background. */
+export function hostActivityReasonTone(reason: Reason): HostActivityTone {
+  if (reason === "input" || reason === "approval" || reason === "waiting") return "warning";
+  if (reason === "preparing" || reason === "starting" || reason === "running") return "info";
+  return "secondary";
 }
 
-/** Each affected thread appears once, with shared project and host labels grouped together. */
+/**
+ * Groups affected threads by host, then by whether they are interrupted or
+ * continue after the restart, then by project. Each thread appears once.
+ */
 export function groupHostActivityThreads(
   activity: ReadonlyArray<ConfirmDialogThreadActivity>,
 ): ReadonlyArray<HostGroup> {
@@ -42,25 +39,25 @@ export function groupHostActivityThreads(
     const hostKey = item.environmentId ?? item.hostLabel ?? "";
     let host = hosts.get(hostKey);
     if (!host) {
-      host = { key: hostKey, label: item.hostLabel, groups: [] };
+      host = { key: hostKey, label: item.hostLabel, sections: [] };
       hosts.set(hostKey, host);
     }
-    const label = activityGroup(item);
-    let group = host.groups.find((candidate) => candidate.label === label);
-    if (!group) {
-      group = { label, projects: [] };
-      host.groups.push(group);
+    const continues = item.continuesAfterRestart;
+    let section = host.sections.find((candidate) => candidate.continues === continues);
+    if (!section) {
+      section = { continues, projects: [] };
+      host.sections.push(section);
     }
     const projectKey = item.thread.project?.id ?? "";
-    let project = group.projects.find((candidate) => candidate.key === projectKey);
+    let project = section.projects.find((candidate) => candidate.key === projectKey);
     if (!project) {
       project = { key: projectKey, activity: [] };
-      group.projects.push(project);
+      section.projects.push(project);
     }
     project.activity.push(item);
   }
   for (const host of hosts.values()) {
-    host.groups.sort((a, b) => groupOrder.indexOf(a.label) - groupOrder.indexOf(b.label));
+    host.sections.sort((a, b) => Number(a.continues) - Number(b.continues));
   }
   return [...hosts.values()];
 }

@@ -68,8 +68,7 @@ describe("serverUpdateConfirmation", () => {
     ).toBe(
       [
         "Update the Lab server with running work?",
-        "2 threads will be interrupted.",
-        "1 terminal session will be interrupted.",
+        "2 threads and 1 terminal session will be interrupted.",
         "",
         "Thread names and activity reasons are unavailable from this server.",
       ].join("\n"),
@@ -149,6 +148,21 @@ describe("serverUpdateConfirmation", () => {
         "Update the styal desktop apps on Laptop, Office?",
         "They will close and relaunch on those machines.",
         "Could not check Office for running work.",
+      ].join("\n"),
+    );
+  });
+
+  it("names every server when a batch mixes desktop apps and plain servers", () => {
+    expect(
+      messageForHosts([
+        host({ serverLabel: "Laptop", desktopApp: true }),
+        host({ serverLabel: "Office", activity: { ...idle, activeSessions: 1, threads: [] } }),
+      ]),
+    ).toBe(
+      [
+        "Update the servers on Laptop, Office?",
+        "The styal desktop app on Laptop will close and relaunch.",
+        "1 thread will be interrupted.",
       ].join("\n"),
     );
   });

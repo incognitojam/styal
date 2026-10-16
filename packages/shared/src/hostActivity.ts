@@ -9,17 +9,18 @@ export type HostActivityCheck = HostActivity & {
   readonly continueRunningThreads?: boolean;
 };
 
+/** Short labels for the restart warning's per-thread status badges. */
 export const hostActivityReasonLabels: Record<HostActivityThread["reasons"][number], string> = {
-  preparing: "Preparing a turn",
-  starting: "Starting a turn",
-  running: "Running a turn",
-  input: "Waiting for your input",
-  approval: "Waiting for approval",
-  waiting: "Waiting for input or approval",
-  command: "Running a background command",
-  monitor: "Running a monitor",
-  subagent: "Running a subagent",
-  background_task: "Running a background task",
+  preparing: "Preparing",
+  starting: "Starting",
+  running: "Running",
+  input: "Needs input",
+  approval: "Needs approval",
+  waiting: "Waiting",
+  command: "Background command",
+  monitor: "Monitor",
+  subagent: "Subagent",
+  background_task: "Background task",
 };
 
 function singleLine(value: string): string {
@@ -98,12 +99,12 @@ export function describeHostActivity(
     deviceUsers += check.environmentsUsingDevices;
   }
   const lines: string[] = [];
-  if (active - continuing)
-    lines.push(`${plural(active - continuing, "thread")} will be interrupted.`);
+  const interrupted = [
+    ...(active - continuing + waiting ? [plural(active - continuing + waiting, "thread")] : []),
+    ...(terminals ? [plural(terminals, "terminal session")] : []),
+  ];
+  if (interrupted.length) lines.push(`${interrupted.join(" and ")} will be interrupted.`);
   if (continuing) lines.push(`${plural(continuing, "thread")} will continue after the restart.`);
-  if (waiting)
-    lines.push(`${plural(waiting, "thread")} waiting for input or approval will be interrupted.`);
-  if (terminals) lines.push(`${plural(terminals, "terminal session")} will be interrupted.`);
   if (deviceUsers) lines.push("Devices in use by other environments will be disconnected.");
   if (uncheckedTerminals)
     lines.push(
