@@ -89,20 +89,20 @@ it("plays queued PRs in turn between one opening and one closing chime, listing 
   expect(labels()).toEqual(["opening"]);
   expect(board()).toEqual([
     "queued: Pull request #1 has departed.",
-    "queued: Pull request #2 is delayed. This is due to a CI failure.",
+    "queued: Pull request #2 is delayed due to a CI failure.",
   ]);
 
   await finish();
   expect(labels()).toEqual(["opening", "sentence"]);
   expect(board()).toEqual([
     "speaking: Pull request #1 has departed.",
-    "queued: Pull request #2 is delayed. This is due to a CI failure.",
+    "queued: Pull request #2 is delayed due to a CI failure.",
   ]);
 
   await finish();
   expect(board()).toEqual([
     "spoken: Pull request #1 has departed.",
-    "speaking: Pull request #2 is delayed. This is due to a CI failure.",
+    "speaking: Pull request #2 is delayed due to a CI failure.",
   ]);
 
   await finish();
@@ -110,7 +110,7 @@ it("plays queued PRs in turn between one opening and one closing chime, listing 
   // Spoken lines stay up through the closing chime.
   expect(board()).toEqual([
     "spoken: Pull request #1 has departed.",
-    "spoken: Pull request #2 is delayed. This is due to a CI failure.",
+    "spoken: Pull request #2 is delayed due to a CI failure.",
   ]);
 
   await finish();
@@ -124,7 +124,7 @@ it("replaces a queued PR's line in place when its status changes again", async (
   announcerPlayer.announce({ key: "a", number: 1, kind: "merge-conflict" });
   await settle();
   expect(board()).toEqual([
-    "queued: Pull request #1 is delayed. This is due to a merge conflict.",
+    "queued: Pull request #1 is delayed due to a merge conflict.",
     "queued: Pull request #2 has departed.",
   ]);
 });

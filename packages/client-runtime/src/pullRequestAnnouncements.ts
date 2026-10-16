@@ -35,10 +35,10 @@ export function pullRequestAnnouncementText(number: number, kind: PullRequestAnn
   const endings = {
     ready: "is ready to depart. It is awaiting a member of train crew.",
     departed: "has departed.",
-    "ci-failure": "is delayed. This is due to a CI failure.",
-    "merge-conflict": "is delayed. This is due to a merge conflict.",
-    "queue-failure": "is delayed. This is due to a problem in the merge queue.",
-    "stack-delayed": "is delayed. This is due to a slower running train ahead.",
+    "ci-failure": "is delayed due to a CI failure.",
+    "merge-conflict": "is delayed due to a merge conflict.",
+    "queue-failure": "is delayed due to a problem in the merge queue.",
+    "stack-delayed": "is delayed due to a slower running train ahead.",
     "changes-requested": "is being held at a red signal.",
     cancelled: "has been cancelled.",
   } satisfies Record<PullRequestAnnouncementKind, string>;
