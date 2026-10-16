@@ -387,7 +387,6 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       );
       expect(result).toEqual({ targetVersion: "1.2.0", method: "desktop-app" });
       expect(stages).toEqual(["downloading", "installing"]);
-      // The launcher staging path must not run on the desktop path.
       expect(order).toEqual([]);
     }),
   );

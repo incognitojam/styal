@@ -150,8 +150,6 @@ describe("orderDiffFiles", () => {
   });
 
   it("falls back to the specifier's last segment when the path does not line up", () => {
-    // An aliased import (`~/lib/b`) resolves to nothing on disk here, but the diff has only one
-    // file that could be meant.
     expect(order([file("src/a.ts", ['import { b } from "~/lib/b";']), file("lib/b.ts")])).toEqual([
       "lib/b.ts",
       "src/a.ts",

@@ -61,10 +61,6 @@ const applyDevelopmentIconOverrides = Effect.fn("applyDevelopmentIconOverrides")
   yield* Effect.log("[cli] Applied development icon overrides to dist/client");
 });
 
-// ---------------------------------------------------------------------------
-// build subcommand
-// ---------------------------------------------------------------------------
-
 const buildCmd = Command.make(
   "build",
   {
@@ -100,10 +96,6 @@ const buildCmd = Command.make(
       }
     }),
 ).pipe(Command.withDescription("Build the server package (tsdown + bundle web client)."));
-
-// ---------------------------------------------------------------------------
-// build-exe subcommand
-// ---------------------------------------------------------------------------
 
 const buildExeCmd = Command.make(
   "build-exe",

@@ -6,7 +6,6 @@ function terminalNumber(terminalId: string): string | undefined {
   )?.[1];
 }
 
-/** Human-readable label for a terminal tab; matches mobile and web sidebars. */
 export function getTerminalLabel(terminalId: string): string {
   const numericSuffix = terminalNumber(terminalId);
   if (numericSuffix) {
@@ -16,7 +15,6 @@ export function getTerminalLabel(terminalId: string): string {
   return terminalId;
 }
 
-/** Prefer server summary label when present; otherwise fall back to `getTerminalLabel`. */
 export function resolveTerminalSessionLabel(
   terminalId: string,
   summary: Pick<TerminalSummary, "label"> | null | undefined,

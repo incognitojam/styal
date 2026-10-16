@@ -16,10 +16,6 @@ import {
 } from "./projectFileRecovery.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 
-/**
- * Codec between the raw `t3.json` file contents (lenient JSONC string) and the
- * decoded {@link T3ProjectFile}.
- */
 export const T3ProjectFileFromJson = fromLenientJson(T3ProjectFile);
 
 const decodeT3ProjectFileValue = Schema.decodeUnknownExit(T3ProjectFile);
@@ -126,15 +122,7 @@ export function parseT3ProjectFile(contents: string): T3ProjectFile | null {
   return parseT3ProjectFileResult(contents).file;
 }
 
-/**
- * Build the publishable JSON Schema document for `t3.json` (draft 2020-12).
- *
- * Served from the marketing site at {@link T3_PROJECT_FILE_SCHEMA_URL} so
- * editors get LSP support via a `$schema` reference.
- */
 export function buildT3ProjectFileJsonSchema(): Record<string, unknown> {
-  // Closed objects, as before effect rc.113 changed the generator default;
-  // editors then flag unknown keys in t3.json.
   const document = Schema.toJsonSchemaDocument(T3ProjectFile, { onExcessProperty: "error" });
   const jsonSchema: Record<string, unknown> = {
     $schema: "https://json-schema.org/draft/2020-12/schema",

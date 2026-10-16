@@ -87,7 +87,6 @@ export function SettingsScopeSentence({ compact = false }: { compact?: boolean }
           : "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-base text-muted-foreground sm:px-4"
       }
     >
-      {/* Each connective stays with its picker so a wrap never strands "on". */}
       {scope.singleEnvironment ? null : (
         <span className="flex min-w-0 items-center gap-1.5">
           {compact ? null : <span className="shrink-0">Applying settings for</span>}
@@ -96,7 +95,6 @@ export function SettingsScopeSentence({ compact = false }: { compact?: boolean }
       )}
       <span className="flex min-w-0 items-center gap-1.5">
         <span className={compact ? "hidden" : "shrink-0"}>
-          {/* A legacy checkout link names one environment without `machine`. */}
           {scope.singleEnvironment
             ? "Applying settings on"
             : scope.search.machine || scope.scope.kind === "checkout"

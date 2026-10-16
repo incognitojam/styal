@@ -77,15 +77,9 @@ export class TriageAgentSpawnError extends Schema.TaggedError<TriageAgentSpawnEr
   }
 }
 
-/**
- * One human-readable line about the local server, for `context.md`. Includes
- * the version the server recorded, which can differ from this CLI's version.
- */
 export const describeServerProcess = Effect.fn("triage.describeServerProcess")(function* (
   serverRuntimeStatePath: string,
 ) {
-  // readPersistedServerRuntimeState swallows read/decode failures itself and
-  // returns none, so a corrupt state file reads as "not running" here.
   const state = yield* readPersistedServerRuntimeState(serverRuntimeStatePath);
   if (Option.isNone(state)) {
     return "not running (no server-runtime.json; the server may never have started here)";
@@ -126,11 +120,6 @@ const pickAgent = (agents: ReadonlyArray<TriageAgent>) =>
     }
   });
 
-/**
- * Run the agent CLI as a normal interactive session: the user's terminal is
- * the UI, and the harness's own permission prompts gate every action. Resolves
- * with the child's exit code.
- */
 const runInteractiveSession = (input: {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
@@ -185,7 +174,6 @@ export const triageCommand = Command.make("triage", {
       const scratchDir = path.join(
         paths.stateDir,
         "triage",
-        // ISO instant, made safe for Windows paths.
         DateTime.formatIso(now).replaceAll(":", "-").replace(".", "-"),
       );
       yield* fs.makeDirectory(scratchDir, { recursive: true });
@@ -205,9 +193,6 @@ export const triageCommand = Command.make("triage", {
             dbPath: paths.dbPath,
             settingsPath: paths.settingsPath,
             logsDir: paths.logsDir,
-            // The server writes no log file of its own. Service installs and the
-            // desktop app capture its output. The glob covers every desktop backend
-            // (such as WSL) and rotated copies; names come from DesktopObservability.ts.
             serviceLogPath: path.join(paths.logsDir, BootService.BOOT_SERVICE_LOG_FILE),
             desktopBackendLogGlob: path.join(paths.logsDir, "server-child*.log*"),
             serverTracePath: paths.serverTracePath,
@@ -245,10 +230,10 @@ export const triageCommand = Command.make("triage", {
         selected = yield* pickAgent(installed);
       }
 
-      // The full seed prompt always goes to disk. The agent is launched with a
-      // one-line pointer at it: Windows `.cmd` shims run through cmd.exe,
-      // which cannot carry the multiline playbook as an argv string, and with
-      // no agent installed the same file is the paste-anywhere fallback.
+      // The agent is launched with a one-line pointer at it: Windows `.cmd`
+      // shims run through cmd.exe, which cannot carry the multiline playbook as
+      // an argv string, and with no agent installed the same file is the
+      // paste-anywhere fallback.
       const promptFilePath = path.join(scratchDir, "prompt.md");
       yield* fs.writeFileString(promptFilePath, buildTriageSeedPrompt(contextFilePath));
 

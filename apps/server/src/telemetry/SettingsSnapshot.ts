@@ -88,9 +88,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     enableDeviceSupport: settings.enableDeviceSupport,
     // null keeps devices running.
     deviceIdleShutdownMinutes: settings.deviceIdleShutdownMinutes,
-    // Usage
     cursorKeychainUsageEnabled: settings.cursorKeychainUsageEnabled,
-    // Background activity
     backgroundActivityProfile: settings.backgroundActivity.profile,
   };
 }

@@ -30,7 +30,6 @@ interface CloudEnvironmentRowsProps {
   readonly connectedCloudEnvironments: ReadonlyArray<ConnectedEnvironmentSummary>;
   readonly onOpenEnvironment?: (environmentId: EnvironmentId) => void;
   readonly onSetEnvironmentEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
-  /** Long-press on a saved row. The callback owns the confirm. */
   readonly onRemoveEnvironment: (environmentId: EnvironmentId) => void;
   readonly showcaseAvailableEnvironments?: ReadonlyArray<RelayEnvironmentView>;
   readonly showcaseSignedIn?: boolean;
@@ -93,8 +92,6 @@ function CloudEnvironmentRowsContent(
     [controller],
   );
 
-  // The relay's health probe carries each server's descriptor, so a machine
-  // can wear its detected glyph before this device ever connects to it.
   const discoveredDescriptors = new Map(
     controller.relayEnvironments.flatMap((entry) =>
       entry.status?.descriptor === undefined
@@ -163,8 +160,6 @@ function CloudEnvironmentRowsContent(
         </View>
       )}
 
-      {/* Rendered alongside any connected rows — a failed discovery must not
-          hide behind an otherwise-healthy list. */}
       {discoveryAvailable &&
       controller.relayDiscovery.error &&
       !controller.relayDiscovery.isRefreshing ? (
@@ -191,14 +186,8 @@ function CloudEnvironmentRowsContent(
   );
 }
 
-/**
- * A saved T3 Connect environment. The switch turns it on or off; off keeps the
- * registration and cache but drops the connection and hides its errors.
- * Long-press removes it from this device.
- */
 function ConnectedCloudEnvironmentRow(props: {
   readonly environment: ConnectedEnvironmentSummary;
-  /** Discovery's view of the server, for the glyph before the first connection. */
   readonly descriptor: ExecutionEnvironmentDescriptor | undefined;
   readonly errorExpanded: boolean;
   readonly onSetEnabled: (enabled: boolean) => void;
@@ -211,8 +200,6 @@ function ConnectedCloudEnvironmentRow(props: {
   );
   const unsupported = props.environment.connectionState === "unsupported";
   const enabled = props.environment.isEnabled && !unsupported;
-  // Discovery empties its map on every refresh; hold the last descriptor seen
-  // so the glyph does not blink back to the generic one each time.
   const [lastDescriptor, setLastDescriptor] = useState(props.descriptor);
   if (props.descriptor !== undefined && props.descriptor !== lastDescriptor) {
     setLastDescriptor(props.descriptor);
@@ -310,7 +297,6 @@ function CloudEnvironmentRowShell(props: {
       error: props.connectionError,
       traceId: props.connectionErrorTraceId,
     });
-  // Unsupported is a compatibility note, not a failure, so it stays muted.
   const statusClassName =
     props.connectionError && props.connectionState !== "unsupported"
       ? "text-danger-foreground"

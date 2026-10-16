@@ -107,7 +107,6 @@ describe("unshareDevServer", () => {
       );
       assert.isFalse(result.cleared);
       assert.include(result.explanation, "permission denied");
-      // Structured, so a wrapping error can keep the real chain.
       assert.equal(result.cause?._tag, "TailscaleCommandExitError");
     }),
   );
@@ -161,13 +160,10 @@ describe("shareDevServer", () => {
 
       assert.instanceOf(error, DevServeFailedError);
       assert.equal(error.webPort, 5788);
-      // The underlying failure is preserved rather than flattened to a string.
       assert.equal(
         (error.cause as { _tag?: string } | undefined)?._tag,
         "TailscaleCommandExitError",
       );
-      // Unclassifiable stderr is never quoted (it can carry auth keys), so the
-      // message points at the command instead of echoing the CLI.
       assert.notInclude(error.message, "port already in use");
       assert.include(error.message, "run the command by hand");
       assert.notInclude(error.message, "cleared");
@@ -175,8 +171,6 @@ describe("shareDevServer", () => {
     }),
   );
 
-  // A recognized failure gets our own wording for it — enough to act on
-  // without passing CLI text through.
   it.effect("explains a recognized serve failure without quoting stderr", () =>
     Effect.gen(function* () {
       const error: DevShareError = yield* shareDevServer({ webPort: 5788 }).pipe(

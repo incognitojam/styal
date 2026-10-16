@@ -8,7 +8,6 @@ import { SettingsPageContainer } from "./settingsLayout";
 /** The list of every project, or one project's identity and checkouts once picked. */
 export function ProjectsSettings() {
   const { search: value, scope } = useSettingsScope();
-  // The panel follows remembered members when grouping replaces a project key.
   const projectScope =
     scope.kind === "project" ||
     scope.kind === "checkout" ||

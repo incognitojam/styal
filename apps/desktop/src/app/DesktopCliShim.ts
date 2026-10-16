@@ -18,7 +18,6 @@ const { logInfo, logWarning } = makeComponentLogger("desktop-cli-shim");
 
 export const MARKER = `Written by styal: runs the desktop app's bundled ${CLI_COMMAND_NAME} CLI.`;
 
-/** Server entry inside the app, relative to its server root (an asar archive when packaged). */
 const SERVER_ENTRY = "apps/server/dist/bin.mjs";
 
 const shellWord = (value: string) => `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -34,11 +33,10 @@ export type CliShimTarget =
   | { readonly kind: "windows"; readonly executable: string; readonly entry: string };
 
 /**
- * The launcher script. Electron runs the server as plain Node with
- * `ELECTRON_RUN_AS_NODE`, which reads the entry from inside the asar archive.
- * The launcher's own path and the app's T3 home are written in, so the command
- * the server shows is absolute and `sudo`, which clears the environment, still
- * runs against this install's home.
+ * Electron runs the server as plain Node with `ELECTRON_RUN_AS_NODE`, which
+ * reads the entry from inside the asar archive. The launcher's own path and the
+ * app's T3 home are written in, so the command the server shows is absolute and
+ * `sudo`, which clears the environment, still runs against this install's home.
  */
 export const renderCliShim = (input: {
   readonly target: CliShimTarget;
@@ -56,9 +54,9 @@ export const renderCliShim = (input: {
       `rem ${MARKER}`,
       // Delayed expansion would rewrite `!name!` in paths and arguments.
       "setlocal EnableExtensions DisableDelayedExpansion",
-      // The file is UTF-8. Only a non-ASCII path needs the console switched to
-      // UTF-8 to read it; a Ctrl-C that ends the batch skips the restore, so the
-      // switch is left out for the common all-ASCII install.
+      // Only a non-ASCII path needs the console switched to UTF-8 to read it; a
+      // Ctrl-C that ends the batch skips the restore, so the switch is left out
+      // for the common all-ASCII install.
       ...(utf8
         ? [
             `for /f "tokens=2 delims=:." %%c in ('chcp') do set "t3_codepage=%%c"`,
@@ -135,11 +133,6 @@ export const launcherPath = (environment: DesktopEnvironment.DesktopEnvironment[
     environment.platform === "win32" ? `${CLI_COMMAND_NAME}.cmd` : CLI_COMMAND_NAME,
   );
 
-/**
- * Writes the packaged app's launcher to `<T3 home>/bin` and returns its path
- * for the backend's T3CODE_CLI_PATH. Development builds run from a checkout
- * and get none.
- */
 export const install = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   if (!environment.isPackaged) return Option.none<string>();
@@ -156,7 +149,6 @@ export const install = Effect.gen(function* () {
           appImage,
           executableName: path.basename(process.execPath),
         }),
-        // macOS and .deb installs live at a fixed path, so the launcher runs the app directly.
         onNone: () => ({ kind: "direct" as const, executable: process.execPath, entry }),
       });
   const content = renderCliShim({ target, shimPath, t3Home: environment.baseDir });

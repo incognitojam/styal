@@ -59,7 +59,6 @@ const V2_RELEASE = "0.1.1";
 describe("provider compatibility", () => {
   it("bundles a compatibility policy for every built-in harness", () => {
     for (const builtIn of BUILT_IN_DRIVERS) {
-      // Registry entries are arbitrary external ACP agents, not one versioned harness.
       if (builtIn.driverKind === "acpRegistry") continue;
       assert.isDefined(
         resolveProviderCompatibility(
@@ -91,7 +90,6 @@ describe("provider compatibility", () => {
       assert.strictEqual(advisory?.status, expected, `OpenCode ${version} on 0.1.0`);
       assert.strictEqual(advisory?.recommendedVersion, "1.14.19");
     }
-    // Pi has no driver before V2.
     assert.isUndefined(
       resolveProviderCompatibility(
         ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
@@ -107,7 +105,6 @@ describe("provider compatibility", () => {
     for (const [version, expected] of [
       ["2.0.18", "supported"],
       ["2.1.0", "supported"],
-      // Early OpenCode 2 releases predate the API the adapter was built against.
       ["2.0.17", "unsupported"],
       ["2.0.0", "unsupported"],
       ["1.99.0", "graceful"],
@@ -125,7 +122,6 @@ describe("provider compatibility", () => {
         assert.strictEqual(advisory?.recommendedRange, ">=2.0.18");
       }
     }
-    // The advisory rides beside the probe: a ready 1.x instance stays ready and selectable.
     const ready = applyProviderCompatibility(
       { ...provider, driver: opencode, version: "1.18.33", status: "ready", message: undefined },
       undefined,

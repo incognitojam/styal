@@ -1,12 +1,5 @@
 import { isGeneratedLockfilePath } from "./generatedFiles.ts";
 
-/**
- * Which of the three reading passes a file belongs to.
- *
- * A reviewer reads the change itself first, then what proves it, and a lockfile or a build output
- * only ever confirms what the source already said. Ordering by path alone buries the one file the
- * change is really about under whichever directory happens to sort first.
- */
 export type DiffFileTier = "source" | "test" | "generated";
 
 const GENERATED_DIRECTORIES = new Set([
@@ -81,7 +74,6 @@ function baseName(path: string): string {
   return stripExtension(path.split("/").at(-1) ?? "");
 }
 
-/** Resolves `../x` against the importer's directory; no package resolution, only what git shows. */
 function resolveRelative(fromPath: string, specifier: string): string {
   const segments = fromPath.split("/").slice(0, -1);
   for (const part of specifier.split("/")) {
@@ -92,11 +84,8 @@ function resolveRelative(fromPath: string, specifier: string): string {
   return segments.join("/");
 }
 
-// `import x from "y"`, `import "y"`, `export … from "y"` and `require("y")` all reduce to a quoted
-// specifier preceded by one of three words.
 const IMPORT_SPECIFIER = /(?:\bfrom|\bimport|\brequire\s*\()\s*\(?\s*["']([^"']+)["']/g;
 
-/** Which changed files a file's patch lines import, by path. */
 function importedPaths(
   path: string,
   lines: ReadonlyArray<string>,

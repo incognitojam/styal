@@ -101,7 +101,6 @@ export interface NewProjectScriptInput {
   command: string;
   icon: ProjectScriptIcon;
   runOnWorktreeCreate: boolean;
-  /** Setup scripts only: hold the agent until the script exits. */
   waitForSetup: boolean;
   runOnSettle: boolean;
   /** Omit to preserve the current shortcut when the form did not edit it. */
@@ -167,11 +166,6 @@ export function editorRequestForScript(
   };
 }
 
-/**
- * Add/edit dialog for a project script, shared by the chat-header scripts menu
- * and the project settings page. The parent owns which script (if any) is
- * being edited via `request`; the dialog owns the form state and validation.
- */
 export function ProjectScriptEditorDialog({
   environmentId,
   editScope = AuthOrchestrationOperateScope,
@@ -184,7 +178,6 @@ export function ProjectScriptEditorDialog({
   environmentId: EnvironmentId;
   editScope?: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
   request: ProjectScriptEditorRequest | null;
-  /** Existing scripts, used to derive a unique id for new scripts. */
   scripts: ReadonlyArray<ProjectScript>;
   onSubmit: (
     scriptId: string | null,
@@ -230,7 +223,6 @@ export function ProjectScriptEditorDialog({
     : null;
   const isEnablingSettle = runOnSettle && (!isEditing || !displayedRequest?.initial.runOnSettle);
 
-  // A save completion must not affect a replacement request or an unmounted editor.
   useLayoutEffect(
     () => () => {
       if (pendingSubmissionRef.current?.request === request) {
@@ -240,7 +232,6 @@ export function ProjectScriptEditorDialog({
     [request],
   );
 
-  // Hydrate the form whenever a new request opens the dialog.
   useEffect(() => {
     if (!request) return;
     setLastRequest(request);

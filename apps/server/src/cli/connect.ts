@@ -90,7 +90,6 @@ function formatDeviceAuthorizationPrompt(
   ].join("\n");
 }
 
-/** Returns the connected account identity, if the flow could determine one. */
 const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
   readonly headless: boolean;
 }) {
@@ -103,8 +102,6 @@ const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
     }
     yield* Console.log("\nHeadless mode enabled. A new authorization link is ready below.");
   }
-  // A stored credential whose refresh fails (revoked, expired grant) must
-  // fall through to a fresh device authorization, not dead-end the command.
   const existing = yield* tokens.getExisting.pipe(
     Effect.catchTags({
       CloudCliCredentialRefreshError: () =>
@@ -141,7 +138,6 @@ interface CloudCliStatus {
   readonly desired: boolean;
   readonly authenticated: boolean;
   readonly linked: boolean;
-  // The relay rejected the stored link, usually after a Deregister.
   readonly revoked: boolean;
   readonly cloudUserId: string | null;
   readonly relayUrl: string | null;

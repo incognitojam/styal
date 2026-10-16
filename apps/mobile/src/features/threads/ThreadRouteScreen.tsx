@@ -116,8 +116,6 @@ function InspectorPaneRoleActivation() {
 
 const EMPTY_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 
-// A blank param (a hand-typed deep link) is treated as missing, since branded
-// IDs reject whitespace-only values.
 function firstRouteParam(value: string | string[] | undefined): string | null {
   const first = Array.isArray(value) ? value[0] : value;
   return first === undefined || first.trim().length === 0 ? null : first;
@@ -165,7 +163,6 @@ function OpeningThreadLoadingScreen() {
 type ThreadRouteScreenRouteProps = StaticScreenProps<{
   readonly environmentId: string;
   readonly threadId: string;
-  /** A prompt link's draft text. See useThreadPromptLink. */
   readonly prompt?: string | string[];
 }>;
 
@@ -174,7 +171,6 @@ interface ThreadRouteScreenProps extends ThreadRouteScreenRouteProps {
   readonly renderInspector?: (headerInset: number) => ReactNode;
 }
 
-/** Shows recovery only after the target route has reached a terminal unavailable state. */
 function ThreadUnavailableScreen(props: {
   readonly actionLabel: string;
   readonly onAction: () => void;
@@ -232,11 +228,6 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
     return <OpeningThreadLoadingScreen />;
   }
 
-  // Render the full thread chrome (header, feed, composer) as soon as the
-  // thread SHELL is known — no blocking on message detail. The feed shows a
-  // loading placeholder while messages fetch, the floating pill above the
-  // composer reports loading/syncing, and the composer's connection pill
-  // reports connecting/reconnecting status.
   if (selectedThread !== null && selectedThreadKey === routeThreadKey) {
     return <ThreadRouteContent {...props} selectedThreadDetailState={selectedThreadDetailState} />;
   }
@@ -443,9 +434,6 @@ function ThreadRouteContent(
     useCallback(() => {
       return () => {
         if (props.renderInspector === undefined) {
-          // Inspectors are contextual to this chat destination. Clear the
-          // hidden chat copy after a native push so returning from Files,
-          // Review, or Terminal cannot reserve an empty trailing pane.
           setInspectorSelection(null);
         }
       };
@@ -472,7 +460,6 @@ function ThreadRouteContent(
     [composer.interactionMode, composer.modelSelection, composer.runtimeMode, selectedThread],
   );
 
-  /* ─── Native header theming ──────────────────────────────────────── */
   const usesNativeHeaderGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
@@ -481,7 +468,6 @@ function ThreadRouteContent(
   ]
     .filter(Boolean)
     .join(" · ");
-  /* ─── Git status for native header trigger ───────────────────────── */
   const gitStatus = useEnvironmentQuery(
     selectedThread !== null && selectedThreadCwd !== null
       ? vcsEnvironment.status({
@@ -510,7 +496,6 @@ function ThreadRouteContent(
     onReconnectEnvironment(environmentId);
   }, [environmentId, onReconnectEnvironment]);
 
-  /* ─── Git action progress (for overlay banner) ──────────────────── */
   const gitActionProgressTarget = useMemo(
     () => ({
       environmentId: selectedThread?.environmentId ?? null,
@@ -595,9 +580,6 @@ function ThreadRouteContent(
     },
     [fileInspector.supported, navigation, selectedThread],
   );
-  // The workspace inspector column spans the full window height. On iOS the
-  // panes bring their own nested native headers (which underlap the status
-  // bar); elsewhere the pane content pads itself below the top inset.
   const safeAreaInsets = useSafeAreaInsets();
   const inspectorHeaderInset = Platform.OS === "ios" ? 0 : safeAreaInsets.top;
   const GitInspector = useCallback(
@@ -656,9 +638,6 @@ function ThreadRouteContent(
     ],
   );
   const activeInspectorRenderer = inspectorMode === null ? undefined : renderInspectorStack;
-  // Hand the inspector to the workspace so it renders beside the navigator,
-  // outside this screen's native header — the terminal/git/files toolbar
-  // stays anchored to the chat pane instead of floating above the inspector.
   useRegisterWorkspaceInspector(activeInspectorRenderer);
 
   const handleOpenConnectionEditor = useCallback(() => {

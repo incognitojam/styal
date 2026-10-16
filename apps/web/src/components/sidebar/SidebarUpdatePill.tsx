@@ -50,7 +50,6 @@ export function handleSidebarUpdateReleaseNotesPopoverOpenChange(
   _open: boolean,
   details: Pick<SidebarUpdatePopoverChangeDetails, "reason" | "cancel">,
 ): void {
-  // The trigger is the update action, so its presses must not also toggle the Popover.
   if (details.reason === "trigger-press") details.cancel();
 }
 
@@ -88,10 +87,6 @@ const toastUpdateError: ReportLocalUpdateError = (title, description) => {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
 };
 
-/** Installs this app's downloaded update, which relaunches the app. Resolves
-    true when the relaunch is under way. Failures go to `reportError` (a toast
-    by default). A refused install (the download is not marked ready yet)
-    leaves the restart to the user. */
 async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
@@ -143,13 +138,11 @@ function SidebarUpdateControl() {
   const serverCheckRequest = useRef(0);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
-  // Remote servers follow this app to the version it is about to install.
   const localUpdateVersion =
     state && action === "install" ? getDesktopUpdateDownloadedVersion(state) : null;
   const everything = useUpdateEverything(localUpdateVersion);
   const isDownloading = state?.status === "downloading";
   const runsEverything = everything.hasUpdates && !isDownloading;
-  // Providers leave the list once queued, so the run keeps its own state.
   const run = useUpdateEverythingRun();
   const isRunningEverything = run !== null;
   const showsEverything = runsEverything || isRunningEverything;
@@ -260,12 +253,9 @@ function SidebarUpdateControl() {
           run={run}
           local={local}
           icon={statusIcon}
-          // After "Later", this app's downloaded update can still be installed
-          // while the run follows the other machines.
           {...(run.localVersion === null && action === "install" && window.desktopBridge
             ? {
                 onRestart: async () => {
-                  // Like the countdown, keep following servers still restarting.
                   saveUpdateEverythingResult({
                     localVersion: localUpdateVersion,
                     updatedServers: 0,

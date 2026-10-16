@@ -103,16 +103,6 @@ export const hydrateCachedProvider = (input: {
 };
 
 /**
- * Resolve the on-disk cache path for a provider instance snapshot.
- *
- * File naming: `<cacheDir>/<instanceId>.json`. For the default instance of
- * a built-in kind this equals the legacy `<kind>.json` path (because
- * `defaultInstanceIdForDriver(kind).toString() === kind`), so existing
- * cached snapshots remain readable without any rename step.
- *
- * Non-default instances (e.g. `codex_personal`) land in their own files and
- * never collide with other instances.
- *
  * Cache contents must still carry matching `instanceId` + `driver` identity
  * before hydration. The filename alone is not trusted as a routing key.
  */

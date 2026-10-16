@@ -221,7 +221,6 @@ function settledSummary<E>(
   );
 }
 
-/** Answers with a refreshing Cursor source; the `awaitRefresh` request runs `followUp` first. */
 const makeRefreshingHarness = Effect.fn("ServerUsageTest.makeRefreshingHarness")(function* (
   followUp: Effect.Effect<void, UsageReadError>,
 ) {

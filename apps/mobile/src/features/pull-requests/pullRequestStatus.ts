@@ -146,7 +146,6 @@ export function pullRequestChecksSummary(pr: Pick<PullRequestDetail, "checks">) 
   } as const;
 }
 
-/** A reviewer's latest verdict replaces their earlier approval or dismissal. */
 export function pullRequestReviewSummary(
   pr: Pick<PullRequestDetail, "reviewers">,
   activity: Pick<PullRequestActivity, "comments" | "commits"> | null,

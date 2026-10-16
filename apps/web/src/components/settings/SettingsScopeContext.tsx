@@ -38,7 +38,6 @@ function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
           ): string | null | undefined => {
             const result = get(getProjectFileQueryAtom(environmentId, workspaceRoot, relativePath));
             if (result.waiting) return undefined;
-            // A pending in-app save overlays the query, like useProjectFileQuery.
             const data =
               get(optimisticFileAtom(environmentId, workspaceRoot, relativePath))?.data ??
               Option.getOrNull(AsyncResult.value(result));
@@ -98,8 +97,6 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
       selected.connectedEnvironments,
       projectFiles,
     );
-    // The representative target supplies display values; project scopes
-    // prefer the member on the primary environment, like environments do.
     const target =
       targets.find(
         (candidate) => candidate.environmentId === selected.environment?.environmentId,

@@ -90,7 +90,6 @@ function tool(
 // styal registers its server as `styal`; sessions started before the rename keep `t3-code`.
 const T3_MCP_SERVER_ALIASES = new Set(["styal", "t3-code", "t3_code", "t3code"]);
 
-// Cards, activity rows, summaries, and provider identity recovery share this inventory.
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   link_pull_request: tool(
     ["Link", "Linking", "Linked", "a pull request"],
@@ -365,10 +364,6 @@ const STYAL_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = Object.fr
   ]),
 );
 
-/**
- * The T3 orchestration tool inventory, used to gate loose name matching on
- * both the server (ACP MCP identity recovery) and the client (logo branding).
- */
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));
 
 function normalizeT3McpToolLabel(value: string): string {
@@ -416,7 +411,6 @@ function resolveT3McpToolName(value: string): string | null {
   return longest;
 }
 
-/** The bare T3 tool name (`html_render`) for any provider's spelling of it. */
 export function resolveT3McpToolId(toolName: string | null | undefined): string | null {
   const name = toolName == null ? null : resolveT3McpToolName(toolName);
   return name !== null && Object.hasOwn(T3_MCP_TOOLS, name) ? name : null;

@@ -139,7 +139,6 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly scriptCommand: string;
   readonly terminalId: string;
   readonly cwd: string;
-  /** False when the script's `async` flag asks the agent to wait for it. */
   readonly async: boolean;
   /**
    * Resolves when the script's terminal process exits. The exit code is null
@@ -191,7 +190,6 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectId?: string;
   readonly projectCwd?: string;
   readonly worktreePath: string;
-  /** Which project script to run. Defaults to the worktree setup script. */
   readonly trigger?: ProjectScriptTrigger;
   readonly project?: {
     readonly id: ProjectId;
@@ -255,10 +253,8 @@ export class ProjectSetupScriptRunner extends Context.Service<
 >()("@styal/cli/project/ProjectSetupScriptRunner") {}
 
 const OUTPUT_LINE_MAX_LENGTH = 400;
-/** A partial line longer than this is a byte stream, not a line. Keep only the tail. */
 const PARTIAL_LINE_MAX_LENGTH = 4_096;
 
-/** Removes ANSI escape sequences and cursor controls so lines can be shown as plain text. */
 function stripTerminalControl(text: string): string {
   return (
     text
@@ -863,7 +859,6 @@ export const make = Effect.gen(function* () {
         terminalId,
         cwd,
         worktreePath: input.worktreePath,
-        // Setup may run before a terminal client attaches to answer color probes.
         env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
         command: script.command,
         label: script.name,
@@ -894,7 +889,6 @@ export const make = Effect.gen(function* () {
             ),
           ),
         ),
-        // Nothing will ever settle the completion if the command never ran.
         Effect.tapError(() => Effect.sync(() => observed?.unsubscribe())),
       );
 

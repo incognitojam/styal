@@ -111,14 +111,9 @@ interface AntigravityProviderOptions {
   readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
   readonly clearUsage?: Effect.Effect<void>;
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
-  /** Auth type and label published once a session authenticates. */
   readonly auth?: { readonly type: string; readonly label: string };
 }
 
-/**
- * Health uses initialize only. Session callbacks supply account-specific
- * metadata, which a disabled instance never shows.
- */
 export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(function* (
   settings: AntigravitySettings,
   options: AntigravityProviderOptions,
@@ -134,8 +129,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
         installed: false,
         version: null,
         status: "warning",
-        // The configured method rides along so the registry can tell a saved
-        // account for this method from one left by a previous configuration.
         auth: { status: "unknown", ...(options.auth ? { type: options.auth.type } : {}) },
         message: settings.enabled
           ? "Checking Antigravity availability."
@@ -390,8 +383,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   ) {
     if (skills) {
       discoveredSkills.set(cwd, skills);
-      // A rescan replaces the stored entry's skills. Session callbacks and
-      // health checks republish that entry, so it must not keep old ones.
       yield* SubscriptionRef.update(metadata, (state) =>
         state.draft.workspaceSnapshots?.some((entry) => entry.cwd === cwd)
           ? {

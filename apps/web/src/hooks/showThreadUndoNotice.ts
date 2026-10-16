@@ -13,7 +13,6 @@ type UndoOptions = {
   undo: () => Promise<AtomCommandResult<unknown, unknown>>;
   failureTitle: string;
   claim: ReturnType<typeof ThreadUndo.begin>;
-  /** Runs once the action can no longer be undone. */
   commit?: () => void;
 };
 
@@ -25,8 +24,6 @@ type UndoNotice = {
 
 export const useThreadUndoNotice = create<{ notice: UndoNotice | null }>(() => ({ notice: null }));
 
-// Shared across sidebar, header and menu actions. Consecutive actions of the
-// same kind share one notice and can be restored together.
 let liveUndos: UndoOptions[] = [];
 let expiry: ReturnType<typeof setTimeout> | undefined;
 // A new notice owns mod+z even inside a text field, until the user presses
@@ -90,7 +87,6 @@ function refreshNotice() {
 
 ThreadUndo.subscribe(refreshNotice);
 
-/** Runs the group displayed in the sidebar; false when nothing is left to undo. */
 export function undoLatestThreadAction(): boolean {
   const notice = useThreadUndoNotice.getState().notice;
   if (!notice) return false;
@@ -108,7 +104,6 @@ export function releaseThreadUndoShortcut() {
   shortcutClaimed = false;
 }
 
-/** Shows one compact confirmation for the currently undoable thread actions. */
 export function showThreadUndoNotice(options: UndoOptions) {
   if (!options.claim.isCurrent()) return;
   liveUndos.push(options);

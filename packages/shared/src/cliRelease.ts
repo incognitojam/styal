@@ -1,10 +1,3 @@
-/**
- * Naming shared by the release workflow, the runtime installers, and
- * install scripts for the per-platform CLI archives attached to GitHub
- * Releases. Every consumer derives the same file names from a version and a
- * platform key, so a rename here is a release-breaking change.
- */
-
 import * as Schema from "effect/Schema";
 import { CLI_PACKAGE_NAME } from "./cliPackage.ts";
 import { parseCliReleaseVersion } from "./cliReleaseVersion.ts";
@@ -12,7 +5,6 @@ import { parseCliReleaseVersion } from "./cliReleaseVersion.ts";
 const CLI_RELEASE_REPOSITORY = "incognitojam/styal";
 export const CLI_NPM_DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${CLI_PACKAGE_NAME}/dist-tags`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
-/** Overrides the download origin for mirrors and air-gapped installs. */
 export const CLI_RELEASE_BASE_URL_ENV = "STYAL_RELEASE_BASE_URL";
 
 /**
@@ -40,9 +32,9 @@ export function cliArchivePlatformKey(
 }
 
 /**
- * The tar to extract a release archive with. Windows ships bsdtar in
- * System32, which reads both formats; a Git-for-Windows GNU tar earlier on
- * PATH cannot open the zip, so the system copy is named by absolute path.
+ * Windows ships bsdtar in System32, which reads both formats; a Git-for-Windows
+ * GNU tar earlier on PATH cannot open the zip, so the system copy is named by
+ * absolute path.
  */
 export function cliArchiveTarCommand(
   platform: NodeJS.Platform,
@@ -59,7 +51,6 @@ export function cliArchiveFileName(version: string, platformKey: CliArchivePlatf
 
 const CLI_RELEASE_DEFAULT_BASE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases/download`;
 
-/** Directory that `releases/download/<tag>/<asset>` lives under. */
 export function cliReleaseDownloadBaseUrl(
   version: string,
   baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
@@ -81,10 +72,6 @@ export function cliReleasePendingMessage(version: string): string {
   return `styal ${version} is still being published. Try again in a few minutes.`;
 }
 
-/**
- * Parses the `sha256sum` style checksum file attached to each release.
- * Lines are `<hex>  <file>`; a leading `*` marks binary mode and is ignored.
- */
 export function parseChecksums(text: string): ReadonlyMap<string, string> {
   const checksums = new Map<string, string>();
   for (const line of text.split(/\r?\n/)) {
@@ -122,7 +109,6 @@ export function cliReleaseVersionFromDistTags(input: unknown, channel: CliReleas
   return version;
 }
 
-/** The release train a version was published on, derived from its prerelease tag. */
 export function cliReleaseChannelOf(version: string): CliReleaseChannel {
   const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
   return channel === "nightly" || channel === "preview" ? channel : "stable";

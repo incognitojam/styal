@@ -51,9 +51,6 @@ const repoRoot = NodePath.resolve(
   "../..",
 );
 
-// ---------------------------------------------------------------------------------------------
-// Process helpers
-
 interface Run {
   readonly status: number;
   readonly stdout: string;
@@ -101,9 +98,6 @@ const lines = (text: string) => text.split("\n").filter((line) => line.length > 
 function sleep(milliseconds: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
-
-// ---------------------------------------------------------------------------------------------
-// One upstream commit
 
 export type AdaptationKind =
   | "rerere"
@@ -674,9 +668,6 @@ export function pickUpstreamCommit(
   };
 }
 
-// ---------------------------------------------------------------------------------------------
-// Commit messages
-
 const AGENT_PATHS =
   /^(apps\/server\/src\/(mcp|provider)\/|apps\/server\/src\/orchestration-v2\/(PullRequestWatchReactor|pullRequestWatch)|packages\/contracts\/src\/orchestratorMcp)/u;
 
@@ -792,9 +783,6 @@ function commitPick(
   run(cwd, "git", ["cherry-pick", "--quit"]);
 }
 
-// ---------------------------------------------------------------------------------------------
-// Trailers
-
 /**
  * Whether a picked commit changes exactly what its upstream sources change, by the audit's rule:
  * matching changed lines, or each differing file ending identical to upstream's version.
@@ -872,9 +860,6 @@ function fixTrailers(cwd: string, base: string): ReadonlyArray<TrailerFix> {
   }
   return plan;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Queue and state
 
 export interface QueueEntry {
   readonly sha: string;
@@ -1025,9 +1010,6 @@ function applyEntries(
   saveState(cwd, null);
   return true;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Automatic batches
 
 const DEFAULT_AUTO_MAX = 30;
 
@@ -1255,9 +1237,6 @@ function pushCandidate(cwd: string, branch: string): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Survey
-
 export interface SurveyEntry {
   readonly sha: string;
   readonly pr: number | null;
@@ -1385,9 +1364,6 @@ export function summarizeSurvey(entries: ReadonlyArray<SurveyEntry>): string {
   }
   return `${parts.join("\n")}\n`;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Replay
 
 export interface ReplayResult {
   readonly commit: string;
@@ -1616,9 +1592,6 @@ function summarizeReplay(results: ReadonlyArray<ReplayResult>): string {
   });
   return `${rows.join("\n")}\n\n${[...counts].map(([verdict, count]) => `${verdict}: ${count}`).join(", ")}\n`;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Verify
 
 /** Workspace packages that own the given paths, by their nearest package.json directory. */
 function owningPackages(cwd: string, paths: ReadonlyArray<string>): ReadonlyArray<string> {
@@ -1849,9 +1822,6 @@ function verify(cwd: string, base: string, options: { readonly allTests?: boolea
   return steps.every((entry) => entry.ok);
 }
 
-// ---------------------------------------------------------------------------------------------
-// Native fingerprint
-
 /**
  * What `.github/workflows/mobile-fingerprint-check.yml` treats as fingerprint inputs. Intake
  * batches land without a pull request, so that check never runs on them.
@@ -2048,9 +2018,6 @@ export function describeNativeFingerprint(comparison: NativeFingerprintCompariso
   const platforms = moved.map((entry) => PLATFORM_NAMES[entry.platform]).join(" and ");
   return `Native fingerprint: moved on ${platforms} (${moved.map((entry) => `${entry.base.slice(0, 10)} → ${entry.head.slice(0, 10)}`).join(", ")}). After promotion, OTA updates no longer reach installed ${platforms} apps until the production builds Mobile EAS Production starts for the new fingerprint finish.`;
 }
-
-// ---------------------------------------------------------------------------------------------
-// References
 
 interface Provided<T> {
   readonly value: T;
@@ -2289,9 +2256,6 @@ function noteReferenceFixes(
   }
   git(cwd, ["switch", "-q", "-C", branch]);
 }
-
-// ---------------------------------------------------------------------------------------------
-// CLI
 
 function flag(name: string): string | undefined {
   const index = process.argv.indexOf(name);

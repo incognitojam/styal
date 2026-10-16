@@ -32,12 +32,6 @@ const NOTE = [
   "- subagent: Background subagent test",
 ].join("\n");
 
-/**
- * The recorded background-subagent session cut by a restart right after the
- * root turn settled: the subagent's frames never arrive. A fresh runtime then
- * resumes the native session; each prompt frame it sends is pinned, so these
- * resumed turns are the provider's view of what T3 told it.
- */
 const readRestartTranscript = Effect.fn("readRestartTranscript")(function* (
   resumedPrompts: ReadonlyArray<string>,
 ) {
@@ -47,7 +41,7 @@ const readRestartTranscript = Effect.fn("readRestartTranscript")(function* (
   const rootResult = recorded.entries.findIndex(
     (entry) => entry.type === "emit_inbound" && entry.label === "result",
   );
-  // The restarted server resumes the recorded session instead of creating it.
+
   const queryOpen = recorded.entries[0];
   const openFrame = queryOpen?.type === "expect_outbound" ? queryOpen.frame : undefined;
   const queryOptions: unknown =
@@ -116,7 +110,7 @@ const readRestartTranscript = Effect.fn("readRestartTranscript")(function* (
     ...recorded,
     entries: [
       ...recorded.entries.slice(0, rootResult + 1),
-      // The server dies here, with the background subagent still running.
+
       { type: "runtime_exit", status: "success" },
       {
         type: "expect_outbound",
@@ -152,7 +146,7 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
     driver: ProviderDriverKind.make("claudeAgent"),
     modelSelection: CLAUDE_MODEL_SELECTION,
   });
-  // Phase 1 ends once the root run settles; the subagent is still open.
+
   const firstIdle = materialized.steps.findIndex((step) => step.type === "await_thread_idle");
   const phase1Steps = materialized.steps.slice(0, firstIdle + 1);
   const threadId = materialized.projectionThreadIds[0]!;
@@ -201,7 +195,7 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
       continueThreadsAfterServerUpdate: input.continueThreadsAfterServerUpdate,
     }),
   );
-  // The replay runner rejects any prompt frame that differs from the transcript.
+
   yield* assertComplete;
   const projection = projectionFor(after, SCENARIO);
   assert.equal(projection.subagents[0]?.status, "cancelled");
@@ -216,7 +210,6 @@ describe("restart-cancelled background work", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const projection = yield* runRestart({
-          // The first turn after the restart carries the note; the second does not.
           resumedPrompts: [
             `${NOTE}\n\nUser message:\n${FIRST_AFTER_RESTART}`,
             SECOND_AFTER_RESTART,

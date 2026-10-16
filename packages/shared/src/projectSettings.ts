@@ -32,11 +32,8 @@ export type ProjectSettingSources = Readonly<
 >;
 
 export interface ResolvedProjectSettings<Settings extends ServerSettings = ServerSettings> {
-  /** Environment settings with the project's overrides applied. */
   readonly settings: Settings;
-  /** Where each scopable key's effective value came from. */
   readonly sources: ProjectSettingSources;
-  /** The project's raw override entry; `{}` when it has none. */
   readonly overrides: ProjectSettingsOverrides;
 }
 
@@ -46,7 +43,6 @@ const ENVIRONMENT_SOURCES: ProjectSettingSources = Object.fromEntries(
   PROJECT_SCOPED_SERVER_SETTING_KEYS.map((key) => [key, "environment"]),
 ) as Record<ProjectScopedServerSettingKey, ProjectSettingSource>;
 
-/** Cheap check so hot paths skip the projectId lookup when nothing is overridden. */
 export function hasProjectSettingsOverrides(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,
 ): boolean {
@@ -69,16 +65,9 @@ export interface LegacyProjectSettingsFields {
   readonly defaultThreadEnvMode?: ThreadEnvMode | null | undefined;
 }
 
-/**
- * Apply one project's overrides on top of environment settings. A model
- * override whose provider is disabled on this environment falls back to the
- * environment value, the same guard the environment-level selection gets.
- */
 export function resolveProjectSettings(
   settings: ServerSettings,
   projectId: ProjectId | null,
-  // Nullable, not just optional: the mobile new-task flow passes its selected
-  // project straight through, and that is null until the shell snapshot lands.
   project?: LegacyProjectSettingsFields | null,
 ): ResolvedProjectSettings;
 /**
@@ -115,8 +104,6 @@ function applyProjectFile(
     effective ??= { ...resolved.settings };
     sources ??= { ...resolved.sources };
     effective[key] = value;
-    // A project override of null defers like an unset one, so the value did
-    // not come from the project either way.
     sources[key] = source;
   }
   return effective === null || sources === null
@@ -176,9 +163,6 @@ function resolveProjectOverrides(
     // A forward-compatible decode leaves an unknown value as a present
     // undefined; that is not an override.
     if (value === undefined) continue;
-    // A model on a disabled provider falls back to the environment, like the
-    // environment-level guards do for these keys. An instance this project
-    // enabled via `providerInstances[id].enabled` still counts as enabled here.
     if (
       (key === "textGenerationModelSelection" || key === "defaultModelSelection") &&
       value !== undefined &&
@@ -194,8 +178,6 @@ function resolveProjectOverrides(
     effective[key] = value;
     sources[key] = "project";
   }
-  // Like the environment guard, text generation never runs on an instance
-  // this project turned off.
   const textGeneration = effective.textGenerationModelSelection as ModelSelection;
   if (!resolveProjectProviderInstanceEnabled(settings, projectId, textGeneration.instanceId)) {
     const fallback = fallbackTextGenerationModelSelection(
@@ -247,7 +229,6 @@ export function resolveNewThreadEnvMode(input: {
   return isNewProjectFolder ? "local" : configured;
 }
 
-/** Replace the project's entry, dropping it entirely when nothing is overridden. */
 export function withProjectSettingsOverrides(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,
   projectId: ProjectId,
@@ -257,7 +238,6 @@ export function withProjectSettingsOverrides(
   return next === null || Object.keys(next).length === 0 ? rest : { ...rest, [projectId]: next };
 }
 
-/** The project's entry with `keys` removed; `null` when that leaves it empty. */
 export function clearProjectSettingsOverrides(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,
   projectId: ProjectId,
@@ -270,7 +250,6 @@ export function clearProjectSettingsOverrides(
   return Object.keys(next).length === 0 ? null : next;
 }
 
-/** Worktree rules are project-scoped; artifact and log retention stays environment-wide. */
 export function resolveWorktreeCleanup(
   settings: ServerSettings,
   projectId: ProjectId | null,

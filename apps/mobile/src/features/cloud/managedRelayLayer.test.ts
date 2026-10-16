@@ -85,7 +85,6 @@ describe("managed relay DPoP signer", () => {
       const failed = yield* Effect.flip(signer.thumbprint);
       assert.equal(failed._tag, "ManagedRelayDpopKeyLoadError");
 
-      // The failure was not kept: the next request reads the key store again.
       const thumbprint = yield* signer.thumbprint;
       assert.equal(yield* signer.thumbprint, thumbprint);
       assert.equal(vi.mocked(SecureStore.getItemAsync).mock.calls.length, readsBefore + 2);

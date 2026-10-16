@@ -52,7 +52,6 @@ describe("diff page refresh", () => {
   });
 });
 
-/** Only the hunk ranges matter here; the viewer fills the rest in when it renders. */
 function fileWithHunks(
   hunks: ReadonlyArray<{
     deletionStart: number;
@@ -76,7 +75,6 @@ describe("isLineInFileDiff", () => {
   });
 
   it("includes the first line of a hunk and excludes the one past its last", () => {
-    // The boundaries are where an off-by-one would quietly move a conversation between lists.
     expect(isLineInFileDiff(file, "right", 10)).toBe(true);
     expect(isLineInFileDiff(file, "right", 14)).toBe(true);
     expect(isLineInFileDiff(file, "right", 15)).toBe(false);
@@ -86,7 +84,6 @@ describe("isLineInFileDiff", () => {
   });
 
   it("keeps the two sides apart, since one line number means two lines", () => {
-    // The second hunk is a pure insertion: it deletes nothing, so nothing is on its left.
     expect(isLineInFileDiff(file, "right", 43)).toBe(true);
     expect(isLineInFileDiff(file, "left", 40)).toBe(false);
   });
@@ -105,7 +102,6 @@ describe("isFileDiffCollapsed", () => {
   });
 
   it("opens every file once the toolbar has asked for it", () => {
-    // Pressing the toolbar clears the reader's own toggles, which is why the set is empty here.
     expect(isFileDiffCollapsed("a.ts", "expanded", NO_TOGGLES)).toBe(false);
     expect(isFileDiffCollapsed("b.ts", "expanded", NO_TOGGLES)).toBe(false);
   });
@@ -116,8 +112,6 @@ describe("isFileDiffCollapsed", () => {
   });
 
   it("keeps a file the reader folded closed as the next slice arrives", () => {
-    // The file keys grow with every slice, so the answer for one already folded must not depend
-    // on how many of them there are by then.
     const toggled = new Set(["b.ts"]);
     expect(isFileDiffCollapsed("b.ts", null, toggled)).toBe(true);
     expect(isFileDiffCollapsed("c.ts", null, toggled)).toBe(false);
@@ -131,7 +125,6 @@ describe("isFileDiffCollapsed", () => {
 
 describe("toggleFileDiffFoldForViewed", () => {
   it("puts a file away when it is ticked off", () => {
-    // Files start expanded, so ticking one off is the case that has somewhere to go.
     expect([...toggleFileDiffFoldForViewed("a.ts", true, null, new Set())]).toEqual(["a.ts"]);
   });
 
@@ -145,7 +138,6 @@ describe("toggleFileDiffFoldForViewed", () => {
   });
 
   it("moves against whatever the toolbar last asked for", () => {
-    // Everything is open, so ticking a file off has to fold that one against the default.
     expect([...toggleFileDiffFoldForViewed("a.ts", true, "expanded", new Set())]).toEqual(["a.ts"]);
     expect(toggleFileDiffFoldForViewed("a.ts", false, "expanded", new Set()).size).toBe(0);
   });

@@ -42,7 +42,6 @@ function accountName(account: LimitAccount) {
   return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase() || "Account";
 }
 
-/** The spent share comes back at reset. SVG keeps the hatching static on both platforms. */
 function AccountSegment({
   remaining,
   color,
@@ -465,7 +464,6 @@ type AccountScreenProps = StaticScreenProps<{
   now: number;
 }>;
 
-/** Resolve the account again so live quota and credit updates reach the open detail screen. */
 export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const insets = useSafeAreaInsets();
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);

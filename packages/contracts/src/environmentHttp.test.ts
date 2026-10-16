@@ -15,8 +15,6 @@ const traceId = "trace-1";
 const decodeHostActivity = Schema.decodeSync(HostActivity);
 
 describe("environment HTTP errors", () => {
-  // A client squashes the cause and shows `message`; an empty one becomes a generic
-  // "The environment request failed." that names nothing the reader can act on.
   it("each carries a message that names its reason", () => {
     const errors = [
       new EnvironmentRequestInvalidError({

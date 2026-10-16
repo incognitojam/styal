@@ -24,7 +24,6 @@ export type DeviceHostId = typeof DeviceHostId.Type;
 /** The server machine. Always present. */
 export const LOCAL_DEVICE_HOST_ID = "local" as DeviceHostId;
 
-/** SSH aliases and key paths are resolved on the environment server. */
 export const SshDeviceHostConfig = Schema.Struct({
   id: DeviceHostId.check(
     Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
@@ -118,7 +117,6 @@ export const DeviceConnectEnvironmentInput = Schema.Union([
 ]);
 export type DeviceConnectEnvironmentInput = typeof DeviceConnectEnvironmentInput.Type;
 
-/** Simulator udid or adb serial (an AVD name while it is not running). */
 export const DeviceId = TrimmedNonEmptyString.check(Schema.isMaxLength(256));
 export type DeviceId = typeof DeviceId.Type;
 
@@ -127,18 +125,12 @@ export const DeviceSummary = Schema.Struct({
   id: DeviceId,
   platform: DevicePlatform,
   name: TrimmedNonEmptyString,
-  /** OS label such as "iOS 18.0" or "Android 15.0". */
   version: Schema.String,
   booted: Schema.Boolean,
   physical: Schema.Boolean,
 });
 export type DeviceSummary = typeof DeviceSummary.Type;
 
-/**
- * What the host can do right now. Platforms missing their toolchain are
- * reported rather than hidden so the picker and the agent can explain why a
- * platform is absent instead of showing an empty list.
- */
 export const DevicePlatformAvailability = Schema.Struct({
   platform: DevicePlatform,
   available: Schema.Boolean,
@@ -172,11 +164,6 @@ export const DeviceHostSummary = Schema.Struct({
 });
 export type DeviceHostSummary = typeof DeviceHostSummary.Type;
 
-/**
- * Lifecycle of the helper processes on a host. Tools are installed on first
- * use, so a fresh install spends a while in `installing` before any device can
- * stream; the UI shows that instead of an empty picker.
- */
 export const DeviceHostStatus = Schema.Literals([
   "disabled",
   "idle",
@@ -187,10 +174,6 @@ export const DeviceHostStatus = Schema.Literals([
 ]);
 export type DeviceHostStatus = typeof DeviceHostStatus.Type;
 
-/**
- * A device a thread is looking at. One session per (thread, device); the same
- * device may be open in several threads, since the stream is shared.
- */
 export const DeviceSession = Schema.Struct({
   threadId: ThreadId,
   hostId: DeviceHostId,
@@ -224,18 +207,14 @@ export const DeviceServiceState = Schema.Struct({
   ),
   onboardingCompleted: Schema.Boolean,
   agentAccessEnabled: Schema.Boolean,
-  /** Origin-relative path the client prefixes to hub routes. */
   hubBasePath: Schema.String,
   revision: Schema.Int,
 });
 export type DeviceServiceState = typeof DeviceServiceState.Type;
 
 export const DeviceListInput = Schema.Struct({
-  /** Install this server's pinned tool without enabling access or starting helpers. */
   updateTool: Schema.optional(Schema.Literals(["hub", "agent"])),
-  /** Read inventory without installing tools or starting helpers. */
   inspectOnly: Schema.optional(Schema.Boolean),
-  /** Retry this host only, including agent tools if access was already granted. */
   retryHostId: Schema.optional(DeviceHostId),
 });
 export type DeviceListInput = typeof DeviceListInput.Type;
@@ -280,18 +259,9 @@ export const DeviceShutdownInput = Schema.Struct({
 });
 export type DeviceShutdownInput = typeof DeviceShutdownInput.Type;
 
-// Device settings and actions. Each setting names the platforms that support
-// it; the panel hides the rest. Values are normalized across platforms where
-// both have the concept (appearance, text size) and platform-specific where
-// only one does.
-
 export const DeviceAppearance = Schema.Literals(["light", "dark"]);
 export type DeviceAppearance = typeof DeviceAppearance.Type;
 
-/**
- * iOS content-size categories map onto twelve steps; Android `font_scale`
- * is continuous. Four shared steps cover what people actually reach for.
- */
 export const DeviceTextSize = Schema.Literals(["small", "default", "large", "extra-large"]);
 export type DeviceTextSize = typeof DeviceTextSize.Type;
 
@@ -312,7 +282,6 @@ export const DeviceOrientation = Schema.Literals([
 ]);
 export type DeviceOrientation = typeof DeviceOrientation.Type;
 
-/** Current values as read from the device; `undefined` means unsupported or unread. */
 export const DeviceSettings = Schema.Struct({
   appearance: Schema.optional(DeviceAppearance),
   textSize: Schema.optional(DeviceTextSize),
@@ -330,7 +299,6 @@ export const DeviceSettings = Schema.Struct({
 });
 export type DeviceSettings = typeof DeviceSettings.Type;
 
-/** The app in the foreground, when the platform can tell us. */
 export const DeviceForegroundApp = Schema.Struct({
   id: Schema.String,
   name: Schema.optional(Schema.String),
@@ -432,7 +400,6 @@ export const DeviceActionInput = Schema.Union([
     ...DeviceTarget,
     type: Schema.Literal("sendPush"),
     appId: TrimmedNonEmptyString,
-    /** APNs-style payload; a bare string becomes the alert body. */
     payload: Schema.Union([Schema.String, Schema.Record(Schema.String, Schema.Unknown)]),
   }),
 ]);
@@ -596,14 +563,10 @@ export const DeviceError = Schema.Union([
 ]);
 export type DeviceError = typeof DeviceError.Type;
 
-// MCP tool shapes. Kept next to the RPC shapes so the tool surface and the
-// panel describe devices the same way.
-
 export const DeviceToolListResult = Schema.Struct({
   hostStatuses: DeviceServiceState.fields.hostStatuses,
   hosts: Schema.Array(DeviceHostSummary),
   devices: Schema.Array(DeviceSummary),
-  /** Devices already open in this thread's Device panel. */
   open: Schema.Array(Schema.Struct({ hostId: DeviceHostId, deviceId: DeviceId })),
   /** Devices other threads have open, one entry per thread. */
   openInOtherThreads: Schema.Array(
@@ -651,10 +614,8 @@ export type DeviceToolOpenInput = typeof DeviceToolOpenInput.Type;
 
 export const DeviceToolOpenResult = Schema.Struct({
   device: DeviceSummary,
-  /** Ready-to-run agent-device invocation pinned to this device. */
   agentDevice: Schema.Struct({
     command: Schema.String,
-    /** Flags that pin every command to this device, e.g. `--udid <id>`. */
     targetArgs: Schema.Array(Schema.String),
   }),
   quickStart: Schema.String,

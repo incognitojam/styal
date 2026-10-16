@@ -112,7 +112,6 @@ export function WelcomeWizard({
 }: {
   /** Whether the hosted first-run gate opened this route automatically. */
   readonly automaticHostedFirstRun?: boolean;
-  /** Whether this client is authenticated to the server serving the app. */
   readonly localAvailable: boolean;
   readonly resumeEnvironmentId?: EnvironmentId | undefined;
   readonly onDone: (projectRef?: ScopedProjectRef) => void | Promise<void>;
@@ -373,8 +372,6 @@ export function WelcomeWizard({
   );
 }
 
-// ── Step 1: connection choice ────────────────────────────────
-
 function ConnectionStep({
   expandPairingInitially,
   checkingWorkspace,
@@ -446,7 +443,6 @@ function ConnectionStep({
                     {environment.label}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    {/* Same rule as Settings: a switched-off computer reads Off, not Not connected. */}
                     {!environment.entry.enabled && environment.connection.phase !== "unsupported"
                       ? "Off"
                       : presentSavedCloudEnvironmentConnection(environment.connection).buttonLabel}
@@ -617,11 +613,6 @@ function ConnectAccountOption({
   );
 }
 
-// ── Step 2′: Direct pairing ──────────────────────────────────
-
-/**
- * Register a computer in this browser using a server-minted pairing link.
- */
 function PairingForm({
   isPairing,
   setIsPairing,
@@ -732,12 +723,9 @@ function PairingForm({
   );
 }
 
-// ── Step 3: agents ───────────────────────────────────────────
-
 const PRIMARY_AGENT_DRIVERS = ["codex", "claudeAgent"] as const;
 type OnboardingAgentDriver = (typeof PRIMARY_AGENT_DRIVERS)[number];
 
-/** Setup values stay fixed while provider probes refresh the surrounding cards. */
 interface AgentTerminalSession {
   readonly terminalId: string;
   readonly environmentId: EnvironmentId;
@@ -748,7 +736,6 @@ interface AgentTerminalSession {
   readonly keybindings: ServerConfig["keybindings"];
 }
 
-/** Codex uses managed setup; existing CLI installs retain the terminal path. */
 function AgentsStep({
   environmentIds,
   terminalSessions,
@@ -825,8 +812,6 @@ function ConnectedAgentsStep({
   } | null>(null);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
 
-  // Re-probe on entry so freshly installed CLIs show up without a manual
-  // refresh; harmless when nothing changed (single-flighted per environment).
   useEffect(() => {
     void refreshProviders({ environmentId, input: {} });
   }, [environmentId, refreshProviders]);
@@ -840,7 +825,6 @@ function ConnectedAgentsStep({
       ? instances.map((provider) => ({ driver, provider, instanceId: provider.instanceId }))
       : [{ driver, provider: byDriver.get(driver), instanceId: byDriver.get(driver)?.instanceId }];
   });
-  // Keep the newly created row mounted while settings and provider snapshots catch up.
   if (createdAccount) {
     const index = primaryAgents.findIndex(
       (agent) => agent.instanceId === createdAccount.instanceId,
@@ -1118,12 +1102,6 @@ function AgentCard({
   );
 }
 
-/**
- * Inline install terminal. Opens a PTY on the connected environment under a
- * synthetic onboarding thread id (terminals are keyed by free-form thread id;
- * the server validates only the cwd) and pre-types the install or login
- * command without submitting, so the user reviews and presses Enter.
- */
 function AgentInstallTerminal({
   session,
   onClose,
@@ -1134,7 +1112,6 @@ function AgentInstallTerminal({
   const { command, cwd, driver, environmentId, keybindings, providerInstanceId, terminalId } =
     session;
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
-  // Same terminal typography preference the thread drawer honors.
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
     false,
@@ -1156,9 +1133,9 @@ function AgentInstallTerminal({
   >("preparing");
   const terminalReady = setupState === "ready" || setupState === "writeFailed";
 
-  // Keep each setup generation distinct. In Strict Mode, a canceled open can
-  // finish after the replacement setup starts; it must not close or pre-type
-  // into the replacement session that shares this terminal id.
+  // In Strict Mode, a canceled open can finish after the replacement setup
+  // starts; it must not close or pre-type into the replacement session that
+  // shares this terminal id.
   useEffect(() => {
     const generation = setupGenerationRef.current + 1;
     setupGenerationRef.current = generation;
@@ -1291,10 +1268,6 @@ function AgentInstallTerminal({
     </div>
   );
 }
-
-// ── Step 4: import ───────────────────────────────────────────
-
-// ── Shared bits ──────────────────────────────────────────────
 
 function StepShell({
   title,

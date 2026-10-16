@@ -179,7 +179,6 @@ describe("confirm dialog coordinator", () => {
 
     respondToConfirmDialog(true);
     await expect(confirmation).resolves.toBe(true);
-    // Still on screen while it closes, so nothing may cover it yet.
     expect(isConfirmDialogActive()).toBe(true);
     expect(readConfirmDialogState()).toEqual({
       status: "closing",

@@ -21,8 +21,6 @@ export interface VersionMismatch {
 
 const VERSION_MISMATCH_DISMISSALS_STORAGE_KEY = "styal:version-mismatch-dismissals:v1";
 
-// Runtime failures retain their identity until the next attempt. Dismiss only
-// that attempt, across chat remounts, without clearing the error in Settings.
 const dismissedServerUpdateFailures = new WeakSet<ServerUpdateState>();
 
 export function isServerUpdateFailureDismissed(state: ServerUpdateState): boolean {
@@ -44,7 +42,6 @@ function normalizeVersion(version: string | null | undefined): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
-/** Core `major.minor.patch`, dropping any prerelease or build suffix. */
 function versionCore(version: string): string {
   return version.replace(/[-+].*$/, "");
 }
@@ -113,8 +110,6 @@ export function resolveServerSelfUpdateCapability(
   return capability;
 }
 
-/** True when the desktop app supervising this server can be told to update
-    itself over RPC. Older desktop servers only get the manual instruction. */
 export function supportsDesktopAppUpdate(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): boolean {

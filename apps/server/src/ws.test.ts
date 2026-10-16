@@ -121,7 +121,6 @@ it.effect(
     }),
 );
 
-// Only the fields the late-editor fold reads or rewrites.
 const snapshotConfig = (fields: Partial<ServerConfig>) =>
   ({ availableEditors: [], settings: {}, ...fields }) as unknown as ServerConfig;
 
@@ -139,7 +138,6 @@ it.effect("resends late editors without rolling back updates already sent", () =
       Stream.make(settingsUpdated({ enableProviderUpdateChecks: false })),
       {
         resolveAvailableEditors: () => Effect.succeed(["file-manager"]),
-        // Holds the late snapshot until the settings change has gone out.
         resolveFileManagerRevealKind: () =>
           Deferred.await(settingsSent).pipe(Effect.as("file-explorer" as const)),
       },
@@ -197,8 +195,6 @@ it.effect("resends a file manager reveal kind that missed the snapshot", () =>
   }),
 );
 
-// The real launcher on Windows over a filesystem whose probes park until
-// released, like a host too busy to finish discovery inside the snapshot timeout.
 const makeParkedWindowsLauncher = Effect.gen(function* () {
   const parkedProbes = yield* Queue.unbounded<void>();
   const release = yield* Deferred.make<void>();
@@ -272,7 +268,6 @@ it.effect("recovers a reveal kind whose real probe outlasts the config timeout",
   Effect.gen(function* () {
     const { editors, probeParked, releaseProbes } = yield* makeParkedWindowsLauncher;
 
-    // The snapshot's bounded probe timed out: file manager, but no reveal kind.
     const lateFiber = yield* withLateEditorConfig(
       snapshotConfig({ availableEditors: ["file-manager"] }),
       Stream.empty,

@@ -38,10 +38,8 @@ import {
   waitForUpdateRestart,
 } from "./updateEverythingRun";
 
-/** How long this app counts down before it relaunches, so the user can postpone it. */
 const UPDATE_RESTART_DELAY_MS = 5_000;
 
-/** Where this app's own download or install reports a failure. */
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 
 /**
@@ -125,18 +123,13 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
 
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
-    /** Short label for the tooltip and the confirmation title. */
     summary,
-    /** One line per machine, for the confirmation. */
     lines,
     /** The servers this app hosts, which restart when it installs. */
     restarts,
     /** What updating the servers would interrupt, for the confirmation. */
     checkServers: () => checkServers(servers),
-    /** Behind machines the run leaves alone, with the reason. */
     skipped,
-    /** Runs the pass. `installLocal` resolves true when this app is relaunching.
-        Both report failures to the pass, which lists them in its summary. */
     run: async ({
       downloadLocal,
       installLocal,
@@ -193,7 +186,6 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             const runs = await providers.updateAll({ quiet: true });
             const outcomes = runs.map((run) => {
               const runOutcome = getProviderUpdateRunOutcome(run);
-              // An interrupted update did not finish either, so its row is not "done".
               if (runOutcome.status !== "updated") {
                 providerFailures.set(
                   run.environmentId,
@@ -262,8 +254,6 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             }).catch((error: unknown) => {
               for (const settler of settlers.values()) settler.reject(error);
             });
-            // Once a server restarts into its update it finishes on its own,
-            // so this app does not wait for it to come back.
             await Promise.all(
               servers.map((server, index) =>
                 waitForServerUpdateHandoff(server.environmentId, runs[index]!),
@@ -289,7 +279,6 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             clearSavedUpdateEverythingResult();
           }
         }
-        // This app is not relaunching, so the pass waits for every server.
         setUpdateEverythingRun(
           (run) =>
             run &&

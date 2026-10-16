@@ -36,10 +36,6 @@ const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefi
   unknown: undefined,
 };
 
-/**
- * Our own wording for why a tailscale command failed, derived from the
- * classified diagnostic. Never the CLI's text — see `stderrDiagnosticOf`.
- */
 const explainCommandFailure = (error: TailscaleServeError): string | undefined =>
   error._tag === "TailscaleCommandExitError" && error.stderrDiagnostic !== undefined
     ? (DIAGNOSTIC_EXPLANATIONS[error.stderrDiagnostic] ?? "run the command by hand to see why")
@@ -47,15 +43,6 @@ const explainCommandFailure = (error: TailscaleServeError): string | undefined =
       ? "the port already belongs to a different Tailscale Serve handler"
       : undefined;
 
-/**
- * Three distinct failures, three classes: each has its own caller-visible
- * message and its own remedy, and `shareDevServer` chooses between them
- * structurally. A single error with a `reason` discriminator would encode that
- * distinction twice and put a lookup table in the `message` getter.
- *
- * Each wraps a real underlying failure and so keeps it as `cause`; the message
- * is derived only from the structural fields, never from `cause.message`.
- */
 export class TailscaleUnavailableError extends Schema.TaggedError<TailscaleUnavailableError>()(
   "TailscaleUnavailableError",
   { cause: Schema.Defect() },
@@ -69,7 +56,6 @@ export class TailscaleUnavailableError extends Schema.TaggedError<TailscaleUnava
   }
 }
 
-/** No underlying failure: the status read succeeded and simply had no name. */
 export class TailnetNameMissingError extends Schema.TaggedError<TailnetNameMissingError>()(
   "TailnetNameMissingError",
   {},
@@ -120,8 +106,6 @@ export const unshareDevServer = (
   {
     readonly cleared: boolean;
     readonly explanation?: string | undefined;
-    // Kept structured so a caller wrapping this can preserve the real error
-    // chain rather than a flattened string.
     readonly cause?: TailscaleServeError | undefined;
   },
   never,
@@ -135,7 +119,6 @@ export const unshareDevServer = (
     Effect.as({ cleared: true } as const),
     Effect.catch((error: TailscaleServeError) =>
       Effect.succeed(
-        // "Nothing was mapped" leaves the port clear either way.
         error._tag === "TailscaleCommandExitError" &&
           error.stderrDiagnostic === "no-existing-handler"
           ? ({ cleared: true } as const)
@@ -173,9 +156,7 @@ export const shareDevServer = Effect.fn("devShare.shareDevServer")(function* (in
   // Proxy to the hostname Vite binds rather than the package default of
   // 127.0.0.1. Vite listens on `localhost`, which Node 17+ resolves to `::1`
   // first, so it only binds the IPv6 loopback and a 127.0.0.1 target has
-  // nothing behind it (tailscale answers 502). Passing `localhost` lets the
-  // tailscale proxy resolve it the same way Node did. Not a literal `[::1]`:
-  // tailscale rejects that form.
+  // nothing behind it (tailscale answers 502).
   yield* ensureTailscaleServe({
     localPort: input.webPort,
     servePort: input.webPort,

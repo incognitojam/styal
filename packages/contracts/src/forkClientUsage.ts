@@ -56,7 +56,6 @@ export const ClientSettingsSnapshot = Schema.Struct({
   wordWrap: Schema.Boolean,
   timestampFormat: TimestampFormat,
   loadBalancingEnabled: Schema.Boolean,
-  // Sidebar
   legacySidebarEnabled: Schema.Boolean,
   sidebarWorkingShelfEnabled: Schema.Boolean,
   sidebarThreadGrouping: SidebarThreadGrouping,
@@ -71,7 +70,6 @@ export const ClientSettingsSnapshot = Schema.Struct({
   confirmThreadArchive: Schema.Boolean,
   confirmThreadDelete: Schema.Boolean,
   confirmThreadUnpin: Schema.Boolean,
-  // Notifications
   notificationMode: NotificationMode,
   inAppNotificationsEnabled: Schema.Boolean,
   completionSound: NotificationSound,
@@ -80,7 +78,6 @@ export const ClientSettingsSnapshot = Schema.Struct({
   claudeStatusAlertsEnabled: Schema.Boolean,
   openaiStatusAlertsEnabled: Schema.Boolean,
   githubStatusAlertsEnabled: Schema.Boolean,
-  // Appearance
   appearanceContrast: AppearanceContrast,
   glassOpacity: GlassOpacity,
   panelAnimationDurationMs: PanelAnimationDurationMs,
@@ -94,12 +91,10 @@ export const ClientSettingsSnapshot = Schema.Struct({
   fontFamilyCodeCustomized: Schema.Boolean,
   fontFamilyTerminalCustomized: Schema.Boolean,
   fontSmoothing: Schema.Boolean,
-  // Diffs
   diffColorScheme: DiffColorScheme,
   diffLayout: DiffLayout,
   diffFilesCollapsed: Schema.Boolean,
   diffIgnoreWhitespace: Schema.Boolean,
-  // Browser
   browserLinkTarget: BrowserLinkTarget,
   pullRequestLinksOpenInApp: Schema.Boolean,
   browserAutoShowFloatingPreview: Schema.Boolean,

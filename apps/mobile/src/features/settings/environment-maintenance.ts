@@ -53,7 +53,6 @@ export function isLatestProviderVersionUntested(provider: ServerProvider) {
   return Boolean(latest && verified && compareSemverVersions(latest, verified) > 0);
 }
 
-/** Preserve the host's release channel and never offer a downgrade. */
 export async function findEnvironmentUpdate(currentVersion: string, signal: AbortSignal) {
   const channel = cliReleaseChannelOf(currentVersion);
   const response = await fetch(CLI_NPM_DIST_TAGS_URL, { signal });

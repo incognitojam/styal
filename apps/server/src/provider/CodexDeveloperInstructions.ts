@@ -33,11 +33,10 @@ const normalizeAvailability = (
   typeof availability === "boolean" ? { browser: availability, device: false } : availability;
 
 /**
- * Each block is omitted entirely when its tools aren't attached. Describing
- * `preview_*` or `device_*` tools that aren't in the turn's tool list would be
- * worse than saying nothing: the instructions actively steer the model away
- * from Playwright, agent-browser, and raw simctl/adb, so leaving them in would
- * talk it out of the only automation it still has.
+ * Describing `preview_*` or `device_*` tools that aren't in the turn's tool list would be worse
+ * than saying nothing: the instructions actively steer the model away from Playwright,
+ * agent-browser, and raw simctl/adb, so leaving them in would talk it out of the only automation
+ * it still has.
  */
 const toolInstructions = (
   availability: boolean | T3CodeToolAvailability,
@@ -201,7 +200,6 @@ export interface CodexRuntimeInfo {
   readonly reasoningEffort: string;
 }
 
-/** Mode prompt for `turn/start.collaborationMode.settings.developer_instructions`. */
 export function buildCodexDeveloperInstructions(interactionMode: ProviderInteractionMode): string {
   return interactionMode === "plan"
     ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS

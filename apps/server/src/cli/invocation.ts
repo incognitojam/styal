@@ -88,7 +88,6 @@ const resolveEntryPath = Effect.gen(function* () {
   return (yield* HostProcess.Arguments)[1] ?? "";
 });
 
-/** Prove the running package and its global bin belong together before suggesting an update. */
 export const resolveServerInstallation = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -101,8 +100,6 @@ export const resolveServerInstallation = Effect.gen(function* () {
       ? null
       : ({ kind: runner === "pnpm dlx" ? "pnpm-dlx" : runner } satisfies ServerInstallation);
   }
-  // A global prefix can contain runner-like names; prove its ownership first.
-  // Windows shims and other package managers need their own ownership proof.
   if (platform === "win32") return null;
   const prefix = match[1] || "/";
   if (
@@ -151,13 +148,11 @@ export function formatCliCommand(input: {
   return `${runner} ${suggestedPackageSpec(input.version)} ${input.subcommand}`;
 }
 
-/** `formatCliCommand` against this process's real entry path and version. */
 export const resolveCliCommand = (subcommand: string) =>
   Effect.map(resolveEntryPath, (entryPath) =>
     formatCliCommand({ subcommand, entryPath, version: packageJson.version }),
   );
 
-/** Quotes `value` for a POSIX shell when it needs it. */
 const shellWord = (value: string) =>
   /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 
@@ -239,7 +234,6 @@ export const resolveRootCliCommand = (subcommand: string) =>
     return systemNode ? `sudo ${command}` : `sudo env "PATH=$PATH" ${command}`;
   });
 
-/** Debian and Ubuntu's sudo `secure_path`, minus snap. */
 const ROOT_PATH_DIRECTORIES = [
   "/usr/local/sbin",
   "/usr/local/bin",

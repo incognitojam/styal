@@ -23,7 +23,6 @@ const decodeHead = Schema.decodeUnknownEffect(Schema.fromJsonString(HeadSchema))
 
 type Validator = { etag: string | undefined; next: boolean; body: string };
 
-/** A host that answers these with one of them has no conditional REST for it at all. */
 const UNSUPPORTED_STATUSES = new Set([404, 405, 501]);
 
 export const makeChecksRevalidator = Effect.gen(function* () {
@@ -63,7 +62,6 @@ export const makeChecksRevalidator = Effect.gen(function* () {
               operation: "revalidateChecks",
               status,
             });
-          /** Whether the endpoint has a next page, or null where the host cannot say. */
           const get = (endpoint: string, head = false) =>
             Effect.gen(function* () {
               const previous = entry.validators.get(endpoint);

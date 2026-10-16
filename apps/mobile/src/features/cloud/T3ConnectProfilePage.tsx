@@ -214,10 +214,6 @@ const ENVIRONMENT_MENU_ACTIONS = [
   { id: "deregister", title: "Deregister", image: "trash", attributes: { destructive: true } },
 ] satisfies MenuAction[];
 
-// Layout primitives that mirror clerk-ios ClerkKitUI's profile rows so a custom
-// page reads as one of Clerk's own screens. System font on purpose: Clerk's
-// native views do not use the app's DM Sans.
-
 function ClerkSectionHeader(props: { readonly children: string }) {
   return (
     <Text className="min-h-4 border-b border-clerk-border px-6 pt-8 pb-4 text-xs font-medium tracking-[0.3px] text-clerk-foreground-muted uppercase">

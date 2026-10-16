@@ -43,7 +43,6 @@ import { cn } from "~/lib/utils";
 import { refreshPreviewStreamAccess, usePreviewStreamAccess } from "~/state/previewStream";
 import { observeResize } from "~/lib/observeResize";
 
-/** Chrome-row controls for a server tab; commands require current ownership. */
 export interface ServerBrowserHandle {
   readonly navigate: (url: string) => void;
   readonly history: (delta: -1 | 1) => void;
@@ -75,7 +74,6 @@ type WheelInput = Extract<PreviewStreamInput, { type: "wheel" }>;
 interface PagePoint {
   readonly x: number;
   readonly y: number;
-  /** Page CSS px per client px. */
   readonly scale: number;
 }
 
@@ -88,14 +86,11 @@ interface TouchGesture {
   panning: boolean;
 }
 
-/** Whether the page point under a touch takes text; null until the server answers. */
 interface TouchProbe {
   readonly x: number;
   readonly y: number;
   editable: boolean | null;
-  /** True only for this tap's own reply, never for a cached answer. */
   answered: boolean;
-  /** The tap ended before the answer arrived. */
   tapped: boolean;
 }
 
@@ -124,7 +119,6 @@ async function copyPageText(text: string) {
   }
 }
 
-/** The download happens on the environment; this hands the finished file to this device. */
 function offerDownload(download: PreviewStreamDownload) {
   const id = toastManager.add({
     type: "info",
@@ -147,16 +141,13 @@ export function ServerBrowserSurface(props: {
   readonly threadId: string;
   readonly tabId: string;
   readonly visible: boolean;
-  /** Sends the surface size so fill-mode tabs follow it. The floating player scales the page instead. */
   readonly followSize?: boolean;
-  /** Floating previews reserve the top edge for their existing hover controls. */
   readonly controlPosition?: "top" | "bottom";
   /** The page ignores pointer and keyboard input while the control bar stays usable. */
   readonly viewOnly?: boolean;
   readonly onFirstFrame?: () => void;
   readonly onViewport?: (viewport: PreviewStreamViewport) => void;
   readonly onControl?: (control: PreviewStreamControl | null) => void;
-  /** The page opened a new tab from this viewer's click; the viewer should switch to it. */
   readonly onPopup?: (tabId: string) => void;
   readonly className?: string;
   readonly ref?: Ref<ServerBrowserHandle>;
@@ -226,8 +217,6 @@ export function ServerBrowserSurface(props: {
   );
   const controlChanged = useEffectEvent((next: PreviewStreamControl | null) => onControl?.(next));
   const popupOpened = useEffectEvent((popupTabId: string) => onPopup?.(popupTabId));
-  // Frame cap in device px, fixed per socket. It grows with the surface and
-  // never shrinks, so only outgrowing it reconnects.
   const [cap, setCap] = useState<{ width: number; height: number } | null>(null);
 
   const send = useCallback((input: PreviewStreamInput) => {
@@ -258,7 +247,6 @@ export function ServerBrowserSurface(props: {
     if (wheel) send(wheel);
   }, [send]);
 
-  // Coalesce moves and wheel deltas to one message each per animation frame.
   const scheduleFlush = useCallback(() => {
     inputFrameRef.current ??= requestAnimationFrame(flushInput);
   }, [flushInput]);
@@ -286,7 +274,6 @@ export function ServerBrowserSurface(props: {
       if (!canvas || !viewport || !hasFrameRef.current || controlRef.current?.controller !== "you")
         return null;
       const rect = canvas.getBoundingClientRect();
-      // `object-contain` letterboxes the frame inside the canvas box.
       const fit = Math.min(rect.width / canvas.width, rect.height / canvas.height);
       const width = canvas.width * fit;
       const height = canvas.height * fit;
@@ -369,10 +356,7 @@ export function ServerBrowserSurface(props: {
       capTimer = setTimeout(growCap, previous === null ? 0 : RESIZE_THROTTLE_MS * 2);
     };
     const stopObserving = observeResize(element, () => {
-      // A pending measure reads the latest size when it fires, so a drag resizes
-      // the page at most every RESIZE_THROTTLE_MS and still ends on the final size.
       if (timer !== null) return;
-      // The first size connects right away.
       timer = setTimeout(measure, sizeRef.current === null ? 0 : RESIZE_THROTTLE_MS);
     });
     return () => {
@@ -406,7 +390,6 @@ export function ServerBrowserSurface(props: {
           probe.editable = result.editable;
           probe.answered = true;
           if (!probe.tapped) return;
-          // Late answer: Android still raises the keyboard; iOS waits for the next tap.
           probeRef.current = null;
           if (result.editable) inputRef.current?.focus({ preventScroll: true });
           else inputRef.current?.blur();
@@ -450,7 +433,6 @@ export function ServerBrowserSurface(props: {
         },
         onHostSetup: setHostSetup,
         onUnauthorized: () => {
-          // Fresh tickets re-run this effect. Repeated refusals need an explicit retry.
           const refusals = ++unauthorizedRef.current;
           if (refusals >= MAX_UNAUTHORIZED_REFUSALS) {
             inputRef.current?.blur();
@@ -490,7 +472,6 @@ export function ServerBrowserSurface(props: {
 
   useEffect(() => {
     if (!visible || accessDenied || access !== null) return;
-    // A failed ticket mint, e.g. while the server restarts, never retries on its own.
     const timer = setInterval(() => refreshPreviewStreamAccess(environmentId), ACCESS_RETRY_MS);
     return () => clearInterval(timer);
   }, [access, accessDenied, environmentId, visible]);
@@ -674,7 +655,6 @@ export function ServerBrowserSurface(props: {
   const handleKey = (action: "down" | "up", event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (controlRef.current?.controller !== "you") return;
     keySentRef.current = false;
-    // IME and soft keyboards deliver text through composition and input events.
     if (
       event.nativeEvent.isComposing ||
       event.keyCode === 229 ||
@@ -683,7 +663,6 @@ export function ServerBrowserSurface(props: {
     ) {
       return;
     }
-    // Keep plain Escape and Tab in the page; Shift+Escape returns to the app.
     if (event.key === "Escape" && event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
@@ -691,8 +670,6 @@ export function ServerBrowserSurface(props: {
       return;
     }
     const shortcut = event.ctrlKey || event.metaKey;
-    // Paste arrives as a paste event carrying this device's clipboard. Copy and cut run
-    // in the page, which sends the copied text back. Shift+Insert is the same paste.
     if (shortcut && event.key.toLowerCase() === "v") return;
     if (event.shiftKey && event.key === "Insert") return;
     // Enter carries "\r" like Puppeteer's key table, so forms submit and textareas break lines.
@@ -717,7 +694,6 @@ export function ServerBrowserSurface(props: {
       action === "down" &&
       !shortcut &&
       (text !== undefined || event.key === "Backspace" || event.key === "Delete");
-    // Shortcuts stay with the app (copy, paste, keybindings); other keys belong to the page.
     if (shortcut) return;
     event.preventDefault();
     event.stopPropagation();
@@ -776,7 +752,6 @@ export function ServerBrowserSurface(props: {
           onPointerMove={handlePointer}
           onPointerUp={handlePointer}
           onPointerCancel={handlePointer}
-          // Keeps focus in the page input below and stops native text selection.
           onMouseDown={(event) => event.preventDefault()}
           onContextMenu={(event) => event.preventDefault()}
         />
@@ -934,7 +909,6 @@ interface AgentCursorPlacement {
   readonly top: number;
 }
 
-/** Places the agent cursor over the letterboxed frame, the inverse of the viewer's own pointer mapping. */
 function placeAgentCursor(
   pointer: PreviewStreamPointer,
   canvas: HTMLCanvasElement | null,

@@ -6,14 +6,12 @@ import * as Option from "effect/Option";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { WEB_LINK_OPEN_CHANNEL } from "../ipc/channels.ts";
 
-/** An http(s) link the operating system handed to T3 Code as the default browser. */
 export const isWebLink = (value: string) => {
   if (!URL.canParse(value)) return false;
   const { protocol } = new URL(value);
   return protocol === "http:" || protocol === "https:";
 };
 
-/** An HTML file the operating system asked T3 Code to open, as browsers are asked to. */
 export const isWebPageFile = (path: string) => /\.x?html?$/i.test(path);
 
 /**
@@ -26,9 +24,7 @@ export const isWebPageFile = (path: string) => /\.x?html?$/i.test(path);
 export class DesktopWebLinks extends Context.Service<
   DesktopWebLinks,
   {
-    /** Queues a link and delivers it as soon as the renderer is listening. */
     readonly receive: (url: string) => Effect.Effect<void>;
-    /** The renderer started or stopped listening; listening flushes queued links. */
     readonly setRendererReady: (ready: boolean) => Effect.Effect<void>;
   }
 >()("@t3tools/desktop/app/DesktopWebLinks") {}
@@ -36,7 +32,6 @@ export class DesktopWebLinks extends Context.Service<
 const make = Effect.gen(function* () {
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const pending: Array<string> = [];
-  /** The page that said it is listening; a reload or crash replaces it, and it must say so again. */
   let listening: Electron.WebContents | null = null;
   let detachListening: (() => void) | null = null;
 
@@ -65,7 +60,6 @@ const make = Effect.gen(function* () {
     if (listening === webContents) return;
     stopListening();
     listening = webContents;
-    // Links that arrive while a new page loads wait for it to listen again.
     const onNavigation = (
       event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
     ) => {

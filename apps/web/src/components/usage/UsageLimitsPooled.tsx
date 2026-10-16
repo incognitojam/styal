@@ -38,13 +38,11 @@ import {
   useResetCredit,
 } from "./UsageLimits";
 
-/** `someone@example.com` → `SE`: enough to tell accounts apart, too little to identify one. */
 function accountInitials(email: string): string {
   const [local = "", domain = ""] = email.split("@");
   return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase() || "?";
 }
 
-/** A stable hue per email, so the same account gets the same chip on every visit. */
 function accountHue(email: string): number {
   let hash = 0;
   for (let index = 0; index < email.length; index += 1) {
@@ -53,7 +51,6 @@ function accountHue(email: string): number {
   return Math.abs(hash) % 360;
 }
 
-/** The two-letter chip for an email, coloured by a stable hue per address. */
 function AccountChip({ email }: { readonly email: string }) {
   const hue = accountHue(email);
   return (
@@ -68,10 +65,6 @@ function AccountChip({ email }: { readonly email: string }) {
   );
 }
 
-/**
- * The same mark the model picker uses for a native instance (provider glyph,
- * initials badge, accent); hub accounts have no instance, so they get the chip.
- */
 function AccountAvatar({
   account,
   className,
@@ -99,11 +92,6 @@ function AccountAvatar({
   return account.email ? <AccountChip email={account.email} /> : null;
 }
 
-/**
- * Who an account is, without printing the email: the instance name when there
- * is one, else a two-letter chip. The address itself is revealed on demand in
- * the segment's popover.
- */
 function AccountName({
   account,
   className,
@@ -135,11 +123,6 @@ function Row({ label, children }: { readonly label: string; readonly children: R
   );
 }
 
-/**
- * Everything about one account in one window: plan, where it is signed in,
- * the email on request, reset time and share of the pool it restores, and the
- * reset-credit action. Opens on hover for a glance, on click to act.
- */
 function SegmentPopover({
   account,
   window,
@@ -152,7 +135,6 @@ function SegmentPopover({
   readonly window: LimitPoolMember["window"];
   readonly reset: LimitPoolWindow["resets"][number] | undefined;
   readonly now: number;
-  /** Redeem state owned by the segment, since the confirm lives outside this popover. */
   readonly redeem: ReturnType<typeof useResetCredit> | null;
   readonly onRedeem: () => void;
 }) {
@@ -243,9 +225,8 @@ function SegmentPopover({
 }
 
 /**
- * One account's share of one pooled window: the segment, its popover, and the
- * reset confirm. The confirm is a sibling of the popover, not a child: dialogs
- * stack under popovers, and the popover closes as the confirm opens.
+ * The confirm is a sibling of the popover, not a child: dialogs stack under
+ * popovers, and the popover closes as the confirm opens.
  */
 function PoolSegment({
   account,
@@ -261,7 +242,6 @@ function PoolSegment({
   readonly reset: LimitPoolWindow["resets"][number] | undefined;
   readonly color: string;
   readonly now: number;
-  /** 1-based position in the bar, shown on the strip and its legend row to tie them together. */
   readonly index: number;
   /** More than one account: segments carry the account name and its own credits. */
   readonly pooled: boolean;
@@ -389,11 +369,6 @@ function PoolSegment({
   );
 }
 
-/**
- * Below the strip at narrow widths: one row per account in bar order, carrying
- * the text the segment has no room for. Tapping a row opens the same popover
- * as its segment, so the two are one control with two handles.
- */
 function LegendRow({
   account,
   window,
@@ -451,7 +426,6 @@ function LegendRow({
   );
 }
 
-/** Split out so the redeem hook only runs for accounts that can redeem. */
 function RedeemableSegmentPopup({
   account,
   window,
@@ -499,15 +473,6 @@ function RedeemableSegmentPopup({
   );
 }
 
-/**
- * One pooled window as equal-width segments, one per account, each filled by
- * the share of that account's quota still open. Equal widths are honest: every
- * account contributes the same share of the pool, whatever its plan.
- *
- * Wide, each segment carries its own label. Narrow, the bar is a bare strip
- * and a legend below lists the accounts in the same order; both open the
- * same popover.
- */
 function PoolBar({
   pool,
   color,
@@ -560,7 +525,6 @@ function PoolWindowRow({
   readonly label?: string | undefined;
   readonly description?: string | undefined;
 }) {
-  // The soonest reset that hands anything back; an untouched account resets to no effect.
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
   const pooled = pool.columns.length > 1;
   return (
@@ -654,11 +618,6 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   );
 }
 
-/**
- * Accounts pooled per provider: what is open across all of them, who resets
- * next, and how much of the pool that hands back. Answers "can I keep going"
- * before "on which account".
- */
 export function UsageLimitsPooled({
   presentations,
   now,
@@ -725,7 +684,6 @@ export function UsageLimitsPooled({
   );
 }
 
-/** Sources and providers that could not be read, so a missing bar is not mistaken for a full one. */
 function LimitNotices({ notices }: { readonly notices: readonly string[] }) {
   if (notices.length === 0) return null;
   return (

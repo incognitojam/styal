@@ -852,7 +852,6 @@ it.effect.each(
       }).pipe(
         Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
-        // This also represents a user enabling the stale catalog entry after re-resolution.
         Effect.provideService(GitHubRoutingPermissions, trustedRouting),
         Effect.provideService(RpcPermissionGuard, { authorize: () => Effect.void }),
       );
@@ -1542,7 +1541,6 @@ it.effect("shares close, reopen, and merge with an untouched client's mounted PR
           }),
         );
         expect(AsyncResult.isSuccess(result)).toBe(true);
-        // The second client receives only the server push: no local refresh or timer tick.
         yield* detailChanged.await;
         yield* summaryChanged.await;
         yield* listChanged.await;
@@ -1957,7 +1955,6 @@ it.effect("updates reviewer requests and enriched reviewers without rereading th
         ]);
       }
       expect(reads).toBe(3);
-      // A slow activity read started before the write must not hide the new request.
       pauseActivity = true;
       registry.refresh(activity);
       yield* activityStarted.await;
@@ -1976,7 +1973,6 @@ it.effect("updates reviewer requests and enriched reviewers without rereading th
       yield* request(false);
       expect((yield* AtomRegistry.getResult(registry, activity)).reviewers).toEqual([hostActor]);
 
-      // A caller without an open picker still needs authoritative reviewer identities.
       const otherTarget = { ...target, input: { ...target.input, number: 2 } };
       const otherDetail = atoms.detail(otherTarget);
       registry.mount(otherDetail);
@@ -2185,8 +2181,6 @@ it.effect("uses cached label colors for optimistic edits without changing anothe
   ),
 );
 
-// Transport fixtures have a source-control-only session; authorization edge cases
-// are exercised by commandPermissions.test.ts.
 vi.mock("./session.ts", () => ({
   createEnvironmentSessionAtoms: () => ({ sessionStateAtom: grantedSessions }),
 }));

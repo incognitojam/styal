@@ -296,7 +296,6 @@ type EditorDiscovery = Pick<
   "resolveAvailableEditors" | "resolveFileManagerRevealKind"
 >;
 
-// The config fields that follow from which editors are installed.
 const resolveEditorConfig = <E, R>(
   availableEditors: ReadonlyArray<EditorId>,
   revealKind: Effect.Effect<FileManagerRevealKind | undefined, E, R>,
@@ -316,14 +315,6 @@ const resolveEditorConfig = <E, R>(
     };
   });
 
-/**
- * Live config updates that follow a snapshot of `config`. A busy host can
- * outlast the snapshot's discovery timeouts, which send no editors, or no
- * reveal kind for the file manager. The scan keeps running, so once it lands
- * this resends the config: clients replace theirs on any snapshot. The resent
- * config is folded from the live updates already sent, so it cannot roll back
- * a change that landed while the scan ran.
- */
 export const withLateEditorConfig = <E, R>(
   config: ClientServerConfig,
   liveUpdates: Stream.Stream<ServerConfigStreamEvent, E, R>,
@@ -651,9 +642,6 @@ export function shouldUseBoundedThreadSnapshot(input: {
   return input.acceptBoundedSnapshot === true;
 }
 
-// Optional client identity announced on the /ws upgrade URL next to wsTicket.
-// Lenient by design: absent or malformed values degrade to {} so a connection
-// never fails over attribution metadata.
 function readClientConnectionOrigin(
   request: HttpServerRequest.HttpServerRequest,
 ): OrchestrationClientOrigin {
@@ -752,11 +740,6 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
       Effect.forEach(
         projects,
         (project) =>
-          // Non-blocking: emit with cached identity (or null) and schedule
-          // background resolution. subscribeChanges is attached before
-          // loadSnapshot, so later identity completions push refreshed
-          // shells for multi-env grouping without blocking the initial
-          // snapshot or completion marker on slow git probes.
           projectEnrichment.getAvailable(project.workspaceRoot).pipe(
             Effect.map((enrichment) => ({
               project: {
@@ -897,13 +880,9 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
       );
     });
 
-    // When the client already holds the projection (cached, or loaded over
-    // HTTP) it passes that snapshot's sequence, and we resume by replaying
-    // persisted events after it instead of re-sending the (potentially
-    // multi-KB) snapshot frame over the socket. The event sink subscribes
-    // to live events before reading the persisted tail, so no event
-    // published during the replay window is lost; overlapping events are
-    // deduped by sequence on the client.
+    // The event sink subscribes to live events before reading the persisted
+    // tail, so no event published during the replay window is lost; overlapping
+    // events are deduped by sequence on the client.
     if (input.afterSequence !== undefined) {
       const [threadSequence, fence] = yield* Effect.all([
         applicationEvents.latestAgentSequence(input.threadId),
@@ -1051,10 +1030,6 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       });
     });
 
-    // Coalescing makes each per-thread shell read represent every event
-    // for that thread in the current window; reading only the affected
-    // threads keeps the cost of a busy stream independent of how many
-    // threads exist overall.
     const projectShellItems = Effect.fn("ws.orchestrationV2.projectShellItems")(function* (
       events: ReadonlyArray<ShellApplicationEvent>,
     ) {
@@ -1093,10 +1068,6 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     const enrichmentRefreshes = Stream.fromSubscription(enrichmentChanges).pipe(
       Stream.filter((change) => change.repositoryIdentityResolved),
       Stream.groupedWithin(64, Duration.millis(25)),
-      // Build the refresh from the identities the changes carry. Re-enriching
-      // every project here re-requested each expired root, whose resolution
-      // published again, so one expiry kept every subscriber reloading every
-      // project's metadata once a minute.
       Stream.mapEffect((changes) =>
         Effect.gen(function* () {
           const identities = new Map(
@@ -1126,21 +1097,10 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     );
 
     // Always attach the enrichment subscription before the first load so
-    // completions that race HTTP snapshot fetch still push a refresh.
-    // When the client already holds a shell snapshot (cached, or loaded
-    // over HTTP) it passes that snapshot's sequence. We still emit one
-    // compact metadata refresh up front: getAvailable may have been cold on the
-    // HTTP path (null identity), and enrichment PubSub events published
-    // before this subscribe attached are dropped. Rehydrating here fills
-    // repositoryIdentity for cross-environment project grouping even on
-    // afterSequence resumes. Application events after the sequence still
-    // stream as deltas; overlapping events are deduped by sequence on the
-    // client.
-    //
-    // After the unmarked authoritative frame, emit a same-sequence
-    // metadata-only frame for roots that already resolved successfully
-    // (including cached null). Cold/failed roots stay unmarked and use
-    // the PubSub enrichment path when they complete later.
+    // completions that race HTTP snapshot fetch still push a refresh. We still
+    // emit one compact metadata refresh up front: getAvailable may have been
+    // cold on the HTTP path (null identity), and enrichment PubSub events
+    // published before this subscribe attached are dropped.
     const completionMarker =
       input.requestCompletionMarker === true
         ? Stream.make({ kind: "synchronized" as const })
@@ -1283,9 +1243,6 @@ const layerWsRpc = (
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
       const analytics = yield* AnalyticsService.AnalyticsService;
       const reportForkClientUsage = yield* ClientFeatureUsage.reporter(clientAnalyticsProps);
-      // Client-origin attribution (#7774): every thread/turn the connecting
-      // client starts is credited to its surface + app version. Best-effort:
-      // attribution must never fail the user's command.
       const originProps = clientAnalyticsProps;
       const projections = yield* ProjectionStoreV2;
       const recordClientCommandAnalytics = (
@@ -1431,8 +1388,6 @@ const layerWsRpc = (
           : {
               tasks: result.tasks.map(({ webhook: _webhook, ...task }) => task),
             };
-      // RpcScopeAuthorization checks each RPC's declared scope before its handler
-      // runs. This covers the one RPC whose scope depends on its input.
       const authorizeEffect = <A, E, R>(
         requiredScope: AuthEnvironmentScope,
         effect: Effect.Effect<A, E, R>,
@@ -1802,8 +1757,6 @@ const layerWsRpc = (
             issues: keybindingsConfig.issues,
             providers,
             ...editorConfig,
-            // Same discovery-with-timeout treatment as editors: a slow probe
-            // must not stall server.getConfig, so it degrades to no targets.
             remoteOpenTargets: yield* resolveAvailableEditorsForConfig(
               remoteOpenTargets.resolveTargets(),
             ),
@@ -1977,7 +1930,6 @@ const layerWsRpc = (
             Effect.flatMap((commandAnalyticsProps) =>
               startup
                 .enqueueCommand(
-                  // A retry also restarts the preparation work the launch owns.
                   (command.type === "prepared-run.retry"
                     ? threadLaunch.retryPreparation(command)
                     : ThreadMessageIntake.dispatchCommand(
@@ -2341,8 +2293,6 @@ const layerWsRpc = (
           ),
         [WS_METHODS.serverRefreshProviders]: (input) =>
           Effect.gen(function* () {
-            // Only explicit catalog refreshes bypass T3's caches. Workspace
-            // discovery and background status checks retain their timers.
             if (input.refreshModels) {
               yield* modelManifest.forceRefresh;
               const instances = yield* providerInstances.listInstances;
@@ -2363,9 +2313,7 @@ const layerWsRpc = (
                 { concurrency: "unbounded", discard: true },
               );
             }
-            // An untargeted refresh is "re-read everything's status", which
-            // includes quota from configured usage-limit sources. Awaited,
-            // not forked: the RPC scope closes on return and would
+            // Awaited, not forked: the RPC scope closes on return and would
             // interrupt a fork before the hub answered.
             if (input.instanceId === undefined) {
               yield* usageLimitSources.refresh;
@@ -2467,7 +2415,6 @@ const layerWsRpc = (
           Effect.gen(function* () {
             if ("sourceId" in input) return yield* usageLimitSources.consumeResetCredit(input);
             const instance = yield* providerInstances.getInstance(input.instanceId);
-            // A disabled instance must not spend anything on its account.
             if (instance === undefined || !instance.enabled) {
               return yield* new ProviderSetupError({
                 instanceId: input.instanceId,
@@ -2692,9 +2639,6 @@ const layerWsRpc = (
         [WS_METHODS.subscribeProjectClones]: () => projectCloneTracker.stream,
         [WS_METHODS.sourceControlPublishRepository]: (input) =>
           sourceControlRepositories.publishRepository(input).pipe(
-            // A new remote can change the cached identity. Only the `cwd` entry
-            // refreshes, so after a publish from a linked worktree the project
-            // root entry waits for its TTL.
             Effect.tap(() => repositoryIdentityResolver.resolve(input.cwd, { refresh: true })),
             Effect.tap(() => refreshGitStatus(input.cwd)),
           ),
@@ -2807,13 +2751,11 @@ const layerWsRpc = (
         [WS_METHODS.assetsCreateUrl]: (input) =>
           Effect.gen(function* () {
             const path = yield* Path.Path;
-            // An absolute media path can be linked from a thread on another environment.
             if (
               input.resource._tag === "attachment" ||
               input.resource._tag === "pull-request-file" ||
               input.resource._tag === "native-app-icon" ||
               input.resource._tag === "tool-output-image" ||
-              // GitHub media names the repository it authenticates through itself.
               input.resource._tag === "github-media" ||
               (input.resource._tag === "media-file" && path.isAbsolute(input.resource.path))
             ) {
@@ -2837,8 +2779,6 @@ const layerWsRpc = (
               });
             }
             if (input.resource._tag === "draft-workspace-file") {
-              // A project draft names its workspace directly; there is no
-              // thread to resolve one from.
               return yield* issueAssetUrl({
                 resource: input.resource,
                 workspaceRoot: input.resource.cwd,
@@ -3107,8 +3047,6 @@ const layerWsRpc = (
                   providerRegistry.streamChanges,
                 ),
                 usageLimitSources.streamChanges.pipe(
-                  // Quota updates already have their own stream. Republish the model
-                  // catalog only when the set of providers offered the command changes.
                   Stream.changesWith(
                     usageLimitsCommand ? sameUsageLimitCommandCoverage : () => true,
                   ),
@@ -3132,9 +3070,6 @@ const layerWsRpc = (
                 })),
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
-              // The only source of published themes: the stream emits the
-              // current set before any change, so the snapshot carrying it too
-              // would just send every client the same array twice per connect.
               // Gated on the subscriber's capability flag because an
               // already-shipped client decodes this stream against the old
               // event union and its whole config subscription dies on an
@@ -3350,9 +3285,8 @@ const layerWsRpc = (
     }),
   );
 
-// A defect in a handler's effect fails only its own request. RpcServer's default
-// sends a socket-level Defect frame instead, and the client ends every pending
-// request on the socket with it. DefectReporter logs these defects.
+// RpcServer's default sends a socket-level Defect frame instead, and the client
+// ends every pending request on the socket with it.
 export const WS_RPC_SERVER_OPTIONS = {
   disableTracing: true,
   disableFatalDefects: true,
@@ -3436,7 +3370,6 @@ export const layer = Layer.unwrap(
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
               Layer.provide(OtlpEndpointCheck.layer),
-              // Shared like the pull request service, so concurrent generations single-flight.
               Layer.provide(
                 Layer.succeed(
                   PullRequestReviewGuideService.PullRequestReviewGuideService,

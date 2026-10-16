@@ -39,7 +39,6 @@ const WRITING_STYLE_LABELS: Record<string, string> = {
   custom: "Custom instructions",
 };
 
-/** Human labels for the values the chain can show; falls back to a type summary. */
 function formatValue(key: keyof ServerSettings, value: unknown): string {
   if (value === null || value === undefined) {
     return key === "pullRequestMergeMethod"
@@ -158,14 +157,8 @@ export type SettingInheritanceState =
   | "overridden"
   | "mixed";
 
-/**
- * A small indicator beside a row's title that opens a top-down view of where
- * the setting's value comes from on each selected target. It sits inline so
- * narrowing to a project does not add a caption line to every row.
- */
 export interface SettingOverridingProject extends ProjectOverrideEntry {
   readonly label: string;
-  /** Jumps the breadcrumb to this project so its override can be edited. */
   readonly open: () => void;
 }
 
@@ -186,7 +179,6 @@ export function SettingInheritance({
     "environmentId" | "label" | "displayUrl" | "serverConfig"
   >[];
   keys: readonly (keyof ServerSettings)[];
-  /** At environment scope: projects whose own value hides the environment's. */
   overridingProjects?: readonly SettingOverridingProject[];
   onClearOverrides?: (entries: readonly ProjectOverrideEntry[]) => void;
 }) {

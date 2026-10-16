@@ -104,7 +104,6 @@ export function PullRequestLinkPreview({
       <Tooltip
         open={showUrlTooltip}
         onOpenChange={(nextOpen) => {
-          // Cancel the card's delayed hover too, without changing its content preview.
           if (!nextOpen && !showCard) previewActionsRef.current?.close();
         }}
       >

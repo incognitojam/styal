@@ -119,11 +119,9 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
   }) {
     const collectCommandResult = Effect.fn("ProviderMaintenanceRunner.collectCommandResult")(
       function* () {
-        // Resolve the executable for the host platform before spawning. On
-        // Windows the update tools are batch shims (e.g. `npm` -> `npm.cmd`),
-        // which a bare ChildProcess.spawn cannot launch (spawn npm ENOENT);
-        // resolveSpawnCommand finds the real `.cmd` and routes it through the
-        // shell. On Linux/macOS (incl. the WSL backend) this is a no-op.
+        // On Windows the update tools are batch shims (e.g. `npm` -> `npm.cmd`), which a bare
+        // ChildProcess.spawn cannot launch (spawn npm ENOENT); resolveSpawnCommand finds the
+        // real `.cmd` and routes it through the shell.
         const resolved = yield* resolveSpawnCommand(input.command, input.args);
         const child = yield* input.spawner
           .spawn(
@@ -152,7 +150,6 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
             );
         }
 
-        // Holds the newest output line not yet reported; the sampler takes it.
         const pendingProgress = yield* Ref.make<string | null>(null);
         const onProgress = input.onProgress;
         if (onProgress) {
@@ -172,8 +169,6 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
             Stream.tap((chunk) => {
               const split = splitOutputLines(partialLine, decoder.decode(chunk, { stream: true }));
               partialLine = split.partialLine;
-              // A progress bar that redraws with a leading `\r` keeps its newest
-              // frame unterminated, so that frame is the latest status.
               const line =
                 toProgressLine(split.partialLine) ??
                 split.lines.map(toProgressLine).findLast((value) => value !== null);
@@ -237,10 +232,6 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
   },
 );
 
-/**
- * Split a chunk of installer output into complete lines. `\r` ends a line too,
- * so a redrawn progress bar reports its latest frame.
- */
 export function splitOutputLines(
   partialLine: string,
   text: string,
@@ -249,7 +240,6 @@ export function splitOutputLines(
   return { partialLine: (parts.pop() ?? "").slice(-UPDATE_PARTIAL_LINE_MAX_LENGTH), lines: parts };
 }
 
-/** Turn one raw output line into a short status message, or null if it has no text. */
 export function toProgressLine(line: string): string | null {
   const text = NodeUtil.stripVTControlCharacters(line).replace(/\s+/g, " ").trim();
   if (text.length === 0) {
@@ -260,7 +250,6 @@ export function toProgressLine(line: string): string | null {
     : `${text.slice(0, UPDATE_PROGRESS_MAX_LENGTH - 1)}…`;
 }
 
-/** `claude update` reads better in a status line than the full executable path. */
 function describeCommand(command: ProviderMaintenanceCommandAction): string {
   const executable = command.executable.split(/[\\/]/).pop() || command.executable;
   // An installer run through a shell script reads as the command it stands for.

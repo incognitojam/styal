@@ -15,11 +15,9 @@ import {
 import { Button } from "../ui/button";
 import type { RestartingMachine, SkippedMachine } from "./updateEverything.logic";
 
-/** A thread an agent is working on now. A restart stops these; queued threads wait. */
 const isRunning = (status: string) =>
   status === "preparing" || status === "starting" || status === "running";
 
-/** Running threads across the environments in a newline-joined key. */
 const runningThreadCountAtom = Atom.family((environmentIds: string) =>
   Atom.make((get) =>
     environmentIds
@@ -44,20 +42,12 @@ interface UpdateEverythingDialogProps {
   readonly summary: string;
   readonly lines: ReadonlyArray<string>;
   readonly restarts: ReadonlyArray<RestartingMachine>;
-  /** Behind machines the run leaves alone. */
   readonly skipped: ReadonlyArray<SkippedMachine>;
   /** What updating the servers would interrupt; null while the fork's check runs. */
   readonly serverCheck?: ReadonlyArray<string> | null;
   readonly onConfirm: () => void;
 }
 
-/**
- * Confirms an "update everything" run. It counts the running threads that the
- * restarts stop, and how many can resume afterwards because "Continue threads
- * after restarts" is on for their server. Recovery still skips some, such as a
- * thread waiting on the user, so the text says "can resume", not "will".
- * Machines the run skips are listed with the reason, so none drop silently.
- */
 export function UpdateEverythingDialog({
   open,
   onOpenChange,
@@ -66,7 +56,7 @@ export function UpdateEverythingDialog({
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPopup>
-        {/* The popup unmounts when closed, so the thread count is read only while open. */}
+        {}
         <UpdateEverythingDialogContent {...content} />
       </AlertDialogPopup>
     </AlertDialog>

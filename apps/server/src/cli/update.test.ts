@@ -160,7 +160,6 @@ it.layer(NodeServices.layer)("styal update launcher", (it) => {
       const copy = path.join(root, "copy/styal");
       const foreign = path.join(root, "foreign/styal");
       const elsewhere = path.join(root, "elsewhere/styal");
-      // Another install's versions tree: same shape, different home.
       const otherHome = path.join(root, "other/runtime/styal-executable/versions/1.0.0/styal");
       const otherLauncher = path.join(root, "other/bin/styal");
       for (const file of [newExe, copy, elsewhere, otherHome]) {

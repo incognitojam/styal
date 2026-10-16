@@ -32,17 +32,8 @@ import { environmentThreadShells } from "../../state/threads";
 import { Button } from "../ui/button";
 
 /**
- * Holds back authenticated and hosted app trees until the first-run decision
- * is known, so a fresh install never flashes the main screen before the wizard.
  * Nothing renders while pending — no shell, no EventRouter (whose welcome
  * payload would otherwise navigate into a thread), no dialogs.
- *
- * Decision order: a set `onboardingCompletedAt` resolves to the app as soon as
- * settings hydrate (the common case, no server round-trip). A `null` flag also
- * covers installs that predate the field, so it alone is not enough — the gate
- * waits for environment shells to bootstrap and inspects the workspace.
- * Hosted mode instead checks its saved environment catalog. A timeout shows
- * recovery for an unreachable primary server without mounting the app tree.
  */
 
 const FIRST_RUN_DECISION_TIMEOUT_MS = 4_000;
@@ -93,8 +84,6 @@ export function FirstRunGate({
   const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
   const primaryShellLive = useAtomValue(primaryShellLiveAtom);
   const workspaceEvidenceLive = useAtomValue(workspaceEvidenceLiveAtom);
-  // Within a session settings stay hydrated, so remounts (e.g. returning from
-  // the wizard) resolve synchronously instead of blanking a frame.
   const [gateState, setGateState] = useState<FirstRunGateState>(() => ({
     decision:
       (!enabled && !hostedStatic) || (hydrated && onboardingCompletedAt !== null)
@@ -170,9 +159,6 @@ export function FirstRunGate({
     persistCompletion,
   ]);
 
-  // A stalled server read gets a recovery screen, but never mounts the app.
-  // The timer starts after settings hydrate so slow local hydration does not
-  // show a false connection failure.
   useEffect(() => {
     if (!enabled || decision !== "pending" || !hydrated) return;
     const timer = window.setTimeout(

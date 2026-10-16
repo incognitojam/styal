@@ -96,7 +96,6 @@ export function launcherOwnsVersionsDir(
  * executable, or a launcher for some other install, is left alone.
  */
 export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function* (input: {
-  /** Path the current process was started through, if known. */
   readonly launchedAs: string | undefined;
   /** `<baseDir>/runtime/styal-executable/versions` of the home being updated. */
   readonly versionsDir: string;
@@ -293,7 +292,6 @@ const belongsToBootService = Effect.fn("cli.update.belongs_to_boot_service")(fun
     return Option.isSome(cgroup) && cgroup.value.includes("/styal.service");
   }
   if (platform === "darwin") {
-    // The service server's parent is the launcher process.
     const parent = yield* runner
       .run({
         command: "ps",
@@ -348,10 +346,6 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   ).pipe(Effect.ensuring(Effect.sync(progress.finish)));
   const targetChannel = cliReleaseChannelOf(targetVersion);
 
-  // Preview is a maintainers' dogfooding train: it is cut by hand from
-  // unmerged branches, receives no fixes, and is never offered to anyone.
-  // Reaching it from stable or nightly takes an explicit ask and an explicit
-  // acknowledgement; the flag alone is not enough from a script.
   const currentChannel = cliReleaseChannelOf(currentVersion);
   if (targetChannel === "preview" && currentChannel !== "preview") {
     yield* Console.log(
@@ -377,8 +371,6 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     }
   }
 
-  // Work out everything that will be touched before touching anything, so the
-  // user sees one plan and one question rather than a surprise restart.
   const status = yield* service.status;
   // The unit name is per user, not per T3 home. Only touch the service when it
   // serves the home this update targets; otherwise it belongs to another
@@ -391,18 +383,8 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     serverRuntimeStatePath: input.serverRuntimeStatePath,
     serviceInstalled,
   });
-  // What this machine runs is the executable behind the launcher and, when a
-  // service is installed for this home, the version that service runs. Either
-  // being stale is an update to do, and the newest of the two is what the
-  // downgrade check protects.
   const serviceVersion = serviceInstalled ? status.installedVersion : undefined;
   const executableCurrent = targetVersion === currentVersion;
-  // A service whose recorded version is missing or unreadable is not known
-  // to be current, so it gets the update rather than being skipped. Nor is
-  // one on the right version that is stopped, disabled, or still running the
-  // version before it (an earlier update where the restart was declined):
-  // `status.current` covers all of that when the target is this executable,
-  // and the problem list is what can be judged for any other target.
   const restartPending = status.problems?.includes("restart-pending") === true;
   const serviceCurrent =
     !serviceInstalled ||

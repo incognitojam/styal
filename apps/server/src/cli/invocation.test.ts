@@ -163,13 +163,13 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
         entry: "/tmp/.mount_styalabc/resources/app.asar/apps/server/dist/bin.mjs",
         env: { T3CODE_CLI_PATH: shim },
       };
-      // The desktop app's shim, quoted for the shell and run as root as is.
+
       expect(yield* rootCommand(desktop)).toBe(`sudo '${shim}' browser setup`);
       // A `styal` the person put on PATH still wins.
       expect(yield* rootCommand({ ...desktop, path: yield* pathWithT3 })).toBe(
         'sudo env "PATH=$PATH" styal browser setup',
       );
-      // A standalone binary names itself.
+
       expect(
         yield* rootCommand({
           node: "/opt/styal/styal",

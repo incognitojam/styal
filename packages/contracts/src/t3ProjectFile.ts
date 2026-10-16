@@ -7,7 +7,6 @@ import { ProjectScriptIcon } from "./project.ts";
 /** File name of the legacy T3 Code project file, read only when there is no `styal.json`. */
 export const T3_PROJECT_FILE_NAME = "t3.json";
 
-/** Public URL of the published JSON Schema for {@link T3ProjectFile}. */
 export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
 
 const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;

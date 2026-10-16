@@ -81,7 +81,6 @@ export function ensureClipboardEpochTracking(): void {
   );
 }
 
-/** Copy fallback for remote web pages served over plain HTTP. */
 function writeTextWithExecCommand(
   value: string,
   extraFlavors?: Readonly<Record<string, string>>,
@@ -146,7 +145,6 @@ export async function writeTextToClipboard(
   if (contextFragment)
     extraFlavors = {
       ...extraFlavors,
-      // A caller that already built rich HTML keeps it; the escaped `<pre>` is only a fallback.
       "text/html": encodeComposerContextClipboardHtml(
         value,
         contextFragment,
@@ -165,8 +163,6 @@ export async function writeTextToClipboard(
   }
 
   try {
-    // Custom flavors need ClipboardItem; when it is missing or refuses the type, plain text
-    // still lands so the copy never silently fails.
     if (extraFlavors && typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
       try {
         await navigator.clipboard.write([
@@ -195,9 +191,7 @@ export async function writeTextToClipboard(
             ]);
             clipboardWriteCount += 1;
             return true;
-          } catch {
-            // Plain text still makes unavailable references visible to the receiver.
-          }
+          } catch {}
         }
       }
     }
@@ -285,7 +279,6 @@ export function useCopyToClipboard<TContext = void>({
     );
   }, []);
 
-  // Cleanup timeout on unmount
   React.useEffect(() => {
     return (): void => {
       if (timeoutIdRef.current) {

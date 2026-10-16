@@ -32,13 +32,8 @@ export interface EnvironmentConnectionLease {
   readonly session: RpcSession.RpcSession;
 }
 
-/**
- * The result of an unauthenticated reachability check. T3 Connect and SSH
- * routes have no cheap check, so they are "unchecked".
- */
 export type RouteCheck = "answered" | "silent" | "unchecked";
 
-/** How long a direct route has to answer before it counts as unreachable from here. */
 const ROUTE_CHECK_TIMEOUT_MS = 2_500;
 
 export class ConnectionDriver extends Context.Service<
@@ -48,16 +43,10 @@ export class ConnectionDriver extends Context.Service<
       entry: ConnectionCatalogEntry,
       reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
     ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope>;
-    /** Whether a direct route answers as the entry's environment, without credentials. */
     readonly checkRoute: (
       entry: ConnectionCatalogEntry,
       route: ConnectionRoute,
     ) => Effect.Effect<RouteCheck>;
-    /**
-     * Whether a direct route answers and accepts this client's credential,
-     * without opening a socket. Switching to a route that fails this would
-     * drop a working connection for nothing.
-     */
     readonly preflight: (
       entry: ConnectionCatalogEntry,
       route: ConnectionRoute,

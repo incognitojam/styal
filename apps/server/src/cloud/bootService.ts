@@ -39,7 +39,6 @@ const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // (build.styal.app), so launchd and TCC records never collide.
 const BOOT_SERVICE_LAUNCHD_LABEL = "build.styal.app.service";
 const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
-/** File in the logs dir that receives the service's stdout and stderr. `t3 triage` points agents at it. */
 export const BOOT_SERVICE_LOG_FILE = "boot-service.log";
 
 /** systemd expands `%` specifiers, including in unquoted append-log paths. */
@@ -77,12 +76,6 @@ export function bootServiceBaseDirOf(contents: string): string | undefined {
 }
 
 export interface BootServicePlan {
-  /**
-   * What the service manager executes. npm-distributed runtimes run the
-   * standalone launcher script with the installing Node; archive-distributed
-   * runtimes run their own executable, which hosts the launcher as a hidden
-   * subcommand so the machine never needs Node.
-   */
   readonly program: ReadonlyArray<string>;
   readonly baseDir: string;
   readonly logPath: string;
@@ -110,8 +103,7 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     // Agents and terminals run in their own scopes in app-t3code-agents.slice
     // (see process/agentScope.ts). Short helper commands still share this
     // cgroup, and with the systemd default of OOMPolicy=stop, the kernel
-    // killing one of them stops the whole unit. Keep running and let
-    // Restart=always cover the main process.
+    // killing one of them stops the whole unit.
     "OOMPolicy=continue",
     "Restart=always",
     "RestartSec=5",
@@ -121,7 +113,7 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     "IOWeight=1000",
     // systemd-oomd only honors this when the cgroup it watches is owned by the
     // same user. Distros watch user-1000.slice, which root owns, so there it is
-    // ignored. The agent scopes are what keep oomd off the server.
+    // ignored.
     "ManagedOOMPreference=avoid",
     `StandardOutput=append:${escapeSystemdSpecifiers(plan.logPath)}`,
     `StandardError=append:${escapeSystemdSpecifiers(plan.logPath)}`,
@@ -132,7 +124,6 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
   ].join("\n");
 }
 
-/** Plist values are emitted as XML text nodes; only these three need escaping. */
 function escapeXmlText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
@@ -142,8 +133,6 @@ export function renderBootServicePlist(
   plan: BootServicePlan,
   options: { readonly homeDir: string; readonly environmentPath: string },
 ): string {
-  // KeepAlive + ThrottleInterval mirror Restart=always + RestartSec=5. launchd
-  // has no StartLimitBurst analog; a hard crash loop respawns every 5s forever.
   // ExitTimeOut 90 matches systemd's default TimeoutStopSec. A plain stop
   // completes within the launcher's 5s child grace, but a stop that queues
   // behind an in-flight update transition can take much longer; launchd's
@@ -201,12 +190,9 @@ export interface BootServiceStep {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   /**
-   * Non-zero exit is logged and ignored. Reserved for steps whose common
-   * failures (not loaded, already enabled) leave a state a later strict step
-   * either tolerates or fails loudly on.
+   * Non-zero exit is logged and ignored.
    */
   readonly optional?: boolean;
-  /** Override the ProcessRunner default (60s) for steps that block longer. */
   readonly timeout?: Duration.Input;
 }
 
@@ -218,24 +204,14 @@ export interface BootServiceStep {
  */
 const STOP_STEP_TIMEOUT = Duration.seconds(120);
 
-/**
- * Platform service-manager integration as data: paths, a pure renderer, and
- * the command steps each flow runs. install/uninstall/status consume this and
- * never branch on platform.
- */
 export interface BootServiceManager {
   readonly kind: "systemd" | "launchd";
   readonly unitPath: string;
   readonly render: (plan: BootServicePlan) => string;
-  /** Before rewriting files, when a unit is already installed. */
   readonly stop: ReadonlyArray<BootServiceStep>;
-  /** After files are written. The last entry starts the service. */
   readonly activate: ReadonlyArray<BootServiceStep>;
-  /** Best-effort recovery after a failed repair of an installed service. */
   readonly restart: ReadonlyArray<BootServiceStep>;
-  /** Uninstall, before the unit file is removed. */
   readonly deactivate: ReadonlyArray<BootServiceStep>;
-  /** Uninstall, after the unit file is removed. */
   readonly finalize: ReadonlyArray<BootServiceStep>;
 }
 
@@ -273,7 +249,6 @@ function systemdManager(input: {
         command: "systemctl",
         args: ["--user", "enable", BOOT_SERVICE_UNIT_FILE],
       },
-      // Start last. No administrative state write occurs after this succeeds.
       {
         step: "starting the service",
         command: "systemctl",
@@ -327,11 +302,8 @@ function launchdManager(input: {
   const serviceTarget = `${domainTarget}/${BOOT_SERVICE_LAUNCHD_LABEL}`;
   // bootout/enable are optional: they fail on not-loaded states that are fine
   // to proceed from. The strict `bootstrap` runs last and is also the start:
-  // loading a RunAtLoad/KeepAlive plist starts the job, so a separate
-  // kickstart would kill and restart a server it just booted. A lingering job
-  // that survived bootout, or a gui domain with nobody logged in at the
-  // screen (SSH install), makes bootstrap fail the flow loudly rather than
-  // silently keeping a stale server.
+  // loading a RunAtLoad/KeepAlive plist starts the job, so a separate kickstart
+  // would kill and restart a server it just booted.
   return {
     kind: "launchd",
     unitPath,
@@ -361,7 +333,6 @@ function launchdManager(input: {
         args: ["enable", serviceTarget],
         optional: true,
       },
-      // Start last. No administrative state write occurs after this succeeds.
       {
         step: "starting the service",
         command: "launchctl",
@@ -375,10 +346,8 @@ function launchdManager(input: {
         args: ["bootstrap", domainTarget, unitPath],
       },
     ],
-    // No `launchctl disable` here: a persisted override would sabotage a
-    // later reinstall. Removing the plist is what stops the next login load.
-    // A bootout that fails for a reason other than "not loaded" leaves the
-    // job running until logout; the failure is in the boot-service log.
+    // No `launchctl disable` here: a persisted override would sabotage a later
+    // reinstall.
     deactivate: [
       {
         step: "stopping the service",
@@ -392,7 +361,6 @@ function launchdManager(input: {
   };
 }
 
-/** Undefined means this host cannot run the background service. */
 function selectBootServiceManager(input: {
   readonly platform: NodeJS.Platform;
   readonly homeDir: string;
@@ -462,7 +430,6 @@ const BootServiceProblem = Schema.Literals([
 ]);
 type BootServiceProblem = typeof BootServiceProblem.Type;
 
-/** These codes and recovery steps are documented in docs/user/background-service.md. */
 export function formatBootServiceProblem(problem: BootServiceProblem): string {
   switch (problem) {
     case "user-manager-unavailable":
@@ -558,7 +525,6 @@ export class BootService extends Context.Service<
       readonly start?: boolean;
     }) => Effect.Effect<BootServicePlan, BootServiceError>;
     /**
-     * Stop and start the installed service on the version its unit names.
      * Only when the unit serves this base dir: the unit name is per user, so
      * another home's service is left alone. Resolves false when nothing was
      * restarted.
@@ -655,8 +621,6 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         );
       }),
     ).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
-  // The executable hosts the launcher as a hidden subcommand of itself, so
-  // the unit runs the pinned runtime directly.
   const plan: BootServicePlan = {
     program: [runtimePaths.entryPath, "__service-launcher"],
     baseDir: input.baseDir,
@@ -710,8 +674,6 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           entry.args,
           entry.timeout === undefined ? undefined : { timeout: entry.timeout },
         );
-        // runStep's tapError already appends the failure to the log, so an
-        // ignored optional step still leaves a trace.
         return entry.optional === true ? run.pipe(Effect.ignore) : run.pipe(Effect.asVoid);
       },
       { discard: true },
@@ -786,12 +748,10 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       .makeDirectory(input.logsDir, { recursive: true })
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
 
-    // A permissions failure must not leave a partial install or stop a working server.
     if (manager.kind === "systemd") {
       yield* requireSystemdPrerequisites.pipe(Effect.tapError(logFailure));
     }
 
-    // Prepare every immutable artifact before stopping the installed unit.
     yield* ensurePinnedRuntimeInstalled({
       baseDir: input.baseDir,
       version: input.cliVersion,
@@ -849,11 +809,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
     // With start=false the service keeps running while its files change. The
     // launcher reads the state file once at startup and the unit only matters
-    // on the next start, so that is safe as long as the launcher is not in
-    // the middle of a remote update, which is the one time it writes the
-    // state file itself. That case is refused below, before anything is
-    // written, from the same read the downgrade check uses; the stop that
-    // normally serialises against the launcher is skipped on purpose.
+    // on the next start, so that is safe as long as the launcher is not in the
+    // middle of a remote update, which is the one time it writes the state file
+    // itself.
     const start = options?.start !== false;
     if (installed && start) {
       yield* runSteps(manager.stop);
@@ -901,10 +859,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         .makeDirectory(path.dirname(unitPath), { recursive: true })
         .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
       if (!start && installed) {
-        // Written first: once the files below name the new version, the
-        // running service is behind them, and a failure between the two
-        // writes must not leave it looking current. The launcher removes the
-        // marker when it starts, `restart` and a started install do too.
+        // Written first: once the files below name the new version, the running
+        // service is behind them, and a failure between the two writes must not
+        // leave it looking current.
         yield* fs.writeFileString(restartPendingPath, `${input.cliVersion}\n`, { mode: 0o600 });
       }
       yield* writeDurably(
@@ -967,8 +924,6 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     }
     yield* runSteps(manager.stop);
     yield* runSteps(manager.activate).pipe(
-      // Same recovery as a failed repair: a service that was running should
-      // not be left stopped because daemon-reload or enable failed.
       Effect.tapError(() => runSteps(manager.restart).pipe(Effect.ignore)),
     );
     yield* fs.remove(restartPendingPath, { force: true });

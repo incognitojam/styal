@@ -63,8 +63,6 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
     const config = yield* ServerConfig.ServerConfig;
     const incomingByQuestionId = command.attachmentsByQuestionId;
     yield* AttachmentClaims.validateAttachmentLimits(Object.values(incomingByQuestionId).flat());
-    // Claims accumulate across questions, so all of preparation shares one
-    // rollback boundary: any failure before dispatch removes every new copy.
     const claimedPaths: string[] = [];
     const prepared = yield* Effect.gen(function* () {
       const attachmentsByQuestionId: import("@t3tools/contracts").UserInputAttachments = {};
@@ -247,9 +245,6 @@ export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(functi
         }
         // Project/receipt reads precede message dispatch. The create-thread error
         // also wraps post-message projection reads, so its tag alone is not proof.
-        // The initial message's own dispatch can still find the instance newly
-        // disabled, which wraps the same tag handled above instead of surfacing
-        // it directly, so the guard below also recognizes it.
         const notAccepted =
           error.operation === "resolve-project" ||
           error.operation === "read-receipt" ||

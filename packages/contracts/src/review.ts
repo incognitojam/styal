@@ -39,7 +39,6 @@ export const ReviewDiffPreviewSource = Schema.Struct({
   truncated: Schema.Boolean,
   /** Paths Git attributes identify as generated in the checked-out repository. */
   generatedPaths: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
-  /** Complete statistics, independent of patch limits. Absent on older servers. */
   files: Schema.optionalKey(Schema.Array(ReviewDiffFileStat)),
 });
 export type ReviewDiffPreviewSource = typeof ReviewDiffPreviewSource.Type;

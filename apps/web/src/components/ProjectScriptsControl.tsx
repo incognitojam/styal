@@ -201,7 +201,6 @@ export default function ProjectScriptsControl({
                 (presentation === "menu" ? (
                   <MenuShortcut className="ms-0 mr-7">{shortcutLabel}</MenuShortcut>
                 ) : (
-                  // The shortcut yields its slot to the edit button on hover.
                   <span className="transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
                     <MenuShortcut className="ms-0">{shortcutLabel}</MenuShortcut>
                   </span>
@@ -361,8 +360,6 @@ export default function ProjectScriptsControl({
           </Menu>
         </ActionGroup>
       ) : scripts.length > 0 || importableScripts.length > 0 ? (
-        // No one-click action (only a settle action, or only t3.json imports),
-        // so the saved actions stay reachable through this menu.
         isPanel ? (
           <div
             role="group"
@@ -438,8 +435,6 @@ export default function ProjectScriptsControl({
                 panel={isPanel}
                 className={isPanel ? undefined : "w-7 sm:w-6 @3xl/header-actions:w-auto!"}
                 aria-label={isPanel ? "Add project script" : "Add action"}
-                // The tooltip wrapper replaces data-slot="button", so themed
-                // toolbar styling needs its own hook.
                 data-toolbar-control=""
                 onClick={openAddDialog}
               />
