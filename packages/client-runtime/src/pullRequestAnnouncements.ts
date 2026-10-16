@@ -145,13 +145,19 @@ function isNewTransition(previous: Observation, next: Observation) {
 export function createPullRequestAnnouncementTracker() {
   let previous = new Map<string, Observation>();
   let membership = new Map<string, Set<string>>();
+  // Each environment's PRs as of its last live read, kept while it reconnects.
+  const lastLiveKeys = new Map<string, Set<string>>();
 
   return (sources: ReadonlyArray<PullRequestAnnouncementSource>) => {
     const latest = new Map<string, ThreadPullRequestLink>();
     const nextMembership = new Map<string, Set<string>>();
     const continuous = new Set<string>();
+    const reconnecting = new Set<string>();
     for (const source of sources) {
-      if (!source.live) continue;
+      if (!source.live) {
+        for (const key of lastLiveKeys.get(source.environmentId) ?? []) reconnecting.add(key);
+        continue;
+      }
       const keys = new Set<string>();
       for (const link of source.links) {
         if (link.source === "stack-dismissed" || link.snapshot === null) continue;
@@ -162,6 +168,7 @@ export function createPullRequestAnnouncementTracker() {
         if (!known || link.snapshot.syncedAt > known.snapshot!.syncedAt) latest.set(key, link);
       }
       nextMembership.set(source.environmentId, keys);
+      lastLiveKeys.set(source.environmentId, keys);
     }
 
     const next = new Map<string, Observation>();
@@ -180,6 +187,14 @@ export function createPullRequestAnnouncementTracker() {
       if (before && continuous.has(key) && isNewTransition(before, observation)) {
         announcements.push({ key, number: link.number, kind: observation.kind! });
       }
+    }
+    // A reconnecting environment says nothing new about its PRs, so their last known status stands
+    // rather than reading as changed and cutting off what is being announced.
+    for (const key of reconnecting) {
+      const before = previous.get(key);
+      if (next.has(key) || !before) continue;
+      next.set(key, before);
+      current.set(key, before.kind);
     }
     previous = next;
     membership = nextMembership;

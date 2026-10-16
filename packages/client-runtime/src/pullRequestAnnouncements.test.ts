@@ -250,6 +250,18 @@ describe("createPullRequestAnnouncementTracker", () => {
     ).toEqual([]);
   });
 
+  it("keeps a reconnecting environment's PRs at their last status until it is live again", () => {
+    const track = createPullRequestAnnouncementTracker();
+    const read = (live: boolean, links: ReadonlyArray<ThreadPullRequestLink>) =>
+      track([{ environmentId: "env", live, links }]);
+    read(true, [link(1)]);
+    expect(read(true, [link(1, { checksState: "failing" })]).announcements).toHaveLength(1);
+    // Returning to the tab re-establishes the connection; what is playing must not read as stale.
+    expect([...read(false, []).current]).toEqual([[expect.any(String), "ci-failure"]]);
+    expect([...read(false, []).current]).toEqual([[expect.any(String), "ci-failure"]]);
+    expect(read(true, []).current.size).toBe(0);
+  });
+
   it("reports each PR's current announcement so stale queued ones can be dropped", () => {
     const track = createPullRequestAnnouncementTracker();
     track([{ environmentId: "env", live: true, links: [link(1)] }]);
