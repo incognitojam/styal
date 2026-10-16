@@ -26,6 +26,26 @@ export interface NetworkReportRecord {
   readonly metrics: NetworkReportMetrics;
 }
 
+export type DropCause = "stoppedResponding" | "disconnected" | "probeFailed" | "other";
+
+/**
+ * Why a live session ended. The client closes the socket itself after
+ * heartbeats go unanswered, so that is known before the close arrives. While
+ * connected, the only timeout is the supervisor's health check.
+ */
+export function dropCause(error: ConnectionAttemptError, heartbeatTimedOut: boolean): DropCause {
+  if (heartbeatTimedOut) return "stoppedResponding";
+  if (error._tag !== "ConnectionTransientError") return "other";
+  switch (error.reason) {
+    case "timeout":
+      return "probeFailed";
+    case "transport":
+      return "disconnected";
+    default:
+      return "other";
+  }
+}
+
 /** Counts one environment session's traffic. Created for each socket the session opens. */
 export interface SocketMeter {
   readonly attach: (socket: Socket.WebSocketLike) => void;
@@ -43,9 +63,16 @@ class ReportWindow {
   connectingMs = 0;
   offlineMs = 0;
   initialConnectMs: number | undefined;
-  drops = 0;
-  heartbeatTimeouts = 0;
+  readonly drops: Record<DropCause, number> = {
+    stoppedResponding: 0,
+    disconnected: 0,
+    probeFailed: 0,
+    other: 0,
+  };
   failedAttempts = 0;
+  setupTimeouts = 0;
+  routeSwitches = 0;
+  routeSwitchBacks = 0;
   readonly recoveries: Array<number> = [];
   heartbeats = 0;
   heartbeatReplies = 0;
@@ -112,13 +139,18 @@ class ReportWindow {
     }
   }
 
+  get dropCount(): number {
+    const { stoppedResponding, disconnected, probeFailed, other } = this.drops;
+    return stoppedResponding + disconnected + probeFailed + other;
+  }
+
   isWorthReporting(endedAt: number): boolean {
     if (this.routeKind === "loopback") return false;
     return (
       endedAt - this.startedAt >= MIN_REPORTED_WINDOW_MS ||
-      this.drops > 0 ||
+      this.dropCount > 0 ||
       this.failedAttempts > 0 ||
-      this.heartbeatTimeouts > 0
+      this.routeSwitchBacks > 0
     );
   }
 
@@ -136,9 +168,15 @@ class ReportWindow {
       ...(this.initialConnectMs === undefined
         ? {}
         : { initialConnectMs: Math.round(this.initialConnectMs) }),
-      drops: this.drops,
-      heartbeatTimeouts: this.heartbeatTimeouts,
+      drops: this.dropCount,
+      dropsStoppedResponding: this.drops.stoppedResponding,
+      dropsDisconnected: this.drops.disconnected,
+      dropsProbeFailed: this.drops.probeFailed,
+      dropsOther: this.drops.other,
       failedAttempts: this.failedAttempts,
+      setupTimeouts: this.setupTimeouts,
+      routeSwitches: this.routeSwitches,
+      routeSwitchBacks: this.routeSwitchBacks,
       recoveries: recoveries.length,
       ...(recoveries.length === 0
         ? {}
@@ -192,6 +230,15 @@ interface EnvironmentTracker {
   // that dies in the background is only found on return, which is not a drop
   // the user saw.
   answered: boolean;
+  // Set by the client's own heartbeat timeout, which closes the socket just
+  // before the supervisor reports the failure.
+  heartbeatTimedOut: boolean;
+  // The route of the latest session, and whether that session has failed.
+  routeId: string | null;
+  sessionFailed: boolean;
+  // The route left by the last switch, until the switched-to session fails
+  // and the connection returns to it or settles elsewhere.
+  switchedFrom: string | null;
   // Compared by identity: the supervisor keeps reporting the same failure
   // while it waits and retries, and creates a new one for each failure.
   lastFailure: ConnectionAttemptError | null;
@@ -253,11 +300,13 @@ export class NetworkReportCollector {
     window?.addPhaseTime(tracker.phase, now);
     const failed = state.lastFailure !== null && state.lastFailure !== tracker.lastFailure;
     if (state.lastFailure !== null) tracker.lastFailure = state.lastFailure;
-    if (failed && window !== null) {
+    if (failed) tracker.sessionFailed = true;
+    if (failed && window !== null && state.lastFailure !== null) {
       if (tracker.phase !== "connected") {
         window.failedAttempts += 1;
+        if (state.lastFailure.reason === "timeout") window.setupTimeouts += 1;
       } else if (tracker.answered) {
-        window.drops += 1;
+        window.drops[dropCause(state.lastFailure, tracker.heartbeatTimedOut)] += 1;
         tracker.droppedAt = now;
       } else {
         window.awaitingConnection = true;
@@ -297,7 +346,11 @@ export class NetworkReportCollector {
     }
   }
 
-  meter(environmentId: EnvironmentId, routeKind: ConnectionRouteKind): SocketMeter {
+  meter(
+    environmentId: EnvironmentId,
+    routeKind: ConnectionRouteKind,
+    routeId: string,
+  ): SocketMeter {
     const current = () => this.trackers.get(environmentId)?.window ?? null;
     // Send times of unanswered pings, oldest first.
     const pings: Array<number> = [];
@@ -338,20 +391,33 @@ export class NetworkReportCollector {
         const tracker = this.trackers.get(environmentId);
         if (tracker === undefined) return;
         tracker.answered = false;
+        tracker.heartbeatTimedOut = false;
         tracker.routeKind = routeKind;
-        const window = tracker.window;
-        if (window === null) return;
-        if (window.routeKind === null) {
-          window.routeKind = routeKind;
-        } else if (window.routeKind !== routeKind) {
-          const now = this.options.now();
-          this.close(environmentId, tracker, now);
-          this.open(tracker, now);
+        if (tracker.window !== null) {
+          if (tracker.window.routeKind === null) {
+            tracker.window.routeKind = routeKind;
+          } else if (tracker.window.routeKind !== routeKind) {
+            const now = this.options.now();
+            this.close(environmentId, tracker, now);
+            this.open(tracker, now);
+          }
         }
+        const previous = tracker.routeId;
+        if (previous !== null && previous !== routeId) {
+          if (!tracker.sessionFailed) {
+            if (tracker.window !== null) tracker.window.routeSwitches += 1;
+            tracker.switchedFrom = previous;
+          } else if (tracker.switchedFrom === routeId) {
+            if (tracker.window !== null) tracker.window.routeSwitchBacks += 1;
+            tracker.switchedFrom = null;
+          }
+        }
+        tracker.routeId = routeId;
+        tracker.sessionFailed = false;
       },
       heartbeatTimedOut: () => {
-        const window = current();
-        if (window !== null) window.heartbeatTimeouts += 1;
+        const tracker = this.trackers.get(environmentId);
+        if (tracker !== undefined) tracker.heartbeatTimedOut = true;
       },
     };
   }
@@ -367,6 +433,10 @@ export class NetworkReportCollector {
       desired: state.desired,
       lastFailure: state.lastFailure,
       answered: false,
+      heartbeatTimedOut: false,
+      routeId: null,
+      sessionFailed: false,
+      switchedFrom: null,
       routeKind: null,
       droppedAt: null,
       window: null,

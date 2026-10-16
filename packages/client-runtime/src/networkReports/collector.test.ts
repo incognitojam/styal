@@ -5,6 +5,7 @@ import type * as Socket from "effect/socket/Socket";
 import {
   type ConnectionAttemptError,
   ConnectionTransientError,
+  type ConnectionTransientReason,
   type SupervisorConnectionPhase,
   type SupervisorConnectionState,
 } from "../connection/model.ts";
@@ -65,16 +66,28 @@ function fakeSocket() {
   };
 }
 
-function failure(detail: string) {
-  return new ConnectionTransientError({ reason: "transport", detail });
+function failure(detail: string, reason: ConnectionTransientReason = "transport") {
+  return new ConnectionTransientError({ reason, detail });
 }
+
+const NO_FAILURES = {
+  drops: 0,
+  dropsStoppedResponding: 0,
+  dropsDisconnected: 0,
+  dropsProbeFailed: 0,
+  dropsOther: 0,
+  failedAttempts: 0,
+  setupTimeouts: 0,
+  routeSwitches: 0,
+  routeSwitchBacks: 0,
+};
 
 describe("NetworkReportCollector", () => {
   it("summarizes a connection that drops in a dead zone and recovers", () => {
     const { collector, reports, advance, state } = harness();
     collector.setNetworkKind("cellular");
     state("connecting");
-    const meter = collector.meter(ENVIRONMENT_ID, "relay");
+    const meter = collector.meter(ENVIRONMENT_ID, "relay", "relay");
     const { socket, receive } = fakeSocket();
     meter.attach(socket);
     advance(800);
@@ -117,8 +130,9 @@ describe("NetworkReportCollector", () => {
         connectingMs: 5_800,
         offlineMs: 0,
         initialConnectMs: 800,
+        ...NO_FAILURES,
         drops: 1,
-        heartbeatTimeouts: 1,
+        dropsStoppedResponding: 1,
         failedAttempts: 1,
         recoveries: 0,
         heartbeats: 2,
@@ -139,9 +153,7 @@ describe("NetworkReportCollector", () => {
         connectedMs: 0,
         connectingMs: 20_000,
         offlineMs: 0,
-        drops: 0,
-        heartbeatTimeouts: 0,
-        failedAttempts: 0,
+        ...NO_FAILURES,
         recoveries: 0,
         heartbeats: 0,
         heartbeatReplies: 0,
@@ -159,9 +171,7 @@ describe("NetworkReportCollector", () => {
         connectingMs: 1_500,
         offlineMs: 0,
         initialConnectMs: 1_500,
-        drops: 0,
-        heartbeatTimeouts: 0,
-        failedAttempts: 0,
+        ...NO_FAILURES,
         // Measured from the drop, across the dead zone.
         recoveries: 1,
         recoveryP50Ms: 26_500,
@@ -199,7 +209,7 @@ describe("NetworkReportCollector", () => {
   it("counts a session that died in the background as a reconnect, not a drop", () => {
     const { collector, reports, advance, state } = harness();
     state("connected");
-    const meter = collector.meter(ENVIRONMENT_ID, "relay");
+    const meter = collector.meter(ENVIRONMENT_ID, "relay", "relay");
     const { socket, receive } = fakeSocket();
     meter.attach(socket);
     meter.opened();
@@ -234,13 +244,91 @@ describe("NetworkReportCollector", () => {
     ]);
   });
 
+  it("records why each live session dropped and which attempts timed out", () => {
+    const { collector, reports, advance, state } = harness();
+    const meter = collector.meter(ENVIRONMENT_ID, "relay", "relay");
+    const { socket, receive } = fakeSocket();
+    meter.attach(socket);
+    const connect = () => {
+      meter.opened();
+      state("connected");
+      receive(PONG);
+      advance(5_000);
+    };
+    state("connecting");
+    connect();
+    // Heartbeats went unanswered, so the client closed the socket.
+    meter.heartbeatTimedOut();
+    state("backoff", failure("stopped responding"));
+    connect();
+    state("backoff", failure("disconnected"));
+    connect();
+    state("connecting", failure("did not respond to a connection health check", "timeout"));
+    state("backoff", failure("did not respond during connection setup", "timeout"));
+    state("backoff", failure("relay unavailable", "relay-unavailable"));
+    connect();
+    collector.setActive(false);
+
+    expect(reports[0]!.metrics).toMatchObject({
+      ...NO_FAILURES,
+      drops: 3,
+      dropsStoppedResponding: 1,
+      dropsDisconnected: 1,
+      dropsProbeFailed: 1,
+      failedAttempts: 2,
+      setupTimeouts: 1,
+    });
+  });
+
+  it("counts a switch to a better route and the switch back after it fails", () => {
+    const { collector, reports, advance, state } = harness();
+    collector.setNetworkKind("wifi");
+    const relay = collector.meter(ENVIRONMENT_ID, "relay", "relay");
+    const lan = collector.meter(ENVIRONMENT_ID, "lan", "connection-lan");
+    const relaySocket = fakeSocket();
+    const lanSocket = fakeSocket();
+    relay.attach(relaySocket.socket);
+    lan.attach(lanSocket.socket);
+    state("connecting");
+    relay.opened();
+    state("connected");
+    relaySocket.receive(PONG);
+    advance(60_000);
+    // A better route answered, so the session is replaced without a failure.
+    state("connecting");
+    lan.opened();
+    state("connected");
+    lanSocket.receive(PONG);
+    advance(20_000);
+    state("backoff", failure("disconnected"));
+    advance(1_000);
+    state("connecting", failure("disconnected"));
+    relay.opened();
+    state("connected");
+    advance(30_000);
+    collector.setActive(false);
+
+    expect(
+      reports.map(({ metrics }) => [
+        metrics.routeKind,
+        metrics.routeSwitches,
+        metrics.routeSwitchBacks,
+        metrics.drops,
+      ]),
+    ).toEqual([
+      ["relay", 0, 0, 0],
+      ["lan", 1, 0, 1],
+      ["relay", 0, 1, 0],
+    ]);
+  });
+
   it("starts a new window when the route changes or the window reaches its limit", () => {
     const { collector, reports, advance, state } = harness();
     collector.setNetworkKind("wifi");
     state("connected");
-    collector.meter(ENVIRONMENT_ID, "lan").opened();
+    collector.meter(ENVIRONMENT_ID, "lan", "lan").opened();
     advance(30_000);
-    collector.meter(ENVIRONMENT_ID, "relay").opened();
+    collector.meter(ENVIRONMENT_ID, "relay", "relay").opened();
     advance(NETWORK_REPORT_WINDOW_MS);
     collector.tick();
     advance(30_000);
@@ -258,10 +346,10 @@ describe("NetworkReportCollector", () => {
   it("skips connections to the same device, short windows and background time", () => {
     const { collector, reports, advance, state } = harness();
     state("connected");
-    collector.meter(ENVIRONMENT_ID, "loopback").opened();
+    collector.meter(ENVIRONMENT_ID, "loopback", "loopback").opened();
     advance(60_000);
     collector.setNetworkKind("wifi");
-    collector.meter(ENVIRONMENT_ID, "tailnet").opened();
+    collector.meter(ENVIRONMENT_ID, "tailnet", "tailnet").opened();
     advance(2_000);
     collector.setActive(false);
     advance(60_000);
@@ -278,7 +366,7 @@ describe("NetworkReportCollector", () => {
   it("matches heartbeat replies to pings in order and finds the busiest second", () => {
     const { collector, reports, advance, state } = harness();
     state("connected");
-    const meter = collector.meter(ENVIRONMENT_ID, "public");
+    const meter = collector.meter(ENVIRONMENT_ID, "public", "public");
     const { socket, receive } = fakeSocket();
     meter.attach(socket);
     meter.opened();

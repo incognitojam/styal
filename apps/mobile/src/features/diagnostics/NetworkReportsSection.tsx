@@ -13,7 +13,6 @@ import { SettingsSection } from "../settings/components/SettingsSection";
 import {
   describeNetworkReport,
   formatReportStart,
-  hadTrouble,
   networkKindLabel,
   routeKindLabel,
   summarizeByNetworkKind,
@@ -113,7 +112,6 @@ function NetworkReportRow(props: {
   readonly now: number;
 }) {
   const { metrics } = props.report;
-  const trouble = hadTrouble(metrics);
   return (
     <View className={props.first ? "gap-1 p-4" : "gap-1 border-t border-border-subtle p-4"}>
       <View className="flex-row items-center justify-between gap-3">
@@ -129,16 +127,16 @@ function NetworkReportRow(props: {
           {props.environmentLabel}
         </Text>
       )}
-      {describeNetworkReport(metrics).map((line, index) => (
+      {describeNetworkReport(metrics).map((line) => (
         <Text
-          key={line}
+          key={line.text}
           className={
-            trouble && index === 1
+            line.trouble
               ? "text-sm text-danger-foreground"
               : "text-sm tabular-nums text-foreground-muted"
           }
         >
-          {line}
+          {line.text}
         </Text>
       ))}
     </View>

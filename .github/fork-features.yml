@@ -2483,7 +2483,7 @@ features:
     status: maintained
     prs: []
     invariants:
-      - Clients summarize each environment connection into windows of foreground use, at most 15 minutes long and split when the network type or route changes, recording time connected, drops, failed attempts, heartbeat timeouts, recovery time, heartbeat round trips, payload bytes and messages each way, and the peak receive rate.
+      - Clients summarize each environment connection into windows of foreground use, at most 15 minutes long and split when the network type or route changes, recording time connected, drops by cause (heartbeat timeout, socket closed, health check timeout, other), failed attempts and setup timeouts, route switches and switches back after a failure, recovery time, heartbeat round trips, payload bytes and messages each way, and the peak receive rate.
       - Round trips come from the existing RPC heartbeat, so measuring adds no network traffic; connections to the same device are not reported.
       - A drop is a session that fails after answering in the foreground; a socket that died while the app was in the background counts toward the time to a working connection instead, and network type changes wait for the state to settle so a handover is not reported as no network.
       - Reports carry the network interface type and route kind only, never a network, carrier or host name, address, or environment identifier.

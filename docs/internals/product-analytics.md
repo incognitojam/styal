@@ -45,7 +45,15 @@ Per-window round-trip percentiles cannot be combined into an overall percentile.
 `drops` counts sessions that failed after answering in the foreground. A socket
 the operating system closed while the app was in the background is found on
 return; it appears as `initialConnectMs` instead, so every resume does not read
-as a network failure.
+as a network failure. The `drops*` cause fields sum to `drops`:
+`dropsStoppedResponding` means the client closed the socket after heartbeats went
+unanswered, `dropsDisconnected` that the socket closed, and `dropsProbeFailed`
+that a health check timed out. `setupTimeouts` is the share of
+`failedAttempts` that ran out of time before the session was ready.
+`routeSwitches` counts sessions replaced on a different route without a failure,
+usually by a better route, and `routeSwitchBacks` counts returns to the route
+left by a switch after the switched-to session failed. Both land in the window
+of the route switched to.
 A send whose response was lost is repeated, so rare duplicates are possible.
 Byte counts are payload sizes before WebSocket compression, and text frames count
 UTF-16 code units.

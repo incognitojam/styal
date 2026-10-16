@@ -43,26 +43,55 @@ function connectedPercent(connectedMs: number, durationMs: number): number {
   return durationMs <= 0 ? 0 : Math.floor((connectedMs / durationMs) * 100);
 }
 
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? "" : "s"}`;
+function plural(count: number, word: string, words = `${word}s`): string {
+  return `${count} ${count === 1 ? word : words}`;
 }
 
 /** Whether a window had any failure worth drawing attention to. */
 export function hadTrouble(metrics: NetworkReportMetrics): boolean {
-  return metrics.drops > 0 || metrics.failedAttempts > 0 || metrics.heartbeatTimeouts > 0;
+  return metrics.drops > 0 || metrics.failedAttempts > 0 || metrics.routeSwitchBacks > 0;
 }
 
-/** One line each for availability, failures, latency and data. */
-export function describeNetworkReport(metrics: NetworkReportMetrics): ReadonlyArray<string> {
-  const lines = [
-    `Connected ${connectedPercent(metrics.connectedMs, metrics.durationMs)}% of ${formatDuration(metrics.durationMs)}`,
+export interface NetworkReportLine {
+  readonly text: string;
+  readonly trouble: boolean;
+}
+
+function describeDrops(metrics: NetworkReportMetrics): string {
+  const causes = (
+    [
+      [metrics.dropsStoppedResponding, "stopped responding"],
+      [metrics.dropsDisconnected, "disconnected"],
+      [metrics.dropsProbeFailed, "health check timed out"],
+      [metrics.dropsOther, "other"],
+    ] as const
+  ).filter(([count]) => count > 0);
+  const detail =
+    causes.length === 1
+      ? causes[0]![1]
+      : causes.map(([count, cause]) => `${count} ${cause}`).join(", ");
+  return `${plural(metrics.drops, "drop")} (${detail})`;
+}
+
+/** One line each for availability, failures, route changes, latency and data. */
+export function describeNetworkReport(
+  metrics: NetworkReportMetrics,
+): ReadonlyArray<NetworkReportLine> {
+  const lines: Array<NetworkReportLine> = [
+    {
+      text: `Connected ${connectedPercent(metrics.connectedMs, metrics.durationMs)}% of ${formatDuration(metrics.durationMs)}`,
+      trouble: false,
+    },
   ];
-  if (hadTrouble(metrics)) {
+  if (metrics.drops > 0 || metrics.failedAttempts > 0) {
     const failures = [
-      ...(metrics.drops > 0 ? [plural(metrics.drops, "drop")] : []),
-      ...(metrics.failedAttempts > 0 ? [plural(metrics.failedAttempts, "failed attempt")] : []),
-      ...(metrics.heartbeatTimeouts > 0
-        ? [plural(metrics.heartbeatTimeouts, "heartbeat timeout")]
+      ...(metrics.drops > 0 ? [describeDrops(metrics)] : []),
+      ...(metrics.failedAttempts > 0
+        ? [
+            metrics.setupTimeouts > 0
+              ? `${plural(metrics.failedAttempts, "failed attempt")} (${metrics.setupTimeouts} timed out)`
+              : plural(metrics.failedAttempts, "failed attempt"),
+          ]
         : []),
     ];
     if (metrics.recoveryP50Ms !== undefined && metrics.recoveryMaxMs !== undefined) {
@@ -72,26 +101,44 @@ export function describeNetworkReport(metrics: NetworkReportMetrics): ReadonlyAr
           : `reconnected in ${formatDuration(metrics.recoveryP50Ms)} (slowest ${formatDuration(metrics.recoveryMaxMs)})`,
       );
     }
-    lines.push(failures.join(" · "));
+    lines.push({ text: failures.join(" · "), trouble: true });
+  }
+  if (metrics.routeSwitches > 0 || metrics.routeSwitchBacks > 0) {
+    lines.push({
+      text: [
+        ...(metrics.routeSwitches > 0
+          ? [plural(metrics.routeSwitches, "route switch", "route switches")]
+          : []),
+        ...(metrics.routeSwitchBacks > 0
+          ? [`${plural(metrics.routeSwitchBacks, "switch", "switches")} back after a failure`]
+          : []),
+      ].join(" · "),
+      trouble: metrics.routeSwitchBacks > 0,
+    });
   }
   if (metrics.initialConnectMs !== undefined) {
-    lines.push(`First connected after ${formatDuration(metrics.initialConnectMs)}`);
+    lines.push({
+      text: `First connected after ${formatDuration(metrics.initialConnectMs)}`,
+      trouble: false,
+    });
   }
   if (
     metrics.rttP50Ms !== undefined &&
     metrics.rttP90Ms !== undefined &&
     metrics.rttMaxMs !== undefined
   ) {
-    lines.push(
-      `Round trip ${formatDuration(metrics.rttP50Ms)} · p90 ${formatDuration(metrics.rttP90Ms)} · max ${formatDuration(metrics.rttMaxMs)}`,
-    );
+    lines.push({
+      text: `Round trip ${formatDuration(metrics.rttP50Ms)} · p90 ${formatDuration(metrics.rttP90Ms)} · max ${formatDuration(metrics.rttMaxMs)}`,
+      trouble: false,
+    });
   } else if (metrics.heartbeats > 0) {
-    lines.push("No heartbeat answered");
+    lines.push({ text: "No heartbeat answered", trouble: true });
   }
   if (metrics.bytesReceived > 0 || metrics.bytesSent > 0) {
-    lines.push(
-      `Received ${formatBytes(metrics.bytesReceived)} · sent ${formatBytes(metrics.bytesSent)} · peak ${formatBytes(metrics.peakReceiveBytesPerSecond)}/s`,
-    );
+    lines.push({
+      text: `Received ${formatBytes(metrics.bytesReceived)} · sent ${formatBytes(metrics.bytesSent)} · peak ${formatBytes(metrics.peakReceiveBytesPerSecond)}/s`,
+      trouble: false,
+    });
   }
   return lines;
 }

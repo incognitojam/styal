@@ -20,7 +20,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { preparedConnectionRouteKind } from "../connection/routes.ts";
+import { connectionRouteId, preparedConnectionRouteKind } from "../connection/routes.ts";
 import * as EnvironmentRpc from "../rpc/client.ts";
 import { NetworkReportCollector, type NetworkReportRecord } from "./collector.ts";
 import { NetworkMeters } from "./meter.ts";
@@ -258,7 +258,11 @@ export const make = Effect.gen(function* () {
 
   const meters = NetworkMeters.of({
     forConnection: (connection) =>
-      collector.meter(connection.environmentId, preparedConnectionRouteKind(connection)),
+      collector.meter(
+        connection.environmentId,
+        preparedConnectionRouteKind(connection),
+        connectionRouteId(connection.target),
+      ),
   });
   return Context.make(NetworkReports, NetworkReports.of({ reports, clear, follow })).pipe(
     Context.add(NetworkMeters, meters),

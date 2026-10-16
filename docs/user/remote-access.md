@@ -228,8 +228,8 @@ devices. For server version warnings, follow [Updating styal](./updating.md).
 The mobile app keeps a report for each stretch of use on one network, up to 15
 minutes long, for 7 days. Open **Settings → About → Diagnostics** to see totals
 for each network type and the individual reports: how much of the time styal was
-connected, drops and how long reconnecting took, heartbeat round-trip times, and
-data received and sent. Use it to check a commute or a weak signal afterwards.
+connected, drops and why they happened, how long reconnecting took, switches
+between routes, heartbeat round-trip times, and data received and sent. Use it to check a commute or a weak signal afterwards.
 
 A report ends when the app goes to the background or the network type or route
 changes. Data figures count message sizes before compression, so they are close

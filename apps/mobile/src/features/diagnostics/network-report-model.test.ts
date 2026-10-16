@@ -11,8 +11,14 @@ const QUIET: NetworkReportMetrics = {
   connectingMs: 0,
   offlineMs: 0,
   drops: 0,
-  heartbeatTimeouts: 0,
+  dropsStoppedResponding: 0,
+  dropsDisconnected: 0,
+  dropsProbeFailed: 0,
+  dropsOther: 0,
   failedAttempts: 0,
+  setupTimeouts: 0,
+  routeSwitches: 0,
+  routeSwitchBacks: 0,
   recoveries: 0,
   heartbeats: 0,
   heartbeatReplies: 0,
@@ -31,7 +37,10 @@ const TRAIN: NetworkReportMetrics = {
   connectedMs: 855_000,
   connectingMs: 45_000,
   drops: 2,
-  heartbeatTimeouts: 1,
+  dropsStoppedResponding: 1,
+  dropsDisconnected: 1,
+  routeSwitches: 2,
+  routeSwitchBacks: 1,
   recoveries: 2,
   recoveryP50Ms: 8_000,
   recoveryMaxMs: 31_000,
@@ -48,10 +57,14 @@ const TRAIN: NetworkReportMetrics = {
 describe("describeNetworkReport", () => {
   it("lists drops, recovery, round trips and data for a window with outages", () => {
     expect(describeNetworkReport(TRAIN)).toEqual([
-      "Connected 95% of 15m",
-      "2 drops · 1 heartbeat timeout · reconnected in 8.0s (slowest 31s)",
-      "Round trip 140ms · p90 620ms · max 4.1s",
-      "Received 2.3 MB · sent 60 KB · peak 371 KB/s",
+      { text: "Connected 95% of 15m", trouble: false },
+      {
+        text: "2 drops (1 stopped responding, 1 disconnected) · reconnected in 8.0s (slowest 31s)",
+        trouble: true,
+      },
+      { text: "2 route switches · 1 switch back after a failure", trouble: true },
+      { text: "Round trip 140ms · p90 620ms · max 4.1s", trouble: false },
+      { text: "Received 2.3 MB · sent 60 KB · peak 371 KB/s", trouble: false },
     ]);
   });
 
@@ -63,12 +76,13 @@ describe("describeNetworkReport", () => {
         connectingMs: 600_000,
         heartbeats: 3,
         failedAttempts: 4,
-      }),
-    ).toEqual(["Connected 0% of 10m", "4 failed attempts", "No heartbeat answered"]);
+        setupTimeouts: 3,
+      }).map((line) => line.text),
+    ).toEqual(["Connected 0% of 10m", "4 failed attempts (3 timed out)", "No heartbeat answered"]);
   });
 
   it("does not round a window with an outage up to 100%", () => {
-    expect(describeNetworkReport({ ...QUIET, connectedMs: 599_000 })[0]).toBe(
+    expect(describeNetworkReport({ ...QUIET, connectedMs: 599_000 })[0]?.text).toBe(
       "Connected 99% of 10m",
     );
   });

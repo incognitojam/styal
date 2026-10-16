@@ -44,8 +44,20 @@ export const NetworkReportMetrics = Schema.Struct({
   initialConnectMs: Schema.optionalKey(NonNegativeInt),
   /** Sessions that stopped working after answering in the foreground. */
   drops: NonNegativeInt,
-  heartbeatTimeouts: NonNegativeInt,
+  /** Drops after heartbeats went unanswered and the client closed the socket. */
+  dropsStoppedResponding: NonNegativeInt,
+  /** Drops where the socket closed. */
+  dropsDisconnected: NonNegativeInt,
+  /** Drops where a health check, run on returning to the app or a network change, timed out. */
+  dropsProbeFailed: NonNegativeInt,
+  dropsOther: NonNegativeInt,
   failedAttempts: NonNegativeInt,
+  /** Failed attempts that ran out of time before the session was ready. */
+  setupTimeouts: NonNegativeInt,
+  /** New sessions on a different route after the previous one ended without failing, usually a better route. */
+  routeSwitches: NonNegativeInt,
+  /** Returns to the route switched away from, after the switched-to session failed. */
+  routeSwitchBacks: NonNegativeInt,
   /** Connections restored after a drop, and how long each took from the drop. */
   recoveries: NonNegativeInt,
   recoveryP50Ms: Schema.optionalKey(NonNegativeInt),
