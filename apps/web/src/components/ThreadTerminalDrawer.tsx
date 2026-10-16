@@ -56,6 +56,7 @@ import {
   type GhosttyTerminalSurfaceOptions,
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
+import { registerTerminalScriptPasteSurface } from "~/terminal/scriptPaste";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { isTerminalUrl, resolvePathLinkTarget } from "../terminal-links";
 import {
@@ -552,6 +553,9 @@ export function TerminalViewport({
       // never started, so only "exited" triggers the message — as with xterm.)
       synchronizedStatusRef.current = "closed";
       synchronizeTerminalStatus(terminal, latestSession.status);
+      setupCleanups.push(
+        registerTerminalScriptPasteSurface({ environmentId, threadId, terminalId }, terminal),
+      );
       // Startup may finish after the user has returned to the composer.
       if (visibleRef.current && mount.contains(document.activeElement)) {
         terminal.focus();

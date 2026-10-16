@@ -9,6 +9,11 @@ a new terminal so the command does not get typed into the existing process. The 
 for recognized shell fences such as `sh`, `bash`, `zsh`, and `powershell`; source-code and plain-text
 blocks remain copy-only.
 
+A block with several lines asks for confirmation first, showing the exact script. T3 Code pastes the
+whole script into the shell at once, so a command that waits for input cannot consume the lines
+after it. This needs a shell that supports bracketed paste, such as zsh, fish, or a recent bash.
+Other shells show an error instead, and you can copy the script.
+
 ![A shell code block with the Run in terminal action](./images/run-command-code-block-after.png)
 
 # Open terminal links in Preview
