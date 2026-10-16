@@ -6,8 +6,6 @@ Use an `intake/<batch>` branch based on fork `main`. Preserve upstream authorshi
 
 Nothing automatically syncs upstream or authorizes a promotion. Dispatch only when the maintainer explicitly requests it.
 
-When an agent performs intake in styal, pin its current thread before starting with `t3_thread_organize({ action: "pin" })`, omitting `threadId`. Keep it pinned across batches, validation, CI, and promotion waits so the ongoing work stays visible. When the requested intake is complete or the maintainer cancels it, call `t3_thread_organize({ action: "unpin" })` only if this intake added the pin; preserve a pre-existing pin. Ending a turn while intake is still pending is not completion.
-
 Before applying a batch, check for other active agent threads working on fork PRs with `t3_thread_list`. If any may land during intake, ask the maintainer whether to coordinate a landing hold, naming the affected threads and explaining that changes to `main` can invalidate candidate validation. Send no coordination messages without approval. With approval, use `t3_thread_send` to ask those agents to wait for intake promotion before landing their PRs; development and testing can continue. Release the hold after promotion as described in [step 4](#4-promote-without-a-pr). If intake is deferred or cancelled, notify them that the hold is released.
 
 ## 1. Choose the next batch
