@@ -3652,7 +3652,7 @@ features:
     prs: [515, 744, 802]
     invariants:
       - Restart recovery records a durable server-created continuation message and an explicit restartContinuationOfRunId link; retries do not dispatch the same recovery message twice and newer user work takes precedence.
-      - Web and mobile render the recovery prompt as a standalone note inside the interrupted response, preserving one final answer and one worked duration with the outage excluded; unrelated background wake continuations remain separate.
+      - Web and mobile render the recovery prompt as a standalone note inside the response the restart cut short, preserving one final answer and one worked duration with the outage excluded. A continuation of a completed or waiting run, prompted only about its cancelled background work, starts its own response under the note and leaves the earlier final answer visible; unrelated background wake continuations remain separate.
       - The standalone restart divider reads Server restarted, remaining accurate after the continued response finishes.
       - While a linked replacement run is working, earlier assistant footers stay hidden and tools remain scoped to their own run; a new user message starts a separate response.
       - The live conversation timer on web and mobile, and the working time in thread lists, include work before each linked restart and exclude outage gaps, matching completed or stopped response duration, including quiet work through its recorded end time; new user prompts start a fresh timer. Restart continuations carry this as a work start moved later by each outage, and later wakes keep it.

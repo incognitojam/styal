@@ -910,6 +910,15 @@ function timelineEntryFoldRunId(entry: TimelineEntry, runlessKey: RunId | null):
   return null;
 }
 
+const RESTART_NEW_RESPONSE_ACTIVITY_KIND = "server-restart.new-response";
+
+function workEntryIsRestartNote(entry: WorkLogEntry): boolean {
+  return (
+    entry.sourceActivityKind === "server-restart.continued" ||
+    entry.sourceActivityKind === RESTART_NEW_RESPONSE_ACTIVITY_KIND
+  );
+}
+
 /** A steer adds input to its existing turn, without creating a new header. */
 function timelineEntryStartsResponse(entry: TimelineEntry): boolean {
   return (
@@ -917,7 +926,9 @@ function timelineEntryStartsResponse(entry: TimelineEntry): boolean {
       entry.message.role === "user" &&
       entry.message.inputIntent !== "steer" &&
       entry.message.inputIntent !== "promoted_queued_to_steer") ||
-    (entry.kind === "work" && entry.entry.itemType === "notification")
+    (entry.kind === "work" &&
+      (entry.entry.itemType === "notification" ||
+        entry.entry.sourceActivityKind === RESTART_NEW_RESPONSE_ACTIVITY_KIND))
   );
 }
 
@@ -1359,6 +1370,7 @@ export function deriveMessagesTimelineRows(input: {
     id: RunId;
     userMessageId?: MessageId | undefined;
     restartContinuationOfRunId?: RunId | undefined;
+    resumesResponse?: boolean | undefined;
   }>;
   runningRunId?: RunId | null;
   expandedRunIds?: ReadonlySet<RunId>;
@@ -1628,10 +1640,7 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
-    if (
-      timelineEntry.kind === "work" &&
-      timelineEntry.entry.sourceActivityKind === "server-restart.continued"
-    ) {
+    if (timelineEntry.kind === "work" && workEntryIsRestartNote(timelineEntry.entry)) {
       nextRows.push({
         kind: "standalone-activity",
         id: timelineEntry.id,
@@ -1686,7 +1695,7 @@ export function deriveMessagesTimelineRows(input: {
           nextEntry.kind !== "work" ||
           nextEntry.entry.questionAnswer !== undefined ||
           nextEntry.entry.sourceActivityKind === "context-compaction" ||
-          nextEntry.entry.sourceActivityKind === "server-restart.continued" ||
+          workEntryIsRestartNote(nextEntry.entry) ||
           workEntryReviewFindings(nextEntry.entry) !== undefined ||
           nextEntry.entry.tone === "error" ||
           nextEntry.entry.sourceActivityKind === "runtime.error" ||
@@ -2346,15 +2355,24 @@ function workEntryToolInputRecord(entry: WorkLogEntry): Record<string, unknown> 
     : undefined;
 }
 
-/** Restart continuation runs explicitly identify the response they continue. */
+/**
+ * Restart continuation runs explicitly identify the run they continue. Only one
+ * that resumes a response the restart cut short joins that response.
+ */
 export function deriveContinuedRunRoots(
   runs: ReadonlyArray<{
     id: RunId;
     userMessageId?: MessageId | undefined;
     restartContinuationOfRunId?: RunId | undefined;
+    resumesResponse?: boolean | undefined;
   }>,
 ): ReadonlyMap<RunId, RunId> {
-  const parents = new Map(runs.map((run) => [run.id, run.restartContinuationOfRunId]));
+  const parents = new Map(
+    runs.map((run) => [
+      run.id,
+      run.resumesResponse === false ? undefined : run.restartContinuationOfRunId,
+    ]),
+  );
   const roots = new Map<RunId, RunId>();
   for (const run of runs) {
     let root = run.id;
@@ -2394,13 +2412,18 @@ function restartDowntimeMs<Entry>(
   return downtime;
 }
 
-/** Recovery prompts remain durable messages, but render as notes within the resumed response. */
+/**
+ * Recovery prompts remain durable messages, but render as notes. A note that
+ * resumes a response sits within it; one after a settled response starts the
+ * next response, as a background wake's notification does.
+ */
 function restartContinuationNotes(
   entries: ReadonlyArray<TimelineEntry>,
   runs: ReadonlyArray<{
     id: RunId;
     userMessageId?: MessageId | undefined;
     restartContinuationOfRunId?: RunId | undefined;
+    resumesResponse?: boolean | undefined;
   }>,
 ): ReadonlyArray<TimelineEntry> {
   const continuationRuns = new Map(
@@ -2425,7 +2448,10 @@ function restartContinuationNotes(
             runId: run.id,
             label: "Server restarted",
             tone: "info",
-            sourceActivityKind: "server-restart.continued",
+            sourceActivityKind:
+              run.resumesResponse === false
+                ? RESTART_NEW_RESPONSE_ACTIVITY_KIND
+                : "server-restart.continued",
             toolLifecycleStatus: "completed",
           },
         }

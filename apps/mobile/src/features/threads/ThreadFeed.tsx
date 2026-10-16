@@ -48,7 +48,10 @@ import {
   classifyMarkdownImageSource,
   markdownImageSourceFragment,
 } from "@t3tools/client-runtime/markdown-images";
-import { resolveViewedImageAsset } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  resolveViewedImageAsset,
+  restartContinuationResumesResponse,
+} from "@t3tools/client-runtime/work-log/presentation";
 import {
   renderCodexFileCitationsAsMarkdown,
   splitCodexArtifactTemplateMarkdown,
@@ -2236,18 +2239,24 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       id: RunId;
       userMessageId: MessageId;
       restartContinuationOfRunId: RunId;
+      resumesResponse: boolean;
     }> = [];
     return Atom.make((get) => {
       const projection = get(
         environmentThreadDetails.threadAtom(scopeThreadRef(props.environmentId, props.threadId)),
       )?.projection;
-      const next = (projection?.runs ?? []).flatMap((run) =>
+      const runs = projection?.runs ?? [];
+      const runsById = new Map(runs.map((run) => [run.id, run]));
+      const next = runs.flatMap((run) =>
         run.restartContinuationOfRunId
           ? [
               {
                 id: run.id,
                 userMessageId: run.userMessageId,
                 restartContinuationOfRunId: run.restartContinuationOfRunId,
+                resumesResponse: restartContinuationResumesResponse(
+                  runsById.get(run.restartContinuationOfRunId),
+                ),
               },
             ]
           : [],
@@ -2258,7 +2267,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           (run, index) =>
             run.id !== previous[index]?.id ||
             run.userMessageId !== previous[index]?.userMessageId ||
-            run.restartContinuationOfRunId !== previous[index]?.restartContinuationOfRunId,
+            run.restartContinuationOfRunId !== previous[index]?.restartContinuationOfRunId ||
+            run.resumesResponse !== previous[index]?.resumesResponse,
         )
       )
         previous = next;

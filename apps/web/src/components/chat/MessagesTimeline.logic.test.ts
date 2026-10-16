@@ -5341,6 +5341,98 @@ describe("V2 restart response identity", () => {
       expanded.filter((row) => row.kind === "message" && row.message.role === "user"),
     ).toHaveLength(1);
   });
+
+  it("keeps a settled response's answer and starts a new response for its restart note", () => {
+    const run = RunId.make("settled");
+    const resumed = RunId.make("background-note");
+    const recovery = MessageId.make("background-recovery");
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      at: string,
+      runId?: RunId,
+    ): TimelineEntry => ({
+      id,
+      kind: "message",
+      createdAt: at,
+      message: {
+        id: MessageId.make(id),
+        role,
+        text: id,
+        createdAt: at,
+        updatedAt: at,
+        streaming: false,
+        runId: runId ?? null,
+      },
+    });
+    const work = (id: string, runId: RunId, at: string): TimelineEntry => ({
+      id,
+      kind: "work",
+      createdAt: at,
+      entry: {
+        id,
+        runId,
+        createdAt: at,
+        endedAt: at,
+        label: "Ran command",
+        command: "synthetic-check",
+        tone: "tool",
+        toolLifecycleStatus: "completed",
+        itemType: "command_execution",
+      },
+    });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("prompt", "user", "2026-01-01T00:00:00Z"),
+        work("check", run, "2026-01-01T00:00:05Z"),
+        message("answer", "assistant", "2026-01-01T00:00:10Z", run),
+        message(recovery, "user", "2026-01-01T00:50:00Z"),
+        work("note-check", resumed, "2026-01-01T00:50:05Z"),
+        message("note-reply", "assistant", "2026-01-01T00:50:20Z", resumed),
+      ],
+      runs: [
+        { id: run },
+        {
+          id: resumed,
+          userMessageId: recovery,
+          restartContinuationOfRunId: run,
+          resumesResponse: false,
+        },
+      ],
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    expect(rows.map((row) => row.id)).toEqual([
+      "prompt",
+      "turn-fold:settled",
+      "answer",
+      recovery,
+      "turn-fold:background-note",
+      "note-reply",
+    ]);
+    expect(rows.find((row) => row.id === recovery)).toMatchObject({
+      kind: "standalone-activity",
+      style: "restart-note",
+      label: "Server restarted",
+    });
+    expect(rows.find((row) => row.id === "turn-fold:background-note")).toMatchObject({
+      label: "Worked for 20s",
+    });
+  });
+
+  it("does not link a continuation of a settled run to that run's response", () => {
+    const first = RunId.make("first");
+    const second = RunId.make("second");
+    const third = RunId.make("third");
+    const roots = deriveContinuedRunRoots([
+      { id: first },
+      { id: second, restartContinuationOfRunId: first, resumesResponse: false },
+      { id: third, restartContinuationOfRunId: second },
+    ]);
+    expect(roots.get(second)).toBe(second);
+    expect(roots.get(third)).toBe(second);
+  });
 });
 
 describe("V2 continued response elapsed time", () => {
