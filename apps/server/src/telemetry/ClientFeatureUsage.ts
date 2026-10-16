@@ -2,27 +2,10 @@ import { LOCAL_DEVICE_HOST_ID } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import * as DeviceService from "../device/DeviceService.ts";
-import * as PreviewManager from "../preview/Manager.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as FeatureUsage from "./FeatureUsage.ts";
 
-/** Observe client operations without counting host relays or agent browser RPCs as user choices. */
-export const preview = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
-  const service = yield* PreviewManager.PreviewManager;
-  const analytics = yield* AnalyticsService.AnalyticsService;
-  return PreviewManager.PreviewManager.of({
-    ...service,
-    open: (input) =>
-      input.usageSource === "user"
-        ? FeatureUsage.observe(
-            { feature: "browser-sessions", action: "open", source: "user" },
-            service.open(input),
-            client,
-          ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics))
-        : service.open(input),
-  });
-});
-
+/** Observe Device panel operations without counting environment relays as user choices. */
 export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
   const service = yield* DeviceService.DeviceService;
   const analytics = yield* AnalyticsService.AnalyticsService;

@@ -53,7 +53,6 @@ describe("addBrowserSurface", () => {
 
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
-      usageSource: "user",
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: "profile-work",
     });
@@ -70,7 +69,6 @@ describe("addBrowserSurface", () => {
 
     expect(openPreview).toHaveBeenCalledWith({
       threadId: "thread-1",
-      usageSource: "user",
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: DEFAULT_BROWSER_PROFILE_ID,
     });
