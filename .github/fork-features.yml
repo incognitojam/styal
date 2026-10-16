@@ -3649,7 +3649,7 @@ features:
   - id: server-restart-continuation-note
     title: Show where a thread continued after a server restart
     status: review-needed
-    prs: [515, 744, 802]
+    prs: [515, 744, 802, 877]
     invariants:
       - Restart recovery records a durable server-created continuation message and an explicit restartContinuationOfRunId link; retries do not dispatch the same recovery message twice and newer user work takes precedence.
       - Web and mobile render the recovery prompt as a standalone note inside the response the restart cut short, preserving one final answer and one worked duration with the outage excluded. A continuation of a completed or waiting run, prompted only about its cancelled background work, starts its own response under the note and leaves the earlier final answer visible; unrelated background wake continuations remain separate.
