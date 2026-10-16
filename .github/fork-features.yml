@@ -4018,6 +4018,32 @@ features:
         - https://github.com/pingdotgg/t3code/pull/13815
       retire_when: Upstream groups active sidebar threads under project headers, keeps two-line cards in groups with branches and one-line rows with equivalent details and actions in branchless groups, limits thread drags to their own project, and reorders projects by dragging their headers.
 
+  - id: slow-network-route-stability
+    title: Keep slow networks from bouncing a connection between routes
+    status: maintained
+    prs: []
+    invariants:
+      - A route the client switched to from a better-route check, whose session then drops within five minutes, is skipped by better-route checks for five minutes, doubling on each repeat up to 30 minutes, and is tried last when reconnecting while it cools down.
+      - A switched-to route whose session held for five minutes clears its cooldown history, so a later drop such as a server restart does not hold it back.
+      - Once an attempted route fails transiently, routes that did not answer their reachability check are not given full attempts; the supervisor backs off and checks every route again. They are still tried when every attempted route was blocked or none was attempted.
+      - A relay WebSocket that opened and later closed or stopped responding does not carry the DNS or firewall hint; a socket that never opened still does.
+    rationale: On a train, a tailnet path through a distant DERP relay answers an occasional quick check but cannot hold a session. Upstream switched to it every few minutes and spent up to a minute per failed reconnect on routes that had not answered.
+    implementation_paths:
+      - packages/client-runtime/src/connection/driver.ts
+      - packages/client-runtime/src/connection/supervisor.ts
+      - packages/client-runtime/src/rpc/session.ts
+    upstream_paths:
+      - packages/client-runtime/src/connection/driver.ts
+      - packages/client-runtime/src/connection/supervisor.ts
+      - packages/client-runtime/src/rpc/session.ts
+    tests:
+      - packages/client-runtime/src/connection/supervisor.test.ts
+      - packages/client-runtime/src/rpc/session.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream stops switching to a route that recently dropped after a switch, and stops giving full attempts to unanswered routes after a transient failure.
+
   - id: source-control-fork-remotes
     title: Configure fork remotes and default repositories
     status: maintained

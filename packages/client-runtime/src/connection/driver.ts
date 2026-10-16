@@ -73,7 +73,9 @@ export class ConnectionDriver extends Context.Service<
  * another network costs one short check, not a connection timeout. A route
  * that fails to connect moves on to the next: a signed-out T3 Connect must
  * not hide a working LAN. Silent routes are tried last, since a check is not
- * proof.
+ * proof, unless an attempted route already failed transiently: then the
+ * network itself is likely slow, and the supervisor's retry checks every
+ * route again sooner than full attempts on routes that did not answer.
  *
  * The reported error is a transient one when any route failed transiently,
  * so the supervisor keeps retrying a route that may come back; a blocked
@@ -120,7 +122,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     // An incompatible server is the same server on every route.
     if (result.failure.reason === "unsupported") return yield* result.failure;
   }
-  for (const route of silent) {
+  for (const route of transient === undefined ? silent : []) {
     const result = yield* attempt(route);
     if (result._tag === "Success") return result.success;
     if (result.failure.reason === "unsupported") return yield* result.failure;

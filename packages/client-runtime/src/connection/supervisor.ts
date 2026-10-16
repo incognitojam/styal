@@ -53,9 +53,12 @@ const BACKOFF_RESET_AFTER_MS = 30_000;
 // While connected over a fallback route, how often to look for a better one.
 // Network changes and returning to the app also trigger a check.
 const BETTER_ROUTE_CHECK_INTERVAL = "60 seconds";
-// A better route that answered the check but then failed to connect is not
-// tried again for this long, so a flaky LAN cannot bounce the connection.
+// A better route that answered the check but then failed to connect, or whose
+// session dropped within this long of the switch, is not tried again for this
+// long, so a flaky LAN or tailnet cannot bounce the connection. Each repeat
+// doubles the wait, up to the cap.
 const BETTER_ROUTE_COOLDOWN_MS = 300_000;
+const BETTER_ROUTE_MAX_COOLDOWN_MS = 1_800_000;
 
 interface SupervisorIntent {
   readonly desired: boolean;
@@ -304,20 +307,50 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   // Set when a better route answered while connected over a worse one; the
   // replacement attempt tries it first. Cleared once an attempt starts.
   const preferredRouteId = yield* Ref.make(Option.none<string>());
-  // Monotonic deadline per route that answered a check but failed to connect.
-  const routeCooldowns = yield* Ref.make<ReadonlyMap<string, bigint>>(new Map());
+  // Per route that a switch to it failed: the monotonic deadline before it is
+  // tried again, and how many switches in a row failed.
+  const routeCooldowns = yield* Ref.make<
+    ReadonlyMap<string, { readonly until: bigint; readonly strikes: number }>
+  >(new Map());
 
+  const coolDownRoute = Effect.fnUntraced(function* (routeId: string) {
+    const now = yield* Clock.monotonicTimeNanos;
+    yield* Ref.update(routeCooldowns, (current) => {
+      const strikes = (current.get(routeId)?.strikes ?? 0) + 1;
+      const cooldownMs = Math.min(
+        BETTER_ROUTE_MAX_COOLDOWN_MS,
+        BETTER_ROUTE_COOLDOWN_MS * 2 ** (strikes - 1),
+      );
+      return new Map(current).set(routeId, {
+        until: now + BigInt(cooldownMs) * 1_000_000n,
+        strikes,
+      });
+    });
+  });
+
+  // An attempt prefers a route a better-route check asked for, and tries routes
+  // that are cooling down last, so a route that just dropped does not hold up
+  // the reconnect.
   const attemptEntry = Effect.gen(function* () {
     const latest = yield* Ref.get(currentEntry);
     const routes = connectionRoutes(latest);
     const preferred = yield* Ref.getAndSet(preferredRouteId, Option.none());
-    if (Option.isNone(preferred)) return latest;
-    const route = routes.find(
-      (candidate) => connectionRouteId(candidate.target) === preferred.value,
-    );
-    return route === undefined
+    const preferredRoute = Option.isNone(preferred)
+      ? undefined
+      : routes.find((candidate) => connectionRouteId(candidate.target) === preferred.value);
+    const now = yield* Clock.monotonicTimeNanos;
+    const cooldowns = yield* Ref.get(routeCooldowns);
+    const coolingDown = (route: ConnectionRoute) =>
+      (cooldowns.get(connectionRouteId(route.target))?.until ?? 0n) > now;
+    const rest = routes.filter((route) => route !== preferredRoute);
+    const ordered = [
+      ...(preferredRoute === undefined ? [] : [preferredRoute]),
+      ...rest.filter((route) => !coolingDown(route)),
+      ...rest.filter(coolingDown),
+    ];
+    return ordered.every((route, index) => route === routes[index])
       ? latest
-      : entryWithRoutes(latest, [route, ...routes.filter((candidate) => candidate !== route)]);
+      : entryWithRoutes(latest, ordered);
   });
 
   const learnRoutesFrom = Effect.fnUntraced(function* (
@@ -364,7 +397,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     const cooldowns = yield* Ref.get(routeCooldowns);
     const better = connectionRoutes(latest)
       .slice(0, current)
-      .filter((route) => (cooldowns.get(connectionRouteId(route.target)) ?? 0n) <= now);
+      .filter((route) => (cooldowns.get(connectionRouteId(route.target))?.until ?? 0n) <= now);
     const passed = yield* Effect.forEach(
       better,
       (route: ConnectionRoute) => driver.preflight(latest, route),
@@ -795,14 +828,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     }
 
     const active = establishment.exit.value;
+    // The route a better-route check switched to, when the switch landed on it.
+    let switchedTo: string | undefined;
     if (Option.isSome(switchingTo)) {
       const landed = connectionRouteId(active.lease.prepared.target);
-      if (landed !== switchingTo.value) {
-        const until =
-          (yield* Clock.monotonicTimeNanos) + BigInt(BETTER_ROUTE_COOLDOWN_MS) * 1_000_000n;
-        yield* Ref.update(routeCooldowns, (current) =>
-          new Map(current).set(switchingTo.value, until),
-        );
+      if (landed === switchingTo.value) {
+        switchedTo = landed;
+      } else {
+        yield* coolDownRoute(switchingTo.value);
       }
     }
     const currentIntent = yield* Ref.get(intent);
@@ -847,6 +880,20 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       ),
     ).pipe(exitUnlessInterrupted);
     const connectedForMs = (yield* Clock.currentTimeMillis) - connectedAt;
+    if (switchedTo !== undefined) {
+      // A switched-to route that held for the cooldown has proven itself; one
+      // that dropped sooner answered a check but cannot carry a session.
+      if (connectedForMs >= BETTER_ROUTE_COOLDOWN_MS) {
+        const route = switchedTo;
+        yield* Ref.update(routeCooldowns, (current) => {
+          const next = new Map(current);
+          next.delete(route);
+          return next;
+        });
+      } else if (Exit.isFailure(connectedExit)) {
+        yield* coolDownRoute(switchedTo);
+      }
+    }
     if (Exit.isSuccess(connectedExit)) {
       return {
         _tag: "Interrupted",
