@@ -2986,7 +2986,7 @@ features:
   - id: provider-auto-updates
     title: Install canary-verified provider updates automatically
     status: maintained
-    prs: []
+    prs: [868]
     invariants:
       - With automatic provider updates and provider update checks on (both default on), a non-dev server installs a provider version in the background only when an `autoUpdates` entry in the matching compatibility policy of a manifest fetched from main in the last two days names it, for the installation's own npm package, verified on a published styal build the server's code contains (a later nightly, or a stable release of a later version; a stable or same build itself). It installs the newest such version and never anything newer. The bundled manifest never authorizes an automatic install.
       - Only installers that can pin a version take part, and they install exactly the verified version; native self-updaters and Homebrew are never run in the background.
