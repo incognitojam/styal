@@ -12,6 +12,7 @@ import * as DesktopEnvironment from "../../src/app/DesktopEnvironment.ts";
 import * as DesktopConfig from "../../src/app/DesktopConfig.ts";
 import * as BrowserSession from "../../src/preview/BrowserSession.ts";
 import * as PreviewManager from "../../src/preview/Manager.ts";
+import * as DesktopRendererHistory from "../../src/telemetry/DesktopRendererHistory.ts";
 import { resolveBrowserViewportLayout } from "../../../web/src/browser/browserViewportLayout.ts";
 import calibrationHtml from "./calibration.html?raw";
 
@@ -76,6 +77,7 @@ async function run() {
     });
     const runtime = PreviewManager.layer.pipe(
       Layer.provide(BrowserSession.layer),
+      Layer.provide(DesktopRendererHistory.layer),
       Layer.provide(environment.pipe(Layer.provide(DesktopConfig.layerTest({})))),
       Layer.provide(NodeServices.layer),
       Layer.provide(Layer.succeed(HostProcessPlatform, platform)),

@@ -2727,6 +2727,7 @@ features:
       - Floating browser and device previews remain visible but do not send pointer or keyboard input to their page or device; dragging anywhere on the view-only surface moves the frame, double-clicking it opens that source in the right panel, and its frame controls remain usable.
     implementation_paths:
       - .github/workflows/fork-ci.yml
+      - apps/desktop/scripts/preview-calibration/main.mjs
       - apps/desktop/scripts/test-preview-calibration.mjs
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/BrowserSurfaceSlot.tsx
