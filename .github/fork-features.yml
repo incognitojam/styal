@@ -2949,11 +2949,12 @@ features:
     prs: [856]
     invariants:
       - Each Claude instance reports the user-level cleanupPeriodDays from settings.json in the config directory its CLI uses; a missing, unreadable, malformed, or invalid value reports Claude Code's 30-day default.
-      - Web and desktop show the retention period, whether it is the user's setting or the default, and the settings file under provider settings, and Usage links there for the selected environment.
+      - Web and desktop show the retention period, mark Claude Code's default, and show the settings file under provider settings with an editor picker that opens it locally or over SSH for remote environments; Usage links there for the selected environment.
       - Reading cleanup settings never changes provider configuration or claims that project, managed, and session overrides have been resolved.
     implementation_paths:
       - apps/server/src/provider/Drivers/ClaudeDriver.ts
       - apps/server/src/provider/Drivers/ClaudeHistoryRetention.ts
+      - apps/web/src/components/chat/OpenInPicker.tsx
       - apps/web/src/components/settings/ProviderHistorySettings.tsx
       - apps/web/src/components/settings/ProviderInstanceCard.tsx
       - apps/web/src/components/settings/settingsSearch.ts
@@ -2961,6 +2962,7 @@ features:
       - packages/contracts/src/server.ts
     upstream_paths:
       - apps/server/src/provider/Drivers/ClaudeDriver.ts
+      - apps/web/src/components/chat/OpenInPicker.tsx
       - apps/web/src/components/settings/ProviderInstanceCard.tsx
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/components/usage/UsagePage.tsx

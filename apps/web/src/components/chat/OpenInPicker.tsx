@@ -301,9 +301,10 @@ export const OpenInPicker = memo(function OpenInPicker({
     ],
   );
 
+  // Only advertise the shortcut where this picker actually handles it.
   const openFavoriteEditorShortcutLabel = useMemo(
-    () => shortcutLabelForCommand(keybindings, "editor.openFavorite"),
-    [keybindings],
+    () => (enableShortcut ? shortcutLabelForCommand(keybindings, "editor.openFavorite") : null),
+    [enableShortcut, keybindings],
   );
 
   useEffect(() => {

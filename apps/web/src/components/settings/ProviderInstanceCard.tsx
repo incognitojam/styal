@@ -1111,7 +1111,10 @@ export function ProviderInstanceCard({
       ) : null}
 
       {instance.driver === "claudeAgent" ? (
-        <ProviderHistorySettings retention={liveProvider?.historyRetention} />
+        <ProviderHistorySettings
+          environmentId={environmentId}
+          retention={liveProvider?.historyRetention}
+        />
       ) : null}
 
       <SettingsSection

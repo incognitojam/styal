@@ -43,11 +43,12 @@ T3 Code uses the Claude configuration on the connected server.
 
 ## Session history cleanup
 
-On web and desktop, select a Claude instance in **Settings → Providers** to inspect its
-user-level session cleanup period and settings file. The view distinguishes a configured
-`cleanupPeriodDays` value from Claude Code's 30-day default. Edit the provider's file, then
-refresh provider status to reread it. Project, managed, and session settings can override this
-user-level rule. Deleting session files can remove their history from styal's usage totals.
+On web and desktop, select a Claude instance in **Settings → Providers** to see how long Claude
+Code keeps session files. styal shows the global `cleanupPeriodDays` setting from Claude Code's
+user `settings.json`, or Claude Code's 30-day default when it is not set. Open the file from there
+in your editor; on a remote server, the editor opens it over SSH. Refresh provider status after
+editing to reread it. Project settings can override the global value. Deleting session files can
+remove their history from styal's usage totals.
 
 ## Compact long conversations
 
