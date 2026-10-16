@@ -2925,9 +2925,11 @@ features:
     invariants:
       - Reopening the sidebar does not discard the user's project filter.
       - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project.
+      - While a project is selected, the sidebar header shows its favicon and name in the filter button, and thread search shrinks to its icon until it is focused or holds a query.
     implementation_paths:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/sidebar/SidebarThreadHeader.tsx
       - apps/web/src/lib/chatThreadActions.ts
       - apps/web/src/sidebarProjectScopeStore.ts
       - apps/web/src/uiStateStore.ts
