@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
@@ -33,6 +34,8 @@ import {
 import {
   DpopFailureReason,
   AuthSessionId,
+  EnvironmentId,
+  ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
@@ -44,7 +47,7 @@ import {
   OrchestrationV2Command,
   OrchestrationV2DispatchCommandResult,
 } from "./orchestrationV2.ts";
-import { Project, ProjectMutation, ProjectSnapshot } from "./project.ts";
+import { Project, ProjectIconOverride, ProjectMutation, ProjectSnapshot } from "./project.ts";
 import {
   PullRequestDiffInput,
   PullRequestDiffResult,
@@ -663,12 +666,54 @@ class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
-/** Fresh host activity; counts cover all clients connected to this environment. */
+const HostActivityReason = Schema.Literals([
+  "preparing",
+  "starting",
+  "running",
+  "input",
+  "approval",
+  "waiting",
+  "command",
+  "monitor",
+  "subagent",
+  "background_task",
+]);
+
+/** Drops reasons this build does not know, so a newer server cannot break the check. */
+const HostActivityReasons = Schema.Array(Schema.String).pipe(
+  Schema.decodeTo(Schema.Array(HostActivityReason), {
+    decode: SchemaGetter.transform((reasons) => reasons.filter(Schema.is(HostActivityReason))),
+    encode: SchemaGetter.passthroughSupertype(),
+  }),
+);
+
+export const HostActivityThread = Schema.Struct({
+  threadId: ThreadId,
+  title: Schema.String,
+  /** Saved project identity, including icon overrides, for shutdown dialogs. */
+  project: Schema.optionalKey(
+    Schema.Struct({
+      id: ProjectId,
+      title: Schema.String,
+      workspaceRoot: Schema.String,
+      faviconPath: Schema.NullOr(Schema.String),
+      projectIcon: Schema.NullOr(ProjectIconOverride),
+    }),
+  ),
+  reasons: HostActivityReasons,
+  continuable: Schema.Boolean,
+});
+export type HostActivityThread = typeof HostActivityThread.Type;
+
+/** Fresh host activity; counts and thread details cover all connected clients. */
 export const HostActivity = Schema.Struct({
+  environmentId: Schema.optionalKey(EnvironmentId),
   activeSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   /** Active threads that thread continuation resumes after a restart, when enabled. */
   continuableSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   waitingSessions: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Omitted by older servers; an empty list means no affected threads. */
+  threads: Schema.optionalKey(Schema.Array(HostActivityThread)),
   terminalsRequiringConfirmation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   terminalsWithUnknownActivity: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   /** Other environments currently using this environment's shared devices. */

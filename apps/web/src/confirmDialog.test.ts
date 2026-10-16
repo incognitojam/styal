@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { ThreadId, type ConfirmDialogThreadActivity } from "@t3tools/contracts";
 
 import {
   acknowledgeConfirmDialogPresentation,
@@ -83,6 +84,38 @@ describe("confirm dialog coordinator", () => {
     await expect(second).resolves.toBe(true);
     completeConfirmDialogClose();
     expect(readConfirmDialogState()).toEqual({ status: "idle" });
+    unregister();
+  });
+
+  it("keeps queued thread details with their dialog through dismissal, then clears them", async () => {
+    const unregister = registerConfirmDialogHost();
+    const first = requireConfirmation(requestConfirmDialog("Delete the project?"));
+    const threadActivity: ReadonlyArray<ConfirmDialogThreadActivity> = [
+      {
+        thread: {
+          threadId: ThreadId.make("preview"),
+          title: "Watch the preview build",
+          reasons: ["monitor"],
+          continuable: true,
+        },
+        hostLabel: "Lab server",
+        continuesAfterRestart: true,
+      },
+    ];
+    const restart = requireConfirmation(requestConfirmDialog("Restart styal?", { threadActivity }));
+    expect(readConfirmDialogState()).not.toHaveProperty("threadActivity");
+    respondToConfirmDialog(false);
+    await expect(first).resolves.toBe(false);
+    completeConfirmDialogClose();
+    expect(readConfirmDialogState()).toMatchObject({ status: "confirming", threadActivity });
+    respondToConfirmDialog(false);
+    await expect(restart).resolves.toBe(false);
+    expect(readConfirmDialogState()).toMatchObject({ status: "closing", threadActivity });
+    completeConfirmDialogClose();
+    const next = requireConfirmation(requestConfirmDialog("Delete the worktree?"));
+    expect(readConfirmDialogState()).not.toHaveProperty("threadActivity");
+    respondToConfirmDialog(false);
+    await expect(next).resolves.toBe(false);
     unregister();
   });
 

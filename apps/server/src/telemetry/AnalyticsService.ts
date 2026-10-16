@@ -30,6 +30,15 @@ import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import { getTelemetryIdentifier } from "./Identify.ts";
+import { resolveBuildContext } from "./BuildContext.ts";
+
+declare const __STYAL_RELEASE_BUILD__: boolean | undefined;
+
+const isTestProcess =
+  process.env.NODE_ENV === "test" ||
+  process.env.VITEST !== undefined ||
+  process.env.CI === "true" ||
+  process.env.CI === "1";
 
 interface BufferedAnalyticsEvent {
   readonly uuid: string;
@@ -75,7 +84,7 @@ const TelemetryEnvConfig = Config.all({
   posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
     Config.withDefault("https://eu.i.posthog.com"),
   ),
-  enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
+  enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(!isTestProcess)),
   flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),
@@ -140,6 +149,12 @@ export const make = Effect.gen(function* () {
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
   const hostPlatform = yield* HostProcessPlatform;
   const hostArchitecture = yield* HostProcessArchitecture;
+  const buildContext = resolveBuildContext({
+    releaseBuild: typeof __STYAL_RELEASE_BUILD__ !== "undefined" && __STYAL_RELEASE_BUILD__,
+    developmentServer: serverConfig.devUrl !== undefined,
+    testProcess: isTestProcess,
+    version: packageJson.version,
+  });
 
   const enqueueBufferedEvent = (
     uuid: string,
@@ -193,6 +208,10 @@ export const make = Effect.gen(function* () {
           t3CodeVersion: packageJson.version,
           t3CodeRepository: T3_CODE_REPOSITORY,
           featureUsageVersion: 1,
+          browserToolsUsageVersion: 1,
+          browserSessionUsageVersion: 1,
+          deviceUsageVersion: 1,
+          ...buildContext,
           clientType,
           serverOs: serverOsFromNodePlatform(hostPlatform),
           serverArch: hostArchitecture,

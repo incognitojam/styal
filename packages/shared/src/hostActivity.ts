@@ -1,4 +1,30 @@
-import type { HostActivity } from "@t3tools/contracts";
+import type {
+  ConfirmDialogThreadActivity,
+  HostActivity,
+  HostActivityThread,
+} from "@t3tools/contracts";
+
+export type HostActivityCheck = HostActivity & {
+  readonly hostLabel?: string;
+  readonly continueRunningThreads?: boolean;
+};
+
+export const hostActivityReasonLabels: Record<HostActivityThread["reasons"][number], string> = {
+  preparing: "Preparing a turn",
+  starting: "Starting a turn",
+  running: "Running a turn",
+  input: "Waiting for your input",
+  approval: "Waiting for approval",
+  waiting: "Waiting for input or approval",
+  command: "Running a background command",
+  monitor: "Running a monitor",
+  subagent: "Running a subagent",
+  background_task: "Running a background task",
+};
+
+function singleLine(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
 
 export type HostActivityConcern = "running" | "waiting" | "unchecked";
 
@@ -23,7 +49,7 @@ function plural(count: number, noun: string): string {
  * checked and nothing needs confirmation.
  */
 export function describeHostActivity(
-  checks: ReadonlyArray<HostActivity | null>,
+  checks: ReadonlyArray<HostActivityCheck | null>,
   options: {
     readonly uncheckedHostsLine: string;
     /** Thread continuation is requested, so continuable threads resume after the restart. */
@@ -32,6 +58,7 @@ export function describeHostActivity(
 ): {
   readonly concern: HostActivityConcern | null;
   readonly lines: ReadonlyArray<string>;
+  readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
   /** Some host or terminal could not be inspected. */
   readonly incomplete: boolean;
 } {
@@ -42,14 +69,30 @@ export function describeHostActivity(
   let uncheckedTerminals = 0;
   let deviceUsers = 0;
   let uncheckedHosts = checks.length === 0;
+  const threadWarnings: string[] = [];
+  const threadActivity: ConfirmDialogThreadActivity[] = [];
   for (const check of checks) {
     if (check === null) {
       uncheckedHosts = true;
       continue;
     }
     active += check.activeSessions;
-    if (options.continueRunningThreads) continuing += check.continuableSessions;
+    const continueThreads = check.continueRunningThreads ?? options.continueRunningThreads;
+    if (continueThreads) continuing += check.continuableSessions;
     waiting += check.waitingSessions;
+    if (check.threads === undefined && check.activeSessions + check.waitingSessions > 0) {
+      threadWarnings.push(
+        `Thread names and activity reasons are unavailable${check.hostLabel ? ` for ${singleLine(check.hostLabel)}` : " from this server"}.`,
+      );
+    }
+    for (const thread of check.threads ?? []) {
+      threadActivity.push({
+        thread,
+        ...(check.environmentId ? { environmentId: check.environmentId } : {}),
+        hostLabel: check.hostLabel ?? null,
+        continuesAfterRestart: Boolean(continueThreads && thread.continuable),
+      });
+    }
     terminals += check.terminalsRequiringConfirmation - check.terminalsWithUnknownActivity;
     uncheckedTerminals += check.terminalsWithUnknownActivity;
     deviceUsers += check.environmentsUsingDevices;
@@ -67,6 +110,7 @@ export function describeHostActivity(
       `Could not check ${plural(uncheckedTerminals, "terminal session")} for running commands.`,
     );
   if (uncheckedHosts) lines.push(options.uncheckedHostsLine);
+  if (threadWarnings.length) lines.push("", ...threadWarnings);
   return {
     concern:
       active || terminals || deviceUsers
@@ -77,6 +121,7 @@ export function describeHostActivity(
             ? "unchecked"
             : null,
     lines,
+    threadActivity,
     incomplete: uncheckedHosts || uncheckedTerminals > 0,
   };
 }

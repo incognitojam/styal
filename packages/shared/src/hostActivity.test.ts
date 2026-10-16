@@ -1,3 +1,4 @@
+import { EnvironmentId, ThreadId, type HostActivityThread } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { describeHostActivity } from "./hostActivity.ts";
@@ -18,6 +19,7 @@ describe("describeHostActivity", () => {
       concern: null,
       lines: [],
       incomplete: false,
+      threadActivity: [],
     });
   });
 
@@ -36,8 +38,12 @@ describe("describeHostActivity", () => {
         "2 threads will be interrupted.",
         "1 thread waiting for input or approval will be interrupted.",
         "1 terminal session will be interrupted.",
+        "",
+        "Thread names and activity reasons are unavailable from this server.",
+        "Thread names and activity reasons are unavailable from this server.",
       ],
       incomplete: false,
+      threadActivity: [],
     });
   });
 
@@ -51,10 +57,20 @@ describe("describeHostActivity", () => {
     const checks = [{ ...idle, activeSessions: 3, continuableSessions: 2 }];
     expect(describeHostActivity(checks, { ...options, continueRunningThreads: true })).toEqual({
       concern: "running",
-      lines: ["1 thread will be interrupted.", "2 threads will continue after the restart."],
+      lines: [
+        "1 thread will be interrupted.",
+        "2 threads will continue after the restart.",
+        "",
+        "Thread names and activity reasons are unavailable from this server.",
+      ],
       incomplete: false,
+      threadActivity: [],
     });
-    expect(describeHostActivity(checks, options).lines).toEqual(["3 threads will be interrupted."]);
+    expect(describeHostActivity(checks, options).lines).toEqual([
+      "3 threads will be interrupted.",
+      "",
+      "Thread names and activity reasons are unavailable from this server.",
+    ]);
   });
 
   it("treats other environments using shared devices as running work", () => {
@@ -62,6 +78,7 @@ describe("describeHostActivity", () => {
       concern: "running",
       lines: ["Devices in use by other environments will be disconnected."],
       incomplete: false,
+      threadActivity: [],
     });
   });
 
@@ -75,6 +92,7 @@ describe("describeHostActivity", () => {
       concern: "unchecked",
       lines: ["Could not check 1 terminal session for running commands."],
       incomplete: true,
+      threadActivity: [],
     });
   });
 
@@ -84,7 +102,97 @@ describe("describeHostActivity", () => {
         concern: "unchecked",
         lines: ["Some hosts could not be checked."],
         incomplete: true,
+        threadActivity: [],
       });
     }
+  });
+});
+
+const namedThread: HostActivityThread = {
+  threadId: ThreadId.make("thread"),
+  title: "Check the release",
+  reasons: ["running", "monitor"],
+  continuable: true,
+};
+
+describe("host thread descriptions", () => {
+  it("keeps titles, project and host context separate from summary copy", () => {
+    const activity = describeHostActivity(
+      [
+        {
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          hostLabel: "Lab server",
+          environmentId: EnvironmentId.make("lab"),
+          threads: [namedThread],
+        },
+      ],
+      options,
+    );
+    expect(activity.lines).toEqual(["1 thread will be interrupted."]);
+    expect(activity.threadActivity).toEqual([
+      {
+        thread: namedThread,
+        environmentId: EnvironmentId.make("lab"),
+        hostLabel: "Lab server",
+        continuesAfterRestart: false,
+      },
+    ]);
+  });
+  it("labels continuation per host, including matching thread IDs on different hosts", () => {
+    const check = { ...idle, activeSessions: 1, continuableSessions: 1, threads: [namedThread] };
+    const activity = describeHostActivity(
+      [
+        { ...check, hostLabel: "Laptop", continueRunningThreads: true },
+        { ...check, hostLabel: "Lab server", continueRunningThreads: false },
+      ],
+      options,
+    );
+    expect(activity.lines).toEqual([
+      "1 thread will be interrupted.",
+      "1 thread will continue after the restart.",
+    ]);
+    expect(activity.threadActivity).toEqual([
+      { thread: namedThread, hostLabel: "Laptop", continuesAfterRestart: true },
+      { thread: namedThread, hostLabel: "Lab server", continuesAfterRestart: false },
+    ]);
+  });
+  it("keeps unnamed threads visible when a title or project is unavailable", () => {
+    const unnamed = { ...namedThread, title: "" };
+    const activity = describeHostActivity(
+      [
+        {
+          ...idle,
+          activeSessions: 1,
+          threads: [unnamed],
+        },
+      ],
+      options,
+    );
+    expect(activity.lines).toEqual(["1 thread will be interrupted."]);
+    expect(activity.threadActivity).toEqual([
+      { thread: unnamed, hostLabel: null, continuesAfterRestart: false },
+    ]);
+  });
+  it("keeps known thread details alongside failed host inspections", () => {
+    const waiting = { ...namedThread, reasons: ["approval" as const], continuable: false };
+    const activity = describeHostActivity(
+      [
+        {
+          ...idle,
+          waitingSessions: 1,
+          threads: [waiting],
+        },
+        null,
+      ],
+      options,
+    );
+    expect(activity.concern).toBe("waiting");
+    expect(activity.incomplete).toBe(true);
+    expect(activity.lines).toContain("Some hosts could not be checked.");
+    expect(activity.threadActivity).toEqual([
+      { thread: waiting, hostLabel: null, continuesAfterRestart: false },
+    ]);
   });
 });

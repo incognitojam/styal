@@ -91,6 +91,12 @@ update can roll back to the previous version. If the update still fails:
 2. Check that you updated the server's machine, not only the device you are using.
 3. For a command-line server, stop it and relaunch the exact version shown in the notice.
 
+## Web app updates
+
+When a new web build is deployed, the sidebar offers **New build available — Refresh**.
+Choose it when you are ready to reload. Your saved connections and composer text drafts remain;
+refreshing does not update or restart your connected servers. This also works in web previews.
+
 ## Desktop app updates
 
 The desktop app downloads updates in the background and installs them when you

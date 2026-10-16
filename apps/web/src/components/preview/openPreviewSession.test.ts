@@ -60,6 +60,7 @@ describe("openPreviewSession", () => {
 
     expect(open).toHaveBeenCalledWith({
       threadId: "thread-1",
+      usageSource: "user",
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: DEFAULT_BROWSER_PROFILE_ID,
     });
@@ -78,6 +79,7 @@ describe("openPreviewSession", () => {
 
     expect(open).toHaveBeenCalledWith({
       threadId: "thread-1",
+      usageSource: "user",
       url: "t3.chat",
       viewport: FILL_PREVIEW_VIEWPORT,
       profileId: DEFAULT_BROWSER_PROFILE_ID,
@@ -130,6 +132,7 @@ describe("openPreviewSession", () => {
         environmentId: threadRef.environmentId,
         input: {
           threadId: threadRef.threadId,
+          usageSource: "user",
           url: input.url,
           viewport,
           profileId: DEFAULT_BROWSER_PROFILE_ID,

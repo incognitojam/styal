@@ -1,6 +1,7 @@
 import { HostActivity } from "@t3tools/contracts";
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
 import { describeHostActivity, hostActivityQuestion } from "@t3tools/shared/hostActivity";
+import type { HostActivityCheck } from "@t3tools/shared/hostActivity";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -12,14 +13,14 @@ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
 
 export type ShutdownAction = "quit" | "restart";
-export type ActivityCheck = HostActivity | null;
+export type ActivityCheck = HostActivityCheck | null;
 
 export function shutdownConfirmation(
   checks: ReadonlyArray<ActivityCheck>,
   action: ShutdownAction,
   title?: string,
 ) {
-  const { concern, lines, incomplete } = describeHostActivity(checks, {
+  const { concern, lines, incomplete, threadActivity } = describeHostActivity(checks, {
     uncheckedHostsLine: "Could not check every local environment for running work.",
   });
   if (concern === null) return null;
@@ -34,6 +35,7 @@ export function shutdownConfirmation(
     message: title ?? `${action === "quit" ? "Quit" : "Restart"}${hostActivityQuestion[concern]}`,
     detail: `${detail.join("\n")} Make sure you're ready before continuing.`,
     confirmLabel: action === "quit" ? "Quit" : "Restart",
+    ...(threadActivity.length ? { threadActivity } : {}),
   };
 }
 
@@ -103,9 +105,13 @@ const make = Effect.gen(function* () {
                   tokens.delete(key);
                   return null;
                 }
-                return yield* response.json.pipe(
+                const activity = yield* response.json.pipe(
                   Effect.flatMap(Schema.decodeUnknownEffect(HostActivity)),
                 );
+                return {
+                  ...activity,
+                  ...(instances.length > 1 ? { hostLabel: yield* instance.label } : {}),
+                };
               }).pipe(
                 Effect.timeout("3 seconds"),
                 Effect.catchCause(() => Effect.succeed(null)),
@@ -117,6 +123,7 @@ const make = Effect.gen(function* () {
           return yield* dialog.request(
             `${confirmation.message}\n\n${confirmation.detail}`,
             confirmation.confirmLabel,
+            confirmation.threadActivity,
           );
         }).pipe(
           Effect.ensuring(

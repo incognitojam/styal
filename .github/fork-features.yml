@@ -860,11 +860,11 @@ features:
   - id: desktop-background-updates
     title: Download desktop updates in the background and install on quit
     status: maintained
-    prs: [110, 128, 358, 390, 754, 758]
+    prs: [110, 128, 358, 390, 754, 758, 851]
     invariants:
       - Nightly release previews retain curated highlights and footer filtering while showing newest entries with counts and links to styal releases.
       - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
-      - In-app shutdown dialogs appear only for active or unknown work and name the threads and terminal sessions that will be interrupted; inspection warnings appear only for activity that could not be checked.
+      - In-app shutdown dialogs appear only for active or unknown work and group affected thread titles under running, monitoring, or waiting activity with the existing project icons/names and host labels, preserving specific turn, input, approval, or background-work reasons from the same snapshot as the counts; older servers retain counts and explicitly report unavailable details, and a reason the client does not recognize is dropped rather than failing the check. Terminal activity is counted and inspection warnings appear only for activity that could not be checked.
       - Manual desktop quits and restarts check every owned backend; active or unknown host activity requires confirmation, and cancellation preserves windows and downloaded updates.
       - Shutdown confirmation has one renderer-wide host, including on recovery screens; cancelling an update restart dismisses the request without reopening it. Failed presentation alone arms a subsequent Quit override that preserves cleanup, cannot be consumed by restart actions, and clears when the renderer recovers or displays a dialog.
       - Available desktop updates download automatically while preserving accurate available, downloading, downloaded, install, and retry state across updater events and pre-install refreshes.
@@ -888,11 +888,16 @@ features:
       - apps/server/src/environment/HostActivity.ts
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/ConfirmDialogHost.tsx
+      - apps/web/src/components/HostActivityThreadList.logic.ts
+      - apps/web/src/components/HostActivityThreadList.tsx
+      - apps/web/src/components/ServerUpdateAction.logic.ts
+      - apps/web/src/components/ServerUpdateAction.tsx
       - apps/web/src/components/desktopUpdate.logic.ts
       - apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
       - apps/web/src/confirmDialog.ts
+      - packages/contracts/src/environmentHttp.ts
       - packages/contracts/src/ipc.ts
       - packages/shared/src/hostActivity.ts
     upstream_paths:
@@ -918,10 +923,15 @@ features:
       - apps/server/src/auth/PairingGrantStore.test.ts
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/terminal/Manager.test.ts
+      - apps/web/src/components/HostActivityThreadList.logic.test.ts
+      - apps/web/src/components/ServerUpdateAction.logic.test.ts
+      - apps/web/src/components/ServerUpdateAction.test.tsx
       - apps/web/src/components/desktopUpdate.logic.test.ts
       - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
       - apps/web/src/confirmDialog.test.ts
       - apps/web/src/state/desktopUpdate.test.ts
+      - packages/contracts/src/environmentHttp.test.ts
+      - packages/contracts/src/ipc.test.ts
       - packages/shared/src/hostActivity.test.ts
     upstream:
       status: partial
@@ -1680,24 +1690,47 @@ features:
   - id: fork-feature-usage
     title: Measure anonymous adoption of maintained features
     status: maintained
-    prs: [840]
+    prs: [840, 859]
     rationale: Maintainers need observed feature adoption to evaluate the cost of retaining fork behavior.
     invariants:
       - Agent browser tools emit one structural feature.used event per public operation, including failures and cancellation, with action, outcome, and duration but no operation arguments or results.
       - Internal metadata reads do not inflate agent usage, and telemetry failures never change the operation's result.
-      - Every analytics event carries a feature-usage version so adoption comparisons can exclude uninstrumented releases, and the shared telemetry opt-out also disables feature events.
+      - Explicit manual browser tab creation is attributed separately from agent browser operations, and unmarked legacy or agent tab creation is not counted as manual use.
+      - Device panel operations and public agent device tools record bounded usage and outcomes without names, device identifiers, arguments, or images; discovery is distinct from adoption and environment forwarding is not counted again as a manual action.
+      - Events carry separate instrumentation versions and explicit build context; test and CI collection defaults off while the shared telemetry opt-out still disables all feature events.
     implementation_paths:
+      - .github/workflows/desktop-macos-preview.yml
+      - .github/workflows/fork-cli-archives.yml
+      - .github/workflows/fork-js-bundle.yml
       - apps/server/src/mcp/McpHttpServer.ts
+      - apps/server/src/mcp/toolkits/device/handlers.ts
       - apps/server/src/mcp/toolkits/preview/handlers.ts
       - apps/server/src/telemetry/AnalyticsService.ts
       - apps/server/src/telemetry/BrowserFeatureUsage.ts
+      - apps/server/src/telemetry/BuildContext.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/server/src/telemetry/DeviceFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/ws.ts
+      - apps/server/vite.config.ts
+      - apps/web/src/browser/openFileInPreview.ts
+      - apps/web/src/components/preview/openPreviewSession.ts
+      - apps/web/src/components/preview/openTerminalLinkInPreview.ts
+      - packages/contracts/src/preview.ts
     upstream_paths:
       - apps/server/src/telemetry/AnalyticsService.ts
     tests:
+      - apps/server/src/device/DeviceService.test.ts
       - apps/server/src/mcp/BrowserFeatureUsage.test.ts
+      - apps/server/src/mcp/DeviceFeatureUsage.test.ts
+      - apps/server/src/mcp/McpDeviceToolkit.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
+      - apps/server/src/telemetry/BuildContext.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/web/src/components/preview/addBrowserSurface.test.ts
+      - apps/web/src/components/preview/openPreviewSession.test.ts
+      - apps/web/src/components/preview/openTerminalLinkInPreview.test.ts
     upstream:
       status: tracking
       tracking:
@@ -3737,6 +3770,35 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15604
       retire_when: Upstream provides equivalent capability-specific update guidance that distinguishes legacy service migration from foreground starts while preserving direct updates for managed services.
 
+  - id: settings-scope-persistent-header
+    title: Keep settings scope visible while scrolling
+    status: maintained
+    prs: [849]
+    invariants:
+      - Web and desktop settings retain the original scope sentence above the content and move its project and environment pickers into the existing toolbar only after the sentence scrolls out of view; scrolling back restores the sentence without changing the toolbar height or shifting the settings content.
+      - Docking moves the same mounted controls so open menus, selected values, and keyboard focus survive the transition. Narrow toolbars prioritize the scope pickers; the breadcrumb and restore-defaults action return when scrolling back to the sentence.
+      - Scope pickers glide and fade into each position for 200ms only when scrolling changes docking; page entry, tab changes, and layout measurements do not replay the animation. Motion uses transforms and opacity, respects reduced motion, and cancels interrupted transitions without shifting the settings content.
+      - The scope sentence wraps on narrow screens and truncates long picker labels, stays available for unavailable scopes, preserves the environment-only Providers picker, and remains hidden on device-only pages.
+    implementation_paths:
+      - apps/web/src/components/settings/SettingsScopeDock.tsx
+      - apps/web/src/components/settings/SettingsScopeSentence.tsx
+      - apps/web/src/components/settings/settingsLayout.tsx
+      - apps/web/src/routes/settings.tsx
+    upstream_paths:
+      - apps/web/src/components/settings/SettingsScopeSentence.tsx
+      - apps/web/src/components/settings/settingsLayout.tsx
+      - apps/web/src/routes/settings.tsx
+    tests:
+      - apps/web/src/components/settings/SettingsScopeDock.test.tsx
+      - apps/web/src/components/settings/settingsLayout.test.tsx
+      - apps/web/src/components/settings/settingsScopeAxis.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
+        - https://github.com/pingdotgg/t3code/pull/13139
+      retire_when: Upstream keeps settings scope pickers visible and usable while scrolling without losing responsive wrapping or scope recovery.
+
   - id: settled-shelf-auto-collapse
     title: Close the settled shelf once the user moves on
     status: maintained
@@ -4400,6 +4462,35 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/blob/f23d0084b6e023ffb1af9e332d8666affc99d542/packages/contracts/src/providerUsageLimits.ts
       retire_when: Upstream reports and shows every banked reset credit's expiry instead of only the next one.
+
+  - id: web-build-update-notice
+    title: Offer a refresh when a new web build is deployed
+    status: maintained
+    prs: [858]
+    invariants:
+      - Production browser clients compare the loaded build with a fresh manifest from the page's own origin, independently of paired environments; every build, including rebuilds of one commit, has a distinct identifier.
+      - A changed build shows a manual refresh action in the sidebar without interrupting work; a rollback to the loaded build clears the notice, while failed or malformed checks preserve the last known state.
+      - Checks pause while hidden or offline, resume on visibility, focus, or connectivity changes, and never overlap; Electron keeps its native updater and development builds keep HMR.
+    implementation_paths:
+      - apps/web/public/_headers
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/WebBuildUpdateProvider.tsx
+      - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+      - apps/web/src/components/sidebar/SidebarWebUpdatePill.tsx
+      - apps/web/src/webBuildUpdate.ts
+      - apps/web/vite.config.ts
+      - apps/web/vite/buildMetadata.ts
+    upstream_paths:
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+      - apps/web/vite.config.ts
+    tests:
+      - apps/web/src/webBuildUpdate.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
+      retire_when: Upstream detects new static web deployments from the page's origin and offers a manual refresh independently of desktop and paired-server updates.
 
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable

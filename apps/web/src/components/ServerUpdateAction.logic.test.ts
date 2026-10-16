@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { ThreadId } from "@t3tools/contracts";
 
 import { type ServerUpdateHost, serverUpdateConfirmation } from "./ServerUpdateAction.logic";
 
@@ -12,7 +13,7 @@ const idle = {
 };
 
 function confirmation(overrides: Partial<ServerUpdateHost> = {}): string | null {
-  return serverUpdateConfirmation([host(overrides)]);
+  return serverUpdateConfirmation([host(overrides)])?.message ?? null;
 }
 
 function host(overrides: Partial<ServerUpdateHost> = {}): ServerUpdateHost {
@@ -25,7 +26,36 @@ function host(overrides: Partial<ServerUpdateHost> = {}): ServerUpdateHost {
   };
 }
 
+function messageForHosts(hosts: ReadonlyArray<ServerUpdateHost>): string | null {
+  return serverUpdateConfirmation(hosts)?.message ?? null;
+}
+
 describe("serverUpdateConfirmation", () => {
+  it("names threads on each server and only promises continuation where requested", () => {
+    const activity = {
+      ...idle,
+      activeSessions: 1,
+      continuableSessions: 1,
+      threads: [
+        {
+          threadId: ThreadId.make("release"),
+          title: "Check the release",
+          reasons: ["running" as const],
+          continuable: true,
+        },
+      ],
+    };
+    const message = serverUpdateConfirmation([
+      host({ serverLabel: "Laptop", activity, continueRunningThreads: true }),
+      host({ serverLabel: "Lab server", activity, continueRunningThreads: false }),
+    ]);
+    expect(message?.message).toContain("1 thread will continue after the restart.");
+    expect(message?.threadActivity).toEqual([
+      { thread: activity.threads[0], hostLabel: "Laptop", continuesAfterRestart: true },
+      { thread: activity.threads[0], hostLabel: "Lab server", continuesAfterRestart: false },
+    ]);
+  });
+
   it("does not ask when the server is idle", () => {
     expect(confirmation()).toBeNull();
   });
@@ -40,6 +70,8 @@ describe("serverUpdateConfirmation", () => {
         "Update the Lab server with running work?",
         "2 threads will be interrupted.",
         "1 terminal session will be interrupted.",
+        "",
+        "Thread names and activity reasons are unavailable from this server.",
       ].join("\n"),
     );
   });
@@ -55,6 +87,8 @@ describe("serverUpdateConfirmation", () => {
         "Update the Lab server with running work?",
         "1 thread will be interrupted.",
         "1 thread will continue after the restart.",
+        "",
+        "Thread names and activity reasons are unavailable from this server.",
       ].join("\n"),
     );
   });
@@ -80,7 +114,7 @@ describe("serverUpdateConfirmation", () => {
 
   it("asks once for several servers and counts continuation per server", () => {
     expect(
-      serverUpdateConfirmation([
+      messageForHosts([
         host({
           serverLabel: "Laptop",
           activity: { ...idle, activeSessions: 1, continuableSessions: 1 },
@@ -97,13 +131,16 @@ describe("serverUpdateConfirmation", () => {
         "Update the servers on Laptop, Office, Idle with running work?",
         "1 thread will be interrupted.",
         "1 thread will continue after the restart.",
+        "",
+        "Thread names and activity reasons are unavailable for Laptop.",
+        "Thread names and activity reasons are unavailable for Office.",
       ].join("\n"),
     );
   });
 
   it("names the desktop apps and unchecked servers in a batch", () => {
     expect(
-      serverUpdateConfirmation([
+      messageForHosts([
         host({ serverLabel: "Laptop", desktopApp: true }),
         host({ serverLabel: "Office", desktopApp: true, activity: null }),
       ]),
@@ -118,7 +155,7 @@ describe("serverUpdateConfirmation", () => {
 
   it("does not ask when every server in a batch is idle", () => {
     expect(
-      serverUpdateConfirmation([host({ serverLabel: "Laptop" }), host({ serverLabel: "Office" })]),
+      messageForHosts([host({ serverLabel: "Laptop" }), host({ serverLabel: "Office" })]),
     ).toBeNull();
   });
 });

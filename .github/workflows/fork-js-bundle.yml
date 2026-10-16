@@ -87,6 +87,7 @@ jobs:
       - name: Build server, web client, and Electron main
         shell: bash
         env:
+          STYAL_RELEASE_BUILD: "1"
           POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
           POSTHOG_SOURCEMAPS_PROJECT_ID: ${{ vars.POSTHOG_SOURCEMAPS_PROJECT_ID }}
         run: |

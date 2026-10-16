@@ -149,7 +149,14 @@ function useServerUpdates() {
       // was the request.
       if (
         confirmation !== null &&
-        !((await requestConfirmDialog(confirmation, { confirmLabel: "Update" })) ?? true)
+        !(
+          (await requestConfirmDialog(confirmation.message, {
+            confirmLabel: "Update",
+            ...(confirmation.threadActivity.length
+              ? { threadActivity: confirmation.threadActivity }
+              : {}),
+          })) ?? true
+        )
       ) {
         return;
       }

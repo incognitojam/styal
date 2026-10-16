@@ -21,6 +21,7 @@ import { SidebarMenuItem } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { DesktopUpdateStatusIcon } from "./DesktopUpdateStatusIcon";
 import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
+import { SidebarWebUpdatePill } from "./SidebarWebUpdatePill";
 
 type SidebarUpdatePopoverChangeDetails = Parameters<
   NonNullable<ComponentProps<typeof Popover>["onOpenChange"]>
@@ -73,7 +74,7 @@ function SidebarUpdateArchitectureWarningContent() {
 }
 
 export function SidebarUpdatePill() {
-  return isElectron ? <SidebarUpdateControl /> : null;
+  return isElectron ? <SidebarUpdateControl /> : <SidebarWebUpdatePill />;
 }
 
 function SidebarUpdateControl() {

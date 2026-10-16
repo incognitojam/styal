@@ -168,6 +168,7 @@ features: []
           id: "github-outage-status",
           paths: ["apps/web/src/components/sidebar/SidebarChrome.tsx"],
         },
+        { id: "web-build-update-notice", paths: ["apps/web/src/AppRoot.tsx"] },
       ],
     );
   });

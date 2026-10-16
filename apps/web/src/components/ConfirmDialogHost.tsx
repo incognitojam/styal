@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
+import { HostActivityThreadList } from "./HostActivityThreadList";
 
 type ConfirmationCopy = {
   readonly title: string;
@@ -78,7 +79,10 @@ export function ConfirmDialogHost() {
       const controller = new AbortController();
       requests.set(request.requestId, controller);
       void (async () => {
-        const options = request.confirmLabel ? { confirmLabel: request.confirmLabel } : undefined;
+        const options = {
+          ...(request.confirmLabel ? { confirmLabel: request.confirmLabel } : {}),
+          ...(request.threadActivity ? { threadActivity: request.threadActivity } : {}),
+        };
         const confirmed = await (requestConfirmDialog(request.message, options, {
           signal: controller.signal,
           onPresented: () => {
@@ -116,6 +120,7 @@ export function ConfirmDialogHost() {
 
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
+  const threadActivity = state.status === "idle" ? undefined : state.threadActivity;
   const onCancel = () => respondToConfirmDialog(false);
   const onConfirm = () => respondToConfirmDialog(true);
 
@@ -130,14 +135,24 @@ export function ConfirmDialogHost() {
       }}
     >
       <AlertDialogPopup>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{copy.title}</AlertDialogTitle>
-          {copy.description ? (
-            <AlertDialogDescription className="whitespace-pre-line">
-              {copy.description}
-            </AlertDialogDescription>
-          ) : null}
-        </AlertDialogHeader>
+        {/* With a thread list, a long description scrolls within 40% of the viewport so the list keeps room. */}
+        <div
+          className={
+            threadActivity?.length
+              ? "max-h-[40dvh] shrink-0 overflow-y-auto"
+              : "min-h-0 overflow-y-auto"
+          }
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy.title}</AlertDialogTitle>
+            {copy.description ? (
+              <AlertDialogDescription className="whitespace-pre-line">
+                {copy.description}
+              </AlertDialogDescription>
+            ) : null}
+          </AlertDialogHeader>
+        </div>
+        {threadActivity?.length ? <HostActivityThreadList activity={threadActivity} /> : null}
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button variant={confirmVariant} onClick={onConfirm}>

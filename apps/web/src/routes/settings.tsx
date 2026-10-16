@@ -17,6 +17,11 @@ import {
 import { useEnvironments } from "../state/environments";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
 import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
+import {
+  SettingsScopeDockProvider,
+  SettingsScopeToolbar,
+  useSettingsScopeDocked,
+} from "../components/settings/SettingsScopeDock";
 import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
@@ -110,37 +115,56 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
   return children;
 }
 
+function SettingsToolbar({ pathname, onRestored }: { pathname: string; onRestored: () => void }) {
+  const docked = useSettingsScopeDocked();
+  return (
+    <WorkspacePageHeader electron={isElectron} className="@container/settings-toolbar">
+      <div className="flex w-full min-w-0 items-center gap-3">
+        <div className={docked ? "hidden min-w-0 @min-[48rem]/settings-toolbar:block" : "min-w-0"}>
+          <SettingsBreadcrumb pathname={pathname} />
+        </div>
+        <SettingsScopeToolbar />
+        {pathname === "/settings/general" ? (
+          <div
+            className={
+              docked
+                ? "ms-auto hidden shrink-0 items-center @min-[56rem]/settings-toolbar:flex"
+                : "ms-auto flex shrink-0 items-center"
+            }
+          >
+            <RestoreDeviceDefaultsButton onRestored={onRestored} />
+          </div>
+        ) : null}
+      </div>
+    </WorkspacePageHeader>
+  );
+}
+
 function SettingsContentLayout() {
   const location = useLocation();
   const navigateToMainApp = useNavigateToMainApp();
   useEscapeToGoBack(navigateToMainApp);
   const { search } = useSettingsScope();
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const hasScope = !SETTINGS_DEVICE_ONLY_PATHS.has(location.pathname);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <WorkspacePageHeader electron={isElectron}>
-          <div className="flex w-full items-center gap-3">
-            <SettingsBreadcrumb pathname={location.pathname} />
-            {location.pathname === "/settings/general" ? (
-              <div className="ms-auto flex shrink-0 items-center">
-                <RestoreDeviceDefaultsButton
-                  onRestored={() => setRestoreSignal((value) => value + 1)}
-                />
-              </div>
-            ) : null}
-          </div>
-        </WorkspacePageHeader>
-
-        <div
-          key={`${JSON.stringify(search)}:${restoreSignal}`}
-          className="min-h-0 flex flex-1 flex-col"
+        <SettingsScopeDockProvider
+          key={`${location.pathname}:${JSON.stringify(search)}:${restoreSignal}`}
+          enabled={hasScope}
         >
-          <SettingsScopeBoundary pathname={location.pathname}>
-            <Outlet />
-          </SettingsScopeBoundary>
-        </div>
+          <SettingsToolbar
+            pathname={location.pathname}
+            onRestored={() => setRestoreSignal((value) => value + 1)}
+          />
+          <div className="min-h-0 flex flex-1 flex-col">
+            <SettingsScopeBoundary pathname={location.pathname}>
+              <Outlet />
+            </SettingsScopeBoundary>
+          </div>
+        </SettingsScopeDockProvider>
       </div>
     </SidebarInset>
   );
