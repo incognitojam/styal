@@ -683,8 +683,10 @@ features:
       - packages/contracts/src/threadPullRequest.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
+      - apps/web/src/announcer.test.ts
       - apps/web/src/components/ThreadNotificationSounds.test.tsx
       - apps/web/src/threadNotifications.test.ts
+      - packages/client-runtime/src/pullRequestAnnouncements.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
       status: partial
