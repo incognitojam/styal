@@ -4242,6 +4242,28 @@ features:
         - https://github.com/pingdotgg/t3code/pull/16172
       retire_when: Upstream undoes thread actions from focused text fields without taking text undo after edits or held-key repeats.
 
+  - id: thread-handoff-pending-work
+    title: Show pending context handoffs as working immediately
+    status: maintained
+    prs: []
+    invariants:
+      - Sending a message on an existing idle thread moves it into the Working section while context handoff dispatch is pending on web, desktop, and mobile.
+      - A rejected send restores the previous thread presentation; an accepted send retains pending work until the corresponding shell update arrives.
+      - Sending another message preserves live run status and pending approvals rather than replacing them with pending handoff state.
+    implementation_paths:
+      - packages/client-runtime/src/state/threadCommands.ts
+      - packages/client-runtime/src/state/threadLifecycle.ts
+    upstream_paths:
+      - packages/client-runtime/src/state/threadCommands.ts
+      - packages/client-runtime/src/state/threadLifecycle.ts
+    tests:
+      - packages/client-runtime/src/state/threadCommands.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/e3b35d1b2440b104f0bc2e357377c348121234dd/packages/client-runtime/src/state/threadCommands.ts
+      retire_when: Upstream presents pending sends as working before handoff dispatch finishes, with rejection rollback and shell reconciliation on every client.
+
   - id: thread-lifecycle-analytics
     title: Record thread lifecycle analytics
     status: maintained

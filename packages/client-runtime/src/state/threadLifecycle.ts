@@ -48,10 +48,10 @@ export function createOptimisticThreadLifecycle(
     }),
   );
 
-  function wrap<Input extends { readonly threadId: ThreadId }, E>(
+  function wrap<Input extends { readonly threadId: ThreadId }, Result extends object, E>(
     command: AtomCommand<
       { readonly environmentId: EnvironmentId; readonly input: Input },
-      { readonly sequence: number },
+      Result,
       E
     >,
     apply: (
@@ -78,10 +78,15 @@ export function createOptimisticThreadLifecycle(
         try {
           const result = await command.run(registry, target);
           if (result._tag === "Success") {
-            update.sequence = result.value.sequence;
+            // Launch responses have no sequence; their shell stream owns reconciliation.
+            if (!("sequence" in result.value) || typeof result.value.sequence !== "number") {
+              return result;
+            }
+            const sequence = result.value.sequence;
+            update.sequence = sequence;
             registry.update(pending, (current) => [...current]);
             const reconcile = (snapshot: OrchestrationV2ShellSnapshot | null) => {
-              if (snapshot === null || snapshot.snapshotSequence >= result.value.sequence) {
+              if (snapshot === null || snapshot.snapshotSequence >= sequence) {
                 remove();
                 unsubscribe();
               }
