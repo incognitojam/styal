@@ -119,6 +119,15 @@ waiting. Read CPU together with page faults:
   file writes.
 - Many `involuntaryContextSwitches` mean other processes were competing for the CPU.
 
+### Client Connection Reliability
+
+Clients report how their connections behave on each network type and route as `client.network.report`
+events. [Connection reliability by network](https://eu.posthog.com/project/120501/dashboard/1030084)
+in PostHog shows connected share, drops per foreground hour by cause, reconnect time, heartbeat round
+trips, and route switches for release builds. How to read the fields is in
+[product analytics](../internals/product-analytics.md). A phone keeps its own reports under
+**Settings → About → Diagnostics**, which helps when a user reports a bad connection.
+
 ### Related Artifacts
 
 Provider event NDJSON files still exist for provider runtime streams. Those are separate from the main server trace file.
