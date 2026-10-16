@@ -1726,10 +1726,10 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/server/src/telemetry/DeviceFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
-      - apps/web/src/forkClientUsage.ts
-      - packages/contracts/src/forkClientUsage.ts
       - apps/server/src/ws.ts
       - apps/server/vite.config.ts
+      - apps/web/src/forkClientUsage.ts
+      - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/server/src/telemetry/AnalyticsService.ts
     tests:
@@ -1739,8 +1739,8 @@ features:
       - apps/server/src/mcp/McpDeviceToolkit.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
       - apps/server/src/telemetry/BuildContext.test.ts
-      - apps/server/src/telemetry/FeatureUsage.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - apps/server/src/telemetry/FeatureUsage.test.ts
     upstream:
       status: tracking
       tracking:
@@ -2308,8 +2308,8 @@ features:
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/MentionedTimeChip.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
-      - apps/web/src/markdown-mentioned-times.ts
       - apps/web/src/forkClientUsage.ts
+      - apps/web/src/markdown-mentioned-times.ts
       - apps/web/src/timestampFormat.ts
       - packages/client-runtime/src/mentionedTimes.ts
       - packages/contracts/src/environment.ts
@@ -4635,12 +4635,12 @@ features:
       - Checks pause while hidden or offline, resume on visibility, focus, or connectivity changes, and never overlap; Electron keeps its native updater and development builds keep HMR.
     implementation_paths:
       - apps/server/src/telemetry/ClientFeatureUsage.ts
-      - apps/web/src/forkClientUsage.ts
       - apps/web/public/_headers
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/WebBuildUpdateProvider.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/src/components/sidebar/SidebarWebUpdatePill.tsx
+      - apps/web/src/forkClientUsage.ts
       - apps/web/src/webBuildUpdate.ts
       - apps/web/src/webBuildUpdateUsage.ts
       - apps/web/vite.config.ts
