@@ -38,8 +38,10 @@ const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 const establishmentTimeout = Duration.fromInputUnsafe(CONNECTION_ESTABLISHMENT_TIMEOUT);
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
 // Mobile resumes, explicit retries, and offline events want a fast answer:
-// the user is waiting, or the network may be gone.
-const QUICK_CONNECTION_PROBE_TIMEOUT = "3 seconds";
+// the user is waiting, or the network may be gone. It still has to cover a
+// lost packet and its retransmit on a 500ms round trip, or a slow link reads
+// as a dead socket and every resume tears down a working session.
+const QUICK_CONNECTION_PROBE_TIMEOUT = "6 seconds";
 const BACKOFF_RESET_AFTER_MS = 30_000;
 // While connected over a fallback route, how often to look for a better one.
 // Network changes and returning to the app also trigger a check.
@@ -627,7 +629,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       yield* Ref.set(probeUnanswered, true);
       const probe = yield* Effect.forkChild(lease.session.probe);
       // Monotonic nanoseconds, so a wall-clock correction cannot move the deadline.
-      let deadline = (yield* Clock.monotonicTimeNanos) + Duration.toNanosUnsafe(probeTimeout);
+      const probeStartedAt = yield* Clock.monotonicTimeNanos;
+      const latestDeadline = probeStartedAt + Duration.toNanosUnsafe(CONNECTION_PROBE_TIMEOUT);
+      let probeWindow = probeTimeout;
+      let deadline = probeStartedAt + Duration.toNanosUnsafe(probeWindow);
+      let receivedFrames = yield* lease.session.receivedFrames;
       for (;;) {
         const remaining = deadline - (yield* Clock.monotonicTimeNanos);
         const probeEvent = yield* Effect.raceAllFirst([
@@ -640,6 +646,17 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           ),
         ]);
         if (probeEvent._tag === "TimedOut") {
+          // Frames still arriving mean a slow link, not a dead one: the answer
+          // may be queued behind them. Wait another window, up to the full
+          // probe timeout.
+          const received = yield* lease.session.receivedFrames;
+          const now = yield* Clock.monotonicTimeNanos;
+          if (received > receivedFrames && now < latestDeadline) {
+            receivedFrames = received;
+            const extended = now + Duration.toNanosUnsafe(probeWindow);
+            deadline = extended < latestDeadline ? extended : latestDeadline;
+            continue;
+          }
           yield* Fiber.interrupt(probe);
           return yield* new ConnectionTransientError({
             reason: "timeout",
@@ -664,7 +681,10 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         if (signalTimeout !== undefined) {
           const signalDeadline =
             (yield* Clock.monotonicTimeNanos) + Duration.toNanosUnsafe(signalTimeout);
-          if (signalDeadline < deadline) deadline = signalDeadline;
+          if (signalDeadline < deadline) {
+            deadline = signalDeadline;
+            probeWindow = signalTimeout;
+          }
         }
       }
     }
