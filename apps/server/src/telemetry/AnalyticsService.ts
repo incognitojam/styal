@@ -209,7 +209,6 @@ export const make = Effect.gen(function* () {
           t3CodeRepository: T3_CODE_REPOSITORY,
           featureUsageVersion: 1,
           browserToolsUsageVersion: 1,
-          browserSessionUsageVersion: 1,
           deviceUsageVersion: 1,
           ...buildContext,
           clientType,

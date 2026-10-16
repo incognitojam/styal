@@ -22,11 +22,6 @@ type FeatureUsage =
       readonly source: "agent";
     }
   | {
-      readonly feature: "browser-sessions";
-      readonly action: "open";
-      readonly source: "user";
-    }
-  | {
       readonly feature: "devices";
       readonly action: "list" | "open" | "close" | "shutdown" | "snapshot" | DeviceActionType;
       readonly source: "user" | "agent";

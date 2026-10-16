@@ -182,8 +182,6 @@ export type PreviewSessionSnapshot = typeof PreviewSessionSnapshot.Type;
 
 export const PreviewOpenInput = Schema.Struct({
   threadId: ThreadId,
-  /** Explicit user tab creation; absent for automation and older clients. */
-  usageSource: Schema.optional(Schema.Literal("user")),
   /** Omit to create an empty (Idle) tab the user can type into. */
   url: Schema.optional(Url),
   /**

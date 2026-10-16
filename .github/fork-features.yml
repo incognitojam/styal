@@ -1684,7 +1684,6 @@ features:
     invariants:
       - Agent browser tools emit one structural feature.used event per public operation, including failures and cancellation, with action, outcome, and duration but no operation arguments or results.
       - Internal metadata reads do not inflate agent usage, and telemetry failures never change the operation's result.
-      - Explicit manual browser tab creation is attributed separately from agent browser operations, and unmarked legacy or agent tab creation is not counted as manual use.
       - Device panel operations and public agent device tools record bounded usage and outcomes without names, device identifiers, arguments, or images; discovery is distinct from adoption and environment forwarding is not counted again as a manual action.
       - Events carry separate instrumentation versions and explicit build context; test and CI collection defaults off while the shared telemetry opt-out still disables all feature events.
     implementation_paths:
@@ -1702,10 +1701,6 @@ features:
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/ws.ts
       - apps/server/vite.config.ts
-      - apps/web/src/browser/openFileInPreview.ts
-      - apps/web/src/components/preview/openPreviewSession.ts
-      - apps/web/src/components/preview/openTerminalLinkInPreview.ts
-      - packages/contracts/src/preview.ts
     upstream_paths:
       - apps/server/src/telemetry/AnalyticsService.ts
     tests:
@@ -1715,11 +1710,7 @@ features:
       - apps/server/src/mcp/McpDeviceToolkit.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
       - apps/server/src/telemetry/BuildContext.test.ts
-      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
-      - apps/web/src/components/preview/addBrowserSurface.test.ts
-      - apps/web/src/components/preview/openPreviewSession.test.ts
-      - apps/web/src/components/preview/openTerminalLinkInPreview.test.ts
     upstream:
       status: tracking
       tracking:
