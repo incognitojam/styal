@@ -161,7 +161,11 @@ export function createSidebarCollisionDetection(
 }
 
 function isGroupedCard(item: SidebarListItem): boolean {
-  return item.kind === "thread" && item.section === "active" && item.group !== undefined;
+  return (
+    item.kind === "thread" &&
+    (item.section === "active" || item.section === "working") &&
+    item.group !== undefined
+  );
 }
 
 /** Preview the committed section layout without moving or mounting DOM nodes.
@@ -250,7 +254,7 @@ export function createSidebarSortingStrategy(input: {
     let slimHeight = input.slimHeight;
     let headerScale: number | undefined;
     for (const [index, item] of items.entries()) {
-      if (item.kind === "project-header") continue;
+      if (item.kind === "project-header" || item.kind === "working-project-header") continue;
       if (item.kind === "marker") {
         if (isShelfHeader(item)) {
           const height = rects[index]?.height;
@@ -327,7 +331,15 @@ export function createSidebarSortingStrategy(input: {
     section("active");
     if (items.some((item) => item.kind === "marker" && item.marker === "working-header")) {
       marker("working-header");
-      projected.push(...groups.working);
+      // Working rows are never dragged, so the shelf keeps its rendered
+      // rows and project headers.
+      projected.push(
+        ...items.filter(
+          (item) =>
+            item.kind === "working-project-header" ||
+            (item.kind === "thread" && item.section === "working"),
+        ),
+      );
     }
     if (
       groups.snoozed.length > 0 ||

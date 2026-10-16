@@ -179,13 +179,16 @@ export type SidebarListItem =
     }
   | { readonly kind: "marker"; readonly marker: SidebarListMarker }
   /** Heads a run of active threads from one project. */
-  | { readonly kind: "project-header"; readonly group: string };
+  | { readonly kind: "project-header"; readonly group: string }
+  /** Heads a run of Working shelf threads from one project. Never dragged. */
+  | { readonly kind: "working-project-header"; readonly group: string };
 
 export function sidebarListItemId(item: SidebarListItem): string {
   if (item.kind === "thread") return item.key;
   if (item.kind === "marker") return sidebarMarkerId(item.marker);
   // Group keys contain colons; encoding keeps marker ids colon-free.
-  return `${SIDEBAR_MARKER_PREFIX}project-${encodeURIComponent(item.group)}`;
+  const prefix = item.kind === "working-project-header" ? "working-project" : "project";
+  return `${SIDEBAR_MARKER_PREFIX}${prefix}-${encodeURIComponent(item.group)}`;
 }
 
 /** Stable-cluster `items` by group, keeping their relative order within a
@@ -237,6 +240,17 @@ export function groupActiveThreadsForSidebar<
     ...savedGroupOrder,
   ];
   return clusterSidebarItemsByGroup(orderedThreads, groupOf, groupOrder);
+}
+
+/** Cluster Working shelf threads by project in `projectOrder`, keeping the
+ * newest-send order within each project. Sending to a thread moves it only
+ * within its project, so headers never trade places as runs start. */
+export function groupWorkingThreadsForSidebar<T>(
+  sortedThreads: readonly T[],
+  groupOf: (thread: T) => string,
+  projectOrder: readonly string[],
+): T[] {
+  return clusterSidebarItemsByGroup(sortedThreads, groupOf, [...new Set(projectOrder)]);
 }
 
 /** Project groups in the order their headers render. */
@@ -298,7 +312,7 @@ export function resolveSidebarDropTarget(
   const activeRows: Extract<SidebarListItem, { kind: "thread" }>[] = [];
   let currentSection: SidebarSection = "pinned";
   for (const item of moved) {
-    if (item.kind === "project-header") continue;
+    if (item.kind === "project-header" || item.kind === "working-project-header") continue;
     if (item.kind === "marker") {
       if (item.marker === "pinned-divider") currentSection = "active";
       else if (

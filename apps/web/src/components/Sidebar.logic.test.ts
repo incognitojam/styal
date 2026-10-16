@@ -8,6 +8,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import {
   groupActiveThreadsForSidebar,
+  groupWorkingThreadsForSidebar,
   sortThreadsForSidebar,
   sidebarListItemId,
   resolveSidebarProjectDrop,
@@ -2042,6 +2043,32 @@ describe("sortPinnedThreadsForSidebar", () => {
     ]);
 
     expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("groupWorkingThreadsForSidebar", () => {
+  const group = (thread: { group: string }) => thread.group;
+  const ids = (rows: readonly { id: string }[]) => rows.map((row) => row.id);
+
+  it("keeps project order when a send makes another project's thread newest", () => {
+    const newestFirst = [
+      { id: "b1", group: "B" },
+      { id: "a1", group: "A" },
+      { id: "b2", group: "B" },
+    ];
+    const afterSendToA2 = [{ id: "a2", group: "A" }, ...newestFirst];
+
+    expect(ids(groupWorkingThreadsForSidebar(newestFirst, group, ["A", "B"]))).toEqual([
+      "a1",
+      "b1",
+      "b2",
+    ]);
+    expect(ids(groupWorkingThreadsForSidebar(afterSendToA2, group, ["A", "B", "A"]))).toEqual([
+      "a2",
+      "a1",
+      "b1",
+      "b2",
+    ]);
   });
 });
 
