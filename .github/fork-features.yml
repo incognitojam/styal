@@ -1407,6 +1407,7 @@ features:
     invariants:
       - Web, desktop, and mobile default to steering follow-ups into the active turn instead of queueing a new turn.
       - Explicit Queue preferences remain unchanged, and Queue remains available as the alternate action.
+      - During compaction, both composer actions queue follow-ups until the maintenance turn finishes; ordinary turns retain the steering default and same-turn completion lifecycle.
       - Mobile queues when the active provider cannot steer; web/desktop use the existing interrupt-and-restart fallback for providers without active steering. Provider execution and Claude message priority remain unchanged.
       - Web, desktop, and mobile show the same muted delivery label (From queue, or an arrow and Steer, with a promoted steer's queued origin kept in the tooltip or accessibility label) beside the timestamp beneath the message. Web and desktop reveal it with the rest of the metadata row on hover or focus; touch clients show that row, label included, at all times.
     rationale: Ordinary follow-ups should reach ongoing work without waiting for the whole turn to finish. Retain the closed upstream proposal as a deliberate styal default.
