@@ -192,8 +192,7 @@ describe("DesktopShutdownGuard", () => {
     return Effect.gen(function* () {
       const guard = yield* Guard.DesktopShutdownGuard;
       assert.isTrue(yield* guard.confirm("restart"));
-      assert.include(h.messages[0]!, "2 threads waiting for input or approval will be interrupted");
-      assert.include(h.messages[0]!, "2 terminal sessions");
+      assert.include(h.messages[0]!, "2 threads and 2 terminal sessions will be interrupted");
     }).pipe(Effect.provide(h.layer));
   });
   it.effect.each(["http", "invalid", "defect"] as const)(
@@ -258,7 +257,7 @@ describe("shutdown confirmation copy", () => {
       {
         message: "Quit with running work?",
         detail:
-          "1 thread will be interrupted.\n1 terminal session will be interrupted.\n\nThread names and activity reasons are unavailable from this server. Make sure you're ready before continuing.",
+          "1 thread and 1 terminal session will be interrupted.\n\nThread names and activity reasons are unavailable from this server. Make sure you're ready before continuing.",
         confirmLabel: "Quit",
       },
     );
@@ -294,11 +293,11 @@ describe("shutdown confirmation copy", () => {
       },
     );
   });
-  it("describes waiting threads separately", () => {
+  it("asks about waiting threads in the title", () => {
     assert.deepEqual(Guard.shutdownConfirmation([{ ...idle, waitingSessions: 1 }], "restart"), {
       message: "Restart with waiting threads?",
       detail:
-        "1 thread waiting for input or approval will be interrupted.\n\nThread names and activity reasons are unavailable from this server. Make sure you're ready before continuing.",
+        "1 thread will be interrupted.\n\nThread names and activity reasons are unavailable from this server. Make sure you're ready before continuing.",
       confirmLabel: "Restart",
     });
   });

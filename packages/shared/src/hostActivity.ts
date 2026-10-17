@@ -9,17 +9,18 @@ export type HostActivityCheck = HostActivity & {
   readonly continueRunningThreads?: boolean;
 };
 
+/** Short labels for the restart warning's per-thread status badges. */
 export const hostActivityReasonLabels: Record<HostActivityThread["reasons"][number], string> = {
-  preparing: "Preparing a turn",
-  starting: "Starting a turn",
-  running: "Running a turn",
-  input: "Waiting for your input",
-  approval: "Waiting for approval",
-  waiting: "Waiting for input or approval",
-  command: "Running a background command",
-  monitor: "Running a monitor",
-  subagent: "Running a subagent",
-  background_task: "Running a background task",
+  preparing: "Preparing",
+  starting: "Starting",
+  running: "Running",
+  input: "Needs input",
+  approval: "Needs approval",
+  waiting: "Waiting",
+  command: "Background command",
+  monitor: "Monitor",
+  subagent: "Subagent",
+  background_task: "Background task",
 };
 
 function singleLine(value: string): string {
@@ -98,12 +99,12 @@ export function describeHostActivity(
     deviceUsers += check.environmentsUsingDevices;
   }
   const lines: string[] = [];
-  if (active - continuing)
-    lines.push(`${plural(active - continuing, "thread")} will be interrupted.`);
+  const interrupted = [
+    ...(active - continuing + waiting ? [plural(active - continuing + waiting, "thread")] : []),
+    ...(terminals ? [plural(terminals, "terminal session")] : []),
+  ];
+  if (interrupted.length) lines.push(`${interrupted.join(" and ")} will be interrupted.`);
   if (continuing) lines.push(`${plural(continuing, "thread")} will continue after the restart.`);
-  if (waiting)
-    lines.push(`${plural(waiting, "thread")} waiting for input or approval will be interrupted.`);
-  if (terminals) lines.push(`${plural(terminals, "terminal session")} will be interrupted.`);
   if (deviceUsers) lines.push("Devices in use by other environments will be disconnected.");
   if (uncheckedTerminals)
     lines.push(
@@ -124,4 +125,66 @@ export function describeHostActivity(
     threadActivity,
     incomplete: uncheckedHosts || uncheckedTerminals > 0,
   };
+}
+
+type Reason = HostActivityThread["reasons"][number];
+
+export type HostActivityTone = "warning" | "info" | "secondary";
+
+type ProjectGroup = {
+  key: string;
+  activity: ConfirmDialogThreadActivity[];
+};
+
+type Section = {
+  continues: boolean;
+  projects: ProjectGroup[];
+};
+
+type HostGroup = {
+  key: string;
+  label: string | null;
+  sections: Section[];
+};
+
+/** Waiting threads need the user, turns are live work, and the rest runs in the background. */
+export function hostActivityReasonTone(reason: Reason): HostActivityTone {
+  if (reason === "input" || reason === "approval" || reason === "waiting") return "warning";
+  if (reason === "preparing" || reason === "starting" || reason === "running") return "info";
+  return "secondary";
+}
+
+/**
+ * Groups affected threads by host, then by whether they are interrupted or
+ * continue after the restart, then by project. Each thread appears once.
+ */
+export function groupHostActivityThreads(
+  activity: ReadonlyArray<ConfirmDialogThreadActivity>,
+): ReadonlyArray<HostGroup> {
+  const hosts = new Map<string, HostGroup>();
+  for (const item of activity) {
+    const hostKey = item.environmentId ?? item.hostLabel ?? "";
+    let host = hosts.get(hostKey);
+    if (!host) {
+      host = { key: hostKey, label: item.hostLabel, sections: [] };
+      hosts.set(hostKey, host);
+    }
+    const continues = item.continuesAfterRestart;
+    let section = host.sections.find((candidate) => candidate.continues === continues);
+    if (!section) {
+      section = { continues, projects: [] };
+      host.sections.push(section);
+    }
+    const projectKey = item.thread.project?.id ?? "";
+    let project = section.projects.find((candidate) => candidate.key === projectKey);
+    if (!project) {
+      project = { key: projectKey, activity: [] };
+      section.projects.push(project);
+    }
+    project.activity.push(item);
+  }
+  for (const host of hosts.values()) {
+    host.sections.sort((a, b) => Number(a.continues) - Number(b.continues));
+  }
+  return [...hosts.values()];
 }
