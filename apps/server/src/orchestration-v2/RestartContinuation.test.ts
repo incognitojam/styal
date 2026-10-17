@@ -32,6 +32,9 @@ const driver = ProviderDriverKind.make("codex");
 const providerThreadId = ProviderThreadId.make("provider-thread:restart");
 const sessionId = ProviderSessionId.make("session:restart");
 const attemptId = RunAttemptId.make("attempt:restart");
+// A turn cut mid-way learns that the restart, not its own command, killed what was running.
+const INTERRUPTED_CONTINUATION =
+  "Note: the T3 server restarted and interrupted this turn. Any command or tool call that was still running was terminated by the restart, so its failure (for example exit code 137) does not reflect the command itself.\n\nContinue where you left off.";
 
 function makeProjection() {
   return {
@@ -643,7 +646,7 @@ it.effect("continues a cut run past queued follow-ups, which stay held", () =>
       ...cut,
       runs: [...cut.runs, queuedFollowUp],
     } as unknown as OrchestrationV2ThreadProjection);
-    assert.deepEqual(texts, ["Continue where you left off."]);
+    assert.deepEqual(texts, [INTERRUPTED_CONTINUATION]);
   }),
 );
 
@@ -672,7 +675,7 @@ it.effect("continues a resumed queued run that ran after an earlier continuation
       ...cut,
       runs: [...cut.runs, finishedContinuation],
     } as unknown as OrchestrationV2ThreadProjection);
-    assert.deepEqual(texts, ["Continue where you left off."]);
+    assert.deepEqual(texts, [INTERRUPTED_CONTINUATION]);
   }),
 );
 
@@ -712,7 +715,7 @@ it.effect("tells a turn cut mid-way about the background work it lost", () =>
     );
     assert.lengthOf(texts, 1);
     assert.include(texts[0]!, "Background reviewer");
-    assert.isTrue(texts[0]!.endsWith("Continue where you left off."));
+    assert.isTrue(texts[0]!.endsWith(INTERRUPTED_CONTINUATION));
   }),
 );
 

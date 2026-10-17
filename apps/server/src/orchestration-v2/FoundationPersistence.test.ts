@@ -2855,7 +2855,8 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
         assert.equal(continuation.type, "message.dispatch");
         if (continuation.type === "message.dispatch") {
           assert.equal(continuation.restartContinuationOfRunId, runId);
-          assert.equal(continuation.text, "Continue where you left off.");
+          assert.include(continuation.text, "the T3 server restarted and interrupted this turn");
+          assert.isTrue(continuation.text.endsWith("Continue where you left off."));
         }
       }),
   );
