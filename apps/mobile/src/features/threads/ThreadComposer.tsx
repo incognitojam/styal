@@ -97,6 +97,7 @@ import type { RemoteClientConnectionState } from "../../lib/connection";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { ControlPillMenu } from "../../components/ControlPill";
 import type { ActiveTurnComposerAction } from "@t3tools/client-runtime/state/composer-dispatch";
+import { resolveComposerStopAndSend } from "@t3tools/client-runtime/state/composer-dispatch";
 import type { FollowUpBehavior } from "../../lib/followUpBehavior";
 import {
   resolveComposerSendPresentation,
@@ -407,8 +408,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     () => composerStripAttachments(props.draftAttachments),
     [props.draftAttachments],
   );
-  const showStopAction = props.canStopThread;
-  const showSendAction = hasContent || !showStopAction || queuedEdit !== null;
+  const { showStop: showStopAction, showSend: showSendAction } = resolveComposerStopAndSend({
+    canStop: props.canStopThread,
+    hasDraft: hasContent,
+    isEditingQueuedMessage: queuedEdit !== null,
+  });
 
   const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
   const attachmentsUploading =

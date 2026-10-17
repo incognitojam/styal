@@ -30,3 +30,17 @@ export function alternateComposerDispatchAction(
     ...(activeTurnDefault === undefined ? {} : { activeTurnDefault }),
   }) as ActiveTurnComposerAction;
 }
+
+/**
+ * Which of Stop and Send the composer shows. Stop stays beside Send while a draft
+ * exists so a run, including manual compaction, can be stopped without clearing
+ * the draft. Editing a queued message shows only its Update action.
+ */
+export function resolveComposerStopAndSend(input: {
+  readonly canStop: boolean;
+  readonly hasDraft: boolean;
+  readonly isEditingQueuedMessage: boolean;
+}): { readonly showStop: boolean; readonly showSend: boolean } {
+  const showStop = input.canStop && !input.isEditingQueuedMessage;
+  return { showStop, showSend: input.hasDraft || !showStop };
+}
