@@ -2476,6 +2476,25 @@ features:
         - https://github.com/pingdotgg/t3code/pull/18425
       retire_when: Upstream's mobile Provider accounts screen shows every provider with its sign-in source and gives each action its own icon.
 
+  - id: mobile-status-icon-theme-colors
+    title: Mobile floating status icons follow the active theme
+    status: maintained
+    prs: []
+    invariants:
+      - Waiting, background command, compacting, goal, and preparing icons use the active theme foreground in light and dark appearances, including Material You and system appearance changes.
+    implementation_paths:
+      - apps/mobile/src/features/threads/floating-working-control.tsx
+    upstream_paths:
+      - apps/mobile/src/features/threads/floating-working-control.tsx
+    tests:
+      - apps/mobile/src/lib/materialYouTheme.test.ts
+      - apps/mobile/src/lib/mobileThemeRuntime.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/86534db4d3525a070589a234d660a3e0373a42ea
+      retire_when: Upstream floating status icons resolve their tint from the active theme foreground using a valid accent color utility.
+
   - id: network-condition-reports
     title: Report how connections behave on each network
     status: maintained
