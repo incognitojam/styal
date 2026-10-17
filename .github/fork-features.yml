@@ -4665,7 +4665,7 @@ features:
   - id: workflow-run-watch
     title: Wake agents when a watched CI workflow run completes
     status: maintained
-    prs: []
+    prs: [896]
     invariants:
       - watch_workflow_run reads the GitHub Actions run first; a run that already completed is reported to the agent instead of watched, and an unreadable run is an error.
       - The server reads each watched run every two minutes and wakes the agent once when it completes, naming its conclusion and the jobs of the latest attempt that did not pass, then ends the watch in the same step.
