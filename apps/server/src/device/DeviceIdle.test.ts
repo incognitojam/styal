@@ -432,6 +432,32 @@ describe("hand-back", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("refuses every concurrent agent open from a thread, not just the first", () =>
+    Effect.gen(function* () {
+      const { service, busy } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      busy.add(threadId);
+
+      // Two device_open calls from one thread both target the device before either opens it.
+      const target = { threadId: thread2, hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" };
+      yield* service.agentTarget(target);
+      yield* service.agentTarget(target);
+      const open = service.open({
+        threadId: thread2,
+        deviceId: "emulator-5554",
+        platform: "android",
+      });
+      expect(yield* open.pipe(Effect.flip)).toMatchObject({ _tag: "DeviceHeldError" });
+      expect(yield* open.pipe(Effect.flip)).toMatchObject({ _tag: "DeviceHeldError" });
+      expect(yield* threads(service)).toEqual([threadId]);
+
+      // With both agent opens consumed, a Device panel open shares the device again.
+      yield* open;
+      expect(yield* threads(service)).toEqual([threadId, thread2]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("a device someone watches is in use for every other thread's agent", () =>
     Effect.gen(function* () {
       const { service, activity, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));

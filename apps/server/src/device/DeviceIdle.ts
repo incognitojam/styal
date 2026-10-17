@@ -195,8 +195,20 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   const startedAt = yield* Clock.currentTimeMillis;
   const lastUsedAt = new Map<string, number>();
   const viewers = new Map<string, number>();
-  /** agent-device session names handed out by `agentTarget`, keyed by the device id asked for. */
-  const targeted = new Map<string, string>();
+  /**
+   * agent-device session names handed out by `agentTarget`, keyed by the device id asked
+   * for, with how many agent opens have yet to consume it. Concurrent agent opens of one
+   * device from one thread each count, so a refused open cannot turn its sibling into a
+   * Device panel open.
+   */
+  const targeted = new Map<string, { readonly name: string; readonly pending: number }>();
+  /** Marks one agent open of `key` as finished with its session name. */
+  const consumeTarget = (key: string) => {
+    const entry = targeted.get(key);
+    if (!entry) return;
+    if (entry.pending <= 1) targeted.delete(key);
+    else targeted.set(key, { name: entry.name, pending: entry.pending - 1 });
+  };
   const holds = new Map<string, Hold>();
   /** Claims whose release the daemon did not confirm, retried on the next reclaim or power-off. */
   const unreleased = new Map<string, Hold>();
@@ -453,7 +465,8 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       Effect.tap((args) => {
         const name = args[args.indexOf("--session") + 1];
         if (!name) return Effect.void;
-        targeted.set(holdKey(input.threadId, input.hostId, input.deviceId), name);
+        const key = holdKey(input.threadId, input.hostId, input.deviceId);
+        targeted.set(key, { name, pending: (targeted.get(key)?.pending ?? 0) + 1 });
         return Effect.void;
       }),
     );
@@ -464,7 +477,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       Effect.gen(function* () {
         const hostId = input.hostId ?? LOCAL_DEVICE_HOST_ID;
         const asked = holdKey(input.threadId, hostId, input.deviceId);
-        const name = targeted.get(asked);
+        const name = targeted.get(asked)?.name;
         // Only an agent open hands a device over or is refused one; the user opening a
         // panel shares the stream and never takes the device from an agent.
         if (name) {
@@ -475,7 +488,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
                 onDevice(hostId, input.deviceId),
               );
           if (held.length > 0 && input.takeOver !== true) {
-            targeted.delete(asked);
+            consumeTarget(asked);
             return yield* new DeviceHeldError({
               hostId,
               deviceId: input.deviceId,
@@ -509,7 +522,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
           // Only a completed open hands the session out again. Keep it refused while
           // a concurrent hand-over is releasing this thread's earlier session.
           yield* setReleased([name], false);
-          targeted.delete(asked);
+          consumeTarget(asked);
           const opened = holdKey(session.threadId, session.hostId, session.deviceId);
           // A thread reopening a device keeps every session name it was given until each is released.
           const previous = [
@@ -622,15 +635,28 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     // agent's hold counts it as deleted.
     for (const session of state.sessions) {
       if (session.threadId.startsWith(PEER_THREAD_PREFIX)) continue;
-      const status = yield* options.threadStatus(session.threadId);
-      if (status !== "archived" && !(status === "missing" && holdFor(session, state))) continue;
-      yield* closeOne(session, false).pipe(withDevice(session.hostId, session.deviceId));
-      yield* Effect.logInfo("Released a device from a thread that ended", {
-        threadId: session.threadId,
-        hostId: session.hostId,
-        deviceId: session.deviceId,
-        status,
-      });
+      // Decide under the device lock, so a thread unarchived and reopened while the
+      // sweep waited keeps its new session.
+      yield* Effect.gen(function* () {
+        const current = yield* inner.state;
+        if (
+          !current.sessions.some(
+            (candidate) =>
+              candidate.threadId === session.threadId &&
+              onDevice(session.hostId, session.deviceId)(candidate),
+          )
+        )
+          return;
+        const status = yield* options.threadStatus(session.threadId);
+        if (status !== "archived" && !(status === "missing" && holdFor(session, current))) return;
+        yield* closeOne(session, false);
+        yield* Effect.logInfo("Released a device from a thread that ended", {
+          threadId: session.threadId,
+          hostId: session.hostId,
+          deviceId: session.deviceId,
+          status,
+        });
+      }).pipe(withDevice(session.hostId, session.deviceId));
     }
 
     const stopped: Array<DeviceShutdownInput> = [];
