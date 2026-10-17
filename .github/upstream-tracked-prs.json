@@ -66,7 +66,7 @@
     },
     {
       "pr": 15328,
-      "reason": "Moves agent preview tabs from the desktop app to a browser on the environment server. The fork imported #17693 early while previews still ran in the desktop app, so it kept the desktop wording of the no-host and recording-transfer errors and the MCP snapshot test that checks it. #15328 does not change those messages and the queue already counts #17693 as recorded, so when the queue reaches #15328, also apply #17693's wording for them. Its server snapshot captures desktop tabs with Page.captureScreenshot through the CDP relay. That works upstream, where the webview keeps its full layout size under a CSS transform, but the fork fits previews with device-metrics emulation, so the guest surface is only the panel size and Chromium tiles it into the screenshot. Keep fitted desktop captures on the full-surface capturePage path (ledger preview-surface-continuity) rather than taking the relayed screenshot."
+      "reason": "Moves agent preview tabs from the desktop app to a browser on the environment server. The fork imported #17693 early while previews still ran in the desktop app, so it kept the desktop wording of the no-host and recording-transfer errors and the MCP snapshot test that checks it. #15328 does not change those messages and the queue already counts #17693 as recorded, so when the queue reaches #15328, also apply #17693's wording for them. Its server snapshot captures desktop tabs with Page.captureScreenshot through the CDP relay. That works upstream, where the webview keeps its full layout size under a CSS transform, but the fork fits previews with device-metrics emulation, so the guest surface is only the panel size and Chromium tiles it into the screenshot. Keep fitted desktop captures on the full-surface capturePage path (ledger preview-surface-continuity) rather than taking the relayed screenshot. The fork also took its broker change early, without provenance: a timed-out background status read (the 500 ms tool-icon lookup) no longer disconnects the preview host. Take upstream's broker code and test over the fork's copy."
     },
     {
       "pr": 16022,
@@ -126,7 +126,7 @@
     },
     {
       "pr": 17711,
-      "reason": "Supersedes #10845, which upstream closed: Usage \u2192 Limits keeps one email signed in to two workspaces, such as a ChatGPT Plus plan and a Business workspace or a Claude login in two orgs, as two accounts instead of merging their quotas. Follow-up to #10300."
+      "reason": "Supersedes #10845, which upstream closed: Usage → Limits keeps one email signed in to two workspaces, such as a ChatGPT Plus plan and a Business workspace or a Claude login in two orgs, as two accounts instead of merging their quotas. Follow-up to #10300."
     },
     {
       "pr": 17900,
