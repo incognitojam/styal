@@ -8,7 +8,7 @@ import { resolveProjectConfig } from "@t3tools/shared/projectFile";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { createContext, type ReactNode, useContext, useMemo } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { getProjectFileQueryAtom, optimisticFileAtom } from "../files/projectFilesQueryState";
@@ -26,42 +26,34 @@ import { selectSingleEnvironmentScope } from "./settingsScopeAxis";
 function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
   const members = scope.kind === "project" || scope.kind === "checkout" ? scope.members : [];
   return useAtomValue(
-    useMemo(
-      () =>
-        Atom.make((get) => {
-          // Contents of one root file, null when missing or truncated, or
-          // undefined while its read is still waiting.
-          const readContents = (
-            environmentId: EnvironmentId,
-            workspaceRoot: string,
-            relativePath: string,
-          ): string | null | undefined => {
-            const result = get(getProjectFileQueryAtom(environmentId, workspaceRoot, relativePath));
-            if (result.waiting) return undefined;
-            const data =
-              get(optimisticFileAtom(environmentId, workspaceRoot, relativePath))?.data ??
-              Option.getOrNull(AsyncResult.value(result));
-            return data === null || data.truncated ? null : data.contents;
-          };
-          const files = new Map<string, ProjectConfig | null>();
-          for (const member of members) {
-            const styal = readContents(
-              member.environmentId,
-              member.workspaceRoot,
-              STYAL_PROJECT_FILE_NAME,
-            );
-            const t3 = readContents(
-              member.environmentId,
-              member.workspaceRoot,
-              T3_PROJECT_FILE_NAME,
-            );
-            if (styal === undefined || t3 === undefined) continue;
-            files.set(member.physicalProjectKey, resolveProjectConfig({ styal, t3 }).config);
-          }
-          return files;
-        }),
-      [members],
-    ),
+    Atom.make((get) => {
+      // Contents of one root file, null when missing or truncated, or
+      // undefined while its read is still waiting.
+      const readContents = (
+        environmentId: EnvironmentId,
+        workspaceRoot: string,
+        relativePath: string,
+      ): string | null | undefined => {
+        const result = get(getProjectFileQueryAtom(environmentId, workspaceRoot, relativePath));
+        if (result.waiting) return undefined;
+        const data =
+          get(optimisticFileAtom(environmentId, workspaceRoot, relativePath))?.data ??
+          Option.getOrNull(AsyncResult.value(result));
+        return data === null || data.truncated ? null : data.contents;
+      };
+      const files = new Map<string, ProjectConfig | null>();
+      for (const member of members) {
+        const styal = readContents(
+          member.environmentId,
+          member.workspaceRoot,
+          STYAL_PROJECT_FILE_NAME,
+        );
+        const t3 = readContents(member.environmentId, member.workspaceRoot, T3_PROJECT_FILE_NAME);
+        if (styal === undefined || t3 === undefined) continue;
+        files.set(member.physicalProjectKey, resolveProjectConfig({ styal, t3 }).config);
+      }
+      return files;
+    }),
   );
 }
 
@@ -69,42 +61,27 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
   const groups = useSettingsProjectGroups();
   const { environments: availableEnvironments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const search = useMemo(
-    () =>
-      singleEnvironment
-        ? selectSingleEnvironmentScope(
-            rawSearch,
-            resolveSettingsScope(rawSearch, groups, availableEnvironments),
-            availableEnvironments,
-            primaryEnvironmentId,
-          )
-        : rawSearch,
-    [availableEnvironments, groups, primaryEnvironmentId, rawSearch, singleEnvironment],
-  );
-  const scope = useMemo(
-    () => resolveSettingsScope(search, groups, availableEnvironments),
-    [availableEnvironments, groups, search],
-  );
+  const search = singleEnvironment
+    ? selectSingleEnvironmentScope(
+        rawSearch,
+        resolveSettingsScope(rawSearch, groups, availableEnvironments),
+        availableEnvironments,
+        primaryEnvironmentId,
+      )
+    : rawSearch;
+  const scope = resolveSettingsScope(search, groups, availableEnvironments);
   const projectFiles = useMemberProjectFiles(scope);
-  return useMemo(() => {
-    const selected = selectScopedSettingsEnvironments(
-      scope,
-      availableEnvironments,
-      primaryEnvironmentId,
-    );
-    const targets = resolveScopedSettingsTargets(
-      scope,
-      selected.connectedEnvironments,
-      projectFiles,
-    );
-    const target =
-      targets.find(
-        (candidate) => candidate.environmentId === selected.environment?.environmentId,
-      ) ??
-      targets[0] ??
-      null;
-    return { scope, groups, search, ...selected, targets, target, projectFiles };
-  }, [availableEnvironments, groups, primaryEnvironmentId, projectFiles, scope, search]);
+  const selected = selectScopedSettingsEnvironments(
+    scope,
+    availableEnvironments,
+    primaryEnvironmentId,
+  );
+  const targets = resolveScopedSettingsTargets(scope, selected.connectedEnvironments, projectFiles);
+  const target =
+    targets.find((candidate) => candidate.environmentId === selected.environment?.environmentId) ??
+    targets[0] ??
+    null;
+  return { scope, groups, search, ...selected, targets, target, projectFiles };
 }
 
 const SettingsScopeContext = createContext<
@@ -128,10 +105,7 @@ export function SettingsScopeProvider({
   children: ReactNode;
 }) {
   const resolved = useResolvedSettingsScope(search, singleEnvironment);
-  const value = useMemo(
-    () => ({ ...resolved, singleEnvironment, selectScope: onChange }),
-    [onChange, resolved, singleEnvironment],
-  );
+  const value = { ...resolved, singleEnvironment, selectScope: onChange };
   return <SettingsScopeContext value={value}>{children}</SettingsScopeContext>;
 }
 
