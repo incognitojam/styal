@@ -14,6 +14,7 @@ import {
   enabledEnvironmentIds,
 } from "@t3tools/client-runtime/state/connections";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 
@@ -43,6 +44,29 @@ export const environmentShellStatusesAtom = Atom.make((get) => {
   previousEnvironmentShellStatuses = next;
   return previousEnvironmentShellStatuses;
 }).pipe(Atom.withLabel("web-environment-shell-statuses"));
+
+const NO_SHELL_STATUS_ATOM = Atom.make<EnvironmentShellStatus | null>(null).pipe(
+  Atom.withLabel("web-environment-shell-status:none"),
+);
+const NO_SHELL_SNAPSHOT_ATOM = Atom.make(false).pipe(
+  Atom.withLabel("web-environment-shell-has-snapshot:none"),
+);
+
+export function useEnvironmentShellStatus(
+  environmentId: EnvironmentId | null,
+): EnvironmentShellStatus | null {
+  return useAtomValue(
+    environmentId === null ? NO_SHELL_STATUS_ATOM : environmentShell.statusAtom(environmentId),
+  );
+}
+
+export function useEnvironmentShellHasSnapshot(environmentId: EnvironmentId | null): boolean {
+  return useAtomValue(
+    environmentId === null
+      ? NO_SHELL_SNAPSHOT_ATOM
+      : environmentShell.hasSnapshotAtom(environmentId),
+  );
+}
 
 export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));
