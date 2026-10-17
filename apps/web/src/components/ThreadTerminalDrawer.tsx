@@ -1127,7 +1127,7 @@ interface ThreadTerminalDrawerProps {
   newShortcutLabel?: string | undefined;
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
-  onCloseTerminal: (terminalId: string) => void;
+  onCloseTerminal: (terminalId: string, target: ScopedThreadRef) => void;
   onHeightChange: (height: number) => void;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
   keybindings: ResolvedKeybindingsConfig;
@@ -1423,7 +1423,7 @@ export default function ThreadTerminalDrawer({
         targets: [{ terminalId, label }],
       }).then((confirmed) => {
         if (confirmed && readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope)) {
-          onCloseTerminal(terminalId);
+          onCloseTerminal(terminalId, threadRef);
         }
       });
     },
@@ -1716,7 +1716,7 @@ export default function ThreadTerminalDrawer({
                           {...(terminalLaunchLocation.runtimeEnv
                             ? { runtimeEnv: terminalLaunchLocation.runtimeEnv }
                             : {})}
-                          onSessionExited={() => onCloseTerminal(terminalId)}
+                          onSessionExited={() => onCloseTerminal(terminalId, threadRef)}
                           onAddTerminalContext={onAddTerminalContext}
                           focusRequestId={focusRequestId}
                           autoFocus={terminalId === resolvedActiveTerminalId}
@@ -1746,7 +1746,7 @@ export default function ThreadTerminalDrawer({
                   {...(activeTerminalLaunchLocation.runtimeEnv
                     ? { runtimeEnv: activeTerminalLaunchLocation.runtimeEnv }
                     : {})}
-                  onSessionExited={() => onCloseTerminal(resolvedActiveTerminalId)}
+                  onSessionExited={() => onCloseTerminal(resolvedActiveTerminalId, threadRef)}
                   onAddTerminalContext={onAddTerminalContext}
                   focusRequestId={focusRequestId}
                   autoFocus
