@@ -5,6 +5,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
+import * as WorkflowRunWatchReactor from "./orchestration-v2/WorkflowRunWatchReactor.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
@@ -590,6 +591,16 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     }),
   ).pipe(
     Layer.provide(PullRequestWatchReactor.layer),
+    Layer.provide(layerPullRequestService),
+    Layer.provide(ProjectionStoreV2.layer),
+  ),
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const service = yield* WorkflowRunWatchReactor.WorkflowRunWatchReactor;
+      yield* service.start();
+    }),
+  ).pipe(
+    Layer.provide(WorkflowRunWatchReactor.layer),
     Layer.provide(layerPullRequestService),
     Layer.provide(ProjectionStoreV2.layer),
   ),

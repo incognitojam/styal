@@ -537,6 +537,52 @@ it.effect("thread.stop on a finished thread refuses a late agent watch", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("thread.stop ends workflow run watches and refuses a late one", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make("thread:stop-workflow-run");
+    yield* createWatchingThread(threadId, 11);
+    const watchRun = (runId: number) =>
+      orchestrator.dispatch({
+        type: "thread.workflow-run.watch",
+        commandId: CommandId.make(`watch-run:${runId}`),
+        threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        runId,
+        watching: true,
+        run: { url: `https://github.com/pingdotgg/t3code/actions/runs/${runId}`, name: "CI #1" },
+      });
+    yield* send(threadId, "work", "start_immediately");
+    yield* watchRun(500);
+    const now = yield* DateTime.now;
+    const run = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+    yield* projections.apply({
+      id: EventId.make("event:stop-workflow-run:completed"),
+      type: "run.updated",
+      threadId,
+      runId: run.id,
+      occurredAt: now,
+      payload: { ...run, status: "completed", startedAt: now, completedAt: now },
+    });
+    const watchedRuns = Effect.map(orchestrator.getThreadProjection(threadId), (projection) =>
+      (projection.thread.workflowRuns ?? []).map((watch) => watch.runId),
+    );
+    assert.deepEqual(yield* watchedRuns, [500]);
+
+    yield* orchestrator.dispatch({
+      type: "thread.stop",
+      commandId: CommandId.make("stop-workflow-run"),
+      threadId,
+    });
+    assert.deepEqual(yield* watchedRuns, []);
+    assert.deepEqual((yield* threadState(threadId)).watched, []);
+    assert.isTrue(Exit.isFailure(yield* Effect.exit(watchRun(501))));
+    assert.deepEqual(yield* watchedRuns, []);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("thread.stop marks a turn it cannot interrupt so a late agent watch is refused", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

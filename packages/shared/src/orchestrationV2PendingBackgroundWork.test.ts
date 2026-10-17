@@ -586,4 +586,36 @@ describe("derivePendingBackgroundWork kinds", () => {
       ).toEqual([]);
     });
   });
+
+  describe("workflow run watches", () => {
+    const workflowRuns = [
+      { host: "github.com", repository: "Acme/App", runId: 77, name: "Deploy #12" },
+    ];
+
+    it("keeps a settled run, or a thread that never ran, waiting on each watch", () => {
+      const expected = [
+        {
+          taskId: "workflow-run-watch:github.com/acme/app/77",
+          description: "Watching Deploy #12",
+          kind: "monitor",
+        },
+      ];
+      expect(
+        derivePendingBackgroundWork({
+          latestRun: { id: "run-1" as never, ordinal: 1, status: "completed" },
+          providerThreads: [],
+          turnItems: [],
+          workflowRuns,
+        }),
+      ).toEqual(expected);
+      expect(
+        derivePendingBackgroundWork({
+          latestRun: null,
+          providerThreads: [],
+          turnItems: [],
+          workflowRuns,
+        }),
+      ).toEqual(expected);
+    });
+  });
 });

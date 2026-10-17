@@ -145,6 +145,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   update methods. [Code review](./source-control.md#review-and-merge).
   Compared with [T3 Code revision a493946](https://github.com/pingdotgg/t3code/tree/a493946bb42ab16e1d18285dac3e9e4603651330),
   checked September 23, 2026.
+- **Agents wait for CI outside pull requests.** T3 Code agents can already watch a pull request and
+  wake when its checks finish. styal agents can also watch a single GitHub Actions run, such as CI
+  after a merge, a deploy, or a workflow they started, and wake once it completes with the jobs that
+  did not pass. [Watch a workflow run](./source-control.md#watch-a-workflow-run).
+  Compared with [T3 Code revision 13aa882](https://github.com/pingdotgg/t3code/tree/13aa882c22d584de5388dfce3b3ca413387ba059),
+  checked October 17, 2026.
 
 - **Code review findings in the conversation.** When Claude Code's `/code-review` reports its
   findings, they appear as a list with links to each file and line, and stay visible after the turn

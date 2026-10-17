@@ -60,6 +60,8 @@ export type T3McpToolSummaryAction =
   | "list-prs"
   | "watch-pr"
   | "unwatch-pr"
+  | "watch-run"
+  | "unwatch-run"
   | "browser"
   | "device"
   | "html-preview"
@@ -110,6 +112,11 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Stop watching", "Stopping watching", "Stopped watching", "a pull request"],
     "unwatch-pr",
     "pull-request",
+  ),
+  watch_workflow_run: tool(["Watch", "Watching", "Watching", "a workflow run"], "watch-run"),
+  unwatch_workflow_run: tool(
+    ["Stop watching", "Stopping watching", "Stopped watching", "a workflow run"],
+    "unwatch-run",
   ),
   orchestrator_capabilities: tool(
     ["Get", "Getting", "Got", "orchestration capabilities"],

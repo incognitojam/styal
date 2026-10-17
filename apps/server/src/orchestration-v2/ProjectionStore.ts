@@ -29,6 +29,7 @@ import type {
   ProviderTurnId,
   RunAttemptId,
   MessageId,
+  ThreadWorkflowRunWatch,
 } from "@t3tools/contracts";
 import {
   LegacyTurnUsage,
@@ -163,6 +164,12 @@ export type ProjectionThreadPullRequests = Pick<
   OrchestrationV2AppThread,
   "id" | "projectId" | "lineage" | "settledOverride" | "settledAt" | "pullRequests"
 >;
+
+/** The thread fields the workflow run watch reads, for a thread with at least one watch. */
+export type ProjectionThreadWorkflowRuns = Pick<
+  OrchestrationV2AppThread,
+  "id" | "projectId" | "settledOverride" | "settledAt"
+> & { readonly workflowRuns: ReadonlyArray<ThreadWorkflowRunWatch> };
 
 /**
  * Thread activity needed by settlement, without transcript or fork history.
@@ -372,6 +379,11 @@ export interface ProjectionStoreV2Shape {
   readonly getThreadsWithPullRequests: (
     threadId?: ThreadId,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadPullRequests>, ProjectionStoreV2Error>;
+  /** Active threads that watch at least one workflow run. */
+  readonly getThreadsWithWorkflowRuns: () => Effect.Effect<
+    ReadonlyArray<ProjectionThreadWorkflowRuns>,
+    ProjectionStoreV2Error
+  >;
   readonly getTurnStartContext: (
     threadId: ThreadId,
     runId: RunId,
@@ -1430,6 +1442,7 @@ export function threadShellFromProjection(
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     runs: projection.runs,
     pullRequests: projection.thread.pullRequests,
+    workflowRuns: projection.thread.workflowRuns,
   });
   const tokenUsage = threadTokenUsageForShell(projection);
   return {
@@ -1445,6 +1458,9 @@ export function threadShellFromProjection(
     branch: projection.thread.branch,
     worktreePath: projection.thread.worktreePath,
     pullRequests: threadPullRequestsOf(projection.thread),
+    ...(projection.thread.workflowRuns === undefined
+      ? {}
+      : { workflowRuns: projection.thread.workflowRuns }),
     ...(projection.thread.linkedPullRequest === undefined
       ? {}
       : { linkedPullRequest: projection.thread.linkedPullRequest }),
@@ -1727,6 +1743,9 @@ function shellFromState(input: {
     branch: input.state.thread.branch,
     worktreePath: input.state.thread.worktreePath,
     pullRequests: threadPullRequestsOf(input.state.thread),
+    ...(input.state.thread.workflowRuns === undefined
+      ? {}
+      : { workflowRuns: input.state.thread.workflowRuns }),
     ...(input.state.thread.linkedPullRequest === undefined
       ? {}
       : { linkedPullRequest: input.state.thread.linkedPullRequest }),
@@ -5488,6 +5507,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     activeProviderThreadId: thread.activeProviderThreadId,
                     hasActiveRun: false,
                     pullRequests: thread.pullRequests,
+                    workflowRuns: thread.workflowRuns,
                   }),
                 } satisfies ProjectionSettlementCandidate;
               }),
@@ -5517,6 +5537,29 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               settledOverride: thread.settledOverride,
               settledAt: thread.settledAt,
               pullRequests: thread.pullRequests ?? [],
+            })),
+          ),
+        );
+      }).pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
+
+    const getThreadsWithWorkflowRuns: ProjectionStoreV2Shape["getThreadsWithWorkflowRuns"] = () =>
+      Effect.gen(function* () {
+        const rows = yield* sql<PayloadRow>`
+          SELECT payload_json
+          FROM orchestration_v2_projection_threads
+          WHERE deleted_at IS NULL
+            AND json_extract(payload_json, '$.archivedAt') IS NULL
+            AND json_array_length(payload_json, '$.workflowRuns') > 0
+          ORDER BY updated_at ASC, thread_id ASC
+        `;
+        return yield* Effect.forEach(rows, (row) =>
+          decodeThreadPayload(row.payload_json).pipe(
+            Effect.map((thread): ProjectionThreadWorkflowRuns => ({
+              id: thread.id,
+              projectId: thread.projectId,
+              settledOverride: thread.settledOverride,
+              settledAt: thread.settledAt,
+              workflowRuns: thread.workflowRuns ?? [],
             })),
           ),
         );
@@ -5616,6 +5659,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             activeProviderThreadId: thread.activeProviderThreadId,
             hasActiveRun: row.active_run_id !== null,
             pullRequests: thread.pullRequests,
+            workflowRuns: thread.workflowRuns,
           }),
         ];
         return {
@@ -5849,6 +5893,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getThread,
       getSettlementCandidates,
       getThreadsWithPullRequests,
+      getThreadsWithWorkflowRuns,
       getThreadProjection,
       getTurnStartContext,
       getTurnStartHistory,
@@ -6009,6 +6054,26 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                 settledOverride: thread.settledOverride,
                 settledAt: thread.settledAt,
                 pullRequests: thread.pullRequests ?? [],
+              })),
+          ),
+        ),
+      getThreadsWithWorkflowRuns: () =>
+        Ref.get(replayState).pipe(
+          Effect.map((state) =>
+            [...state.projections.values()]
+              .map(({ thread }) => thread)
+              .filter(
+                (thread) =>
+                  thread.deletedAt === null &&
+                  thread.archivedAt === null &&
+                  (thread.workflowRuns ?? []).length > 0,
+              )
+              .map((thread): ProjectionThreadWorkflowRuns => ({
+                id: thread.id,
+                projectId: thread.projectId,
+                settledOverride: thread.settledOverride,
+                settledAt: thread.settledAt,
+                workflowRuns: thread.workflowRuns ?? [],
               })),
           ),
         ),

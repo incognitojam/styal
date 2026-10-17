@@ -2,10 +2,12 @@ import {
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
+  PullRequestOperationError,
   ThreadId,
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   type OrchestrationProjectShell,
   type ThreadPullRequestLink,
+  type ThreadWorkflowRunWatch,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -22,11 +24,14 @@ import {
   v2PullRequestThread,
 } from "../../../orchestration-v2/testkit/pullRequestFixtures.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
+import type { ProviderWorkflowRun } from "../../../pullRequest/PullRequestProvider.ts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as McpToolAccessTestkit from "../../McpToolAccess.testkit.ts";
 import { listThreadPullRequests } from "./handlers.ts";
 import * as PullRequestsHandlers from "./handlers.ts";
+import { parseWorkflowRunUrl } from "./handlers.ts";
 import { PullRequestLinkFailedError, PullRequestsToolkit } from "./tools.ts";
 
 const PROJECT_ID = ProjectId.make("project-1");
@@ -135,12 +140,17 @@ interface HarnessOptions {
   readonly project?: OrchestrationProjectShell | null;
   /** A rejection the orchestrator reports as the dispatch error's cause. */
   readonly reject?: (command: OrchestrationCommand) => string | null;
+  /** What the host reports for a workflow run; every run is unreadable when omitted. */
+  readonly workflowRun?: ProviderWorkflowRun;
+  readonly workflowRuns?: ReadonlyArray<ThreadWorkflowRunWatch>;
 }
 
 const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
   options: HarnessOptions = {},
 ) {
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+  const workflowRuns = yield* Ref.make(options.workflowRuns ?? []);
+  const workflowRunReads = yield* Ref.make<ReadonlyArray<number>>([]);
   const thread = options.thread === undefined ? makeThread([]) : options.thread;
   const project = options.project === undefined ? makeProject() : options.project;
   const dispatch: Orchestrator.OrchestratorV2Shape["dispatch"] = (command) =>
@@ -153,6 +163,14 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
           cause: rejection,
         });
       yield* Ref.update(commands, (recorded) => [...recorded, command]);
+      if (command.type === "thread.workflow-run.watch") {
+        yield* Ref.update(workflowRuns, (runs) => [
+          ...runs.filter((run) => run.runId !== command.runId),
+          ...(command.watching && command.run
+            ? [{ ...command, ...command.run, startedAt: "2026-08-20T00:00:00.000Z" }]
+            : []),
+        ]);
+      }
       return { sequence: 1, storedEvents: [] };
     });
   const layerDependencies = Layer.mergeAll(
@@ -161,8 +179,29 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
     }),
     Layer.mock(Orchestrator.OrchestratorV2)({
       getThreadShell: (id) =>
-        Effect.succeed(id === THREAD_ID && thread ? v2PullRequestThread(thread) : null),
+        Ref.get(workflowRuns).pipe(
+          Effect.map((runs) =>
+            id === THREAD_ID && thread
+              ? { ...v2PullRequestThread(thread), workflowRuns: runs.map(watchFields) }
+              : null,
+          ),
+        ),
       dispatch,
+    }),
+    Layer.mock(PullRequestService.PullRequestService)({
+      workflowRun: (input) =>
+        Ref.update(workflowRunReads, (reads) => [...reads, input.runId]).pipe(
+          Effect.andThen(
+            options.workflowRun === undefined
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "workflowRun",
+                    detail: "Not Found",
+                  }),
+                )
+              : Effect.succeed(options.workflowRun),
+          ),
+        ),
     }),
     Layer.succeed(Crypto.Crypto, testCrypto),
     McpToolAccessTestkit.liveThreadsLayer,
@@ -189,7 +228,16 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
       Effect.provide(layerDependencies),
     );
-  return { commands, call };
+  return { commands, call, workflowRunReads };
+});
+
+const watchFields = (run: ThreadWorkflowRunWatch): ThreadWorkflowRunWatch => ({
+  host: run.host,
+  repository: run.repository,
+  runId: run.runId,
+  url: run.url,
+  name: run.name,
+  startedAt: run.startedAt,
 });
 
 describe("pull request toolkit handlers", () => {
@@ -514,6 +562,102 @@ describe("pull request toolkit handlers", () => {
       expect(result.chains).toEqual([
         { kind: "derived", numbers: [1, 2, 3] },
         { kind: "derived", numbers: [10] },
+      ]);
+    }),
+  );
+});
+
+const runningRun: ProviderWorkflowRun = {
+  name: "Deploy #41",
+  url: "https://github.com/t3tools/t3code/actions/runs/9001",
+  completed: false,
+  conclusion: null,
+  headBranch: "main",
+  headSha: "a".repeat(40),
+  event: "push",
+  failedJobs: [],
+};
+
+describe("workflow run watches", () => {
+  it("parses run and job URLs", () => {
+    expect(
+      parseWorkflowRunUrl("https://github.com/T3Tools/T3Code/actions/runs/9001/job/77"),
+    ).toEqual({ host: "github.com", repository: "t3tools/t3code", runId: 9001 });
+    expect(parseWorkflowRunUrl("https://github.com/t3tools/t3code/pull/12")).toBeNull();
+    expect(parseWorkflowRunUrl("not a url")).toBeNull();
+  });
+
+  it.effect("watches a running run under the name the host reports", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ workflowRun: runningRun });
+      const result = yield* harness.call("watch_workflow_run", {
+        repository: "T3Tools/T3Code",
+        runId: 9001,
+      });
+      expect(result).toMatchObject({
+        host: "github.com",
+        repository: "t3tools/t3code",
+        runId: 9001,
+        name: "Deploy #41",
+        watching: true,
+        wasWatching: false,
+        conclusion: null,
+      });
+      expect(yield* Ref.get(harness.commands)).toMatchObject([
+        {
+          type: "thread.workflow-run.watch",
+          host: "github.com",
+          repository: "t3tools/t3code",
+          runId: 9001,
+          watching: true,
+          run: { url: runningRun.url, name: "Deploy #41" },
+        },
+      ]);
+    }),
+  );
+
+  it.effect("reports a run that already completed instead of watching it", () =>
+    Effect.gen(function* () {
+      const failedJobs = [{ name: "build", conclusion: "failure", url: null }];
+      const harness = yield* makeHarness({
+        workflowRun: { ...runningRun, completed: true, conclusion: "failure", failedJobs },
+      });
+      const result = yield* harness.call("watch_workflow_run", { url: runningRun.url });
+      expect(result).toMatchObject({ watching: false, conclusion: "failure", failedJobs });
+      expect(yield* Ref.get(harness.commands)).toEqual([]);
+    }),
+  );
+
+  it.effect("fails without watching when the run cannot be read", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const error = yield* harness
+        .call("watch_workflow_run", { url: runningRun.url })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "WorkflowRunReadFailedError" });
+      expect(yield* Ref.get(harness.commands)).toEqual([]);
+    }),
+  );
+
+  it.effect("stops a watch without reading the run", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        workflowRuns: [
+          {
+            host: "github.com",
+            repository: "t3tools/t3code",
+            runId: 9001,
+            url: runningRun.url,
+            name: "Deploy #41",
+            startedAt: "2026-08-20T00:00:00.000Z",
+          },
+        ],
+      });
+      const result = yield* harness.call("unwatch_workflow_run", { url: runningRun.url });
+      expect(result).toMatchObject({ watching: false, wasWatching: true, name: "Deploy #41" });
+      expect(yield* Ref.get(harness.workflowRunReads)).toEqual([]);
+      expect(yield* Ref.get(harness.commands)).toMatchObject([
+        { type: "thread.workflow-run.watch", runId: 9001, watching: false },
       ]);
     }),
   );
