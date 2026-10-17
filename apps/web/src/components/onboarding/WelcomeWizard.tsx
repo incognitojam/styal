@@ -28,7 +28,7 @@ import {
   MonitorIcon,
   TerminalIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useTerminalCloseConfirmation } from "../../hooks/useTerminalCloseConfirmation";
@@ -143,15 +143,15 @@ export function WelcomeWizard({
   const changeStep = async (nextStep: WizardStep) => {
     if (changingStepRef.current) return;
     changingStepRef.current = true;
-    try {
+    await (async () => {
       for (const session of terminalSessions.values()) {
         if (!(await confirmSessionClose(session))) return;
       }
       setTerminalSessions(new Map());
       setStep(nextStep);
-    } finally {
+    })().finally(() => {
       changingStepRef.current = false;
-    }
+    });
   };
   const changeTerminalSession = async (
     environmentId: EnvironmentId,
@@ -209,59 +209,60 @@ export function WelcomeWizard({
   ];
   const stages = stageSteps.map((stageStep) => ONBOARDING_STAGE_LABELS[stageStep]);
   const stageIndex = Math.max(0, stageSteps.indexOf(step));
-  const finish = useCallback(
-    (projectRef?: ScopedProjectRef, importWarning?: string, importedThreadCount = 0) => {
-      if (finishingPromiseRef.current !== null) return finishingPromiseRef.current;
-      if (completionErrorToastIdRef.current !== null) {
-        toastManager.close(completionErrorToastIdRef.current);
-        completionErrorToastIdRef.current = null;
-      }
+  const finish = (
+    projectRef?: ScopedProjectRef,
+    importWarning?: string,
+    importedThreadCount = 0,
+  ) => {
+    if (finishingPromiseRef.current !== null) return finishingPromiseRef.current;
+    if (completionErrorToastIdRef.current !== null) {
+      toastManager.close(completionErrorToastIdRef.current);
+      completionErrorToastIdRef.current = null;
+    }
 
-      const completion = completeOnboarding()
-        .then(async () => {
-          if (completionErrorToastIdRef.current !== null) {
-            toastManager.close(completionErrorToastIdRef.current);
-            completionErrorToastIdRef.current = null;
-          }
-          await onDone(projectRef);
-          if (importWarning) {
-            toastManager.add({
-              type: "warning",
-              title: "Some history was not imported",
-              description: importWarning,
-              timeout: 0,
-            });
-          } else if (importedThreadCount > 0) {
-            toastManager.add({
-              type: "success",
-              title: `Imported ${importedThreadCount} ${importedThreadCount === 1 ? "thread" : "threads"}`,
-            });
-          }
-          return true;
-        })
-        .catch(() => {
-          const errorToast = {
-            type: "error",
-            title: "Could not finish setup",
-            description: "Your settings could not be saved. Try again.",
-          } as const;
-          if (completionErrorToastIdRef.current === null) {
-            completionErrorToastIdRef.current = toastManager.add(errorToast);
-          } else {
-            toastManager.update(completionErrorToastIdRef.current, errorToast);
-          }
-          return false;
-        })
-        .finally(() => {
-          if (finishingPromiseRef.current === completion) {
-            finishingPromiseRef.current = null;
-          }
-        });
-      finishingPromiseRef.current = completion;
-      return completion;
-    },
-    [completeOnboarding, onDone],
-  );
+    const completion = completeOnboarding()
+      .then(async () => {
+        if (completionErrorToastIdRef.current !== null) {
+          toastManager.close(completionErrorToastIdRef.current);
+          completionErrorToastIdRef.current = null;
+        }
+        await onDone(projectRef);
+        if (importWarning) {
+          toastManager.add({
+            type: "warning",
+            title: "Some history was not imported",
+            description: importWarning,
+            timeout: 0,
+          });
+        } else if (importedThreadCount > 0) {
+          toastManager.add({
+            type: "success",
+            title: `Imported ${importedThreadCount} ${importedThreadCount === 1 ? "thread" : "threads"}`,
+          });
+        }
+        return true;
+      })
+      .catch(() => {
+        const errorToast = {
+          type: "error",
+          title: "Could not finish setup",
+          description: "Your settings could not be saved. Try again.",
+        } as const;
+        if (completionErrorToastIdRef.current === null) {
+          completionErrorToastIdRef.current = toastManager.add(errorToast);
+        } else {
+          toastManager.update(completionErrorToastIdRef.current, errorToast);
+        }
+        return false;
+      })
+      .finally(() => {
+        if (finishingPromiseRef.current === completion) {
+          finishingPromiseRef.current = null;
+        }
+      });
+    finishingPromiseRef.current = completion;
+    return completion;
+  };
   const continueFromImport = (projectRef?: ScopedProjectRef) => {
     if (settlementEnvironments.length === 0) return finish(projectRef);
     setLanding(projectRef);
@@ -549,7 +550,7 @@ function ConnectAccountOption({
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   const [expanded, setExpanded] = useState(true);
   const [discoveryReady, setDiscoveryReady] = useState(false);
-  const onDiscoveryReady = useCallback(() => setDiscoveryReady(true), []);
+  const onDiscoveryReady = () => setDiscoveryReady(true);
 
   return (
     <div className="rounded-lg border border-border bg-background">
@@ -816,7 +817,7 @@ function ConnectedAgentsStep({
     void refreshProviders({ environmentId, input: {} });
   }, [environmentId, refreshProviders]);
 
-  const byDriver = useMemo(() => selectOnboardingProvidersByDriver(providers), [providers]);
+  const byDriver = selectOnboardingProvidersByDriver(providers);
 
   const primaryAgents = PRIMARY_AGENT_DRIVERS.flatMap((driver) => {
     const instances =
@@ -1123,10 +1124,7 @@ function AgentInstallTerminal({
   const setupQueueRef = useRef(Promise.resolve());
   const setupGenerationRef = useRef(0);
   const activeSetupGenerationRef = useRef<number | null>(null);
-  const threadRef = useMemo(
-    () => scopeThreadRef(environmentId, AGENT_ONBOARDING_THREAD_ID),
-    [environmentId],
-  );
+  const threadRef = scopeThreadRef(environmentId, AGENT_ONBOARDING_THREAD_ID);
   const [setupAttempt, setSetupAttempt] = useState(0);
   const [setupState, setSetupState] = useState<
     "preparing" | "ready" | "openFailed" | "writeFailed"
@@ -1140,6 +1138,7 @@ function AgentInstallTerminal({
     const generation = setupGenerationRef.current + 1;
     setupGenerationRef.current = generation;
     activeSetupGenerationRef.current = generation;
+    // oxlint-disable-next-line react/set-state-in-effect -- A retry or a new command reopens the terminal, which shows as preparing until the open settles.
     setSetupState("preparing");
 
     setupQueueRef.current = setupQueueRef.current.then(async () => {
@@ -1198,6 +1197,7 @@ function AgentInstallTerminal({
     environmentId,
     openTerminal,
     providerInstanceId,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry bumps setupAttempt to open the terminal again.
     setupAttempt,
     terminalId,
     writeTerminal,
