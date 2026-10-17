@@ -161,10 +161,10 @@ export const make = Effect.gen(function* () {
     if (config.environment.capabilities.networkReports !== true) return;
     for (;;) {
       // Oldest first, so a long backlog arrives in order.
-      const pending = (yield* SubscriptionRef.get(reports))
-        .filter((report) => report.environmentId === environmentId && !report.delivered)
-        .toReversed()
-        .slice(0, MAX_NETWORK_REPORTS_PER_REQUEST);
+      const undelivered = (yield* SubscriptionRef.get(reports)).filter(
+        (report) => report.environmentId === environmentId && !report.delivered,
+      );
+      const pending = [...undelivered].reverse().slice(0, MAX_NETWORK_REPORTS_PER_REQUEST);
       if (pending.length === 0) return;
       const now = yield* Clock.currentTimeMillis;
       yield* registry.run(
