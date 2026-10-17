@@ -22,6 +22,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   over-the-air updates but no in-app APK installer as of
   [revision 454b94a](https://github.com/pingdotgg/t3code/tree/454b94a13aea918f27bb060d8d054d4cfb791bc2).
   [Install and update the mobile app](./install.md#mobile-app).
+- **Network reports.** Mobile **Settings → About → Diagnostics** shows how connections held up
+  on each network type, with time connected, drops, reconnect times, heartbeat round trips, and
+  data used, kept for 7 days. T3 Code has no client-side connection measurement as of
+  [revision cfafb4b](https://github.com/pingdotgg/t3code/tree/cfafb4bb54d244e4612f5681aad3832ea64cb0fb).
+  [Check how connections held up](./remote-access.md#check-how-connections-held-up).
 - **Every provider in Provider accounts.** Mobile **Settings → Provider accounts** lists each
   provider with its icon and sign-in status, including Claude and Codex, which sign in through
   their own CLI. T3 Code lists only providers that sign in inside the app as of

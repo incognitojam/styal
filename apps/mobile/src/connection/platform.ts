@@ -38,6 +38,7 @@ import {
   mobileApplicationActiveWakeup,
   type MobileApplicationActiveWakeup,
 } from "./app-state-wakeups";
+import { networkReportsPlatformLayer } from "./network-reports";
 import { connectionStorageLayer } from "./storage";
 
 function networkStatus(state: Network.NetworkState): "unknown" | "offline" | "online" {
@@ -297,7 +298,8 @@ type ConnectionPlatformLayerSource =
   | typeof wakeupsLayer
   | typeof providedCapabilitiesLayer
   | typeof platformConnectionSourceLayer
-  | typeof environmentOwnedDataCleanupLayer;
+  | typeof environmentOwnedDataCleanupLayer
+  | typeof networkReportsPlatformLayer;
 
 export const connectionPlatformLayer: Layer.Layer<
   Layer.Success<ConnectionPlatformLayerSource>,
@@ -311,4 +313,5 @@ export const connectionPlatformLayer: Layer.Layer<
   providedCapabilitiesLayer,
   platformConnectionSourceLayer,
   environmentOwnedDataCleanupLayer,
+  networkReportsPlatformLayer,
 );

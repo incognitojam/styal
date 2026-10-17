@@ -3,6 +3,7 @@ import { resolveAddProjectDefaultDirectory } from "./project/AddProjectDefaultDi
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as ClientFeatureUsage from "./telemetry/ClientFeatureUsage.ts";
+import { recordClientNetworkReports } from "./telemetry/ClientNetworkReports.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as NodeCrypto from "node:crypto";
 
@@ -2730,6 +2731,12 @@ const makeWsRpcLayer = (
                 { "rpc.aggregate": "server" },
               ),
             ),
+          ),
+        [WS_METHODS.serverReportNetworkConditions]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverReportNetworkConditions,
+            recordClientNetworkReports(input, analytics, originProps),
+            { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.serverReportHostPowerState]: (input) =>
           observeRpcEffect(

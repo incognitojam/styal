@@ -2,6 +2,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -23,6 +24,7 @@ interface RecordedBatchRequest {
     readonly api_key?: string;
     readonly batch?: ReadonlyArray<{
       readonly event?: string;
+      readonly timestamp?: string;
       readonly properties?: {
         readonly index?: number;
         readonly clientType?: string;
@@ -249,6 +251,50 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
           ),
         ),
         true,
+      );
+    }),
+  );
+
+  it.effect("sends a backdated event with the time it describes", () =>
+    Effect.gen(function* () {
+      const capturedRequests: Array<RecordedBatchRequest> = [];
+      const runtimeLayer = AnalyticsService.layer.pipe(
+        Layer.provideMerge(
+          ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-backdate-" }),
+        ),
+        Layer.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromUnknown({
+              T3CODE_TELEMETRY_ENABLED: true,
+              T3CODE_POSTHOG_KEY: "phc_test_key",
+              T3CODE_POSTHOG_HOST: "http://localhost",
+            }),
+          ),
+        ),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcessPlatform, "linux"),
+            Layer.succeed(HostProcessArchitecture, "x64"),
+          ),
+        ),
+        Layer.provideMerge(NodeHttpServer.layerTest),
+      );
+
+      yield* Effect.gen(function* () {
+        yield* Layer.launch(batchCaptureServer(capturedRequests)).pipe(Effect.forkScoped);
+        const analytics = yield* AnalyticsService.AnalyticsService;
+        yield* analytics.record(
+          "test.backdated",
+          {},
+          { capturedAt: DateTime.makeUnsafe("2026-10-16T08:00:00.000Z") },
+        );
+        yield* analytics.flush;
+      }).pipe(Effect.provide(runtimeLayer));
+
+      const events = capturedRequests.flatMap((request) => request.body?.batch ?? []);
+      assert.deepEqual(
+        events.map((event) => [event.event, event.timestamp]),
+        [["test.backdated", "2026-10-16T08:00:00.000Z"]],
       );
     }),
   );

@@ -16,6 +16,7 @@ import {
   parseStartupCrashRecords,
   type StartupCrashRecord,
 } from "./crash-log-model";
+import { NetworkReportsSection } from "./NetworkReportsSection";
 
 // expo-updates keeps its persistent log this long. Reading any further back
 // returns nothing, so this is the whole available window.
@@ -122,6 +123,8 @@ export function SettingsDiagnosticsRouteScreen() {
             it over before sharing.
           </Text>
         </View>
+
+        <NetworkReportsSection />
       </ScrollView>
     </SettingsScreen>
   );

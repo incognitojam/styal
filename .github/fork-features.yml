@@ -2476,6 +2476,45 @@ features:
         - https://github.com/pingdotgg/t3code/pull/18425
       retire_when: Upstream's mobile Provider accounts screen shows every provider with its sign-in source and gives each action its own icon.
 
+  - id: network-condition-reports
+    title: Report how connections behave on each network
+    status: maintained
+    prs: []
+    invariants:
+      - Clients summarize each environment connection into windows of foreground use, at most 15 minutes long and split when the network type or route changes, recording time connected, drops by cause (heartbeat timeout, socket closed, health check timeout, other), failed attempts and setup timeouts, route switches and switches back after a failure, recovery time, heartbeat round trips, payload bytes and messages each way, and the peak receive rate.
+      - Round trips come from the existing RPC heartbeat, so measuring adds no network traffic; connections to the same device are not reported.
+      - A drop is a session that fails after answering in the foreground; a socket that died while the app was in the background counts toward the time to a working connection instead, and network type changes wait for the state to settle so a handover is not reported as no network.
+      - Reports carry the network interface type and route kind only, never a network, carrier or host name, address, or environment identifier.
+      - A report is sent to its own environment's server only when the server advertises `networkReports`, once, after any reconnection; the server records it as `client.network.report` dated when the window ended, subject to the usual telemetry opt-out.
+      - Mobile keeps reports for 7 days across restarts and lists them under Settings → About → Diagnostics with per-network totals and a way to clear them; removing an environment forgets its reports.
+    rationale: Upstream measures connection reliability only through relay traces and has no client-side view of latency, drops or data use, so whether styal works on trains and weak cellular links could not be checked. Compared with upstream revision cfafb4bb54d244e4612f5681aad3832ea64cb0fb on October 16, 2026.
+    implementation_paths:
+      - apps/mobile/src/connection/network-reports.ts
+      - apps/mobile/src/features/diagnostics/NetworkReportsSection.tsx
+      - apps/mobile/src/features/diagnostics/network-report-model.ts
+      - apps/server/src/telemetry/ClientNetworkReports.ts
+      - apps/web/src/connection/networkReports.ts
+      - packages/client-runtime/src/networkReports/collector.ts
+      - packages/client-runtime/src/networkReports/service.ts
+      - packages/contracts/src/networkReports.ts
+    upstream_paths:
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/ws.ts
+      - packages/client-runtime/src/connection/layer.ts
+      - packages/client-runtime/src/rpc/session.ts
+      - packages/contracts/src/environment.ts
+      - packages/contracts/src/rpc.ts
+    tests:
+      - apps/mobile/src/features/diagnostics/network-report-model.test.ts
+      - apps/server/src/telemetry/AnalyticsService.test.ts
+      - apps/server/src/telemetry/ClientNetworkReports.test.ts
+      - packages/client-runtime/src/networkReports/collector.test.ts
+      - packages/client-runtime/src/networkReports/service.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream measures client connection quality per network type and exposes it to users and maintainers.
+
   - id: pair-cli-startup
     title: Avoid redundant CLI loading and Tailscale pairing probes
     status: maintained
