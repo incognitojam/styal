@@ -1,6 +1,7 @@
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
-import { type ComponentProps, useCallback, useEffect, useId, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useId, useRef, useState } from "react";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { flushSync } from "react-dom";
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
@@ -172,7 +173,7 @@ function SidebarUpdateControl() {
     }
   }, [releaseNotesPopoverHandle, releaseNotesTriggerId, showReleaseNotesPopover]);
 
-  const handleAction = useCallback(async () => {
+  const handleAction = async () => {
     if (isInteractionDisabled) return;
     if (runsEverything) {
       const request = ++serverCheckRequest.current;
@@ -194,19 +195,21 @@ function SidebarUpdateControl() {
     if (!bridge || !state || action !== "install") return;
     setIsActionPending(true);
     void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
-  }, [action, everything, isInteractionDisabled, runsEverything, state]);
+  };
 
-  const runEverything = useCallback(async () => {
+  const runEverything = async () => {
     const bridge = window.desktopBridge;
     setIsConfirmingEverything(false);
     setIsActionPending(true);
-    try {
-      await everything.run(
+    const result = await settlePromise(() =>
+      everything.run(
         bridge && action === "install"
           ? { installLocal: (reportError) => installLocalUpdate(bridge, reportError) }
           : {},
-      );
-    } catch (error) {
+      ),
+    );
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
       toastManager.add(
         stackedThreadToast({
           type: "error",
@@ -214,10 +217,9 @@ function SidebarUpdateControl() {
           description: error instanceof Error ? error.message : "An unexpected error occurred.",
         }),
       );
-    } finally {
-      setIsActionPending(false);
     }
-  }, [action, everything]);
+    setIsActionPending(false);
+  };
 
   if (!showsLocalUpdate && !showsEverything) return null;
 
