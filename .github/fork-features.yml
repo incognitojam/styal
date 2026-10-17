@@ -2072,6 +2072,7 @@ features:
       - apps/web/src/components/IssueContextChip.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/useQueuedRunEdit.ts
       - apps/web/src/components/composerContextPresentation.tsx
       - apps/web/src/components/contextPresentationRegistry.ts
       - apps/web/src/composerDraftStore.ts
