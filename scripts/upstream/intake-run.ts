@@ -1,0 +1,1234 @@
+#!/usr/bin/env node
+// @effect-diagnostics nodeBuiltinImport:off
+
+/**
+ * Applies upstream commits to an intake branch, resolving the conflicts that follow from known
+ * fork differences and stopping on the rest. See docs/operations/upstream-tracking.md.
+ *
+ *   intake-run.ts apply (--count <n> | --through <upstream-sha> | --commits <sha,...>) [--branch <name>]
+ *   intake-run.ts continue [--note <text>] [--feature <id,id>]
+ *   intake-run.ts fix-trailers [--base origin/main]
+ *   intake-run.ts verify [--base origin/main]
+ *   intake-run.ts replay <promoted-candidate-sha> [--base <fork-sha>] [--skip-lockfile] [--json] [--dump <dir>]
+ *   intake-run.ts score <dump-dir> [--exclude <sha-prefixes>] [--verbose]
+ */
+
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+
+import {
+  changedLinesByFile,
+  cherryPickSources,
+  compareWithUpstream,
+  forkAdaptationNote,
+  preservedFeatureIds,
+} from "./lib/commit-review.ts";
+import {
+  type HunkResolution,
+  parseConflictFile,
+  renderConflictFile,
+  resolveHunk,
+} from "./lib/conflicts.ts";
+import { parseUpstreamProvenance } from "./lib/provenance.ts";
+
+const repoRoot = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "../..",
+);
+
+// ---------------------------------------------------------------------------------------------
+// Process helpers
+
+interface Run {
+  readonly status: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+function run(cwd: string, command: string, args: ReadonlyArray<string>, input?: string): Run {
+  const result = NodeChildProcess.spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    input,
+    maxBuffer: 256 * 1024 * 1024,
+    env: { ...process.env, GIT_EDITOR: "true" },
+  });
+  return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+}
+
+function git(cwd: string, args: ReadonlyArray<string>, input?: string): string {
+  const result = run(cwd, "git", args, input);
+  if (result.status !== 0) {
+    throw new Error(
+      `git ${args.join(" ")} failed: ${result.stderr.trim() || result.stdout.trim()}`,
+    );
+  }
+  return result.stdout;
+}
+
+const lines = (text: string) => text.split("\n").filter((line) => line.length > 0);
+
+// ---------------------------------------------------------------------------------------------
+// One upstream commit
+
+export type AdaptationKind =
+  | "rerere"
+  | "identity"
+  | "upstream-rename"
+  | "additions"
+  | "fork-deletion"
+  | "lockfile"
+  | "service-keys";
+
+export interface Adaptation {
+  readonly kind: AdaptationKind;
+  readonly path: string;
+  readonly detail?: string;
+}
+
+export interface PickOutcome {
+  readonly upstreamSha: string;
+  /** "clean": applied without conflicts; "resolved": every conflict resolved here. */
+  readonly status: "clean" | "resolved" | "stopped";
+  readonly adaptations: ReadonlyArray<Adaptation>;
+  /** Files still holding conflicts, with the number of unresolved hunks in each. */
+  readonly unresolved: ReadonlyArray<{ readonly path: string; readonly hunks: number }>;
+  /** Added lines naming upstream's product in agent-facing code, for review. */
+  readonly identityReview: ReadonlyArray<string>;
+  readonly lockfile?: LockfileReport;
+}
+
+export interface LockfileReport {
+  /** Versions upstream's lockfile adds that the regenerated lockfile still lacks. */
+  readonly missing: ReadonlyArray<string>;
+  /** Versions upstream's lockfile drops that the regenerated lockfile still has. */
+  readonly stale: ReadonlyArray<string>;
+  readonly pinned: ReadonlyArray<string>;
+}
+
+const LOCKFILE = "pnpm-lock.yaml";
+
+function unmergedFiles(
+  cwd: string,
+): ReadonlyArray<{ readonly path: string; readonly code: string }> {
+  return lines(git(cwd, ["status", "--porcelain=v1", "-z"]).replaceAll("\0", "\n"))
+    .map((line) => ({ code: line.slice(0, 2), path: line.slice(3) }))
+    .filter(({ code }) => ["UU", "AA", "DU", "UD", "AU", "UA", "DD"].includes(code));
+}
+
+/** Resolves what it can in one conflicted text file, writing the result back. */
+/** Set by `replay --dump` to collect every conflict hunk with how it was resolved. */
+let hunkSink: Array<{ path: string; hunk: unknown; resolution: string }> | null = null;
+
+function resolveFile(
+  cwd: string,
+  path: string,
+): { readonly resolutions: ReadonlyArray<HunkResolution>; readonly unresolved: number } | null {
+  const absolute = NodePath.join(cwd, path);
+  const bytes = NodeFS.readFileSync(absolute);
+  // Binary conflicts carry no markers; leave them for a person to choose a side.
+  if (bytes.includes(0)) return null;
+  const parsed = parseConflictFile(bytes.toString("utf8"));
+  if (parsed === null || parsed.hunks.length === 0) return null;
+  if (hunkSink) {
+    for (const hunk of parsed.hunks)
+      hunkSink.push({ path, hunk, resolution: resolveHunk(hunk, path).kind });
+  }
+  const resolutions = parsed.hunks.map((hunk) => resolveHunk(hunk, path));
+  NodeFS.writeFileSync(
+    absolute,
+    renderConflictFile(
+      parsed,
+      resolutions.map((resolution) => (resolution.kind === "unresolved" ? null : resolution.text)),
+    ),
+  );
+  return {
+    resolutions,
+    unresolved: resolutions.filter((resolution) => resolution.kind === "unresolved").length,
+  };
+}
+
+/** Package versions a lockfile resolves, as `name@version` without peer suffixes. */
+export function lockfilePackages(text: string): ReadonlySet<string> {
+  const packages = new Set<string>();
+  for (const line of text.split("\n")) {
+    const match = /^ {2}'?((?:@[^@/\s]+\/)?[^@\s']+@[0-9][^:(\s']*)/u.exec(line);
+    if (match && line.trimEnd().endsWith(":")) packages.add(match[1]!);
+  }
+  return packages;
+}
+
+function splitPackage(entry: string): { readonly name: string; readonly version: string } {
+  const at = entry.lastIndexOf("@");
+  return { name: entry.slice(0, at), version: entry.slice(at + 1) };
+}
+
+/** An override selector for the major line of `version`, or the bare name for 0.x versions. */
+export function overrideSelector(name: string, version: string): string {
+  const major = Number.parseInt(version, 10);
+  return major > 0 ? `${name}@^${major}.0.0` : name;
+}
+
+function compareLockfiles(
+  cwd: string,
+  upstreamSha: string,
+): { missing: Array<string>; stale: Array<string> } {
+  const after = lockfilePackages(git(cwd, ["show", `${upstreamSha}:${LOCKFILE}`]));
+  const before = lockfilePackages(git(cwd, ["show", `${upstreamSha}^:${LOCKFILE}`]));
+  const ours = lockfilePackages(NodeFS.readFileSync(NodePath.join(cwd, LOCKFILE), "utf8"));
+  return {
+    missing: [...after].filter((entry) => !before.has(entry) && !ours.has(entry)).toSorted(),
+    stale: [...before].filter((entry) => !after.has(entry) && ours.has(entry)).toSorted(),
+  };
+}
+
+/**
+ * Regenerates the fork's lockfile, then pins any version upstream's lockfile adds but the fresh
+ * resolution chose differently, using temporary overrides that the lockfile keeps once removed.
+ */
+function regenerateLockfile(cwd: string, upstreamSha: string): LockfileReport {
+  const install = () => {
+    const result = run(cwd, "pnpm", ["install", "--lockfile-only", "--ignore-scripts"]);
+    if (result.status !== 0)
+      throw new Error(`pnpm install --lockfile-only failed:\n${result.stderr}`);
+  };
+  install();
+  const first = compareLockfiles(cwd, upstreamSha);
+  const pinned: Array<string> = [];
+  if (first.missing.length > 0 || first.stale.length > 0) {
+    const workspacePath = NodePath.join(cwd, "pnpm-workspace.yaml");
+    const workspace = NodeFS.readFileSync(workspacePath, "utf8");
+    const overrides = new Map<string, string>();
+    const ambiguous = new Set<string>();
+    const upstreamAfter = lockfilePackages(git(cwd, ["show", `${upstreamSha}:${LOCKFILE}`]));
+    for (const entry of first.missing) {
+      const { name, version } = splitPackage(entry);
+      const selector = overrideSelector(name, version);
+      // A selector shared by two missing versions, or by another version upstream keeps,
+      // would move more than the one package it pins.
+      const keeps = [...upstreamAfter].some((other) => {
+        const kept = splitPackage(other);
+        return (
+          kept.name === name &&
+          kept.version !== version &&
+          overrideSelector(name, kept.version) === selector
+        );
+      });
+      if (keeps || overrides.has(selector)) ambiguous.add(selector);
+      else overrides.set(selector, version);
+    }
+    for (const selector of ambiguous) overrides.delete(selector);
+    const block = [...overrides]
+      .map(([selector, version]) => `  ${JSON.stringify(selector)}: ${JSON.stringify(version)}`)
+      .join("\n");
+    if (overrides.size > 0) {
+      NodeFS.writeFileSync(
+        workspacePath,
+        /^overrides:\n/mu.test(workspace)
+          ? workspace.replace(/^overrides:\n/mu, `overrides:\n${block}\n`)
+          : `${workspace.replace(/\n*$/u, "")}\n\noverrides:\n${block}\n`,
+      );
+      try {
+        install();
+      } finally {
+        NodeFS.writeFileSync(workspacePath, workspace);
+      }
+      install();
+      pinned.push(...overrides.keys());
+    }
+  }
+  const last = compareLockfiles(cwd, upstreamSha);
+  return { ...last, pinned };
+}
+
+/** Packages whose fork name differs from upstream's, so service keys take the fork's prefix. */
+function renamedPackages(
+  cwd: string,
+  upstreamSha: string,
+  paths: ReadonlyArray<string>,
+): ReadonlyArray<{ readonly directory: string; readonly from: string; readonly to: string }> {
+  const directories = new Set(
+    paths.flatMap((path) => {
+      const match = /^((?:apps|packages|infra)\/[^/]+)\//u.exec(path);
+      return match ? [match[1]!] : [];
+    }),
+  );
+  return [...directories].flatMap((directory) => {
+    const read = (ref: string | null) => {
+      const result =
+        ref === null
+          ? { status: 0, stdout: readIfExists(NodePath.join(cwd, directory, "package.json")) }
+          : run(cwd, "git", ["show", `${ref}:${directory}/package.json`]);
+      try {
+        return result.status === 0 ? (JSON.parse(result.stdout).name as string) : null;
+      } catch {
+        return null;
+      }
+    };
+    const from = read(upstreamSha);
+    const to = read(null);
+    return from && to && from !== to ? [{ directory, from, to }] : [];
+  });
+}
+
+function readIfExists(path: string): string {
+  return NodeFS.existsSync(path) ? NodeFS.readFileSync(path, "utf8") : "";
+}
+
+/** Rewrites `Context.Service` keys that carry upstream's package name to the fork's. */
+function rewriteServiceKeys(
+  cwd: string,
+  upstreamSha: string,
+  paths: ReadonlyArray<string>,
+  skip: ReadonlySet<string> = new Set(),
+): ReadonlyArray<Adaptation> {
+  const adaptations: Array<Adaptation> = [];
+  for (const { directory, from, to } of renamedPackages(cwd, upstreamSha, paths)) {
+    const key = new RegExp(`(>\\(\\)\\(")${escapeRegExp(from)}/`, "gu");
+    for (const path of paths) {
+      if (!path.startsWith(`${directory}/`) || !/\.tsx?$/u.test(path) || skip.has(path)) continue;
+      const absolute = NodePath.join(cwd, path);
+      if (!NodeFS.existsSync(absolute)) continue;
+      const text = NodeFS.readFileSync(absolute, "utf8");
+      const rewritten = text.replace(key, `$1${to}/`);
+      if (rewritten !== text) {
+        NodeFS.writeFileSync(absolute, rewritten);
+        git(cwd, ["add", "--", path]);
+        adaptations.push({ kind: "service-keys", path, detail: `${from}/ -> ${to}/` });
+      }
+    }
+  }
+  return adaptations;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+/** Code whose strings agents or users read: tool text, instructions, contracts, and client UI. */
+const PRODUCT_FACING =
+  /^(apps\/server\/src\/(mcp|provider|orchestration-v2)\/|packages\/contracts\/src\/|apps\/(web|mobile|desktop)\/src\/)/u;
+const UPSTREAM_PRODUCT = /\bT3 Code\b|\bT3 Connect\b|\bT3 home\b|t3-code MCP server/u;
+
+/** Lines the pick adds that name upstream's product where agents or users read them. */
+function identityReview(cwd: string): ReadonlyArray<string> {
+  const diff = git(cwd, ["diff", "--cached", "-U0", "HEAD"]);
+  const findings: Array<string> = [];
+  let path = "";
+  for (const line of diff.split("\n")) {
+    const header = /^\+\+\+ b\/(.+)$/u.exec(line);
+    if (header) {
+      path = header[1]!;
+      continue;
+    }
+    if (
+      line.startsWith("+") &&
+      PRODUCT_FACING.test(path) &&
+      !/\.test\.tsx?$/u.test(path) &&
+      UPSTREAM_PRODUCT.test(line)
+    ) {
+      findings.push(`${path}: ${line.slice(1).trim().slice(0, 160)}`);
+    }
+  }
+  return findings;
+}
+
+/**
+ * Cherry-picks one upstream commit onto the checkout in `cwd` and resolves what it can. The pick
+ * is left staged and uncommitted; a stopped pick keeps its conflict markers for review.
+ */
+export function pickUpstreamCommit(
+  cwd: string,
+  upstreamSha: string,
+  options: { readonly skipLockfile?: boolean; readonly rerere?: boolean } = {},
+): PickOutcome {
+  const parents = lines(git(cwd, ["rev-list", "--parents", "-n", "1", upstreamSha])).join(" ");
+  const isMerge = parents.split(" ").length > 2;
+  const picked = run(cwd, "git", [
+    "-c",
+    "merge.conflictStyle=diff3",
+    "-c",
+    `rerere.enabled=${options.rerere === false ? "false" : "true"}`,
+    "cherry-pick",
+    "--no-commit",
+    ...(isMerge ? ["-m", "1"] : []),
+    upstreamSha,
+  ]);
+  const adaptations: Array<Adaptation> = [];
+  const unresolved: Array<{ path: string; hunks: number }> = [];
+  let lockfile: LockfileReport | undefined;
+  const conflicts = picked.status === 0 ? [] : unmergedFiles(cwd);
+  if (picked.status !== 0 && conflicts.length === 0) {
+    throw new Error(`cherry-pick ${upstreamSha} failed: ${picked.stderr.trim()}`);
+  }
+  // rerere replays a resolution recorded the last time this conflict was resolved by hand.
+  const replayed = new Set(
+    [
+      ...`${picked.stdout}\n${picked.stderr}`.matchAll(
+        /Resolved '(.+)' using previous resolution/gu,
+      ),
+    ].map((match) => match[1]!),
+  );
+  let lockfileConflict = false;
+  for (const { path, code } of conflicts) {
+    if (replayed.has(path) && !/^(<{7}|>{7})/mu.test(readIfExists(NodePath.join(cwd, path)))) {
+      git(cwd, ["add", "--", path]);
+      adaptations.push({ kind: "rerere", path });
+      continue;
+    }
+    if (path === LOCKFILE) {
+      if (code !== "UU" && code !== "AA") {
+        unresolved.push({ path, hunks: 1 });
+        continue;
+      }
+      lockfileConflict = true;
+      git(cwd, ["checkout", "--ours", "--", path]);
+      continue;
+    }
+    if (code === "DU") {
+      // The fork removed this file; upstream's edit to it has nowhere to land.
+      git(cwd, ["rm", "-q", "--", path]);
+      adaptations.push({ kind: "fork-deletion", path });
+      continue;
+    }
+    if (code !== "UU" && code !== "AA") {
+      unresolved.push({ path, hunks: 1 });
+      continue;
+    }
+    const result = resolveFile(cwd, path);
+    if (result === null) {
+      unresolved.push({ path, hunks: 1 });
+      continue;
+    }
+    for (const resolution of result.resolutions) {
+      if (resolution.kind === "identity") {
+        adaptations.push({
+          kind: "identity",
+          path,
+          detail: resolution.replacements.map(([from, to]) => `${from} -> ${to}`).join(", "),
+        });
+      } else if (resolution.kind === "upstream-rename") {
+        adaptations.push({
+          kind: "upstream-rename",
+          path,
+          detail: resolution.replacements.map(([from, to]) => `${from} -> ${to}`).join(", "),
+        });
+      } else if (
+        resolution.kind === "additions" ||
+        resolution.kind === "superset" ||
+        resolution.kind === "surrounding-additions"
+      ) {
+        adaptations.push({ kind: "additions", path });
+      }
+    }
+    if (result.unresolved > 0) unresolved.push({ path, hunks: result.unresolved });
+    else git(cwd, ["add", "--", path]);
+  }
+  if (lockfileConflict) {
+    if (options.skipLockfile) {
+      // The fork's lockfile stays as it was; regenerate it before validating the batch.
+      git(cwd, ["add", "--", LOCKFILE]);
+      adaptations.push({ kind: "lockfile", path: LOCKFILE, detail: "skipped" });
+    } else {
+      lockfile = regenerateLockfile(cwd, upstreamSha);
+      git(cwd, ["add", "--", LOCKFILE]);
+      adaptations.push({ kind: "lockfile", path: LOCKFILE });
+    }
+  }
+  const changedPaths = lines(
+    git(cwd, [
+      "diff-tree",
+      "--no-commit-id",
+      "--name-only",
+      "-r",
+      ...(isMerge ? ["-m", "--first-parent"] : []),
+      upstreamSha,
+    ]),
+  );
+  adaptations.push(
+    ...rewriteServiceKeys(
+      cwd,
+      upstreamSha,
+      changedPaths,
+      new Set(unresolved.map((file) => file.path)),
+    ),
+  );
+  return {
+    upstreamSha,
+    status: unresolved.length > 0 ? "stopped" : conflicts.length > 0 ? "resolved" : "clean",
+    adaptations,
+    unresolved,
+    identityReview: unresolved.length > 0 ? [] : identityReview(cwd),
+    ...(lockfile ? { lockfile } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Commit messages
+
+const AGENT_PATHS =
+  /^(apps\/server\/src\/(mcp|provider)\/|apps\/server\/src\/orchestration-v2\/(PullRequestWatchReactor|pullRequestWatch)|packages\/contracts\/src\/orchestratorMcp)/u;
+
+/** A draft `Fork adaptation:` note and features for what the driver changed in a pick. */
+export function draftAdaptationNote(
+  adaptations: ReadonlyArray<Adaptation>,
+  lockfile?: LockfileReport,
+): {
+  readonly note: string | null;
+  readonly features: ReadonlyArray<string>;
+} {
+  const sentences: Array<string> = [];
+  const features = new Set<string>();
+  const identity = adaptations.filter((adaptation) => adaptation.kind === "identity");
+  if (identity.length > 0) {
+    const renames = [
+      ...new Set(identity.flatMap((adaptation) => (adaptation.detail ?? "").split(", "))),
+    ]
+      .filter((rename) => rename !== "")
+      .map((rename) => `\`${rename.replace(" -> ", "` to `")}\``);
+    const files = [...new Set(identity.map((adaptation) => `\`${adaptation.path}\``))];
+    sentences.push(
+      `Upstream's new text in ${files.join(", ")} takes the fork's naming (${renames.join(", ")}), as the fork's existing text there does.`,
+    );
+    features.add(
+      identity.some((adaptation) => AGENT_PATHS.test(adaptation.path))
+        ? "fork-agent-integration-identity"
+        : "fork-distribution-identity",
+    );
+  }
+  const keys = adaptations.filter((adaptation) => adaptation.kind === "service-keys");
+  if (keys.length > 0) {
+    sentences.push(
+      `The new service keys in ${keys.map((adaptation) => `\`${adaptation.path}\``).join(", ")} use the fork's package name.`,
+    );
+    features.add("fork-distribution-identity");
+  }
+  for (const deletion of adaptations.filter((adaptation) => adaptation.kind === "fork-deletion")) {
+    sentences.push(`\`${deletion.path}\` stays absent: the fork does not carry it.`);
+  }
+  if (lockfile) {
+    const differences = [
+      ...lockfile.missing.map((entry) => `${entry} is not resolved`),
+      ...lockfile.stale.map((entry) => `${entry} is still resolved`),
+    ];
+    sentences.push(
+      differences.length === 0
+        ? "The lockfile is regenerated from the fork's dependency graph and resolves the same new versions as upstream's."
+        : `The lockfile is regenerated from the fork's dependency graph; unlike upstream's, ${differences.join(", ")}.`,
+    );
+  }
+  return { note: sentences.length === 0 ? null : sentences.join(" "), features: [...features] };
+}
+
+export function intakeCommitMessage(input: {
+  readonly upstreamMessage: string;
+  readonly upstreamSha: string;
+  readonly pr: number | null;
+  readonly note: string | null;
+  readonly features: ReadonlyArray<string>;
+}): string {
+  const body = input.upstreamMessage.replace(/\s+$/u, "");
+  const trailers = [
+    `(cherry picked from commit ${input.upstreamSha})`,
+    input.pr === null ? `Upstream-Commit: ${input.upstreamSha}` : `Upstream-PR: ${input.pr}`,
+    ...(input.features.length > 0 ? [`Fork-Feature: ${input.features.join(", ")}`] : []),
+  ].join("\n");
+  if (input.note) return `${body}\n\nFork adaptation: ${input.note}\n\n${trailers}\n`;
+  // Like `cherry-pick -x`, provenance joins a trailer block that ends upstream's message.
+  const lastParagraph = body.split(/\n\n/u).at(-1) ?? "";
+  const endsWithTrailers =
+    body.includes("\n\n") && lastParagraph.split("\n").every((line) => /^[\w-]+: /u.test(line));
+  return `${body}${endsWithTrailers ? "\n" : "\n\n"}${trailers}\n`;
+}
+
+function commitPick(
+  cwd: string,
+  entry: QueueEntry,
+  outcome: PickOutcome,
+  extra?: { note?: string; features?: ReadonlyArray<string> },
+) {
+  const draft = draftAdaptationNote(outcome.adaptations, outcome.lockfile);
+  const note = [draft.note, extra?.note ?? null].filter((part) => part).join(" ") || null;
+  const features = [...new Set([...draft.features, ...(extra?.features ?? [])])];
+  const author = lines(git(cwd, ["log", "-1", "--format=%an%n%ae%n%aD", entry.sha]));
+  const message = intakeCommitMessage({
+    upstreamMessage: git(cwd, ["log", "-1", "--format=%B", entry.sha]),
+    upstreamSha: entry.sha,
+    pr: entry.pr,
+    note,
+    features,
+  });
+  const result = NodeChildProcess.spawnSync(
+    "git",
+    ["commit", "-q", "--no-verify", "--allow-empty", "-F", "-"],
+    {
+      cwd,
+      input: message,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: author[0],
+        GIT_AUTHOR_EMAIL: author[1],
+        GIT_AUTHOR_DATE: author[2],
+      },
+    },
+  );
+  if (result.status !== 0) throw new Error(`git commit failed: ${result.stderr}`);
+  // A no-commit cherry-pick can leave its sequencer state behind.
+  run(cwd, "git", ["cherry-pick", "--quit"]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Trailers
+
+/**
+ * Whether a picked commit changes exactly what its upstream sources change, by the audit's rule:
+ * matching changed lines, or each differing file ending identical to upstream's version.
+ */
+export function commitMatchesUpstream(cwd: string, sha: string): boolean | null {
+  const message = git(cwd, ["show", "-s", "--format=%B", sha]);
+  const sources = [
+    ...new Set([...cherryPickSources(message), ...parseUpstreamProvenance([message]).commitShas]),
+  ];
+  if (sources.length === 0) return null;
+  // The audit diffs against the first parent, so a merge source reads as its first-parent change.
+  const patch = (commit: string) =>
+    git(cwd, ["diff", "-U0", "--no-renames", `${commit}^1`, commit]);
+  const upstreamPatches = sources.map(patch);
+  const blob = (commit: string, path: string) =>
+    run(cwd, "git", ["rev-parse", "--verify", "--quiet", `${commit}:${path}`]).stdout.trim();
+  const differing = compareWithUpstream({ upstreamPatches, forkPatch: patch(sha) }).filter(
+    (file) => {
+      const last = upstreamPatches.findLastIndex((source) =>
+        changedLinesByFile([source]).has(file.path),
+      );
+      return last === -1 || blob(sha, file.path) !== blob(sources[last]!, file.path);
+    },
+  );
+  return differing.length === 0;
+}
+
+export interface TrailerFix {
+  readonly sha: string;
+  readonly subject: string;
+  readonly action: "removed-features" | "needs-note" | "ok";
+}
+
+/** Drops `Fork-Feature` from commits that match upstream and lists differing ones without a note. */
+function fixTrailers(cwd: string, base: string): ReadonlyArray<TrailerFix> {
+  const commits = lines(git(cwd, ["rev-list", "--reverse", `${base}..HEAD`]));
+  const plan = commits.map((sha) => {
+    const message = git(cwd, ["show", "-s", "--format=%B", sha]);
+    const subject = message.split("\n")[0] ?? sha;
+    const matches = commitMatchesUpstream(cwd, sha);
+    if (matches === true && preservedFeatureIds(message).length > 0) {
+      return { sha, subject, action: "removed-features" as const };
+    }
+    if (matches === false && forkAdaptationNote(message) === null) {
+      return { sha, subject, action: "needs-note" as const };
+    }
+    return { sha, subject, action: "ok" as const };
+  });
+  if (plan.some((fix) => fix.action === "removed-features")) {
+    // Rebuild the branch, rewriting only the messages that cite features they do not preserve.
+    const remove = new Set(
+      plan.filter((fix) => fix.action === "removed-features").map((fix) => fix.sha),
+    );
+    requireCleanIndex(cwd);
+    const branch = git(cwd, ["symbolic-ref", "--short", "HEAD"]).trim();
+    git(cwd, ["checkout", "-q", "--detach", commits[0] ? `${commits[0]}^` : base]);
+    try {
+      for (const sha of commits) {
+        git(cwd, ["cherry-pick", "--allow-empty", "--keep-redundant-commits", sha]);
+        if (remove.has(sha)) {
+          const message = git(cwd, ["show", "-s", "--format=%B", "HEAD"])
+            .split("\n")
+            .filter((line) => !line.startsWith("Fork-Feature:"))
+            .join("\n");
+          git(cwd, ["commit", "-q", "--amend", "--no-verify", "-F", "-"], message);
+        }
+      }
+    } catch (error) {
+      // The branch itself is untouched until the rebuild finishes; return to it.
+      run(cwd, "git", ["cherry-pick", "--abort"]);
+      git(cwd, ["switch", "-q", "--discard-changes", branch]);
+      throw error;
+    }
+    git(cwd, ["switch", "-q", "-C", branch]);
+  }
+  return plan;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Queue and state
+
+export interface QueueEntry {
+  readonly sha: string;
+  readonly pr: number | null;
+  readonly title: string;
+}
+
+function queueEntries(
+  cwd: string,
+  selection: { count?: number; through?: string },
+): ReadonlyArray<QueueEntry> {
+  const count = selection.count ?? 200;
+  const result = run(cwd, "node", [
+    "scripts/upstream/queue.ts",
+    "next",
+    "--count",
+    String(count),
+    "--json",
+  ]);
+  if (result.status !== 0) throw new Error(`queue next failed: ${result.stderr}`);
+  const entries = (
+    JSON.parse(result.stdout).entries as Array<{
+      sha: string;
+      pr: number | null;
+      title: string;
+      disposition: string;
+    }>
+  )
+    .filter((entry) => entry.disposition === "pending")
+    .map(({ sha, pr, title }) => ({ sha, pr, title }));
+  if (selection.through === undefined) return entries;
+  const through = git(cwd, ["rev-parse", selection.through]).trim();
+  const end = entries.findIndex((entry) => entry.sha === through);
+  if (end === -1)
+    throw new Error(`${selection.through} is not among the next ${count} pending commits.`);
+  return entries.slice(0, end + 1);
+}
+
+/** Upstream commits named directly, with the PR their subject cites. */
+function explicitEntries(cwd: string, commits: ReadonlyArray<string>): ReadonlyArray<QueueEntry> {
+  return commits.map((commit) => {
+    const sha = git(cwd, ["rev-parse", "--verify", `${commit}^{commit}`]).trim();
+    const title = git(cwd, ["log", "-1", "--format=%s", sha]).trim();
+    const pr = /\(#(\d+)\)$/u.exec(title);
+    return { sha, title, pr: pr ? Number(pr[1]) : null };
+  });
+}
+
+interface RunState {
+  readonly remaining: ReadonlyArray<QueueEntry>;
+  readonly current: { readonly entry: QueueEntry; readonly outcome: PickOutcome } | null;
+}
+
+function statePath(cwd: string): string {
+  return NodePath.join(git(cwd, ["rev-parse", "--absolute-git-dir"]).trim(), "intake-run.json");
+}
+
+function saveState(cwd: string, state: RunState | null) {
+  const path = statePath(cwd);
+  if (state === null) NodeFS.rmSync(path, { force: true });
+  else NodeFS.writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`);
+}
+
+function describeOutcome(entry: QueueEntry, outcome: PickOutcome): string {
+  const label = `${entry.sha.slice(0, 10)} ${entry.pr === null ? "direct" : `#${entry.pr}`} ${entry.title}`;
+  const kinds = [...new Set(outcome.adaptations.map((adaptation) => adaptation.kind))];
+  const parts = [`${outcome.status.padEnd(8)} ${label}`];
+  if (kinds.length > 0) parts.push(`    adapted: ${kinds.join(", ")}`);
+  for (const file of outcome.unresolved)
+    parts.push(`    UNRESOLVED ${file.path} (${file.hunks} hunk${file.hunks === 1 ? "" : "s"})`);
+  for (const finding of outcome.identityReview) parts.push(`    review naming: ${finding}`);
+  const combined = outcome.adaptations.filter((adaptation) => adaptation.kind === "additions");
+  for (const path of new Set(combined.map((adaptation) => adaptation.path))) {
+    parts.push(`    review combined lines: ${path}`);
+  }
+  if (
+    outcome.lockfile &&
+    (outcome.lockfile.missing.length > 0 || outcome.lockfile.stale.length > 0)
+  ) {
+    parts.push(
+      `    lockfile differs: missing ${outcome.lockfile.missing.join(", ") || "none"}; stale ${outcome.lockfile.stale.join(", ") || "none"}`,
+    );
+  }
+  return parts.join("\n");
+}
+
+/** Upstream sources already picked onto the branch since `base`. */
+function pickedSources(cwd: string, base: string): ReadonlySet<string> {
+  return new Set(
+    lines(git(cwd, ["log", "--format=%B", `${base}..HEAD`])).flatMap((line) => {
+      const match = /^\(cherry picked from commit ([0-9a-f]{40})\)$/u.exec(line);
+      return match ? [match[1]!] : [];
+    }),
+  );
+}
+
+function requireCleanIndex(cwd: string) {
+  const status = lines(git(cwd, ["status", "--porcelain=v1", "--untracked-files=no"]));
+  if (status.length > 0) {
+    throw new Error(`Commit or set aside these changes first:\n${status.join("\n")}`);
+  }
+}
+
+function applyEntries(
+  cwd: string,
+  entries: ReadonlyArray<QueueEntry>,
+  options: { skipLockfile?: boolean },
+) {
+  requireCleanIndex(cwd);
+  const picked = pickedSources(cwd, "origin/main");
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    if (picked.has(entry.sha)) {
+      process.stdout.write(`skipped  ${entry.sha.slice(0, 10)} already on this branch\n`);
+      continue;
+    }
+    let outcome: PickOutcome;
+    try {
+      outcome = pickUpstreamCommit(cwd, entry.sha, options);
+    } catch (error) {
+      // Keep the rest of the selection so `continue` can resume after a manual fix.
+      saveState(cwd, {
+        remaining: entries.slice(index + 1),
+        current: {
+          entry,
+          outcome: {
+            upstreamSha: entry.sha,
+            status: "stopped",
+            adaptations: [],
+            unresolved: [],
+            identityReview: [],
+          },
+        },
+      });
+      throw error;
+    }
+    process.stdout.write(`${describeOutcome(entry, outcome)}\n`);
+    if (outcome.status === "stopped") {
+      saveState(cwd, { remaining: entries.slice(index + 1), current: { entry, outcome } });
+      process.stdout.write(
+        "\nResolve the conflicts above, stage them, then run `intake-run.ts continue` with --note and --feature for any fork adaptation.\n",
+      );
+      return false;
+    }
+    commitPick(cwd, entry, outcome);
+  }
+  saveState(cwd, null);
+  return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Replay
+
+export interface ReplayResult {
+  readonly commit: string;
+  readonly subject: string;
+  readonly source: string | null;
+  readonly verdict:
+    | "clean-match"
+    | "resolved-match"
+    | "resolved-differs"
+    | "resolved-reordered"
+    | "clean-differs"
+    | "stopped"
+    | "skipped";
+  readonly adaptations: ReadonlyArray<AdaptationKind>;
+  readonly unresolvedHunks: number;
+  readonly differingFiles: ReadonlyArray<string>;
+  readonly realHadNote: boolean;
+}
+
+/** The commit before a batch: the first ancestor on the first-parent chain without intake trailers. */
+function batchBase(head: string): string {
+  let commit = head;
+  for (;;) {
+    const message = git(repoRoot, ["show", "-s", "--format=%B", commit]);
+    if (cherryPickSources(message).length === 0 && !/^Upstream-(PR|Commit):/mu.test(message)) {
+      return commit;
+    }
+    commit = git(repoRoot, ["rev-parse", `${commit}^`]).trim();
+  }
+}
+
+/**
+ * Re-runs the driver on each commit of a promoted batch from that commit's real parent, and
+ * compares the driver's tree with the tree the batch committed.
+ */
+function replay(
+  candidate: string,
+  options: { base?: string; skipLockfile: boolean; dump?: string },
+): ReadonlyArray<ReplayResult> {
+  const head = git(repoRoot, ["rev-parse", candidate]).trim();
+  const base = options.base ?? batchBase(head);
+  const commits = lines(
+    git(repoRoot, ["rev-list", "--reverse", "--first-parent", `${base}..${head}`]),
+  );
+  const worktree = NodePath.join(repoRoot, ".scratch", `intake-replay-${head.slice(0, 10)}`);
+  if (NodeFS.existsSync(worktree)) git(repoRoot, ["worktree", "remove", "--force", worktree]);
+  git(repoRoot, ["worktree", "add", "-q", "--detach", worktree, base]);
+  const results: Array<ReplayResult> = [];
+  try {
+    for (const commit of commits) {
+      const message = git(repoRoot, ["show", "-s", "--format=%B", commit]);
+      const subject = message.split("\n")[0] ?? commit;
+      const sources = cherryPickSources(message);
+      const realHadNote = forkAdaptationNote(message) !== null;
+      if (sources.length !== 1) {
+        results.push({
+          commit,
+          subject,
+          source: null,
+          verdict: "skipped",
+          adaptations: [],
+          unresolvedHunks: 0,
+          differingFiles: [],
+          realHadNote,
+        });
+        continue;
+      }
+      const source = sources[0]!;
+      git(worktree, ["reset", "-q", "--hard"]);
+      run(worktree, "git", ["cherry-pick", "--quit"]);
+      git(worktree, ["checkout", "-q", "--detach", `${commit}^`]);
+      git(worktree, ["clean", "-qfd"]);
+      let outcome: PickOutcome;
+      if (options.dump) hunkSink = [];
+      try {
+        // A recorded resolution of this very conflict would answer the question being scored.
+        outcome = pickUpstreamCommit(worktree, source, {
+          skipLockfile: options.skipLockfile,
+          rerere: false,
+        });
+      } catch (error) {
+        process.stderr.write(`${commit.slice(0, 10)}: ${String(error).slice(0, 300)}\n`);
+        results.push({
+          commit,
+          subject,
+          source,
+          verdict: "skipped",
+          adaptations: [],
+          unresolvedHunks: 0,
+          differingFiles: [],
+          realHadNote,
+        });
+        continue;
+      }
+      const adaptations = [...new Set(outcome.adaptations.map((adaptation) => adaptation.kind))];
+      if (options.dump && hunkSink && hunkSink.length > 0) {
+        NodeFS.mkdirSync(options.dump, { recursive: true });
+        const real = Object.fromEntries(
+          [...new Set(hunkSink.map((entry) => entry.path))].map((path) => [
+            path,
+            run(repoRoot, "git", ["show", `${commit}:${path}`]).stdout,
+          ]),
+        );
+        NodeFS.writeFileSync(
+          NodePath.join(options.dump, `${commit.slice(0, 10)}.json`),
+          JSON.stringify({ commit, subject, source, hunks: hunkSink, real }, null, 1),
+        );
+      }
+      hunkSink = null;
+      if (outcome.status === "stopped") {
+        results.push({
+          commit,
+          subject,
+          source,
+          verdict: "stopped",
+          adaptations,
+          unresolvedHunks: outcome.unresolved.reduce((sum, file) => sum + file.hunks, 0),
+          differingFiles: outcome.unresolved.map((file) => file.path),
+          realHadNote,
+        });
+        continue;
+      }
+      git(worktree, ["add", "-A"]);
+      const differingFiles = lines(
+        git(worktree, ["diff", "--cached", "--name-only", "--no-renames", commit]),
+      ).filter((path) => !(options.skipLockfile && path === LOCKFILE));
+      const matched = differingFiles.length === 0;
+      // The same lines in another order, as when two added imports land in either order.
+      const reordered =
+        !matched &&
+        differingFiles.every((path) => {
+          const sorted = (ref: string) =>
+            run(worktree, "git", ["show", `${ref}:${path}`])
+              .stdout.split("\n")
+              .toSorted()
+              .join("\n");
+          return sorted(":0") === sorted(commit);
+        });
+      results.push({
+        commit,
+        subject,
+        source,
+        verdict:
+          outcome.status === "clean"
+            ? matched
+              ? "clean-match"
+              : "clean-differs"
+            : matched
+              ? "resolved-match"
+              : reordered
+                ? "resolved-reordered"
+                : "resolved-differs",
+        adaptations,
+        unresolvedHunks: 0,
+        differingFiles,
+        realHadNote,
+      });
+    }
+  } finally {
+    run(worktree, "git", ["cherry-pick", "--quit"]);
+    git(repoRoot, ["worktree", "remove", "--force", worktree]);
+  }
+  return results;
+}
+
+/**
+ * Re-resolves hunks that `replay --dump` saved with the current resolvers and checks each
+ * resolution against the file the batch committed. A resolution counts as correct when every
+ * line it produces is in that file, so order and later edits nearby do not count against it.
+ */
+export function scoreDumpedHunks(
+  directory: string,
+  options: { exclude?: ReadonlyArray<string> } = {},
+) {
+  const normalize = (text: string) => text.replace(/\s+/gu, " ").trim();
+  const counts = new Map<string, { correct: number; wrong: number }>();
+  const wrong: Array<string> = [];
+  let stopped = 0;
+  for (const name of NodeFS.readdirSync(directory).filter((file) => file.endsWith(".json"))) {
+    const dump = JSON.parse(NodeFS.readFileSync(NodePath.join(directory, name), "utf8")) as {
+      commit: string;
+      hunks: Array<{ path: string; hunk: { ours: string; base: string; theirs: string } }>;
+      real: Record<string, string>;
+    };
+    if (options.exclude?.some((prefix) => dump.commit.startsWith(prefix))) continue;
+    for (const { path, hunk } of dump.hunks) {
+      if (path === LOCKFILE) continue;
+      const resolution = resolveHunk(hunk, path);
+      if (resolution.kind === "unresolved") {
+        stopped += 1;
+        continue;
+      }
+      const real = normalize(dump.real[path] ?? "");
+      const ok = resolution.text
+        .split("\n")
+        .map(normalize)
+        .filter((line) => line !== "")
+        .every((line) => real.includes(line));
+      const entry = counts.get(resolution.kind) ?? { correct: 0, wrong: 0 };
+      if (ok) entry.correct += 1;
+      else {
+        entry.wrong += 1;
+        wrong.push(`${resolution.kind} ${dump.commit.slice(0, 10)} ${path}`);
+      }
+      counts.set(resolution.kind, entry);
+    }
+  }
+  return { stopped, counts: Object.fromEntries(counts), wrong };
+}
+
+function summarizeReplay(results: ReadonlyArray<ReplayResult>): string {
+  const counts = new Map<string, number>();
+  for (const result of results) counts.set(result.verdict, (counts.get(result.verdict) ?? 0) + 1);
+  const rows = results.map((result) => {
+    const detail = [
+      result.adaptations.length > 0 ? `adapted: ${result.adaptations.join(", ")}` : "",
+      result.unresolvedHunks > 0 ? `${result.unresolvedHunks} unresolved hunks` : "",
+      result.differingFiles.length > 0
+        ? `files: ${result.differingFiles.slice(0, 6).join(", ")}${result.differingFiles.length > 6 ? ", …" : ""}`
+        : "",
+      result.realHadNote ? "(real commit has a note)" : "",
+    ]
+      .filter((part) => part !== "")
+      .join("; ");
+    return `${result.verdict.padEnd(16)} ${result.commit.slice(0, 10)} ${result.subject.slice(0, 80)}${detail ? `\n${" ".repeat(28)}${detail}` : ""}`;
+  });
+  return `${rows.join("\n")}\n\n${[...counts].map(([verdict, count]) => `${verdict}: ${count}`).join(", ")}\n`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Verify
+
+/** Workspace packages that own the given paths, by their nearest package.json directory. */
+function owningPackages(cwd: string, paths: ReadonlyArray<string>): ReadonlyArray<string> {
+  const packages = new Set<string>();
+  for (const path of paths) {
+    let directory = NodePath.dirname(path);
+    while (directory !== "." && !NodeFS.existsSync(NodePath.join(cwd, directory, "package.json"))) {
+      directory = NodePath.dirname(directory);
+    }
+    if (directory !== ".") packages.add(directory);
+  }
+  return [...packages].toSorted();
+}
+
+/**
+ * Installs once, then typechecks every package the batch touches, lints its changed files, runs
+ * its changed tests, and checks the ledger. Prints one line per step and the failures in full.
+ */
+function verify(cwd: string, base: string): boolean {
+  const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
+    (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
+  );
+  const packages = owningPackages(cwd, changed).filter((directory) =>
+    /"typecheck"\s*:/u.test(readIfExists(NodePath.join(cwd, directory, "package.json"))),
+  );
+  const steps: Array<{ name: string; ok: boolean; output: string }> = [];
+  const step = (name: string, command: string, args: ReadonlyArray<string>, directory = cwd) => {
+    const result = run(directory, command, args);
+    steps.push({ name, ok: result.status === 0, output: `${result.stdout}\n${result.stderr}` });
+    process.stdout.write(`${result.status === 0 ? "ok  " : "FAIL"} ${name}\n`);
+  };
+  step("install", "vp", ["i"]);
+  for (const directory of packages) {
+    step(`typecheck ${directory}`, "pnpm", ["run", "typecheck"], NodePath.join(cwd, directory));
+  }
+  const sources = changed.filter((path) => /\.(ts|tsx|mts|mjs|js)$/u.test(path));
+  if (sources.length > 0)
+    step("lint changed files", "vp", ["lint", "--report-unused-disable-directives", ...sources]);
+  for (const directory of owningPackages(cwd, changed)) {
+    const tests = changed
+      .filter((path) => path.startsWith(`${directory}/`) && /\.test\.tsx?$/u.test(path))
+      .map((path) => path.slice(directory.length + 1));
+    if (tests.length > 0)
+      step(`tests ${directory}`, "vp", ["test", "run", ...tests], NodePath.join(cwd, directory));
+  }
+  step("ledger", "vp", ["run", "--filter", "@t3tools/scripts", "ledger:check"]);
+  for (const failed of steps.filter((entry) => !entry.ok)) {
+    const relevant = failed.output
+      .split("\n")
+      .filter((line) => /error|fail|×|✗/iu.test(line))
+      .slice(0, 40)
+      .join("\n");
+    process.stdout.write(`\n--- ${failed.name}\n${relevant || failed.output.slice(-4000)}\n`);
+  }
+  return steps.every((entry) => entry.ok);
+}
+
+// ---------------------------------------------------------------------------------------------
+// CLI
+
+function flag(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  return index === -1 ? undefined : process.argv[index + 1];
+}
+
+function main() {
+  const [command, ...rest] = process.argv.slice(2).filter((argument) => argument !== "--");
+  const cwd = repoRoot;
+  switch (command) {
+    case "apply": {
+      const count = flag("--count");
+      const through = flag("--through");
+      const commits = flag("--commits");
+      if (count === undefined && through === undefined && commits === undefined) {
+        throw new Error("apply needs --count, --through, or --commits.");
+      }
+      const entries =
+        commits === undefined
+          ? queueEntries(cwd, {
+              ...(count === undefined ? {} : { count: Number(count) }),
+              ...(through === undefined ? {} : { through }),
+            })
+          : explicitEntries(cwd, commits.split(","));
+      const branch = flag("--branch");
+      if (branch) git(cwd, ["switch", "-q", "-c", branch, "--no-track", "origin/main"]);
+      const done = applyEntries(cwd, entries, {
+        skipLockfile: process.argv.includes("--skip-lockfile"),
+      });
+      if (done)
+        process.stdout.write(
+          "\nAll commits applied. Run `intake-run.ts fix-trailers`, then `intake-run.ts verify`.\n",
+        );
+      process.exitCode = done ? 0 : 2;
+      return;
+    }
+    case "continue": {
+      const state = JSON.parse(NodeFS.readFileSync(statePath(cwd), "utf8")) as RunState;
+      if (state.current === null) throw new Error("No stopped pick to continue.");
+      if (
+        unmergedFiles(cwd).length > 0 ||
+        /^\+(<{7}|\|{7}|>{7})( |$)/mu.test(git(cwd, ["diff", "--cached"]))
+      ) {
+        throw new Error("Conflicts remain; resolve and stage them first.");
+      }
+      const note = flag("--note");
+      const features =
+        flag("--feature")
+          ?.split(",")
+          .map((id) => id.trim())
+          .filter((id) => id) ?? [];
+      const changed = lines(git(cwd, ["diff", "--cached", "--name-only", "HEAD"]));
+      const keys = rewriteServiceKeys(cwd, state.current.entry.sha, changed);
+      const outcome = {
+        ...state.current.outcome,
+        adaptations: [...state.current.outcome.adaptations, ...keys],
+      };
+      commitPick(cwd, state.current.entry, outcome, {
+        ...(note ? { note } : {}),
+        features,
+      });
+      const done = applyEntries(cwd, state.remaining, {
+        skipLockfile: process.argv.includes("--skip-lockfile"),
+      });
+      process.exitCode = done ? 0 : 2;
+      return;
+    }
+    case "fix-trailers": {
+      const fixes = fixTrailers(cwd, flag("--base") ?? "origin/main");
+      for (const fix of fixes)
+        if (fix.action !== "ok") process.stdout.write(`${fix.action.padEnd(17)} ${fix.subject}\n`);
+      process.exitCode = fixes.some((fix) => fix.action === "needs-note") ? 1 : 0;
+      return;
+    }
+    case "replay": {
+      const candidate = rest.find(
+        (argument) =>
+          !argument.startsWith("--") && argument !== flag("--base") && argument !== flag("--dump"),
+      );
+      if (!candidate) throw new Error("replay needs a promoted candidate SHA.");
+      const base = flag("--base");
+      const dump = flag("--dump");
+      const results = replay(candidate, {
+        ...(base ? { base } : {}),
+        ...(dump ? { dump: NodePath.resolve(dump) } : {}),
+        skipLockfile: process.argv.includes("--skip-lockfile"),
+      });
+      process.stdout.write(
+        process.argv.includes("--json")
+          ? `${JSON.stringify(results, null, 2)}\n`
+          : summarizeReplay(results),
+      );
+      return;
+    }
+    case "verify": {
+      process.exitCode = verify(cwd, flag("--base") ?? "origin/main") ? 0 : 1;
+      return;
+    }
+    case "score": {
+      const directory = rest.find(
+        (argument) => !argument.startsWith("--") && argument !== flag("--exclude"),
+      );
+      if (!directory) throw new Error("score needs the directory replay --dump wrote.");
+      const exclude = flag("--exclude")?.split(",") ?? [];
+      const result = scoreDumpedHunks(directory, { exclude });
+      process.stdout.write(
+        `${JSON.stringify({ stopped: result.stopped, ...result.counts }, null, 2)}\n`,
+      );
+      if (process.argv.includes("--verbose")) process.stdout.write(`${result.wrong.join("\n")}\n`);
+      return;
+    }
+    default:
+      process.stdout.write(
+        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | fix-trailers [--base <ref>] | verify [--base <ref>] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
+      );
+      process.exitCode = command === undefined ? 0 : 1;
+  }
+}
+
+if (import.meta.url === NodeURL.pathToFileURL(process.argv[1] ?? "").href) {
+  try {
+    main();
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  }
+}
