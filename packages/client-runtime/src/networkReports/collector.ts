@@ -27,14 +27,14 @@ export interface NetworkReportRecord {
   readonly metrics: NetworkReportMetrics;
 }
 
-export type DropCause = "stoppedResponding" | "disconnected" | "probeFailed" | "other";
+type DropCause = "stoppedResponding" | "disconnected" | "probeFailed" | "other";
 
 /**
  * Why a live session ended. The client closes the socket itself after
  * heartbeats go unanswered, so that is known before the close arrives. While
  * connected, the only timeout is the supervisor's health check.
  */
-export function dropCause(error: ConnectionAttemptError, heartbeatTimedOut: boolean): DropCause {
+function dropCause(error: ConnectionAttemptError, heartbeatTimedOut: boolean): DropCause {
   if (heartbeatTimedOut) return "stoppedResponding";
   if (error._tag !== "ConnectionTransientError") return "other";
   switch (error.reason) {
