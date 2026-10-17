@@ -812,8 +812,8 @@ features:
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
       - apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
       - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.test.ts
-      - apps/web/src/components/import/useHistoryImport.test.ts
-      - apps/web/src/components/import/useLegacyImport.test.ts
+      - apps/web/src/components/import/useHistoryImport.browser.test.tsx
+      - apps/web/src/components/import/useLegacyImport.browser.test.tsx
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
       - apps/web/src/components/settings/settingsSearch.test.ts
       - apps/web/src/onboarding/firstRun.logic.test.ts

@@ -1,6 +1,8 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { reactHookHarness as hooks } from "../../test/reactHookHarness";
+import { act, useEffect } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { ImportOutcome } from "./types";
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   importThreads: vi.fn(),
@@ -16,23 +18,9 @@ const mocks = vi.hoisted(() => ({
     git: { remoteKey: string | null; repository: string | null } | null;
   }>,
 }));
-vi.mock("react", async (original) => {
-  const actual = await original<typeof import("react")>();
-  const { reactHookHarness } = await import("../../test/reactHookHarness");
-  return {
-    ...actual,
-    useState: reactHookHarness.useState,
-    useRef: reactHookHarness.useRef,
-    useMemo: reactHookHarness.useMemo,
-    useEffect: vi.fn(),
-  };
-});
-vi.mock("react/compiler-runtime", async () => {
-  const { reactHookHarness } = await import("../../test/reactHookHarness");
-  return { c: reactHookHarness.useMemoCache };
-});
-vi.mock("../../onboarding/useProjectScans", () => ({
-  useProjectScans: (ids: EnvironmentId[]) => [
+vi.mock(import("../../onboarding/useProjectScans"), async (original) => ({
+  ...(await original()),
+  useProjectScans: ((ids: EnvironmentId[]) => [
     {
       environmentId: ids[0],
       data: { candidates: mocks.candidates },
@@ -40,27 +28,43 @@ vi.mock("../../onboarding/useProjectScans", () => ({
       isPending: false,
       refresh: mocks.refresh,
     },
-  ],
+  ]) as never,
 }));
-vi.mock("../../state/entities", () => ({ readProjects: () => [] }));
-vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "create" } }));
-vi.mock("../../state/agentSessions", () => ({ agentSessionImport: "history" }));
-vi.mock("../../state/session", () => ({
+vi.mock(import("../../state/session"), async (original) => ({
+  ...(await original()),
   useEnvironmentScope: () => mocks.canOperate,
   readEnvironmentScope: () => mocks.canOperate,
 }));
-vi.mock("../../state/use-atom-command", () => ({
-  useAtomCommand: (command: string) => (command === "create" ? mocks.create : mocks.importThreads),
-}));
+vi.mock(import("../../state/use-atom-command"), async (original) => {
+  const { projectEnvironment } = await import("../../state/projects");
+  return {
+    ...(await original()),
+    useAtomCommand: ((command: unknown) =>
+      command === projectEnvironment.create ? mocks.create : mocks.importThreads) as never,
+  };
+});
 import { useHistoryImport } from "./useHistoryImport";
 const environmentId = EnvironmentId.make("demo-desktop");
-const render = () => {
-  hooks.beginRender();
-  return useHistoryImport(environmentId);
+let root: Root;
+let current: ReturnType<typeof useHistoryImport>;
+function Probe() {
+  const importer = useHistoryImport(environmentId);
+  useEffect(() => {
+    current = importer;
+  });
+  return null;
+}
+const render = async () => {
+  await act(() => root.render(<Probe />));
+  return current;
+};
+const run = async () => {
+  const importer = await render();
+  return act(() => importer.run());
 };
 describe("setup CLI history importer", () => {
-  beforeEach(() => {
-    hooks.reset();
+  beforeEach(async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     mocks.create.mockReset();
     mocks.importThreads.mockReset();
     mocks.canOperate = true;
@@ -78,30 +82,36 @@ describe("setup CLI history importer", () => {
       lastActiveAt: new Date().toISOString(),
       git: { remoteKey: null, repository: null },
     }));
+    root = createRoot(document.createElement("div"));
+  });
+  afterEach(async () => {
+    await act(() => root.unmount());
+    vi.unstubAllGlobals();
   });
   it("retains partial failures for retry and does not repeat completed projects", async () => {
     mocks.importThreads.mockResolvedValueOnce({
       _tag: "Success",
       value: { importedCount: 1, skippedCount: 1 },
     });
-    expect((await render().run()).success).toBe(false);
-    expect(render().selected.map((p) => p.title)).toEqual(["one"]);
-    await render().run();
+    expect((await run()).success).toBe(false);
+    expect((await render()).selected.map((p) => p.title)).toEqual(["one"]);
+    await run();
     expect(mocks.importThreads).toHaveBeenCalledTimes(3);
     expect(mocks.importThreads).toHaveBeenLastCalledWith({
       environmentId,
       input: { projectId: "one", expectedWorkspaceRoot: "/demo/one" },
     });
-    expect(render().selected).toHaveLength(0);
+    expect((await render()).selected).toHaveLength(0);
   });
   it("allows explicitly selecting an imported project again to read newer history", async () => {
-    await render().run();
-    render().setSelected(new Set([render().candidates[0]!.key]));
-    await render().run();
+    await run();
+    const importer = await render();
+    await act(() => importer.setSelected(new Set([importer.candidates[0]!.key])));
+    await run();
     expect(mocks.importThreads).toHaveBeenCalledTimes(3);
   });
   it("uses an existing project without creating a duplicate", async () => {
-    await render().run();
+    await run();
     expect(mocks.create).not.toHaveBeenCalled();
   });
   it("reuses the project creation identity when thread import needs a retry", async () => {
@@ -119,8 +129,8 @@ describe("setup CLI history importer", () => {
       _tag: "Success",
       value: { importedCount: 0, skippedCount: 1 },
     });
-    await render().run();
-    await render().run();
+    await run();
+    await run();
     expect(mocks.create.mock.calls[1]?.[0].input.projectId).toBe(
       mocks.create.mock.calls[0]?.[0].input.projectId,
     );
@@ -130,11 +140,13 @@ describe("setup CLI history importer", () => {
   });
   it("keeps the selection and writes nothing without permission to operate the environment", async () => {
     mocks.canOperate = false;
-    expect((await render().run()).success).toBe(false);
+    expect((await run()).success).toBe(false);
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.importThreads).not.toHaveBeenCalled();
-    expect(render().error).toBe("This connection cannot import projects or thread history.");
-    expect(render().selected).toHaveLength(2);
+    expect((await render()).error).toBe(
+      "This connection cannot import projects or thread history.",
+    );
+    expect((await render()).selected).toHaveLength(2);
   });
   it("stops before importing history when permission is revoked and retries with the same project", async () => {
     mocks.candidates = [
@@ -151,11 +163,11 @@ describe("setup CLI history importer", () => {
       mocks.canOperate = false;
       return { _tag: "Success", value: {} };
     });
-    expect((await render().run()).success).toBe(false);
+    expect((await run()).success).toBe(false);
     expect(mocks.importThreads).not.toHaveBeenCalled();
     mocks.canOperate = true;
-    expect(render().error).toBe("");
-    expect((await render().run()).success).toBe(true);
+    expect((await render()).error).toBe("");
+    expect((await run()).success).toBe(true);
     expect(mocks.importThreads).toHaveBeenCalledTimes(1);
     expect(mocks.create.mock.calls[1]?.[0].input.commandId).toBe(
       mocks.create.mock.calls[0]?.[0].input.commandId,
@@ -172,23 +184,32 @@ describe("setup CLI history importer", () => {
       completeSecond = resolve;
     });
     mocks.importThreads.mockReturnValueOnce(first).mockReturnValueOnce(second);
-    const running = render().run();
-    expect(render().progress?.map((row) => row.status)).toEqual(["importing", "queued"]);
-    completeFirst({ _tag: "Success", value: { importedCount: 2, skippedCount: 0 } });
-    await first;
-    expect(render().progress?.map((row) => row.status)).toEqual(["complete", "importing"]);
-    completeSecond({ _tag: "Success", value: { importedCount: 1, skippedCount: 1 } });
-    expect((await running).success).toBe(false);
-    expect(render().progress).toMatchObject([
+    const importer = await render();
+    let running!: Promise<ImportOutcome>;
+    await act(async () => {
+      running = importer.run();
+    });
+    expect((await render()).progress?.map((row) => row.status)).toEqual(["importing", "queued"]);
+    await act(async () => {
+      completeFirst({ _tag: "Success", value: { importedCount: 2, skippedCount: 0 } });
+      await first;
+    });
+    expect((await render()).progress?.map((row) => row.status)).toEqual(["complete", "importing"]);
+    const outcome = await act(async () => {
+      completeSecond({ _tag: "Success", value: { importedCount: 1, skippedCount: 1 } });
+      return running;
+    });
+    expect(outcome.success).toBe(false);
+    expect((await render()).progress).toMatchObject([
       { title: "one", status: "complete", importedCount: 2 },
       { title: "two", status: "failed", importedCount: 1, skippedCount: 1 },
     ]);
-    expect(render().selected.map((project) => project.title)).toEqual(["two"]);
+    expect((await render()).selected.map((project) => project.title)).toEqual(["two"]);
   });
   it("marks a rejected command as failed and continues the remaining projects", async () => {
     mocks.importThreads.mockRejectedValueOnce(new Error("Connection lost"));
-    expect((await render().run()).success).toBe(false);
-    expect(render().progress?.map((row) => row.status)).toEqual(["failed", "complete"]);
-    expect(render().selected.map((project) => project.title)).toEqual(["one"]);
+    expect((await run()).success).toBe(false);
+    expect((await render()).progress?.map((row) => row.status)).toEqual(["failed", "complete"]);
+    expect((await render()).selected.map((project) => project.title)).toEqual(["one"]);
   });
 });
