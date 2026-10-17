@@ -215,6 +215,8 @@ export const ServerProviderHistoryRetention = Schema.Struct({
   status: Schema.Literals(["configured", "default"]),
   days: PositiveInt,
   settingsPath: TrimmedNonEmptyString,
+  // 1-based line of the configured key, so editors can open the file there.
+  line: Schema.optional(PositiveInt),
 });
 export type ServerProviderHistoryRetention = typeof ServerProviderHistoryRetention.Type;
 

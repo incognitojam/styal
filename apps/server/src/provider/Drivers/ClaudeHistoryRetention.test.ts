@@ -48,11 +48,37 @@ it.layer(NodeServices.layer)("readClaudeHistoryRetention", (it) => {
             status: "configured",
             days,
             settingsPath,
+            line: 3,
           });
           assert.strictEqual(yield* fs.readFileString(settingsPath), contents);
         }
         yield* fs.remove(settingsPath);
         assert.strictEqual((yield* readClaudeHistoryRetention(homePath)).status, "default");
+      }),
+  );
+
+  it.effect(
+    "locates the top-level key past comments, strings, nested objects, and duplicates",
+    () =>
+      Effect.gen(function* () {
+        const { fs, homePath, settingsPath } = yield* fixture;
+        const contents = [
+          "{",
+          '  // "cleanupPeriodDays": 1',
+          '  /* "cleanupPeriodDays": 2 */',
+          '  "note": "\\"cleanupPeriodDays\\": 3",',
+          '  "cleanupPeriodDays": 5,',
+          '  "env": { "cleanupPeriodDays": 4 },',
+          '  "cleanupPeriodDays": 14',
+          "}",
+        ].join("\n");
+        yield* fs.writeFileString(settingsPath, contents);
+        assert.deepStrictEqual(yield* readClaudeHistoryRetention(homePath), {
+          status: "configured",
+          days: 14,
+          settingsPath,
+          line: 7,
+        });
       }),
   );
 

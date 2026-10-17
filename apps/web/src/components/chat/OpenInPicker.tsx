@@ -213,6 +213,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   keybindings,
   availableEditors,
   openInCwd,
+  openInLine,
   presentation = "toolbar",
   compact = false,
   enableShortcut = true,
@@ -222,6 +223,8 @@ export const OpenInPicker = memo(function OpenInPicker({
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
+  /** Line to open `openInCwd` at. Remote editor links open the file without it. */
+  openInLine?: number | undefined;
   presentation?: "toolbar" | "menu";
   compact?: boolean;
   enableShortcut?: boolean;
@@ -283,7 +286,8 @@ export const OpenInPicker = memo(function OpenInPicker({
       const result = openInEditorMutation({
         environmentId,
         input: {
-          cwd: openInCwd,
+          // The server translates `path:line` into each editor's own arguments.
+          cwd: openInLine === undefined ? openInCwd : `${openInCwd}:${openInLine}`,
           editor,
         },
       });
@@ -295,6 +299,7 @@ export const OpenInPicker = memo(function OpenInPicker({
       markRemoteHintSeen,
       openInCwd,
       openInEditorMutation,
+      openInLine,
       preferredEditor,
       remote,
       setPreferredEditor,

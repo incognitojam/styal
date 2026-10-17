@@ -12,6 +12,22 @@ const decodeSettings = Schema.decodeUnknownEffect(
 );
 const decodeDays = Schema.decodeUnknownOption(PositiveInt);
 
+// Whole string literals (with a following colon when they are keys), comments, and braces.
+const JSONC_TOKEN_PATTERN = /("(?:[^"\\]|\\.)*")(\s*:)?|\/\/[^\n]*|\/\*[\s\S]*?\*\/|([{}])/g;
+
+/** 1-based line of the last top-level `cleanupPeriodDays` key, matching JSON's last-key-wins rule. */
+const findCleanupPeriodDaysLine = (contents: string): number | undefined => {
+  let depth = 0;
+  let offset: number | undefined;
+  for (const match of contents.matchAll(JSONC_TOKEN_PATTERN)) {
+    if (match[3] !== undefined) depth += match[3] === "{" ? 1 : -1;
+    else if (depth === 1 && match[1] === '"cleanupPeriodDays"' && match[2] !== undefined) {
+      offset = match.index;
+    }
+  }
+  return offset === undefined ? undefined : contents.slice(0, offset).split("\n").length;
+};
+
 /** Read only the user rule; project, managed, and session overrides are not resolved here. */
 export const readClaudeHistoryRetention = Effect.fn("readClaudeHistoryRetention")(function* (
   configDir: string,
@@ -27,6 +43,11 @@ export const readClaudeHistoryRetention = Effect.fn("readClaudeHistoryRetention"
   if (Option.isNone(settings)) return defaultRetention;
   const days = decodeDays(settings.value.cleanupPeriodDays);
   return Option.isSome(days)
-    ? { status: "configured", days: days.value, settingsPath }
+    ? {
+        status: "configured",
+        days: days.value,
+        settingsPath,
+        line: findCleanupPeriodDaysLine(contents.value),
+      }
     : defaultRetention;
 });

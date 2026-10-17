@@ -61,7 +61,11 @@ export function ProviderHistorySettings({
         description={description}
         status={
           retention ? (
-            <SettingsFileActions environmentId={environmentId} path={retention.settingsPath} />
+            <SettingsFileActions
+              environmentId={environmentId}
+              path={retention.settingsPath}
+              line={retention.line}
+            />
           ) : null
         }
         control={
@@ -87,9 +91,11 @@ export function ProviderHistorySettings({
 function SettingsFileActions({
   environmentId: requestedEnvironmentId,
   path,
+  line,
 }: {
   readonly environmentId: EnvironmentId | undefined;
   readonly path: string;
+  readonly line: number | undefined;
 }) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentId = requestedEnvironmentId ?? primaryEnvironmentId;
@@ -111,6 +117,7 @@ function SettingsFileActions({
           keybindings={keybindings}
           availableEditors={availableEditors}
           openInCwd={path}
+          openInLine={line}
           compact
           enableShortcut={false}
         />
