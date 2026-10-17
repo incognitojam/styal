@@ -10,6 +10,7 @@ import type { EnvironmentId, ServerInstallation } from "@t3tools/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
   isAtomCommandInterrupted,
+  settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { CircleArrowUpIcon } from "lucide-react";
@@ -154,31 +155,16 @@ export function useServerUpdates() {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
     if (!canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))))
       return { status: "skipped" };
-    try {
-      const result = await updateServer({
-        environmentId,
-        input: {
-          targetVersion,
-          ...(continuesRunningThreads(target) ? { continueRunningThreads: true } : {}),
-        },
-      });
-      if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) return { status: "skipped" };
-        throw squashAtomCommandFailure(result);
-      }
-      if (!quiet) {
-        toastManager.add({
-          type: "success",
-          title: `${serverLabel} updated`,
-          description:
-            selfUpdate === "desktop-managed"
-              ? `Desktop app relaunched on ${result.value.targetVersion}.`
-              : `Reconnected on @styal/cli@${result.value.targetVersion}.`,
-        });
-      }
-      return { status: "updated" };
-    } catch (error) {
-      const message = updateFailureMessage(error);
+    const result = await updateServer({
+      environmentId,
+      input: {
+        targetVersion,
+        ...(continuesRunningThreads(target) ? { continueRunningThreads: true } : {}),
+      },
+    });
+    if (result._tag === "Failure") {
+      if (isAtomCommandInterrupted(result)) return { status: "skipped" };
+      const message = updateFailureMessage(squashAtomCommandFailure(result));
       if (!quiet) {
         toastManager.add({
           type: "error",
@@ -188,6 +174,17 @@ export function useServerUpdates() {
       }
       return { status: "failed", message };
     }
+    if (!quiet) {
+      toastManager.add({
+        type: "success",
+        title: `${serverLabel} updated`,
+        description:
+          selfUpdate === "desktop-managed"
+            ? `Desktop app relaunched on ${result.value.targetVersion}.`
+            : `Reconnected on @styal/cli@${result.value.targetVersion}.`,
+      });
+    }
+    return { status: "updated" };
   };
   return async (
     targets: ReadonlyArray<ServerUpdateTarget>,
@@ -217,7 +214,7 @@ export function useServerUpdates() {
     const unclaimed = targets.filter((target) => !claimed.includes(target));
     if (claimed.length === 0) return skipAll(unclaimed);
     for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
-    try {
+    const result = await settlePromise(async () => {
       if (!confirmed) {
         // The remote machines restart without asking anyone there, so work
         // started from any client counts.
@@ -236,9 +233,10 @@ export function useServerUpdates() {
         claimed.map(async (target) => settle(target, await updateOne(target, quiet))),
       );
       return [...skipAll(unclaimed), ...updated];
-    } finally {
-      for (const target of claimed) pendingUpdateEnvironmentIds.delete(target.environmentId);
-    }
+    });
+    for (const target of claimed) pendingUpdateEnvironmentIds.delete(target.environmentId);
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    return result.value;
   };
 }
 
@@ -259,12 +257,9 @@ export function ServerUpdatesAction({
     if (pending.current) return;
     pending.current = true;
     setIsPending(true);
-    try {
-      await update(eligible);
-    } finally {
-      pending.current = false;
-      setIsPending(false);
-    }
+    await settlePromise(() => update(eligible));
+    pending.current = false;
+    setIsPending(false);
   };
   return (
     <Button
@@ -551,30 +546,26 @@ export function OutdatedServerUpdateAction({
   const handleUpdate = async () => {
     if (pendingUpdateEnvironmentIds.has(environmentId)) return;
     pendingUpdateEnvironmentIds.add(environmentId);
-    try {
-      const result = await update({
-        environmentId,
-        input: { targetVersion },
-        ...(fromVersion === undefined ? {} : { fromVersion }),
-      });
-      if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) return;
-        throw squashAtomCommandFailure(result);
-      }
-      toastManager.add({
-        type: "success",
-        title: `${serverLabel} updated`,
-        description: `Reconnected on @styal/cli@${result.value.targetVersion}.`,
-      });
-    } catch (error) {
+    const result = await update({
+      environmentId,
+      input: { targetVersion },
+      ...(fromVersion === undefined ? {} : { fromVersion }),
+    });
+    pendingUpdateEnvironmentIds.delete(environmentId);
+    if (result._tag === "Failure") {
+      if (isAtomCommandInterrupted(result)) return;
       toastManager.add({
         type: "error",
         title: `${serverLabel} update failed`,
-        description: updateFailureMessage(error),
+        description: updateFailureMessage(squashAtomCommandFailure(result)),
       });
-    } finally {
-      pendingUpdateEnvironmentIds.delete(environmentId);
+      return;
     }
+    toastManager.add({
+      type: "success",
+      title: `${serverLabel} updated`,
+      description: `Reconnected on @styal/cli@${result.value.targetVersion}.`,
+    });
   };
   return (
     <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
