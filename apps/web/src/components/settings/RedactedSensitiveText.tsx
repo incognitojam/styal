@@ -1,5 +1,5 @@
 import { redactedPlaceholder } from "@t3tools/shared/redactedText";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -13,7 +13,7 @@ export function RedactedSensitiveText(props: {
 }) {
   const [revealed, setRevealed] = useState(false);
   const value = props.value?.trim();
-  const redacted = useMemo(() => (value ? redactedPlaceholder(value) : ""), [value]);
+  const redacted = value ? redactedPlaceholder(value) : "";
 
   if (!value) return null;
 
