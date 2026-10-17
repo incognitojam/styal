@@ -140,7 +140,7 @@ function ProjectOverviewContent(props: {
         </View>
       </SettingsSection>
 
-      <ProjectNoticesSection members={props.members} />
+      <ProjectNoticesSection members={props.members} environments={props.environments} />
 
       <SettingsSection title="Checkouts">
         {props.members.map((member, index) => {

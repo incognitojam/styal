@@ -9,9 +9,11 @@ import {
   type ProjectNoticeResolveResult,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
@@ -147,18 +149,32 @@ const make = Effect.gen(function* () {
     return { wasActive: row.expiresAt > (yield* nowIso) };
   });
 
+  /**
+   * The project's active notices: a snapshot, then a fresh list after every change to the
+   * project and whenever its next notice expires, so open clients drop expired notices.
+   */
   const subscribe = (projectId: ProjectId) =>
     Stream.unwrap(
       Effect.gen(function* () {
         // Subscribe before the snapshot so a change between the two is not lost.
         const subscription = yield* PubSub.subscribe(changes);
-        return Stream.concat(
-          Stream.fromEffect(list(projectId)),
-          Stream.fromSubscription(subscription).pipe(
-            Stream.filter((changed) => changed === projectId),
-            Stream.mapEffect(() => list(projectId)),
-          ),
+        const nextChange: Effect.Effect<void> = PubSub.take(subscription).pipe(
+          Effect.flatMap((changed) => (changed === projectId ? Effect.void : nextChange)),
         );
+        const untilNextExpiry = (current: ProjectNoticeListResult) =>
+          Effect.gen(function* () {
+            if (current.notices.length === 0) return yield* Effect.never;
+            const now = yield* Clock.currentTimeMillis;
+            const next = Math.min(...current.notices.map((notice) => Date.parse(notice.expiresAt)));
+            yield* Effect.sleep(Duration.millis(Math.max(0, next - now)));
+          });
+        let current = yield* list(projectId);
+        const refreshed = Effect.gen(function* () {
+          yield* Effect.race(nextChange, untilNextExpiry(current));
+          current = yield* list(projectId);
+          return current;
+        });
+        return Stream.concat(Stream.make(current), Stream.fromEffectRepeat(refreshed));
       }),
     );
 

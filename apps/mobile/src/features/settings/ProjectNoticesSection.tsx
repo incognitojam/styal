@@ -11,9 +11,15 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsSection } from "./components/SettingsSection";
+import type { SettingsTarget } from "./settings-environment-filter";
 
 /** Notices agents posted for this project's threads, with a way to resolve each one. */
-export function ProjectNoticesSection(props: { readonly members: readonly EnvironmentProject[] }) {
+export function ProjectNoticesSection(props: {
+  readonly members: readonly EnvironmentProject[];
+  readonly environments: readonly SettingsTarget[];
+}) {
+  // Name the environment only when the checkouts span more than one.
+  const spansEnvironments = new Set(props.members.map((member) => member.environmentId)).size > 1;
   return (
     <SettingsSection title="Notices">
       <Text className="p-4 text-sm leading-normal text-foreground-muted">
@@ -22,19 +28,36 @@ export function ProjectNoticesSection(props: { readonly members: readonly Enviro
         on their own.
       </Text>
       {props.members.map((member) => (
-        <MemberNotices key={`${member.environmentId}:${member.id}`} member={member} />
+        <MemberNotices
+          key={`${member.environmentId}:${member.id}`}
+          member={member}
+          environmentLabel={
+            spansEnvironments
+              ? (props.environments.find((entry) => entry.environmentId === member.environmentId)
+                  ?.label ?? "Environment")
+              : null
+          }
+        />
       ))}
     </SettingsSection>
   );
 }
 
-function MemberNotices(props: { readonly member: EnvironmentProject }) {
+function MemberNotices(props: {
+  readonly member: EnvironmentProject;
+  readonly environmentLabel: string | null;
+}) {
   const { environmentId, id: projectId } = props.member;
   const query = useEnvironmentQuery(
     serverEnvironment.projectNoticesLive({ environmentId, input: { projectId } }),
   );
   return (query.data?.notices ?? []).map((notice) => (
-    <NoticeRow key={notice.id} notice={notice} member={props.member} />
+    <NoticeRow
+      key={notice.id}
+      notice={notice}
+      member={props.member}
+      environmentLabel={props.environmentLabel}
+    />
   ));
 }
 
@@ -42,7 +65,11 @@ function hoursUntil(iso: string): number {
   return Math.max(1, Math.ceil((Date.parse(iso) - Date.now()) / 3_600_000));
 }
 
-function NoticeRow(props: { readonly notice: ProjectNotice; readonly member: EnvironmentProject }) {
+function NoticeRow(props: {
+  readonly notice: ProjectNotice;
+  readonly member: EnvironmentProject;
+  readonly environmentLabel: string | null;
+}) {
   const { notice, member } = props;
   const resolveNotice = useAtomCommand(serverEnvironment.resolveProjectNotice, {
     label: "project notice resolve",
@@ -55,6 +82,7 @@ function NoticeRow(props: { readonly notice: ProjectNotice; readonly member: Env
       : scopeThreadRef(member.environmentId, notice.authorThreadId),
   );
   const meta = [
+    props.environmentLabel,
     `Posted ${relativeTime(notice.createdAt)} ago`,
     author ? `by ${author.title}` : null,
     `expires in ${hoursUntil(notice.expiresAt)}h`,

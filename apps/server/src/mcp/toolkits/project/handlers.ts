@@ -36,9 +36,15 @@ function noticeFailure(error: { readonly message: string; readonly cause?: unkno
     : unavailable();
 }
 
-/** The project a notice tool acts on: the one passed, which must exist, else the caller's. */
-const noticeProject = Effect.fn("mcp.noticeProject")(function* (projectId: ProjectId | undefined) {
-  const context = yield* readCaller();
+/**
+ * The project a notice tool acts on: the one passed, which must exist, else the caller's.
+ * Posting needs the calling thread's live run, like other mutations; listing does not.
+ */
+const noticeProject = Effect.fn("mcp.noticeProject")(function* (
+  projectId: ProjectId | undefined,
+  access: "read" | "mutate",
+) {
+  const context = yield* access === "mutate" ? readMutationCaller() : readCaller();
   const resolved = yield* resolveProjectId(context, projectId);
   if (projectId !== undefined) {
     const project = yield* Project.ProjectService.pipe(
@@ -261,7 +267,7 @@ export const layer = ProjectToolkit.toLayer({
     }),
   t3_notice_post: (input) =>
     Effect.gen(function* () {
-      const { projectId, authorThreadId } = yield* noticeProject(input.projectId);
+      const { projectId, authorThreadId } = yield* noticeProject(input.projectId, "mutate");
       const notices = yield* ProjectNotices.ProjectNotices;
       return yield* notices
         .post({
@@ -275,13 +281,13 @@ export const layer = ProjectToolkit.toLayer({
     }),
   t3_notice_list: (input) =>
     Effect.gen(function* () {
-      const { projectId } = yield* noticeProject(input.projectId);
+      const { projectId } = yield* noticeProject(input.projectId, "read");
       const notices = yield* ProjectNotices.ProjectNotices;
       return yield* notices.list(projectId).pipe(Effect.mapError(noticeFailure));
     }),
   t3_notice_resolve: (input) =>
     Effect.gen(function* () {
-      yield* readCaller();
+      yield* readMutationCaller();
       const notices = yield* ProjectNotices.ProjectNotices;
       return yield* notices.resolve(input.noticeId).pipe(Effect.mapError(noticeFailure));
     }),

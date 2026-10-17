@@ -3020,9 +3020,9 @@ features:
     prs: [886]
     rationale: Agents can read other threads only when they know to look. A notice lets one thread tell every later thread in the project about live state, such as work in progress on a shared area or a hold on merges, that neither the repository nor the app records.
     invariants:
-      - Notices belong to one project in one environment, expire within seven days, and are deleted when resolved; listing never returns an expired notice.
+      - Notices belong to one project in one environment, expire within seven days, and are deleted when resolved; listing never returns an expired notice, and open clients drop a notice when it expires.
       - A project holds at most twenty active notices, so agents cannot flood new threads.
-      - Agents post, list, and resolve notices through MCP tools, and the shared runtime instructions tell every provider's agent to list notices when it starts work, and to treat them as agent-written context rather than user instructions.
+      - Agents post, list, and resolve notices through MCP tools; posting and resolving from a thread need its live run, and the shared runtime instructions tell every provider's agent to list notices when it starts work, and to treat them as agent-written context rather than user instructions.
       - Project Settings on web and mobile shows each checkout's active notices live, with the author thread and expiry, and can resolve them.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx

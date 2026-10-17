@@ -368,7 +368,7 @@ it.effect("posts notices to the calling thread's project under its name", () => 
   const callerId = ThreadId.make("notice-caller");
   const projectId = ProjectId.make("notice-project");
   const providerInstanceId = ProviderInstanceId.make("codex");
-  const caller = {
+  let caller = {
     id: callerId,
     projectId,
     providerInstanceId,
@@ -422,5 +422,12 @@ it.effect("posts notices to the calling thread's project under its name", () => 
       title: "Nowhere",
     });
     expect(elsewhere.at(-1)?.result).toMatchObject({ code: "invalid_request" });
+
+    // Once the calling thread's run ends it can still read notices but no longer post them.
+    caller = { ...caller, activeRunId: null };
+    const afterRun = yield* call("t3_notice_post", { title: "Too late" });
+    expect(afterRun.at(-1)?.result).toMatchObject({ code: "parent_not_active" });
+    const listedAfterRun = yield* call("t3_notice_list", {});
+    expect(listedAfterRun.at(-1)?.result).toMatchObject({ notices: [{}] });
   }).pipe(Effect.provide(ProjectHandlersLive.pipe(Layer.provideMerge(dependencies))));
 });

@@ -147,4 +147,32 @@ layer("ProjectNotices", (it) => {
       assert.deepStrictEqual(yield* Queue.take(lists), []);
     }),
   );
+  it.effect("refreshes subscribers when a notice expires without another change", () =>
+    Effect.gen(function* () {
+      yield* runAllMigrations();
+      const notices = yield* ProjectNotices.ProjectNotices;
+      const projectId = ProjectId.make("notice-project-expiry");
+      yield* notices.post({
+        projectId,
+        title: "Short hold",
+        body: "",
+        authorThreadId: null,
+        expiresInHours: 1,
+      });
+      const lists = yield* Queue.unbounded<ReadonlyArray<string>>();
+      yield* notices.subscribe(projectId).pipe(
+        Stream.runForEach((result) =>
+          Queue.offer(
+            lists,
+            result.notices.map((notice) => notice.title),
+          ),
+        ),
+        Effect.forkChild,
+      );
+      assert.deepStrictEqual(yield* Queue.take(lists), ["Short hold"]);
+
+      yield* TestClock.adjust("1 hour");
+      assert.deepStrictEqual(yield* Queue.take(lists), []);
+    }),
+  );
 });
