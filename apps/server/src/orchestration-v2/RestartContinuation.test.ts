@@ -16,7 +16,12 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ServerSettings from "../serverSettings.ts";
-import { restartContinuationRun, continueRestartedRun } from "./RestartContinuation.ts";
+import {
+  CONTINUE_PROMPT,
+  INTERRUPTED_TURN_NOTE,
+  restartContinuationRun,
+  continueRestartedRun,
+} from "./RestartContinuation.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -32,9 +37,7 @@ const driver = ProviderDriverKind.make("codex");
 const providerThreadId = ProviderThreadId.make("provider-thread:restart");
 const sessionId = ProviderSessionId.make("session:restart");
 const attemptId = RunAttemptId.make("attempt:restart");
-// A turn cut mid-way learns that the restart, not its own command, killed what was running.
-const INTERRUPTED_CONTINUATION =
-  "Note: the T3 server restarted and interrupted this turn. Any command or tool call that was still running was terminated by the restart, so its failure (for example exit code 137) does not reflect the command itself.\n\nContinue where you left off.";
+const INTERRUPTED_CONTINUATION = `${INTERRUPTED_TURN_NOTE}\n\n${CONTINUE_PROMPT}`;
 
 function makeProjection() {
   return {

@@ -53,6 +53,7 @@ import * as EventStore from "./EventStore.ts";
 import * as IdAllocator from "./IdAllocator.ts";
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { CONTINUE_PROMPT, INTERRUPTED_TURN_NOTE } from "./RestartContinuation.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
@@ -2855,8 +2856,7 @@ it.layer(TestLayer)("orchestration V2 foundation persistence", (it) => {
         assert.equal(continuation.type, "message.dispatch");
         if (continuation.type === "message.dispatch") {
           assert.equal(continuation.restartContinuationOfRunId, runId);
-          assert.include(continuation.text, "the T3 server restarted and interrupted this turn");
-          assert.isTrue(continuation.text.endsWith("Continue where you left off."));
+          assert.equal(continuation.text, `${INTERRUPTED_TURN_NOTE}\n\n${CONTINUE_PROMPT}`);
         }
       }),
   );
