@@ -7,6 +7,7 @@
  *
  *   intake-run.ts apply (--count <n> | --through <upstream-sha> | --commits <sha,...>) [--branch <name>]
  *   intake-run.ts continue [--note <text>] [--feature <id,id>]
+ *   intake-run.ts auto --branch <name> [--max <n>] [--push] [--no-rerere]
  *   intake-run.ts fix-trailers [--base origin/main]
  *   intake-run.ts fix-references [--base origin/main]
  *   intake-run.ts verify [--base origin/main]
@@ -1002,6 +1003,225 @@ function applyEntries(
 }
 
 // ---------------------------------------------------------------------------------------------
+// Automatic batches
+
+const DEFAULT_AUTO_MAX = 30;
+
+const CODE_FILE = /\.(ts|tsx|mts|mjs|js)$/u;
+// The fork keeps upstream's product name in comments and test titles; strings a person reads are
+// what it renames.
+const COMMENT_OR_TEST_TITLE = /^\s*(\/\/|\/\*|\*|(it|test|describe)(\.\w+)?\()/u;
+
+/**
+ * Whether an added line names upstream's product where the fork renames it: code outside comments
+ * and test titles, and the user guides.
+ */
+export function namesUpstreamProduct(path: string, line: string): boolean {
+  if (!UPSTREAM_PRODUCT.test(line)) return false;
+  if (CODE_FILE.test(path)) return !COMMENT_OR_TEST_TITLE.test(line);
+  return path.startsWith("docs/user/");
+}
+
+/** Added lines in the staged pick that name upstream's product where the fork renames it. */
+function addedUpstreamNames(cwd: string): ReadonlyArray<string> {
+  const diff = git(cwd, ["diff", "--cached", "-U0", "HEAD"]);
+  const findings: Array<string> = [];
+  let path = "";
+  for (const line of diff.split("\n")) {
+    const header = /^\+\+\+ b\/(.+)$/u.exec(line);
+    if (header) {
+      path = header[1]!;
+      continue;
+    }
+    if (line.startsWith("+") && namesUpstreamProduct(path, line.slice(1))) {
+      findings.push(`${path}: ${line.slice(1).trim().slice(0, 160)}`);
+    }
+  }
+  return findings;
+}
+
+/**
+ * Why `auto` hands a pick to a person instead of committing it: anything `apply` would stop on
+ * or ask to review, plus upstream's product name in added strings or user guides and a committed pick that
+ * differs from upstream without a note explaining why.
+ */
+export function autoStopReasons(input: {
+  readonly outcome: PickOutcome;
+  readonly upstreamNames: ReadonlyArray<string>;
+  readonly differsWithoutNote: boolean;
+}): ReadonlyArray<string> {
+  const { outcome } = input;
+  const reasons: Array<string> = [];
+  for (const file of outcome.unresolved) reasons.push(`unresolved conflict: ${file.path}`);
+  const combined = outcome.adaptations.filter((adaptation) => adaptation.kind === "additions");
+  for (const path of new Set(combined.map((adaptation) => adaptation.path))) {
+    reasons.push(`combined lines to review: ${path}`);
+  }
+  if (
+    outcome.lockfile &&
+    (outcome.lockfile.missing.length > 0 || outcome.lockfile.stale.length > 0)
+  ) {
+    reasons.push("lockfile differs from upstream's");
+  }
+  for (const finding of new Set([...outcome.identityReview, ...input.upstreamNames])) {
+    reasons.push(`upstream naming: ${finding}`);
+  }
+  if (input.differsWithoutNote) reasons.push("differs from upstream without a fork note");
+  return reasons;
+}
+
+/**
+ * How many of `picked` a batch keeps when the next commit cannot join it: commits of the same
+ * pull request as the next one leave with it, so a batch never ends inside a pull request.
+ */
+export function batchLength(
+  picked: ReadonlyArray<{ readonly pr: number | null }>,
+  next: { readonly pr: number | null } | undefined,
+): number {
+  let length = picked.length;
+  if (next?.pr == null) return length;
+  while (length > 0 && picked[length - 1]!.pr === next.pr) length -= 1;
+  return length;
+}
+
+function sleep(milliseconds: number) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+/** Waits for the Fork CI runs on `sha`, returning their conclusion, or null after two hours. */
+const forkRepository = () => process.env.GH_REPO ?? "incognitojam/styal";
+
+function waitForForkCi(cwd: string, sha: string): string | null {
+  const repository = forkRepository();
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    sleep(60_000);
+    const result = run(cwd, "gh", [
+      "api",
+      `repos/${repository}/actions/runs?head_sha=${sha}`,
+      "--jq",
+      '.workflow_runs[] | select(.name == "Fork CI") | "\\(.status) \\(.conclusion)"',
+    ]);
+    // A SHA pushed to two branches gets a run for each; wait for all of them.
+    const runs = lines(result.stdout).map((line) => line.split(" "));
+    if (runs.length > 0 && runs.every(([status]) => status === "completed")) {
+      return runs.find(([, conclusion]) => conclusion !== "success")?.[1] ?? "success";
+    }
+  }
+  return null;
+}
+
+/**
+ * Applies the queue until a pick needs a person or `max` commits are in, then finishes the batch:
+ * fixes references and trailers, verifies, and with `push` pushes and waits for Fork CI. A pick
+ * that needs a person ends the batch before it; when it is the first, it stays staged for
+ * `continue`, as `apply` leaves a stop.
+ */
+function autoBatch(
+  cwd: string,
+  options: {
+    readonly branch: string;
+    readonly max: number;
+    readonly push: boolean;
+    readonly rerere: boolean;
+  },
+): boolean {
+  requireCleanIndex(cwd);
+  git(cwd, ["switch", "-q", "-c", options.branch, "--no-track", "origin/main"]);
+  const queue = queueEntries(cwd, { count: options.max + 20 });
+  const picked: Array<QueueEntry> = [];
+  let blocker: { entry: QueueEntry; reasons: ReadonlyArray<string> } | null = null;
+  for (let index = 0; index < queue.length; index += 1) {
+    const entry = queue[index]!;
+    // Past the cap, keep going only to finish the pull request in progress.
+    if (picked.length >= options.max && (entry.pr === null || entry.pr !== picked.at(-1)?.pr)) {
+      break;
+    }
+    const outcome = pickUpstreamCommit(cwd, entry.sha, { rerere: options.rerere });
+    const upstreamNames = outcome.status === "stopped" ? [] : addedUpstreamNames(cwd);
+    let reasons = autoStopReasons({ outcome, upstreamNames, differsWithoutNote: false });
+    if (reasons.length === 0) {
+      commitPick(cwd, entry, outcome);
+      const message = git(cwd, ["show", "-s", "--format=%B", "HEAD"]);
+      const differsWithoutNote =
+        commitMatchesUpstream(cwd, "HEAD") === false && forkAdaptationNote(message) === null;
+      reasons = autoStopReasons({ outcome, upstreamNames, differsWithoutNote });
+      if (reasons.length > 0) git(cwd, ["reset", "-q", "--soft", "HEAD~1"]);
+    }
+    process.stdout.write(`${describeOutcome(entry, outcome)}\n`);
+    if (reasons.length === 0) {
+      picked.push(entry);
+      continue;
+    }
+    blocker = { entry, reasons };
+    const keep = batchLength(picked, entry);
+    if (keep === 0) {
+      // Nothing can ship before this pick, so leave it for review as `apply` does, with the rest
+      // of its pull request queued behind it.
+      const rest = queue.slice(index + 1);
+      const samePr = entry.pr === null ? 0 : rest.findIndex((next) => next.pr !== entry.pr);
+      saveState(cwd, {
+        remaining: rest.slice(0, samePr === -1 ? rest.length : samePr),
+        current: { entry, outcome },
+      });
+      process.stdout.write(
+        `\nNeeds a person before it can be committed:\n${reasons.map((reason) => `  ${reason}`).join("\n")}\n\nReview it, stage any changes, then run \`intake-run.ts continue\` with --note and --feature as needed.\n`,
+      );
+      return false;
+    }
+    run(cwd, "git", ["reset", "-q", "--hard", "HEAD"]);
+    run(cwd, "git", ["cherry-pick", "--quit"]);
+    if (keep < picked.length) {
+      git(cwd, ["reset", "-q", "--hard", `HEAD~${picked.length - keep}`]);
+      picked.length = keep;
+    }
+    break;
+  }
+  saveState(cwd, null);
+  if (picked.length === 0) {
+    process.stdout.write("\nNo pending upstream commits.\n");
+    return true;
+  }
+  process.stdout.write(
+    `\nBatch: ${picked.length} commit${picked.length === 1 ? "" : "s"}, through ${picked.at(-1)!.sha.slice(0, 10)}.\n`,
+  );
+  if (blocker) {
+    process.stdout.write(
+      `Stopped before ${blocker.entry.sha.slice(0, 10)} ${blocker.entry.title}:\n${blocker.reasons.map((reason) => `  ${reason}`).join("\n")}\n`,
+    );
+  }
+  const unresolvedReferences = fixReferences(cwd, "origin/main");
+  if (unresolvedReferences.length > 0) {
+    process.stdout.write(`\nReferences not fixed:\n${unresolvedReferences.join("\n")}\n`);
+    return false;
+  }
+  const needsNote = fixTrailers(cwd, "origin/main").filter((fix) => fix.action === "needs-note");
+  if (needsNote.length > 0) {
+    process.stdout.write(
+      `\nDiffers from upstream without a note:\n${needsNote.map((fix) => `  ${fix.subject}`).join("\n")}\n`,
+    );
+    return false;
+  }
+  process.stdout.write("\n");
+  if (!verify(cwd, "origin/main")) return false;
+  if (!options.push) {
+    process.stdout.write(`\nVerified. Push ${options.branch} and wait for Fork CI.\n`);
+    return true;
+  }
+  git(cwd, ["push", "-q", "-u", "origin", options.branch]);
+  const sha = git(cwd, ["rev-parse", "HEAD"]).trim();
+  process.stdout.write(`\nPushed ${sha}; waiting for Fork CI.\n`);
+  const conclusion = waitForForkCi(cwd, sha);
+  if (conclusion !== "success") {
+    process.stdout.write(`Fork CI: ${conclusion ?? "still running after two hours"}.\n`);
+    return false;
+  }
+  process.stdout.write(
+    `Fork CI passed. Promote with:\n\n  GH_REPO=${forkRepository()} gh workflow run promote-upstream-intake.yml -f candidate_branch=${options.branch} -f candidate_sha=${sha}\n`,
+  );
+  return true;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Replay
 
 export interface ReplayResult {
@@ -1621,6 +1841,21 @@ function main() {
       process.exitCode = done ? 0 : 2;
       return;
     }
+    case "auto": {
+      const branch = flag("--branch");
+      if (!branch) throw new Error("auto needs --branch.");
+      const max = Number(flag("--max") ?? DEFAULT_AUTO_MAX);
+      if (!Number.isInteger(max) || max < 1) throw new Error("--max must be a positive integer.");
+      process.exitCode = autoBatch(cwd, {
+        branch,
+        max,
+        push: process.argv.includes("--push"),
+        rerere: !process.argv.includes("--no-rerere"),
+      })
+        ? 0
+        : 2;
+      return;
+    }
     case "fix-trailers": {
       const fixes = fixTrailers(cwd, flag("--base") ?? "origin/main");
       for (const fix of fixes)
@@ -1675,7 +1910,7 @@ function main() {
     }
     default:
       process.stdout.write(
-        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | fix-trailers [--base <ref>] | verify [--base <ref>] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
+        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | fix-trailers [--base <ref>] | verify [--base <ref>] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
       );
       process.exitCode = command === undefined ? 0 : 1;
   }

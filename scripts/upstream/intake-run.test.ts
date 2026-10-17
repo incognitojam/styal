@@ -1,6 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  autoStopReasons,
+  batchLength,
+  namesUpstreamProduct,
   draftAdaptationNote,
   intakeCommitMessage,
   lockfilePackages,
@@ -205,5 +208,94 @@ describe("mergedModuleMoves", () => {
         ],
       ],
     );
+  });
+});
+
+describe("autoStopReasons", () => {
+  const clean = {
+    upstreamSha: "a".repeat(40),
+    status: "clean" as const,
+    adaptations: [],
+    unresolved: [],
+    identityReview: [],
+  };
+
+  it("commits a clean pick and one whose resolutions explain themselves", () => {
+    assert.deepStrictEqual(
+      autoStopReasons({ outcome: clean, upstreamNames: [], differsWithoutNote: false }),
+      [],
+    );
+    assert.deepStrictEqual(
+      autoStopReasons({
+        outcome: {
+          ...clean,
+          status: "resolved",
+          adaptations: [{ kind: "identity", path: "docs/user/remote-access.md" }],
+          lockfile: { missing: [], stale: [], pinned: [] },
+        },
+        upstreamNames: [],
+        differsWithoutNote: false,
+      }),
+      [],
+    );
+  });
+
+  it("hands over conflicts, combined lines, lockfile drift, upstream naming, and unexplained differences", () => {
+    assert.deepStrictEqual(
+      autoStopReasons({
+        outcome: {
+          ...clean,
+          status: "stopped",
+          adaptations: [{ kind: "additions", path: "a.ts" }],
+          unresolved: [{ path: "b.ts", hunks: 2 }],
+          identityReview: ["c.ts: T3 Code"],
+          lockfile: { missing: ["ws@8.22.0"], stale: [], pinned: [] },
+        },
+        upstreamNames: ["c.ts: T3 Code", "d.test.ts: T3 Connect"],
+        differsWithoutNote: true,
+      }),
+      [
+        "unresolved conflict: b.ts",
+        "combined lines to review: a.ts",
+        "lockfile differs from upstream's",
+        "upstream naming: c.ts: T3 Code",
+        "upstream naming: d.test.ts: T3 Connect",
+        "differs from upstream without a fork note",
+      ],
+    );
+  });
+});
+
+describe("batchLength", () => {
+  it("ends a batch before the pull request the next commit belongs to", () => {
+    const picked = [{ pr: 1 }, { pr: 2 }, { pr: 3 }, { pr: 3 }];
+    assert.strictEqual(batchLength(picked, { pr: 3 }), 2);
+    assert.strictEqual(batchLength(picked, { pr: 4 }), 4);
+    assert.strictEqual(batchLength(picked, { pr: null }), 4);
+    assert.strictEqual(batchLength(picked, undefined), 4);
+    assert.strictEqual(batchLength([{ pr: 5 }], { pr: 5 }), 0);
+  });
+});
+
+describe("namesUpstreamProduct", () => {
+  it("flags strings and user guides, not comments, test titles, or other docs", () => {
+    assert.isTrue(
+      namesUpstreamProduct(
+        "packages/client-runtime/src/relay/errorPresentation.ts",
+        '  "Start T3 Code on that computer.";',
+      ),
+    );
+    assert.isTrue(namesUpstreamProduct("docs/user/remote-access.md", "T3 Connect also removes"));
+    assert.isFalse(
+      namesUpstreamProduct("apps/server/src/cloud/a.ts", " * Traces a T3 Connect request"),
+    );
+    assert.isFalse(namesUpstreamProduct("apps/server/src/cloud/a.ts", "  // a T3 Connect session"));
+    assert.isFalse(
+      namesUpstreamProduct(
+        "apps/server/src/a.test.ts",
+        '  it.effect("exports T3 Connect requests", () =>',
+      ),
+    );
+    assert.isFalse(namesUpstreamProduct("docs/internals/remote.md", "T3 Connect tunnels"));
   });
 });
