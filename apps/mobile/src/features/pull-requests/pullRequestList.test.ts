@@ -14,8 +14,10 @@ import {
   mergeEnvironmentPullRequestPages,
   nextPullRequestListInput,
   pullRequestListProjectScope,
+  PR_LIST_PAGE_SIZE,
   pullRequestListFacets,
   pullRequestListHead,
+  pullRequestListInput,
   pullRequestListReviewStatus,
   pullRequestLabelColor,
   scopedPullRequestListKey,
@@ -305,6 +307,11 @@ describe("mobile PR scan and filters", () => {
         new Set(),
       ).map((row) => row.number),
     ).toEqual([1]);
+    expect(
+      filterPullRequestList(rows, DEFAULT_PR_LIST_CONTROLS, viewers, "author:@me", new Set()).map(
+        (row) => row.number,
+      ),
+    ).toEqual([1]);
   });
   it("combines label groups, exclusions, draft and review filters", () => {
     const rows = [
@@ -329,6 +336,54 @@ describe("mobile PR scan and filters", () => {
         (row) => row.number,
       ),
     ).toEqual([1]);
+  });
+  it("reads a typed draft qualifier as a filter and searches only the text left over", () => {
+    expect(pullRequestListInput(DEFAULT_PR_LIST_CONTROLS, "draft:false fix")).toEqual({
+      state: "open",
+      involvement: "all",
+      filters: { draft: "hide" },
+      limit: PR_LIST_PAGE_SIZE,
+      query: "fix",
+    });
+    const rows = [
+      entry(1, { title: "Fix parser" }),
+      entry(2, { title: "Fix drafts", isDraft: true }),
+      entry(3),
+    ];
+    expect(
+      filterPullRequestList(
+        rows,
+        DEFAULT_PR_LIST_CONTROLS,
+        {},
+        "draft:false fix",
+        new Set(["github.com"]),
+      ).map((row) => row.number),
+    ).toEqual([1]);
+  });
+  it("combines typed qualifiers with PR-number search in a selected project", () => {
+    const controls = { ...DEFAULT_PR_LIST_CONTROLS, projectId: "project" };
+    const query = "draft:false label:bug #12";
+    expect(pullRequestListInput(controls, query)).toEqual({
+      state: "open",
+      involvement: "all",
+      projectId: "project",
+      filters: { draft: "hide", labels: [["bug"]] },
+      limit: PR_LIST_PAGE_SIZE,
+      query: "#12",
+    });
+    const labels = [{ name: "bug", color: null }];
+    const rows = [
+      entry(12, { labels }),
+      entry(13, { labels }),
+      entry(12, { labels, repository: "org/drafts", isDraft: true }),
+      entry(12, { labels: [], repository: "org/features" }),
+      entry(12, { labels, repository: "org/other", projectId: ProjectId.make("other") }),
+    ];
+    expect(
+      filterPullRequestList(rows, controls, {}, query, new Set(["github.com"])).map(
+        (row) => row.repository,
+      ),
+    ).toEqual(["org/repo"]);
   });
   it("does not label unsupported review summaries as reviewed or match text locally on host-search results", () => {
     expect(

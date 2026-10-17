@@ -1,8 +1,11 @@
+import {
+  applyPullRequestDraftFilterChange,
+  parsePullRequestQuery,
+} from "@t3tools/client-runtime/pull-request-query";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useNavigation } from "@react-navigation/native";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ProjectId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
   Keyboard,
@@ -31,10 +34,10 @@ import {
   filterPullRequestList,
   pullRequestListFacets,
   pullRequestListProjectScope,
+  pullRequestListInput,
   pullRequestListRowsAreEqual,
   scopedPullRequestListKey as pullRequestKey,
   type EnvironmentPullRequestListEntry,
-  PR_LIST_PAGE_SIZE,
   withoutScratchProjectScope,
 } from "./pullRequestList";
 import { useDebouncedValue } from "../../state/queries";
@@ -80,6 +83,8 @@ export function PullRequestsScreen(
   );
   const debouncedQuery = useDebouncedValue(tab.query.trim(), 180);
   const query = tab.searchMode === "resting" ? "" : debouncedQuery;
+  const typedQuery = tab.searchMode === "resting" ? "" : tab.query;
+  const typedDraft = parsePullRequestQuery(typedQuery).filters.draft;
   const listControls = usePullRequestListControls();
   const selectedEnvironmentId = listControls.environmentId;
   const environmentId = environments.some((item) => item.environmentId === selectedEnvironmentId)
@@ -123,20 +128,13 @@ export function PullRequestsScreen(
         .flatMap((environment) => {
           // A chosen project is listed even when archived; otherwise archived projects are left out.
           const scope = controls.projectId
-            ? { projectId: ProjectId.make(controls.projectId) }
+            ? {}
             : pullRequestListProjectScope(allProjects, environment.environmentId);
           if (scope === null) return [];
           return [
             {
               environmentId: environment.environmentId,
-              input: {
-                state: controls.state,
-                involvement: controls.involvement,
-                filters: controls.filters,
-                limit: PR_LIST_PAGE_SIZE,
-                ...scope,
-                ...(query ? { query } : {}),
-              },
+              input: { ...pullRequestListInput(controls, query), ...scope },
             },
           ];
         }),
@@ -293,9 +291,20 @@ export function PullRequestsScreen(
               }))}
               environmentId={environmentId}
               onEnvironmentChange={listControls.setEnvironmentId}
-              value={controls}
+              value={
+                typedDraft
+                  ? { ...controls, filters: { ...controls.filters, draft: typedDraft } }
+                  : controls
+              }
               onChange={(next) => {
-                listControls.setControls(environmentId, next);
+                const update = applyPullRequestDraftFilterChange(
+                  typedQuery,
+                  controls.filters,
+                  next.filters,
+                );
+                listControls.setControls(environmentId, { ...next, filters: update.filters });
+                if (update.query !== typedQuery)
+                  workspace.dispatch({ type: "query", tab: "pullRequests", query: update.query });
                 void listRef.current?.scrollToOffset({
                   offset: Platform.OS === "ios" ? -insets.top : 0,
                   animated: false,
