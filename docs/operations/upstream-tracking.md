@@ -48,6 +48,19 @@ git switch -c intake/<batch> origin/main
 git cherry-pick -x <upstream-commit>
 ```
 
+`scripts/upstream/intake-run.ts` applies a selection in queue order and does the mechanical work, so review starts from what needs judgment:
+
+```bash
+node scripts/upstream/intake-run.ts apply --through <full-upstream-SHA> --branch intake/<batch>
+node scripts/upstream/intake-run.ts continue --note "<what differs and why>" --feature <ledger-id>
+node scripts/upstream/intake-run.ts fix-trailers
+node scripts/upstream/intake-run.ts verify
+```
+
+`apply` cherry-picks each commit with diff3 conflict markers and its provenance trailer. It resolves a hunk only when the fork's side is explained: the fork's text is upstream's base with styal renames, upstream's side only renames identifiers the fork's side also uses, or one or both sides only add lines around an unchanged base. It also regenerates and pins the lockfile and gives new service keys the fork's package name, and drafts the `Fork adaptation:` note and `Fork-Feature` trailer for those changes. A hunk that combines both sides' added lines is reported for review, because about one in seven combines two versions of the same change. `apply` stops on any other hunk with the conflict in place; resolve and stage it, then `continue` with the note and features it needs. It also lists added lines that name upstream's product in agent- or user-facing code. `fix-trailers` drops `Fork-Feature` from commits that turn out to match upstream and lists differing commits without a note. `verify` installs once, then typechecks every package the batch touches, lints changed files, runs changed tests, and checks the ledger.
+
+`intake-run.ts replay <promoted-SHA> --dump <dir>` reruns a promoted batch from each commit's real parent, without recorded resolutions, and compares the result with what was committed; `intake-run.ts score <dir>` scores the current resolvers against those dumps. Use both before changing a resolver.
+
 Apply upstream merge commits against their first parent (`git cherry-pick -m 1 -x`), rather than introducing merge commits into the candidate. Preserve each source commit where possible. Keep conflict adaptations small and explain the fork invariant they preserve. Do not replace upstream implementations, rename unchanged internals, or squash the batch for publication.
 
 Follow upstream behavior by default. General guidance inherited from upstream is not a separate fork requirement or a reason to redesign an upstream change during intake. Record deliberate styal-specific policies and maintained divergences in the fork feature ledger (with supporting documentation where needed); do not invent new differences while resolving conflicts.
@@ -81,7 +94,7 @@ Do not run the full validation loop after every cherry-pick. Test intermediate s
 
 Review `origin/main...candidate` against the upstream sources and the fork feature ledger. Focus local tests and real-client checks on conflict resolutions, changed behavior, and fork integration boundaries. In particular, preserve styal's runtime homes, environment variables, browser storage, installed-app identity, and maintained capabilities. These are behavioral invariants, not a reason to mechanically replace every upstream name. Carry upstream migration files verbatim.
 
-A cherry-pick that applies cleanly can still break fork code it does not touch: upstream may rename an export that a fork-only file still calls, or add a lint rule that fork-only files break. Before pushing, typecheck and lint each package the batch changes as a whole, not only the changed files.
+A cherry-pick that applies cleanly can still break fork code it does not touch: upstream may rename an export that a fork-only file still calls, or add a lint rule that fork-only files break. Before pushing, typecheck and lint each package the batch changes as a whole, not only the changed files; `intake-run.ts verify` does this.
 
 Also run the test files the batch adds or changes. Upstream's new tests describe upstream's behavior, so a failure can show a fork difference that no conflict touched; trace it as you would a conflict before choosing between the fork's code and the test. Fold each fix into the commit that introduced the break, with a `Fork adaptation:` note, rather than adding a commit of its own.
 
