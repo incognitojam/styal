@@ -4866,6 +4866,7 @@ features:
       - apps/web/src/components/FileActionApprovalDialog.tsx
       - apps/web/src/components/ProjectScriptsControl.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/useProjectScriptEditing.ts
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/components/settings/ProjectActionsList.tsx
       - apps/web/src/components/settings/ProjectActionsSettings.tsx
