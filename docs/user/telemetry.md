@@ -10,6 +10,11 @@ input, or evaluated code. Device panel actions and agent device tools record the
 outcome, whether the device is local or remote when known, and its platform when reported. Device
 names, identifiers, screenshots and action arguments are not collected.
 
+Web and desktop clients also record explicit diff-order selections and when you open a
+mentioned time's explanation. The web app records when a new-build notice is visible and
+when you choose Refresh. These events use the relevant paired environment's telemetry setting.
+File paths, written times, deployment identifiers, and composer drafts are not collected.
+
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 

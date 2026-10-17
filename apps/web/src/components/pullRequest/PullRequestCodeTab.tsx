@@ -99,6 +99,7 @@ import {
   usePullRequestReviewStore,
   type PendingReviewComment,
 } from "./pullRequestReviewStore";
+import { reportForkClientUsage } from "~/forkClientUsage";
 
 /** Everything pinned to one line of one file: what is already there, and what is being added. */
 interface ReviewAnnotationGroup {
@@ -1307,6 +1308,11 @@ function PullRequestCodeTab({
                 pressed={diffSortMode === "smart"}
                 onPressedChange={(pressed) => {
                   setDiffSortMode(pressed ? "smart" : "alphabetical");
+                  void reportForkClientUsage(environmentId, {
+                    feature: "diff-file-review-order",
+                    action: pressed ? "relevance_selected" : "alphabetical_selected",
+                    view: "pull_request",
+                  });
                 }}
               />
             }

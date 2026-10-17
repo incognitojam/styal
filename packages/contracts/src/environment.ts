@@ -178,6 +178,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),
   /** Server can persist and stream revisioned web/desktop composer drafts. */
   composerDraftSync: Schema.optionalKey(Schema.Boolean),
+  /** Highest complete fork client usage vocabulary accepted by this server. */
+  forkClientUsageVersion: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
   /** Server understands thread.pull-request.link / .unlink, exposes `pullRequests` on
       threads, and routes PullRequestRef.host across projects on the same host. Same
       version-skew contract as threadSettlement. */

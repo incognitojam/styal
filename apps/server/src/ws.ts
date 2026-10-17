@@ -1243,6 +1243,7 @@ const makeWsRpcLayer = (
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const analytics = yield* AnalyticsService.AnalyticsService;
+      const reportForkClientUsage = yield* ClientFeatureUsage.reporter(clientAnalyticsProps);
       // Client-origin attribution (#7774): every thread/turn the connecting
       // client starts is credited to its surface + app version. Best-effort:
       // attribution must never fail the user's command.
@@ -2779,6 +2780,10 @@ const makeWsRpcLayer = (
             recordClientNetworkReports(input, analytics, originProps),
             { "rpc.aggregate": "server" },
           ),
+        [WS_METHODS.serverReportForkClientUsage]: (input) =>
+          observeRpcEffect(WS_METHODS.serverReportForkClientUsage, reportForkClientUsage(input), {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverReportHostPowerState]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverReportHostPowerState,

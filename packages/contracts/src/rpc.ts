@@ -377,6 +377,7 @@ import {
   ComposerDraftUpdateResult,
 } from "./composerDraft.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
+import { ForkClientUsageInput } from "./forkClientUsage.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -513,6 +514,7 @@ export const WS_METHODS = {
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
   serverSignalProcess: "server.signalProcess",
   serverReportClientActivity: "server.reportClientActivity",
+  serverReportForkClientUsage: "server.reportForkClientUsage",
   serverReportHostPowerState: "server.reportHostPowerState",
   serverReportNetworkConditions: "server.reportNetworkConditions",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
@@ -971,6 +973,11 @@ const WsServerReportClientActivityRpc = Rpc.make(WS_METHODS.serverReportClientAc
 
 const WsServerReportNetworkConditionsRpc = Rpc.make(WS_METHODS.serverReportNetworkConditions, {
   payload: ReportNetworkConditionsInput,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerReportForkClientUsageRpc = Rpc.make(WS_METHODS.serverReportForkClientUsage, {
+  payload: ForkClientUsageInput,
   error: EnvironmentAuthorizationError,
 });
 
@@ -1966,6 +1973,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,
+  WsServerReportForkClientUsageRpc,
   WsServerReportHostPowerStateRpc,
   WsServerReportNetworkConditionsRpc,
   WsServerGetBackgroundPolicyRpc,

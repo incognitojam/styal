@@ -2,7 +2,10 @@ const CHECK_INTERVAL_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 
 /** Watches the page's deployment, independently of any paired server. Stop on renderer unmount. */
-export function watchWebBuildUpdates(buildId: string, onChange: (available: boolean) => void) {
+export function watchWebBuildUpdates(
+  buildId: string,
+  onChange: (availableBuildId: string | null) => void,
+) {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let request: AbortController | undefined;
@@ -34,7 +37,7 @@ export function watchWebBuildUpdates(buildId: string, onChange: (available: bool
         typeof manifest.buildId === "string" &&
         manifest.buildId.trim().length > 0
       ) {
-        onChange(manifest.buildId !== buildId);
+        onChange(manifest.buildId !== buildId ? manifest.buildId : null);
       }
     } catch {
       // A failed check should neither interrupt work nor erase an existing update notice.

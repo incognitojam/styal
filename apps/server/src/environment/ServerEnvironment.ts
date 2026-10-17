@@ -3,6 +3,7 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type ExecutionEnvironmentDescriptor,
+  FORK_CLIENT_USAGE_VERSION,
 } from "@t3tools/contracts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Context from "effect/Context";
@@ -259,6 +260,7 @@ export const make = Effect.gen(function* () {
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
       composerDraftSync: true,
+      forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
       serverResolvedCommandContext: true,
       environmentIcon: true,
       projectCloneTracking: true,

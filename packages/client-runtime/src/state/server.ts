@@ -994,6 +994,10 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    reportForkClientUsage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:fork-client-usage",
+      tag: WS_METHODS.serverReportForkClientUsage,
+    }),
     updateStateAtom,
     settingsValueAtom,
     providersValueAtom,

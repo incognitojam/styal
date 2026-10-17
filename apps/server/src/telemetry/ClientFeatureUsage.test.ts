@@ -1,0 +1,92 @@
+import { expect, it } from "@effect/vitest";
+import { ForkClientUsageInput } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+
+import * as AnalyticsService from "./AnalyticsService.ts";
+import * as ClientFeatureUsage from "./ClientFeatureUsage.ts";
+
+const decode = Schema.decodeUnknownEffect(ForkClientUsageInput);
+const isUsage = Schema.is(ForkClientUsageInput);
+
+it.effect("records allowlisted client interactions with socket attribution and no content", () =>
+  Effect.gen(function* () {
+    const events: Array<unknown> = [];
+    const analytics = {
+      record: (event: string, properties: Record<string, unknown> | undefined) =>
+        Effect.sync(() => {
+          events.push({ event, properties });
+        }),
+      flush: Effect.void,
+    };
+    const client = { surface: "web", clientOs: "Linux", clientAppVersion: "1.0.0" } as const;
+    const report = yield* ClientFeatureUsage.reporter(client).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+    );
+    const properties = { forkClientUsageVersion: 1, ...client };
+    for (const { event, source, ...input } of [
+      {
+        feature: "web-build-update-notice",
+        action: "notice_shown",
+        event: "feature.exposed",
+        source: "system",
+      },
+      {
+        feature: "web-build-update-notice",
+        action: "refresh_requested",
+        event: "feature.used",
+        source: "user",
+      },
+      {
+        feature: "diff-file-review-order",
+        action: "alphabetical_selected",
+        view: "changes",
+        event: "feature.used",
+        source: "user",
+      },
+      {
+        feature: "diff-file-review-order",
+        action: "relevance_selected",
+        view: "pull_request",
+        event: "feature.used",
+        source: "user",
+      },
+      {
+        feature: "mentioned-time-chips",
+        action: "details_opened",
+        event: "feature.used",
+        source: "user",
+      },
+    ]) {
+      yield* report(yield* decode({ ...input, content: "Synthetic content", path: "/private" }));
+      expect(events.at(-1)).toEqual({ event, properties: { ...input, ...properties, source } });
+    }
+    expect(isUsage({ feature: "arbitrary", action: "anything" })).toBe(false);
+    expect(isUsage({ feature: "mentioned-time-chips", action: "notice_shown" })).toBe(false);
+    for (const surface of ["desktop", "mobile", undefined] as const) {
+      const otherReport = yield* ClientFeatureUsage.reporter({ surface }).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+      yield* otherReport({ feature: "web-build-update-notice", action: "refresh_requested" });
+      yield* otherReport({ feature: "mentioned-time-chips", action: "details_opened" });
+    }
+    expect(events).toHaveLength(6);
+    expect(events[5]).toEqual({
+      event: "feature.used",
+      properties: {
+        feature: "mentioned-time-chips",
+        action: "details_opened",
+        source: "user",
+        forkClientUsageVersion: 1,
+        surface: "desktop",
+      },
+    });
+    const unavailable = yield* ClientFeatureUsage.reporter(client).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, {
+        ...analytics,
+        record: () => Effect.die("Synthetic collector failure"),
+      }),
+    );
+    yield* unavailable({ feature: "mentioned-time-chips", action: "details_opened" });
+  }),
+);
