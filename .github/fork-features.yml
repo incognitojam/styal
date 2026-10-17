@@ -5394,7 +5394,7 @@ features:
       - apps/web/vite.config.ts
     tests:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
-      - apps/web/src/webBuildUpdate.test.ts
+      - apps/web/src/webBuildUpdate.browser.test.ts
       - apps/web/src/webBuildUpdateUsage.test.ts
     upstream:
       status: tracking

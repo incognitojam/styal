@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { watchWebBuildUpdates } from "./webBuildUpdate";
@@ -6,6 +5,19 @@ import { watchWebBuildUpdates } from "./webBuildUpdate";
 const manifest = (buildId: string) => Response.json({ buildId });
 const fetchBuild = vi.fn<typeof fetch>();
 let stop: (() => void) | undefined;
+
+// Chromium reads a response body on real tasks, which fake timers never run.
+async function advance(ms: number) {
+  await vi.advanceTimersByTimeAsync(ms);
+  for (let round = 0; round < 3; round++) {
+    await new Promise<void>((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => resolve();
+      channel.port2.postMessage(null);
+    });
+    await vi.advanceTimersByTimeAsync(0);
+  }
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -28,7 +40,7 @@ describe("web build update checks", () => {
   it("detects a deployment and clears the notice if it rolls back to the loaded build", async () => {
     const onChange = vi.fn();
     stop = watchWebBuildUpdates("build-a", onChange);
-    await vi.advanceTimersByTimeAsync(0);
+    await advance(0);
     expect(onChange).toHaveBeenLastCalledWith(null);
     expect(fetchBuild).toHaveBeenCalledWith(new URL("/build.json", window.location.origin), {
       cache: "no-store",
@@ -36,15 +48,15 @@ describe("web build update checks", () => {
     });
 
     fetchBuild.mockResolvedValue(manifest("build-b"));
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
     expect(onChange).toHaveBeenLastCalledWith("build-b");
 
     fetchBuild.mockResolvedValue(manifest("build-c"));
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
     expect(onChange).toHaveBeenLastCalledWith("build-c");
 
     fetchBuild.mockResolvedValue(manifest("build-a"));
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
     expect(onChange).toHaveBeenLastCalledWith(null);
   });
 
@@ -67,16 +79,16 @@ describe("web build update checks", () => {
       const onChange = vi.fn();
       fetchBuild.mockResolvedValue(manifest("build-b"));
       stop = watchWebBuildUpdates("build-a", onChange);
-      await vi.advanceTimersByTimeAsync(0);
+      await advance(0);
       expect(onChange).toHaveBeenLastCalledWith("build-b");
       onChange.mockClear();
 
       fetchBuild.mockResolvedValue(response());
-      await vi.advanceTimersByTimeAsync(60_000);
+      await advance(60_000);
       expect(onChange).not.toHaveBeenCalled();
 
       fetchBuild.mockResolvedValue(manifest("build-a"));
-      await vi.advanceTimersByTimeAsync(60_000);
+      await advance(60_000);
       expect(onChange).toHaveBeenLastCalledWith(null);
     },
   );
@@ -85,12 +97,12 @@ describe("web build update checks", () => {
     const onChange = vi.fn();
     fetchBuild.mockRejectedValueOnce(new TypeError("offline"));
     stop = watchWebBuildUpdates("build-a", onChange);
-    await vi.advanceTimersByTimeAsync(0);
+    await advance(0);
     expect(onChange).not.toHaveBeenCalled();
 
     fetchBuild.mockResolvedValue(manifest("build-b"));
     window.dispatchEvent(new Event("focus"));
-    await vi.advanceTimersByTimeAsync(0);
+    await advance(0);
     expect(onChange).toHaveBeenLastCalledWith("build-b");
     expect(fetchBuild).toHaveBeenCalledTimes(2);
   });
@@ -101,33 +113,33 @@ describe("web build update checks", () => {
     const online = vi.spyOn(navigator, "onLine", "get");
     visibility.mockReturnValue("hidden");
     stop = watchWebBuildUpdates("build-a", onChange);
-    await vi.advanceTimersByTimeAsync(120_000);
+    await advance(120_000);
     expect(fetchBuild).not.toHaveBeenCalled();
 
     visibility.mockReturnValue("visible");
     document.dispatchEvent(new Event("visibilitychange"));
-    await vi.advanceTimersByTimeAsync(0);
+    await advance(0);
     expect(fetchBuild).toHaveBeenCalledTimes(1);
 
     visibility.mockReturnValue("hidden");
     document.dispatchEvent(new Event("visibilitychange"));
-    await vi.advanceTimersByTimeAsync(120_000);
+    await advance(120_000);
     expect(fetchBuild).toHaveBeenCalledTimes(1);
 
     online.mockReturnValue(false);
     visibility.mockReturnValue("visible");
     document.dispatchEvent(new Event("visibilitychange"));
-    await vi.advanceTimersByTimeAsync(120_000);
+    await advance(120_000);
     expect(fetchBuild).toHaveBeenCalledTimes(1);
 
     online.mockReturnValue(true);
     window.dispatchEvent(new Event("online"));
-    await vi.advanceTimersByTimeAsync(0);
+    await advance(0);
     expect(fetchBuild).toHaveBeenCalledTimes(2);
 
     online.mockReturnValue(false);
     window.dispatchEvent(new Event("offline"));
-    await vi.advanceTimersByTimeAsync(120_000);
+    await advance(120_000);
     expect(fetchBuild).toHaveBeenCalledTimes(2);
   });
 
@@ -148,7 +160,7 @@ describe("web build update checks", () => {
     stop();
     expect(signal?.aborted).toBe(true);
     resolveFetch(manifest("build-b"));
-    await vi.advanceTimersByTimeAsync(120_000);
+    await advance(120_000);
     expect(onChange).not.toHaveBeenCalled();
     window.dispatchEvent(new Event("focus"));
     expect(fetchBuild).toHaveBeenCalledTimes(1);
@@ -165,11 +177,11 @@ describe("web build update checks", () => {
     );
     const onChange = vi.fn();
     stop = watchWebBuildUpdates("build-a", onChange);
-    await vi.advanceTimersByTimeAsync(10_000);
+    await advance(10_000);
     expect(onChange).not.toHaveBeenCalled();
 
     fetchBuild.mockResolvedValue(manifest("build-b"));
-    await vi.advanceTimersByTimeAsync(60_000);
+    await advance(60_000);
     expect(onChange).toHaveBeenLastCalledWith("build-b");
     expect(fetchBuild).toHaveBeenCalledTimes(2);
   });
