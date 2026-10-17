@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { EnvironmentId, FORK_CLIENT_USAGE_VERSION } from "@t3tools/contracts";
+import { AsyncResult } from "effect/reactivity";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
@@ -31,7 +32,7 @@ it("keeps explanations usable across version skew and reports each mounted chip 
     removeEventListener() {},
   }));
   vi.useFakeTimers();
-  run.mockResolvedValue(undefined);
+  run.mockResolvedValue(AsyncResult.success(undefined));
   const environmentId = EnvironmentId.make("synthetic-environment");
   const container = document.createElement("div");
   document.body.append(container);

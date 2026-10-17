@@ -4631,7 +4631,7 @@ features:
     status: maintained
     prs: [858]
     invariants:
-      - Visible notices emit feature.exposed and explicit refresh clicks emit feature.used through one supported paired environment with the shared opt-out; polls, hidden sidebars, deployment identifiers, and composer content are not collected, and telemetry cannot prevent a refresh.
+      - Visible notices emit feature.exposed and explicit refresh clicks emit feature.used through one supported paired environment with the shared opt-out; skipped or failed exposure reports can retry on a later sighting, and a blocked reload allows another refresh after two seconds. Polls, hidden sidebars, deployment identifiers, and composer content are not collected, and telemetry cannot prevent a refresh.
       - Production browser clients compare the loaded build with a fresh manifest from the page's own origin, independently of paired environments; every build, including rebuilds of one commit, has a distinct identifier.
       - A changed build shows a manual refresh action in the sidebar without interrupting work; a rollback to the loaded build clears the notice, while failed or malformed checks preserve the last known state.
       - Checks pause while hidden or offline, resume on visibility, focus, or connectivity changes, and never overlap; Electron keeps its native updater and development builds keep HMR.

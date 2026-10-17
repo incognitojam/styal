@@ -1,7 +1,10 @@
 import type { WebBuildUpdateUsageAction } from "@t3tools/contracts";
 
-type Reporter = (action: WebBuildUpdateUsageAction) => Promise<unknown>;
+/** Returns nothing when the report is unsupported; otherwise resolves to whether it was received. */
+type Reporter = (action: WebBuildUpdateUsageAction) => Promise<boolean> | undefined;
 const REPORT_WAIT_MS = 200;
+// A reload the browser cancels or blocks leaves the page open; allow another attempt.
+const RELOAD_RETRY_MS = 2_000;
 
 /** Keep each build's exposure and click on one environment, even if the primary changes. */
 export function createWebBuildUpdateUsage(reload: () => void) {
@@ -11,10 +14,21 @@ export function createWebBuildUpdateUsage(reload: () => void) {
   return {
     noticeShown(buildId: string, report: Reporter | undefined) {
       if (!report || exposed.has(buildId)) return;
+      // Only a received report counts; a skipped or failed one lets a later sighting try again.
+      let pending: Promise<boolean> | undefined;
+      try {
+        pending = report("notice_shown");
+      } catch {
+        return;
+      }
+      if (!pending) return;
       exposed.set(buildId, report);
-      void Promise.resolve()
-        .then(() => report("notice_shown"))
-        .catch(() => {});
+      const forget = () => {
+        if (exposed.get(buildId) === report) exposed.delete(buildId);
+      };
+      pending.then((received) => {
+        if (!received) forget();
+      }, forget);
     },
     async refresh(buildId: string, report: Reporter | undefined) {
       if (refreshing) return;
@@ -37,6 +51,9 @@ export function createWebBuildUpdateUsage(reload: () => void) {
         }
       }
       reload();
+      setTimeout(() => {
+        refreshing = false;
+      }, RELOAD_RETRY_MS);
     },
   };
 }

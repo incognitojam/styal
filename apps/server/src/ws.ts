@@ -2780,7 +2780,10 @@ const makeWsRpcLayer = (
             recordClientNetworkReports(input, analytics, originProps),
             { "rpc.aggregate": "server" },
           ),
-        [WS_METHODS.serverReportForkClientUsage]: reportForkClientUsage,
+        [WS_METHODS.serverReportForkClientUsage]: (input) =>
+          observeRpcEffect(WS_METHODS.serverReportForkClientUsage, reportForkClientUsage(input), {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverReportHostPowerState]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverReportHostPowerState,
