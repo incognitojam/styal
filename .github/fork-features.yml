@@ -225,7 +225,7 @@ features:
       - apps/server/src/orchestration-v2/AttachmentClaims.test.ts
       - apps/server/src/orchestration-v2/ThreadMessageIntake.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
-      - apps/web/src/components/chat/ComposerPrimaryActions.test.tsx
+      - apps/web/src/components/chat/ComposerPrimaryActions.browser.test.tsx
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/threadTranscript.test.ts
       - packages/contracts/src/orchestrationV2.test.ts
@@ -2880,7 +2880,7 @@ features:
     tests:
       - apps/mobile/src/lib/markdownLinks.test.ts
       - apps/web/src/components/ChatMarkdown.file-preview.browser.test.tsx
-      - apps/web/src/components/chat/ComposerPendingUserInputPanel.test.tsx
+      - apps/web/src/components/chat/ComposerPendingUserInputPanel.browser.test.tsx
     upstream:
       status: partial
       tracking:
