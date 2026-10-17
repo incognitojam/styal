@@ -120,6 +120,9 @@ The styal mobile app is a work in progress. The phone connects to a server on
 another machine. Follow [remote access](./remote-access.md) to link it through
 styal Link or a pairing URL.
 
+On iPhone and iPad, TestFlight is invite-only. Android release links and a QR code
+are available in **Settings → General → Mobile app** on web and desktop.
+
 On Android 7.0 or newer, open the newest **styal for Android** release on the
 [releases page](https://github.com/incognitojam/styal/releases) and download its
 APK on your phone. Chrome may warn that the file might be harmful; choose

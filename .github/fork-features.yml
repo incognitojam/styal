@@ -1582,6 +1582,7 @@ features:
       - The macOS installer backgrounds and the Dev and Nightly sidebar and send-button artwork use styal's channel grounds and sewing motifs (pinked linen, cutting mat, starry horizon) rather than upstream's T3 Code installer and stage artwork.
       - Linux desktop entries, SnapShot D-Bus names, the GNOME Shell extension, and the KDE and Hyprland capture helpers use styal identities (`build.styal.Styal`, `snap-shot@styal.build`, `styal-*-snap-shot`) so they cannot collide with an upstream T3 Code install.
       - Mobile production builds reconcile native fingerprints and committed versions automatically for both platforms, retaining nightly artwork and OTA-blocked reporting; upstream's separate fixed-version TestFlight release train does not replace the fork's version scheme.
+      - Web and desktop mobile settings link to styal Android APK releases and describe invite-only iOS TestFlight access, without directing users to upstream store apps.
       - Mobile production and preview profiles retain styal identity and fork Expo configuration; Android distribution uses installable APKs without store submission, while iOS submits to TestFlight.
       - Each finished production Android APK is published as a GitHub release tagged `android-<version>-<versionCode>`, created without claiming Latest from a stable `v` release, and only when its signing certificate matches the pinned production key; release notes contain installation guidance and APK checksums are attached as `SHA256SUMS`.
       - Production Android installs offer the newest GitHub release once per release, and keep its download directly below Version in About styal, only when its runtime version differs from the installed binary's, because over-the-air updates cannot reach that install.
@@ -1659,6 +1660,7 @@ features:
       - apps/web/src/components/chat/V2LifecycleRow.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/components/settings/BranchNamingSettings.tsx
+      - apps/web/src/components/settings/MobileAppSettingsRow.tsx
       - apps/web/src/components/settings/SettingsFontPreviews.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/settings/forkFeatures.ts

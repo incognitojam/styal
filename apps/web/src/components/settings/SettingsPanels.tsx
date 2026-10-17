@@ -65,6 +65,7 @@ import {
   HOSTED_APP_CHANNEL_LABEL,
 } from "../../branding";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
+import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -3612,6 +3613,7 @@ export function GeneralSettingsPanel() {
             status={<AboutBuildProvenance />}
           />
         )}
+        <MobileAppSettingsRow />
         <SettingsRow
           {...searchableSetting("privacy-policy")}
           description="How we handle your data, including the anonymous usage data styal collects."
