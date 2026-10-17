@@ -216,6 +216,7 @@ export const make = Effect.gen(function* () {
           featureUsageVersion: 1,
           browserToolsUsageVersion: 1,
           deviceUsageVersion: 1,
+          noticesUsageVersion: 1,
           ...buildContext,
           clientType,
           serverOs: serverOsFromNodePlatform(hostPlatform),

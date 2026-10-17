@@ -118,6 +118,7 @@ import { RpcSerialization, RpcServer } from "effect/rpc";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CommandOutputQuery from "./orchestration-v2/CommandOutputQuery.ts";
 import * as ComposerDrafts from "./persistence/ComposerDrafts.ts";
+import * as ProjectNotices from "./project/ProjectNotices.ts";
 import * as LegacyImportPreview from "./dataImport/LegacyImportPreview.ts";
 import * as LegacyImport from "./dataImport/LegacyImport.ts";
 import * as ServerConfig from "./config.ts";
@@ -1251,6 +1252,7 @@ const layerWsRpc = (
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
+      const projectNotices = yield* ClientFeatureUsage.notices(clientAnalyticsProps);
       const pullRequests = yield* PullRequestService.PullRequestService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* ClientFeatureUsage.devices(clientAnalyticsProps);
@@ -2213,6 +2215,20 @@ const layerWsRpc = (
             WS_METHODS.scheduledTasksGetWebhookDelivery,
             scheduledTasks.getWebhookDelivery(input),
             { "rpc.aggregate": "scheduledTasks", "scheduled_task.id": input.id },
+          ),
+        [WS_METHODS.projectNoticesSubscribe]: (input) =>
+          observeRpcStream(
+            WS_METHODS.projectNoticesSubscribe,
+            projectNotices.subscribe(input.projectId),
+            { "rpc.aggregate": "projectNotices", "project.id": input.projectId },
+          ),
+        [WS_METHODS.projectNoticesResolve]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectNoticesResolve,
+            projectNotices.resolve(input.noticeId),
+            {
+              "rpc.aggregate": "projectNotices",
+            },
           ),
         [WS_METHODS.serverProbe]: (_input) =>
           observeRpcEffect(WS_METHODS.serverProbe, Effect.succeed({}), {

@@ -15,6 +15,9 @@ mentioned time's explanation. The web app records when a new-build notice is vis
 when you choose Refresh. These events use the relevant paired environment's telemetry setting.
 File paths, written times, deployment identifiers, and composer drafts are not collected.
 
+Agents posting, listing and resolving project notices, and resolving a notice in Project Settings,
+record the action and its outcome. Notice titles, text and projects are not collected.
+
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 

@@ -49,6 +49,7 @@ import {
 } from "./ProjectFaviconPickerDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { ProjectNoticesSettings } from "./ProjectNoticesSettings";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
@@ -662,6 +663,7 @@ function ProjectDetail({
             <DefaultRepositorySetting checkout={group.memberProjects[0]!} />
           )}
         </SettingsSection>
+        <ProjectNoticesSettings members={group.memberProjects} />
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
         {hasMultipleCheckouts ? checkoutChoices : null}

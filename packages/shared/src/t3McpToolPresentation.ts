@@ -50,6 +50,9 @@ export type T3McpToolSummaryAction =
   | "project-update"
   | "project-delete"
   | "project-clone"
+  | "notice-post"
+  | "notice-list"
+  | "notice-resolve"
   | "environment-read"
   | "environment-update"
   | "attachment-prepare"
@@ -282,6 +285,12 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   t3_project_update: tool(["Update", "Updating", "Updated", "a project"], "project-update"),
   t3_project_delete: tool(["Delete", "Deleting", "Deleted", "a project"], "project-delete"),
   t3_project_clone: tool(["Clone", "Cloning", "Cloned", "a repository"], "project-clone"),
+  t3_notice_post: tool(["Post", "Posting", "Posted", "a project notice"], "notice-post"),
+  t3_notice_list: tool(["List", "Listing", "Listed", "project notices"], "notice-list"),
+  t3_notice_resolve: tool(
+    ["Resolve", "Resolving", "Resolved", "a project notice"],
+    "notice-resolve",
+  ),
   t3_attachment_prepare_upload: tool(
     ["Prepare", "Preparing", "Prepared", "an attachment upload"],
     "attachment-prepare",

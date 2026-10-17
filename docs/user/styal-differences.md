@@ -112,6 +112,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Project instructions across providers.** Set additional instructions once for a project and use
   them across its checkouts and agent sessions with Codex, Claude, Cursor, Grok, and OpenCode.
   [Project instructions](./project-settings.md#give-agents-project-instructions).
+- **Agent notices for a project.** An agent can post a short notice, such as work in progress on a
+  shared area or a hold on merges, that every later thread in the project reads when it starts.
+  Notices expire on their own and can be resolved in Project Settings on web and mobile. Compared
+  with [T3 Code revision 4b1024d](https://github.com/pingdotgg/t3code/tree/4b1024dafe4766ea7c59546936c21ce0fab8acb3), which has no
+  way to leave a message for threads that have not started.
+  [Agent notices](./project-settings.md#agent-notices).
 - **Review shared actions before importing.** Selecting an action from `t3.json` opens its command
   for review before saving a checkout-local copy. The confirmation states when the action will run
   in new worktrees or replace an existing setup action. [Project actions](./project-scripts.md). Compared with

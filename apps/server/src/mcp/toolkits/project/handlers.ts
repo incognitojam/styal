@@ -5,6 +5,8 @@ import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageInt
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as ProjectNotices from "../../../project/ProjectNotices.ts";
+import * as FeatureUsage from "../../../telemetry/FeatureUsage.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import { resolveRuntimeMode } from "../../OrchestratorMcpService.ts";
 import {
@@ -27,6 +29,30 @@ function projectFailure(error: Project.ProjectServiceError) {
         : "The project is not empty; force=true is required to delete it.";
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
+
+/**
+ * The project a notice tool acts on: the one passed, which must exist, else the caller's.
+ * Posting needs the calling thread's live run, like other mutations; listing does not.
+ */
+const noticeProject = Effect.fn("mcp.noticeProject")(function* (
+  projectId: ProjectId | undefined,
+  access: "read" | "mutate",
+) {
+  const context = yield* access === "mutate" ? readMutationCaller() : readCaller();
+  const resolved = yield* resolveProjectId(context, projectId);
+  if (projectId !== undefined) {
+    const project = yield* Project.ProjectService.pipe(
+      Effect.flatMap((projects) => projects.getById(projectId)),
+      Effect.mapError(unavailable),
+    );
+    if (Option.isNone(project))
+      return yield* new OrchestratorMcpFailure({
+        code: "invalid_request",
+        message: "The project was not found.",
+      });
+  }
+  return { projectId: resolved, authorThreadId: context.caller?.id ?? null };
+});
 
 const access = Effect.gen(function* () {
   yield* readCaller();
@@ -233,4 +259,50 @@ export const layer = ProjectToolkit.toLayer({
         ),
       );
     }),
+  t3_notice_post: (input) =>
+    FeatureUsage.observe(
+      { feature: "notices", action: "post", source: "agent" },
+      Effect.gen(function* () {
+        const { projectId, authorThreadId } = yield* noticeProject(input.projectId, "mutate");
+        const notices = yield* ProjectNotices.ProjectNotices;
+        return yield* notices
+          .post({
+            projectId,
+            authorThreadId,
+            title: input.title,
+            body: input.body ?? "",
+            expiresInHours: input.expiresInHours,
+          })
+          .pipe(
+            Effect.catchTags({
+              // The active limit is a request the caller can fix by resolving a notice.
+              ProjectNoticeLimitError: (error) =>
+                new OrchestratorMcpFailure({ code: "invalid_request", message: error.message }),
+              ProjectNoticePersistenceError: () => unavailable(),
+            }),
+          );
+      }),
+    ),
+  t3_notice_list: (input) =>
+    FeatureUsage.observe(
+      { feature: "notices", action: "list", source: "agent" },
+      Effect.gen(function* () {
+        const { projectId } = yield* noticeProject(input.projectId, "read");
+        const notices = yield* ProjectNotices.ProjectNotices;
+        return yield* notices
+          .list(projectId)
+          .pipe(Effect.catchTags({ ProjectNoticePersistenceError: () => unavailable() }));
+      }),
+    ),
+  t3_notice_resolve: (input) =>
+    FeatureUsage.observe(
+      { feature: "notices", action: "resolve", source: "agent" },
+      Effect.gen(function* () {
+        yield* readMutationCaller();
+        const notices = yield* ProjectNotices.ProjectNotices;
+        return yield* notices
+          .resolve(input.noticeId)
+          .pipe(Effect.catchTags({ ProjectNoticePersistenceError: () => unavailable() }));
+      }),
+    ),
 });
