@@ -123,74 +123,6 @@ function getCachedFileEntry(fileDiff: FileDiffMetadata) {
   return entry;
 }
 
-// These hooks call no hooks, so the compiler needs the directive to memoize them. Their results
-// feed the code view and the file patch loader, which key on identity.
-function useRenderablePatch(
-  patch: string | undefined,
-  theme: string,
-  compactPartialHunkOffsets: boolean,
-) {
-  "use memo";
-  return getRenderablePatch(patch, `diff-panel:${theme}`, { compactPartialHunkOffsets });
-}
-
-function useGitDiffFileContentsLoader<E>(
-  getDiffFileContents: Parameters<typeof createGitDiffFileContentsLoader<E>>[0],
-  source: Parameters<typeof createGitDiffFileContentsLoader<E>>[1] | null,
-): FileDiffContentsLoader | undefined {
-  "use memo";
-  return source ? createGitDiffFileContentsLoader(getDiffFileContents, source) : undefined;
-}
-
-function useFileStats<File extends { readonly path: string }>(
-  files: ReadonlyArray<File> | undefined,
-) {
-  "use memo";
-  return new Map(files?.map((file) => [file.path, file]));
-}
-
-function useDiffFileEntries(
-  renderableFiles: ReadonlyArray<FileDiffMetadata>,
-  collapsed: boolean,
-  generatedPaths: ReadonlyArray<string> | undefined,
-) {
-  "use memo";
-  const renderableFileEntries = renderableFiles.map(getCachedFileEntry);
-  const diffFileKeys = renderableFileEntries.map((file) => file.fileKey);
-  const attributedPaths = new Set(generatedPaths ?? []);
-  return {
-    renderableFileEntries,
-    diffFileKeys,
-    defaultCollapsedDiffFileKeys: new Set(
-      collapsed
-        ? diffFileKeys
-        : renderableFileEntries
-            .filter(
-              ({ fileDiff }) =>
-                diffFileTier(resolveFileDiffPath(fileDiff), attributedPaths) === "generated",
-            )
-            .map(({ fileKey }) => fileKey),
-    ),
-  };
-}
-
-function useCodeViewFiles(
-  entries: ReadonlyArray<ReturnType<typeof getCachedFileEntry>>,
-  readyFilePaths: ReadonlySet<string> | null,
-  collapsedFileKeys: ReadonlySet<string>,
-) {
-  "use memo";
-  return entries
-    .filter(({ fileDiff }) => !readyFilePaths || readyFilePaths.has(resolveFileDiffPath(fileDiff)))
-    .map(({ fileDiff, fileKey, fileVersion }) => ({
-      fileDiff,
-      filePath: resolveFileDiffPath(fileDiff),
-      fileKey,
-      fileVersion,
-      collapsed: collapsedFileKeys.has(fileKey) || fileDiff.cacheKey?.endsWith(":pending") === true,
-    }));
-}
-
 interface CollapsedDiffFilesState {
   readonly scopeKey: string | null;
   readonly fileKeys: ReadonlySet<string>;
@@ -437,19 +369,57 @@ export default function DiffPanel({
   const refreshDiffFromUserAction = refreshPreviewQuery;
 
   const preview = branchDiffPreview.data;
-  const currentLoadDiffFiles = useGitDiffFileContentsLoader(
-    getDiffFileContents,
+  const gitDiff = selectedGitSource?.diff;
+
+  const selectedPatch = selectedTurn ? activeCheckpointDiff.data?.diff : gitDiff;
+  const isSelectedPatchTruncated = !selectedTurn && selectedGitSource?.truncated === true;
+  const isLoadingSelectedPatch = selectedTurn
+    ? activeCheckpointDiff.isPending
+    : branchDiffPreview.isPending;
+  const selectedPatchError = selectedTurn ? activeCheckpointDiff.error : branchDiffPreview.error;
+  const hasResolvedPatch = typeof selectedPatch === "string";
+  const hasNoNetChanges = hasResolvedPatch && selectedPatch.trim().length === 0;
+  const lazySource =
+    !selectedTurn && selectedGitSource?.truncated && selectedGitSource.files
+      ? selectedGitSource
+      : null;
+  const renderablePatch = getRenderablePatch(
+    lazySource ? undefined : selectedPatch,
+    `diff-panel:${resolvedTheme}`,
+    { compactPartialHunkOffsets: selectedRunId === null },
+  );
+  const fileStats = new Map(lazySource?.files?.map((file) => [file.path, file]));
+  // Turn diffs carry their attributions on the diff result; git sources on the preview source.
+  const attributedGeneratedPaths = selectedTurn
+    ? activeCheckpointDiff.data?.generatedPaths
+    : selectedGitSource?.generatedPaths;
+  // Files that load one by one load in reading order; their import lines are not known yet.
+  const orderLazyFiles =
+    diffSortMode === "smart"
+      ? (files: ReadonlyArray<ReviewDiffFileStat>) =>
+          orderUnloadedDiffFiles(files, attributedGeneratedPaths)
+      : undefined;
+  const sourceLineStat =
+    !selectedTurn && selectedGitSource?.files
+      ? selectedGitSource.files.reduce(
+          (total, file) => ({
+            additions: total.additions + file.additions,
+            deletions: total.deletions + file.deletions,
+          }),
+          { additions: 0, deletions: 0 },
+        )
+      : null;
+  const currentLoadDiffFiles =
     selectedRunId === null && activeThread && preview && selectedGitSource && canReadFiles
-      ? {
+      ? createGitDiffFileContentsLoader(getDiffFileContents, {
           environmentId: activeThread.environmentId,
           cwd: preview.cwd,
           sourceKind: selectedGitSource.kind,
           baseRef: selectedGitSource.baseRef,
           headRef: selectedGitSource.headRef,
           cacheKey: selectedGitSource.diffHash,
-        }
-      : null,
-  );
+        })
+      : undefined;
   // The code view keeps one loader for its lifetime; a new identity would remount it.
   const loadDiffFiles: FileDiffContentsLoader = useStableCallback(async (fileDiff) => {
     if (!currentLoadDiffFiles) {
@@ -505,36 +475,6 @@ export default function DiffPanel({
     ...(baseRefQuery.trim().length === 0 ? [AUTOMATIC_BASE_REF] : []),
     ...matchingBaseRefChoices.map(valueForBaseRefChoice),
   ];
-  const gitDiff = selectedGitSource?.diff;
-
-  const selectedPatch = selectedTurn ? activeCheckpointDiff.data?.diff : gitDiff;
-  const isSelectedPatchTruncated = !selectedTurn && selectedGitSource?.truncated === true;
-  const isLoadingSelectedPatch = selectedTurn
-    ? activeCheckpointDiff.isPending
-    : branchDiffPreview.isPending;
-  const selectedPatchError = selectedTurn ? activeCheckpointDiff.error : branchDiffPreview.error;
-  const hasResolvedPatch = typeof selectedPatch === "string";
-  const hasNoNetChanges = hasResolvedPatch && selectedPatch.trim().length === 0;
-  const lazySource =
-    !selectedTurn && selectedGitSource?.truncated && selectedGitSource.files
-      ? selectedGitSource
-      : null;
-  const renderablePatch = useRenderablePatch(
-    lazySource ? undefined : selectedPatch,
-    resolvedTheme,
-    selectedRunId === null,
-  );
-  // Turn diffs carry their attributions on the diff result; git sources on the preview source.
-  const attributedGeneratedPaths = selectedTurn
-    ? activeCheckpointDiff.data?.generatedPaths
-    : selectedGitSource?.generatedPaths;
-  // Files that load one by one load in reading order; their import lines are not known yet.
-  const orderLazyFiles =
-    diffSortMode === "smart"
-      ? (files: ReadonlyArray<ReviewDiffFileStat>) =>
-          orderUnloadedDiffFiles(files, attributedGeneratedPaths)
-      : undefined;
-  const fileStats = useFileStats(lazySource?.files);
   const {
     scope: filePatchScope,
     isPending: areFilePatchesPending,
@@ -580,15 +520,22 @@ export default function DiffPanel({
   });
 
   const isRefreshingDiff = branchDiffPreview.isPending || areFilePatchesPending;
-  const { renderableFileEntries, diffFileKeys, defaultCollapsedDiffFileKeys } = useDiffFileEntries(
-    renderableFiles,
-    settings.diffFilesCollapsed,
-    attributedGeneratedPaths,
+  const renderableFileEntries = renderableFiles.map(getCachedFileEntry);
+  const diffFileKeys = renderableFileEntries.map((file) => file.fileKey);
+  const attributedPaths = new Set(attributedGeneratedPaths ?? []);
+  const defaultCollapsedDiffFileKeys = new Set(
+    settings.diffFilesCollapsed
+      ? diffFileKeys
+      : renderableFileEntries
+          .filter(
+            ({ fileDiff }) =>
+              diffFileTier(resolveFileDiffPath(fileDiff), attributedPaths) === "generated",
+          )
+          .map(({ fileKey }) => fileKey),
   );
   // Fed to the header suffix chips; smart order is what makes the tier grouping legible.
   const fileTierByKey = (() => {
     if (diffSortMode !== "smart") return null;
-    const attributedPaths = new Set(attributedGeneratedPaths ?? []);
     const tiers = new Map<string, DiffFileTier>();
     for (const { fileDiff, fileKey } of renderableFileEntries) {
       tiers.set(fileKey, diffFileTier(resolveFileDiffPath(fileDiff), attributedPaths));
@@ -606,22 +553,22 @@ export default function DiffPanel({
         count={renderableFiles.length - settledFileCount}
       />
     ) : null;
-  const codeViewFiles = useCodeViewFiles(
-    renderableFileEntries,
-    lazySource ? readyFilePaths : null,
-    collapsedDiffFileKeys,
-  );
+  const codeViewFiles = renderableFileEntries
+    .filter(
+      ({ fileDiff }) =>
+        !lazySource || !readyFilePaths || readyFilePaths.has(resolveFileDiffPath(fileDiff)),
+    )
+    .map(({ fileDiff, fileKey, fileVersion }) => ({
+      fileDiff,
+      filePath: resolveFileDiffPath(fileDiff),
+      fileKey,
+      fileVersion,
+      collapsed:
+        collapsedDiffFileKeys.has(fileKey) || fileDiff.cacheKey?.endsWith(":pending") === true,
+    }));
+  const codeViewFileKeys = codeViewFiles.map((file) => file.fileKey);
   const allDiffFilesCollapsed = areAllDiffFilesCollapsed(diffFileKeys, collapsedDiffFileKeys);
-  const diffLineStat =
-    !selectedTurn && selectedGitSource?.files
-      ? selectedGitSource.files.reduce(
-          (total, file) => ({
-            additions: total.additions + file.additions,
-            deletions: total.deletions + file.deletions,
-          }),
-          { additions: 0, deletions: 0 },
-        )
-      : getDiffLineStat(renderableFiles);
+  const diffLineStat = sourceLineStat ?? getDiffLineStat(renderableFiles);
   const fileTreeEntries = diffFileTreeEntries(renderableFiles);
   const selectedDiffFileKey = selectedFilePath
     ? (codeViewFiles.find((candidate) => candidate.filePath === selectedFilePath)?.fileKey ?? null)
@@ -634,11 +581,7 @@ export default function DiffPanel({
   }, [codeView, codeViewMountKey, selectedDiffFileKey, selectedFileRevealRequestId]);
 
   const treeRevealScope = { collapseScopeKey, diffSelection };
-  const requestTreeReveal = useCodeViewFileReveal(
-    codeView,
-    treeRevealScope,
-    codeViewFiles.map((file) => file.fileKey),
-  );
+  const requestTreeReveal = useCodeViewFileReveal(codeView, treeRevealScope, codeViewFileKeys);
   const revealDiffFile = (filePath: string) => {
     const index = renderableFileEntries.findIndex(
       (candidate) => resolveFileDiffPath(candidate.fileDiff) === filePath,
