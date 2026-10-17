@@ -86,7 +86,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceContentWidth } from "../layout/workspace-content-width";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
-import type { TurnSummaryView, TurnUsageView } from "@t3tools/shared/turnUsage";
+import type { TurnSummaryView } from "@t3tools/shared/turnUsage";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
 import type { DraftComposerAttachment } from "../../lib/composerImages";
@@ -146,7 +146,6 @@ import { useGlobalVoiceInput } from "../voice-input/VoiceInputProvider";
 
 export interface ThreadDetailScreenProps {
   readonly turnUsageByTurnId: ReadonlyMap<string, TurnSummaryView>;
-  readonly threadUsage: TurnUsageView | null;
   readonly worktreeSetup?: WorktreeSetupCardProps | null;
   readonly setupWorkingStartedAt?: string | null;
   readonly selectedThread: EnvironmentThreadShell;
@@ -1346,7 +1345,6 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                     <ThreadComposer
                       reportedModelSelection={reportedModelSelection}
                       editorRef={composerEditorRef}
-                      threadUsage={props.threadUsage}
                       draftMessage={props.draftMessage}
                       draftAttachments={props.draftAttachments}
                       placeholder="Ask the repo agent, or run a command…"

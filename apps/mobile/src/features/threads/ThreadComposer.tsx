@@ -1,4 +1,3 @@
-import { TurnUsageText } from "./TurnUsageText";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -22,7 +21,6 @@ import {
   hasProviderUsageLimits,
   isUsageLimitsCommand,
 } from "@t3tools/shared/usageLimits";
-import type { TurnUsageView } from "@t3tools/shared/turnUsage";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import {
@@ -143,7 +141,6 @@ export const COMPOSER_COLLAPSED_CHROME = 60;
 export const COMPOSER_EXPANDED_CHROME = 156;
 
 export interface ThreadComposerProps {
-  readonly threadUsage?: TurnUsageView | null;
   readonly draftMessage: string;
   readonly draftAttachments: ReadonlyArray<DraftComposerAttachment>;
   readonly placeholder: string;
@@ -1138,15 +1135,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                         onPress={openSettings}
                       />
                     </View>
-                    {props.threadUsage ? (
-                      <View className="shrink-0 pl-2">
-                        <TurnUsageText
-                          view={props.threadUsage}
-                          subject="Thread usage"
-                          meterKey={composerOwnerKey}
-                        />
-                      </View>
-                    ) : null}
                   </View>
                 )}
                 <View className="shrink-0 flex-row items-center">

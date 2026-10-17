@@ -1,4 +1,8 @@
-import { useTurnSummaries, useTurnUsageEnabled } from "../../state/use-turn-usage";
+import {
+  useTurnSummaries,
+  useTurnUsageEnabled,
+  useTurnUsageFigure,
+} from "../../state/use-turn-usage";
 import { isSetupScriptOutsideWorktree } from "@t3tools/shared/projectScripts";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
@@ -28,7 +32,7 @@ import {
   projectScriptRuntimeEnv,
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
-import { threadUsageView } from "@t3tools/shared/turnUsage";
+import { threadUsageView, usageFigureText } from "@t3tools/shared/turnUsage";
 import { Alert, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useConnectionsReady } from "../../state/workspace";
@@ -352,9 +356,13 @@ function ThreadRouteContent(
     : shellTokenUsage !== undefined
       ? shellTokenUsage
       : composer.selectedTurnUsage.thread;
-  const threadUsage = useMemo(
-    () => (selectedThreadUsage ? threadUsageView(selectedThreadUsage) : null),
-    [selectedThreadUsage],
+  const turnUsageFigure = useTurnUsageFigure();
+  const threadUsageText = useMemo(
+    () =>
+      selectedThreadUsage
+        ? usageFigureText(threadUsageView(selectedThreadUsage), turnUsageFigure)
+        : null,
+    [selectedThreadUsage, turnUsageFigure],
   );
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
@@ -509,6 +517,7 @@ function ThreadRouteContent(
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
+    threadUsageText,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1040,7 +1049,6 @@ function ThreadRouteContent(
           onDismissFeedback={composer.dismissFeedback}
           selectedThreadFeed={composer.selectedThreadFeed}
           turnUsageByTurnId={turnSummaries}
-          threadUsage={threadUsage}
           activityRun={composer.selectedThreadActivityRun}
           activeWorkStartedAt={
             creationState?.kind === "preparing" ||
