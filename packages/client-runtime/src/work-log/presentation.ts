@@ -57,9 +57,9 @@ export function restartContinuationResumesResponse(
 }
 
 /**
- * Carry recorded work across linked recovery runs, excluding the server outage.
- * A run stamped with `workStartedAt` already counts from the work it continues,
- * moved later by each restart outage, so its start is used as is.
+ * Time this response, carrying recorded work across linked recovery runs and
+ * excluding server outages. The task-wide `workStartedAt` also includes earlier
+ * responses and background waits, so it is not a conversation header clock.
  */
 export function continuedResponseWorkStartedAt(input: {
   readonly startedAt: string | null;
@@ -89,10 +89,11 @@ export function continuedResponseWorkStartedAt(input: {
   if (startedAt === null || runId === null || projection === null) return startedAt;
   const runs = new Map(projection.runs.map((run) => [run.id, run]));
   const current = runs.get(runId);
-  if (current === undefined || current.workStartedAt !== undefined) return startedAt;
+  if (current === undefined) return startedAt;
   if (
     startedAt !== DateTime.formatIso(current.startedAt ?? current.requestedAt) &&
-    startedAt !== DateTime.formatIso(current.requestedAt)
+    startedAt !== DateTime.formatIso(current.requestedAt) &&
+    (current.workStartedAt === undefined || startedAt !== DateTime.formatIso(current.workStartedAt))
   )
     return startedAt;
   const chain = [current];
@@ -101,10 +102,11 @@ export function continuedResponseWorkStartedAt(input: {
     const parentId = chain[0]!.restartContinuationOfRunId!;
     const parent = runs.get(parentId);
     if (parent === undefined || seen.has(parentId)) return startedAt;
+    if (!restartContinuationResumesResponse(parent)) break;
     chain.unshift(parent);
     seen.add(parentId);
   }
-  if (chain.length === 1) return startedAt;
+  const responseStartedAt = DateTime.toEpochMillis(current.startedAt ?? current.requestedAt);
   let earlierWorkMs = 0;
   for (const run of chain.slice(0, -1)) {
     earlierWorkMs += Math.max(
@@ -113,7 +115,7 @@ export function continuedResponseWorkStartedAt(input: {
         DateTime.toEpochMillis(run.requestedAt),
     );
   }
-  return DateTime.formatIso(DateTime.makeUnsafe(Date.parse(startedAt) - earlierWorkMs));
+  return DateTime.formatIso(DateTime.makeUnsafe(responseStartedAt - earlierWorkMs));
 }
 
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped" | "idle";
