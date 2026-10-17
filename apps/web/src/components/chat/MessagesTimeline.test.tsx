@@ -94,6 +94,7 @@ const legendListTestState = vi.hoisted(() => ({
 }));
 
 vi.mock("@legendapp/list/react", async () => {
+  const { useLayoutEffect } = await import("react");
   const legendListTestId = "legend-list";
 
   const LegendList = (props: {
@@ -131,8 +132,10 @@ vi.mock("@legendapp/list/react", async () => {
     onScroll?: () => void;
     ref?: Ref<LegendListRef>;
   }) => {
-    legendListTestState.data = props.data;
-    legendListTestState.onScroll = props.onScroll;
+    useLayoutEffect(() => {
+      legendListTestState.data = props.data;
+      legendListTestState.onScroll = props.onScroll;
+    });
     if (props.anchoredEndSpace) {
       props.anchoredEndSpace.onSizeChanged?.(240);
       props.anchoredEndSpace.onReady?.({ anchorIndex: props.anchoredEndSpace.anchorIndex });
@@ -228,9 +231,8 @@ function matchMedia() {
 }
 
 let MessagesTimeline: typeof import("./MessagesTimeline").MessagesTimeline;
-let resolvePreviewAnnotationImage: typeof import("./MessagesTimeline").resolvePreviewAnnotationImage;
 
-const ElementStub = class ElementStub {};
+const ElementStub = function ElementStub() {};
 function stubDomGlobals() {
   const classList = {
     add: () => {},
@@ -272,7 +274,7 @@ beforeEach(stubDomGlobals);
 // Cold transformation of the full chat dependency graph needs extra time on slower CI workers.
 beforeAll(async () => {
   Object.defineProperty(window, "matchMedia", { value: matchMedia, configurable: true });
-  ({ MessagesTimeline, resolvePreviewAnnotationImage } = await import("./MessagesTimeline"));
+  ({ MessagesTimeline } = await import("./MessagesTimeline"));
 }, 120_000);
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
@@ -791,16 +793,14 @@ describe("MessagesTimeline", () => {
     const { readTimelinePosition } = await import("./timelineScrollAnchoring");
     const timeline = stubFollowTimeline("environment-local:manual-departure");
     const { props } = timeline;
-    let navigateManually = () => {};
     function ChatProbe() {
       const [liveFollowEnabled, setLiveFollowEnabled] = useState(true);
-      navigateManually = () => setLiveFollowEnabled(false);
       return (
         <MessagesTimeline
           {...props}
           timelineEntries={[buildUserTimelineEntry("First prompt")]}
           liveFollowEnabled={liveFollowEnabled}
-          onManualNavigation={navigateManually}
+          onManualNavigation={() => setLiveFollowEnabled(false)}
         />
       );
     }
@@ -814,7 +814,7 @@ describe("MessagesTimeline", () => {
 
       timeline.scrollTop = 1300;
       await act(() => {
-        navigateManually();
+        renderer?.root.findByType(MessagesTimeline).props.onManualNavigation?.();
         legendListTestState.onScroll?.();
       });
       await act(() => renderer?.unmount());
@@ -2214,7 +2214,7 @@ describe("MessagesTimeline", () => {
       activityTestState.expandedRuns = true;
       activityTestState.subagentTooltips = true;
       vi.stubGlobal("HTMLElement", ElementStub);
-      window.HTMLElement = ElementStub as typeof HTMLElement;
+      window.HTMLElement = ElementStub as unknown as typeof HTMLElement;
       vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
       vi.stubGlobal("requestAnimationFrame", () => 0);
       vi.stubGlobal("cancelAnimationFrame", () => {});
