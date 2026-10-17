@@ -2212,7 +2212,7 @@ features:
       - packages/contracts/src/rpc.ts
     tests:
       - apps/server/src/sourceControl/referenceCache.test.ts
-      - apps/web/src/components/ChatMarkdown.test.tsx
+      - apps/web/src/components/ChatMarkdown.browser.test.tsx
       - apps/web/src/components/chat/githubReferenceLinks.test.ts
       - apps/web/src/lib/openPullRequestLink.test.ts
       - apps/web/src/markdown-github-references.test.tsx
@@ -3103,7 +3103,7 @@ features:
     tests:
       - apps/mobile/src/features/terminal/terminalMenu.test.ts
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/web/src/components/chat/MessagesTimeline.test.tsx
+      - apps/web/src/components/chat/MessagesTimeline.browser.test.tsx
       - packages/contracts/src/t3ProjectFile.test.ts
     upstream:
       status: tracking
@@ -4550,8 +4550,8 @@ features:
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/components/ThreadTerminalDrawer.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.browser.test.tsx
       - apps/web/src/components/chat/MessagesTimeline.fileActionReview.test.ts
-      - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - apps/web/src/session-logic.test.ts
       - packages/shared/src/projectScripts.test.ts
     upstream:
@@ -5533,11 +5533,11 @@ features:
     tests:
       - apps/mobile/src/lib/markdownLinks.test.ts
       - apps/mobile/src/lib/threadActivity.test.ts
+      - apps/web/src/components/ChatMarkdown.browser.test.tsx
       - apps/web/src/components/ChatMarkdown.file-preview.browser.test.tsx
-      - apps/web/src/components/ChatMarkdown.test.tsx
       - apps/web/src/components/chat/ChatHeader.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.browser.test.tsx
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
-      - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - apps/web/src/filePathDisplay.test.ts
       - apps/web/src/markdown-clipboard.test.ts
       - apps/web/src/markdown-links.test.ts
