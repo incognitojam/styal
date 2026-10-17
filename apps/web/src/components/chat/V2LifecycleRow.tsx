@@ -120,6 +120,7 @@ export function V2LifecycleRow(props: {
     );
   }
   if (item.type === "handoff") {
+    if (item.title === "Imported context" && item.status === "completed") return null;
     const { from: fromEndpoints, to } = resolveHandoffEndpoints(item, props.runs);
     return (
       <TimelineSystemDivider
