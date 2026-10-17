@@ -127,7 +127,7 @@ export function getProviderVersionLabel(version: string | null | undefined) {
  * canary verified with this styal release. Automatic updates stop at the
  * verified version.
  */
-export function getUntestedLatestVersionNote(
+function getUntestedLatestVersionNote(
   latestVersion: string | null,
   verifiedVersion: string | undefined,
 ): string | null {
