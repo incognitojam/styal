@@ -4,7 +4,11 @@ import {
   draftAdaptationNote,
   intakeCommitMessage,
   lockfilePackages,
+  mergedModuleMoves,
+  moveLedgerPaths,
   overrideSelector,
+  rewriteServiceKeyText,
+  verificationEnvironment,
 } from "./intake-run.ts";
 
 describe("lockfilePackages", () => {
@@ -106,6 +110,100 @@ describe("intakeCommitMessage", () => {
         features: [],
       }),
       `Upstream-Commit: ${"b".repeat(40)}`,
+    );
+  });
+});
+
+describe("rewriteServiceKeyText", () => {
+  it("gives keys the fork's package name, including keys wrapped onto the next line", () => {
+    const text = [
+      'export class A extends Context.Service<A, {}>()("t3/provider/A") {}',
+      "export class B extends LayerMap.Service<B>()(",
+      '  "t3/workspace/B",',
+      ") {}",
+      'const unrelated = "t3/elsewhere";',
+    ].join("\n");
+    assert.strictEqual(
+      rewriteServiceKeyText(text, "t3", "@styal/cli"),
+      [
+        'export class A extends Context.Service<A, {}>()("@styal/cli/provider/A") {}',
+        "export class B extends LayerMap.Service<B>()(",
+        '  "@styal/cli/workspace/B",',
+        ") {}",
+        'const unrelated = "t3/elsewhere";',
+      ].join("\n"),
+    );
+  });
+});
+
+describe("moveLedgerPaths", () => {
+  it("points moved paths at their new files and keeps each edited list sorted", () => {
+    const ledger = [
+      "  - id: provider-auto-updates",
+      "    implementation_paths:",
+      "      - apps/server/src/provider/Layers/ProviderRegistry.ts",
+      "      - apps/server/src/provider/ProviderAutoUpdater.ts",
+      "    tests:",
+      "      - apps/server/src/provider/Layers/ProviderRegistry.test.ts",
+    ].join("\n");
+    const result = moveLedgerPaths(
+      ledger,
+      new Map([
+        [
+          "apps/server/src/provider/Layers/ProviderRegistry.ts",
+          "apps/server/src/provider/ProviderRegistry.ts",
+        ],
+        [
+          "apps/server/src/provider/Layers/ProviderRegistry.test.ts",
+          "apps/server/src/provider/ProviderRegistry.test.ts",
+        ],
+      ]),
+    );
+    assert.strictEqual(result.moved, 2);
+    assert.strictEqual(
+      result.text,
+      [
+        "  - id: provider-auto-updates",
+        "    implementation_paths:",
+        "      - apps/server/src/provider/ProviderAutoUpdater.ts",
+        "      - apps/server/src/provider/ProviderRegistry.ts",
+        "    tests:",
+        "      - apps/server/src/provider/ProviderRegistry.test.ts",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("verificationEnvironment", () => {
+  it("drops a styal session's server settings and service launcher context", () => {
+    assert.deepStrictEqual(
+      verificationEnvironment({
+        PATH: "/usr/bin",
+        T3CODE_PORT: "3773",
+        STYAL_HOME: "/home/a/.styal",
+        T3_SERVICE_LAUNCHER_CONTEXT: "{}",
+        T3_OTHER: "kept",
+      }),
+      { PATH: "/usr/bin", T3_OTHER: "kept" },
+    );
+  });
+});
+
+describe("mergedModuleMoves", () => {
+  it("maps a service file to the module that replaces its folder", () => {
+    assert.deepStrictEqual(
+      [
+        ...mergedModuleMoves(
+          ["apps/server/src/provider/Services/ProviderAuthService.ts", "apps/server/src/old.ts"],
+          ["apps/server/src/provider/ProviderAuthService.ts", "apps/server/src/web/old.ts"],
+        ),
+      ],
+      [
+        [
+          "apps/server/src/provider/Services/ProviderAuthService.ts",
+          "apps/server/src/provider/ProviderAuthService.ts",
+        ],
+      ],
     );
   });
 });

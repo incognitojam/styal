@@ -47,13 +47,19 @@ interface Run {
   readonly stderr: string;
 }
 
-function run(cwd: string, command: string, args: ReadonlyArray<string>, input?: string): Run {
+function run(
+  cwd: string,
+  command: string,
+  args: ReadonlyArray<string>,
+  input?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Run {
   const result = NodeChildProcess.spawnSync(command, args, {
     cwd,
     encoding: "utf8",
     input,
     maxBuffer: 256 * 1024 * 1024,
-    env: { ...process.env, GIT_EDITOR: "true" },
+    env: { ...env, GIT_EDITOR: "true" },
   });
   return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 }
@@ -80,7 +86,8 @@ export type AdaptationKind =
   | "additions"
   | "fork-deletion"
   | "lockfile"
-  | "service-keys";
+  | "service-keys"
+  | "ledger-paths";
 
 export interface Adaptation {
   readonly kind: AdaptationKind;
@@ -277,6 +284,14 @@ function readIfExists(path: string): string {
   return NodeFS.existsSync(path) ? NodeFS.readFileSync(path, "utf8") : "";
 }
 
+/**
+ * Replaces the package prefix of service keys, such as `>()("t3/provider/X")`, including keys
+ * the formatter wrapped onto the next line.
+ */
+export function rewriteServiceKeyText(text: string, from: string, to: string): string {
+  return text.replace(new RegExp(`(>\\(\\)\\(\\s*")${escapeRegExp(from)}/`, "gu"), `$1${to}/`);
+}
+
 /** Rewrites `Context.Service` keys that carry upstream's package name to the fork's. */
 function rewriteServiceKeys(
   cwd: string,
@@ -286,13 +301,12 @@ function rewriteServiceKeys(
 ): ReadonlyArray<Adaptation> {
   const adaptations: Array<Adaptation> = [];
   for (const { directory, from, to } of renamedPackages(cwd, upstreamSha, paths)) {
-    const key = new RegExp(`(>\\(\\)\\(")${escapeRegExp(from)}/`, "gu");
     for (const path of paths) {
       if (!path.startsWith(`${directory}/`) || !/\.tsx?$/u.test(path) || skip.has(path)) continue;
       const absolute = NodePath.join(cwd, path);
       if (!NodeFS.existsSync(absolute)) continue;
       const text = NodeFS.readFileSync(absolute, "utf8");
-      const rewritten = text.replace(key, `$1${to}/`);
+      const rewritten = rewriteServiceKeyText(text, from, to);
       if (rewritten !== text) {
         NodeFS.writeFileSync(absolute, rewritten);
         git(cwd, ["add", "--", path]);
@@ -305,6 +319,95 @@ function rewriteServiceKeys(
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+const LEDGER = ".github/fork-features.yml";
+
+/**
+ * Points ledger path entries at the files' new locations and keeps each edited list sorted, as
+ * the ledger check requires.
+ */
+export function moveLedgerPaths(
+  text: string,
+  moves: ReadonlyMap<string, string>,
+): { readonly text: string; readonly moved: number } {
+  const lines = text.split("\n");
+  let moved = 0;
+  const edited = new Set<number>();
+  lines.forEach((line, index) => {
+    const match = /^(\s*- )(\S+)$/u.exec(line);
+    const target = match ? moves.get(match[2]!) : undefined;
+    if (match && target !== undefined) {
+      lines[index] = `${match[1]}${target}`;
+      moved += 1;
+      edited.add(index);
+    }
+  });
+  for (const index of edited) {
+    const indent = /^(\s*)- /u.exec(lines[index]!)![1]!;
+    const item = (line: string | undefined) =>
+      line !== undefined &&
+      line.startsWith(`${indent}- `) &&
+      !line.slice(indent.length + 2).startsWith(" ");
+    let start = index;
+    while (item(lines[start - 1])) start -= 1;
+    let end = index;
+    while (item(lines[end + 1])) end += 1;
+    lines.splice(start, end - start + 1, ...lines.slice(start, end + 1).toSorted());
+  }
+  return { text: lines.join("\n"), moved };
+}
+
+/**
+ * Files merged into a module of the same name in a parent folder, such as
+ * `provider/Services/X.ts` into `provider/X.ts`. Git reports these as a deletion and an addition
+ * because the new module combines two files.
+ */
+export function mergedModuleMoves(
+  deleted: ReadonlyArray<string>,
+  added: ReadonlyArray<string>,
+): ReadonlyMap<string, string> {
+  const moves = new Map<string, string>();
+  for (const from of deleted) {
+    const candidates = added.filter(
+      (to) =>
+        NodePath.posix.basename(to) === NodePath.posix.basename(from) &&
+        NodePath.posix.dirname(from).startsWith(`${NodePath.posix.dirname(to)}/`),
+    );
+    if (candidates.length === 1) moves.set(from, candidates[0]!);
+  }
+  return moves;
+}
+
+/** Moves ledger paths for files this pick renames, including fork files moved with a folder. */
+function moveLedgerPathsForStagedRenames(cwd: string): ReadonlyArray<Adaptation> {
+  const absolute = NodePath.join(cwd, LEDGER);
+  if (!NodeFS.existsSync(absolute)) return [];
+  const fields = git(cwd, ["diff", "--cached", "-M", "--name-status", "-z", "HEAD"]).split("\0");
+  const moves = new Map<string, string>();
+  const deleted: Array<string> = [];
+  const added: Array<string> = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const status = fields[index]!;
+    if (status.startsWith("R")) {
+      moves.set(fields[index + 1]!, fields[index + 2]!);
+      // A module that absorbed a second file arrives as a rename of the first.
+      added.push(fields[index + 2]!);
+      index += 2;
+    } else if (status === "D" || status === "A") {
+      (status === "D" ? deleted : added).push(fields[index + 1]!);
+      index += 1;
+    } else if (status !== "") {
+      index += 1;
+    }
+  }
+  for (const [from, to] of mergedModuleMoves(deleted, added)) moves.set(from, to);
+  if (moves.size === 0) return [];
+  const result = moveLedgerPaths(NodeFS.readFileSync(absolute, "utf8"), moves);
+  if (result.moved === 0) return [];
+  NodeFS.writeFileSync(absolute, result.text);
+  git(cwd, ["add", "--", LEDGER]);
+  return [{ kind: "ledger-paths", path: LEDGER, detail: String(result.moved) }];
 }
 
 /** Code whose strings agents or users read: tool text, instructions, contracts, and client UI. */
@@ -455,6 +558,7 @@ export function pickUpstreamCommit(
       new Set(unresolved.map((file) => file.path)),
     ),
   );
+  if (unresolved.length === 0) adaptations.push(...moveLedgerPathsForStagedRenames(cwd));
   return {
     upstreamSha,
     status: unresolved.length > 0 ? "stopped" : conflicts.length > 0 ? "resolved" : "clean",
@@ -504,6 +608,9 @@ export function draftAdaptationNote(
       `The new service keys in ${keys.map((adaptation) => `\`${adaptation.path}\``).join(", ")} use the fork's package name.`,
     );
     features.add("fork-distribution-identity");
+  }
+  if (adaptations.some((adaptation) => adaptation.kind === "ledger-paths")) {
+    sentences.push("The fork feature ledger names the moved files' new paths.");
   }
   for (const deletion of adaptations.filter((adaptation) => adaptation.kind === "fork-deletion")) {
     sentences.push(`\`${deletion.path}\` stays absent: the fork does not carry it.`);
@@ -1061,8 +1168,22 @@ function owningPackages(cwd: string, paths: ReadonlyArray<string>): ReadonlyArra
 }
 
 /**
+ * The environment checks run in: a styal session passes its own server settings and the service
+ * launcher's context to the agents it runs, and server tests read them as if they were their own.
+ * CI has none of them.
+ */
+export function verificationEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      ([name]) => !/^(T3CODE_|STYAL_)/u.test(name) && name !== "T3_SERVICE_LAUNCHER_CONTEXT",
+    ),
+  );
+}
+
+/**
  * Installs once, then typechecks every package the batch touches, lints its changed files, runs
- * its changed tests, and checks the ledger. Prints one line per step and the failures in full.
+ * its changed tests, checks formatting, and checks the ledger. Prints one line per step and the
+ * failures in full.
  */
 function verify(cwd: string, base: string): boolean {
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
@@ -1072,8 +1193,9 @@ function verify(cwd: string, base: string): boolean {
     /"typecheck"\s*:/u.test(readIfExists(NodePath.join(cwd, directory, "package.json"))),
   );
   const steps: Array<{ name: string; ok: boolean; output: string }> = [];
+  const env = verificationEnvironment(process.env);
   const step = (name: string, command: string, args: ReadonlyArray<string>, directory = cwd) => {
-    const result = run(directory, command, args);
+    const result = run(directory, command, args, undefined, env);
     steps.push({ name, ok: result.status === 0, output: `${result.stdout}\n${result.stderr}` });
     process.stdout.write(`${result.status === 0 ? "ok  " : "FAIL"} ${name}\n`);
   };
@@ -1091,6 +1213,8 @@ function verify(cwd: string, base: string): boolean {
     if (tests.length > 0)
       step(`tests ${directory}`, "vp", ["test", "run", ...tests], NodePath.join(cwd, directory));
   }
+  // Renames and moved imports can leave lines the formatter would wrap differently.
+  step("formatting", "vp", ["fmt", "--check", "--no-error-on-unmatched-pattern", ...changed]);
   step("ledger", "vp", ["run", "--filter", "@t3tools/scripts", "ledger:check"]);
   for (const failed of steps.filter((entry) => !entry.ok)) {
     const relevant = failed.output
@@ -1158,9 +1282,10 @@ function main() {
           .filter((id) => id) ?? [];
       const changed = lines(git(cwd, ["diff", "--cached", "--name-only", "HEAD"]));
       const keys = rewriteServiceKeys(cwd, state.current.entry.sha, changed);
+      const ledger = moveLedgerPathsForStagedRenames(cwd);
       const outcome = {
         ...state.current.outcome,
-        adaptations: [...state.current.outcome.adaptations, ...keys],
+        adaptations: [...state.current.outcome.adaptations, ...keys, ...ledger],
       };
       commitPick(cwd, state.current.entry, outcome, {
         ...(note ? { note } : {}),
