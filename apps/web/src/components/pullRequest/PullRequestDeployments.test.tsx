@@ -125,7 +125,9 @@ it("lists failures first and keeps the rest behind Show all", async () => {
   environments[5] = { ...environments[5]!, status: "failure" };
   await render(environments, { headSha });
   const names = () =>
-    [...container.querySelectorAll("li .font-medium")].map((node) => node.textContent);
+    [...container.querySelectorAll('button[aria-label^="View deployment logs for "]')].map((node) =>
+      node.getAttribute("aria-label")!.slice("View deployment logs for ".length),
+    );
   expect(names()).toEqual(["f", "a", "b", "c", "d"]);
 
   await act(async () =>

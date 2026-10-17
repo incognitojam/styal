@@ -125,21 +125,21 @@ export function PullRequestDeployments({
                   </p>
                 ) : null}
               </div>
-              <div className="flex h-4.5 shrink-0 items-center gap-2 text-xs">
+              <div className="flex h-4.5 shrink-0 items-center gap-1">
                 {logUrl ? (
-                  <button
-                    type="button"
-                    className="text-primary hover:underline"
+                  <Button
+                    size="xs"
+                    variant="ghost-muted"
                     onClick={() => open(logUrl)}
                     aria-label={`View deployment logs for ${deployment.environment}`}
                   >
                     Logs
-                  </button>
+                  </Button>
                 ) : null}
                 {environmentUrl ? (
                   <Button
                     size="xs"
-                    variant="outline"
+                    variant="ghost-muted"
                     onClick={() => open(environmentUrl)}
                     aria-label={`Open ${deployment.environment}`}
                   >
@@ -163,7 +163,7 @@ export function PullRequestDeployments({
           )}
           {canCollapse ? (
             <Button
-              variant="ghost"
+              variant="ghost-muted"
               size="xs"
               aria-expanded={showAll}
               onClick={() => setShowAll(!showAll)}
