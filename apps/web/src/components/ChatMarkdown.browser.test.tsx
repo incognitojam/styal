@@ -5,6 +5,8 @@ import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import "~/index.css";
+
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { MarkdownFindContext } from "./chat/markdownFindContext";
 import { useThreadFindHighlights } from "./chat/threadFindHighlights";
@@ -1024,4 +1026,34 @@ describe("ChatMarkdown thread find", () => {
       ).toBe(count);
     },
   );
+});
+
+describe("ChatMarkdown table wrap toggle", () => {
+  const table = (cell: string) => `| Name | Value |\n| --- | --- |\n| one | ${cell} |`;
+
+  async function renderTable(cell: string) {
+    const host = document.body.appendChild(document.createElement("div"));
+    host.style.width = "320px";
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => root.render(<ChatMarkdown cwd="/tmp/project" text={table(cell)} />));
+    return host;
+  }
+
+  it("offers the toggle when the unwrapped table is wider than its scroll area", async () => {
+    const host = await renderTable("word ".repeat(80));
+
+    // Word wrap is on by default, so the table starts wrapped.
+    const [toggle] = buttonsLabelled(host, "Collapse table cells");
+    expect(toggle).toBeDefined();
+    await act(async () => toggle!.click());
+    expect(buttonsLabelled(host, "Expand table cells")).toHaveLength(1);
+  });
+
+  it("hides the toggle when the table fits", async () => {
+    const host = await renderTable("short");
+
+    expect(buttonsLabelled(host, "Expand table cells")).toHaveLength(0);
+    expect(buttonsLabelled(host, "Collapse table cells")).toHaveLength(0);
+  });
 });

@@ -214,6 +214,7 @@ import {
   resolvePullRequestPreviewTarget,
   useOpenChangeRequestLink,
 } from "~/lib/openPullRequestLink";
+import { observeResize } from "~/lib/observeResize";
 import { useOpenLink } from "../browser/useOpenLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
@@ -557,13 +558,61 @@ function readInitialWordWrapSetting(): boolean {
   return getClientSettings().wordWrap;
 }
 
+/**
+ * Whether the unwrapped layout overflows: the table is wider than its scroll
+ * area or a cell is clipped. Only then does the wrap toggle change anything,
+ * so short tables hide it. Measures with the container briefly unwrapped and
+ * restores it before the browser paints.
+ */
+function tableHasClippedCells(container: HTMLElement, table: HTMLTableElement): boolean {
+  const viewport = table.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
+  const scrollLeft = viewport?.scrollLeft ?? 0;
+  const previous = container.dataset.expanded;
+  container.dataset.expanded = "false";
+  try {
+    // Unwrapped fork tables grow to their content, so cells rarely clip.
+    if (table.scrollWidth > (viewport ?? container).clientWidth) return true;
+    for (const row of table.rows) {
+      for (const cell of row.cells) {
+        if (cell.scrollWidth > cell.clientWidth) return true;
+      }
+    }
+    return false;
+  } finally {
+    if (previous === undefined) delete container.dataset.expanded;
+    else container.dataset.expanded = previous;
+    // The unwrapped layout can be narrower and clamp a sideways scroll.
+    if (viewport && scrollLeft > 0) viewport.scrollLeft = scrollLeft;
+  }
+}
+
 function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
   const [expanded, setExpanded] = useState(readInitialWordWrapSetting);
+  const [hasClippedCells, setHasClippedCells] = useState(false);
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expandLabel = expanded ? "Collapse table cells" : "Expand table cells";
   const copyLabel = copied ? "Copied" : "Copy table";
+
+  const measureClippedCells = () => {
+    const container = containerRef.current;
+    const table = tableRef.current;
+    if (!container || !table) return;
+    setHasClippedCells(tableHasClippedCells(container, table));
+  };
+
+  // A streamed cell can grow until it clips while the table keeps its size,
+  // so remeasure after every render, not only on resize.
+  useLayoutEffect(measureClippedCells);
+
+  // Column width changes can clip a cell without rendering this table.
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    if (!table) return;
+    return observeResize(table, measureClippedCells);
+  }, [measureClippedCells]);
 
   const handleCopy = (format: "markdown" | "csv") => {
     const table = containerRef.current?.querySelector("table");
@@ -608,26 +657,32 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
       data-expanded={expanded ? "true" : "false"}
     >
       <ScrollArea radius="none" chainVerticalScroll scrollFade className="w-full max-w-full">
-        <table {...props}>{children}</table>
+        <table ref={tableRef} {...props}>
+          {children}
+        </table>
       </ScrollArea>
       <div className="mt-0.5 flex items-center justify-between select-none">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant={expanded ? "secondary" : "ghost-muted"}
-                size="icon-xs"
-                aria-pressed={expanded}
-                onClick={() => setExpanded((value) => !value)}
-                aria-label={expandLabel}
-              />
-            }
-          >
-            <MorphIcon className="size-3" icon={expanded ? Minimize2 : Maximize2} />
-          </TooltipTrigger>
-          <TooltipPopup side="top">{expandLabel}</TooltipPopup>
-        </Tooltip>
+        {hasClippedCells ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant={expanded ? "secondary" : "ghost-muted"}
+                  size="icon-xs"
+                  aria-pressed={expanded}
+                  onClick={() => setExpanded((value) => !value)}
+                  aria-label={expandLabel}
+                />
+              }
+            >
+              <MorphIcon className="size-3" icon={expanded ? Minimize2 : Maximize2} />
+            </TooltipTrigger>
+            <TooltipPopup side="top">{expandLabel}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          <span />
+        )}
         <Menu>
           <Tooltip>
             <TooltipTrigger
