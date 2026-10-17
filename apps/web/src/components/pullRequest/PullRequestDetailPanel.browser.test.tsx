@@ -1,0 +1,497 @@
+import {
+  EnvironmentId,
+  ProjectId,
+  SourceControlProviderKind,
+  ThreadId,
+  type PullRequestDetailView,
+  type PullRequestSummary,
+  type ScopedThreadRef,
+  type ThreadPullRequestLink,
+} from "@t3tools/contracts";
+import { act, type ComponentProps } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
+import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
+
+import "~/index.css";
+
+const { newThread, prepareThread, refresh, sharedSummary } = vi.hoisted(() => ({
+  newThread: vi.fn(),
+  prepareThread: vi.fn(),
+  refresh: vi.fn(),
+  sharedSummary: vi.fn<() => PullRequestSummary | null>(),
+}));
+
+vi.mock(import("~/state/session"), async (original) => ({
+  ...(await original()),
+  useEnvironmentScope: () => true,
+  readEnvironmentScope: () => true,
+}));
+vi.mock(import("~/hooks/useSettings"), async (original) => ({
+  ...(await original()),
+  useEnvironmentSettings: (() => undefined) as never,
+}));
+vi.mock(import("~/hooks/useHandleNewThread"), async (original) => ({
+  ...(await original()),
+  useNewThreadHandler: (() => newThread) as never,
+}));
+vi.mock(import("~/lib/sourceControlActions"), async (original) => ({
+  ...(await original()),
+  usePreparePullRequestThreadAction: (() => ({
+    run: prepareThread,
+    isAllowed: true,
+    error: null,
+  })) as never,
+}));
+vi.mock(import("~/state/use-atom-command"), async (original) => ({
+  ...(await original()),
+  useAtomCommand: (() => vi.fn()) as never,
+}));
+vi.mock(import("~/state/pullRequests"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  const cannotWriteGuides = Atom.make(false);
+  return {
+    ...actual,
+    useSharedPullRequestSummary: sharedSummary,
+    pullRequestEnvironment: {
+      ...actual.pullRequestEnvironment,
+      detail: (() => "detail") as never,
+      activity: (() => "activity") as never,
+      reviewGuide: (() => "review-guide") as never,
+      generateReviewGuide: {
+        ...actual.pullRequestEnvironment.generateReviewGuide,
+        permissionAtom: () => cannotWriteGuides,
+      },
+    },
+  };
+});
+vi.mock(import("~/state/query"), async (original) => ({
+  ...(await original()),
+  useEnvironmentQuery: ((query: unknown) => ({
+    data: query === "detail" ? liveDetail : null,
+    dataUpdatedAt: query === "detail" ? liveDetail.observedAt : null,
+    failure: null,
+    isPending: false,
+    isSuccess: true,
+    error: null,
+    refresh,
+  })) as never,
+}));
+vi.mock(import("~/state/usePullRequestStack"), async (original) => ({
+  ...(await original()),
+  usePullRequestStack: (() => ({
+    data: null,
+    isSuccess: true,
+    isPending: false,
+    error: null,
+    refresh,
+  })) as never,
+}));
+// The real tabs load diffs, markdown and checks from the environment; these stand-ins
+// expose the actions they hand back to the panel and a tall scroller.
+vi.mock(import("./PullRequestSummaryTab"), async (original) => ({
+  ...(await original()),
+  PullRequestSummaryTab: (({
+    onFixFinding,
+    scrollerRef,
+  }: ComponentProps<typeof import("./PullRequestSummaryTab").PullRequestSummaryTab>) => (
+    <div ref={scrollerRef} data-testid="summary-scroller" className="h-full overflow-y-auto">
+      <button
+        type="button"
+        onClick={() =>
+          onFixFinding?.({
+            kind: "check",
+            check: { name: "Unit tests", status: "failure", description: "Test failed", url: null },
+          })
+        }
+      >
+        Fix check
+      </button>
+      <div data-testid="nested-scroller" className="h-40 overflow-y-auto">
+        <div className="h-[2000px]" />
+      </div>
+      <div className="h-[3000px]" />
+    </div>
+  )) as never,
+}));
+vi.mock(import("./PullRequestCodeTab"), async (original) => ({
+  ...(await original()),
+  default: (({
+    onAddToAgentSelection,
+    scrollerRef,
+  }: ComponentProps<typeof import("./PullRequestCodeTab").default>) => (
+    <div ref={scrollerRef} data-testid="code-scroller" className="h-full overflow-y-auto">
+      <button
+        type="button"
+        onClick={() =>
+          onAddToAgentSelection?.({
+            request: "Fix this line",
+            comment: {
+              id: "note-1",
+              sectionId: "file:a.ts",
+              sectionTitle: "a.ts",
+              filePath: "a.ts",
+              startIndex: 0,
+              endIndex: 0,
+              rangeLabel: "L1",
+              text: "Please fix",
+              diff: "+broken()",
+            },
+          })
+        }
+      >
+        Add to agent
+      </button>
+      <div className="h-[3000px]" />
+    </div>
+  )) as never,
+}));
+
+import { PullRequestDetailPanel } from "./PullRequestDetailPanel";
+import { pullRequestPanelContext } from "./pullRequestDetail.logic";
+
+const detail: PullRequestDetailView = {
+  provider: SourceControlProviderKind.make("github"),
+  projectId: ProjectId.make("project"),
+  projectTitle: "Project",
+  workspaceRoot: "/workspace",
+  repository: "owner/repo",
+  number: 1,
+  title: "Test pull request",
+  body: "Original description",
+  url: "https://github.com/owner/repo/pull/1",
+  author: { login: "author", name: null, avatarUrl: null },
+  viewer: "author",
+  state: "open",
+  isDraft: false,
+  mergeability: "conflicting",
+  additions: 1,
+  deletions: 0,
+  changedFiles: 1,
+  headBranch: "feature",
+  baseBranch: "main",
+  createdAt: "2026-09-01T00:00:00Z",
+  updatedAt: "2026-09-01T00:00:00Z",
+  mergedAt: null,
+  closedAt: null,
+  reviewers: [],
+  labels: [],
+  checks: [{ name: "Unit tests", status: "success", description: null, url: null }],
+  comments: [],
+  commentCount: 0,
+  commentsTruncated: false,
+  reviewThreads: [],
+  commits: [],
+  mergeCapabilities: { merge: false, squash: false, rebase: false },
+  capabilities: {
+    diff: true,
+    comment: false,
+    search: true,
+    actions: [],
+    mergeMethods: [],
+    review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
+    reviewers: { request: false, listCandidates: false },
+    edit: { changeRequest: true, comment: false },
+  },
+  viewerPermissions: {
+    actions: [],
+    comment: false,
+    resolve: false,
+    verdicts: [],
+    requestReviewers: false,
+  },
+};
+
+let liveDetail = detail;
+
+const threadRef: ScopedThreadRef = {
+  environmentId: EnvironmentId.make("env-1"),
+  threadId: ThreadId.make("thread-1"),
+};
+const draftId = DraftId.make("draft-1");
+const newDraftId = DraftId.make("new-draft");
+const shortcutContext = () => ({
+  terminalFocus: false,
+  terminalOpen: false,
+  rightPanelFocus: false,
+  previewFocus: false,
+  previewOpen: false,
+  isWeb: true,
+  isDesktop: false,
+});
+
+const roots: Root[] = [];
+
+function render(props: Partial<ComponentProps<typeof PullRequestDetailPanel>> = {}) {
+  const container = document.createElement("div");
+  container.className = "flex h-[700px] w-[900px]";
+  document.body.append(container);
+  const root = createRoot(container);
+  roots.push(root);
+  return act(async () =>
+    root.render(
+      <PullRequestDetailPanel
+        environmentId={threadRef.environmentId}
+        reference={detail}
+        context="page"
+        shortcutsEnabled={false}
+        getShortcutContext={shortcutContext}
+        {...props}
+      />,
+    ),
+  );
+}
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  liveDetail = detail;
+  sharedSummary.mockReset().mockReturnValue(null);
+  refresh.mockReset();
+  useComposerDraftStore.setState({ draftsByThreadKey: {} });
+  newThread
+    .mockReset()
+    .mockResolvedValue({ draftId: newDraftId, threadId: ThreadId.make("new-thread") });
+  prepareThread.mockReset().mockResolvedValue({
+    _tag: "Success",
+    value: { branch: "feature", worktreePath: "/workspace/pr" },
+  });
+});
+afterEach(async () => {
+  for (const root of roots.splice(0)) await act(async () => root.unmount());
+  document.body.replaceChildren();
+  vi.unstubAllGlobals();
+});
+
+const surface = { projectId: detail.projectId, repository: detail.repository, number: 1 };
+const link = (number: number, source: ThreadPullRequestLink["source"]): ThreadPullRequestLink => ({
+  host: "github.com",
+  repository: detail.repository,
+  number,
+  url: `https://github.com/${detail.repository}/pull/${number}`,
+  source,
+  linkedAt: "2026-09-01T00:00:00Z",
+  snapshot: null,
+  stack: null,
+});
+const stackThread = {
+  projectId: detail.projectId,
+  pullRequests: [link(3, "manual"), link(2, "stack"), link(1, "stack")],
+  linkedPullRequest: { ...surface, number: 3, url: link(3, "manual").url },
+};
+const unrelatedThread = {
+  projectId: detail.projectId,
+  pullRequests: [link(9, "created")],
+  linkedPullRequest: { ...surface, number: 9, url: link(9, "created").url },
+};
+
+const tab = (name: string) => page.getByRole("button", { name, exact: true });
+
+async function runAction(action: string) {
+  if (action === "Add to agent") {
+    await tab("Code").click();
+  }
+  if (["Ask a question", "Explain this PR"].includes(action) || action.startsWith("Fix findings")) {
+    await page.getByRole("button", { name: "More pull request actions" }).click();
+    // Menu items carry a description under their label.
+    await page.getByRole("menuitem", { name: new RegExp(`^${action}`) }).click();
+    return;
+  }
+  await page.getByRole("button", { name: action, exact: true }).click();
+}
+
+describe.each([
+  ["own PR, a lower layer of the thread's stack", stackThread, threadRef],
+  ["another PR beside the current thread", unrelatedThread, threadRef],
+  ["PR beside an unsent draft", null, draftId],
+  ["standalone PR page", null, undefined],
+] as const)("%s", (_name, thread, target) => {
+  const context = thread ? pullRequestPanelContext(thread, surface) : "page";
+  const renderPanel = () =>
+    render({ context, ...(target ? { composerDraftTarget: target, threadRef } : {}) });
+
+  it(`${thread === stackThread ? "hides" : "offers"} the checkout`, async () => {
+    await renderPanel();
+    await expect.element(page.getByText("Test pull request").first()).toBeVisible();
+    expect(page.getByRole("button", { name: "Check out" }).elements()).toHaveLength(
+      thread === stackThread ? 0 : 1,
+    );
+  });
+
+  it.each([
+    "Resolve conflicts",
+    "Ask a question",
+    "Explain this PR",
+    "Fix findings in this thread",
+    "Fix check",
+    "Add to agent",
+  ])("%s writes to the correct composer", async (action) => {
+    if (target) useComposerDraftStore.getState().setPrompt(target, "Keep my draft");
+    await renderPanel();
+    await runAction(target ? action : action.replace("in this thread", "in a thread"));
+    const draft = () => useComposerDraftStore.getState().getComposerDraft(target ?? newDraftId);
+    await vi.waitFor(() => {
+      if (action === "Resolve conflicts")
+        expect(draft()?.prompt).toContain("resolve every conflict");
+      else if (action === "Fix check") expect(draft()?.prompt).toContain("Fix the failing check");
+      else if (action.startsWith("Fix findings"))
+        expect(draft()?.prompt).toContain("Fix the actionable findings");
+      else expect(draft()?.reviewComments?.length).toBeGreaterThan(0);
+    });
+    if (action === "Add to agent") {
+      expect(draft()?.prompt).toContain("Fix this line");
+      expect(draft()?.reviewComments).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "note-1", diff: "+broken()" })]),
+      );
+    }
+    if (target) {
+      expect(draft()?.prompt).toContain("Keep my draft");
+      expect(newThread).not.toHaveBeenCalled();
+      expect(prepareThread).not.toHaveBeenCalled();
+    } else {
+      expect(newThread).toHaveBeenCalled();
+    }
+  });
+});
+
+it("folds the title only for the active tab's own scroller", async () => {
+  await render();
+  const title = page.getByRole("heading", { level: 1, name: "Test pull request" });
+  await expect.element(title).toBeVisible();
+  const titleFold = () => title.element().closest("[inert]") !== null;
+  const scrollTo = async (testId: string, top: number) => {
+    const scroller = page.getByTestId(testId).element() as HTMLElement;
+    await act(async () => {
+      scroller.scrollTop = top;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    return scroller;
+  };
+
+  await scrollTo("nested-scroller", 600);
+  expect(titleFold()).toBe(false);
+
+  const summary = await scrollTo("summary-scroller", 600);
+  await vi.waitFor(() => expect(titleFold()).toBe(true));
+  // Folding the header keeps the content under the reader's eye.
+  expect(summary.scrollTop).toBeLessThan(600);
+
+  await scrollTo("summary-scroller", 0);
+  await vi.waitFor(() => expect(titleFold()).toBe(false));
+  await scrollTo("summary-scroller", 600);
+  await vi.waitFor(() => expect(titleFold()).toBe(true));
+
+  await tab("Code").click();
+  await expect.element(page.getByTestId("code-scroller")).toBeInTheDocument();
+  await vi.waitFor(() => expect(titleFold()).toBe(false));
+  await scrollTo("code-scroller", 600);
+  await vi.waitFor(() => expect(titleFold()).toBe(true));
+
+  await tab("Summary").click();
+  await vi.waitFor(() => expect(titleFold()).toBe(true));
+  await scrollTo("summary-scroller", 0);
+  await vi.waitFor(() => expect(titleFold()).toBe(false));
+  await tab("Code").click();
+  await vi.waitFor(() => expect(titleFold()).toBe(true));
+});
+
+describe("checks contradicted by a newer cached summary", () => {
+  it.each([
+    ["success", "failing", "Some checks were not successful", "failure"],
+    ["failure", "passing", "All checks have passed", "success"],
+    ["success", "pending", "Some checks are still pending", "pending"],
+    ["success", null, "No checks reported", null],
+  ] as const)(
+    "%s runs are hidden while the cached summary reports %s, until refresh",
+    async (oldStatus, checksState, label, refreshedStatus) => {
+      liveDetail = {
+        ...detail,
+        observedAt: 100,
+        mergeReadiness: "ready",
+        checks: [{ name: "Cached unit tests", status: oldStatus, description: null, url: null }],
+      };
+      // The list's newer read time wins even when the host's updatedAt has not changed.
+      const cachedEntry = {
+        ...detail,
+        environmentId: threadRef.environmentId,
+        host: "github.com",
+        observedAt: 200,
+        viewerReviewRequested: false,
+        ...(checksState === null ? {} : { checksState }),
+      };
+      // A shared summary can explicitly clear a rollup; list entries only report non-null ones.
+      if (checksState === null) {
+        sharedSummary.mockReturnValue({ ...detail, observedAt: 200, checksState: null });
+      }
+      const panel = (
+        <PullRequestDetailPanel
+          environmentId={threadRef.environmentId}
+          reference={detail}
+          listEntry={checksState === null ? null : cachedEntry}
+          shortcutsEnabled={false}
+          getShortcutContext={() => ({
+            terminalFocus: false,
+            terminalOpen: false,
+            rightPanelFocus: false,
+            previewFocus: false,
+            previewOpen: false,
+            isWeb: true,
+            isDesktop: false,
+          })}
+        />
+      );
+      await render(panel.props);
+      const navButton = page
+        .getByRole("button", { name: `Open checks: ${label}`, exact: true })
+        .element();
+      // A stale rollup has a label, but cannot support counts or the old merge verdict.
+      expect(navButton.textContent).toBe(label);
+      await page.getByRole("button", { name: `Open checks: ${label}`, exact: true }).click();
+      expect(document.body.textContent ?? "").toContain("Check details are out of date.");
+      expect(document.body.textContent ?? "").not.toContain("Cached unit tests");
+      expect(document.body.textContent ?? "").not.toContain("Ready to merge");
+      expect(page.getByRole("button", { name: "Fix", exact: true }).elements().length > 0).toBe(
+        false,
+      );
+
+      refresh.mockImplementation(() => {
+        liveDetail = {
+          ...liveDetail,
+          observedAt: 300,
+          checks:
+            refreshedStatus === null
+              ? []
+              : [
+                  {
+                    name: "Refreshed unit tests",
+                    status: refreshedStatus,
+                    description: null,
+                    url: null,
+                  },
+                ],
+        };
+        sharedSummary.mockReturnValue(null);
+        roots.at(-1)!.render(<PullRequestDetailPanel {...panel.props} />);
+      });
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      expect(document.body.textContent ?? "").not.toContain("Check details are out of date.");
+      if (refreshedStatus === null)
+        expect(document.body.textContent ?? "").toContain("No checks reported");
+      else {
+        expect(document.body.textContent ?? "").toContain("Refreshed unit tests");
+        expect(document.body.textContent ?? "").toContain(
+          refreshedStatus === "failure"
+            ? "1 of 1 failing"
+            : refreshedStatus === "pending"
+              ? "1 of 1 running"
+              : "All checks passed",
+        );
+      }
+      await page.getByRole("button", { name: "Summary", exact: true }).click();
+      const refreshedNavButton = page.getByRole("button", { name: /^Open checks:/ }).element();
+      expect(refreshedNavButton.textContent).toContain("Ready to merge");
+      expect(refreshedNavButton.textContent).not.toBe(label);
+    },
+  );
+});
