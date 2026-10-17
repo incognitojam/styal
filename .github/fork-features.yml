@@ -18,6 +18,7 @@ features:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/hooks/useRightPanelSurfaceClose.ts
       - apps/web/src/hooks/useTerminalCloseConfirmation.ts
       - apps/web/src/lib/terminalCloseConfirm.ts
       - packages/client-runtime/src/state/terminal.ts

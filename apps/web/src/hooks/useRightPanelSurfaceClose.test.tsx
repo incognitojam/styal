@@ -1,0 +1,118 @@
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { act, useLayoutEffect } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
+import { useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useRightPanelSurfaceClose } from "./useRightPanelSurfaceClose";
+
+const state = vi.hoisted(() => ({
+  close: vi.fn(),
+  confirm: vi.fn(),
+  allowed: new Set<string>(),
+}));
+
+vi.mock("../composerDraftStore", () => ({ useComposerDraftStore: () => null }));
+vi.mock("../state/entities", () => ({ useThreadShell: () => null, useProject: () => null }));
+vi.mock("../state/session", () => ({
+  readEnvironmentScope: (environmentId: string) => state.allowed.has(environmentId),
+  useEnvironmentScope: (environmentId: string) => state.allowed.has(environmentId),
+}));
+vi.mock("../state/terminal", () => ({ terminalEnvironment: { close: "close" } }));
+vi.mock("../state/terminalSessions", () => ({ useKnownTerminalSessions: () => [] }));
+vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.close }));
+vi.mock("../components/ChatView.logic", () => ({
+  agentControlledBrowserCloseConfirmation: () => null,
+}));
+vi.mock("./useTerminalCloseConfirmation", () => ({
+  useTerminalCloseConfirmation: () => state.confirm,
+}));
+vi.mock("../state/preview", () => ({ previewEnvironment: { close: "preview-close" } }));
+vi.mock("../previewStateStore", () => ({
+  useThreadPreviewState: () => ({ sessions: {} }),
+  setActivePreviewTab: vi.fn(),
+}));
+vi.mock("../localApi", () => ({ readLocalApi: () => null }));
+vi.mock("../components/preview/closePreviewSession", () => ({ closePreviewSession: vi.fn() }));
+
+const original: ScopedThreadRef = {
+  environmentId: EnvironmentId.make("environment-a"),
+  threadId: ThreadId.make("thread-a"),
+};
+const other: ScopedThreadRef = {
+  environmentId: EnvironmentId.make("environment-b"),
+  threadId: ThreadId.make("thread-b"),
+};
+let renderer: ReactTestRenderer | null = null;
+let actions: ReturnType<typeof useRightPanelSurfaceClose>;
+function Probe({ target }: { target: ScopedThreadRef }) {
+  const currentActions = useRightPanelSurfaceClose({
+    threadRef: target,
+    terminalLabelsById: new Map(),
+  });
+  useLayoutEffect(() => {
+    actions = currentActions;
+  });
+  return null;
+}
+async function render(target: ScopedThreadRef) {
+  await act(() => {
+    if (renderer) renderer.update(<Probe target={target} />);
+    else renderer = create(<Probe target={target} />);
+  });
+  return actions;
+}
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  state.allowed = new Set([original.environmentId, other.environmentId]);
+  state.close.mockResolvedValue({ _tag: "Success" });
+  useRightPanelStore.setState({ byThreadKey: {} });
+  useTerminalUiStateStore.setState({ terminalUiStateByThreadKey: {} });
+});
+afterEach(async () => {
+  await act(() => renderer?.unmount());
+  renderer = null;
+  vi.resetAllMocks();
+  vi.unstubAllGlobals();
+});
+
+it.each(["confirmed", "cancelled", "revoked"])(
+  "keeps a delayed %s close on its original thread",
+  async (outcome) => {
+    let confirm!: (confirmed: boolean) => void;
+    state.confirm.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        confirm = resolve;
+      }),
+    );
+    for (const target of [original, other]) {
+      useRightPanelStore.getState().openTerminal(target, "term-1");
+      useTerminalUiStateStore.getState().ensureTerminal(target, "term-1");
+    }
+    const originalSurface = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      original,
+    ).surfaces[0]!;
+    const retained = await render(original);
+    retained.closeSurface(originalSurface);
+    await render(other);
+    if (outcome === "revoked") state.allowed.delete(original.environmentId);
+    await act(async () => {
+      confirm(outcome !== "cancelled");
+    });
+    if (outcome === "confirmed") {
+      expect(state.close).toHaveBeenCalledExactlyOnceWith({
+        environmentId: original.environmentId,
+        input: { threadId: original.threadId, terminalId: "term-1", deleteHistory: true },
+      });
+    } else {
+      expect(state.close).not.toHaveBeenCalled();
+    }
+    const panels = useRightPanelStore.getState().byThreadKey;
+    expect(selectThreadRightPanelState(panels, other).surfaces).toHaveLength(1);
+    expect(selectThreadRightPanelState(panels, original).surfaces).toHaveLength(
+      outcome === "cancelled" ? 1 : 0,
+    );
+  },
+);
