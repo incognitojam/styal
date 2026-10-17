@@ -14,7 +14,7 @@ import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
-import { serverUpdateConfirmation } from "./ServerUpdateAction.logic";
+import { serverUpdateConfirmation, serverUpdateQuestion } from "./ServerUpdateAction.logic";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -128,38 +128,37 @@ function useServerUpdates() {
     );
     if (claimed.length === 0) return;
     for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
+    const hosts = claimed.map((target) => ({
+      serverLabel: target.serverLabel,
+      desktopApp: target.selfUpdate === "desktop-managed",
+      continueRunningThreads: continuesRunningThreads(target),
+    }));
     try {
       // This is the only confirmation in the flow; the remote machines restart
       // without asking anyone there, so work started from any client counts.
-      const activities = await Promise.all(
-        claimed.map(async ({ environmentId }) => {
-          const activity = await readHostActivity({ environmentId, input: {} });
-          return activity._tag === "Success" ? activity.value : null;
-        }),
-      );
-      const confirmation = serverUpdateConfirmation(
-        claimed.map((target, index) => ({
-          serverLabel: target.serverLabel,
-          activity: activities[index] ?? null,
-          desktopApp: target.selfUpdate === "desktop-managed",
-          continueRunningThreads: continuesRunningThreads(target),
-        })),
+      const prepare = async () => {
+        const activities = await Promise.all(
+          claimed.map(async ({ environmentId }) => {
+            const activity = await readHostActivity({ environmentId, input: {} });
+            return activity._tag === "Success" ? activity.value : null;
+          }),
+        );
+        return serverUpdateConfirmation(
+          hosts.map((host, index) => ({
+            ...host,
+            activity: activities[index] ?? null,
+          })),
+        );
+      };
+      const confirmation = requestConfirmDialog(
+        `${serverUpdateQuestion(hosts)}\nChecking for running work…`,
+        { confirmLabel: "Update" },
+        { prepare },
       );
       // No themed host mounted (undefined) means proceed: the click itself
       // was the request.
-      if (
-        confirmation !== null &&
-        !(
-          (await requestConfirmDialog(confirmation.message, {
-            confirmLabel: "Update",
-            ...(confirmation.threadActivity.length
-              ? { threadActivity: confirmation.threadActivity }
-              : {}),
-          })) ?? true
-        )
-      ) {
-        return;
-      }
+      if (confirmation === undefined) await prepare();
+      else if (!(await confirmation)) return;
       await Promise.all(
         claimed.map((target) =>
           updateOne(

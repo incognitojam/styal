@@ -11,6 +11,14 @@ import {
   respondToConfirmDialog,
 } from "./confirmDialog";
 
+function deferred<A>() {
+  let resolve!: (value: A) => void;
+  const promise = new Promise<A>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 function requireConfirmation(confirmation: Promise<boolean> | undefined): Promise<boolean> {
   if (!confirmation) {
     throw new Error("Expected a registered confirmation host.");
@@ -21,6 +29,130 @@ function requireConfirmation(confirmation: Promise<boolean> | undefined): Promis
 describe("confirm dialog coordinator", () => {
   beforeEach(() => {
     resetConfirmDialogForTests();
+  });
+
+  it("waits to prepare a queued dialog and never replaces the active confirmation", async () => {
+    const unregister = registerConfirmDialogHost();
+    const content = deferred<{ message: string }>();
+    let checks = 0;
+    const first = requireConfirmation(requestConfirmDialog("Delete this thread?"));
+    const update = requireConfirmation(
+      requestConfirmDialog(
+        "Update?\nChecking…",
+        { confirmLabel: "Update" },
+        {
+          prepare: () => {
+            checks++;
+            return content.promise;
+          },
+        },
+      ),
+    );
+    expect(checks).toBe(0);
+    expect(readConfirmDialogState()).toMatchObject({ message: "Delete this thread?" });
+    respondToConfirmDialog(false);
+    await first;
+    completeConfirmDialogClose();
+    expect(checks).toBe(1);
+    expect(readConfirmDialogState()).toMatchObject({ loading: true });
+    content.resolve({ message: "Update?\n1 thread will be interrupted." });
+    await content.promise;
+    expect(readConfirmDialogState()).toMatchObject({
+      message: "Update?\n1 thread will be interrupted.",
+    });
+    expect(readConfirmDialogState()).not.toHaveProperty("loading");
+    respondToConfirmDialog(false);
+    await expect(update).resolves.toBe(false);
+    unregister();
+  });
+
+  it("cancels when preparation rejects instead of admitting an unchecked action", async () => {
+    const unregister = registerConfirmDialogHost();
+    const confirmation = requireConfirmation(
+      requestConfirmDialog("Update?", undefined, {
+        prepare: () => Promise.reject(new Error("Connection lost")),
+      }),
+    );
+    await expect(confirmation).resolves.toBe(false);
+    expect(readConfirmDialogState().status).toBe("closing");
+    unregister();
+  });
+
+  it("advances the queue when a check needs no confirmation before the dialog renders", async () => {
+    const unregister = registerConfirmDialogHost();
+    const idle = requireConfirmation(
+      requestConfirmDialog("Update?", undefined, { prepare: async () => null }),
+    );
+    const next = requireConfirmation(requestConfirmDialog("Delete the project?"));
+    await expect(idle).resolves.toBe(true);
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "confirming",
+      message: "Delete the project?",
+    });
+    respondToConfirmDialog(false);
+    await expect(next).resolves.toBe(false);
+    unregister();
+  });
+
+  it("ignores preparation results after the last host unmounts", async () => {
+    const unregister = registerConfirmDialogHost();
+    const content = deferred<null>();
+    const confirmation = requireConfirmation(
+      requestConfirmDialog("Update?", undefined, { prepare: () => content.promise }),
+    );
+    unregister();
+    await expect(confirmation).resolves.toBe(false);
+    content.resolve(null);
+    await content.promise;
+    expect(readConfirmDialogState()).toEqual({ status: "idle" });
+  });
+
+  it.each(["cancel", "abort"] as const)(
+    "ignores late warning content after %s during loading",
+    async (action) => {
+      const unregister = registerConfirmDialogHost();
+      const controller = new AbortController();
+      const content = deferred<{ message: string }>();
+      const confirmation = requireConfirmation(
+        requestConfirmDialog("Update?\nChecking…", undefined, {
+          signal: controller.signal,
+          prepare: () => content.promise,
+        }),
+      );
+      acknowledgeConfirmDialogPresentation(readConfirmDialogState());
+      if (action === "cancel") respondToConfirmDialog(false);
+      else controller.abort();
+      await expect(confirmation).resolves.toBe(false);
+      completeConfirmDialogClose();
+      content.resolve({ message: "Update?\n1 thread will be interrupted." });
+      await content.promise;
+      expect(readConfirmDialogState()).toEqual({ status: "idle" });
+      unregister();
+    },
+  );
+
+  it("waits for the close transition when an idle check finishes after presentation", async () => {
+    const unregister = registerConfirmDialogHost();
+    const content = deferred<null>();
+    const idle = requireConfirmation(
+      requestConfirmDialog("Update?\nChecking…", undefined, { prepare: () => content.promise }),
+    );
+    acknowledgeConfirmDialogPresentation(readConfirmDialogState());
+    const next = requireConfirmation(requestConfirmDialog("Delete the project?"));
+    content.resolve(null);
+    await expect(idle).resolves.toBe(true);
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "closing",
+      message: "Update?\nChecking…",
+    });
+    completeConfirmDialogClose();
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "confirming",
+      message: "Delete the project?",
+    });
+    respondToConfirmDialog(false);
+    await expect(next).resolves.toBe(false);
+    unregister();
   });
 
   it("returns undefined until a themed host is mounted", () => {

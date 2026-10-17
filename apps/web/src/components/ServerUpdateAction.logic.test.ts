@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ThreadId } from "@t3tools/contracts";
 
-import { type ServerUpdateHost, serverUpdateConfirmation } from "./ServerUpdateAction.logic";
+import {
+  type ServerUpdateHost,
+  serverUpdateConfirmation,
+  serverUpdateQuestion,
+} from "./ServerUpdateAction.logic";
 
 const idle = {
   activeSessions: 0,
@@ -108,6 +112,19 @@ describe("serverUpdateConfirmation", () => {
     );
     expect(confirmation({ desktopApp: true, activity: { ...idle, activeSessions: 1 } })).toContain(
       "1 thread will be interrupted.",
+    );
+  });
+
+  it.each([
+    [host({ desktopApp: true })],
+    [
+      host({ serverLabel: "Laptop", desktopApp: true }),
+      host({ serverLabel: "Office", desktopApp: true }),
+    ],
+    [host({ serverLabel: "Laptop", desktopApp: true }), host({ serverLabel: "Office" })],
+  ])("keeps the desktop update title while checking running work: %j", (...hosts) => {
+    expect(serverUpdateConfirmation(hosts)?.message.split("\n")[0]).toBe(
+      serverUpdateQuestion(hosts),
     );
   });
 
