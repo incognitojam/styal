@@ -30,6 +30,7 @@ import {
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import {
@@ -47,13 +48,6 @@ import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { encodeTerminalScriptPaste } from "../terminal/scriptPaste";
 import * as Schema from "effect/Schema";
-import {
-  questionAttachmentDraftId,
-  questionAttachmentDraftPrefix,
-  clearQuestionAttachmentDraft,
-  useQuestionAttachmentPreparation,
-} from "../questionAttachments";
-import { useAttachmentUploadStore } from "../lib/attachmentUploadQueue";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -73,7 +67,6 @@ import {
   type ModelSelection,
   type ProjectScript,
   type ProjectId,
-  type ProviderApprovalDecision,
   type PreviewAnnotationPayload,
   ProviderInstanceId,
   type ServerProvider,
@@ -131,7 +124,6 @@ import {
   type CodexFeedbackSubmission,
 } from "@t3tools/client-runtime/state/threads";
 import { resolveThreadLastVisitedAt } from "./Sidebar.logic";
-import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
@@ -206,8 +198,6 @@ import {
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
-  derivePendingApprovals,
-  derivePendingUserInputs,
   derivePhase,
   deriveTimelineEntriesFromVisibleTurnItemsWithState,
   selectHandoffImageResources,
@@ -218,7 +208,6 @@ import {
   findLatestProposedPlan,
   hasActionableProposedPlan,
   isLatestRunSettled,
-  type PendingUserInput,
 } from "../session-logic";
 import { type LegendListRef } from "@legendapp/list/react";
 import {
@@ -229,21 +218,6 @@ import {
   type TimelineRunObservation,
   type TimelineScrollMode,
 } from "./chat/timelineScrollAnchoring";
-import {
-  buildPendingUserInputAnswers,
-  carryDisplacedCustomAnswerIntoPrompt,
-  derivePendingUserInputProgress,
-  projectPendingUserInputAnswer,
-  setPendingUserInputCustomAnswer,
-  togglePendingUserInputOptionSelection,
-  type PendingUserInputDraftAnswer,
-} from "../pendingUserInput";
-import {
-  setPendingUserInputQuestionIndex,
-  updatePendingUserInputAnswer,
-  usePendingUserInputDrafts,
-} from "../pendingUserInputDrafts";
-import { seedUserInputDraftAnswers } from "@t3tools/client-runtime/state/thread-requests";
 import { useUiStateStore } from "../uiStateStore";
 import { useWorkspaceMutationRefresh } from "../hooks/useWorkspaceMutationRefresh";
 import {
@@ -664,7 +638,6 @@ const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 // broadcast to all shell subscribers.
 const VISIT_DISPATCH_THROTTLE_MS = 10_000;
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
-const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 function useDraftHeroLayoutTransition(
   isDraftHeroState: boolean,
   animationsActive: boolean,
@@ -1621,29 +1594,7 @@ function makeThreadErrorSetter(input: {
   };
 }
 
-function makePendingCustomAnswerSetter(input: {
-  readonly activePendingUserInput: PendingUserInput | null;
-  readonly activePendingRequestKey: string;
-  readonly promptRef: { current: string };
-}) {
-  const { activePendingUserInput, activePendingRequestKey } = input;
-  return (questionId: string, value: string) => {
-    if (!activePendingUserInput) {
-      return;
-    }
-    const question = activePendingUserInput.questions.find((entry) => entry.id === questionId);
-    if (!question || question.allowCustomAnswer === false) {
-      return;
-    }
-    input.promptRef.current = value;
-    updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-      setPendingUserInputCustomAnswer(draft, value, question),
-    );
-    // The editor owns this selection. Resetting it before the answer renders
-    // can re-enter Lexical with offsets from the previous skill token.
-  };
-}
-
+/** Draft id for editing a queued run of `threadRef`. */
 function makeQueuedEditDraftTarget(threadRef: ScopedThreadRef) {
   return (runId: RunId) => DraftId.make(`queued-edit:${scopedThreadKey(threadRef)}:${runId}`);
 }
@@ -1737,15 +1688,6 @@ export default function ChatView(props: ChatViewProps) {
   });
   const loadEarlierThreadHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
     label: "load earlier thread history",
-    reportFailure: false,
-  });
-  const respondToThreadApproval = useOrchestrationCommand(threadEnvironment.respondToApproval, {
-    reportFailure: false,
-  });
-  const respondToThreadUserInput = useOrchestrationCommand(threadEnvironment.respondToUserInput, {
-    reportFailure: false,
-  });
-  const dismissThreadUserInput = useAtomCommand(threadEnvironment.dismissUserInput, {
     reportFailure: false,
   });
   const revertThreadCheckpoint = useOrchestrationCommand(threadEnvironment.revertCheckpoint, {
@@ -2005,8 +1947,6 @@ export default function ChatView(props: ChatViewProps) {
   const isRevertingCheckpoint = useComposerDraftStore((store) =>
     store.rewindingThreadKeys.has(routeThreadKey),
   );
-  const userInputResponsesInFlight = useRef(new Set<string>());
-  const [respondingRequestIds, setRespondingRequestIds] = useState<RuntimeRequestId[]>([]);
 
   useEffect(() => {
     setIsWorkspaceFileDragActive(false);
@@ -2018,14 +1958,6 @@ export default function ChatView(props: ChatViewProps) {
     window.addEventListener("dragend", clearWorkspaceFileDrag);
     return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
   }, [isWorkspaceFileDragActive]);
-  const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
-    RuntimeRequestId[]
-  >([]);
-  const [pendingUserInputAnswersByRequestId, setPendingUserInputAnswersByRequestId] = useState<
-    Record<string, Record<string, PendingUserInputDraftAnswer>>
-  >({});
-  const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
-    useState<Record<string, number>>({});
   const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
   const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
@@ -3395,177 +3327,50 @@ export default function ChatView(props: ChatViewProps) {
     conversationProviderStatus !== null &&
     conversationProviderStatus.supportsConversationRollback !== false;
   const phase = derivePhase(activeRuntime);
-  const pendingRequests = useMemo(
+  const setThreadError = useMemo(
     () =>
-      serverProjection === null
-        ? { approvals: [], userInputs: [] }
-        : derivePendingThreadRequests(serverProjection),
-    [serverProjection],
-  );
-  const pendingApprovals = useMemo(
-    () => derivePendingApprovals(pendingRequests.approvals),
-    [pendingRequests.approvals],
-  );
-  const pendingUserInputs = useMemo(
-    () => derivePendingUserInputs(pendingRequests.userInputs),
-    [pendingRequests.userInputs],
-  );
-  const activePendingUserInput = pendingUserInputs[0] ?? null;
-  const activePendingRequestKey = JSON.stringify([
-    environmentId,
-    activeThreadId,
-    activePendingUserInput?.requestId,
-  ]);
-  const activePendingStoredAnswers = usePendingUserInputDrafts(
-    (state) => state.answersByRequestKey[activePendingRequestKey],
-  );
-  const activePendingStoredQuestionIndex = usePendingUserInputDrafts(
-    (state) => state.questionIndexByRequestKey[activePendingRequestKey],
-  );
-  const activePendingAnswerDrafts =
-    pendingUserInputAnswersByRequestId[activePendingRequestKey] ?? EMPTY_PENDING_USER_INPUT_ANSWERS;
-  if (
-    activePendingUserInput &&
-    seedUserInputDraftAnswers(activePendingUserInput.questions, activePendingAnswerDrafts) !==
-      activePendingAnswerDrafts
-  ) {
-    setPendingUserInputAnswersByRequestId((existing) => {
-      const drafts = existing[activePendingRequestKey] ?? EMPTY_PENDING_USER_INPUT_ANSWERS;
-      const seeded = seedUserInputDraftAnswers(activePendingUserInput.questions, drafts);
-      return seeded === drafts ? existing : { ...existing, [activePendingRequestKey]: seeded };
-    });
-  }
-  const pendingQuestionDraftKeys = useMemo(
-    () =>
-      activeThreadId
-        ? pendingUserInputs.flatMap((request) =>
-            request.questions.map((question) =>
-              questionAttachmentDraftId(
-                environmentId,
-                activeThreadId,
-                request.requestId,
-                question.id,
-              ),
-            ),
-          )
-        : [],
-    [activeThreadId, environmentId, pendingUserInputs],
-  );
-  const questionComposerDrafts = useComposerDraftStore(
-    useShallow((state) =>
-      Object.fromEntries(
-        pendingQuestionDraftKeys.map((key) => [key, state.draftsByThreadKey[key]]),
-      ),
-    ),
-  );
-  const questionUploadsBlocked = useAttachmentUploadStore(
-    useShallow((state) =>
-      Object.fromEntries(
-        pendingQuestionDraftKeys.map((key) => {
-          const draft = questionComposerDrafts[key];
-          const attachments = draft ? [...draft.images, ...draft.files] : [];
-          return [
-            key,
-            attachments.some((attachment) => {
-              const upload = state.uploadsByImageId[attachment.id];
-              return upload?.status !== "ready" || upload.environmentId !== environmentId;
-            }),
-          ];
-        }),
-      ),
-    ),
-  );
-  const questionPreparations = useQuestionAttachmentPreparation(
-    useShallow((state) =>
-      Object.fromEntries(pendingQuestionDraftKeys.map((key) => [key, state.counts[key] ?? 0])),
-    ),
-  );
-  useEffect(() => {
-    if (!activeThread) return;
-    const questionThread = activeThread;
-    const currentRequests = pendingUserInputs;
-    const prefix = questionAttachmentDraftPrefix(environmentId, questionThread.id);
-    const retained = new Set(
-      currentRequests.flatMap((request) =>
-        request.questions.map((question) =>
-          questionAttachmentDraftId(
-            environmentId,
-            questionThread.id,
-            request.requestId,
-            question.id,
-          ),
-        ),
-      ),
-    );
-    const keys = new Set([
-      ...Object.keys(useComposerDraftStore.getState().draftsByThreadKey),
-      ...Object.keys(useQuestionAttachmentPreparation.getState().counts),
-    ]);
-    for (const key of keys) {
-      if (key.startsWith(prefix) && !retained.has(DraftId.make(key)))
-        clearQuestionAttachmentDraft(DraftId.make(key));
-    }
-  }, [environmentId, activeThread, pendingUserInputs]);
-  const activePendingDraftAnswers = useMemo(() => {
-    if (!activePendingUserInput || !activeThreadId) return EMPTY_PENDING_USER_INPUT_ANSWERS;
-    return Object.fromEntries(
-      activePendingUserInput.questions.map((question) => {
-        const key = questionAttachmentDraftId(
-          environmentId,
-          activeThreadId,
-          activePendingUserInput.requestId,
-          question.id,
-        );
-        const draft = questionComposerDrafts[key];
-        const attachments = draft ? [...draft.images, ...draft.files] : [];
-        return [
-          question.id,
-          {
-            ...activePendingStoredAnswers?.[question.id],
-            attachmentCount: attachments.length,
-            attachmentsBlocked:
-              (attachments.length > 0 && !supportsQuestionAttachments) ||
-              (questionPreparations[key] ?? 0) > 0 ||
-              questionUploadsBlocked[key] === true,
-          },
-        ];
+      makeThreadErrorSetter({
+        routeThreadRef,
+        routeThreadKey,
+        draftId,
+        serverThreadRef: serverThread
+          ? { threadId: serverThread.id, environmentId: serverThread.environmentId }
+          : null,
+        setLocalServerErrorsByThreadKey,
+        setLocalDraftErrorsByDraftId,
       }),
-    );
-  }, [
+    [draftId, routeThreadKey, routeThreadRef, serverThread?.id, serverThread?.environmentId],
+  );
+  const {
+    pendingApprovals,
+    pendingUserInputs,
+    activePendingApproval,
     activePendingUserInput,
-    activeThreadId,
+    activePendingDraftAnswers,
+    activePendingQuestionIndex,
+    activePendingProgress,
+    activePendingResolvedAnswers,
+    activePendingIsResponding,
+    respondingRequestIds,
+    onRespondToApproval: onRespondToApprovalStable,
+    onDismissUserInput: onDismissUserInputStable,
+    onSelectActivePendingUserInputOption: onSelectActivePendingUserInputOptionStable,
+    onChangeActivePendingUserInputCustomAnswer,
+    onAdvanceActivePendingUserInput,
+    onAdvanceActivePendingUserInputStable,
+    onPreviousActivePendingUserInputQuestion: onPreviousActivePendingUserInputQuestionStable,
+  } = usePendingThreadRequests({
     environmentId,
-    questionComposerDrafts,
-    questionUploadsBlocked,
+    activeThreadId,
+    activeThread,
+    serverProjection,
     supportsQuestionAttachments,
-    questionPreparations,
-    activePendingStoredAnswers,
-  ]);
-  const activePendingQuestionIndex = activePendingUserInput
-    ? (activePendingStoredQuestionIndex ?? 0)
-    : 0;
-  const activePendingProgress = useMemo(
-    () =>
-      activePendingUserInput
-        ? derivePendingUserInputProgress(
-            activePendingUserInput.questions,
-            activePendingDraftAnswers,
-            activePendingQuestionIndex,
-          )
-        : null,
-    [activePendingDraftAnswers, activePendingQuestionIndex, activePendingUserInput],
-  );
-  const activePendingResolvedAnswers = useMemo(
-    () =>
-      activePendingUserInput
-        ? buildPendingUserInputAnswers(activePendingUserInput.questions, activePendingDraftAnswers)
-        : null,
-    [activePendingDraftAnswers, activePendingUserInput],
-  );
-  const activePendingIsResponding = activePendingUserInput
-    ? activePendingUserInput.responseCapability === "not_resumable" ||
-      respondingUserInputRequestIds.includes(activePendingUserInput.requestId)
-    : false;
+    composerDraftTarget,
+    setComposerDraftPrompt,
+    promptRef,
+    composerRef,
+    setThreadError,
+  });
   const activeProposedPlan = useMemo(() => {
     if (!latestRunSettled) {
       return null;
@@ -3579,7 +3384,11 @@ export default function ChatView(props: ChatViewProps) {
     hasActionableProposedPlan: hasActionableProposedPlan(activeProposedPlan),
     hasComposerAttachments: composerHasAttachments,
   });
-  const activePendingApproval = pendingApprovals[0] ?? null;
+  // The open /usage-limits panel for this thread, model and turn. Only the open
+  // moment is stored: the rows read live provider data, so a redeemed reset
+  // credit or refreshed probe shows through. Anything that spends quota closes
+  // it: a new turn from any source, or the agent resuming after an approval or
+  // answered question.
   const [usageLimitsPanel, setUsageLimitsPanel] = useState<{
     readonly key: string;
     readonly threadKey: string;
@@ -4595,20 +4404,6 @@ export default function ChatView(props: ChatViewProps) {
     null;
   const hasReachedSplitLimit =
     (activeTerminalGroup?.terminalIds.length ?? 0) >= MAX_TERMINALS_PER_GROUP;
-  const setThreadError = useMemo(
-    () =>
-      makeThreadErrorSetter({
-        routeThreadRef,
-        routeThreadKey,
-        draftId,
-        serverThreadRef: serverThread
-          ? { threadId: serverThread.id, environmentId: serverThread.environmentId }
-          : null,
-        setLocalServerErrorsByThreadKey,
-        setLocalDraftErrorsByDraftId,
-      }),
-    [draftId, routeThreadKey, routeThreadRef, serverThread?.id, serverThread?.environmentId],
-  );
 
   const focusComposer = () => {
     composerRef.current?.focusAtEnd();
@@ -10049,229 +9844,6 @@ export default function ChatView(props: ChatViewProps) {
       if (!sendQueuesBehindSetup) resetLocalDispatch();
     }
   };
-
-  const onRespondToApproval = async (
-    requestId: RuntimeRequestId,
-    decision: ProviderApprovalDecision,
-  ) => {
-    if (!activeThreadId || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
-      return;
-    if (
-      pendingApprovals.find((approval) => approval.requestId === requestId)?.responseCapability !==
-      "live"
-    )
-      return;
-
-    setRespondingRequestIds((existing) =>
-      existing.includes(requestId) ? existing : [...existing, requestId],
-    );
-    const result = await respondToThreadApproval({
-      environmentId,
-      input: {
-        threadId: activeThreadId,
-        requestId,
-        decision,
-      },
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThreadId,
-        error instanceof Error ? error.message : "Failed to submit approval decision.",
-      );
-    }
-    setRespondingRequestIds((existing) => existing.filter((id) => id !== requestId));
-    return result;
-  };
-  const onRespondToApprovalStable = useStableCallback(onRespondToApproval);
-
-  const onRespondToUserInput = async (
-    requestId: RuntimeRequestId,
-    answers: Record<string, unknown>,
-  ) => {
-    if (!activeThreadId || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
-      return;
-    const pendingInput = pendingUserInputs.find((input) => input.requestId === requestId);
-    if (!pendingInput || pendingInput.responseCapability === "not_resumable") return;
-    const responseKey = JSON.stringify([environmentId, activeThreadId, requestId]);
-    if (userInputResponsesInFlight.current.has(responseKey)) return;
-    const attachmentsByQuestionId = new Map<
-      string,
-      import("@t3tools/contracts").UserInputAttachments[string]
-    >();
-    const providerAnswers = { ...answers };
-    for (const question of pendingInput.questions) {
-      const target = questionAttachmentDraftId(
-        environmentId,
-        activeThreadId,
-        requestId,
-        question.id,
-      );
-      if ((useQuestionAttachmentPreparation.getState().counts[target] ?? 0) > 0) return;
-      const draft = useComposerDraftStore.getState().getComposerDraft(target);
-      providerAnswers[question.id] = projectPendingUserInputAnswer(
-        answers[question.id],
-        draft?.threadContexts ?? [],
-      );
-      const attachments = draft ? [...draft.images, ...draft.files] : [];
-      if (attachments.length === 0) continue;
-      const uploaded = getUploadedAttachments({ environmentId, images: attachments });
-      if (!uploaded) {
-        setThreadError(
-          activeThreadId,
-          "Wait for attachments to finish uploading, or remove failed uploads.",
-        );
-        return;
-      }
-      attachmentsByQuestionId.set(
-        question.id,
-        uploaded as import("@t3tools/contracts").UserInputAttachments[string],
-      );
-    }
-    userInputResponsesInFlight.current.add(responseKey);
-
-    setRespondingUserInputRequestIds((existing) =>
-      existing.includes(requestId) ? existing : [...existing, requestId],
-    );
-    const result = await respondToThreadUserInput({
-      environmentId,
-      input: {
-        threadId: activeThreadId,
-        requestId,
-        answers: providerAnswers,
-        ...(attachmentsByQuestionId.size > 0
-          ? { attachmentsByQuestionId: Object.fromEntries(attachmentsByQuestionId) }
-          : {}),
-      },
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThreadId,
-        error instanceof Error ? error.message : "Failed to submit user input.",
-      );
-    }
-    userInputResponsesInFlight.current.delete(responseKey);
-    setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
-    return result;
-  };
-
-  const onDismissUserInput = async (requestId: RuntimeRequestId) => {
-    if (!activeThreadId) return;
-
-    setRespondingUserInputRequestIds((existing) =>
-      existing.includes(requestId) ? existing : [...existing, requestId],
-    );
-    const result = await dismissThreadUserInput({
-      environmentId,
-      input: { threadId: activeThreadId, requestId },
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThreadId,
-        error instanceof Error ? error.message : "Failed to dismiss the question.",
-      );
-    }
-    setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
-    return result;
-  };
-  const onDismissUserInputStable = useStableCallback(onDismissUserInput);
-
-  const setActivePendingUserInputQuestionIndex = (nextQuestionIndex: number) => {
-    if (!activePendingUserInput) {
-      return;
-    }
-    setPendingUserInputQuestionIndex(activePendingRequestKey, nextQuestionIndex);
-  };
-
-  const onSelectActivePendingUserInputOption = (questionId: string, optionValue: string) => {
-    if (!activePendingUserInput) {
-      return;
-    }
-    // A multi-select option is added alongside the custom answer.
-    const multiSelectQuestion = activePendingUserInput.questions.find(
-      (entry) => entry.id === questionId && entry.multiSelect,
-    );
-    if (multiSelectQuestion) {
-      updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-        togglePendingUserInputOptionSelection(multiSelectQuestion, draft, optionValue),
-      );
-      return;
-    }
-    const displacedAnswer =
-      usePendingUserInputDrafts.getState().answersByRequestKey[activePendingRequestKey]?.[
-        questionId
-      ]?.customAnswer;
-    const currentPrompt =
-      useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
-    const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
-    if (nextPrompt !== currentPrompt) {
-      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
-      if (activeThreadId) {
-        const store = useComposerDraftStore.getState();
-        const questionTarget = questionAttachmentDraftId(
-          environmentId,
-          activeThreadId,
-          activePendingUserInput.requestId,
-          questionId,
-        );
-        store.addThreadContexts(
-          composerDraftTarget,
-          store.getComposerDraft(questionTarget)?.threadContexts ?? [],
-          { appendReference: false },
-        );
-      }
-    }
-    const question =
-      (activePendingProgress?.activeQuestion?.id === questionId
-        ? activePendingProgress.activeQuestion
-        : undefined) ?? activePendingUserInput.questions.find((entry) => entry.id === questionId);
-    if (question) {
-      updatePendingUserInputAnswer(activePendingRequestKey, questionId, (draft) =>
-        togglePendingUserInputOptionSelection(question, draft, optionValue),
-      );
-    }
-    promptRef.current = "";
-    composerRef.current?.resetCursorState({ cursor: 0 });
-  };
-  const onSelectActivePendingUserInputOptionStable = useStableCallback(
-    onSelectActivePendingUserInputOption,
-  );
-
-  const onChangeActivePendingUserInputCustomAnswer = useMemo(
-    () =>
-      makePendingCustomAnswerSetter({ activePendingUserInput, activePendingRequestKey, promptRef }),
-    [activePendingUserInput, activePendingRequestKey],
-  );
-
-  const onAdvanceActivePendingUserInput = () => {
-    if (
-      !activePendingUserInput ||
-      activePendingUserInput.responseCapability === "not_resumable" ||
-      !activePendingProgress
-    ) {
-      return;
-    }
-    if (activePendingProgress.isLastQuestion) {
-      if (activePendingResolvedAnswers) {
-        void onRespondToUserInput(activePendingUserInput.requestId, activePendingResolvedAnswers);
-      }
-      return;
-    }
-    setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
-  };
-  const onAdvanceActivePendingUserInputStable = useStableCallback(onAdvanceActivePendingUserInput);
-
-  const onPreviousActivePendingUserInputQuestion = () => {
-    if (!activePendingProgress) {
-      return;
-    }
-    setActivePendingUserInputQuestionIndex(Math.max(activePendingProgress.questionIndex - 1, 0));
-  };
-  const onPreviousActivePendingUserInputQuestionStable = useStableCallback(
-    onPreviousActivePendingUserInputQuestion,
-  );
 
   async function onSubmitPlanFollowUp({
     text,
