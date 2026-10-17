@@ -31,6 +31,7 @@ import {
   type EnvironmentId,
   EventId,
   type MessageId,
+  type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
   type OrchestrationGetCommandOutputResult,
   type RunAttemptId,
@@ -56,6 +57,7 @@ import {
   resolveWorkEntryToolPresentation,
   resolveWorkEntryToolRowPresentation,
   resolveViewedImageAsset,
+  restartContinuationResumesResponse,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
@@ -348,6 +350,7 @@ interface TimelineRowSharedState {
     HandoffTimelineRun & {
       userMessageId?: MessageId | undefined;
       restartContinuationOfRunId?: RunId | undefined;
+      status?: OrchestrationV2Run["status"] | undefined;
     }
   >;
   activeThreadEnvironmentId: EnvironmentId;
@@ -518,6 +521,7 @@ interface MessagesTimelineProps {
     HandoffTimelineRun & {
       userMessageId?: MessageId | undefined;
       restartContinuationOfRunId?: RunId | undefined;
+      status?: OrchestrationV2Run["status"] | undefined;
     }
   >;
   anchorMessageId: MessageId | null;
@@ -813,9 +817,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       id: RunId;
       userMessageId?: MessageId | undefined;
       restartContinuationOfRunId: RunId;
+      resumesResponse: boolean;
     }>
   >([]);
   const restartRuns = useMemo(() => {
+    const runsById = new Map(runsProp.map((run) => [run.id, run]));
     const next = runsProp.flatMap((run) =>
       run.restartContinuationOfRunId
         ? [
@@ -823,6 +829,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               id: run.id,
               userMessageId: run.userMessageId,
               restartContinuationOfRunId: run.restartContinuationOfRunId,
+              resumesResponse: restartContinuationResumesResponse(
+                runsById.get(run.restartContinuationOfRunId),
+              ),
             },
           ]
         : [],
@@ -834,7 +843,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         (run, index) =>
           run.id !== previous[index]?.id ||
           run.userMessageId !== previous[index]?.userMessageId ||
-          run.restartContinuationOfRunId !== previous[index]?.restartContinuationOfRunId,
+          run.restartContinuationOfRunId !== previous[index]?.restartContinuationOfRunId ||
+          run.resumesResponse !== previous[index]?.resumesResponse,
       )
     )
       restartRunsRef.current = next;

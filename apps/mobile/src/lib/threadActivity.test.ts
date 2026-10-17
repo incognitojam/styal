@@ -2542,6 +2542,78 @@ it("folds V2 restart runs into one response and draws the recovery message as a 
   expect(working.some((entry) => entry.type === "run-fold")).toBe(false);
 });
 
+it("keeps a settled response's answer and starts a new response for its restart note", () => {
+  const resumed = RunId.make("background-note");
+  const recovery = MessageId.make("background-recovery");
+  const feed = buildThreadFeed([
+    projected(userMessage("2026-06-20T00:00:00.000Z"), 0),
+    projected(command("2026-06-20T00:00:05.000Z"), 1),
+    projected(assistantMessage("2026-06-20T00:00:10.000Z"), 2),
+    projected(
+      {
+        ...userMessage("2026-06-20T00:50:00.000Z"),
+        id: TurnItemId.make("recovery-item"),
+        messageId: recovery,
+        runId: resumed,
+        createdBy: "system",
+        creationSource: "server",
+        text: "Note: the T3 server restarted, and this background work was cancelled.",
+      },
+      3,
+    ),
+    projected(
+      {
+        ...command("2026-06-20T00:50:05.000Z"),
+        id: TurnItemId.make("note-command"),
+        runId: resumed,
+      },
+      4,
+    ),
+    projected(
+      {
+        ...assistantMessage("2026-06-20T00:50:20.000Z"),
+        id: TurnItemId.make("note-reply-item"),
+        messageId: MessageId.make("note-reply"),
+        runId: resumed,
+      },
+      5,
+    ),
+  ]);
+  const rows = deriveThreadFeedPresentation(
+    feed,
+    {
+      runId: resumed,
+      status: "completed",
+      startedAt: "2026-06-20T00:50:00.000Z",
+      completedAt: "2026-06-20T00:50:20.000Z",
+    },
+    new Set(),
+    new Set(),
+    null,
+    false,
+    [
+      {
+        id: resumed,
+        userMessageId: recovery,
+        restartContinuationOfRunId: runId,
+        resumesResponse: false,
+      },
+    ],
+  );
+  expect(rows.map((entry) => (entry.type === "message" ? entry.message.id : entry.type))).toEqual([
+    "message-user",
+    "run-fold",
+    "message-assistant",
+    "restart-note",
+    "run-fold",
+    "note-reply",
+  ]);
+  expect(rows.filter((entry) => entry.type === "run-fold").map((entry) => entry.runId)).toEqual([
+    runId,
+    resumed,
+  ]);
+});
+
 describe("V2 continued response timer boundaries", () => {
   const iso = (minute: number) => `2026-10-11T10:${String(minute).padStart(2, "0")}:00.000Z`;
   const second = RunId.make("timer-second");

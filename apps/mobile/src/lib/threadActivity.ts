@@ -198,6 +198,8 @@ export interface ThreadFeedRestartRun {
   readonly id: RunId;
   readonly userMessageId?: MessageId | undefined;
   readonly restartContinuationOfRunId?: RunId | undefined;
+  /** False when the continued run had settled; see `restartContinuationResumesResponse`. */
+  readonly resumesResponse?: boolean | undefined;
 }
 
 type ThreadFeedEntryContent =
@@ -207,6 +209,8 @@ type ThreadFeedEntryContent =
       readonly createdAt: string;
       readonly runId: RunId;
       readonly label: string;
+      /** The note follows a settled response and starts the next one. */
+      readonly startsResponse: boolean;
     }
   | {
       readonly type: "review-findings";
@@ -1099,6 +1103,11 @@ function deriveThreadFeedRunFolds(
       runlessKey = entry.message.runId == null ? RunId.make(`runless:${entry.id}`) : null;
       continue;
     }
+    if (entry.type === "restart-note" && entry.startsResponse) {
+      pendingUserBoundary = entry.createdAt;
+      runlessKey = null;
+      continue;
+    }
     const entryRunId =
       entry.type === "message" && entry.message.role === "assistant"
         ? (entry.message.runId ?? runlessKey)
@@ -1282,6 +1291,7 @@ export function deriveThreadFeedPresentation(
                 createdAt: entry.createdAt,
                 runId: run.id,
                 label: "Server restarted",
+                startsResponse: run.resumesResponse === false,
               }
             : entry;
         });
@@ -1929,7 +1939,12 @@ export function buildThreadFeed(
 export function deriveFeedContinuedRunRoots(
   runs: ReadonlyArray<ThreadFeedRestartRun>,
 ): ReadonlyMap<RunId, RunId> {
-  const parents = new Map(runs.map((run) => [run.id, run.restartContinuationOfRunId]));
+  const parents = new Map(
+    runs.map((run) => [
+      run.id,
+      run.resumesResponse === false ? undefined : run.restartContinuationOfRunId,
+    ]),
+  );
   const roots = new Map<RunId, RunId>();
   for (const run of runs) {
     let root = run.id;

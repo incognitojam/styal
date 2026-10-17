@@ -45,6 +45,18 @@ import {
 } from "@t3tools/client-runtime/t3ToolSummary";
 
 /**
+ * Whether a restart continuation resumes the response of the run it continues.
+ * Only a response the restart cut short resumes. A source that had already
+ * settled keeps its own final answer; the continuation, prompted with the note
+ * about its cancelled background work, starts a new response.
+ */
+export function restartContinuationResumesResponse(
+  source: { readonly status?: OrchestrationV2Run["status"] | undefined } | undefined,
+): boolean {
+  return source?.status !== "completed" && source?.status !== "waiting";
+}
+
+/**
  * Carry recorded work across linked recovery runs, excluding the server outage.
  * A run stamped with `workStartedAt` already counts from the work it continues,
  * moved later by each restart outage, so its start is used as is.
