@@ -2479,7 +2479,7 @@ features:
   - id: network-condition-reports
     title: Report how connections behave on each network
     status: maintained
-    prs: []
+    prs: [876]
     invariants:
       - Clients summarize each environment connection into windows of foreground use, at most 15 minutes long and split when the network type or route changes, recording time connected, drops by cause (heartbeat timeout, socket closed, health check timeout, other), failed attempts and setup timeouts, route switches and switches back after a failure, recovery time, heartbeat round trips, payload bytes and messages each way, and the peak receive rate.
       - Round trips come from the existing RPC heartbeat, so measuring adds no network traffic; connections to the same device are not reported.
