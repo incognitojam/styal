@@ -77,6 +77,7 @@ import { SettingsDiagnosticsRouteScreen } from "./features/diagnostics/SettingsD
 import { SettingsProviderAccountsRouteScreen } from "./features/settings/SettingsProviderAccountsRouteScreen";
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentDetailRouteScreen } from "./features/settings/SettingsEnvironmentDetailRouteScreen";
+import { SettingsServerUpdateConfirmRouteScreen } from "./features/settings/SettingsServerUpdateConfirmRouteScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsFollowUpRouteScreen } from "./features/settings/SettingsFollowUpRouteScreen";
 import {
@@ -216,6 +217,16 @@ const SettingsContentStack = createNativeStackNavigator({
       screen: SettingsEnvironmentDetailRouteScreen,
       linking: "environments/:environmentId",
       options: { title: "Environment" },
+    }),
+    // No linking path: the request id refers to an in-memory confirmation.
+    SettingsServerUpdateConfirm: createNativeStackScreen({
+      screen: SettingsServerUpdateConfirmRouteScreen,
+      options: {
+        headerShown: false,
+        ...FORM_SHEET_PRESENTATION_OPTIONS,
+        sheetAllowedDetents: [0.6, 1],
+        sheetGrabberVisible: true,
+      },
     }),
     SettingsEnvironmentNewThreads: createNativeStackScreen({
       screen: SettingsEnvironmentNewThreadsRouteScreen,

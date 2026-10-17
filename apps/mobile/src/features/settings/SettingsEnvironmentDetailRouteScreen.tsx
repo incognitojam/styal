@@ -4,7 +4,7 @@ import type { EnvironmentId, ServerProvider } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
-import { Alert, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
@@ -25,6 +25,7 @@ import {
   findEnvironmentUpdate,
   supportsEnvironmentUpdate,
 } from "./environment-maintenance";
+import { describeServerUpdate, requestServerUpdateConfirmation } from "./serverUpdateConfirmation";
 
 export function SettingsEnvironmentDetailRouteScreen({
   route,
@@ -52,6 +53,9 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const sessionResult = useAtomValue(environmentSession.sessionStateAtom(environmentId));
   const updateState = useAtomValue(serverEnvironment.updateStateAtom(environmentId));
   const updateServer = useAtomCommand(serverEnvironment.updateServer);
+  const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, {
+    reportFailure: false,
+  });
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
   const [connectionExpanded, setConnectionExpanded] = useState(false);
@@ -102,32 +106,38 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     const targetVersion = checkedRelease?.targetVersion;
     if (disabled || !targetVersion || !capabilities || !supportsEnvironmentUpdate(capabilities))
       return;
-    Alert.alert(
-      `Update ${environment?.environmentLabel ?? "environment"}?`,
-      `Install styal ${targetVersion}. ${capabilities.serverSelfUpdate === "desktop-managed" ? "The desktop app will close and relaunch." : "The server will restart and reconnect."} Running threads may be interrupted.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Update",
-          onPress: () =>
-            void run("server", async () => {
-              const result = await updateServer({
-                environmentId,
-                input: {
-                  targetVersion,
-                  ...(capabilities.serverUpdateThreadContinuation &&
-                  config?.settings.continueThreadsAfterServerUpdate
-                    ? { continueRunningThreads: true }
-                    : {}),
-                },
-              });
-              if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-              setRelease(null);
-              setNotice(`Updated to ${result.value.targetVersion}.`);
-            }),
-        },
-      ],
+    const continueRunningThreads = Boolean(
+      capabilities.serverUpdateThreadContinuation &&
+      config?.settings.continueThreadsAfterServerUpdate,
     );
+    void run("server", async () => {
+      const activity = await readHostActivity({ environmentId, input: {} });
+      const confirmed = await requestServerUpdateConfirmation(
+        describeServerUpdate({
+          serverLabel: environment?.environmentLabel ?? "environment",
+          targetVersion,
+          desktopManaged: capabilities.serverSelfUpdate === "desktop-managed",
+          activity: AsyncResult.isSuccess(activity) ? activity.value : null,
+          continueRunningThreads,
+        }),
+        (requestId) =>
+          navigation.navigate("SettingsSheet", {
+            screen: "SettingsContent",
+            params: {
+              screen: "SettingsServerUpdateConfirm",
+              params: { environmentId, requestId },
+            },
+          }),
+      );
+      if (!confirmed) return;
+      const result = await updateServer({
+        environmentId,
+        input: { targetVersion, ...(continueRunningThreads ? { continueRunningThreads } : {}) },
+      });
+      if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+      setRelease(null);
+      setNotice(`Updated to ${result.value.targetVersion}.`);
+    });
   }
 
   function requestProviderUpdate(provider: ServerProvider) {
