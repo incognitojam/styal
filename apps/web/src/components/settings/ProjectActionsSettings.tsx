@@ -14,7 +14,7 @@ import {
   type ResolvedProjectAction,
 } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import { projectConfigRoot, useProjectConfigState } from "../../hooks/useProjectConfig";
 import { type EnvironmentPresentation, useEnvironments } from "../../state/environments";
@@ -75,46 +75,41 @@ export function ProjectActionsSettings() {
   const { environments } = useEnvironments();
   const canWriteSettings = useScopedSettingsWriteAllowed();
 
-  const checkouts = useMemo(() => {
-    const memberById = new Map(scope.members.map((member) => [member.id, member]));
-    return targets.flatMap((target): ActionsCheckout[] => {
-      const member = target.projectId ? memberById.get(target.projectId) : undefined;
-      const environment = environments.find(
-        (entry) => entry.environmentId === target.environmentId,
-      );
-      const serverConfig = environment?.serverConfig;
-      if (!member || !environment || !serverConfig) return [];
-      return [
-        {
-          member,
-          environment,
-          saved: target.settings.defaultProjectScripts,
-          keybindings: serverConfig.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
-          // An older server ignores the override record, so a project edit
-          // there would report success and vanish; the legacy per-project
-          // map keeps serving those environments.
-          writeTarget:
-            serverConfig.environment?.capabilities.projectSettingsOverrides === true
-              ? {
-                  environmentId: target.environmentId,
-                  // Writes read the raw environment settings so an override
-                  // entry is extended, not derived from already-resolved values.
-                  settings: serverConfig.settings,
-                  keybindings: serverConfig.keybindings,
-                  project: member,
-                }
-              : null,
-        },
-      ];
-    });
-  }, [environments, scope.members, targets]);
+  const memberById = new Map(scope.members.map((member) => [member.id, member]));
+  const checkouts = targets.flatMap((target): ActionsCheckout[] => {
+    const member = target.projectId ? memberById.get(target.projectId) : undefined;
+    const environment = environments.find((entry) => entry.environmentId === target.environmentId);
+    const serverConfig = environment?.serverConfig;
+    if (!member || !environment || !serverConfig) return [];
+    return [
+      {
+        member,
+        environment,
+        saved: target.settings.defaultProjectScripts,
+        keybindings: serverConfig.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
+        // An older server ignores the override record, so a project edit
+        // there would report success and vanish; the legacy per-project
+        // map keeps serving those environments.
+        writeTarget:
+          serverConfig.environment?.capabilities.projectSettingsOverrides === true
+            ? {
+                environmentId: target.environmentId,
+                // Writes read the raw environment settings so an override
+                // entry is extended, not derived from already-resolved values.
+                settings: serverConfig.settings,
+                keybindings: serverConfig.keybindings,
+                project: member,
+              }
+            : null,
+      },
+    ];
+  });
 
   const mixed = checkouts.some(
     (checkout) => JSON.stringify(checkout.saved) !== JSON.stringify(checkouts[0]?.saved),
   );
-  const writeTargets = useMemo(
-    () => checkouts.flatMap((checkout) => (checkout.writeTarget ? [checkout.writeTarget] : [])),
-    [checkouts],
+  const writeTargets = checkouts.flatMap((checkout) =>
+    checkout.writeTarget ? [checkout.writeTarget] : [],
   );
   const { saving, persist, submit } = useProjectScriptSettings(writeTargets);
   const [request, setRequest] = useState<ProjectScriptEditorRequest | null>(null);
@@ -228,7 +223,7 @@ function CheckoutActions({
   renderHeader: (controls: ReactNode) => ReactNode;
 }) {
   const { member, environment, saved, keybindings, writeTarget } = checkout;
-  const writeTargets = useMemo(() => (writeTarget ? [writeTarget] : []), [writeTarget]);
+  const writeTargets = writeTarget ? [writeTarget] : [];
   const { saving, persist, submit } = useProjectScriptSettings(writeTargets);
   const [request, setRequest] = useState<ProjectScriptEditorRequest | null>(null);
   const [reviewing, setReviewing] = useState<FileActionApprovalTarget | null>(null);
@@ -236,29 +231,21 @@ function CheckoutActions({
   const projectConfig = useProjectConfigState(member.environmentId, projectRoot);
   const approvals =
     environment.serverConfig?.settings.projectFileActionApprovals[projectFileApprovalKey(member)];
-  const actions = useMemo(
-    () => mergeProjectActions(saved, projectConfig.config, approvals ?? {}),
-    [approvals, projectConfig.config, saved],
-  );
-  const fileActionIds = useMemo(
-    () => actions.filter((action) => action.source !== "local").map((action) => action.id),
-    [actions],
-  );
-  const importableScripts = useMemo(
-    () =>
-      projectConfig.legacyScripts.filter(
-        (fileScript) =>
-          !saved.some(
-            (script) =>
-              script.command === fileScript.command ||
-              script.name.toLowerCase() === fileScript.name.toLowerCase(),
-          ),
+  const actions = mergeProjectActions(saved, projectConfig.config, approvals ?? {});
+  const fileActionIds = actions
+    .filter((action) => action.source !== "local")
+    .map((action) => action.id);
+  const importableScripts = projectConfig.legacyScripts.filter(
+    (fileScript) =>
+      !saved.some(
+        (script) =>
+          script.command === fileScript.command ||
+          script.name.toLowerCase() === fileScript.name.toLowerCase(),
       ),
-    [saved, projectConfig.legacyScripts],
   );
-  const importFileScript = useCallback((fileScript: T3ProjectFileScript) => {
+  const importFileScript = (fileScript: T3ProjectFileScript) => {
     setRequest(editorRequestForFileScript(fileScript));
-  }, []);
+  };
   const disabled = saving || !canWriteSettings || writeTarget === null;
 
   return (
