@@ -30,13 +30,6 @@ function projectFailure(error: Project.ProjectServiceError) {
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
 
-function noticeFailure(error: { readonly message: string; readonly cause?: unknown }) {
-  // A notice error without a cause is a rule the caller can fix, such as the active limit.
-  return error.cause === undefined
-    ? new OrchestratorMcpFailure({ code: "invalid_request", message: error.message })
-    : unavailable();
-}
-
 /**
  * The project a notice tool acts on: the one passed, which must exist, else the caller's.
  * Posting needs the calling thread's live run, like other mutations; listing does not.
@@ -280,7 +273,14 @@ export const layer = ProjectToolkit.toLayer({
             body: input.body ?? "",
             expiresInHours: input.expiresInHours,
           })
-          .pipe(Effect.mapError(noticeFailure));
+          .pipe(
+            Effect.catchTags({
+              // The active limit is a request the caller can fix by resolving a notice.
+              ProjectNoticeLimitError: (error) =>
+                new OrchestratorMcpFailure({ code: "invalid_request", message: error.message }),
+              ProjectNoticePersistenceError: () => unavailable(),
+            }),
+          );
       }),
     ),
   t3_notice_list: (input) =>
@@ -289,7 +289,9 @@ export const layer = ProjectToolkit.toLayer({
       Effect.gen(function* () {
         const { projectId } = yield* noticeProject(input.projectId, "read");
         const notices = yield* ProjectNotices.ProjectNotices;
-        return yield* notices.list(projectId).pipe(Effect.mapError(noticeFailure));
+        return yield* notices
+          .list(projectId)
+          .pipe(Effect.catchTags({ ProjectNoticePersistenceError: () => unavailable() }));
       }),
     ),
   t3_notice_resolve: (input) =>
@@ -298,7 +300,9 @@ export const layer = ProjectToolkit.toLayer({
       Effect.gen(function* () {
         yield* readMutationCaller();
         const notices = yield* ProjectNotices.ProjectNotices;
-        return yield* notices.resolve(input.noticeId).pipe(Effect.mapError(noticeFailure));
+        return yield* notices
+          .resolve(input.noticeId)
+          .pipe(Effect.catchTags({ ProjectNoticePersistenceError: () => unavailable() }));
       }),
     ),
 });

@@ -380,7 +380,7 @@ it.effect("posts notices to the calling thread's project under its name", () => 
     deletedAt: null,
   } as OrchestrationV2ThreadShell;
   const usage: Array<Readonly<Record<string, unknown>>> = [];
-  const dependencies = Layer.mergeAll(
+  const layerDependencies = Layer.mergeAll(
     Layer.succeed(
       AnalyticsService.AnalyticsService,
       AnalyticsService.AnalyticsService.of({
@@ -456,5 +456,5 @@ it.effect("posts notices to the calling thread's project under its name", () => 
         .flatMap(Object.values)
         .filter((value) => typeof value === "string" && value.includes("Hold merges")),
     ).toEqual([]);
-  }).pipe(Effect.provide(ProjectHandlersLive.pipe(Layer.provideMerge(dependencies))));
+  }).pipe(Effect.provide(ProjectHandlers.layer.pipe(Layer.provideMerge(layerDependencies))));
 });

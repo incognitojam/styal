@@ -104,8 +104,8 @@ layer("ProjectNotices", (it) => {
       const refused = yield* notices
         .post({ projectId, title: "One too many", body: "", authorThreadId: null })
         .pipe(Effect.flip);
-      assert.include(refused.message, "active notices");
-      assert.equal(refused.cause, undefined);
+      assert.equal(refused._tag, "ProjectNoticeLimitError");
+      assert.include(refused.message, `${PROJECT_NOTICE_MAX_ACTIVE} active notices`);
 
       yield* TestClock.adjust("2 hours");
       yield* notices.post({ projectId, title: "After expiry", body: "", authorThreadId: null });

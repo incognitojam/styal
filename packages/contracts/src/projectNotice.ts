@@ -57,10 +57,25 @@ export const ProjectNoticeResolveResult = Schema.Struct({
 });
 export type ProjectNoticeResolveResult = typeof ProjectNoticeResolveResult.Type;
 
-export class ProjectNoticeError extends Schema.TaggedError<ProjectNoticeError>()(
-  "ProjectNoticeError",
+/** A project already holds the most active notices it may; the caller can resolve one first. */
+export class ProjectNoticeLimitError extends Schema.TaggedError<ProjectNoticeLimitError>()(
+  "ProjectNoticeLimitError",
+  { limit: Schema.Int },
+) {
+  override get message(): string {
+    return `This project already has ${this.limit} active notices. Resolve one that no longer applies first.`;
+  }
+}
+
+/** Reading or writing notice storage failed. */
+export class ProjectNoticePersistenceError extends Schema.TaggedError<ProjectNoticePersistenceError>()(
+  "ProjectNoticePersistenceError",
   {
-    message: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
+    operation: Schema.Literals(["list", "post", "resolve"]),
+    cause: Schema.Defect(),
   },
-) {}
+) {
+  override get message(): string {
+    return `Could not ${this.operation} project notices.`;
+  }
+}

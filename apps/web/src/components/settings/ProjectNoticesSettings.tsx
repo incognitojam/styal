@@ -102,6 +102,7 @@ function NoticeRow(props: {
   const meta = [
     props.showEnvironment ? (member.environmentLabel ?? "Environment") : null,
     `Expires ${relativeLabel(notice.expiresAt)}`,
+    authorRef !== null ? `From ${author?.title ?? "a thread"}` : null,
   ]
     .filter((part) => part !== null)
     .join(" · ");
@@ -114,32 +115,29 @@ function NoticeRow(props: {
           {notice.body.length > 0 ? (
             <span className="block whitespace-pre-wrap">{notice.body}</span>
           ) : null}
-          <span className="block">
-            {meta}
-            {authorRef !== null ? (
-              <>
-                {" · From "}
-                <button
-                  type="button"
-                  className="text-foreground underline-offset-4 hover:underline"
-                  onClick={() =>
-                    void navigate({
-                      to: "/$environmentId/$threadId",
-                      params: buildThreadRouteParams(authorRef),
-                    })
-                  }
-                >
-                  {author?.title ?? "a thread"}
-                </button>
-              </>
-            ) : null}
-          </span>
+          <span className="block">{meta}</span>
         </>
       }
       control={
-        <Button size="sm" variant="outline" disabled={resolving} onClick={() => void resolve()}>
-          Resolve
-        </Button>
+        <div className="flex items-center gap-2">
+          {authorRef !== null ? (
+            <Button
+              size="sm"
+              variant="link"
+              onClick={() =>
+                void navigate({
+                  to: "/$environmentId/$threadId",
+                  params: buildThreadRouteParams(authorRef),
+                })
+              }
+            >
+              Open thread
+            </Button>
+          ) : null}
+          <Button size="sm" variant="outline" disabled={resolving} onClick={() => void resolve()}>
+            Resolve
+          </Button>
+        </div>
       }
     />
   );

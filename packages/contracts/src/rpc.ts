@@ -341,7 +341,7 @@ import {
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
-  ProjectNoticeError,
+  ProjectNoticePersistenceError,
   ProjectNoticeListInput,
   ProjectNoticeListResult,
   ProjectNoticeResolveInput,
@@ -1895,14 +1895,14 @@ const WsScheduledTasksGetWebhookDeliveryRpc = Rpc.make(
 const WsProjectNoticesSubscribeRpc = Rpc.make(WS_METHODS.projectNoticesSubscribe, {
   payload: ProjectNoticeListInput,
   success: ProjectNoticeListResult,
-  error: Schema.Union([ProjectNoticeError, EnvironmentAuthorizationError]),
+  error: Schema.Union([ProjectNoticePersistenceError, EnvironmentAuthorizationError]),
   stream: true,
 });
 
 const WsProjectNoticesResolveRpc = Rpc.make(WS_METHODS.projectNoticesResolve, {
   payload: ProjectNoticeResolveInput,
   success: ProjectNoticeResolveResult,
-  error: Schema.Union([ProjectNoticeError, EnvironmentAuthorizationError]),
+  error: Schema.Union([ProjectNoticePersistenceError, EnvironmentAuthorizationError]),
 });
 
 const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {

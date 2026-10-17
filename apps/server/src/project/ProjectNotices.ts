@@ -2,7 +2,8 @@ import {
   PROJECT_NOTICE_DEFAULT_EXPIRY_HOURS,
   PROJECT_NOTICE_MAX_ACTIVE,
   ProjectNotice,
-  ProjectNoticeError,
+  ProjectNoticeLimitError,
+  ProjectNoticePersistenceError,
   ProjectNoticeId,
   type ProjectId,
   type ProjectNoticeListResult,
@@ -39,16 +40,16 @@ export class ProjectNotices extends Context.Service<
   {
     readonly list: (
       projectId: ProjectId,
-    ) => Effect.Effect<ProjectNoticeListResult, ProjectNoticeError>;
+    ) => Effect.Effect<ProjectNoticeListResult, ProjectNoticePersistenceError>;
     readonly post: (
       input: ProjectNoticePostInput,
-    ) => Effect.Effect<ProjectNotice, ProjectNoticeError>;
+    ) => Effect.Effect<ProjectNotice, ProjectNoticeLimitError | ProjectNoticePersistenceError>;
     readonly resolve: (
       noticeId: ProjectNoticeId,
-    ) => Effect.Effect<ProjectNoticeResolveResult, ProjectNoticeError>;
+    ) => Effect.Effect<ProjectNoticeResolveResult, ProjectNoticePersistenceError>;
     readonly subscribe: (
       projectId: ProjectId,
-    ) => Stream.Stream<ProjectNoticeListResult, ProjectNoticeError>;
+    ) => Stream.Stream<ProjectNoticeListResult, ProjectNoticePersistenceError>;
   }
 >()("@styal/cli/project/ProjectNotices") {}
 
@@ -61,9 +62,6 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   // Publishes the project id whose notices changed; subscribers re-list that project.
   const changes = yield* PubSub.unbounded<ProjectId>();
-
-  const failure = (message: string) => (cause: unknown) =>
-    new ProjectNoticeError({ message, cause });
 
   const activeRows = (projectId: ProjectId, now: string) => sql<Record<string, unknown>>`
     SELECT
@@ -81,10 +79,10 @@ const make = Effect.gen(function* () {
 
   const list = Effect.fn("ProjectNotices.list")(function* (projectId: ProjectId) {
     const rows = yield* activeRows(projectId, yield* nowIso).pipe(
-      Effect.mapError(failure("Could not list project notices.")),
+      Effect.mapError((cause) => new ProjectNoticePersistenceError({ operation: "list", cause })),
     );
     const notices = yield* decodeNotices(rows).pipe(
-      Effect.mapError(failure("Could not read project notices.")),
+      Effect.mapError((cause) => new ProjectNoticePersistenceError({ operation: "list", cause })),
     );
     return { notices };
   });
@@ -105,9 +103,7 @@ const make = Effect.gen(function* () {
             SELECT COUNT(*) AS "active" FROM project_notices WHERE project_id = ${input.projectId}
           `;
           if ((count?.active ?? 0) >= PROJECT_NOTICE_MAX_ACTIVE) {
-            return yield* new ProjectNoticeError({
-              message: `This project already has ${PROJECT_NOTICE_MAX_ACTIVE} active notices. Resolve one that no longer applies first.`,
-            });
+            return yield* new ProjectNoticeLimitError({ limit: PROJECT_NOTICE_MAX_ACTIVE });
           }
           yield* sql`
             INSERT INTO project_notices (
@@ -129,9 +125,9 @@ const make = Effect.gen(function* () {
         }),
       )
       .pipe(
-        Effect.catchTag("SqlError", (cause) =>
-          Effect.fail(failure("Could not post the notice.")(cause)),
-        ),
+        Effect.catchTags({
+          SqlError: (cause) => new ProjectNoticePersistenceError({ operation: "post", cause }),
+        }),
       );
     yield* PubSub.publish(changes, input.projectId);
     return notice;
@@ -142,7 +138,11 @@ const make = Effect.gen(function* () {
       DELETE FROM project_notices
       WHERE notice_id = ${noticeId}
       RETURNING project_id AS "projectId", expires_at AS "expiresAt"
-    `.pipe(Effect.mapError(failure("Could not resolve the notice.")));
+    `.pipe(
+      Effect.mapError(
+        (cause) => new ProjectNoticePersistenceError({ operation: "resolve", cause }),
+      ),
+    );
     const row = deleted[0];
     if (row === undefined) return { wasActive: false };
     yield* PubSub.publish(changes, row.projectId);
