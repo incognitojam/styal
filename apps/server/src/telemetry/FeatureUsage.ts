@@ -27,6 +27,11 @@ type FeatureUsage =
       readonly source: "user" | "agent";
       readonly devicePlatform?: DevicePlatform | undefined;
       readonly deviceLocation?: "local" | "remote" | undefined;
+    }
+  | {
+      readonly feature: "notices";
+      readonly action: "post" | "list" | "resolve";
+      readonly source: "user" | "agent";
     };
 
 export interface ClientDimensions {

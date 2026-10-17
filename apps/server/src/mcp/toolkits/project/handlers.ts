@@ -6,6 +6,7 @@ import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ProjectNotices from "../../../project/ProjectNotices.ts";
+import * as FeatureUsage from "../../../telemetry/FeatureUsage.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import { resolveRuntimeMode } from "../../OrchestratorMcpService.ts";
 import {
@@ -266,29 +267,38 @@ export const layer = ProjectToolkit.toLayer({
       );
     }),
   t3_notice_post: (input) =>
-    Effect.gen(function* () {
-      const { projectId, authorThreadId } = yield* noticeProject(input.projectId, "mutate");
-      const notices = yield* ProjectNotices.ProjectNotices;
-      return yield* notices
-        .post({
-          projectId,
-          authorThreadId,
-          title: input.title,
-          body: input.body ?? "",
-          expiresInHours: input.expiresInHours,
-        })
-        .pipe(Effect.mapError(noticeFailure));
-    }),
+    FeatureUsage.observe(
+      { feature: "notices", action: "post", source: "agent" },
+      Effect.gen(function* () {
+        const { projectId, authorThreadId } = yield* noticeProject(input.projectId, "mutate");
+        const notices = yield* ProjectNotices.ProjectNotices;
+        return yield* notices
+          .post({
+            projectId,
+            authorThreadId,
+            title: input.title,
+            body: input.body ?? "",
+            expiresInHours: input.expiresInHours,
+          })
+          .pipe(Effect.mapError(noticeFailure));
+      }),
+    ),
   t3_notice_list: (input) =>
-    Effect.gen(function* () {
-      const { projectId } = yield* noticeProject(input.projectId, "read");
-      const notices = yield* ProjectNotices.ProjectNotices;
-      return yield* notices.list(projectId).pipe(Effect.mapError(noticeFailure));
-    }),
+    FeatureUsage.observe(
+      { feature: "notices", action: "list", source: "agent" },
+      Effect.gen(function* () {
+        const { projectId } = yield* noticeProject(input.projectId, "read");
+        const notices = yield* ProjectNotices.ProjectNotices;
+        return yield* notices.list(projectId).pipe(Effect.mapError(noticeFailure));
+      }),
+    ),
   t3_notice_resolve: (input) =>
-    Effect.gen(function* () {
-      yield* readMutationCaller();
-      const notices = yield* ProjectNotices.ProjectNotices;
-      return yield* notices.resolve(input.noticeId).pipe(Effect.mapError(noticeFailure));
-    }),
+    FeatureUsage.observe(
+      { feature: "notices", action: "resolve", source: "agent" },
+      Effect.gen(function* () {
+        yield* readMutationCaller();
+        const notices = yield* ProjectNotices.ProjectNotices;
+        return yield* notices.resolve(input.noticeId).pipe(Effect.mapError(noticeFailure));
+      }),
+    ),
 });

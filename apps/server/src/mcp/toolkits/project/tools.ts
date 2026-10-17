@@ -33,6 +33,7 @@ import { Tool, Toolkit } from "effect/ai";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ProjectNotices from "../../../project/ProjectNotices.ts";
+import * as AnalyticsService from "../../../telemetry/AnalyticsService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -155,7 +156,11 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
   .annotate(Tool.Destructive, true)
   .annotate(Tool.OpenWorld, true);
 
-const noticeDependencies = [...shared.dependencies, ProjectNotices.ProjectNotices];
+const noticeDependencies = [
+  ...shared.dependencies,
+  ProjectNotices.ProjectNotices,
+  AnalyticsService.AnalyticsService,
+];
 const NoticePostTool = Tool.make("t3_notice_post", {
   ...shared,
   description: `Post a project notice: a short message every thread in the project sees through t3_notice_list, including threads started later. Use it only for live state other threads need and cannot find in the repository or the app, such as work in progress on a shared area, a broken main branch, or a hold on merges. Put durable guidance in the repository's docs instead. Choose the shortest expiry that covers the situation (default ${PROJECT_NOTICE_DEFAULT_EXPIRY_HOURS} hours, at most ${PROJECT_NOTICE_MAX_EXPIRY_HOURS}), and resolve the notice with t3_notice_resolve as soon as it no longer applies. Omit projectId for this thread's project.`,

@@ -3024,6 +3024,7 @@ features:
       - A project holds at most twenty active notices, so agents cannot flood new threads.
       - Agents post, list, and resolve notices through MCP tools; posting and resolving from a thread need its live run, and the shared runtime instructions tell every provider's agent to list notices when it starts work, and to treat them as agent-written context rather than user instructions.
       - Project Settings on web and mobile shows each checkout's active notices live, with the author thread and expiry, and can resolve them.
+      - Agent notice tool calls and Project Settings resolves emit `feature.used` events for `notices` with structural properties only, never notice text.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx
       - apps/server/src/mcp/toolkits/project/handlers.ts
@@ -3031,6 +3032,8 @@ features:
       - apps/server/src/persistence/ForkMigrations/010_ProjectNotices.ts
       - apps/server/src/project/ProjectNotices.ts
       - apps/server/src/provider/RuntimeInstructions.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
       - apps/web/src/components/settings/ProjectNoticesSettings.tsx
       - packages/contracts/src/projectNotice.ts
     upstream_paths:

@@ -6,6 +6,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import * as DeviceService from "../device/DeviceService.ts";
+import * as ProjectNotices from "../project/ProjectNotices.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as FeatureUsage from "./FeatureUsage.ts";
 
@@ -93,5 +94,21 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
         },
         service.action(input),
       ),
+  });
+});
+
+/** Observe notices resolved from Project Settings; agents' tool calls are observed separately. */
+export const notices = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
+  const service = yield* ProjectNotices.ProjectNotices;
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  if (!client.surface) return service;
+  return ProjectNotices.ProjectNotices.of({
+    ...service,
+    resolve: (noticeId) =>
+      FeatureUsage.observe(
+        { feature: "notices", action: "resolve", source: "user" },
+        service.resolve(noticeId),
+        client,
+      ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics)),
   });
 });

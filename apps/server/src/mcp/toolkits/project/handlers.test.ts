@@ -20,6 +20,7 @@ import * as ServerConfig from "../../../config.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ProjectNotices from "../../../project/ProjectNotices.ts";
+import * as AnalyticsService from "../../../telemetry/AnalyticsService.ts";
 import { runAllMigrations } from "../../../persistence/ForkMigrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -378,7 +379,18 @@ it.effect("posts notices to the calling thread's project under its name", () => 
     archivedAt: null,
     deletedAt: null,
   } as OrchestrationV2ThreadShell;
+  const usage: Array<Readonly<Record<string, unknown>>> = [];
   const dependencies = Layer.mergeAll(
+    Layer.succeed(
+      AnalyticsService.AnalyticsService,
+      AnalyticsService.AnalyticsService.of({
+        record: (event, properties) =>
+          Effect.sync(() => {
+            if (event === "feature.used" && properties) usage.push(properties);
+          }),
+        flush: Effect.void,
+      }),
+    ),
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
       requestNamespace: "session",
@@ -429,5 +441,20 @@ it.effect("posts notices to the calling thread's project under its name", () => 
     expect(afterRun.at(-1)?.result).toMatchObject({ code: "parent_not_active" });
     const listedAfterRun = yield* call("t3_notice_list", {});
     expect(listedAfterRun.at(-1)?.result).toMatchObject({ notices: [{}] });
+
+    // Each call is measured once with its outcome, and never with the notice's text.
+    expect(usage.map(({ action, outcome }) => `${action}:${outcome}`)).toEqual([
+      "post:success",
+      "list:success",
+      "post:failure",
+      "post:failure",
+      "list:success",
+    ]);
+    expect(usage.every((properties) => properties.feature === "notices")).toBe(true);
+    expect(
+      usage
+        .flatMap(Object.values)
+        .filter((value) => typeof value === "string" && value.includes("Hold merges")),
+    ).toEqual([]);
   }).pipe(Effect.provide(ProjectHandlersLive.pipe(Layer.provideMerge(dependencies))));
 });

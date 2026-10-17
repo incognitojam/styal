@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { PROJECT_NOTICE_MAX_ACTIVE, ProjectId, ThreadId } from "@t3tools/contracts";
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -9,6 +9,8 @@ import * as TestClock from "effect/testing/TestClock";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runAllMigrations } from "../persistence/ForkMigrations.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as ClientFeatureUsage from "../telemetry/ClientFeatureUsage.ts";
 import * as ProjectNotices from "./ProjectNotices.ts";
 
 const layer = it.layer(
@@ -173,6 +175,46 @@ layer("ProjectNotices", (it) => {
 
       yield* TestClock.adjust("1 hour");
       assert.deepStrictEqual(yield* Queue.take(lists), []);
+    }),
+  );
+  it.effect("measures a resolve from a client with a surface, and not a relayed one", () =>
+    Effect.gen(function* () {
+      yield* runAllMigrations();
+      const service = yield* ProjectNotices.ProjectNotices;
+      const events: Array<Readonly<Record<string, unknown>>> = [];
+      const analytics = AnalyticsService.AnalyticsService.of({
+        record: (event, properties) =>
+          Effect.sync(() => {
+            if (event === "feature.used" && properties) events.push(properties);
+          }),
+        flush: Effect.void,
+      });
+      const forClient = (client: { readonly surface?: "web" }) =>
+        ClientFeatureUsage.notices(client).pipe(
+          Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+        );
+      const post = service.post({
+        projectId: projectA,
+        title: "Resolved from settings",
+        body: "",
+        authorThreadId: null,
+      });
+
+      const web = yield* forClient({ surface: "web" });
+      yield* web.resolve((yield* post).id);
+      const relayed = yield* forClient({});
+      yield* relayed.resolve((yield* post).id);
+
+      expect(events).toEqual([
+        {
+          feature: "notices",
+          action: "resolve",
+          source: "user",
+          surface: "web",
+          outcome: "success",
+          durationMs: 0,
+        },
+      ]);
     }),
   );
 });
