@@ -148,8 +148,9 @@ cannot drag or move threads within it. Your saved order returns when you turn it
 
 ## Filter by project
 
-Use the menu below the sidebar search to show a single project. While a project is
-selected, **New thread** creates the thread there without asking. The **new thread
+Use the project button beside the sidebar search to show a single project. While a
+project is selected, the button shows its name and search shrinks to an icon; click the
+icon to search. **New thread** creates the thread there without asking. The **new thread
 in current project** shortcut uses the open thread's project, or the selected
 project when no thread is open. Choose **All projects** to clear the filter.
 

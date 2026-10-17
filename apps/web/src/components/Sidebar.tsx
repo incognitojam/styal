@@ -283,7 +283,11 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
+import {
+  SidebarHeaderIconButton,
+  SidebarHeaderLabelButton,
+  SidebarThreadHeader,
+} from "./sidebar/SidebarThreadHeader";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
@@ -5313,7 +5317,9 @@ export default function Sidebar() {
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
-              projectScope={
+              projectScoped={scopedProjectGroup !== null}
+              projectScopeMenuOpen={projectScopeMenuState.open}
+              projectScope={(showName) => (
                 <Combobox
                   items={projectScopeItems}
                   filteredItems={filteredProjectScopeItems}
@@ -5340,13 +5346,19 @@ export default function Sidebar() {
                 >
                   <ComboboxTrigger
                     render={
-                      <SidebarHeaderIconButton
-                        label={
-                          scopedProjectGroup
-                            ? `Filter threads by project: ${scopedProjectGroup.displayName}`
-                            : "Filter threads by project"
-                        }
-                      />
+                      scopedProjectGroup && showName ? (
+                        <SidebarHeaderLabelButton
+                          label={`Filter threads by project: ${scopedProjectGroup.displayName}`}
+                        />
+                      ) : (
+                        <SidebarHeaderIconButton
+                          label={
+                            scopedProjectGroup
+                              ? `Filter threads by project: ${scopedProjectGroup.displayName}`
+                              : "Filter threads by project"
+                          }
+                        />
+                      )
                     }
                   >
                     {scopedProjectGroup ? (
@@ -5358,6 +5370,9 @@ export default function Sidebar() {
                     ) : (
                       <FolderIcon className="size-4" />
                     )}
+                    {scopedProjectGroup && showName ? (
+                      <span className="min-w-0 truncate">{scopedProjectGroup.displayName}</span>
+                    ) : null}
                   </ComboboxTrigger>
                   <ComboboxPopup
                     align="start"
@@ -5444,7 +5459,7 @@ export default function Sidebar() {
                     </ComboboxList>
                   </ComboboxPopup>
                 </Combobox>
-              }
+              )}
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
               newThreadDisabled={projects.length === 0}

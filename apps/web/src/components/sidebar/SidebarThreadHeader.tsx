@@ -3,12 +3,14 @@
  *
  * Search owns the row's text and spans it. Project scope collapses to an icon
  * that sits with new-project and new-thread as a segmented group at the end.
- * The scope icon swaps to the project favicon while a project is selected,
- * so the header still names the scope after the row that showed it is gone.
+ * While a project is selected, search folds to its icon and the scope shows
+ * the project's favicon and name. Focusing search, by clicking the icon or
+ * tabbing to it, opens the field again; it folds when it loses focus empty.
  *
  * The scope picker itself is passed in: its combobox state lives with the rest
- * of the sidebar's scope logic. `searchFieldRef` lands on the search field so
- * the picker's popup can anchor to that width rather than to its 28px trigger.
+ * of the sidebar's scope logic. `searchFieldRef` lands on the search field, or
+ * on the whole row while search is folded, so the picker's popup can anchor to
+ * that width rather than to its trigger.
  */
 import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
@@ -17,6 +19,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
+  useEffect,
+  useState,
 } from "react";
 
 import { cn } from "~/lib/utils";
@@ -29,8 +33,13 @@ export interface SidebarThreadHeaderProps {
   searchFieldRef?: RefObject<HTMLDivElement | null>;
   /** Without projects there is nothing to scope, so those controls stay out. */
   hasProjects: boolean;
-  /** The project scope combobox, rendered as the first icon of the group. */
-  projectScope: ReactNode;
+  /** The project scope combobox, rendered first in the group. `showName` is
+   * true while search is folded and the trigger can show the project name. */
+  projectScope: (showName: boolean) => ReactNode;
+  /** A project is selected, so search folds to make room for its name. */
+  projectScoped: boolean;
+  /** The scope menu is open; search keeps its current width until it closes. */
+  projectScopeMenuOpen: boolean;
   onNewProject: () => void;
   /** Receives the click so Shift+click can skip the project picker. */
   onNewThread: (event: ReactMouseEvent) => void;
@@ -53,6 +62,8 @@ export function SidebarThreadHeader({
   searchFieldRef,
   hasProjects,
   projectScope,
+  projectScoped,
+  projectScopeMenuOpen,
   onNewProject,
   onNewThread,
   newThreadDisabled,
@@ -76,12 +87,54 @@ export function SidebarThreadHeader({
   const newThreadLabel = newThreadShortcutLabel
     ? `New thread (${newThreadShortcutLabel})`
     : "New thread";
+  const [searchFocused, setSearchFocused] = useState(false);
+  // Pressing a header control blurs search before the press ends. Folding
+  // then would swap the scope trigger under the pointer and the press would
+  // not open its menu, so the row keeps its layout from the press until the
+  // click lands, and while the scope menu that click opened stays open.
+  const [pressInRow, setPressInRow] = useState(false);
+  useEffect(() => {
+    if (!pressInRow) return;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const releaseAfter = (ms: number) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => setPressInRow(false), ms);
+    };
+    // Touch input blurs search and clicks after the pointer lifts, so the
+    // hold ends after the click. A press that never clicks, such as a drag,
+    // ends shortly after pointerup.
+    const onClick = () => releaseAfter(0);
+    const onPointerUp = () => releaseAfter(500);
+    const onPointerCancel = () => releaseAfter(0);
+    window.addEventListener("click", onClick, true);
+    window.addEventListener("pointerup", onPointerUp, true);
+    window.addEventListener("pointercancel", onPointerCancel, true);
+    return () => {
+      window.removeEventListener("click", onClick, true);
+      window.removeEventListener("pointerup", onPointerUp, true);
+      window.removeEventListener("pointercancel", onPointerCancel, true);
+      clearTimeout(timeout);
+    };
+  }, [pressInRow]);
+  const shouldFold = projectScoped && !searchFocused && searchQuery.length === 0;
+  const [searchFolded, setSearchFolded] = useState(shouldFold);
+  if (!pressInRow && !projectScopeMenuOpen && searchFolded !== shouldFold) {
+    setSearchFolded(shouldFold);
+  }
 
   return (
-    <div className="flex items-center gap-1">
+    <div
+      ref={searchFolded ? searchFieldRef : undefined}
+      onPointerDownCapture={() => setPressInRow(true)}
+      className="flex items-center gap-1"
+    >
       <div
-        ref={searchFieldRef}
-        className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+        ref={searchFolded ? undefined : searchFieldRef}
+        onClick={searchFolded ? () => searchInputRef.current?.focus() : undefined}
+        className={cn(
+          "flex h-8 min-w-0 items-center gap-2 rounded-md py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+          searchFolded ? "w-8 shrink-0 cursor-pointer justify-center px-0" : "flex-1 px-2",
+        )}
       >
         <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
         <SidebarInput
@@ -91,6 +144,8 @@ export function SidebarThreadHeader({
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
           onKeyDown={onSearchKeyDown}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
           placeholder="Search"
           aria-label="Search threads"
           role="combobox"
@@ -102,7 +157,7 @@ export function SidebarThreadHeader({
               ? `sidebar-thread-search-result-${activeSearchResultIndex}`
               : undefined
           }
-          className="min-w-0 flex-1"
+          className={searchFolded ? "sr-only" : "min-w-0 flex-1"}
         />
         {isSearching ? (
           <Button
@@ -123,10 +178,10 @@ export function SidebarThreadHeader({
       {/* Unfilled like the search field beside it: the buttons carry their own
           hover states, and a background well reads far louder on themed
           palettes than on the base light and dark ones. */}
-      <div className="flex shrink-0 items-center">
+      <div className={cn("flex items-center", searchFolded ? "min-w-0 flex-1" : "shrink-0")}>
         {hasProjects ? (
           <>
-            {projectScope}
+            {projectScope(searchFolded)}
             <SidebarHeaderIconButton label="Add project" onClick={onNewProject}>
               <FolderPlusIcon />
             </SidebarHeaderIconButton>
@@ -154,6 +209,44 @@ export function SidebarThreadHeader({
         </SidebarHeaderIconButton>
       </div>
     </div>
+  );
+}
+
+/**
+ * Full-width button with a tooltip, for a header control that shows text,
+ * such as the selected project's name. Spreads unknown props through like
+ * `SidebarHeaderIconButton`.
+ */
+export function SidebarHeaderLabelButton({
+  label,
+  tooltip = label,
+  children,
+  ...rest
+}: {
+  /** Accessible name; also the tooltip unless `tooltip` says more. */
+  label: string;
+  tooltip?: ReactNode;
+  children?: ReactNode;
+} & Omit<
+  ComponentProps<typeof SidebarMenuButton>,
+  "children" | "className" | "tooltip" | "isActive" | "aria-label"
+>) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <SidebarMenuButton
+            type="button"
+            aria-label={label}
+            {...rest}
+            className="min-w-0 flex-1"
+          />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{tooltip}</TooltipPopup>
+    </Tooltip>
   );
 }
 
