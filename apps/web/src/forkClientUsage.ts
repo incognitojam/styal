@@ -10,7 +10,9 @@ import { appAtomRegistry } from "./rpc/atomRegistry";
 import { serverEnvironment } from "./state/server";
 
 /** Whether the server accepts this client's usage vocabulary. */
-export function supportsForkClientUsage(config: ServerConfig | null | undefined) {
+export function supportsForkClientUsage(
+  config: Pick<ServerConfig, "environment"> | null | undefined,
+) {
   return (
     (config?.environment.capabilities.forkClientUsageVersion ?? 0) >= FORK_CLIENT_USAGE_VERSION
   );

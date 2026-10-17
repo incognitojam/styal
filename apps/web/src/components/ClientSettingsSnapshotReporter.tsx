@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
+import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect } from "react";
 
 import {
@@ -20,7 +21,7 @@ const CHECK_INTERVAL_MS = 60 * 1000;
 /** The primary environment, or on hosted web the first paired one, if it accepts the report. */
 function reportingEnvironment(
   primaryId: EnvironmentId | null,
-  configs: ReadonlyMap<EnvironmentId, ServerConfig>,
+  configs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>,
 ): EnvironmentId | null {
   if (primaryId) return supportsForkClientUsage(configs.get(primaryId)) ? primaryId : null;
   for (const [environmentId, config] of configs) {

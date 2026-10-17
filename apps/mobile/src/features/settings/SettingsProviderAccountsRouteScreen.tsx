@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { ProviderAuthResponse, ServerProvider } from "@t3tools/contracts";
 import { redactedPlaceholder } from "@t3tools/shared/redactedText";
+import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 import { BlurView } from "expo-blur";
 import {
@@ -22,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -43,6 +45,7 @@ import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-en
 
 export function SettingsProviderAccountsRouteScreen() {
   const { selectedTargets } = useSettingsEnvironmentFilter();
+  const providersByEnvironment = useAtomValue(environmentPresentations.providersByEnvironmentAtom);
   const insets = useSafeAreaInsets();
   return (
     <>
@@ -59,7 +62,9 @@ export function SettingsProviderAccountsRouteScreen() {
           ) : (
             selectedTargets.map((environment) => (
               <SettingsSection key={environment.environmentId} title={environment.label}>
-                {sortProvidersForAccounts(environment.serverConfig.providers).map((provider) =>
+                {sortProvidersForAccounts(
+                  providersByEnvironment.get(environment.environmentId) ?? [],
+                ).map((provider) =>
                   supportsInAppSignIn(provider) ? (
                     <ProviderAccount
                       key={provider.instanceId}
@@ -70,7 +75,7 @@ export function SettingsProviderAccountsRouteScreen() {
                     <ExternalProviderAccount key={provider.instanceId} provider={provider} />
                   ),
                 )}
-                {environment.serverConfig.providers.length === 0 ? (
+                {(providersByEnvironment.get(environment.environmentId) ?? []).length === 0 ? (
                   <Text className="p-4 text-foreground-muted">
                     Add a provider in web or desktop Settings.
                   </Text>
