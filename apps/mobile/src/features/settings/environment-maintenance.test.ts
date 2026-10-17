@@ -6,6 +6,7 @@ import {
   canMaintainEnvironment,
   canUpdateEnvironmentProvider,
   findEnvironmentUpdate,
+  isLatestProviderVersionUntested,
   supportsEnvironmentUpdate,
 } from "./environment-maintenance";
 
@@ -60,6 +61,22 @@ describe("environment maintenance access", () => {
     expect(
       supportsEnvironmentUpdate({ serverSelfUpdate: "desktop-managed", desktopAppUpdate: true }),
     ).toBe(true);
+  });
+
+  it("marks a latest release newer than the verified version as untested", () => {
+    const withVerified = (verifiedVersion: string) => ({
+      ...provider,
+      compatibilityAdvisory: {
+        status: "supported" as const,
+        message: null,
+        recommendedVersion: null,
+        recommendedRange: null,
+        verifiedVersion,
+      },
+    });
+    expect(isLatestProviderVersionUntested(withVerified("1.0.5"))).toBe(true);
+    expect(isLatestProviderVersionUntested(withVerified("1.1.0"))).toBe(false);
+    expect(isLatestProviderVersionUntested(provider)).toBe(false);
   });
 
   it("excludes unavailable, manual, busy, and incompatible provider updates", () => {

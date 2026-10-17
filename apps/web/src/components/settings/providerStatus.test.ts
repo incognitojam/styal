@@ -187,3 +187,39 @@ describe("provider status copy", () => {
     });
   });
 });
+
+it("notes when the latest release is newer than the verified version", () => {
+  const advisory = {
+    status: "behind_latest" as const,
+    currentVersion: "1.0.0",
+    latestVersion: "1.2.0",
+    updateCommand: "npm install -g fixture@latest",
+    canUpdate: true,
+    checkedAt: provider.checkedAt,
+    message: null,
+  };
+  const compatibility = {
+    status: "supported" as const,
+    message: null,
+    recommendedRange: null,
+    recommendedVersion: null,
+    verifiedVersion: "1.1.0",
+  };
+  expect(getProviderVersionAdvisoryPresentation(advisory, compatibility)?.detail).toBe(
+    "Update available: install v1.2.0. styal has not tested v1.2.0 yet. The newest tested version is v1.1.0.",
+  );
+  expect(
+    getProviderVersionAdvisoryPresentation(advisory, {
+      ...compatibility,
+      verifiedVersion: "1.2.0",
+    })?.detail,
+  ).toBe("Update available: install v1.2.0.");
+  expect(
+    getProviderVersionAdvisoryPresentation(advisory, {
+      status: "supported",
+      message: null,
+      recommendedRange: null,
+      recommendedVersion: null,
+    })?.detail,
+  ).toBe("Update available: install v1.2.0.");
+});

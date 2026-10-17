@@ -30,6 +30,7 @@ import {
   type ServerProviderUpdateState,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
@@ -41,7 +42,10 @@ import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 
 import * as ModelManifest from "../ModelManifest.ts";
-import { applyProviderCompatibility } from "../providerCompatibility.ts";
+import {
+  applyProviderCompatibility,
+  resolveRecentProviderAutoUpdateVersion,
+} from "../providerCompatibility.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ProviderInstanceRegistry from "../Services/ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "../Services/ProviderRegistry.ts";
@@ -411,14 +415,21 @@ export const ProviderRegistryLive = Layer.effect(
       ),
     );
     const initialManifest = yield* manifestService.current;
+    // Package each instance's installer manages, recorded as its snapshots
+    // arrive. The verified version applies only to installs of that package.
+    const packageNamesRef = yield* Ref.make<ReadonlyMap<ProviderInstanceId, string | null>>(
+      new Map(),
+    );
     const classifyCompatibility = (
       provider: ServerProvider,
       manifest: ModelManifest.ModelManifestData,
+      verifiedVersionFor: (provider: ServerProvider) => string | null = () => null,
     ) =>
       applyProviderCompatibility(
         provider,
         manifest.compatibility,
         ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
+        verifiedVersionFor(provider),
       );
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(
       cachedProviders.map((provider) => classifyCompatibility(provider, initialManifest)),
@@ -482,6 +493,23 @@ export const ProviderRegistryLive = Layer.effect(
       };
     });
 
+    const getProviderMaintenanceCapabilitiesForInstance = Effect.fn(
+      "getProviderMaintenanceCapabilitiesForInstance",
+    )(function* (
+      instanceId: ProviderInstanceId,
+      provider: ProviderDriverKind,
+      options?: { readonly fresh?: boolean },
+    ) {
+      // Read the instance registry, not `liveSubsRef`: the latter trails
+      // reconciliation, and an update must never run a retired instance's
+      // command against a freshly configured executable.
+      const instance = yield* instanceRegistry.getInstance(instanceId);
+      if (!instance || instance.driverKind !== provider) {
+        return makeManualProviderMaintenanceCapabilities(provider);
+      }
+      return yield* instance.snapshot.resolveMaintenance(options);
+    });
+
     const upsertProviders = Effect.fn("upsertProviders")(function* (
       nextProviders: ReadonlyArray<ServerProvider>,
       options?: {
@@ -498,6 +526,27 @@ export const ProviderRegistryLive = Layer.effect(
           concurrency: "unbounded",
         },
       );
+      const nextPackageNames = yield* Effect.forEach(
+        nextProviders,
+        (provider) =>
+          getProviderMaintenanceCapabilitiesForInstance(provider.instanceId, provider.driver).pipe(
+            Effect.map((capabilities) => [provider.instanceId, capabilities.packageName] as const),
+          ),
+        { concurrency: "unbounded" },
+      );
+      const packageNames = yield* Ref.updateAndGet(
+        packageNamesRef,
+        (previous) => new Map([...previous, ...nextPackageNames]),
+      );
+      const remoteManifest = yield* manifestService.remote;
+      const now = yield* Clock.currentTimeMillis;
+      const verifiedVersionFor = (provider: ServerProvider) =>
+        resolveRecentProviderAutoUpdateVersion(
+          remoteManifest,
+          now,
+          provider.driver,
+          packageNames.get(provider.instanceId) ?? null,
+        );
       const [previousProviders, providers, providersToPersist] = yield* Ref.modify(
         providersRef,
         (previousProviders) => {
@@ -519,7 +568,7 @@ export const ProviderRegistryLive = Layer.effect(
 
           const providers = orderProviderSnapshots(
             [...mergedProviders.values()].map((provider) =>
-              classifyCompatibility(provider, manifest),
+              classifyCompatibility(provider, manifest, verifiedVersionFor),
             ),
           );
           const providersToPersist = providers.filter((provider) =>
@@ -648,23 +697,6 @@ export const ProviderRegistryLive = Layer.effect(
         return yield* Ref.get(providersRef);
       }
       return yield* refreshOneSource(providerSource);
-    });
-
-    const getProviderMaintenanceCapabilitiesForInstance = Effect.fn(
-      "getProviderMaintenanceCapabilitiesForInstance",
-    )(function* (
-      instanceId: ProviderInstanceId,
-      provider: ProviderDriverKind,
-      options?: { readonly fresh?: boolean },
-    ) {
-      // Read the instance registry, not `liveSubsRef`: the latter trails
-      // reconciliation, and an update must never run a retired instance's
-      // command against a freshly configured executable.
-      const instance = yield* instanceRegistry.getInstance(instanceId);
-      if (!instance || instance.driverKind !== provider) {
-        return makeManualProviderMaintenanceCapabilities(provider);
-      }
-      return yield* instance.snapshot.resolveMaintenance(options);
     });
 
     /**
