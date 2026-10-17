@@ -8,6 +8,7 @@
  *   intake-run.ts apply (--count <n> | --through <upstream-sha> | --commits <sha,...>) [--branch <name>]
  *   intake-run.ts continue [--note <text>] [--feature <id,id>]
  *   intake-run.ts fix-trailers [--base origin/main]
+ *   intake-run.ts fix-references [--base origin/main]
  *   intake-run.ts verify [--base origin/main]
  *   intake-run.ts replay <promoted-candidate-sha> [--base <fork-sha>] [--skip-lockfile] [--json] [--dump <dir>]
  *   intake-run.ts score <dump-dir> [--exclude <sha-prefixes>] [--verbose]
@@ -32,6 +33,14 @@ import {
   resolveHunk,
 } from "./lib/conflicts.ts";
 import { parseUpstreamProvenance } from "./lib/provenance.ts";
+import {
+  namespaceAlias,
+  parseReferenceErrors,
+  relativeSpecifier,
+  renameIdentifier,
+  useNamespaceImport,
+} from "./lib/references.ts";
+import { applyIdentifierRenames, deriveIdentifierRenames } from "./lib/renames.ts";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -126,6 +135,65 @@ function unmergedFiles(
 }
 
 /** Resolves what it can in one conflicted text file, writing the result back. */
+/**
+ * Merges one file again after giving the fork's version and the base the renames upstream's
+ * commit makes in that file, so a mechanical rename stops conflicting with fork edits nearby.
+ * Returns the merged text with any remaining hunks resolved where possible, or null when the
+ * commit renames nothing in the file or a version is missing.
+ */
+function remergeWithRenames(
+  cwd: string,
+  upstreamSha: string,
+  path: string,
+): { readonly text: string; readonly unresolved: number; readonly renames: number } | null {
+  const renames = deriveIdentifierRenames(
+    git(cwd, ["diff", "-U0", "--no-renames", `${upstreamSha}^`, upstreamSha, "--", path]),
+  );
+  if (renames.size === 0) return null;
+  const show = (ref: string) => run(cwd, "git", ["show", `${ref}:${path}`]);
+  const ours = show("HEAD");
+  const base = show(`${upstreamSha}^`);
+  const theirs = show(upstreamSha);
+  if (ours.status !== 0 || base.status !== 0 || theirs.status !== 0) return null;
+  const directory = NodePath.join(
+    git(cwd, ["rev-parse", "--absolute-git-dir"]).trim(),
+    "intake-run-merge",
+  );
+  NodeFS.mkdirSync(directory, { recursive: true });
+  const write = (name: string, text: string) => {
+    const file = NodePath.join(directory, name);
+    NodeFS.writeFileSync(file, text);
+    return file;
+  };
+  const merged = run(cwd, "git", [
+    "merge-file",
+    "--diff3",
+    "-p",
+    "-L",
+    "HEAD",
+    "-L",
+    "base",
+    "-L",
+    "upstream",
+    write("ours", applyIdentifierRenames(ours.stdout, renames)),
+    write("base", applyIdentifierRenames(base.stdout, renames)),
+    write("theirs", theirs.stdout),
+  ]);
+  // merge-file exits with the number of conflicts, or above 127 when it fails.
+  if (merged.status > 127) return null;
+  const parsed = parseConflictFile(merged.stdout);
+  if (parsed === null) return null;
+  const resolutions = parsed.hunks.map((hunk) => resolveHunk(hunk, path));
+  return {
+    text: renderConflictFile(
+      parsed,
+      resolutions.map((resolution) => (resolution.kind === "unresolved" ? null : resolution.text)),
+    ),
+    unresolved: resolutions.filter((resolution) => resolution.kind === "unresolved").length,
+    renames: renames.size,
+  };
+}
+
 /** Set by `replay --dump` to collect every conflict hunk with how it was resolved. */
 let hunkSink: Array<{ path: string; hunk: unknown; resolution: string }> | null = null;
 
@@ -526,7 +594,20 @@ export function pickUpstreamCommit(
         adaptations.push({ kind: "additions", path });
       }
     }
-    if (result.unresolved > 0) unresolved.push({ path, hunks: result.unresolved });
+    let remaining = result.unresolved;
+    if (remaining > 0) {
+      const remerged = remergeWithRenames(cwd, upstreamSha, path);
+      if (remerged !== null && remerged.unresolved < remaining) {
+        NodeFS.writeFileSync(NodePath.join(cwd, path), remerged.text);
+        remaining = remerged.unresolved;
+        adaptations.push({
+          kind: "upstream-rename",
+          path,
+          detail: `merged again with ${remerged.renames} of upstream's renames`,
+        });
+      }
+    }
+    if (remaining > 0) unresolved.push({ path, hunks: remaining });
     else git(cwd, ["add", "--", path]);
   }
   if (lockfileConflict) {
@@ -876,7 +957,7 @@ function requireCleanIndex(cwd: string) {
 function applyEntries(
   cwd: string,
   entries: ReadonlyArray<QueueEntry>,
-  options: { skipLockfile?: boolean },
+  options: { skipLockfile?: boolean; rerere?: boolean },
 ) {
   requireCleanIndex(cwd);
   const picked = pickedSources(cwd, "origin/main");
@@ -1228,6 +1309,247 @@ function verify(cwd: string, base: string): boolean {
 }
 
 // ---------------------------------------------------------------------------------------------
+// References
+
+interface Provided<T> {
+  readonly value: T;
+  /** The upstream commit whose change this follows. */
+  readonly source: string;
+}
+
+/** Renames and file moves the batch's upstream commits make, each tagged with its commit. */
+function batchRenames(cwd: string, sources: ReadonlyArray<string>) {
+  const byFile = new Map<string, Map<string, Provided<string>>>();
+  const exported = new Map<string, Provided<string>>();
+  const moves = new Map<string, Provided<string>>();
+  for (const source of sources) {
+    const patch = git(cwd, [
+      "diff",
+      "-U0",
+      "--no-renames",
+      `${source}^`,
+      source,
+      "--",
+      ".",
+      ":!.repos",
+    ]);
+    for (const chunk of patch.split(/^(?=diff --git )/mu)) {
+      const header = /^diff --git a\/(\S+) b\/(\S+)/u.exec(chunk);
+      if (!header) continue;
+      const renames = new Map(deriveIdentifierRenames(chunk));
+      // A renamed export whose declaration was also reformatted does not pair line by line;
+      // the file's removed and added exported names pair in order when their counts match.
+      const declared = (sign: string) =>
+        chunk
+          .split("\n")
+          .flatMap((line) =>
+            line.startsWith(sign)
+              ? (/^.\s*export\s+(?:const|function|class|let)\s+([A-Za-z_$][\w$]*)/u.exec(
+                  line,
+                )?.[1] ?? [])
+              : [],
+          );
+      const removedExports = declared("-");
+      const addedExports = declared("+");
+      if (removedExports.length === addedExports.length) {
+        removedExports.forEach((from, index) => {
+          const to = addedExports[index]!;
+          if (from !== to && !renames.has(from)) renames.set(from, to);
+        });
+      }
+      if (renames.size === 0) continue;
+      const file = byFile.get(header[2]!) ?? new Map<string, Provided<string>>();
+      const exports = new Set(
+        chunk
+          .split("\n")
+          .filter((line) => /^-\s*export\b/u.test(line))
+          .flatMap((line) => line.match(/[A-Za-z_$][\w$]*/gu) ?? []),
+      );
+      for (const [from, to] of renames) {
+        file.set(from, { value: to, source });
+        if (exports.has(from)) exported.set(from, { value: to, source });
+      }
+      byFile.set(header[2]!, file);
+    }
+    const fields = git(cwd, ["diff", "-M", "--name-status", "-z", `${source}^`, source]).split(
+      "\0",
+    );
+    const deleted: Array<string> = [];
+    const arrived: Array<string> = [];
+    for (let index = 0; index < fields.length; index += 1) {
+      const status = fields[index]!;
+      if (status.startsWith("R")) {
+        moves.set(fields[index + 1]!, { value: fields[index + 2]!, source });
+        arrived.push(fields[index + 2]!);
+        index += 2;
+      } else if (status !== "") {
+        if (status === "D") deleted.push(fields[index + 1]!);
+        if (status === "A") arrived.push(fields[index + 1]!);
+        index += 1;
+      }
+    }
+    for (const [from, to] of mergedModuleMoves(deleted, arrived)) {
+      moves.set(from, { value: to, source });
+    }
+  }
+  return { byFile, exported, moves };
+}
+
+const MODULE_EXTENSIONS = ["", ".ts", ".tsx", "/index.ts"];
+
+/**
+ * Typechecks the packages the batch touches and fixes fork references to what its upstream
+ * commits renamed or moved, until a round fixes nothing. Each fix is committed into the pick
+ * whose upstream commit made the rename or move. Returns the errors it could not fix.
+ */
+function fixReferences(cwd: string, base: string): ReadonlyArray<string> {
+  requireCleanIndex(cwd);
+  const commits = lines(git(cwd, ["rev-list", "--reverse", `${base}..HEAD`]));
+  const pickBySource = new Map<string, string>();
+  for (const commit of commits) {
+    const source = cherryPickSources(git(cwd, ["show", "-s", "--format=%B", commit]))[0];
+    if (source) pickBySource.set(source, commit);
+  }
+  const { byFile, exported, moves } = batchRenames(cwd, [...pickBySource.keys()]);
+  const movedFrom = new Map([...moves].map(([from, to]) => [to.value, from]));
+  const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`]));
+  const packages = owningPackages(cwd, changed).filter((directory) =>
+    /"typecheck"\s*:/u.test(readIfExists(NodePath.join(cwd, directory, "package.json"))),
+  );
+  const fileSource = new Map<string, string>();
+  let remaining: Array<string> = [];
+  for (let round = 0; round < 6; round += 1) {
+    remaining = [];
+    let fixed = 0;
+    for (const directory of packages) {
+      const result = run(NodePath.join(cwd, directory), "pnpm", ["run", "typecheck"]);
+      for (const error of parseReferenceErrors(`${result.stdout}\n${result.stderr}`, directory)) {
+        const absolute = NodePath.join(cwd, error.file);
+        if (!NodeFS.existsSync(absolute)) continue;
+        const text = NodeFS.readFileSync(absolute, "utf8");
+        let next = text;
+        let source: string | undefined;
+        if (error.kind === "module") {
+          const oldFile = movedFrom.get(error.file) ?? error.file;
+          const target = NodePath.posix.normalize(
+            NodePath.posix.join(NodePath.posix.dirname(oldFile), error.module),
+          );
+          const move = MODULE_EXTENSIONS.map((extension) => moves.get(target + extension)).find(
+            (candidate) => candidate !== undefined,
+          );
+          const destination = move?.value ?? target;
+          if (
+            MODULE_EXTENSIONS.some((extension) =>
+              NodeFS.existsSync(NodePath.join(cwd, destination + extension)),
+            )
+          ) {
+            const specifier = relativeSpecifier(error.file, destination);
+            next = text.split(`"${error.module}"`).join(`"${specifier}"`);
+            source = move?.source;
+          }
+        } else {
+          const rename = byFile.get(error.file)?.get(error.name) ?? exported.get(error.name);
+          // A bare `layer` needs its module's namespace, and a name the file declares more than
+          // once is shadowed somewhere, so the rename could bind the wrong one. Both stay for a
+          // person.
+          const declarations =
+            rename === undefined
+              ? 0
+              : (
+                  text.match(
+                    new RegExp(
+                      `\\b(const|let|var|function|class)\\s+${rename.value.replace(/\$/gu, "\\$")}\\b`,
+                      "gu",
+                    ),
+                  ) ?? []
+                ).length;
+          const usable =
+            rename !== undefined &&
+            declarations <= 1 &&
+            (rename.value !== "layer" || error.kind === "export");
+          if (rename !== undefined && usable) {
+            source = rename.source;
+            next =
+              error.kind === "export" && rename.value === "layer"
+                ? useNamespaceImport(text, {
+                    specifier: error.module,
+                    name: error.name,
+                    alias: namespaceAlias(error.module),
+                    member: rename.value,
+                  })
+                : renameIdentifier(text, error.name, rename.value);
+          }
+        }
+        if (next !== text) {
+          NodeFS.writeFileSync(absolute, next);
+          fixed += 1;
+          if (source !== undefined) fileSource.set(error.file, source);
+        } else {
+          remaining.push(`${error.file}: ${error.kind === "module" ? error.module : error.name}`);
+        }
+      }
+    }
+    if (fixed === 0) break;
+  }
+  // Commit each file's fixes into the pick whose upstream change made them necessary.
+  const groups = new Map<string, Array<string>>();
+  for (const [file, source] of fileSource) {
+    const pick = pickBySource.get(source);
+    if (pick) groups.set(pick, [...(groups.get(pick) ?? []), file]);
+  }
+  for (const [pick, files] of groups) {
+    git(cwd, ["add", "--", ...files]);
+    git(cwd, ["commit", "-q", "--no-verify", `--fixup=${pick}`]);
+  }
+  if (groups.size > 0) {
+    const sources = new Map(
+      [...groups].map(([pick, files]) => [
+        cherryPickSources(git(cwd, ["show", "-s", "--format=%B", pick]))[0]!,
+        files,
+      ]),
+    );
+    git(cwd, ["-c", "sequence.editor=true", "rebase", "-q", "-i", "--autosquash", base]);
+    noteReferenceFixes(cwd, base, sources);
+  }
+  return [...new Set(remaining)];
+}
+
+/** Adds a sentence to each listed pick's fork note naming the files whose references it fixed. */
+function noteReferenceFixes(
+  cwd: string,
+  base: string,
+  filesBySource: ReadonlyMap<string, ReadonlyArray<string>>,
+) {
+  const branch = git(cwd, ["symbolic-ref", "--short", "HEAD"]).trim();
+  const commits = lines(git(cwd, ["rev-list", "--reverse", `${base}..HEAD`]));
+  git(cwd, ["checkout", "-q", "--detach", `${commits[0]!}^`]);
+  try {
+    for (const commit of commits) {
+      git(cwd, ["cherry-pick", "--allow-empty", "--keep-redundant-commits", commit]);
+      const message = git(cwd, ["show", "-s", "--format=%B", "HEAD"]);
+      const files = filesBySource.get(cherryPickSources(message)[0] ?? "");
+      if (!files) continue;
+      const sentence = `Fork-only code takes upstream's renamed names and moved modules in ${files
+        .toSorted()
+        .map((file) => `\`${file}\``)
+        .join(", ")}.`;
+      const updated = /^Fork adaptation: /mu.test(message)
+        ? message.replace(/^(Fork adaptation: .*?)(\n\n|\n?$)/msu, `$1 ${sentence}$2`)
+        : message.replace(
+            /\n\n(\(cherry picked from commit )/u,
+            `\n\nFork adaptation: ${sentence}\n\n$1`,
+          );
+      git(cwd, ["commit", "-q", "--amend", "--no-verify", "-F", "-"], updated);
+    }
+  } catch (error) {
+    run(cwd, "git", ["cherry-pick", "--abort"]);
+    git(cwd, ["switch", "-q", "--discard-changes", branch]);
+    throw error;
+  }
+  git(cwd, ["switch", "-q", "-C", branch]);
+}
+
+// ---------------------------------------------------------------------------------------------
 // CLI
 
 function flag(name: string): string | undefined {
@@ -1257,6 +1579,7 @@ function main() {
       if (branch) git(cwd, ["switch", "-q", "-c", branch, "--no-track", "origin/main"]);
       const done = applyEntries(cwd, entries, {
         skipLockfile: process.argv.includes("--skip-lockfile"),
+        rerere: !process.argv.includes("--no-rerere"),
       });
       if (done)
         process.stdout.write(
@@ -1293,6 +1616,7 @@ function main() {
       });
       const done = applyEntries(cwd, state.remaining, {
         skipLockfile: process.argv.includes("--skip-lockfile"),
+        rerere: !process.argv.includes("--no-rerere"),
       });
       process.exitCode = done ? 0 : 2;
       return;
@@ -1326,6 +1650,14 @@ function main() {
     }
     case "verify": {
       process.exitCode = verify(cwd, flag("--base") ?? "origin/main") ? 0 : 1;
+      return;
+    }
+    case "fix-references": {
+      const unresolved = fixReferences(cwd, flag("--base") ?? "origin/main");
+      if (unresolved.length > 0) {
+        process.stdout.write(`Not fixed:\n${unresolved.join("\n")}\n`);
+      }
+      process.exitCode = unresolved.length > 0 ? 1 : 0;
       return;
     }
     case "score": {
