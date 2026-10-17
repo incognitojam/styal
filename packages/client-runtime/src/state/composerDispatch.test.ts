@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   alternateComposerDispatchAction,
   resolveComposerDispatchMode,
+  resolveComposerStopAndSend,
 } from "./composerDispatch.ts";
 
 describe("resolveComposerDispatchMode", () => {
@@ -68,5 +69,35 @@ describe("resolveComposerDispatchMode", () => {
     expect(alternateComposerDispatchAction("queue")).toBe("steer");
     expect(alternateComposerDispatchAction("steer")).toBe("queue");
     expect(alternateComposerDispatchAction()).toBe("queue");
+  });
+});
+
+describe("resolveComposerStopAndSend", () => {
+  it("shows Stop alone while a run is active and the draft is empty", () => {
+    expect(
+      resolveComposerStopAndSend({ canStop: true, hasDraft: false, isEditingQueuedMessage: false }),
+    ).toEqual({ showStop: true, showSend: false });
+  });
+
+  it("keeps Stop beside Send while a run is active and a draft exists", () => {
+    expect(
+      resolveComposerStopAndSend({ canStop: true, hasDraft: true, isEditingQueuedMessage: false }),
+    ).toEqual({ showStop: true, showSend: true });
+  });
+
+  it("shows only Update while editing a queued message during a run", () => {
+    for (const hasDraft of [false, true]) {
+      expect(
+        resolveComposerStopAndSend({ canStop: true, hasDraft, isEditingQueuedMessage: true }),
+      ).toEqual({ showStop: false, showSend: true });
+    }
+  });
+
+  it("shows only Send when there is no run to stop", () => {
+    for (const hasDraft of [false, true]) {
+      expect(
+        resolveComposerStopAndSend({ canStop: false, hasDraft, isEditingQueuedMessage: false }),
+      ).toEqual({ showStop: false, showSend: true });
+    }
   });
 });

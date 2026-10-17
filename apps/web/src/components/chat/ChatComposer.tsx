@@ -3104,16 +3104,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const showResumeAction =
     canResume && !composerDraftHasUserContent(composerDraft) && !isEditingQueuedMessage;
-  const collapsedComposerPrimaryActionDisabled =
-    phase === "running" ||
-    isSendBusy ||
-    isSendDisabled ||
-    isConnecting ||
-    noProviderAvailable ||
-    projectSelectionRequired ||
-    environmentUnavailable !== null ||
-    (!composerSendState.hasSendableContent && !showResumeAction);
-  const collapsedComposerPrimaryActionLabel = showResumeAction ? "Resume thread" : "Send message";
   const showMobilePendingAnswerActions =
     isMobileViewport && !isComposerCollapsedMobile && pendingPrimaryAction !== null;
 
@@ -6783,6 +6773,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ],
   );
 
+  // Shared by the collapsed mobile row and the footer so both offer the same Stop and Send.
+  const primaryActionProps = {
+    isRunning: phase === "running",
+    canInterrupt,
+    followUpBehavior: settings.followUpBehavior,
+    alternateShortcutLabel: shortcutLabelForCommand(keybindings, "composer.sendAlternate", {
+      context: {
+        composerFocus: true,
+        draftThreadRoute: routeKind === "draft",
+        turnRunning: true,
+      },
+    }),
+    promptHasText: prompt.trim().length > 0,
+    isSendBusy,
+    sendDisabledReason,
+    isConnecting,
+    isEnvironmentUnavailable:
+      environmentUnavailable !== null || noProviderAvailable || projectSelectionRequired,
+    isPreparingWorktree,
+    hasSendableContent: composerSendState.hasSendableContent,
+    canResume: showResumeAction,
+    isEditingQueuedMessage,
+    onSubmitMessage: handleSubmitMessage,
+    onResume,
+    onPreviousPendingQuestion: onPreviousActivePendingUserInputQuestion,
+    onInterrupt: handleInterruptPrimaryAction,
+    onImplementPlanInNewThread: handleImplementPlanInNewThreadPrimaryAction,
+  };
+
   // Render
   // ------------------------------------------------------------------
   return (
@@ -7095,33 +7114,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         : "Ask anything...")}
                 </button>
                 {collapsedComposerImagePreviews}
-                <button
-                  type="button"
+                <div
                   data-chat-composer-transition-actions="true"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:opacity-64"
-                  disabled={collapsedComposerPrimaryActionDisabled}
-                  aria-label={collapsedComposerPrimaryActionLabel}
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (showResumeAction) onResume();
-                    else submitComposer();
-                  }}
+                  className="flex shrink-0 items-center gap-2"
                 >
-                  {showResumeAction ? (
-                    <PlayIcon className="size-4 fill-current" aria-hidden="true" />
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path
-                        d="M8 3L8 13M8 3L4 7M8 3L12 7"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </button>
+                  <ComposerPrimaryActions
+                    {...primaryActionProps}
+                    compact
+                    buttonSize="small"
+                    pendingAction={null}
+                    showPlanFollowUpPrompt={false}
+                    preserveComposerFocusOnPointerDown
+                  />
+                </div>
               </div>
             ) : null}
 
@@ -7788,43 +7793,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     reserveContextWindowMeter={reserveContextWindowMeter}
                     activeThreadModelDisplayName={activeThreadModelDisplayName}
+                    {...primaryActionProps}
                     pendingAction={pendingPrimaryAction}
-                    isRunning={phase === "running"}
-                    canInterrupt={canInterrupt}
-                    followUpBehavior={settings.followUpBehavior}
-                    alternateShortcutLabel={shortcutLabelForCommand(
-                      keybindings,
-                      "composer.sendAlternate",
-                      {
-                        context: {
-                          composerFocus: true,
-                          draftThreadRoute: routeKind === "draft",
-                          turnRunning: true,
-                        },
-                      },
-                    )}
                     showPlanFollowUpPrompt={
                       pendingUserInputs.length === 0 && showPlanFollowUpPrompt
                     }
-                    promptHasText={prompt.trim().length > 0}
-                    isSendBusy={isSendBusy}
-                    sendDisabledReason={sendDisabledReason}
-                    isConnecting={isConnecting}
-                    isEnvironmentUnavailable={
-                      environmentUnavailable !== null ||
-                      noProviderAvailable ||
-                      projectSelectionRequired
-                    }
-                    isPreparingWorktree={isPreparingWorktree}
-                    hasSendableContent={composerSendState.hasSendableContent}
-                    canResume={showResumeAction}
                     preserveComposerFocusOnPointerDown={isMobileViewport || isComposerResting}
-                    isEditingQueuedMessage={isEditingQueuedMessage}
-                    onSubmitMessage={handleSubmitMessage}
-                    onResume={onResume}
-                    onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
-                    onInterrupt={handleInterruptPrimaryAction}
-                    onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                     compactDisabled={
                       compactDisabled || noProviderAvailable || isSendBusy || isConnecting
                     }

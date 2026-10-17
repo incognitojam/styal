@@ -3185,32 +3185,42 @@ features:
   - id: provider-working-state-recovery
     title: Recover truthful Claude working state after compaction
     status: review-needed
-    prs: [290]
+    prs: [290, 881]
     invariants:
       - A cleared Claude transient status keeps an active turn running but returns an idle session to ready after manual context compaction completes.
       - Requesting and compacting states retain their existing presentation, and a delayed provider status cannot leave a completed thread falsely Working.
       - Web and mobile recognize an unsettled manual compaction across provider restarts without requiring matching message and turn timestamps; a newer user prompt or matching result clears the compaction label.
       - Cancelling manual compaction durably cancels its canonical run, so a later provider session cannot revive its compaction label.
+      - Web, desktop, and native mobile keep Stop available beside Send when an active turn has a draft, including collapsed composers, so users can cancel manual compaction without clearing text or attachments; editing a queued message shows only Update.
     implementation_paths:
+      - apps/mobile/src/features/threads/ThreadComposer.tsx
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/mobile/src/state/use-thread-composer-state.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
       - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ComposerPrimaryActions.tsx
+      - packages/client-runtime/src/state/composerDispatch.ts
     upstream_paths:
+      - apps/mobile/src/features/threads/ThreadComposer.tsx
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ComposerPrimaryActions.tsx
+      - packages/client-runtime/src/state/composerDispatch.ts
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
       - apps/server/src/orchestration-v2/runtimeLayer.test.ts
+      - packages/client-runtime/src/state/composerDispatch.test.ts
     upstream:
-      status: equivalent
+      status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/issues/7589
         - https://github.com/pingdotgg/t3code/pull/2829
-      retire_when: Upstream derives Claude working and compaction state from the active turn rather than provider status messages, with equivalent post-compaction recovery.
+      retire_when: Upstream derives Claude working and compaction state from the active turn rather than provider status messages, with equivalent post-compaction recovery, and keeps Stop accessible while composing a draft.
 
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request

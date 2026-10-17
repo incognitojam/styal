@@ -14,6 +14,7 @@ import { composerFloatingLayerProps } from "./composerEventScope";
 import {
   alternateComposerDispatchAction,
   resolveComposerDispatchMode,
+  resolveComposerStopAndSend,
 } from "@t3tools/client-runtime/state/composer-dispatch";
 
 interface PendingActionState {
@@ -26,6 +27,8 @@ interface PendingActionState {
 
 interface ComposerPrimaryActionsProps {
   compact: boolean;
+  /** "small" keeps Stop and Send at 32px on every viewport, for the collapsed mobile row. */
+  buttonSize?: "default" | "small";
   pendingAction: PendingActionState | null;
   /** The turn is running: sending steers or queues instead of starting a turn. */
   isRunning: boolean;
@@ -80,6 +83,7 @@ const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
 
 export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   compact,
+  buttonSize = "default",
   pendingAction,
   isRunning,
   canInterrupt,
@@ -127,8 +131,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <button
             type="button"
             className={cn(
-              "flex cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-control-pressed active:shadow-none [&_svg]:pointer-events-none",
-              insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
+              "flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-control-highlight transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-control-pressed active:shadow-none [&_svg]:pointer-events-none",
+              insidePendingAction
+                ? "size-8 sm:size-7"
+                : buttonSize === "small"
+                  ? "size-8"
+                  : "size-9 sm:size-8",
             )}
             {...pointerFocusProps}
             onClick={onInterrupt}
@@ -247,10 +255,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  if (canInterrupt && !hasSendableContent && !isEditingQueuedMessage) {
-    return renderStopGenerationButton(false);
-  }
-
+  const { showStop, showSend } = resolveComposerStopAndSend({
+    canStop: canInterrupt,
+    hasDraft: hasSendableContent,
+    isEditingQueuedMessage,
+  });
   const showResume = canResume && !hasSendableContent && !isEditingQueuedMessage;
   const submitLabel = showResume
     ? "Resume thread"
@@ -283,7 +292,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none disabled:hover:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none",
+        "relative isolate flex shrink-0 items-center justify-center overflow-hidden rounded-full shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:inset-shadow-control-highlight hover:scale-105 active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none disabled:hover:scale-100 [&_svg]:pointer-events-none",
+        buttonSize === "small" ? "size-8" : "size-9 sm:size-8",
         stageBackdropVariant
           ? "bg-transparent text-white enabled:shadow-black/24 enabled:hover:brightness-110"
           : "bg-message-action text-message-action-foreground enabled:shadow-message-action/24 hover:bg-message-action-hover",
@@ -346,12 +356,17 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     sendButton
   );
 
-  return sendDisabledReason ? (
-    sendButtonWithDisabledReason
-  ) : (
-    <Tooltip key="submit">
-      <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
-      <TooltipPopup>{submitTooltip}</TooltipPopup>
-    </Tooltip>
+  return (
+    <>
+      {showStop ? renderStopGenerationButton(false) : null}
+      {!showSend ? null : sendDisabledReason ? (
+        sendButtonWithDisabledReason
+      ) : (
+        <Tooltip key="submit">
+          <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
+          <TooltipPopup>{submitTooltip}</TooltipPopup>
+        </Tooltip>
+      )}
+    </>
   );
 });
