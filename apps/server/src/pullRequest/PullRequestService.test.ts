@@ -129,6 +129,47 @@ function hostedChangeRequest(body: string, additions = 1): ProviderChangeRequest
   return { ...changeRequestDetail(1), body, additions };
 }
 
+it.effect("refreshes deployment status and environment links with PR detail", () =>
+  Effect.gen(function* () {
+    let ready = false;
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/w", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequest: () =>
+            Effect.succeed({
+              ...changeRequestDetail(1),
+              deployments: [
+                {
+                  id: "deployment-1",
+                  environment: "web-preview",
+                  status: ready ? ("success" as const) : ("pending" as const),
+                  description: null,
+                  environmentUrl: ready ? "https://preview.example.com" : null,
+                  logUrl: "https://example.com/logs",
+                  commitSha: "abc123",
+                  createdAt: "2026-07-01T00:00:00Z",
+                  updatedAt: "2026-07-01T00:00:00Z",
+                },
+              ],
+              deploymentsTruncated: false,
+            }),
+        }),
+      ],
+    });
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const pending = yield* service.detail(reference);
+    assert.strictEqual(pending.deployments?.[0]?.status, "pending");
+    assert.strictEqual(pending.deployments?.[0]?.environmentUrl, null);
+    ready = true;
+    yield* service.invalidate({ reference, scope: "detail" });
+    const complete = yield* service.detail(reference);
+    assert.strictEqual(complete.deployments?.[0]?.status, "success");
+    assert.strictEqual(complete.deployments?.[0]?.environmentUrl, "https://preview.example.com");
+    assert.strictEqual(complete.deploymentsTruncated, false);
+  }),
+);
+
 it.effect("caches narrow previews and invalidates them after refresh or mutation", () =>
   Effect.gen(function* () {
     let reads = 0;

@@ -1738,22 +1738,31 @@ export const make = Effect.gen(function* () {
   const getPullRequestDetail: GitHubPullRequestCli["Service"]["getPullRequestDetail"] = (input) => {
     const { owner, name } = parseRepositorySelector(input.repository);
     return GitHubCli.AllowGitHubReserve.pipe(
-      Effect.flatMap((allowReserve) =>
-        graphqlRead({
-          allowReserve,
-          cwd: input.cwd,
-          host: input.host,
-          operation: "getPullRequestDetail",
-          variables: [
-            ["-f", `owner=${owner}`],
-            ["-f", `name=${name}`],
-            ["-F", `number=${input.number}`],
-            ["-f", `headRef=refs/pull/${input.number}/head`],
-          ],
-          query: pullRequestCoreGraphQlQuery(input.host),
-          decode: decodePullRequestCoreJson,
-        }),
-      ),
+      Effect.flatMap((allowReserve) => {
+        const readCore = (includeDeployments: boolean) =>
+          graphqlRead({
+            allowReserve,
+            cwd: input.cwd,
+            host: input.host,
+            operation: "getPullRequestDetail",
+            variables: [
+              ["-f", `owner=${owner}`],
+              ["-f", `name=${name}`],
+              ["-F", `number=${input.number}`],
+              ["-f", `headRef=refs/pull/${input.number}/head`],
+            ],
+            query: pullRequestCoreGraphQlQuery(input.host, includeDeployments),
+            decode: decodePullRequestCoreJson,
+          });
+        // Deployment access is optional. A rejected extended query must not hide the PR itself.
+        // gh can classify a GraphQL field error containing repository.pullRequest as not-found.
+        return readCore(true).pipe(
+          Effect.catchTags({
+            GitHubCliCommandError: () => readCore(false),
+            GitHubPullRequestNotFoundError: () => readCore(false),
+          }),
+        );
+      }),
       // gh already pages check contexts. Keep its complete, deduplicated result for
       // large check suites instead of letting the first 100 checks imply success.
       Effect.filterOrElse(

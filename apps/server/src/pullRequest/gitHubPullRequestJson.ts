@@ -10,6 +10,7 @@ import type {
   PullRequestCheckStatus,
   PullRequestChecksState,
   PullRequestComment,
+  PullRequestDeployment,
   PullRequestCommit,
   PullRequestFileViewedState,
   PullRequestLabel,
@@ -824,6 +825,24 @@ const RawRepositoryAccessSchema = Schema.Struct({
   viewerPermission: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
+const RawDeploymentSchema = Schema.Struct({
+  id: Schema.String,
+  environment: Schema.NullOr(Schema.String),
+  state: Schema.NullOr(Schema.String),
+  commitOid: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  latestStatus: Schema.NullOr(
+    Schema.Struct({
+      state: Schema.String,
+      updatedAt: Schema.String,
+      description: Schema.NullOr(Schema.String),
+      environmentUrl: Schema.NullOr(Schema.String),
+      logUrl: Schema.NullOr(Schema.String),
+    }),
+  ),
+});
+
 const RawCoreSchema = Schema.Struct({
   data: Schema.Struct({
     repository: Schema.Struct({
@@ -843,10 +862,24 @@ const RawCoreSchema = Schema.Struct({
           ),
         }),
         labels: Schema.Struct({ nodes: Schema.Array(RawLabelSchema) }),
+        timelineItems: Schema.optional(
+          Schema.Struct({
+            nodes: Schema.Array(Schema.NullOr(Schema.Struct({ deployment: RawDeploymentSchema }))),
+            pageInfo: Schema.Struct({ hasPreviousPage: Schema.Boolean }),
+          }),
+        ),
         commits: Schema.Struct({
           nodes: Schema.Array(
             Schema.Struct({
               commit: Schema.Struct({
+                deployments: Schema.optional(
+                  Schema.NullOr(
+                    Schema.Struct({
+                      nodes: Schema.Array(Schema.NullOr(RawDeploymentSchema)),
+                      pageInfo: Schema.Struct({ hasNextPage: Schema.Boolean }),
+                    }),
+                  ),
+                ),
                 statusCheckRollup: Schema.NullOr(
                   Schema.Struct({
                     contexts: Schema.Struct({
@@ -934,10 +967,26 @@ export const PULL_REQUEST_DETAIL_JSON_FIELDS = `${PULL_REQUEST_LIST_JSON_FIELDS}
  * `isRequired` and `isInMergeQueue` are asked for on github.com only: an older Enterprise
  * server may not know them, and an unknown field fails the whole read.
  */
-export const pullRequestCoreGraphQlQuery = (host: string) => {
+export const pullRequestCoreGraphQlQuery = (host: string, includeDeployments = true) => {
   const isGitHubDotCom = host.toLowerCase() === "github.com";
   const required = isGitHubDotCom ? " isRequired(pullRequestNumber: $number)" : "";
   const mergeQueue = isGitHubDotCom ? " isInMergeQueue" : "";
+  const deploymentFields = `id environment state commitOid createdAt updatedAt
+    latestStatus { state updatedAt description environmentUrl logUrl }`;
+  const deploymentHistory = includeDeployments
+    ? `
+      timelineItems(last: 100, itemTypes: [DEPLOYED_EVENT]) {
+        nodes { ... on DeployedEvent { deployment { ${deploymentFields} } } }
+        pageInfo { hasPreviousPage }
+      }`
+    : "";
+  const headDeployments = includeDeployments
+    ? `
+          deployments(first: 100, orderBy: { field: CREATED_AT, direction: DESC }) {
+            nodes { ${deploymentFields} }
+            pageInfo { hasNextPage }
+          }`
+    : "";
   return `query($owner: String!, $name: String!, $number: Int!, $headRef: String!) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission
@@ -954,8 +1003,11 @@ export const pullRequestCoreGraphQlQuery = (host: string) => {
         nodes { requestedReviewer { ... on User { login name } ... on Bot { login } ... on Team { slug name } } }
       }
       labels(first: 100) { nodes { name color } }
+      ${deploymentHistory}
       commits(last: 1) {
-        nodes { commit { statusCheckRollup { contexts(first: 100) {
+        nodes { commit {
+          ${headDeployments}
+          statusCheckRollup { contexts(first: 100) {
           nodes {
             __typename
             ... on StatusContext { context state targetUrl createdAt description${required} }
@@ -1448,6 +1500,8 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly mergedAt: string | null;
   readonly closedAt: string | null;
   readonly checks: ReadonlyArray<PullRequestCheck>;
+  readonly deployments?: ReadonlyArray<PullRequestDeployment>;
+  readonly deploymentsTruncated?: boolean;
   /** Absent where GitHub did not report its repository-policy-aware verdict. */
   readonly mergeReadiness?: PullRequestMergeReadiness;
   /** Absent where `gh` did not answer for auto-merge at all, which is not the same as off. */
@@ -2314,6 +2368,55 @@ export interface GitHubPullRequestCore extends GitHubPullRequestDetail {
   readonly checksTruncated: boolean;
 }
 
+function deploymentUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+const DEPLOYMENT_STATUSES: Readonly<Record<string, PullRequestDeployment["status"]>> = {
+  ACTIVE: "success",
+  SUCCESS: "success",
+  IN_PROGRESS: "in-progress",
+  PENDING: "pending",
+  QUEUED: "queued",
+  WAITING: "waiting",
+  FAILURE: "failure",
+  ERROR: "error",
+  INACTIVE: "inactive",
+};
+
+function latestDeployments(
+  entries: ReadonlyArray<Schema.Schema.Type<typeof RawDeploymentSchema>>,
+): ReadonlyArray<PullRequestDeployment> {
+  const environments = new Map<string, PullRequestDeployment>();
+  // Creation orders attempts. An old deployment marked inactive later must not replace a new one.
+  for (const entry of [...entries].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+    const environment = trimmed(entry.environment) ?? "Unnamed environment";
+    if (environments.has(environment)) continue;
+    const state =
+      entry.state === "DESTROYED" || entry.state === "INACTIVE" || entry.state === "ABANDONED"
+        ? "INACTIVE"
+        : (entry.latestStatus?.state ?? entry.state);
+    environments.set(environment, {
+      id: entry.id,
+      environment,
+      status: DEPLOYMENT_STATUSES[state ?? ""] ?? "unknown",
+      description: trimmed(entry.latestStatus?.description),
+      environmentUrl: deploymentUrl(entry.latestStatus?.environmentUrl),
+      logUrl: deploymentUrl(entry.latestStatus?.logUrl),
+      commitSha: entry.commitOid,
+      createdAt: entry.createdAt,
+      updatedAt: entry.latestStatus?.updatedAt ?? entry.updatedAt,
+    });
+  }
+  return [...environments.values()].sort((a, b) => a.environment.localeCompare(b.environment));
+}
+
 export function decodePullRequestCoreJson(
   raw: string,
 ): Result.Result<GitHubPullRequestCore, DecodeFailure> {
@@ -2322,6 +2425,7 @@ export function decodePullRequestCoreJson(
   const repository = decoded.success.data.repository;
   const pr = repository.pullRequest;
   const contexts = pr.commits.nodes[0]?.commit.statusCheckRollup?.contexts;
+  const headDeployments = pr.commits.nodes[0]?.commit.deployments;
   return Result.succeed({
     ...toDetail({
       ...pr,
@@ -2335,6 +2439,21 @@ export function decodePullRequestCoreJson(
           workflowName: check.checkSuite?.workflowRun?.workflow?.name ?? null,
         })) ?? [],
     }),
+    ...(pr.timelineItems === undefined && headDeployments === undefined
+      ? {}
+      : {
+          deployments: latestDeployments([
+            ...(headDeployments?.nodes.flatMap((deployment) => (deployment ? [deployment] : [])) ??
+              []),
+            // Prefer the head read, then newest timeline events, when creation times tie.
+            ...(pr.timelineItems?.nodes
+              .toReversed()
+              .flatMap((event) => (event ? [event.deployment] : [])) ?? []),
+          ]),
+          deploymentsTruncated:
+            pr.timelineItems?.pageInfo.hasPreviousPage === true ||
+            headDeployments?.pageInfo.hasNextPage === true,
+        }),
     viewerAccess: {
       canWrite: toCanWrite(repository.viewerPermission),
       canTriage: toCanTriage(repository.viewerPermission),
