@@ -51,8 +51,8 @@ export function useReviewFilePatches({
     baseRef,
     ignoreWhitespace,
   ]);
-  const [requested, setRequested] = useState({ scope, indices: DEFAULT_INDICES });
-  const { files, queries } = useReviewFileQueries({
+  const [requested, setRequested] = useState(() => ({ scope, indices: DEFAULT_INDICES }));
+  const queries = reviewFileQueries({
     environmentId,
     cwd,
     source,
@@ -62,6 +62,7 @@ export function useReviewFilePatches({
     requested,
     orderFiles,
   });
+  const queriedPatchesAtom = patchesAtom(queries, theme);
   const previousPreview = useRef({ scope, revision, queries: [] as typeof queries });
   useEffect(() => {
     const previous = previousPreview.current;
@@ -75,7 +76,13 @@ export function useReviewFilePatches({
       if (changed || cached) registry.refresh(query);
     }
   }, [scope, revision, queries, registry]);
-  const patches = useAtomValue(usePatchesAtom(queries, theme));
+  const patches = useAtomValue(queriedPatchesAtom);
+  const retry = useStableCallback((path: string) => {
+    const files = sortedReviewFiles(source, orderFiles);
+    const query = queries.find(({ index }) => files[index]?.path === path)?.query;
+    if (query) registry.refresh(query);
+  });
+  const files = sortedReviewFiles(source, orderFiles);
   const pendingIndex = files.findIndex((_, index) => {
     const patch = patches.get(index);
     return !patch || patch._tag === "Initial";
@@ -96,10 +103,6 @@ export function useReviewFilePatches({
   const loadNextFiles = () =>
     requestFiles(Array.from({ length: 4 }, (_, index) => settledFileCount + index));
   const requestFile = (index: number) => requestFiles([index]);
-  const retry = useStableCallback((path: string) => {
-    const query = queries.find(({ index }) => files[index]?.path === path)?.query;
-    if (query) registry.refresh(query);
-  });
   const renderableFiles = source
     ? files.map((file, index): FileDiffMetadata => {
         const result = patches.get(index);
@@ -164,9 +167,8 @@ export function useReviewFilePatches({
   };
 }
 
-// The caller runs more hooks after these values, so the compiler would rebuild them
-// every render there; the refresh effect and the patches atom key on their identity.
-function useReviewFileQueries({
+// The refresh effect and the patches atom key on the identity of these queries.
+function reviewFileQueries({
   environmentId,
   cwd,
   source,
@@ -187,10 +189,8 @@ function useReviewFileQueries({
     | ((files: ReadonlyArray<ReviewDiffFileStat>) => ReadonlyArray<ReviewDiffFileStat>)
     | undefined;
 }) {
-  "use memo";
   const indices = requested.scope === scope ? requested.indices : DEFAULT_INDICES;
-  const sorted = source?.files?.toSorted((a, b) => filePathCollator.compare(a.path, b.path)) ?? [];
-  const files = orderFiles ? orderFiles(sorted) : sorted;
+  const files = sortedReviewFiles(source, orderFiles);
   const queries =
     !environmentId || !cwd || !source
       ? []
@@ -218,17 +218,26 @@ function useReviewFileQueries({
               }),
             };
           });
-  return { files, queries };
+  return queries;
 }
 
-function usePatchesAtom(
+function sortedReviewFiles(
+  source: ReviewDiffPreviewSource | null,
+  orderFiles:
+    | ((files: ReadonlyArray<ReviewDiffFileStat>) => ReadonlyArray<ReviewDiffFileStat>)
+    | undefined,
+) {
+  const sorted = source?.files?.toSorted((a, b) => filePathCollator.compare(a.path, b.path)) ?? [];
+  return orderFiles ? orderFiles(sorted) : sorted;
+}
+
+function patchesAtom(
   queries: ReadonlyArray<{
     index: number;
     query: ReturnType<typeof reviewEnvironment.diffFilePatch>;
   }>,
   theme: "light" | "dark",
 ) {
-  "use memo";
   // Derived atoms parse each query result once, even when another file finishes loading.
   const parsedQuery = Atom.family((query: ReturnType<typeof reviewEnvironment.diffFilePatch>) =>
     Atom.map(query, (result) =>
