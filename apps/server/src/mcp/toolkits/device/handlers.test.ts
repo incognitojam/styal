@@ -1,4 +1,4 @@
-import { DeviceHostId, DeviceId } from "@t3tools/contracts";
+import { DeviceHostId, DeviceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "@effect/vitest";
 
@@ -75,22 +75,27 @@ describe("choosing a device", () => {
     physical: false,
   });
   const session = (threadId: string, deviceId: string) => ({
-    threadId,
+    threadId: ThreadId.make(threadId),
     hostId: local,
     deviceId: DeviceId.make(deviceId),
   });
 
-  it("lists each device other threads have open once, without this thread's", () => {
+  it("names each other thread holding a device, and whether it is using it", () => {
     expect(
       devicesOpenInOtherThreads(
         [
           session("thread-a", "emulator-5554"),
           session("thread-b", "emulator-5554"),
+          session("thread-b", "emulator-5554"),
           session("thread-me", "emulator-5556"),
         ],
+        [session("thread-b", "emulator-5554")],
         "thread-me",
       ),
-    ).toEqual([{ hostId: local, deviceId: "emulator-5554" }]);
+    ).toEqual([
+      { hostId: local, deviceId: "emulator-5554", threadId: "thread-a", inUse: false },
+      { hostId: local, deviceId: "emulator-5554", threadId: "thread-b", inUse: true },
+    ]);
   });
 
   it.effect("opens a running device no other thread has open", () =>

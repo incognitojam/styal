@@ -51,6 +51,9 @@ function deviceFailureReason(cause: Cause.Cause<unknown>) {
       return "unavailable";
     case "DeviceNotFoundError":
       return "not_found";
+    // Another thread is using the device; a contested device, not a broken one.
+    case "DeviceHeldError":
+      return "in_use";
     default:
       return "operation_failed";
   }
