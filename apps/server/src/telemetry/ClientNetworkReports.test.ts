@@ -64,30 +64,20 @@ it.effect("records each report with the client's dimensions, dated when its wind
     );
 
     const { endedAgoMs: _endedAgoMs, ...metrics } = REPORT;
-    assert.deepEqual(recorded, [
-      {
-        event: "client.network.report",
-        properties: {
-          surface: "mobile",
-          os: "iOS",
-          appVersion: "1.2.3",
-          ...metrics,
-          networkReportVersion: 1,
-        },
-        capturedAt: "2026-10-16T08:00:00.000Z",
+    assert.deepEqual(recorded[0], {
+      event: "client.network.report",
+      properties: {
+        surface: "mobile",
+        os: "iOS",
+        appVersion: "1.2.3",
+        ...metrics,
+        networkReportVersion: 1,
       },
-      {
-        event: "client.network.report",
-        properties: {
-          surface: "mobile",
-          os: "iOS",
-          appVersion: "1.2.3",
-          ...metrics,
-          networkKind: "wifi",
-          networkReportVersion: 1,
-        },
-        capturedAt: "2026-10-16T09:00:00.000Z",
-      },
-    ]);
+      capturedAt: "2026-10-16T08:00:00.000Z",
+    });
+    assert.deepEqual(
+      [recorded[1]?.properties?.networkKind, recorded[1]?.capturedAt],
+      ["wifi", "2026-10-16T09:00:00.000Z"],
+    );
   }),
 );

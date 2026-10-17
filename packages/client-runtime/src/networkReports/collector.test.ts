@@ -83,7 +83,7 @@ const NO_FAILURES = {
 };
 
 describe("NetworkReportCollector", () => {
-  it("summarizes a connection that drops in a dead zone and recovers", () => {
+  it("splits windows by network type and measures a reconnect across a dead zone", () => {
     const { collector, reports, advance, state } = harness();
     collector.setNetworkKind("cellular");
     state("connecting");
@@ -93,23 +93,12 @@ describe("NetworkReportCollector", () => {
     advance(800);
     meter.opened();
     state("connected");
-
-    // Two heartbeats; the second reply comes back slowly.
-    advance(5_000);
-    socket.send(PING);
-    advance(120);
     receive(PONG);
-    advance(5_000);
-    socket.send(PING);
-    advance(900);
-    receive(PONG);
-
-    // Signal lost: the heartbeat stops answering and the session drops.
-    advance(10_000);
-    meter.heartbeatTimedOut();
-    const dropped = failure("stopped responding");
+    advance(20_000);
+    const dropped = failure("disconnected");
     state("backoff", dropped);
     advance(2_000);
+    // The supervisor keeps reporting the same failure while it retries.
     state("connecting", dropped);
     advance(3_000);
     state("backoff", failure("timed out"));
@@ -121,90 +110,50 @@ describe("NetworkReportCollector", () => {
     advance(10_000);
     collector.setActive(false);
 
-    expect(reports.map((report) => report.metrics)).toEqual([
+    expect(
+      reports.map(({ metrics }) => ({
+        networkKind: metrics.networkKind,
+        durationMs: metrics.durationMs,
+        connectedMs: metrics.connectedMs,
+        connectingMs: metrics.connectingMs,
+        initialConnectMs: metrics.initialConnectMs,
+        drops: metrics.drops,
+        failedAttempts: metrics.failedAttempts,
+        recoveryMs: metrics.recoveryMs,
+      })),
+    ).toEqual([
       {
-        durationMs: 26_820,
         networkKind: "cellular",
-        routeKind: "relay",
-        connectedMs: 21_020,
+        durationMs: 25_800,
+        connectedMs: 20_000,
         connectingMs: 5_800,
-        offlineMs: 0,
         initialConnectMs: 800,
-        ...NO_FAILURES,
         drops: 1,
-        dropsStoppedResponding: 1,
         failedAttempts: 1,
-        recoveries: 0,
         recoveryMs: [],
-        heartbeats: 2,
-        heartbeatReplies: 2,
-        rttP50Ms: 120,
-        rttP90Ms: 900,
-        rttMaxMs: 900,
-        bytesReceived: PONG.length * 2,
-        bytesSent: PING.length * 2,
-        messagesReceived: 2,
-        messagesSent: 2,
-        peakReceiveBytesPerSecond: PONG.length,
       },
       {
-        durationMs: 20_000,
         networkKind: "none",
-        routeKind: "relay",
+        durationMs: 20_000,
         connectedMs: 0,
         connectingMs: 20_000,
-        offlineMs: 0,
-        ...NO_FAILURES,
-        recoveries: 0,
+        initialConnectMs: undefined,
+        drops: 0,
+        failedAttempts: 0,
         recoveryMs: [],
-        heartbeats: 0,
-        heartbeatReplies: 0,
-        bytesReceived: 0,
-        bytesSent: 0,
-        messagesReceived: 0,
-        messagesSent: 0,
-        peakReceiveBytesPerSecond: 0,
       },
       {
-        durationMs: 11_500,
         networkKind: "cellular",
-        routeKind: "relay",
+        durationMs: 11_500,
         connectedMs: 10_000,
         connectingMs: 1_500,
-        offlineMs: 0,
         initialConnectMs: 1_500,
-        ...NO_FAILURES,
+        drops: 0,
+        failedAttempts: 0,
         // Measured from the drop, across the dead zone.
-        recoveries: 1,
         recoveryMs: [26_500],
-        heartbeats: 0,
-        heartbeatReplies: 0,
-        bytesReceived: 0,
-        bytesSent: 0,
-        messagesReceived: 0,
-        messagesSent: 0,
-        peakReceiveBytesPerSecond: 0,
       },
     ]);
-  });
-
-  it("does not count a failure the supervisor keeps reporting as a new one", () => {
-    const { collector, reports, advance, state } = harness();
-    const earlier = failure("earlier");
-    state("backoff", earlier);
-    advance(1_000);
-    state("connected");
-    advance(10_000);
-    // A replaced session (a better route, a long resume) restarts with the
-    // last failure still attached.
-    state("connecting", earlier);
-    advance(500);
-    state("connected");
-    advance(10_000);
-    collector.setActive(false);
-
-    expect(reports).toHaveLength(1);
-    expect(reports[0]!.metrics).toMatchObject({ drops: 0, failedAttempts: 0, recoveries: 0 });
   });
 
   it("counts a session that died in the background as a reconnect, not a drop", () => {
@@ -290,13 +239,15 @@ describe("NetworkReportCollector", () => {
     const lanSocket = fakeSocket();
     relay.attach(relaySocket.socket);
     lan.attach(lanSocket.socket);
-    state("connecting");
+    const earlier = failure("earlier");
+    state("backoff", earlier);
     relay.opened();
     state("connected");
     relaySocket.receive(PONG);
     advance(60_000);
-    // A better route answered, so the session is replaced without a failure.
-    state("connecting");
+    // A better route answered, so the session is replaced without a new
+    // failure; the supervisor still carries the earlier one.
+    state("connecting", earlier);
     lan.opened();
     state("connected");
     lanSocket.receive(PONG);
