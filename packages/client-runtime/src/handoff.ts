@@ -14,6 +14,21 @@ export type HandoffTimelineRun = Pick<
   "id" | "ordinal" | "providerInstanceId" | "modelSelection"
 >;
 
+export function shouldShowHandoff(
+  item: Pick<
+    Extract<OrchestrationV2TurnItem, { type: "handoff" }>,
+    "title" | "status" | "fromProviderInstanceIds" | "fromModelSelections" | "toProviderInstanceId"
+  >,
+) {
+  if (item.title !== "Imported context" || item.status !== "completed") return true;
+  // The first restored turn can also switch providers before any V2 run exists.
+  return (
+    item.fromProviderInstanceIds.some((instanceId) => instanceId !== item.toProviderInstanceId) ||
+    (item.fromModelSelections?.some(({ instanceId }) => instanceId !== item.toProviderInstanceId) ??
+      false)
+  );
+}
+
 export function resolveHandoffEndpoints(
   item: Pick<
     Extract<OrchestrationV2TurnItem, { type: "handoff" }>,
