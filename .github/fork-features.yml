@@ -1089,10 +1089,11 @@ features:
   - id: device-idle-shutdown
     title: Hand devices back on demand and shut down unused simulators
     status: maintained
-    prs: [832]
+    prs: [832, 887]
     invariants:
       - device_close releases every agent-device session device_open handed the thread for that device, recorded when each was handed out (so an Android AVD that boots under a new id still releases), and leaves the device booted. Unconfirmed releases are retried per session name on the next hand-over or power-off without blocking cleanup of other names; a missing session after failed cleanup remains uncertain across reopen until a successful release or stopped daemon confirms it.
-      - When an agent opens a device nobody is watching, other local threads' holds on it are released if their thread is not working. Connected environments' holds are not reclaimed. device_open prefers a free device and takes an idle-held one only when none is free, never one someone is watching. Opening a device from the Device panel never takes it from an agent, and holds are never released on a timer.
+      - When an agent opens a device nobody is watching, other local threads' holds on it are released if their thread is not working. Connected environments' holds are not reclaimed. device_open prefers a free device and takes an idle-held one only when none is free. An agent open of a device that a working thread holds, someone watches, or another environment holds fails with DeviceHeldError naming those threads unless it passes takeOver, which releases every local holder's hold and shares the device with connected environments' holders. Opening a device from the Device panel never takes it from an agent or is refused, and holds are never released on a timer.
+      - The sweep closes sessions of archived threads, and agent holds of deleted threads. A Device panel session from a thread the projections do not know stays, since it may be a draft's.
       - A session handed back or over is refused by the agent-device launcher, with a message to call device_open, until device_open hands it out again; agent-device itself does not stop a released session driving the device by its selector.
       - Lifecycle work on one device is serialized, an Android device by AVD name across its boot, so a reopen waits for a hand-over or release in progress. Hand-over happens within an environment, not across connected environments.
       - Powering a device off, by close, shutdown, or the sweep, first releases every agent's claim on it, including connected environments' claims named from the peer environment id, and forgets the device's boot record. Revoking a peer's grant on the device environment closes that peer's sessions.
@@ -1154,11 +1155,11 @@ features:
   - id: device-tool-thread-awareness
     title: Agents see devices other threads have open
     status: maintained
-    prs: [681]
+    prs: [681, 887]
     invariants:
-      - device_list reports devices that other threads have open, separately from the calling thread's own devices.
+      - device_list reports devices that other threads have open, separately from the calling thread's own devices, naming each holding thread and whether it is using the device.
       - device_open without a device id opens a booted device no other thread has open. When every booted device is open elsewhere, it takes one whose holders are not working and that nobody is watching, handing it over (see device-idle-shutdown); otherwise it returns an error naming them instead of taking one over.
-      - Opening another thread's device by id still works. Its quick start warns that another agent may be driving it, unless the device was handed over from an idle thread.
+      - Opening a device another thread is using fails with DeviceHeldError naming that thread unless takeOver is passed (see device-idle-shutdown). When the device stays shared, as with another environment's holder, the quick start names the thread whose agent may be driving it.
     rationale: Several agents share one machine's simulators and emulators. Upstream returns only the calling thread's devices, so an agent could load its own build onto an app another agent was testing.
     implementation_paths:
       - .agents/skills/test-styal-mobile/SKILL.md

@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import { DeviceHeldError, DeviceHostId, DeviceId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -80,5 +81,33 @@ it.effect("analytics defects cannot turn a successful operation into a failure",
       }),
     );
     expect(result).toBe("operation result");
+  }),
+);
+
+it.effect("reports a device another thread is using as in use, not as a failed operation", () =>
+  Effect.gen(function* () {
+    const events: Array<unknown> = [];
+    const held = new DeviceHeldError({
+      hostId: DeviceHostId.make("local"),
+      deviceId: DeviceId.make("emulator-5554"),
+      threadIds: [ThreadId.make("holder-thread")],
+    });
+    yield* FeatureUsage.observe(
+      { feature: "devices", action: "open", source: "agent" },
+      Effect.fail(held),
+    ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, capture(events)), Effect.exit);
+    expect(events).toEqual([
+      {
+        event: "feature.used",
+        properties: {
+          feature: "devices",
+          action: "open",
+          source: "agent",
+          failureReason: "in_use",
+          outcome: "failure",
+          durationMs: 0,
+        },
+      },
+    ]);
   }),
 );
