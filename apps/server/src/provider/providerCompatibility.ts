@@ -150,6 +150,33 @@ export function resolveProviderAutoUpdateVersion(
   return best;
 }
 
+/** A manifest older than this may still list a version that was since withdrawn. */
+const AUTO_UPDATE_MANIFEST_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1_000;
+
+/**
+ * The version automatic updates install for `packageName`: the newest verified
+ * entry in a remote manifest fetched in the last two days, or null.
+ */
+export function resolveRecentProviderAutoUpdateVersion(
+  remote: {
+    readonly manifest: {
+      readonly compatibility?: ReadonlyArray<ProviderCompatibilityPolicy> | undefined;
+    };
+    readonly fetchedAtMs: number;
+  } | null,
+  nowMs: number,
+  driver: ProviderDriverKind,
+  packageName: string | null,
+): string | null {
+  if (
+    remote === null ||
+    nowMs < remote.fetchedAtMs ||
+    nowMs - remote.fetchedAtMs > AUTO_UPDATE_MANIFEST_MAX_AGE_MS
+  )
+    return null;
+  return resolveProviderAutoUpdateVersion(remote.manifest.compatibility, driver, packageName);
+}
+
 export function resolveProviderCompatibility(
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
   driver: ProviderDriverKind,
@@ -182,11 +209,15 @@ export function resolveProviderCompatibility(
   };
 }
 
-/** A remote policy replaces its matching bundled policy; omission keeps the bundle. */
+/**
+ * A remote policy replaces its matching bundled policy; omission keeps the
+ * bundle. `verifiedVersion` comes from `resolveRecentProviderAutoUpdateVersion`.
+ */
 export function applyProviderCompatibility(
   snapshot: ServerProvider,
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
   fallback: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  verifiedVersion: string | null = null,
 ): ServerProvider {
   const { compatibilityAdvisory: _previous, ...base } = snapshot;
   if (!snapshot.enabled || !snapshot.installed) return base;
@@ -204,6 +235,7 @@ export function applyProviderCompatibility(
         compatibilityAdvisory: {
           ...advisory,
           ...(latestAdvisory ? { latestVersionStatus: latestAdvisory.status } : {}),
+          ...(verifiedVersion ? { verifiedVersion } : {}),
         },
       }
     : base;

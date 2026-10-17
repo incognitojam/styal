@@ -45,6 +45,13 @@ export function canUpdateEnvironmentProvider(provider: ServerProvider) {
   );
 }
 
+/** Whether the latest release is newer than the version the provider canary verified. */
+export function isLatestProviderVersionUntested(provider: ServerProvider) {
+  const latest = provider.versionAdvisory?.latestVersion;
+  const verified = provider.compatibilityAdvisory?.verifiedVersion;
+  return Boolean(latest && verified && compareSemverVersions(latest, verified) > 0);
+}
+
 /** Preserve the host's release channel and never offer a downgrade. */
 export async function findEnvironmentUpdate(currentVersion: string, signal: AbortSignal) {
   const channel = cliReleaseChannelOf(currentVersion);

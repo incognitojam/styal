@@ -4,14 +4,19 @@ import { DownloadIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { type ServerProvider, type ProviderInstanceId } from "@t3tools/contracts";
 
-import { primaryServerProvidersAtom, serverEnvironment } from "../state/server";
+import {
+  primaryServerConfigAtom,
+  primaryServerProvidersAtom,
+  serverEnvironment,
+} from "../state/server";
 import { usePrimaryEnvironment } from "../state/environments";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import {
   canOneClickUpdateProviderCandidate,
-  collectProviderUpdateCandidates,
+  collectPromptedProviderUpdateCandidates,
   collectUpdatedProviderSnapshots,
+  environmentAutoUpdatesProviders,
   firstFailedProviderUpdateMessage,
   getProviderUpdateInitialToastView,
   getProviderUpdateProgressToastView,
@@ -99,6 +104,9 @@ function addProviderUpdateToast(input: {
 export function ProviderUpdatePrimaryNotification() {
   const navigate = useNavigate();
   const providers = useAtomValue(primaryServerProvidersAtom);
+  const autoUpdatesProviders = environmentAutoUpdatesProviders(
+    useAtomValue(primaryServerConfigAtom),
+  );
   const primaryEnvironment = usePrimaryEnvironment();
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
@@ -119,7 +127,10 @@ export function ProviderUpdatePrimaryNotification() {
     };
   }, []);
 
-  const updateProviders = useMemo(() => collectProviderUpdateCandidates(providers), [providers]);
+  const updateProviders = useMemo(
+    () => collectPromptedProviderUpdateCandidates(providers, autoUpdatesProviders),
+    [providers, autoUpdatesProviders],
+  );
   const notificationKey = useMemo(
     () => providerUpdateNotificationKey(updateProviders),
     [updateProviders],

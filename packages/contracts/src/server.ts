@@ -169,6 +169,12 @@ export const ServerProviderCompatibilityAdvisory = Schema.Struct({
   message: Schema.NullOr(TrimmedNonEmptyString),
   recommendedVersion: Schema.NullOr(TrimmedNonEmptyString),
   recommendedRange: Schema.NullOr(TrimmedNonEmptyString),
+  /**
+   * Newest provider version the provider canary verified with this styal
+   * release, from a recent manifest. Automatic updates install it and nothing
+   * newer. Absent when no recent verification applies to this installation.
+   */
+  verifiedVersion: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type ServerProviderCompatibilityAdvisory = typeof ServerProviderCompatibilityAdvisory.Type;
 

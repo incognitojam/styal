@@ -23,6 +23,7 @@ import {
   canMaintainEnvironment,
   canUpdateEnvironmentProvider,
   findEnvironmentUpdate,
+  isLatestProviderVersionUntested,
   supportsEnvironmentUpdate,
 } from "./environment-maintenance";
 import { describeServerUpdate, requestServerUpdateConfirmation } from "./serverUpdateConfirmation";
@@ -311,7 +312,11 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                               ? (provider.version ?? "Version unknown")
                               : "Not installed"}
                             {provider.versionAdvisory?.latestVersion
-                              ? ` · Latest ${provider.versionAdvisory.latestVersion}`
+                              ? ` · Latest ${provider.versionAdvisory.latestVersion}${
+                                  isLatestProviderVersionUntested(provider)
+                                    ? " (not yet tested)"
+                                    : ""
+                                }`
                               : ""}
                           </Text>
                           {provider.updateState && provider.updateState.status !== "idle" ? (
