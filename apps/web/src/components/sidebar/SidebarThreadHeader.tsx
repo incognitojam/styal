@@ -19,6 +19,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
+  useEffect,
   useState,
 } from "react";
 
@@ -37,6 +38,8 @@ export interface SidebarThreadHeaderProps {
   projectScope: (showName: boolean) => ReactNode;
   /** A project is selected, so search folds to make room for its name. */
   projectScoped: boolean;
+  /** The scope menu is open; search keeps its current width until it closes. */
+  projectScopeMenuOpen: boolean;
   onNewProject: () => void;
   /** Receives the click so Shift+click can skip the project picker. */
   onNewThread: (event: ReactMouseEvent) => void;
@@ -60,6 +63,7 @@ export function SidebarThreadHeader({
   hasProjects,
   projectScope,
   projectScoped,
+  projectScopeMenuOpen,
   onNewProject,
   onNewThread,
   newThreadDisabled,
@@ -84,10 +88,46 @@ export function SidebarThreadHeader({
     ? `New thread (${newThreadShortcutLabel})`
     : "New thread";
   const [searchFocused, setSearchFocused] = useState(false);
-  const searchFolded = projectScoped && !searchFocused && searchQuery.length === 0;
+  // Pressing a header control blurs search before the press ends. Folding
+  // then would swap the scope trigger under the pointer and the press would
+  // not open its menu, so the row keeps its layout from the press until the
+  // click lands, and while the scope menu that click opened stays open.
+  const [pressInRow, setPressInRow] = useState(false);
+  useEffect(() => {
+    if (!pressInRow) return;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const releaseAfter = (ms: number) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => setPressInRow(false), ms);
+    };
+    // Touch input blurs search and clicks after the pointer lifts, so the
+    // hold ends after the click. A press that never clicks, such as a drag,
+    // ends shortly after pointerup.
+    const onClick = () => releaseAfter(0);
+    const onPointerUp = () => releaseAfter(500);
+    const onPointerCancel = () => releaseAfter(0);
+    window.addEventListener("click", onClick, true);
+    window.addEventListener("pointerup", onPointerUp, true);
+    window.addEventListener("pointercancel", onPointerCancel, true);
+    return () => {
+      window.removeEventListener("click", onClick, true);
+      window.removeEventListener("pointerup", onPointerUp, true);
+      window.removeEventListener("pointercancel", onPointerCancel, true);
+      clearTimeout(timeout);
+    };
+  }, [pressInRow]);
+  const shouldFold = projectScoped && !searchFocused && searchQuery.length === 0;
+  const [searchFolded, setSearchFolded] = useState(shouldFold);
+  if (!pressInRow && !projectScopeMenuOpen && searchFolded !== shouldFold) {
+    setSearchFolded(shouldFold);
+  }
 
   return (
-    <div ref={searchFolded ? searchFieldRef : undefined} className="flex items-center gap-1">
+    <div
+      ref={searchFolded ? searchFieldRef : undefined}
+      onPointerDownCapture={() => setPressInRow(true)}
+      className="flex items-center gap-1"
+    >
       <div
         ref={searchFolded ? undefined : searchFieldRef}
         onClick={searchFolded ? () => searchInputRef.current?.focus() : undefined}

@@ -5317,6 +5317,7 @@ export default function Sidebar() {
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
               projectScoped={scopedProjectGroup !== null}
+              projectScopeMenuOpen={projectScopeMenuState.open}
               projectScope={(showName) => (
                 <Combobox
                   items={projectScopeItems}
