@@ -6,7 +6,6 @@ import {
   type T3ProjectFileScript,
 } from "@t3tools/contracts";
 import { resolveProjectConfig } from "@t3tools/shared/projectFile";
-import { useMemo } from "react";
 
 import { useProjectFileQuery } from "~/components/files/projectFilesQueryState";
 
@@ -56,25 +55,23 @@ export function useProjectConfigState(
   // contents, wait for its read to settle before falling back to t3.json, so
   // a legacy file never shows ahead of the file that replaces it.
   const isPending = styal === null && (styalQuery.isPending || (t3 === null && t3Query.isPending));
-  return useMemo(() => {
-    if (isPending) {
-      return {
-        status: "loading",
-        source: null,
-        config: null,
-        legacyScripts: NO_SCRIPTS,
-        legacyContents: null,
-      };
-    }
-    const state = resolveProjectConfig({ styal, t3 });
+  if (isPending) {
     return {
-      status: state.status,
-      source: state.status === "missing" ? null : state.source,
-      config: state.config,
-      legacyScripts: state.legacyScripts.length === 0 ? NO_SCRIPTS : state.legacyScripts,
-      legacyContents: state.status !== "missing" && state.source === "t3.json" ? t3 : null,
+      status: "loading",
+      source: null,
+      config: null,
+      legacyScripts: NO_SCRIPTS,
+      legacyContents: null,
     };
-  }, [isPending, styal, t3]);
+  }
+  const state = resolveProjectConfig({ styal, t3 });
+  return {
+    status: state.status,
+    source: state.status === "missing" ? null : state.source,
+    config: state.config,
+    legacyScripts: state.legacyScripts.length === 0 ? NO_SCRIPTS : state.legacyScripts,
+    legacyContents: state.status !== "missing" && state.source === "t3.json" ? t3 : null,
+  };
 }
 
 /**
