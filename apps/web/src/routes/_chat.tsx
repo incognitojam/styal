@@ -1,7 +1,7 @@
 import { AuthPreviewOperateScope } from "@t3tools/contracts";
 import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
@@ -50,17 +50,13 @@ function ChatRouteGlobalShortcuts() {
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
-  const activeProject = useMemo(
-    () =>
-      activeThread
-        ? (projects.find(
-            (project) =>
-              project.environmentId === activeThread.environmentId &&
-              project.id === activeThread.projectId,
-          ) ?? null)
-        : null,
-    [activeThread, projects],
-  );
+  const activeProject = activeThread
+    ? (projects.find(
+        (project) =>
+          project.environmentId === activeThread.environmentId &&
+          project.id === activeThread.projectId,
+      ) ?? null)
+    : null;
   const gitCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot ?? null;
   const gitStatusQuery = useEnvironmentQuery(
     routeThreadRef && gitCwd
@@ -72,16 +68,12 @@ function ChatRouteGlobalShortcuts() {
   );
   const { viewPullRequest } = useViewPullRequest(gitStatusQuery.data, routeThreadRef);
   const { focusPullRequestTab } = useFocusPullRequestTab(gitStatusQuery.data, routeThreadRef);
-  const projectGroups = useMemo(
-    () =>
-      buildSidebarProjectSnapshots({
-        projects,
-        settings: projectGroupingSettings,
-        primaryEnvironmentId,
-        resolveEnvironmentLabel: () => null,
-      }).filter((group) => group.archivedAt == null),
-    [primaryEnvironmentId, projectGroupingSettings, projects],
-  );
+  const projectGroups = buildSidebarProjectSnapshots({
+    projects,
+    settings: projectGroupingSettings,
+    primaryEnvironmentId,
+    resolveEnvironmentLabel: () => null,
+  }).filter((group) => group.archivedAt == null);
   // These commands start a thread beside your current work, so the thread you
   // are viewing outranks the sidebar's filter. The filter still beats the
   // fallback default, so with nothing open they land in the project on screen
