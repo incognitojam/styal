@@ -407,8 +407,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     () => composerStripAttachments(props.draftAttachments),
     [props.draftAttachments],
   );
-  // Stopping the agent is not what the send button means in edit mode.
-  const showStopAction = !hasContent && props.canStopThread && queuedEdit === null;
+  const showStopAction = props.canStopThread;
+  const showSendAction = hasContent || !showStopAction || queuedEdit !== null;
 
   const uploadStates = useAtomValue(composerAttachmentUploadsAtom);
   const attachmentsUploading =
@@ -1059,14 +1059,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     variant="danger"
                     onPress={props.onStopThread}
                   />
-                ) : (
+                ) : null}
+                {showSendAction ? (
                   <SendActionButton
                     accessibilityLabel={sendBlockedReason ?? sendLabel}
                     presentation={sendPresentation}
                     disabled={!canSend}
                     onSend={handleSend}
                   />
-                )}
+                ) : null}
               </View>
             ) : null}
             {isExpanded ? <View className="h-1" /> : null}
@@ -1153,7 +1154,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                       variant="danger"
                       onPress={props.onStopThread}
                     />
-                  ) : voicePresentation.showsSend ? (
+                  ) : null}
+                  {showSendAction && voicePresentation.showsSend ? (
                     <SendActionButton
                       accessibilityLabel={sendBlockedReason ?? sendLabel}
                       presentation={sendPresentation}
