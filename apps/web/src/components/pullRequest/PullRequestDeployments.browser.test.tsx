@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-
 import {
   EnvironmentId,
   FORK_CLIENT_USAGE_VERSION,

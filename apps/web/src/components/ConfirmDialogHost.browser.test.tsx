@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -89,6 +87,8 @@ it("closes on Cancel during loading and stays closed when the check finishes", a
   });
   await act(async () => button("Cancel").click());
   await expect(confirmation).resolves.toBe(false);
+  // The dialog stays mounted for its exit animation.
+  await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).toBeNull());
   await act(async () => finish(null));
   expect(readConfirmDialogState().status).not.toBe("confirming");
   expect(document.querySelector('[role="alertdialog"]')).toBeNull();

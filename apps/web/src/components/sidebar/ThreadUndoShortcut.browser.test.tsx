@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-
 import { Editor } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 import StarterKit from "@tiptap/starter-kit";
@@ -13,9 +11,14 @@ import { showThreadUndoNotice } from "../../hooks/showThreadUndoNotice";
 import * as ThreadUndo from "../../hooks/threadUndo";
 import { ThreadUndoShortcut } from "./ThreadUndoShortcut";
 
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => DEFAULT_RESOLVED_KEYBINDINGS }));
-vi.mock("../../state/server", () => ({ primaryServerKeybindingsAtom: {} }));
-vi.mock("../ui/sidebar", () => ({ useSidebarVisibility: () => true }));
+vi.mock(import("@effect/atom-react"), async (original) => ({
+  ...(await original()),
+  useAtomValue: (() => DEFAULT_RESOLVED_KEYBINDINGS) as never,
+}));
+vi.mock(import("../ui/sidebar"), async (original) => ({
+  ...(await original()),
+  useSidebarVisibility: () => true,
+}));
 
 let root: Root;
 let container: HTMLDivElement;

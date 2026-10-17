@@ -1,7 +1,5 @@
-// @vitest-environment jsdom
-
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { act, type ReactElement, type ReactNode } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -16,29 +14,32 @@ import {
 import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 
 const setActivePreviewTab = vi.fn();
-vi.mock("~/previewStateStore", () => ({
-  setActivePreviewTab: (...args: unknown[]) => setActivePreviewTab(...args),
-  useThreadPreviewState: () => ({
+vi.mock(import("~/previewStateStore"), async (original) => ({
+  ...(await original()),
+  setActivePreviewTab: ((...args: unknown[]) => setActivePreviewTab(...args)) as never,
+  useThreadPreviewState: (() => ({
     sessions: { "tab-1": { viewport: { _tag: "freeform", width: 1600, height: 1000 } } },
     serverEpoch: null,
     desktopByTabId: {},
-  }),
+  })) as never,
 }));
-vi.mock("~/browser/browserRecording", () => ({
-  useActiveBrowserRecordingTabIds: () => new Set(),
-  findActiveBrowserRecordingRuntimeTabId: () => null,
+vi.mock(import("~/browser/browserRecording"), async (original) => ({
+  ...(await original()),
+  useActiveBrowserRecordingTabIds: (() => new Set()) as never,
+  findActiveBrowserRecordingRuntimeTabId: (() => null) as never,
 }));
-vi.mock("~/browser/BrowserSurfaceSlot", () => ({ BrowserSurfaceSlot: () => null }));
-vi.mock("../device/DeviceStreamView", () => ({ DeviceStreamView: () => null }));
-vi.mock("~/state/device", () => ({
-  useDeviceState: () => ({ state: { devices: [], hosts: [] } }),
+vi.mock(import("~/browser/BrowserSurfaceSlot"), async (original) => ({
+  ...(await original()),
+  BrowserSurfaceSlot: (() => null) as never,
 }));
-vi.mock("~/components/ui/tooltip", () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipTrigger: ({ render }: { render: ReactElement }) => render,
-  TooltipPopup: () => null,
+vi.mock(import("../device/DeviceStreamView"), async (original) => ({
+  ...(await original()),
+  DeviceStreamView: (() => null) as never,
 }));
-
+vi.mock(import("~/state/device"), async (original) => ({
+  ...(await original()),
+  useDeviceState: (() => ({ state: { devices: [], hosts: [] } })) as never,
+}));
 import { ThreadPreviewMiniPlayer } from "./ThreadPreviewMiniPlayer";
 
 const threadRef = {
@@ -128,7 +129,7 @@ function shield() {
 }
 
 async function pointer(element: Element, type: string, x: number, y: number) {
-  // jsdom does not implement native pointer capture.
+  // Synthetic events have no active pointer for the browser to capture.
   Object.assign(element, {
     setPointerCapture: (id: number) => captured.add(id),
     hasPointerCapture: (id: number) => captured.has(id),

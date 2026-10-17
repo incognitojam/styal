@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -42,8 +40,10 @@ function fixture(pageKey = "initial") {
       <header>
         <SettingsScopeToolbar />
       </header>
-      <div key={pageKey} data-settings-page-scroll>
+      {/* Real overflow, so assigning scrollTop moves the page. */}
+      <div key={pageKey} data-settings-page-scroll style={{ height: 600, overflowY: "auto" }}>
         <SettingsScopeInline />
+        <div style={{ height: 2000 }} />
       </div>
     </SettingsScopeDockProvider>
   );

@@ -1794,7 +1794,7 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
       - apps/server/src/telemetry/ProviderAnalytics.test.ts
-      - apps/web/src/components/chat/MentionedTimeChip.test.tsx
+      - apps/web/src/components/chat/MentionedTimeChip.browser.test.tsx
     upstream:
       status: tracking
       tracking:
@@ -2498,7 +2498,7 @@ features:
       - packages/contracts/src/environment.ts
     tests:
       - apps/server/src/environment/ServerEnvironment.test.ts
-      - apps/web/src/components/chat/MentionedTimeChip.test.tsx
+      - apps/web/src/components/chat/MentionedTimeChip.browser.test.tsx
       - apps/web/src/markdown-mentioned-times.test.tsx
       - packages/client-runtime/src/mentionedTimes.test.ts
     upstream:
@@ -2879,7 +2879,7 @@ features:
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx
     tests:
       - apps/mobile/src/lib/markdownLinks.test.ts
-      - apps/web/src/components/ChatMarkdown.file-preview.test.tsx
+      - apps/web/src/components/ChatMarkdown.file-preview.browser.test.tsx
       - apps/web/src/components/chat/ComposerPendingUserInputPanel.test.tsx
     upstream:
       status: partial
@@ -3047,7 +3047,7 @@ features:
       - apps/web/src/browser/browserSurfaceStore.test.ts
       - apps/web/src/browser/hostedBrowserWebviewStyle.test.ts
       - apps/web/src/components/RightPanelTabs.test.tsx
-      - apps/web/src/components/preview/ThreadPreviewMiniPlayer.test.tsx
+      - apps/web/src/components/preview/ThreadPreviewMiniPlayer.browser.test.tsx
       - apps/web/src/components/preview/usePreviewBridge.test.ts
       - apps/web/src/previewStateStore.test.ts
     upstream:
@@ -3727,7 +3727,7 @@ features:
     tests:
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
-      - apps/web/src/components/pullRequest/PullRequestDeployments.test.tsx
+      - apps/web/src/components/pullRequest/PullRequestDeployments.browser.test.tsx
       - apps/web/src/components/pullRequest/pullRequestDeployments.logic.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
     upstream:
@@ -4399,7 +4399,7 @@ features:
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
       - apps/server/src/orchestration-v2/RestartContinuation.test.ts
       - apps/server/src/serverRuntimeStartup.test.ts
-      - apps/web/src/components/ConfirmDialogHost.test.tsx
+      - apps/web/src/components/ConfirmDialogHost.browser.test.tsx
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/components/ServerUpdateAction.test.tsx
       - apps/web/src/confirmDialog.test.ts
@@ -4433,7 +4433,7 @@ features:
       - apps/web/src/components/settings/settingsLayout.tsx
       - apps/web/src/routes/settings.tsx
     tests:
-      - apps/web/src/components/settings/SettingsScopeDock.test.tsx
+      - apps/web/src/components/settings/SettingsScopeDock.browser.test.tsx
       - apps/web/src/components/settings/settingsLayout.test.tsx
       - apps/web/src/components/settings/settingsScopeAxis.test.ts
     upstream:
@@ -5047,7 +5047,7 @@ features:
       - apps/web/src/hooks/showThreadUndoNotice.ts
       - apps/web/src/routes/_chat.tsx
     tests:
-      - apps/web/src/components/sidebar/ThreadUndoShortcut.test.tsx
+      - apps/web/src/components/sidebar/ThreadUndoShortcut.browser.test.tsx
       - apps/web/src/hooks/showThreadUndoNotice.test.ts
     upstream:
       status: tracking
@@ -5533,7 +5533,7 @@ features:
     tests:
       - apps/mobile/src/lib/markdownLinks.test.ts
       - apps/mobile/src/lib/threadActivity.test.ts
-      - apps/web/src/components/ChatMarkdown.file-preview.test.tsx
+      - apps/web/src/components/ChatMarkdown.file-preview.browser.test.tsx
       - apps/web/src/components/ChatMarkdown.test.tsx
       - apps/web/src/components/chat/ChatHeader.test.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
