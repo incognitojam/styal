@@ -9,8 +9,8 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 
-export const PROJECT_NOTICE_TITLE_MAX_LENGTH = 120;
-export const PROJECT_NOTICE_BODY_MAX_LENGTH = 2000;
+const PROJECT_NOTICE_TITLE_MAX_LENGTH = 120;
+const PROJECT_NOTICE_BODY_MAX_LENGTH = 2000;
 export const PROJECT_NOTICE_DEFAULT_EXPIRY_HOURS = 24;
 export const PROJECT_NOTICE_MAX_EXPIRY_HOURS = 168;
 /** Active notices a project may hold at once, so agents cannot flood new threads. */
