@@ -294,6 +294,10 @@ it.effect("prompts a settled thread's continuation with the note of its lost wor
       "sleep 25 && echo DONE",
     );
     assert.notInclude(command.type === "message.dispatch" ? command.text : "", "Continue where");
+    assert.notInclude(
+      command.type === "message.dispatch" ? command.text : "",
+      INTERRUPTED_TURN_NOTE,
+    );
   }),
 );
 
@@ -758,6 +762,7 @@ it.effect(
       assert.lengthOf(texts, 1);
       assert.include(texts[0]!, "sleep 25 && echo DONE");
       assert.notInclude(texts[0]!, "Continue where");
+      assert.notInclude(texts[0]!, INTERRUPTED_TURN_NOTE);
     }),
 );
 

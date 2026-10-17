@@ -22,9 +22,9 @@ import {
 
 export const CONTINUE_PROMPT = "Continue where you left off.";
 // Without this the agent sees only a killed tool result (often exit 137) and
-// blames the command itself, e.g. as an out-of-memory kill.
+// may blame the command itself, e.g. as an out-of-memory kill.
 export const INTERRUPTED_TURN_NOTE =
-  "Note: the styal server restarted and interrupted this turn. Any command or tool call that was still running was terminated by the restart, so its failure (for example exit code 137) does not reflect the command itself.";
+  "Note: the styal server restarted and interrupted this turn. Check unfinished work before retrying.";
 
 /**
  * The run a restart continuation resumes, if any: an unfinished root run, or a
