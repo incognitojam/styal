@@ -297,6 +297,21 @@ preferences become T3 completion, and Avanti stays Avanti, with notifications an
 sound enabled. An existing None preference stays off. Any previously saved
 notification mode takes precedence over this migration.
 
+### PR announcements
+
+On web and desktop, turn on **PR announcements** under **Settings → General →
+Notification sounds** to hear railway-style announcements for linked pull
+requests: checks passing on a pull request that is waiting for you, merges,
+closures, failed checks, merge conflicts, requested changes, removal from a GitHub
+merge queue without merging, and delays behind an open lower layer in a stack. A pull request with auto-merge turned on, or already
+in a merge queue, is announced when it merges rather than when its checks pass. The speaker button plays a
+sample, stepping through the announcements on each press.
+
+Only changes observed while the app is open are announced; opening the app does
+not replay existing PR states. Several PRs play in turn between one opening and
+one closing chime. A toast lists the announcements in the current run,
+highlighting the one being spoken; use **Stop** on it to silence them.
+
 ## Snooze until later
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your

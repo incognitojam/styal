@@ -6,6 +6,7 @@ import {
   type NotificationSound,
 } from "@t3tools/contracts/settings";
 
+import { announcerPlayer } from "../../announcer";
 import {
   hasDesktopNotifications,
   hasNotificationSound,
@@ -196,6 +197,43 @@ export function NotificationSettings() {
               }
             />
           ))}
+          <SettingsSubRow
+            {...searchableSetting("pr-announcements")}
+            disabled={!soundEnabled}
+            description="Railway-style announcements when a linked pull request is ready for you, merges, closes, fails checks, or is held up."
+            control={
+              <>
+                <Switch
+                  checked={settings.pullRequestAnnouncerEnabled}
+                  disabled={!soundEnabled}
+                  onCheckedChange={(checked) => {
+                    void unlockNotificationAudio();
+                    updateSettings({ pullRequestAnnouncerEnabled: checked });
+                  }}
+                  aria-label="PR announcements"
+                />
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost-muted"
+                        size="icon-sm"
+                        aria-label="Preview PR announcements"
+                        disabled={!soundEnabled}
+                        onClick={async () => {
+                          await unlockNotificationAudio();
+                          announcerPlayer.preview();
+                        }}
+                      >
+                        <Volume2Icon />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="top">Preview</TooltipPopup>
+                </Tooltip>
+              </>
+            }
+          />
         </SettingsSubRows>
       </SettingsRow>
     </>

@@ -652,7 +652,7 @@ features:
   - id: completion-sounds
     title: Configurable thread notification sounds
     status: maintained
-    prs: [5, 7, 19, 72, 249, 250, 742]
+    prs: [5, 7, 19, 72, 249, 250, 742, 846]
     invariants:
       - Users can independently select, preview, and disable sounds for completion, input, and approval events; the sound choices are nested under the Notification sounds switch and disabled while it is off.
       - System notifications, in-app notifications, and notification sounds are independent switches; the system notification and sound switches together set the persisted notification mode.
@@ -660,22 +660,33 @@ features:
       - Fresh settings play upstream completion and attention sounds with system notifications off; legacy Resolve or Chime migrates to T3 completion, and Avanti remains Avanti, with notifications and sound enabled unless a notification mode was explicitly saved.
       - Legacy None stays disabled, Resolve is retired, and Avanti retains its normalized playback level.
       - Departures is an original chime synthesised for styal, so it carries no third-party notice.
+      - Opt-in PR announcements sit under Notification sounds on web and desktop, share the notification audio context, and speak PR numbers digit by digit from bundled phrase recordings.
+      - Live announcements use existing shell snapshots without extra polling, establish silent baselines on connection and new links, and deduplicate the same PR across threads and environments. Missing host data is not a new transition. Ready to depart plays only when checks pass and nothing but a person stands in the way, so never for a draft, a conflict, requested changes, an open lower stack layer, an armed auto-merge, or a merge queue entry, which the PR sync records on the snapshot where the host reports them. Leaving the merge queue without merging is announced once and outranks ready until the PR re-queues, settles, or its checks change.
+      - Pending announcements coalesce per host, repository, and PR number. Playback uses one opening and closing chime per batch, survives navigation, and stops or drops stale work when disabled, disconnected, unlinked, or superseded. A toast lists every line in the batch from when it is queued until the closing chime ends, highlighting the one being spoken, with a Stop action.
     implementation_paths:
+      - apps/web/src/announcer.ts
+      - apps/web/src/components/PullRequestAnnouncerCoordinator.tsx
       - apps/web/src/components/ThreadNotificationCoordinator.tsx
       - apps/web/src/components/settings/NotificationSettings.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/threadNotifications.ts
+      - packages/client-runtime/src/pullRequestAnnouncements.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
+      - apps/server/src/orchestration-v2/PullRequestSyncReactor.ts
+      - apps/server/src/pullRequest/gitHubPullRequestJson.ts
       - apps/web/src/components/ThreadNotificationCoordinator.tsx
       - apps/web/src/components/settings/NotificationSettings.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/threadNotifications.ts
       - packages/contracts/src/settings.ts
+      - packages/contracts/src/threadPullRequest.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
+      - apps/web/src/announcer.test.ts
       - apps/web/src/components/ThreadNotificationSounds.test.tsx
       - apps/web/src/threadNotifications.test.ts
+      - packages/client-runtime/src/pullRequestAnnouncements.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
       status: partial
