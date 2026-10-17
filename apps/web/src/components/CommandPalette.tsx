@@ -257,7 +257,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
-import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
+import { getProjectOrderKey } from "../logicalProject";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import {
   buildSidebarProjectPickerEntries,
@@ -586,6 +586,15 @@ function useProjectLookups(projects: ReturnType<typeof useProjects>) {
   return { projectCwdById, projectByKey, projectTitleById };
 }
 
+const selectCommandPaletteClientSettings = (settings: ClientSettings) => ({
+  sidebarProjectGroupingMode: settings.sidebarProjectGroupingMode,
+  sidebarProjectGroupingOverrides: settings.sidebarProjectGroupingOverrides,
+  sidebarProjectSortOrder: settings.sidebarProjectSortOrder,
+  sidebarThreadSortOrder: settings.sidebarThreadSortOrder,
+  sidebarThreadTimestampMode: settings.sidebarThreadTimestampMode,
+});
+type CommandPaletteClientSettings = ReturnType<typeof selectCommandPaletteClientSettings>;
+
 function useSortedProjectGroups({
   projects,
   projectOrder,
@@ -596,14 +605,17 @@ function useSortedProjectGroups({
 }: {
   readonly projects: ReturnType<typeof useProjects>;
   readonly projectOrder: ReturnType<typeof useUiStateStore.getState>["projectOrder"];
-  readonly clientSettings: ClientSettings;
+  readonly clientSettings: CommandPaletteClientSettings;
   readonly primaryEnvironmentId: ReturnType<typeof usePrimaryEnvironmentId>;
   readonly environmentLabelById: ReadonlyMap<EnvironmentId, string>;
   readonly threads: ReturnType<typeof useThreadShells>;
 }) {
   // oxlint-disable-next-line t3code/no-manual-memo -- Kept until the palette's item building moves out of this component (see above).
   "use memo";
-  const projectGroupingSettings = selectProjectGroupingSettings(clientSettings);
+  const projectGroupingSettings = {
+    sidebarProjectGroupingMode: clientSettings.sidebarProjectGroupingMode,
+    sidebarProjectGroupingOverrides: clientSettings.sidebarProjectGroupingOverrides,
+  };
   const orderedProjects = orderItemsByPreferredIds({
     items: projects,
     preferredIds: projectOrder,
@@ -859,7 +871,7 @@ function OpenCommandPaletteDialog(props: {
     highlightClearedRef.current = true;
     setHighlightedItemValue(null);
   }
-  const clientSettings = useClientSettings();
+  const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
