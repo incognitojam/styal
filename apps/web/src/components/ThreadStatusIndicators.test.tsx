@@ -1,46 +1,7 @@
-import { ThreadId, type ThreadPullRequestLink } from "@t3tools/contracts";
-import { renderToStaticMarkup } from "react-dom/server";
+import type { ThreadPullRequestLink } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  ThreadPullRequestsMiniList,
-  ThreadWorktreeIndicator,
-  linkedPullRequestSnapshotStatus,
-} from "./ThreadStatusIndicators";
-
-describe("ThreadWorktreeIndicator", () => {
-  it("renders the worktree folder and branch in an accessible label", () => {
-    const markup = renderToStaticMarkup(
-      <ThreadWorktreeIndicator
-        thread={{
-          id: ThreadId.make("thread-1"),
-          branch: "feature/sidebar-indicator",
-          worktreePath: "/tmp/worktrees/sidebar-indicator",
-        }}
-      />,
-    );
-
-    expect(markup).toContain('role="img"');
-    expect(markup).toContain(
-      'aria-label="Worktree: sidebar-indicator (feature/sidebar-indicator)"',
-    );
-    expect(markup).toContain('data-testid="thread-worktree-thread-1"');
-  });
-
-  it.each([null, "", "   "])("renders nothing for an absent worktree path", (worktreePath) => {
-    const markup = renderToStaticMarkup(
-      <ThreadWorktreeIndicator
-        thread={{
-          id: ThreadId.make("thread-1"),
-          branch: "main",
-          worktreePath,
-        }}
-      />,
-    );
-
-    expect(markup).toBe("");
-  });
-});
+import { linkedPullRequestSnapshotStatus } from "./ThreadStatusIndicators";
 
 describe("linked pull request snapshots", () => {
   const link: ThreadPullRequestLink = {
@@ -104,50 +65,5 @@ describe("linked pull request snapshots", () => {
       },
     });
     expect(result?.sourceControlProvider.kind).toBe(kind);
-  });
-});
-
-describe("ThreadPullRequestsMiniList", () => {
-  const branchPullRequest = {
-    number: 579,
-    title: "Fix the branch pull request",
-    url: "https://github.com/acme/web/pull/579",
-    baseRef: "main",
-    headRef: "fix-branch",
-    state: "open" as const,
-  };
-
-  it("lists the branch pull request when the thread has no linked pull requests", () => {
-    const markup = renderToStaticMarkup(
-      <ThreadPullRequestsMiniList pullRequests={[]} fallback={branchPullRequest} />,
-    );
-    expect(markup).toContain("#579");
-    expect(markup).toContain("Fix the branch pull request");
-  });
-
-  it("lists linked pull requests instead of the branch pull request", () => {
-    const markup = renderToStaticMarkup(
-      <ThreadPullRequestsMiniList
-        pullRequests={[
-          {
-            host: "github.com",
-            repository: "acme/web",
-            number: 42,
-            url: "https://github.com/acme/web/pull/42",
-            source: "manual",
-            linkedAt: "2026-01-01T00:00:00Z",
-            stack: null,
-            snapshot: null,
-          },
-        ]}
-        fallback={branchPullRequest}
-      />,
-    );
-    expect(markup).toContain("#42");
-    expect(markup).not.toContain("#579");
-  });
-
-  it("renders nothing without linked or branch pull requests", () => {
-    expect(renderToStaticMarkup(<ThreadPullRequestsMiniList pullRequests={[]} />)).toBe("");
   });
 });

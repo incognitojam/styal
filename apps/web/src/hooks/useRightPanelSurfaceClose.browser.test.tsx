@@ -1,6 +1,6 @@
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { act, useLayoutEffect } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -12,28 +12,29 @@ const state = vi.hoisted(() => ({
   allowed: new Set<string>(),
 }));
 
-vi.mock("../composerDraftStore", () => ({ useComposerDraftStore: () => null }));
-vi.mock("../state/entities", () => ({ useThreadShell: () => null, useProject: () => null }));
-vi.mock("../state/session", () => ({
+vi.mock(import("../state/entities"), async (original) => ({
+  ...(await original()),
+  useThreadShell: () => null,
+  useProject: () => null,
+}));
+vi.mock(import("../state/session"), async (original) => ({
+  ...(await original()),
   readEnvironmentScope: (environmentId: string) => state.allowed.has(environmentId),
-  useEnvironmentScope: (environmentId: string) => state.allowed.has(environmentId),
+  useEnvironmentScope: (environmentId: string | null) =>
+    environmentId !== null && state.allowed.has(environmentId),
 }));
-vi.mock("../state/terminal", () => ({ terminalEnvironment: { close: "close" } }));
-vi.mock("../state/terminalSessions", () => ({ useKnownTerminalSessions: () => [] }));
-vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.close }));
-vi.mock("../components/ChatView.logic", () => ({
-  agentControlledBrowserCloseConfirmation: () => null,
+vi.mock(import("../state/terminalSessions"), async (original) => ({
+  ...(await original()),
+  useKnownTerminalSessions: () => [],
 }));
-vi.mock("./useTerminalCloseConfirmation", () => ({
+vi.mock(import("../state/use-atom-command"), async (original) => ({
+  ...(await original()),
+  useAtomCommand: (() => state.close) as never,
+}));
+vi.mock(import("./useTerminalCloseConfirmation"), async (original) => ({
+  ...(await original()),
   useTerminalCloseConfirmation: () => state.confirm,
 }));
-vi.mock("../state/preview", () => ({ previewEnvironment: { close: "preview-close" } }));
-vi.mock("../previewStateStore", () => ({
-  useThreadPreviewState: () => ({ sessions: {} }),
-  setActivePreviewTab: vi.fn(),
-}));
-vi.mock("../localApi", () => ({ readLocalApi: () => null }));
-vi.mock("../components/preview/closePreviewSession", () => ({ closePreviewSession: vi.fn() }));
 
 const original: ScopedThreadRef = {
   environmentId: EnvironmentId.make("environment-a"),
@@ -43,7 +44,7 @@ const other: ScopedThreadRef = {
   environmentId: EnvironmentId.make("environment-b"),
   threadId: ThreadId.make("thread-b"),
 };
-let renderer: ReactTestRenderer | null = null;
+let root: Root | null = null;
 let actions: ReturnType<typeof useRightPanelSurfaceClose>;
 function Probe({ target }: { target: ScopedThreadRef }) {
   const currentActions = useRightPanelSurfaceClose({
@@ -56,10 +57,8 @@ function Probe({ target }: { target: ScopedThreadRef }) {
   return null;
 }
 async function render(target: ScopedThreadRef) {
-  await act(() => {
-    if (renderer) renderer.update(<Probe target={target} />);
-    else renderer = create(<Probe target={target} />);
-  });
+  root ??= createRoot(document.createElement("div"));
+  await act(() => root!.render(<Probe target={target} />));
   return actions;
 }
 
@@ -71,8 +70,8 @@ beforeEach(() => {
   useTerminalUiStateStore.setState({ terminalUiStateByThreadKey: {} });
 });
 afterEach(async () => {
-  await act(() => renderer?.unmount());
-  renderer = null;
+  await act(() => root?.unmount());
+  root = null;
   vi.resetAllMocks();
   vi.unstubAllGlobals();
 });

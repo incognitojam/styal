@@ -8,7 +8,7 @@ import {
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { act } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -25,25 +25,31 @@ const sync = vi.hoisted(() => ({
     >(),
 }));
 
-vi.mock("../connection/runtime", () => ({ connectionAtomRuntime: null }));
-vi.mock("./server", () => ({ serverEnvironment: { configValueAtom: () => "config" } }));
-vi.mock("@effect/atom-react", () => ({
-  useAtomValue: (atom: unknown) =>
+vi.mock(import("./server"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    serverEnvironment: { ...actual.serverEnvironment, configValueAtom: (() => "config") as never },
+  };
+});
+vi.mock(import("@effect/atom-react"), async (original) => ({
+  ...(await original()),
+  useAtomValue: ((atom: unknown) =>
     atom === "config"
       ? { environment: { capabilities: { composerDraftSync: true } } }
       : sync.snapshot === null
         ? null
-        : AsyncResult.success(sync.snapshot),
+        : AsyncResult.success(sync.snapshot)) as never,
 }));
-vi.mock("@t3tools/client-runtime/state/composer-drafts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/composer-drafts")>()),
-  createComposerDraftEnvironmentAtoms: () => ({
+vi.mock(import("@t3tools/client-runtime/state/composer-drafts"), async (original) => ({
+  ...(await original()),
+  createComposerDraftEnvironmentAtoms: (() => ({
     changes: () => Atom.make(null),
     update: { run: sync.update },
-  }),
+  })) as never,
 }));
 
-let renderer: ReactTestRenderer | undefined;
+let root: Root | undefined;
 let threadRef: { environmentId: EnvironmentId; threadId: ThreadId };
 let nextThreadId = 0;
 
@@ -52,10 +58,14 @@ function Probe() {
   return null;
 }
 
+async function mount() {
+  root = createRoot(document.createElement("div"));
+  await act(() => root!.render(<Probe />));
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("window", { setTimeout, clearTimeout });
   threadRef = {
     environmentId: EnvironmentId.make("environment-1"),
     threadId: ThreadId.make(`thread-${++nextThreadId}`),
@@ -73,8 +83,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await act(() => renderer?.unmount());
-  renderer = undefined;
+  await act(() => root?.unmount());
+  root = undefined;
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -92,21 +102,17 @@ describe("web composer draft sync", () => {
         interactionMode: null,
       },
     };
-    await act(() => {
-      renderer = create(<Probe />);
-    });
+    await mount();
     expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt).toBe(
       "saved draft",
     );
     await act(() => {
       useComposerDraftStore.getState().setPrompt(threadRef, "");
-      renderer?.unmount();
+      root?.unmount();
     });
     expect(sync.update).toHaveBeenCalledOnce();
     expect(sync.update.mock.calls[0]?.[1].input.common).toBeNull();
-    await act(() => {
-      renderer = create(<Probe />);
-    });
+    await mount();
     expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt ?? "").toBe("");
 
     sync.update.mockImplementation(async (_registry, { input }) => {
@@ -130,9 +136,7 @@ describe("web composer draft sync", () => {
     async (runtimeMode) => {
       if (runtimeMode !== null)
         useComposerDraftStore.getState().setRuntimeMode(threadRef, runtimeMode);
-      await act(() => {
-        renderer = create(<Probe />);
-      });
+      await mount();
       await act(() => {
         useComposerDraftStore.getState().setPrompt(threadRef, "sent message");
       });
@@ -152,9 +156,7 @@ describe("web composer draft sync", () => {
   );
 
   it("autosaves a new edit made after sending before React renders it", async () => {
-    await act(() => {
-      renderer = create(<Probe />);
-    });
+    await mount();
     await act(() => {
       useComposerDraftStore.getState().setPrompt(threadRef, "sent message");
     });
@@ -183,9 +185,7 @@ describe("web composer draft sync", () => {
       },
     );
     sync.update.mockReturnValueOnce(autosave);
-    await act(() => {
-      renderer = create(<Probe />);
-    });
+    await mount();
     await act(() => {
       useComposerDraftStore.getState().setPrompt(threadRef, "sent message");
     });

@@ -654,7 +654,7 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/desktop/src/settings/DesktopClientSettings.test.ts
-      - apps/web/src/components/ThreadNotificationSounds.test.tsx
+      - apps/web/src/components/ThreadNotificationSounds.browser.test.tsx
       - apps/web/src/threadNotifications.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
@@ -721,7 +721,7 @@ features:
       - apps/server/src/persistence/ForkMigrations.test.ts
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/discardComposerDraft.test.ts
-      - apps/web/src/state/composerDrafts.test.tsx
+      - apps/web/src/state/composerDrafts.browser.test.tsx
       - packages/client-runtime/src/state/composerDrafts.test.ts
     upstream:
       status: partial
@@ -912,8 +912,8 @@ features:
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/telemetry/DesktopFeatureUsage.test.ts
       - apps/server/src/terminal/Manager.test.ts
+      - apps/web/src/components/ServerUpdateAction.browser.test.tsx
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
-      - apps/web/src/components/ServerUpdateAction.test.tsx
       - apps/web/src/components/desktopUpdate.logic.test.ts
       - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
       - apps/web/src/confirmDialog.test.ts
@@ -3668,7 +3668,7 @@ features:
       - apps/web/src/components/contextChipParts.tsx
     tests:
       - apps/web/src/components/chat/externalLinkContextMenu.test.ts
-      - apps/web/src/hooks/useExternalLinkContextMenu.test.tsx
+      - apps/web/src/hooks/useExternalLinkContextMenu.browser.test.tsx
     upstream:
       status: tracking
       tracking:
@@ -4400,8 +4400,8 @@ features:
       - apps/server/src/orchestration-v2/RestartContinuation.test.ts
       - apps/server/src/serverRuntimeStartup.test.ts
       - apps/web/src/components/ConfirmDialogHost.browser.test.tsx
+      - apps/web/src/components/ServerUpdateAction.browser.test.tsx
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
-      - apps/web/src/components/ServerUpdateAction.test.tsx
       - apps/web/src/confirmDialog.test.ts
       - apps/web/src/versionSkew.test.ts
       - e2e/tests/network/update-everything.e2e.ts

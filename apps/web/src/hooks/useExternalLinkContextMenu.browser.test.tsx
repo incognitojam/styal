@@ -1,6 +1,6 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { act, useLayoutEffect } from "react";
-import { create } from "react-test-renderer";
+import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { useExternalLinkContextMenu } from "./useExternalLinkContextMenu";
@@ -22,27 +22,42 @@ const harness = vi.hoisted(() => ({
   copy: vi.fn(async () => {}),
 }));
 
-vi.mock("~/state/entities", () => ({ readThreadShell: () => harness.thread }));
-vi.mock("~/state/session", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/state/session")>()),
+vi.mock(import("~/state/entities"), async (original) => ({
+  ...(await original()),
+  readThreadShell: (() => harness.thread) as never,
+}));
+vi.mock(import("~/state/session"), async (original) => ({
+  ...(await original()),
   readEnvironmentScope: () => true,
   useEnvironmentScope: () => true,
 }));
-vi.mock("./usePullRequestLinking", () => ({
-  usePullRequestLinking: () => ({
+vi.mock(import("./usePullRequestLinking"), async (original) => ({
+  ...(await original()),
+  usePullRequestLinking: (() => ({
     canLink: () => harness.canLink,
     isLinked: (thread: { linked: boolean } | null) => thread?.linked === true,
     changeLink: harness.changeLink,
-  }),
+  })) as never,
 }));
-vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
-vi.mock("~/localApi", () => ({
-  readLocalApi: () => ({ contextMenu: { show: harness.show }, shell: { openExternal: vi.fn() } }),
+vi.mock(import("~/state/use-atom-command"), async (original) => ({
+  ...(await original()),
+  useAtomCommand: (() => vi.fn()) as never,
 }));
-vi.mock("~/previewStateStore", () => ({
+vi.mock(import("~/localApi"), async (original) => ({
+  ...(await original()),
+  readLocalApi: (() => ({
+    contextMenu: { show: harness.show },
+    shell: { openExternal: vi.fn() },
+  })) as never,
+}));
+vi.mock(import("~/previewStateStore"), async (original) => ({
+  ...(await original()),
   isPreviewSupportedInRuntime: () => harness.previewSupported,
 }));
-vi.mock("./useCopyToClipboard", () => ({ writeTextToClipboard: harness.copy }));
+vi.mock(import("./useCopyToClipboard"), async (original) => ({
+  ...(await original()),
+  writeTextToClipboard: harness.copy as never,
+}));
 
 const threadRef = {
   environmentId: EnvironmentId.make("menu-environment"),
@@ -68,11 +83,12 @@ async function withMenu(
     }, [onContextMenu]);
     return null;
   }
-  const renderer = await act(() => create(<Consumer />));
+  const root = createRoot(document.createElement("div"));
+  await act(() => root.render(<Consumer />));
   try {
     await run(() => open());
   } finally {
-    await act(() => renderer.unmount());
+    await act(() => root.unmount());
   }
 }
 

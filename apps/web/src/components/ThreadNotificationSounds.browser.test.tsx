@@ -5,14 +5,12 @@ import {
   RunId,
   RuntimeRequestId,
   type OrchestrationV2ThreadShell,
-  ProjectId,
-  ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import { act } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
 
@@ -22,30 +20,35 @@ const state = vi.hoisted(() => ({
   play: vi.fn(),
   navigate: vi.fn(),
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => state.shell }));
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => state.navigate,
-  useParams: () => ({}),
+vi.mock(import("@effect/atom-react"), async (original) => ({
+  ...(await original()),
+  useAtomValue: (() => state.shell) as never,
 }));
-vi.mock("../hooks/useSettings", () => ({
-  getClientSettings: () => state.settings,
-  useClientSettings: (select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
-    select(state.settings),
+vi.mock(import("@tanstack/react-router"), async (original) => ({
+  ...(await original()),
+  useNavigate: (() => state.navigate) as never,
+  useParams: (() => ({})) as never,
 }));
-vi.mock("../state/environments", () => ({
-  useEnvironmentIds: () => [EnvironmentId.make("test-environment")],
+vi.mock(import("../hooks/useSettings"), async (original) => ({
+  ...(await original()),
+  getClientSettings: (() => state.settings) as never,
+  useClientSettings: ((select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
+    select(state.settings)) as never,
 }));
-vi.mock("../state/shell", () => ({ environmentShell: { stateValueAtom: () => null } }));
-vi.mock("../threadNotifications", async (original) => ({
-  ...(await original<typeof import("../threadNotifications")>()),
+vi.mock(import("../state/environments"), async (original) => ({
+  ...(await original()),
+  useEnvironmentIds: (() => [EnvironmentId.make("test-environment")]) as never,
+}));
+vi.mock(import("../threadNotifications"), async (original) => ({
+  ...(await original()),
   playNotificationSound: state.play,
-  // The dock and taskbar badge has its own test; it draws on a canvas this stub lacks.
+  // The dock and taskbar badge has its own test; it would redraw the page favicon here.
   setNotificationBadge: vi.fn(),
 }));
 
 import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
 
-let renderer: ReactTestRenderer | undefined;
+let root: Root;
 const notifications: {
   title: string;
   options: NotificationOptions;
@@ -92,11 +95,8 @@ function snapshot(
     }),
   };
 }
-function render() {
-  act(() => {
-    if (renderer) renderer.update(<ThreadNotificationCoordinator />);
-    else renderer = create(<ThreadNotificationCoordinator />);
-  });
+async function render() {
+  await act(() => root.render(<ThreadNotificationCoordinator />));
 }
 beforeEach(() => {
   state.settings = {
@@ -111,12 +111,9 @@ beforeEach(() => {
   state.navigate.mockReset();
   notifications.length = 0;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
-  vi.stubGlobal("window", {
-    focus: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  });
+  // System notifications are only shown while the app is in the background.
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  vi.spyOn(document, "hasFocus").mockReturnValue(false);
   vi.stubGlobal(
     "Notification",
     class {
@@ -134,20 +131,21 @@ beforeEach(() => {
       }
     },
   );
+  root = createRoot(document.createElement("div"));
 });
-afterEach(() => {
-  act(() => renderer?.unmount());
-  renderer = undefined;
+afterEach(async () => {
+  await act(() => root.unmount());
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
-it("alerts once for a live completion using the persisted sample and opens its environment/thread", () => {
-  render();
+it("alerts once for a live completion using the persisted sample and opens its environment/thread", async () => {
+  await render();
   expect(notifications).toHaveLength(0);
   state.shell = snapshot(true);
-  render();
+  await render();
   state.shell = snapshot(true);
-  render();
+  await render();
   expect(state.play).toHaveBeenCalledExactlyOnceWith("completion", expect.any(Function), "avanti");
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.title).toBe("Thread completed");
@@ -160,9 +158,9 @@ it("alerts once for a live completion using the persisted sample and opens its e
 
 it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
   "honors %s for input and approval transitions",
-  (mode) => {
+  async (mode) => {
     state.settings = { ...state.settings, notificationMode: mode };
-    render();
+    await render();
     state.shell = snapshot(false, {
       pendingRuntimeRequest: {
         id: RuntimeRequestId.make("question"),
@@ -170,7 +168,7 @@ it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
         createdAt: completedAt,
       },
     });
-    render();
+    await render();
     state.shell = snapshot(false, {
       pendingRuntimeRequest: {
         id: RuntimeRequestId.make("approval"),
@@ -178,7 +176,7 @@ it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
         createdAt: completedAt,
       },
     });
-    render();
+    await render();
     expect(state.play).toHaveBeenCalledTimes(
       mode === "sound" || mode === "notifications-and-sound" ? 2 : 0,
     );
@@ -196,20 +194,20 @@ it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
   },
 );
 
-it("does not replay initial, reconnect, or archived completions", () => {
+it("does not replay initial, reconnect, or archived completions", async () => {
   state.shell = snapshot(true);
-  render();
+  await render();
   state.shell = { ...state.shell, status: "synchronizing", snapshot: Option.none() };
-  render();
+  await render();
   state.shell = snapshot(true);
-  render();
+  await render();
   state.shell = snapshot(false);
-  render();
+  await render();
   state.shell = snapshot(true, {
     archivedAt: DateTime.makeUnsafe("2026-09-30T12:01:00Z"),
     latestRunCompletedAt: DateTime.makeUnsafe("2026-09-30T12:01:00Z"),
   });
-  render();
+  await render();
   expect(state.play).not.toHaveBeenCalled();
   expect(notifications).toHaveLength(0);
 });
