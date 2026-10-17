@@ -61,7 +61,7 @@ import {
   SourceControlRepositoryError,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
@@ -181,7 +181,7 @@ import {
   newProjectId,
 } from "../lib/utils";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { buildThreadRouteParams } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
 import {
   applyWslEnvironmentConfiguration,
@@ -269,6 +269,7 @@ import { useFocusPullRequestTab, useViewPullRequest } from "../lib/viewPullReque
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
+import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
@@ -640,10 +641,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
-  const routeTarget = useParams({
-    strict: false,
-    select: (params) => resolveThreadRouteTarget(params),
-  });
+  const routeTarget = useThreadRouteTarget();
   const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
@@ -909,10 +907,7 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
-  const paletteRouteTarget = useParams({
-    strict: false,
-    select: (params) => resolveThreadRouteTarget(params),
-  });
+  const paletteRouteTarget = useThreadRouteTarget();
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
