@@ -133,6 +133,10 @@
       "reason": "Moves the mobile environment update check from GitHub's API to github.com release pages to avoid the anonymous quota. The fork already fixed this for the mobile check and `styal update` through npm dist-tags (fork #741, ledger fork-distribution-identity). Expect conflicts in `packages/shared/src/cliRelease.ts` and `apps/mobile/src/features/settings/environment-maintenance.ts`; keep the fork's lookup."
     },
     {
+      "pr": 17945,
+      "reason": "Fork #860 ports only its latestProviderTurnTokenUsage helper, test, and ChatView call site, unchanged: thread snapshots order provider turns by provider thread, so after a Codex to Claude switch the context meter and resume compaction banner read the last Codex turn's usage. Not imported early: ChatView.tsx and docs/user/providers-claude.md conflict with pending upstream work, including the #17127 Compact chip. When the queue reaches it, take upstream's implementation, including the reported promptCacheTtlMs, and resolve the ported lines to upstream's. Keep the fork's 60-minute fallback when no TTL is reported, and pass the TTL to claudeSelectionCacheLoss as well (ledger claude-resume-compaction-cache-expiry, claude-settings-change-cache-warning). Verify a stale Claude thread offers compaction after a 5-minute cache and a Codex to Claude switch does not, then remove this entry."
+    },
+    {
       "pr": 18053,
       "reason": "One sidebar action updates outdated providers on every connected environment, then servers behind the target version, then this desktop app. Not imported early: it needs #9786's environment maintenance scope, and its sidebar and server-update changes are built on the manual download and check animation that fork #358 and #754 removed (ledger desktop-background-updates, server-update-guidance). When taken in: route servers through the fork's `useServerUpdates` host-activity confirmation without a second dialog, and replace its `registry.npmjs.org/t3/<version>` availability check with the fork's `@styal/cli` lookup in `packages/shared/src/cliRelease.ts`, which also confirms the release checksums are downloadable (fork #741)."
     },
