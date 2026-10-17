@@ -1,4 +1,5 @@
 import { Volume2Icon } from "lucide-react";
+import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useState } from "react";
 import {
   type ClientSettings,
@@ -52,19 +53,17 @@ export function NotificationSettings() {
         return;
       }
       setRequesting(true);
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission !== "granted") {
-          setPermissionMessage(
-            "Allow notifications in your browser or system settings, then turn this on again.",
-          );
-          return;
-        }
-      } catch {
+      const permission = await settlePromise(() => Notification.requestPermission());
+      setRequesting(false);
+      if (permission._tag === "Failure") {
         setPermissionMessage("Notifications are unavailable in this browser.");
         return;
-      } finally {
-        setRequesting(false);
+      }
+      if (permission.value !== "granted") {
+        setPermissionMessage(
+          "Allow notifications in your browser or system settings, then turn this on again.",
+        );
+        return;
       }
     }
     updateSettings({ notificationMode: value });
