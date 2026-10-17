@@ -175,6 +175,21 @@ the project. The instructions apply to every checkout in the project group and w
 Claude, Cursor, Grok, and OpenCode. Clear the field or reset it to stop including them in future
 sessions.
 
+## Agent notices
+
+Agents can leave a notice for the other threads in a project, for example "Refactoring the
+WebSocket server until PR 123 lands" or "Main is broken, wait for the fix before rebasing". Every
+agent lists the project's notices when it starts work, so a thread you start later sees them too.
+Notices are written by agents, and other agents treat them as context to check rather than as your
+instructions.
+
+Each notice expires on its own, after one day unless the agent chose a shorter or longer time (at
+most seven days), and the agent that posted it resolves it when the situation ends. Open the project
+in **Settings → Projects** to see the active notices, which thread posted each one, and when it
+expires. Select **Resolve** to remove one that no longer applies. On mobile, the notices are in the
+project overview. Each checkout keeps its own notices, and a project with checkouts on several
+machines names the machine beside each notice.
+
 ## Keep the default branch current
 
 In Source Control, enable **Automatically pull** to keep the default-branch checkout up to date

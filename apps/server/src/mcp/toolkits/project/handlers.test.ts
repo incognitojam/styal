@@ -19,6 +19,9 @@ import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementSer
 import * as ServerConfig from "../../../config.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as ProjectNotices from "../../../project/ProjectNotices.ts";
+import { runAllMigrations } from "../../../persistence/ForkMigrations.ts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
@@ -360,3 +363,64 @@ it.effect("a client launches at its ceiling with the project's default model", (
     expect(launched).toHaveLength(1);
   }),
 );
+
+it.effect("posts notices to the calling thread's project under its name", () => {
+  const callerId = ThreadId.make("notice-caller");
+  const projectId = ProjectId.make("notice-project");
+  const providerInstanceId = ProviderInstanceId.make("codex");
+  const caller = {
+    id: callerId,
+    projectId,
+    providerInstanceId,
+    runtimeMode: "approval-required",
+    interactionMode: "plan",
+    activeRunId: "active-run",
+    archivedAt: null,
+    deletedAt: null,
+  } as OrchestrationV2ThreadShell;
+  const dependencies = Layer.mergeAll(
+    Layer.succeed(McpInvocationContext.McpInvocationContext, {
+      environmentId: EnvironmentId.make("environment"),
+      requestNamespace: "session",
+      thread: { threadId: callerId, providerSessionId: "session", providerInstanceId },
+      client: undefined,
+      issuedAt: 0,
+      capabilities: new Set(["orchestration" as const]),
+    }),
+    Layer.mock(ThreadManagement.ThreadManagementService)({
+      getThreadShell: () => Effect.succeed(caller),
+    }),
+    Layer.mock(Project.ProjectService)({ getById: () => Effect.succeed(Option.none()) }),
+    ProjectNotices.layer.pipe(
+      Layer.provideMerge(
+        Layer.merge(NodeSqliteClient.layer({ filename: ":memory:" }), NodeCrypto.layer),
+      ),
+    ),
+  );
+  return Effect.gen(function* () {
+    yield* runAllMigrations();
+    const toolkit = yield* ProjectToolkit;
+    const call = <Name extends "t3_notice_post" | "t3_notice_list">(
+      name: Name,
+      input: Parameters<typeof toolkit.handle<Name>>[1],
+    ) => toolkit.handle(name, input).pipe(Stream.unwrap, Stream.runCollect);
+
+    // A plan-mode thread can post: a notice changes no workspace.
+    const posted = yield* call("t3_notice_post", { title: "Hold merges until intake lands" });
+    expect(posted.at(-1)?.result).toMatchObject({
+      projectId,
+      authorThreadId: callerId,
+      body: "",
+    });
+    const listed = yield* call("t3_notice_list", {});
+    expect(listed.at(-1)?.result).toMatchObject({
+      notices: [{ title: "Hold merges until intake lands" }],
+    });
+
+    const elsewhere = yield* call("t3_notice_post", {
+      projectId: ProjectId.make("missing-project"),
+      title: "Nowhere",
+    });
+    expect(elsewhere.at(-1)?.result).toMatchObject({ code: "invalid_request" });
+  }).pipe(Effect.provide(ProjectHandlersLive.pipe(Layer.provideMerge(dependencies))));
+});

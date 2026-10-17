@@ -341,6 +341,13 @@ import {
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
+  ProjectNoticeError,
+  ProjectNoticeListInput,
+  ProjectNoticeListResult,
+  ProjectNoticeResolveInput,
+  ProjectNoticeResolveResult,
+} from "./projectNotice.ts";
+import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
   ProjectCloneListEvent,
@@ -534,6 +541,10 @@ export const WS_METHODS = {
   secretsAnswerRequest: "secrets.answerRequest",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
+
+  // Project notices
+  projectNoticesSubscribe: "projectNotices.subscribe",
+  projectNoticesResolve: "projectNotices.resolve",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -1880,6 +1891,20 @@ const WsScheduledTasksGetWebhookDeliveryRpc = Rpc.make(
   },
 );
 
+/** Streams a project's active notices: one snapshot on subscribe, then a fresh list after every change. */
+const WsProjectNoticesSubscribeRpc = Rpc.make(WS_METHODS.projectNoticesSubscribe, {
+  payload: ProjectNoticeListInput,
+  success: ProjectNoticeListResult,
+  error: Schema.Union([ProjectNoticeError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+const WsProjectNoticesResolveRpc = Rpc.make(WS_METHODS.projectNoticesResolve, {
+  payload: ProjectNoticeResolveInput,
+  success: ProjectNoticeResolveResult,
+  error: Schema.Union([ProjectNoticeError, EnvironmentAuthorizationError]),
+});
+
 const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
   payload: Schema.Struct({}),
   success: AuthAccessStreamEvent,
@@ -1972,6 +1997,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSecretsAnswerRequestRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
+  WsProjectNoticesSubscribeRpc,
+  WsProjectNoticesResolveRpc,
   WsServerReportClientActivityRpc,
   WsServerReportForkClientUsageRpc,
   WsServerReportHostPowerStateRpc,

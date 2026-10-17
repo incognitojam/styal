@@ -10,6 +10,7 @@ export const SETTINGS_FORK_FEATURES = [
   "device-idle-shutdown",
   "github-outage-status",
   "project-agent-instructions",
+  "project-notices",
   "provider-auto-updates",
   "sidebar-last-message-time",
   "sidebar-project-thread-groups",
