@@ -50,6 +50,8 @@ const fixture = Effect.fn("fixture")(function* (
   const releaseError = yield* Ref.make<string | null>(null);
   const sessionErrors = new Map<string, string>();
   const busy = new Set<string>();
+  /** Threads that are not "idle"; `busy` marks working ones. */
+  const ended = new Map<string, "archived" | "missing">();
   const releasedNames = yield* Ref.make<ReadonlyArray<string>>([]);
   const ledgerSaves = { count: 0 };
   const daemonRunning = yield* Ref.make(true);
@@ -169,7 +171,8 @@ const fixture = Effect.fn("fixture")(function* (
     agentEndpoint: () =>
       Ref.get(daemonRunning).pipe(Effect.map((running) => (running ? agentDevice : null))),
     environmentId: OWN_ENVIRONMENT,
-    threadBusy: (thread) => Effect.sync(() => busy.has(thread)),
+    threadStatus: (thread) =>
+      Effect.sync(() => (busy.has(thread) ? "working" : (ended.get(thread) ?? "idle"))),
   }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
   const bootElsewhere = () => {
     booted = true;
@@ -183,6 +186,7 @@ const fixture = Effect.fn("fixture")(function* (
     starts,
     calls,
     busy,
+    ended,
     releasedNames,
     ledgerSaves,
     bootElsewhere,
@@ -202,10 +206,18 @@ const agentOpen = (
   service: DeviceService.DeviceService["Service"],
   thread = threadId,
   deviceId = "Pixel_API_35",
+  takeOver?: boolean,
 ) =>
-  service
-    .agentTarget({ threadId: thread, hostId: LOCAL_DEVICE_HOST_ID, deviceId })
-    .pipe(Effect.andThen(service.open({ threadId: thread, deviceId, platform: "android" })));
+  service.agentTarget({ threadId: thread, hostId: LOCAL_DEVICE_HOST_ID, deviceId }).pipe(
+    Effect.andThen(
+      service.open({
+        threadId: thread,
+        deviceId,
+        platform: "android",
+        ...(takeOver === undefined ? {} : { takeOver }),
+      }),
+    ),
+  );
 const threads = (service: DeviceService.DeviceService["Service"]) =>
   service.state.pipe(Effect.map((state) => state.sessions.map((session) => session.threadId)));
 
@@ -363,7 +375,7 @@ describe("hand-back", () => {
       busy.add(threadId);
       calls.length = 0;
 
-      yield* agentOpen(service, thread2, "emulator-5554");
+      yield* agentOpen(service, thread2, "emulator-5554").pipe(Effect.flip);
       expect(calls).toEqual([]);
       expect(yield* Ref.get(releasedNames)).not.toContain(sessionName("thread-1", "emulator-5554"));
 
@@ -379,33 +391,71 @@ describe("hand-back", () => {
       const { service, activity, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
       yield* service.configure({ enabled: true });
       yield* agentOpen(service);
-      expect(yield* activity.reclaimable(thread2)).toEqual([
-        { hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" },
-      ]);
+      expect(yield* activity.inUse(thread2)).toEqual([]);
       yield* agentOpen(service, thread2, "emulator-5554");
       expect(calls).toEqual([release("thread-1")]);
       expect(yield* threads(service)).toEqual([thread2]);
     }).pipe(Effect.scoped),
   );
 
-  it.effect("a thread that is working, or a device someone watches, is not handed over", () =>
+  it.effect("an agent cannot open a device a working thread holds without taking it over", () =>
     Effect.gen(function* () {
-      const { service, activity, calls, busy } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      const { service, activity, calls, busy, releasedNames } = yield* fixture(
+        yield* Ref.make<BootRecords>([]),
+      );
       yield* service.configure({ enabled: true });
       yield* agentOpen(service);
       busy.add(threadId);
-      expect(yield* activity.reclaimable(thread2)).toEqual([]);
-      yield* agentOpen(service, thread2, "emulator-5554");
-      expect(calls).toEqual([]);
-      expect(yield* threads(service)).toEqual([threadId, thread2]);
+      const held = { threadId, hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" };
+      expect(yield* activity.inUse(thread2)).toEqual([held]);
+      expect(yield* activity.inUse(threadId)).toEqual([]);
 
-      busy.delete(threadId);
+      const refused = yield* agentOpen(service, thread2, "emulator-5554").pipe(Effect.flip);
+      expect(refused).toMatchObject({
+        _tag: "DeviceHeldError",
+        hostId: LOCAL_DEVICE_HOST_ID,
+        deviceId: "emulator-5554",
+        threadIds: [threadId],
+      });
+      expect(calls).toEqual([]);
+      expect(yield* threads(service)).toEqual([threadId]);
+
+      // The holder reopening its own device stays idempotent.
+      yield* agentOpen(service, threadId, "emulator-5554");
+      expect(yield* threads(service)).toEqual([threadId]);
+
+      yield* agentOpen(service, thread2, "emulator-5554", true);
+      expect(calls).toEqual([release("thread-1"), release("thread-1", "emulator-5554")]);
+      expect(yield* threads(service)).toEqual([thread2]);
+      // The working agent's launcher now reports that its device was handed over.
+      expect(yield* Ref.get(releasedNames)).toContain(sessionName("thread-1"));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("a device someone watches is in use for every other thread's agent", () =>
+    Effect.gen(function* () {
+      const { service, activity, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
       yield* Effect.scoped(
         Effect.gen(function* () {
           yield* activity.watch(LOCAL_DEVICE_HOST_ID, "emulator-5554");
-          expect(yield* activity.reclaimable(ThreadId.make("thread-3"))).toEqual([]);
+          expect(yield* activity.inUse(thread2)).toEqual([
+            { threadId, hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" },
+          ]);
+          yield* agentOpen(service, thread2, "emulator-5554").pipe(Effect.flip);
+          expect(calls).toEqual([]);
+          // A panel session elsewhere does not refuse the holder its own device.
+          yield* service.open({
+            threadId: thread2,
+            deviceId: "emulator-5554",
+            platform: "android",
+          });
+          yield* agentOpen(service, threadId, "emulator-5554");
+          expect(yield* threads(service)).toEqual([thread2, threadId]);
         }),
       );
+      expect(yield* activity.inUse(ThreadId.make("thread-3"))).toEqual([]);
     }).pipe(Effect.scoped),
   );
 
@@ -436,8 +486,14 @@ describe("hand-back", () => {
         platform: "android",
       });
       yield* TestClock.adjust("1 hour");
-      expect(yield* activity.reclaimable(threadId)).toEqual([]);
-      yield* agentOpen(service, threadId, "emulator-5554");
+      expect(yield* activity.inUse(threadId)).toEqual([
+        { threadId: peerThread, hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" },
+      ]);
+      expect((yield* agentOpen(service, threadId, "emulator-5554").pipe(Effect.flip))._tag).toBe(
+        "DeviceHeldError",
+      );
+      // A take-over cannot revoke the other environment's claim, so the device is shared.
+      yield* agentOpen(service, threadId, "emulator-5554", true);
       expect(calls).toEqual([]);
       expect(yield* threads(service)).toEqual([peerThread, threadId]);
     }).pipe(Effect.scoped),
@@ -486,18 +542,6 @@ describe("hand-back", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("an explicit open does not take a device someone is watching", () =>
-    Effect.gen(function* () {
-      const { service, activity, calls } = yield* fixture(yield* Ref.make<BootRecords>([]));
-      yield* service.configure({ enabled: true });
-      yield* agentOpen(service);
-      yield* activity.watch(LOCAL_DEVICE_HOST_ID, "emulator-5554");
-      yield* agentOpen(service, thread2, "emulator-5554");
-      expect(calls).toEqual([]);
-      expect(yield* threads(service)).toEqual([threadId, thread2]);
-    }).pipe(Effect.scoped),
-  );
-
   it.effect("an Android device's AVD name and serial share one lock while it boots", () =>
     Effect.gen(function* () {
       const saveGate = yield* Deferred.make<void>();
@@ -543,6 +587,32 @@ describe("hand-back", () => {
           "shutdown",
         ]);
       }).pipe(Effect.scoped),
+  );
+});
+
+describe("ended threads", () => {
+  it.effect("the sweep releases devices held by archived and deleted threads", () =>
+    Effect.gen(function* () {
+      const { service, sweep, calls, ended } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* agentOpen(service);
+      const archivedPanel = ThreadId.make("thread-archived");
+      const draftPanel = ThreadId.make("thread-draft");
+      for (const thread of [archivedPanel, draftPanel])
+        yield* service.open({ threadId: thread, deviceId: "emulator-5554", platform: "android" });
+
+      yield* sweep({ shutdownAfter: null, agentAccess: true });
+      expect(yield* threads(service)).toEqual([threadId, archivedPanel, draftPanel]);
+
+      ended.set(threadId, "missing");
+      ended.set(archivedPanel, "archived");
+      // A Device panel session from a thread the projections do not know may be a draft's.
+      ended.set(draftPanel, "missing");
+      yield* sweep({ shutdownAfter: null, agentAccess: true });
+      expect(calls).toEqual([release("thread-1")]);
+      expect(yield* threads(service)).toEqual([draftPanel]);
+      expect((yield* service.state).devices[0]?.booted).toBe(true);
+    }).pipe(Effect.scoped),
   );
 });
 
