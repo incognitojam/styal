@@ -17,43 +17,59 @@ import { resolveScopedSettingsTargets, selectScopedSettingsEnvironments } from "
 import { resolveSettingsScope, type SettingsScopeSearch } from "./settingsScope";
 import { selectSingleEnvironmentScope } from "./settingsScopeAxis";
 
+type ProjectFileMember = readonly [
+  environmentId: EnvironmentId,
+  workspaceRoot: string,
+  physicalProjectKey: string,
+];
+
 /**
  * Each member's project configuration (styal.json, or a legacy t3.json), so
  * file-backed settings show the file as a layer in the inheritance chain. A
  * member is only present once both reads have settled; the query atoms
- * cache per (environment, cwd).
+ * cache per (environment, cwd). Keyed by the members' identifying fields so
+ * each render reads the same atom.
  */
+const memberProjectFilesAtom = Atom.family((membersKey: string) => {
+  const members = JSON.parse(membersKey) as ReadonlyArray<ProjectFileMember>;
+  return Atom.make((get) => {
+    // Contents of one root file, null when missing or truncated, or
+    // undefined while its read is still waiting.
+    const readContents = (
+      environmentId: EnvironmentId,
+      workspaceRoot: string,
+      relativePath: string,
+    ): string | null | undefined => {
+      const result = get(getProjectFileQueryAtom(environmentId, workspaceRoot, relativePath));
+      if (result.waiting) return undefined;
+      const data =
+        get(optimisticFileAtom(environmentId, workspaceRoot, relativePath))?.data ??
+        Option.getOrNull(AsyncResult.value(result));
+      return data === null || data.truncated ? null : data.contents;
+    };
+    const files = new Map<string, ProjectConfig | null>();
+    for (const [environmentId, workspaceRoot, physicalProjectKey] of members) {
+      const styal = readContents(environmentId, workspaceRoot, STYAL_PROJECT_FILE_NAME);
+      const t3 = readContents(environmentId, workspaceRoot, T3_PROJECT_FILE_NAME);
+      if (styal === undefined || t3 === undefined) continue;
+      files.set(physicalProjectKey, resolveProjectConfig({ styal, t3 }).config);
+    }
+    return files;
+  }).pipe(Atom.withLabel(`web-settings-member-project-files:${membersKey}`));
+});
+
 function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
   const members = scope.kind === "project" || scope.kind === "checkout" ? scope.members : [];
   return useAtomValue(
-    Atom.make((get) => {
-      // Contents of one root file, null when missing or truncated, or
-      // undefined while its read is still waiting.
-      const readContents = (
-        environmentId: EnvironmentId,
-        workspaceRoot: string,
-        relativePath: string,
-      ): string | null | undefined => {
-        const result = get(getProjectFileQueryAtom(environmentId, workspaceRoot, relativePath));
-        if (result.waiting) return undefined;
-        const data =
-          get(optimisticFileAtom(environmentId, workspaceRoot, relativePath))?.data ??
-          Option.getOrNull(AsyncResult.value(result));
-        return data === null || data.truncated ? null : data.contents;
-      };
-      const files = new Map<string, ProjectConfig | null>();
-      for (const member of members) {
-        const styal = readContents(
+    memberProjectFilesAtom(
+      JSON.stringify(
+        members.map((member): ProjectFileMember => [
           member.environmentId,
           member.workspaceRoot,
-          STYAL_PROJECT_FILE_NAME,
-        );
-        const t3 = readContents(member.environmentId, member.workspaceRoot, T3_PROJECT_FILE_NAME);
-        if (styal === undefined || t3 === undefined) continue;
-        files.set(member.physicalProjectKey, resolveProjectConfig({ styal, t3 }).config);
-      }
-      return files;
-    }),
+          member.physicalProjectKey,
+        ]),
+      ),
+    ),
   );
 }
 
