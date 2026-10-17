@@ -3765,7 +3765,7 @@ features:
   - id: server-restart-continuation-note
     title: Show where a thread continued after a server restart
     status: review-needed
-    prs: [515, 744, 802, 877]
+    prs: [515, 744, 802, 877, 892]
     invariants:
       - Restart recovery records a durable server-created continuation message and an explicit restartContinuationOfRunId link; retries do not dispatch the same recovery message twice and newer user work takes precedence.
       - Web and mobile render the recovery prompt as a standalone note inside the response the restart cut short, preserving one final answer and one worked duration with the outage excluded. A continuation of a completed or waiting run, prompted only about its cancelled background work, starts its own response under the note and leaves the earlier final answer visible; unrelated background wake continuations remain separate.
@@ -3774,6 +3774,7 @@ features:
       - The live conversation timer on web and mobile, and the working time in thread lists, include work before each linked restart and exclude outage gaps, matching completed or stopped response duration, including quiet work through its recorded end time; new user prompts start a fresh timer. Restart continuations carry this as a work start moved later by each outage, and later wakes keep it.
       - Each prompt starts at most one response. Separate background responses exclude earlier response work and idle time; collapsed or start-positioned tool rows retain completion timing boundaries, and stopped responses include the full duration of overlapping tools.
       - Recovery closes dead streaming messages and unfinished provider work using their last recorded update times, while event and run lifecycle timestamps still record when recovery occurred.
+      - A prompted continuation of a turn the restart cut mid-way tells the agent that the styal server restarted and interrupted the turn, so a killed command is not mistaken for the command's own failure; a settled turn's continuation carries only its cancelled background-work note. Codex resumes a cut turn natively and receives no prompt unless the turn also lost background work.
     rationale: Upstream V2 durable continuation messages and explicit run lineage supersede V1 restart activity events and their inferred turn linkage. The fork retains the note presentation, linked response folding, outage exclusion, and mobile footer behavior against canonical V2 recovery state.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx

@@ -16,7 +16,12 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ServerSettings from "../serverSettings.ts";
-import { restartContinuationRun, continueRestartedRun } from "./RestartContinuation.ts";
+import {
+  CONTINUE_PROMPT,
+  INTERRUPTED_TURN_NOTE,
+  restartContinuationRun,
+  continueRestartedRun,
+} from "./RestartContinuation.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -32,6 +37,7 @@ const driver = ProviderDriverKind.make("codex");
 const providerThreadId = ProviderThreadId.make("provider-thread:restart");
 const sessionId = ProviderSessionId.make("session:restart");
 const attemptId = RunAttemptId.make("attempt:restart");
+const INTERRUPTED_CONTINUATION = `${INTERRUPTED_TURN_NOTE}\n\n${CONTINUE_PROMPT}`;
 
 function makeProjection() {
   return {
@@ -288,6 +294,10 @@ it.effect("prompts a settled thread's continuation with the note of its lost wor
       "sleep 25 && echo DONE",
     );
     assert.notInclude(command.type === "message.dispatch" ? command.text : "", "Continue where");
+    assert.notInclude(
+      command.type === "message.dispatch" ? command.text : "",
+      INTERRUPTED_TURN_NOTE,
+    );
   }),
 );
 
@@ -652,7 +662,7 @@ it.effect("continues a cut run past queued follow-ups, which stay held", () =>
       ...cut,
       runs: [...cut.runs, queuedFollowUp],
     } as unknown as OrchestrationV2ThreadProjection);
-    assert.deepEqual(texts, ["Continue where you left off."]);
+    assert.deepEqual(texts, [INTERRUPTED_CONTINUATION]);
   }),
 );
 
@@ -681,7 +691,7 @@ it.effect("continues a resumed queued run that ran after an earlier continuation
       ...cut,
       runs: [...cut.runs, finishedContinuation],
     } as unknown as OrchestrationV2ThreadProjection);
-    assert.deepEqual(texts, ["Continue where you left off."]);
+    assert.deepEqual(texts, [INTERRUPTED_CONTINUATION]);
   }),
 );
 
@@ -721,7 +731,7 @@ it.effect("tells a turn cut mid-way about the background work it lost", () =>
     );
     assert.lengthOf(texts, 1);
     assert.include(texts[0]!, "Background reviewer");
-    assert.isTrue(texts[0]!.endsWith("Continue where you left off."));
+    assert.isTrue(texts[0]!.endsWith(INTERRUPTED_CONTINUATION));
   }),
 );
 
@@ -761,6 +771,7 @@ it.effect(
       assert.lengthOf(texts, 1);
       assert.include(texts[0]!, "sleep 25 && echo DONE");
       assert.notInclude(texts[0]!, "Continue where");
+      assert.notInclude(texts[0]!, INTERRUPTED_TURN_NOTE);
     }),
 );
 

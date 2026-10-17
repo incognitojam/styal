@@ -20,7 +20,11 @@ import {
   restartContinuationNote,
 } from "./RestartBackgroundNote.ts";
 
-const CONTINUE_PROMPT = "Continue where you left off.";
+export const CONTINUE_PROMPT = "Continue where you left off.";
+// Without this the agent sees only a killed tool result (often exit 137) and
+// may blame the command itself, e.g. as an out-of-memory kill.
+export const INTERRUPTED_TURN_NOTE =
+  "Note: the styal server restarted and interrupted this turn. Check unfinished work before retrying.";
 
 /**
  * The run a restart continuation resumes, if any: an unfinished root run, or a
@@ -166,11 +170,11 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
       threadId: input.threadId,
       messageId,
       text:
-        noteText === undefined
-          ? CONTINUE_PROMPT
-          : note.settled
-            ? noteText
-            : `${noteText}\n\n${CONTINUE_PROMPT}`,
+        note.settled && noteText !== undefined
+          ? noteText
+          : [noteText, INTERRUPTED_TURN_NOTE, CONTINUE_PROMPT]
+              .filter((part) => part !== undefined)
+              .join("\n\n"),
       attachments: [],
       modelSelection: source.modelSelection,
       dispatchMode: { type: "start_immediately" },
