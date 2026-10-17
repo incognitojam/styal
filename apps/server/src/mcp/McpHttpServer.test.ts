@@ -15,6 +15,7 @@ import { McpProtocol, McpSchema, McpServer } from "effect/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/http";
 
 import * as ProjectService from "../project/ProjectService.ts";
+import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerConfig from "../config.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -64,6 +65,7 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
       Layer.mock(ProjectService.ProjectService)({}),
       Layer.mock(Orchestrator.OrchestratorV2)({}),
       Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+      Layer.mock(PullRequestService.PullRequestService)({}),
       NodeServices.layer,
     ),
   ),

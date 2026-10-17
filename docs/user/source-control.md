@@ -267,6 +267,16 @@ returns to your inbox.
 Cross-repository links use a project on the same host. Azure DevOps reviews require a project checked
 out from the matching organization and repository.
 
+### Watch a workflow run
+
+For GitHub Actions runs that no watched pull request covers, such as CI on a branch after a merge, a
+deploy, or a workflow the agent started, ask the agent to watch the run and it calls
+`watch_workflow_run`. The server checks the run every two minutes and wakes the agent once when it
+completes, with its result and the jobs that did not pass. A run that has already finished is reported
+straight away instead of watched. The thread stays in the **Working** section while it waits. Watching
+ends when the run completes, after 8 failed reads in a row, when the thread settles or is archived,
+or when you press Stop.
+
 ## GitHub stacks
 
 The Pull Requests page shows each PR's position in its GitHub stack. Open the stack badge in a

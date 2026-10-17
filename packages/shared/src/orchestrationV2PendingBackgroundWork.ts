@@ -5,6 +5,7 @@ import type {
   OrchestrationV2TurnItem,
   ThreadId,
   ThreadPullRequestLink,
+  ThreadWorkflowRunWatch,
 } from "@t3tools/contracts";
 import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
 
@@ -92,6 +93,11 @@ type PendingBackgroundWorkRun = Pick<OrchestrationV2Run, "id" | "ordinal" | "sta
 type PendingBackgroundWorkPullRequest = Pick<
   ThreadPullRequestLink,
   "host" | "repository" | "number" | "url" | "source" | "watch"
+>;
+
+type PendingBackgroundWorkWorkflowRun = Pick<
+  ThreadWorkflowRunWatch,
+  "host" | "repository" | "runId" | "name"
 >;
 
 type PendingBackgroundWorkProviderThread = Pick<
@@ -233,6 +239,7 @@ export function derivePendingBackgroundWork(input: {
    */
   readonly runs?: ReadonlyArray<PendingBackgroundWorkRun>;
   readonly pullRequests?: ReadonlyArray<PendingBackgroundWorkPullRequest> | undefined;
+  readonly workflowRuns?: ReadonlyArray<PendingBackgroundWorkWorkflowRun> | undefined;
 }): ReadonlyArray<PendingBackgroundWorkTask> {
   const hasActiveRun =
     input.hasActiveRun ??
@@ -245,7 +252,7 @@ export function derivePendingBackgroundWork(input: {
   }
   // A thread that never ran waits on nothing else, but a watch started on it still wakes it.
   if (input.latestRun == null) {
-    return pullRequestWatchTasks(input.pullRequests);
+    return watchTasks(input);
   }
   if (!isLatestRunSettledForBackgroundWait(input.latestRun)) {
     return [];
@@ -281,9 +288,22 @@ export function derivePendingBackgroundWork(input: {
     byTaskId.set(taskId, pendingTaskFromTurnItem(taskId, item));
   }
 
-  for (const task of pullRequestWatchTasks(input.pullRequests)) byTaskId.set(task.taskId, task);
+  for (const task of watchTasks(input)) byTaskId.set(task.taskId, task);
 
   return Array.from(byTaskId.values());
+}
+
+/** Pull request and workflow run watches the server holds for the thread's agent. */
+function watchTasks(input: {
+  readonly pullRequests?: ReadonlyArray<PendingBackgroundWorkPullRequest> | undefined;
+  readonly workflowRuns?: ReadonlyArray<PendingBackgroundWorkWorkflowRun> | undefined;
+}): Array<PendingBackgroundWorkTask> {
+  const runs = (input.workflowRuns ?? []).map((run) => ({
+    taskId: `workflow-run-watch:${run.host.toLowerCase()}/${run.repository.toLowerCase()}/${run.runId}`,
+    description: `Watching ${run.name}`,
+    kind: "monitor" as const,
+  }));
+  return [...pullRequestWatchTasks(input.pullRequests), ...runs];
 }
 
 function pullRequestWatchTasks(

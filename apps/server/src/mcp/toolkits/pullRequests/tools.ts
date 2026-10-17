@@ -13,12 +13,15 @@ import * as Toolkit from "effect/ai/Toolkit";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
   Orchestrator.OrchestratorV2,
   ProjectService.ProjectService,
 ];
+
+const workflowRunDependencies = [...dependencies, PullRequestService.PullRequestService];
 
 const REGISTER_EVERY_PR =
   "Register every pull request you open for this thread, including each layer of a stack, right after creating it.";
@@ -155,7 +158,43 @@ export class PullRequestWatchFromSubagentError extends Schema.TaggedError<PullRe
   {},
 ) {
   override get message(): string {
-    return "This thread is a subagent, so it cannot watch pull requests. Its parent thread owns the pull request: finish your task and report back instead.";
+    return "This thread is a subagent, so it cannot watch pull requests or workflow runs. Its parent thread owns them: finish your task and report back instead.";
+  }
+}
+
+export class WorkflowRunUrlInvalidError extends Schema.TaggedError<WorkflowRunUrlInvalidError>()(
+  "WorkflowRunUrlInvalidError",
+  {},
+) {
+  override get message(): string {
+    return "This is not a recognised workflow run URL. Pass repository and runId instead.";
+  }
+}
+
+export class WorkflowRunTargetIncompleteError extends Schema.TaggedError<WorkflowRunTargetIncompleteError>()(
+  "WorkflowRunTargetIncompleteError",
+  {},
+) {
+  override get message(): string {
+    return "Pass either url, or both repository and runId.";
+  }
+}
+
+export class WorkflowRunReadFailedError extends Schema.TaggedError<WorkflowRunReadFailedError>()(
+  "WorkflowRunReadFailedError",
+  { detail: Schema.String, cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Could not read the workflow run: ${this.detail}`;
+  }
+}
+
+export class WorkflowRunWatchFailedError extends Schema.TaggedError<WorkflowRunWatchFailedError>()(
+  "WorkflowRunWatchFailedError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Could not change whether the workflow run is watched.";
   }
 }
 
@@ -182,6 +221,10 @@ export const PullRequestToolError = Schema.Union([
   PullRequestWatchFailedError,
   PullRequestNotOpenError,
   PullRequestWatchFromSubagentError,
+  WorkflowRunUrlInvalidError,
+  WorkflowRunTargetIncompleteError,
+  WorkflowRunReadFailedError,
+  WorkflowRunWatchFailedError,
 ]);
 export type PullRequestToolError = typeof PullRequestToolError.Type;
 
@@ -220,6 +263,58 @@ export const WatchPullRequestResult = Schema.Struct({
   }),
 });
 export type WatchPullRequestResult = typeof WatchPullRequestResult.Type;
+
+/** Either the run's URL or its repository and run ID, as `gh run list` prints them. */
+export const WorkflowRunTargetInput = Schema.Struct({
+  threadId: PullRequestTargetInput.fields.threadId,
+  url: Schema.optional(
+    TrimmedNonEmptyString.annotate({
+      description:
+        "The run's web URL, for example https://github.com/owner/repo/actions/runs/123. A job URL below it also works.",
+    }),
+  ),
+  repository: Schema.optional(
+    TrimmedNonEmptyString.annotate({
+      description: "Repository, for example owner/repo. Required with runId when url is omitted.",
+    }),
+  ),
+  runId: Schema.optional(
+    PositiveInt.annotate({
+      description:
+        "The run's databaseId from `gh run list --json databaseId`. Required with repository when url is omitted.",
+    }),
+  ),
+  host: PullRequestTargetInput.fields.host,
+});
+export type WorkflowRunTargetInput = typeof WorkflowRunTargetInput.Type;
+
+export const WatchWorkflowRunResult = Schema.Struct({
+  host: Schema.String,
+  repository: Schema.String,
+  runId: Schema.Int,
+  url: Schema.String,
+  name: Schema.NullOr(Schema.String).annotate({
+    description: "The workflow and run number. Null when the run was not read.",
+  }),
+  watching: Schema.Boolean.annotate({
+    description: "Whether styal now watches the run for this thread.",
+  }),
+  wasWatching: Schema.Boolean.annotate({
+    description: "Whether it was already watched before the call.",
+  }),
+  conclusion: Schema.NullOr(Schema.String).annotate({
+    description:
+      "Set when the run had already completed, so nothing was watched: how it ended, such as success or failure.",
+  }),
+  failedJobs: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      conclusion: Schema.NullOr(Schema.String),
+      url: Schema.NullOr(Schema.String),
+    }),
+  ).annotate({ description: "Jobs that did not pass, when the run had already completed." }),
+});
+export type WatchWorkflowRunResult = typeof WatchWorkflowRunResult.Type;
 
 export const ThreadPullRequestEntry = Schema.Struct({
   ...PullRequestIdentity,
@@ -325,10 +420,40 @@ const UnwatchPullRequestTool = Tool.make("unwatch_pull_request", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, false);
 
+const WatchWorkflowRunTool = Tool.make("watch_workflow_run", {
+  description:
+    "Have styal watch a GitHub Actions workflow run for this thread and wake you once with its result when it completes, listing the jobs that did not pass. Use it for CI that no watched pull request covers: runs on a branch after a merge or push, deploys, releases, and workflows you dispatched. A pull request's own checks are covered by watch_pull_request. Find the run with `gh run list --commit <sha>` or `gh run list --workflow <file>`, call this, then end your turn instead of polling, sleeping, or running `gh run watch`. A run that already completed is not watched: the result reports how it ended. styal checks every two minutes. While styal watches, the thread stays in the user's Working list. Watching ends when the run completes, when the thread settles or is archived, when the user stops the thread, when styal fails to read the run 8 times in a row, or when you call unwatch_workflow_run. A subagent cannot watch.",
+  parameters: WorkflowRunTargetInput,
+  success: WatchWorkflowRunResult,
+  failure: PullRequestToolError,
+  dependencies: workflowRunDependencies,
+})
+  .annotate(Tool.Title, "Watch workflow run")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
+
+const UnwatchWorkflowRunTool = Tool.make("unwatch_workflow_run", {
+  description:
+    "Stop styal from watching a workflow run for this thread. Pass the URL, or repository plus runId.",
+  parameters: WorkflowRunTargetInput,
+  success: WatchWorkflowRunResult,
+  failure: PullRequestToolError,
+  dependencies: workflowRunDependencies,
+})
+  .annotate(Tool.Title, "Stop watching workflow run")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
+
 export const PullRequestsToolkit = Toolkit.make(
   LinkPullRequestTool,
   UnlinkPullRequestTool,
   ListThreadPullRequestsTool,
   WatchPullRequestTool,
   UnwatchPullRequestTool,
+  WatchWorkflowRunTool,
+  UnwatchWorkflowRunTool,
 );
