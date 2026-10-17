@@ -256,8 +256,10 @@ npx @styal/cli pair --scope orchestration:read --scope relay:read
 The selected scopes replace the default permissions. The same option works with
 `npx @styal/cli auth pairing create` and `npx @styal/cli auth session issue`;
 each command's `--help` lists the available scopes. Without `--scope`, pairing
-tokens retain standard client permissions and issued bearer sessions retain
-administrative permissions.
+tokens and issued bearer sessions get every permission, including managing access
+and styal Link. A terminal or a full-access agent on the host can reach those as
+well, so a client that should not manage access also needs to go without
+`terminal:operate` and `orchestration:operate`.
 
 To change an existing client's permissions, create a fresh pairing link with the
 scopes it needs. In a browser opened directly on the environment, open that link
@@ -276,12 +278,13 @@ worktrees. It does not restrict what a task does. Starting a task in a new
 worktree still creates that branch and worktree with `orchestration:operate`,
 and the agent it runs can use Git however the environment allows.
 
-Settings changes, provider management, and environment maintenance can be granted
-separately from access administration. New standard pairings include these
-permissions. Existing clients can stay connected after an update, but newly separated
-features may require pairing again with the permissions they need. Older clients
-may show controls that the server denies. Create a fresh pairing link to change
-a client's permissions.
+Settings changes, provider management, environment maintenance, access
+management, and styal Link management can each be granted separately. New
+pairings without `--scope` include all of them. Existing clients keep the
+permissions they paired with and can stay connected after an update, but newly
+separated features may require pairing again with the permissions they need.
+Older clients may show controls that the server denies. Create a fresh pairing
+link to change a client's permissions.
 
 `filesystem:read` allows browsing host files, opening workspace files, and viewing
 local changes. Add `filesystem:write` to allow editing files or saving plans to

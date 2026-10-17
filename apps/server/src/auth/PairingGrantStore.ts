@@ -1,5 +1,4 @@
 import {
-  AuthAdministrativeScopes,
   AuthStandardClientScopes,
   type AuthEnvironmentScope,
   type AuthPairingLink,
@@ -322,7 +321,7 @@ export const make = Effect.gen(function* () {
   if (config.desktopBootstrapToken && desktopBootstrapSecret === undefined) {
     yield* seedGrant(config.desktopBootstrapToken, {
       method: "desktop-bootstrap",
-      scopes: AuthAdministrativeScopes,
+      scopes: AuthStandardClientScopes,
       subject: "desktop-bootstrap",
       expiresAt: null,
       // Unbounded uses so the renderer can re-exchange the seed for a
@@ -445,7 +444,7 @@ export const make = Effect.gen(function* () {
       if (consumeRotatingDesktopToken(credential, now.epochMilliseconds)) {
         return {
           method: "desktop-bootstrap",
-          scopes: AuthAdministrativeScopes,
+          scopes: AuthStandardClientScopes,
           subject: "desktop-bootstrap",
           expiresAt: DateTime.add(now, {
             milliseconds: DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
