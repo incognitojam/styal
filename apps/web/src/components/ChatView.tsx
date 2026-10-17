@@ -3434,10 +3434,13 @@ export default function ChatView(props: ChatViewProps) {
     const pending = environmentChangeRef.current;
     return pending !== null && pending.scope === environmentChangeScopeRef.current ? pending : null;
   };
-  const [environmentChangingScope, setEnvironmentChangingScope] = useState<string | null>(null);
-  const isEnvironmentChanging = environmentChangingScope === environmentChangeScope;
-  const setIsEnvironmentChanging = (changing: boolean) =>
-    setEnvironmentChangingScope(changing ? environmentChangeScope : null);
+  // The busy state belongs to the request that set it, so an older request settling late
+  // (abandoned, or superseded by a newer switch) can never clear a newer one's.
+  const [busyEnvironmentChange, setBusyEnvironmentChange] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly scope: string;
+  } | null>(null);
+  const isEnvironmentChanging = busyEnvironmentChange?.scope === environmentChangeScope;
 
   const onEnvironmentChange = (nextEnvironmentId: EnvironmentId) => {
     if (envLocked || !draftId || sendInFlightRef.current) return;
@@ -3449,7 +3452,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!target) return;
     const request = { environmentId: target.environmentId, scope: environmentChangeScope };
     environmentChangeRef.current = request;
-    setIsEnvironmentChanging(false);
+    setBusyEnvironmentChange(null);
     const retarget = (project: (typeof allProjects)[number]) => {
       const currentDraft = getDraftSession(draftId);
       if (
@@ -3479,10 +3482,8 @@ export default function ChatView(props: ChatViewProps) {
       }
     };
     const finish = () => {
-      if (environmentChangeRef.current === request) {
-        environmentChangeRef.current = null;
-        setIsEnvironmentChanging(false);
-      }
+      if (environmentChangeRef.current === request) environmentChangeRef.current = null;
+      setBusyEnvironmentChange((busy) => (busy === request ? null : busy));
     };
     if (target.projectId !== null) {
       const project = allProjects.find(
@@ -3493,7 +3494,7 @@ export default function ChatView(props: ChatViewProps) {
       finish();
       return;
     }
-    setIsEnvironmentChanging(true);
+    setBusyEnvironmentChange(request);
     void openScratchProject(target.environmentId, "Could not switch machine")
       .then((project) => {
         if (project) retarget(project);
