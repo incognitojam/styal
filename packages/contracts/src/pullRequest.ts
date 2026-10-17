@@ -848,6 +848,33 @@ export const PullRequestInvalidateInput = Schema.Struct({
 });
 export type PullRequestInvalidateInput = typeof PullRequestInvalidateInput.Type;
 
+export const PullRequestDeploymentStatus = Schema.Literals([
+  "pending",
+  "queued",
+  "waiting",
+  "in-progress",
+  "success",
+  "failure",
+  "error",
+  "inactive",
+  "unknown",
+]);
+export type PullRequestDeploymentStatus = typeof PullRequestDeploymentStatus.Type;
+
+export const PullRequestDeployment = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  environment: TrimmedNonEmptyString,
+  status: PullRequestDeploymentStatus,
+  description: Schema.NullOr(Schema.String),
+  environmentUrl: Schema.NullOr(TrimmedNonEmptyString),
+  logUrl: Schema.NullOr(TrimmedNonEmptyString),
+  commitSha: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+  /** Latest status update, or the deployment update before any status has been reported. */
+  updatedAt: IsoDateTime,
+});
+export type PullRequestDeployment = typeof PullRequestDeployment.Type;
+
 export const PullRequestDetail = Schema.Struct({
   provider: SourceControlProviderKind,
   capabilities: PullRequestCapabilities,
@@ -892,6 +919,9 @@ export const PullRequestDetail = Schema.Struct({
   reviewers: Schema.Array(PullRequestActor),
   labels: Schema.Array(PullRequestLabel),
   checks: Schema.Array(PullRequestCheck),
+  /** Latest deployment per environment, where the host reports deployments for this PR. */
+  deployments: Schema.optional(Schema.Array(PullRequestDeployment)),
+  deploymentsTruncated: Schema.optional(Schema.Boolean),
   mergeCapabilities: PullRequestMergeCapabilities,
   /**
    * Who the host says the reader is, which is the one thing a conversation cannot be read without
