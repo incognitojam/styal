@@ -3460,7 +3460,7 @@ features:
       - packages/contracts/src/server.ts
     tests:
       - apps/server/src/provider/Drivers/ClaudeHistoryRetention.test.ts
-      - apps/web/src/components/usage/UsagePage.test.tsx
+      - apps/web/src/components/usage/UsagePage.browser.test.tsx
     upstream:
       status: tracking
       tracking:

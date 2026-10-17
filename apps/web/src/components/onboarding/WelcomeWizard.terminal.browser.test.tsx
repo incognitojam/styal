@@ -20,9 +20,12 @@ import {
 } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import * as Cause from "effect/Cause";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
+import { AsyncResult, Atom } from "effect/reactivity";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+import "~/index.css";
 
 type SessionResult = AsyncResult.AsyncResult<AuthSessionState, Error>;
 type CommandResult = AsyncResult.AsyncResult<void, Error>;
@@ -34,7 +37,6 @@ type SetupConfig = {
   keybindings: ResolvedKeybindingsConfig;
 };
 const state = vi.hoisted(() => ({
-  registry: null as AtomRegistry.AtomRegistry | null,
   importStep: null as {
     readonly active: boolean;
     readonly onDone: (projectRef?: undefined) => Promise<boolean>;
@@ -53,122 +55,108 @@ const state = vi.hoisted(() => ({
   done: vi.fn(),
 }));
 
-vi.mock("../../connection/runtime", () => ({ connectionAtomRuntime: undefined }));
-vi.mock("@t3tools/client-runtime/state/session", () => ({
-  createEnvironmentSessionAtoms: () => ({
-    sessionStateAtom: (id: EnvironmentId) => state.sessions.get(id)!,
-  }),
+// Session grants come from per-test atoms so a test can revoke or regrant mid-flow; the
+// real scope checks in ~/state/session read them through the app registry, which the
+// wizard is also rendered with.
+vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    createEnvironmentSessionAtoms: ((runtime: never) => ({
+      ...actual.createEnvironmentSessionAtoms(runtime),
+      sessionStateAtom: (id: EnvironmentId) => state.sessions.get(id)!,
+    })) as never,
+  };
+});
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  useEnvironments: (() => ({ environments: [primaryEnvironment, remoteEnvironment] })) as never,
+  usePrimaryEnvironment: (() => primaryEnvironment) as never,
 }));
-vi.mock("../../rpc/atomRegistry", () => ({
-  get appAtomRegistry() {
-    return state.registry;
-  },
+vi.mock(import("../../state/server"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      providersValueAtom: ((id: EnvironmentId) => state.providers.get(id)!) as never,
+      configValueAtom: ((id: EnvironmentId) => state.configs.get(id)!) as never,
+      refreshProviders: "refresh" as never,
+    },
+  };
+});
+vi.mock(import("../../state/terminal"), async (original) => ({
+  ...(await original()),
+  terminalEnvironment: { open: "open", write: "write", close: "close" } as never,
 }));
-vi.mock("../../state/environments", () => ({
-  useEnvironments: () => ({ environments: [primaryEnvironment, remoteEnvironment] }),
-  usePrimaryEnvironment: () => primaryEnvironment,
-}));
-vi.mock("../../state/server", () => ({
-  serverEnvironment: {
-    providersValueAtom: (id: EnvironmentId) => state.providers.get(id)!,
-    configValueAtom: (id: EnvironmentId) => state.configs.get(id)!,
-    refreshProviders: "refresh",
-  },
-}));
-vi.mock("../../state/terminal", () => ({
-  terminalEnvironment: { open: "open", write: "write", close: "close" },
-}));
-vi.mock("../../state/use-atom-command", () => ({
-  useAtomCommand: (
+vi.mock(import("../../state/use-atom-command"), async (original) => ({
+  ...(await original()),
+  useAtomCommand: ((
     command: "open" | "write" | "close" | "refresh" | "pair" | "createProject" | "importThreads",
-  ) => state[command],
+  ) => state[command]) as never,
 }));
-vi.mock("../../connection/onboarding", () => ({ connectPairing: "pair" }));
-vi.mock("../../state/agentSessions", () => ({
-  agentSessionImport: "importThreads",
-  agentSessionScan: vi.fn(),
+vi.mock(import("../../connection/onboarding"), async (original) => ({
+  ...(await original()),
+  connectPairing: "pair" as never,
 }));
-vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "createProject" } }));
-vi.mock("../../state/entities", () => ({
+vi.mock(import("../../state/agentSessions"), async (original) => ({
+  ...(await original()),
+  agentSessionImport: "importThreads" as never,
+}));
+vi.mock(import("../../state/projects"), async (original) => ({
+  ...(await original()),
+  projectEnvironment: { create: "createProject" } as never,
+}));
+vi.mock(import("../../state/entities"), async (original) => ({
+  ...(await original()),
   readProjects: () => [],
   useProjects: () => [],
   useThreadShells: () => [],
-  // Setup waits for live workspace state before it continues.
   useEnvironmentShellStatuses: () =>
     new Map([
       [primaryId, "live"],
       [remoteId, "live"],
     ]),
 }));
-vi.mock("../../onboarding/useProjectScans", () => ({ useProjectScans: () => [] }));
-vi.mock("../../state/dataImport", async () => {
-  const { Atom } = await import("effect/reactivity");
-  return { legacyImportPendingCount: Atom.make(0) };
-});
-vi.mock("./OnboardingImportStep", () => ({
-  OnboardingImportStep: (props: NonNullable<typeof state.importStep>) => {
-    state.importStep = props;
-    return null;
-  },
+vi.mock(import("../../onboarding/useProjectScans"), async (original) => ({
+  ...(await original()),
+  useProjectScans: () => [],
 }));
-vi.mock("../../hooks/useTerminalCloseConfirmation", () => ({
-  useTerminalCloseConfirmation: () => async () => true,
+vi.mock(import("../../onboarding/firstRun"), async (original) => ({
+  ...(await original()),
+  useCompleteOnboarding: () => state.complete,
 }));
-vi.mock("../ui/dialog", () => ({
-  Dialog: "div",
-  DialogPopup: "div",
-  DialogTitle: "div",
-  DialogHeader: "div",
+vi.mock(import("../../cloud/publicConfig"), async (original) => ({
+  ...(await original()),
+  hasCloudPublicConfig: () => false,
 }));
-vi.mock("../ui/wizard", () => ({
-  WizardPanel: "div",
-  WizardPopup: "div",
-  WizardHeader: "div",
-  WizardSteps: ({ onStepChange }: { onStepChange: (step: number) => void }) => (
-    <button onClick={() => onStepChange(0)}>Back</button>
-  ),
+vi.mock(import("../settings/ChatGptWelcomeCoordinator"), async (original) => ({
+  ...(await original()),
+  ChatGptWelcomeCoordinator: () => <></>,
 }));
-vi.mock("../ui/scroll-area", () => ({ ScrollArea: "div" }));
-vi.mock("../../onboarding/firstRun", () => ({ useCompleteOnboarding: () => state.complete }));
-vi.mock("../../hooks/useTheme", () => ({ mountOnboardingTheme: () => undefined }));
-vi.mock("../../hooks/useLocalStorage", () => ({ useLocalStorage: () => [false, vi.fn()] }));
-vi.mock("../../hooks/useCopyToClipboard", () => ({
-  useCopyToClipboard: () => ({ copyToClipboard: vi.fn(), isCopied: false }),
-}));
-vi.mock("../../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => false }));
-vi.mock("../clerk/useT3ConnectAuthPrompt", () => ({ useT3ConnectAuthPrompt: vi.fn() }));
-vi.mock("@clerk/react", () => ({ useAuth: vi.fn() }));
-vi.mock("../../env", () => ({ isElectron: false }));
-vi.mock("../../providerInstances", () => ({ resolveDefaultProviderModelSelection: vi.fn() }));
-vi.mock("../settings/ChatGptWelcomeCoordinator", () => ({ ChatGptWelcomeCoordinator: () => null }));
-vi.mock("../settings/CodexSetupSection", () => ({
-  CodexSetupSection: () => null,
-  AddManagedCodexAccountDialog: () => null,
-}));
-vi.mock("../settings/providerDriverMeta", () => ({
-  providerClients: { get: (driver: string) => ({ label: driver }) },
-}));
-vi.mock("../settings/providerStatus", () => ({
-  getProviderSummary: () => ({ headline: "Setup required" }),
-}));
-vi.mock("../cloud/CloudEnvironmentConnectList", () => ({
-  CloudEnvironmentConnectRows: () => null,
-}));
-vi.mock("../ThreadTerminalDrawer", () => ({
+// The real viewport mounts a Ghostty terminal against the PTY; these tests only need to
+// see whether the wizard shows it.
+vi.mock(import("../ThreadTerminalDrawer"), async (original) => ({
+  ...(await original()),
   TerminalViewport: () => <div data-terminal-viewport />,
 }));
-vi.mock("../ui/button", () => ({ Button: "button" }));
-vi.mock("../ui/input", () => ({ Input: "input" }));
-vi.mock("../ui/checkbox", () => ({ Checkbox: "input" }));
-vi.mock("../ui/collapsible", () => ({
-  Collapsible: "div",
-  CollapsiblePanel: "div",
-  CollapsibleTrigger: "button",
-}));
-vi.mock("../ui/toast", () => ({
-  toastManager: { add: vi.fn(), update: vi.fn(), close: vi.fn() },
-}));
 
+import { appAtomRegistry } from "../../rpc/atomRegistry";
+vi.mock(import("../../state/dataImport"), async (original) => ({
+  ...(await original()),
+  legacyImportPendingCount: Atom.make(0),
+}));
+vi.mock(import("./OnboardingImportStep"), async (original) => ({
+  ...(await original()),
+  OnboardingImportStep: (props: NonNullable<typeof state.importStep>) => {
+    state.importStep = props;
+    return <></>;
+  },
+}));
+vi.mock(import("../../hooks/useTerminalCloseConfirmation"), async (original) => ({
+  ...(await original()),
+  useTerminalCloseConfirmation: () => async () => true,
+}));
 import { WelcomeWizard } from "./WelcomeWizard";
 
 const primaryId = EnvironmentId.make("primary");
@@ -231,7 +219,7 @@ const session = (scopes: readonly AuthEnvironmentScope[]): AuthSessionState => (
   },
 });
 function setAccess(environmentId: EnvironmentId, allowed: boolean) {
-  state.registry!.set(
+  appAtomRegistry.set(
     state.sessions.get(environmentId)!,
     AsyncResult.success(session(allowed ? [AuthTerminalOperateScope] : [])),
   );
@@ -243,44 +231,46 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-function text(node: ReactTestInstance | string): string {
-  return typeof node === "string" ? node : node.children.map(text).join("");
+const roots: Root[] = [];
+function pageText() {
+  return document.body.textContent ?? "";
 }
-let renderer: ReactTestRenderer | undefined;
 function button(label: string) {
-  return renderer!.root.findAllByType("button").find((node) => text(node) === label)!;
+  const found = [...document.querySelectorAll("button")].find(
+    (element) => element.textContent?.trim() === label || element.ariaLabel === label,
+  );
+  if (!found) throw new Error(`Missing button: ${label}`);
+  return found;
 }
 async function click(label: string) {
   const node = button(label);
-  expect(node).toBeDefined();
-  expect(node.props.disabled).not.toBe(true);
-  await act(async () => node.props.onClick());
+  expect(node.disabled).toBe(false);
+  await act(async () => node.click());
 }
 function hasViewport() {
-  return renderer!.root.findAllByProps({ "data-terminal-viewport": true }).length > 0;
+  return document.querySelector("[data-terminal-viewport]") !== null;
 }
 async function enterRemoteAgents() {
-  await act(async () => {
-    renderer = create(
-      <RegistryContext.Provider value={state.registry!}>
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  roots.push(root);
+  await act(async () =>
+    root.render(
+      <RegistryContext.Provider value={appAtomRegistry}>
         <WelcomeWizard localAvailable onDone={state.done} />
       </RegistryContext.Provider>,
-    );
-  });
+    ),
+  );
   // Computers are set up only once chosen: swap this computer for the paired one.
-  const [primaryChoice, remoteChoice] = renderer!.root
-    .findAllByType("input")
-    .filter((node) => node.props.onCheckedChange !== undefined);
-  await act(async () => primaryChoice!.props.onCheckedChange(false));
-  await act(async () => remoteChoice!.props.onCheckedChange(true));
+  const choices = document.querySelectorAll<HTMLButtonElement>('[role="checkbox"]');
+  await act(async () => choices[0]!.click());
+  await act(async () => choices[1]!.click());
   await click("Continue");
-  expect(text(renderer!.root)).toContain("Paired computer");
+  expect(pageText()).toContain("Paired computer");
 }
 
 beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("document", { activeElement: null, body: {}, getElementById: () => null });
-  state.registry = AtomRegistry.make();
   for (const id of [primaryId, remoteId]) {
     state.sessions.set(
       id,
@@ -323,25 +313,23 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await act(async () => renderer?.unmount());
-  renderer = undefined;
-  state.registry?.dispose();
+  for (const root of roots.splice(0)) await act(async () => root.unmount());
+  document.body.replaceChildren();
   state.sessions.clear();
   state.providers.clear();
   state.configs.clear();
-  vi.unstubAllGlobals();
 });
 
 describe("welcome agent terminal setup", () => {
   it("disables both setup actions for the paired read-only connection and preserves local completion", async () => {
     setAccess(remoteId, false);
     await enterRemoteAgents();
-    expect(button("Install").props.disabled).toBe(true);
-    expect(button("Sign in").props.disabled).toBe(true);
-    expect(text(renderer!.root)).toContain("This connection cannot control terminals.");
+    expect(button("Install").disabled).toBe(true);
+    expect(button("Sign in").disabled).toBe(true);
+    expect(pageText()).toContain("This connection cannot control terminals.");
     await act(async () => {
-      button("Install").props.onClick();
-      button("Sign in").props.onClick();
+      button("Install").click();
+      button("Sign in").click();
     });
     expect(state.open).not.toHaveBeenCalled();
     expect(state.write).not.toHaveBeenCalled();
@@ -357,16 +345,17 @@ describe("welcome agent terminal setup", () => {
   it("rejects a retained install action after revocation and allows a terminal-only regrant", async () => {
     setAccess(primaryId, false);
     await enterRemoteAgents();
-    const install = button("Install").props.onClick;
+    const install = button("Install");
+    // The click reaches the still-enabled button before React re-renders the revocation.
     await act(async () => {
       setAccess(remoteId, false);
-      install();
+      install.click();
     });
     expect(state.open).not.toHaveBeenCalled();
-    expect(button("Install").props.disabled).toBe(true);
+    expect(button("Install").disabled).toBe(true);
     await act(async () => setAccess(remoteId, true));
-    expect(button("Install").props.disabled).toBe(false);
-    await act(async () => install());
+    expect(button("Install").disabled).toBe(false);
+    await click("Install");
     expect(state.open).toHaveBeenCalledExactlyOnceWith({
       environmentId: remoteId,
       input: {
@@ -417,7 +406,7 @@ describe("welcome agent terminal setup", () => {
         data: "/opt/codex-work login",
       },
     });
-    expect(text(renderer!.root)).toContain("Review the command, then press Enter to run it.");
+    expect(pageText()).toContain("Review the command, then press Enter to run it.");
   });
 
   it("checks access when a queued retry starts and recovers after regrant", async () => {
@@ -434,7 +423,7 @@ describe("welcome agent terminal setup", () => {
       closing.resolve(AsyncResult.success(undefined));
     });
     expect(state.open).toHaveBeenCalledOnce();
-    expect(button("Retry").props.disabled).toBe(true);
+    expect(button("Retry").disabled).toBe(true);
     expect(state.write).not.toHaveBeenCalled();
     await act(async () => setAccess(remoteId, true));
     await click("Retry");
@@ -455,13 +444,11 @@ describe("welcome agent terminal setup", () => {
     expect(state.write).not.toHaveBeenCalled();
     expect(state.close).not.toHaveBeenCalled();
     expect(hasViewport()).toBe(true);
-    expect(text(renderer!.root)).toContain("This connection cannot control terminals.");
+    expect(pageText()).toContain("This connection cannot control terminals.");
     await act(async () => setAccess(remoteId, true));
     expect(state.open).toHaveBeenCalledOnce();
     expect(state.write).not.toHaveBeenCalled();
-    expect(text(renderer!.root)).toContain(
-      "Run curl -fsSL https://claude.ai/install.sh | bash in this",
-    );
+    expect(pageText()).toContain("Run curl -fsSL https://claude.ai/install.sh | bash in this");
     await act(async () => setAccess(remoteId, false));
     await click("Close");
     expect(hasViewport()).toBe(false);
@@ -483,7 +470,7 @@ describe("welcome agent terminal setup", () => {
     expect(state.write).toHaveBeenCalledOnce();
     expect(hasViewport()).toBe(true);
     await act(async () => setAccess(remoteId, true));
-    expect(text(renderer!.root)).toContain("Review the command, then press Enter to run it.");
+    expect(pageText()).toContain("Review the command, then press Enter to run it.");
     expect(state.open).toHaveBeenCalledOnce();
     expect(state.write).toHaveBeenCalledOnce();
     await act(async () => setAccess(remoteId, false));
@@ -496,13 +483,13 @@ describe("welcome agent terminal setup", () => {
     state.write.mockReturnValueOnce(writing.promise);
     await enterRemoteAgents();
     await click("Install");
-    await click("Back");
+    await click("Connect, step 1");
     expect(state.close).not.toHaveBeenCalled();
     await act(async () => {
       setAccess(remoteId, false);
       writing.resolve(AsyncResult.success(undefined));
     });
     expect(state.close).not.toHaveBeenCalled();
-    expect(text(renderer!.root)).toContain("Connect your computers");
+    expect(pageText()).toContain("Connect your computers");
   });
 });
