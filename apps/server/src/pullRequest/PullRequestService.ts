@@ -91,6 +91,7 @@ import {
   type ProviderListCursor,
   type ProviderChangeRequestWatchFingerprint,
   type ProviderPullRequestFile,
+  type ProviderWorkflowRun,
   type PullRequestProviderApi,
   PullRequestProviderError,
 } from "./PullRequestProvider.ts";
@@ -242,6 +243,12 @@ export class PullRequestService extends Context.Service<
      * What a pull request watch compares between passes, so it reads detail and activity only
      * when something moved. Null when the host has no fingerprint or gave none for this one.
      */
+    /** A CI workflow run in a repository the project can read, for watching it. */
+    readonly workflowRun: (
+      input: Pick<PullRequestRef, "projectId" | "host" | "repository"> & {
+        readonly runId: number;
+      },
+    ) => Effect.Effect<ProviderWorkflowRun, PullRequestError>;
     readonly watchFingerprint: (
       input: PullRequestRef,
     ) => Effect.Effect<ProviderChangeRequestWatchFingerprint | null, PullRequestError>;
@@ -619,6 +626,9 @@ function withRateLimitBackoff(
             api.getChangeRequestWatchFingerprint,
           ),
         }),
+    ...(api.getWorkflowRun === undefined
+      ? {}
+      : { getWorkflowRun: wrap("getWorkflowRun", api.getWorkflowRun) }),
     getChangeRequestActivity: wrap("getChangeRequestActivity", api.getChangeRequestActivity),
     ...(api.getReviewThreadComments === undefined
       ? {}
@@ -873,7 +883,9 @@ export const make = Effect.gen(function* () {
    * targeting can fall back to another checkout on the host. Azure derives its organization
    * from the checkout, so it requires a matching repository.
    */
-  const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
+  const requireProject = (
+    ref: Pick<PullRequestRef, "projectId" | "host" | "repository">,
+  ): Effect.Effect<SupportedProject, PullRequestError> =>
     listWorkspaceProjects({ projectId: ref.projectId }).pipe(
       Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
         const own = supported[0];
@@ -1851,6 +1863,27 @@ export const make = Effect.gen(function* () {
             })),
           ),
       ),
+    );
+
+  const workflowRun: PullRequestService["Service"]["workflowRun"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap((project): Effect.Effect<ProviderWorkflowRun, PullRequestError> => {
+        const read = project.api.getWorkflowRun;
+        if (read === undefined) {
+          return Effect.fail(
+            new PullRequestOperationError({
+              operation: "workflowRun",
+              detail: "Only GitHub Actions workflow runs can be watched.",
+            }),
+          );
+        }
+        return read({
+          cwd: project.project.workspaceRoot,
+          repository: project.repository,
+          host: project.host,
+          runId: input.runId,
+        }).pipe(Effect.mapError(toPullRequestError("workflowRun")));
+      }),
     );
 
   const threadComments: PullRequestService["Service"]["threadComments"] = (input) =>
@@ -3465,6 +3498,7 @@ export const make = Effect.gen(function* () {
       Cache.get(watchFingerprintCache, refCacheKey(input)),
     ),
     activity: credentialCached(activity),
+    workflowRun,
     preview: credentialCached(preview),
     threadComments,
     diff: credentialCached(diff),

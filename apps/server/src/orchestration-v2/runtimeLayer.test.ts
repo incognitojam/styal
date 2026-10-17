@@ -64,6 +64,7 @@ import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryServic
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as PullRequestWatchReactor from "./PullRequestWatchReactor.ts";
+import * as WorkflowRunWatchReactor from "./WorkflowRunWatchReactor.ts";
 import { PullRequestProviderError } from "../pullRequest/PullRequestProvider.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -2515,6 +2516,237 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         ["#8: stopped watching, could not read it"],
       );
     }),
+  );
+
+  it.effect("wakes the agent once when a watched workflow run completes", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-workflow-run-watch");
+      const projectId = ProjectId.make("workflow-run-watch-project");
+      yield* seedProject({
+        projectId,
+        title: "Watch run",
+        workspaceRoot: "/workspace/watch-run",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("workflow-run-watch-create"),
+        threadId,
+        projectId,
+        title: "Watch run",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const key = { host: "github.com", repository: "pingdotgg/t3code", runId: 9001 };
+      const url = "https://github.com/pingdotgg/t3code/actions/runs/9001";
+      yield* orchestrator.dispatch({
+        type: "thread.workflow-run.watch",
+        commandId: CommandId.make("workflow-run-watch-start"),
+        threadId,
+        ...key,
+        watching: true,
+        run: { url, name: "Deploy #41" },
+      });
+      const shell = yield* orchestrator.getThreadShell(threadId);
+      assert.deepEqual(
+        shell?.workflowRuns?.map((run) => run.name),
+        ["Deploy #41"],
+      );
+      assert.deepEqual(shell?.pendingBackgroundTasks, [
+        {
+          taskId: "workflow-run-watch:github.com/pingdotgg/t3code/9001",
+          description: "Watching Deploy #41",
+          kind: "monitor",
+        },
+      ]);
+
+      let completed = false;
+      let reads = 0;
+      const reactor = yield* WorkflowRunWatchReactor.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            Layer.mock(PullRequestService.PullRequestService)({
+              workflowRun: (input) => {
+                reads += 1;
+                assert.deepEqual(input, { projectId, ...key });
+                return Effect.succeed({
+                  name: "Deploy #41",
+                  url,
+                  completed,
+                  conclusion: completed ? "failure" : null,
+                  headBranch: "main",
+                  headSha: "a".repeat(40),
+                  event: "push",
+                  failedJobs: completed
+                    ? [{ name: "publish", conclusion: "failure", url: `${url}/job/1` }]
+                    : [],
+                });
+              },
+            }),
+          ),
+        ),
+      );
+      const notifications = Effect.map(
+        orchestrator.getThreadRecords(threadId, ["messages"]),
+        ({ messages }) => messages.flatMap((message) => message.notification?.summary ?? []),
+      );
+
+      yield* reactor.sweep;
+      assert.equal(reads, 1);
+      assert.deepEqual(yield* notifications, []);
+      assert.lengthOf((yield* orchestrator.getThreadShell(threadId))?.workflowRuns ?? [], 1);
+
+      completed = true;
+      yield* reactor.sweep;
+      const after = yield* orchestrator.getThreadShell(threadId);
+      assert.deepEqual(after?.workflowRuns, []);
+      assert.deepEqual(yield* notifications, ["Deploy #41: failure"]);
+      const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
+      assert.include(messages[0]?.text ?? "", `- publish ${url}/job/1`);
+
+      // The watch ended, so later passes read nothing and wake no one.
+      yield* reactor.sweep;
+      assert.equal(reads, 2);
+      assert.deepEqual(yield* notifications, ["Deploy #41: failure"]);
+    }),
+  );
+
+  it.effect("ends a workflow run watch it cannot read, and tells the agent", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-workflow-run-watch-unreadable");
+      const projectId = ProjectId.make("workflow-run-watch-unreadable-project");
+      yield* seedProject({
+        projectId,
+        title: "Watch unreadable run",
+        workspaceRoot: "/workspace/watch-run-unreadable",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("workflow-run-unreadable-create"),
+        threadId,
+        projectId,
+        title: "Watch unreadable run",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.workflow-run.watch",
+        commandId: CommandId.make("workflow-run-unreadable-start"),
+        threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        runId: 9002,
+        watching: true,
+        run: { url: "https://github.com/pingdotgg/t3code/actions/runs/9002", name: "CI #7" },
+      });
+      const reactor = yield* WorkflowRunWatchReactor.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            Layer.mock(PullRequestService.PullRequestService)({
+              workflowRun: () =>
+                Effect.fail(
+                  new PullRequestOperationError({ operation: "workflowRun", detail: "Not Found" }),
+                ),
+            }),
+          ),
+        ),
+      );
+      for (let pass = 0; pass < 7; pass += 1) yield* reactor.sweep;
+      assert.lengthOf((yield* orchestrator.getThreadShell(threadId))?.workflowRuns ?? [], 1);
+      yield* reactor.sweep;
+
+      assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
+      const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
+      assert.deepEqual(
+        messages.flatMap((message) => message.notification?.summary ?? []),
+        ["CI #7: stopped watching, could not read it"],
+      );
+    }),
+  );
+
+  it.effect.each(["settle", "archive"] as const)(
+    "a workflow run watch ends on %s, and a late finish changes nothing",
+    (action) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const threadId = ThreadId.make(`runtime-workflow-run-watch-${action}`);
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`workflow-run-${action}-create`),
+          threadId,
+          projectId: ProjectId.make("workflow-run-end-project"),
+          title: "Watch run",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        const key = { host: "github.com", repository: "pingdotgg/t3code", runId: 9003 };
+        const start = {
+          type: "thread.workflow-run.watch" as const,
+          threadId,
+          ...key,
+          watching: true,
+          run: { url: "https://github.com/pingdotgg/t3code/actions/runs/9003", name: "CI #8" },
+        };
+        yield* orchestrator.dispatch({
+          ...start,
+          commandId: CommandId.make(`workflow-run-${action}-start`),
+        });
+        const started = (yield* orchestrator.getThreadShell(threadId))?.workflowRuns?.[0];
+        assert.isDefined(started);
+        if (started === undefined) return;
+
+        yield* orchestrator.dispatch({
+          type: action === "settle" ? "thread.settle" : "thread.archive",
+          commandId: CommandId.make(`workflow-run-${action}`),
+          threadId,
+        });
+        assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
+        const late = yield* orchestrator
+          .dispatch({
+            type: "thread.workflow-run-watch.finish",
+            commandId: CommandId.make(`workflow-run-${action}-late`),
+            threadId,
+            ...key,
+            startedAt: started.startedAt,
+            wake: {
+              messageId: MessageId.make(`workflow-run-${action}-late-wake`),
+              text: "Finished",
+              notification: { source: { kind: "monitor" }, outcome: "completed", summary: "CI" },
+            },
+          })
+          .pipe(Effect.flip);
+        assert.equal(late._tag, "OrchestratorDispatchError");
+        const refused = yield* orchestrator
+          .dispatch({ ...start, commandId: CommandId.make(`workflow-run-${action}-restart`) })
+          .pipe(Effect.flip);
+        assert.equal(refused._tag, "OrchestratorDispatchError");
+        assert.deepEqual(
+          (yield* orchestrator.getThreadRecords(threadId, ["messages"])).messages,
+          [],
+        );
+      }),
   );
 
   it.effect(

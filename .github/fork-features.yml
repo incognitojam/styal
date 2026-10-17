@@ -4662,6 +4662,51 @@ features:
         - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
       retire_when: Upstream detects new static web deployments from the page's origin and offers a manual refresh independently of desktop and paired-server updates.
 
+  - id: workflow-run-watch
+    title: Wake agents when a watched CI workflow run completes
+    status: maintained
+    prs: []
+    invariants:
+      - watch_workflow_run reads the GitHub Actions run first; a run that already completed is reported to the agent instead of watched, and an unreadable run is an error.
+      - The server reads each watched run every two minutes and wakes the agent once when it completes, naming its conclusion and the jobs of the latest attempt that did not pass, then ends the watch in the same step.
+      - A watched run keeps the thread in the Working list as a monitor background task until the watch ends.
+      - Settling, archiving, or stopping the thread ends its workflow run watches, and a finish read before that changes nothing and wakes no one. Subagents and settled or archived threads cannot start one.
+      - Eight failed reads in a row end the watch with a wake saying so; a host rate limit only pauses it.
+    rationale: Agents waiting on CI outside a pull request (after a merge, deploys, releases, dispatched workflows) otherwise poll or hold a `gh run watch` process, which only some providers can wait on and which a server restart kills.
+    implementation_paths:
+      - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
+      - apps/server/src/mcp/toolkits/pullRequests/tools.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/WorkflowRunWatchReactor.ts
+      - apps/server/src/orchestration-v2/workflowRunWatch.ts
+      - apps/server/src/provider/RuntimeInstructions.ts
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/gitHubWorkflowRunJson.ts
+      - packages/client-runtime/src/operations/commands.ts
+      - packages/contracts/src/threadPullRequest.ts
+      - packages/shared/src/orchestrationV2PendingBackgroundWork.ts
+    upstream_paths:
+      - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
+      - apps/server/src/mcp/toolkits/pullRequests/tools.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - packages/client-runtime/src/operations/commands.ts
+      - packages/contracts/src/orchestrationV2.ts
+      - packages/contracts/src/threadPullRequest.ts
+      - packages/shared/src/orchestrationV2PendingBackgroundWork.ts
+    tests:
+      - apps/server/src/mcp/toolkits/pullRequests/handlers.test.ts
+      - apps/server/src/orchestration-v2/ThreadStop.test.ts
+      - apps/server/src/orchestration-v2/runtimeLayer.test.ts
+      - apps/server/src/orchestration-v2/workflowRunWatch.test.ts
+      - packages/shared/src/orchestrationV2PendingBackgroundWork.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream wakes agents when a CI workflow run outside a watched pull request completes, without a provider-held watcher process.
+
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable
     status: review-needed
