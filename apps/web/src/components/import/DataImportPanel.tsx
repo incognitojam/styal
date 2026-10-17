@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -60,15 +60,15 @@ export function DataImportPanel({
   const [summaries, setSummaries] = useState<ReadonlyMap<EnvironmentId, ComputerImportSummary>>(
     new Map(),
   );
-  const onSummary = useCallback((id: EnvironmentId, summary: ComputerImportSummary) => {
+  const onSummary = (id: EnvironmentId, summary: ComputerImportSummary) => {
     setSummaries((current) => new Map(current).set(id, summary));
-  }, []);
+  };
   const [historySummaries, setHistorySummaries] = useState<
     ReadonlyMap<EnvironmentId, ComputerImportSummary>
   >(new Map());
-  const onHistorySummary = useCallback((id: EnvironmentId, summary: ComputerImportSummary) => {
+  const onHistorySummary = (id: EnvironmentId, summary: ComputerImportSummary) => {
     setHistorySummaries((current) => new Map(current).set(id, summary));
-  }, []);
+  };
   const preferencesAvailable = environments.some(
     (environment) => (summaries.get(environment.environmentId)?.preferenceChanges ?? 0) > 0,
   );
@@ -131,6 +131,7 @@ export function DataImportPanel({
       )
     )
       return;
+    // oxlint-disable-next-line react/set-state-in-effect -- Finishing waits for the landing project to reach the projection, which arrives outside this component.
     setAwaitingCompletion(false);
     setFinishing(true);
     void onDone(landing)
@@ -145,51 +146,30 @@ export function DataImportPanel({
     setRunning(true);
     setError(null);
     setMessage(null);
-    let success = true;
-    let firstProject = landing;
-    const failures: string[] = [];
-    try {
-      const batch = environments.flatMap((environment) => [
-        ...(historyStep
-          ? [{ environment, importer: historyImporters.current.get(environment.environmentId) }]
-          : []),
-        { environment, importer: importers.current.get(environment.environmentId) },
-      ]);
-      for (const { environment, importer } of batch) {
-        if (!mounted.current) return;
-        if (!importer) {
-          success = false;
-          continue;
-        }
-        try {
-          setProgress(`Importing from ${environment.label}…`);
-          const result = await importer.run();
-          if (!result.success) {
-            success = false;
-            failures.push(environment.label);
-          }
-          firstProject ??= result.projectRef;
-        } catch (failure) {
-          success = false;
-          failures.push(`${environment.label}: ${importErrorMessage(failure)}`);
-        }
-      }
+    const batch = environments.flatMap((environment) => [
+      ...(historyStep
+        ? [{ environment, importer: historyImporters.current.get(environment.environmentId) }]
+        : []),
+      { environment, importer: importers.current.get(environment.environmentId) },
+    ]);
+    const outcome = await runImportBatch(batch, mounted, setProgress);
+    if (outcome !== null) {
+      const firstProject = landing ?? outcome.firstProject;
       setLanding(firstProject);
-      if (!success)
+      if (!outcome.success)
         setError(
-          `Some data could not be imported${failures.length ? ` on ${failures.join(", ")}` : ""}. Retry the remaining selection.`,
+          `Some data could not be imported${outcome.failures.length ? ` on ${outcome.failures.join(", ")}` : ""}. Retry the remaining selection.`,
         );
       else if (!onDone) setMessage("Import complete.");
       else if (nextStep) {
         setMessage(`Imported ${plural(summary.projects, "project")}.`);
         onContinue?.();
       } else setAwaitingCompletion(true);
-    } finally {
-      registry.update(dataImportBatchPendingCount, (count) => Math.max(0, count - 1));
-      runningRef.current = false;
-      setRunning(false);
-      setProgress(null);
     }
+    registry.update(dataImportBatchPendingCount, (count) => Math.max(0, count - 1));
+    runningRef.current = false;
+    setRunning(false);
+    setProgress(null);
   };
   /** Leaves the current step without importing it; earlier steps stay imported. */
   const skip = () => {
@@ -333,4 +313,42 @@ export function DataImportPanel({
       </div>
     </div>
   );
+}
+
+/** Runs each importer in turn; `null` when the panel unmounted before the batch finished. */
+async function runImportBatch(
+  batch: ReadonlyArray<{
+    readonly environment: { readonly label: string };
+    readonly importer: ComputerImporter | undefined;
+  }>,
+  mounted: { readonly current: boolean },
+  setProgress: (progress: string) => void,
+): Promise<{
+  readonly success: boolean;
+  readonly failures: readonly string[];
+  readonly firstProject: ScopedProjectRef | undefined;
+} | null> {
+  let success = true;
+  let firstProject: ScopedProjectRef | undefined;
+  const failures: string[] = [];
+  for (const { environment, importer } of batch) {
+    if (!mounted.current) return null;
+    if (!importer) {
+      success = false;
+      continue;
+    }
+    try {
+      setProgress(`Importing from ${environment.label}…`);
+      const result = await importer.run();
+      if (!result.success) {
+        success = false;
+        failures.push(environment.label);
+      }
+      firstProject ??= result.projectRef;
+    } catch (failure) {
+      success = false;
+      failures.push(`${environment.label}: ${importErrorMessage(failure)}`);
+    }
+  }
+  return { success, failures, firstProject };
 }

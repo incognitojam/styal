@@ -1,5 +1,5 @@
 import { ExternalLinkIcon } from "lucide-react";
-import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { useEffect, useState, type ComponentType, type SVGProps } from "react";
 
 import { cn } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
@@ -220,11 +220,10 @@ export function StatusPageNotice({
       } catch {
         // A missing status response is not evidence of an outage. Keep the
         // most recent known state and quietly try again on the next tick.
-      } finally {
-        if (!enrichmentStarted && activeRequest === request) activeRequest = undefined;
-        if (!cancelled) {
-          nextRefresh = window.setTimeout(refresh, STATUS_POLL_INTERVAL_MS);
-        }
+      }
+      if (!enrichmentStarted && activeRequest === request) activeRequest = undefined;
+      if (!cancelled) {
+        nextRefresh = window.setTimeout(refresh, STATUS_POLL_INTERVAL_MS);
       }
     };
 
@@ -236,11 +235,11 @@ export function StatusPageNotice({
     };
   }, [componentsUrl, enabled, resolveNotice, summaryUrl]);
 
-  const openStatusPage = useCallback(() => {
+  const openStatusPage = () => {
     void readLocalApi()
       ?.shell.openExternal(pageUrl)
       .catch(() => undefined);
-  }, [pageUrl]);
+  };
 
   if (!enabled || !notice) return null;
 

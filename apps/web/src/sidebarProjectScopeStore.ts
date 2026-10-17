@@ -8,7 +8,6 @@
  * entry point reads this so a chosen project decides where the next thread
  * lands.
  */
-import { useMemo } from "react";
 
 import { useUiStateStore } from "./uiStateStore";
 
@@ -21,11 +20,7 @@ export function useScopedProjectGroup<T extends { readonly projectKey: string }>
   groups: readonly T[],
 ): T | null {
   const projectScopeKey = useUiStateStore((state) => state.sidebarProjectScopeKey);
-  return useMemo(
-    () =>
-      projectScopeKey === null
-        ? null
-        : (groups.find((group) => group.projectKey === projectScopeKey) ?? null),
-    [groups, projectScopeKey],
-  );
+  return projectScopeKey === null
+    ? null
+    : (groups.find((group) => group.projectKey === projectScopeKey) ?? null);
 }

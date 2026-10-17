@@ -141,7 +141,10 @@ export function WizardSteps({
       for (const animation of animations) animation.cancel();
       list.style.removeProperty("grid-template-columns");
     };
-  }, [layoutKey]);
+  }, [
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The pills are measured from the DOM, which changes when the steps or the current step do.
+    layoutKey,
+  ]);
   const Step = onStepChange ? "button" : "div";
   return (
     // Let long labels such as Preferences use more of the available width.

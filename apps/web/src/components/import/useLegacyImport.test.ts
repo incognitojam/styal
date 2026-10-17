@@ -37,7 +37,10 @@ vi.mock("../../hooks/useSettings", () => ({
 }));
 import { useLegacyImport } from "./useLegacyImport";
 const environmentId = EnvironmentId.make("demo-laptop");
+// React renders again straight away when a render updates state, as the retained preview does.
 const render = (busy = false) => {
+  hooks.beginRender();
+  useLegacyImport(environmentId, busy);
   hooks.beginRender();
   return useLegacyImport(environmentId, busy);
 };

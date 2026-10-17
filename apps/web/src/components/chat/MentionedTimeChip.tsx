@@ -5,7 +5,7 @@ import {
   resolveMentionedTime,
   type ResolvedMentionedTime,
 } from "@t3tools/client-runtime/mentioned-times";
-import { type ReactNode, useMemo, useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { reportForkClientUsage } from "../../forkClientUsage";
@@ -34,7 +34,7 @@ export function MentionedTimeChip(props: {
   children: ReactNode;
 }) {
   const { time, anchor } = props;
-  const resolved = useMemo(() => resolveMentionedTime(time, anchor), [time, anchor]);
+  const resolved = resolveMentionedTime(time, anchor);
   const reported = useRef(false);
   if (resolved === null) return props.children;
   return (

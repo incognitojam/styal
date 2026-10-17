@@ -1,5 +1,5 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useCallback } from "react";
+
 import {
   confirmTerminalClose,
   resolveTerminalCloseConfirmationIds,
@@ -14,39 +14,36 @@ export function useTerminalCloseConfirmation() {
     reportFailure: false,
   });
 
-  return useCallback(
-    async (input: {
-      readonly environmentId: EnvironmentId;
-      readonly threadId: ThreadId;
-      readonly targets: readonly [TerminalCloseTarget, ...TerminalCloseTarget[]];
-    }): Promise<boolean> => {
-      const [firstTarget, ...otherTargets] = input.targets;
-      const terminalIds = [
-        firstTarget.terminalId,
-        ...otherTargets.map(({ terminalId }) => terminalId),
-      ] as const;
-      return runTerminalCloseConfirmationFlow(
-        {
+  return async (input: {
+    readonly environmentId: EnvironmentId;
+    readonly threadId: ThreadId;
+    readonly targets: readonly [TerminalCloseTarget, ...TerminalCloseTarget[]];
+  }): Promise<boolean> => {
+    const [firstTarget, ...otherTargets] = input.targets;
+    const terminalIds = [
+      firstTarget.terminalId,
+      ...otherTargets.map(({ terminalId }) => terminalId),
+    ] as const;
+    return runTerminalCloseConfirmationFlow(
+      {
+        environmentId: input.environmentId,
+        threadId: input.threadId,
+        terminalIds,
+      },
+      async () => {
+        const result = await closePreflight({
           environmentId: input.environmentId,
-          threadId: input.threadId,
-          terminalIds,
-        },
-        async () => {
-          const result = await closePreflight({
-            environmentId: input.environmentId,
-            input: {
-              threadId: input.threadId,
-              terminalIds,
-            },
-          });
-          const confirmationTerminalIds = resolveTerminalCloseConfirmationIds(
-            input.targets,
-            result._tag === "Success" ? result.value.confirmationTerminalIds : null,
-          );
-          return confirmTerminalClose(input.targets, confirmationTerminalIds);
-        },
-      );
-    },
-    [closePreflight],
-  );
+          input: {
+            threadId: input.threadId,
+            terminalIds,
+          },
+        });
+        const confirmationTerminalIds = resolveTerminalCloseConfirmationIds(
+          input.targets,
+          result._tag === "Success" ? result.value.confirmationTerminalIds : null,
+        );
+        return confirmTerminalClose(input.targets, confirmationTerminalIds);
+      },
+    );
+  };
 }

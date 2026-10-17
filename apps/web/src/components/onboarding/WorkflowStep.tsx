@@ -39,30 +39,27 @@ export function WorkflowStep({
   const save = async () => {
     if (saving) return;
     setSaving(true);
-    try {
-      const results = await Promise.all(
-        environments.map((environment) => {
-          const settings = environment.serverConfig?.settings;
-          const patch = settings
-            ? resolveSettlementPatch(settings, { onMerge, whenInactive })
-            : null;
-          return patch
-            ? update({ environmentId: environment.environmentId, input: { patch } })
-            : null;
-        }),
-      );
-      // A failed save has already raised its toast; stay so the user can retry.
-      if (results.some((result) => result !== null && result._tag !== "Success")) return;
-      void reportForkClientUsage(environments[0]?.environmentId, {
-        feature: "setup-thread-settlement",
-        action: "continued",
-        settleOnMerge: onMerge,
-        settleWhenInactive: whenInactive,
-      });
-      await onContinue();
-    } finally {
+    const results = await Promise.all(
+      environments.map((environment) => {
+        const settings = environment.serverConfig?.settings;
+        const patch = settings ? resolveSettlementPatch(settings, { onMerge, whenInactive }) : null;
+        return patch
+          ? update({ environmentId: environment.environmentId, input: { patch } })
+          : null;
+      }),
+    );
+    // A failed save has already raised its toast; stay so the user can retry.
+    if (results.some((result) => result !== null && result._tag !== "Success")) {
       setSaving(false);
+      return;
     }
+    void reportForkClientUsage(environments[0]?.environmentId, {
+      feature: "setup-thread-settlement",
+      action: "continued",
+      settleOnMerge: onMerge,
+      settleWhenInactive: whenInactive,
+    });
+    await onContinue().finally(() => setSaving(false));
   };
 
   return (

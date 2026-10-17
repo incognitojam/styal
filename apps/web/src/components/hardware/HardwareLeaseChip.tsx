@@ -110,11 +110,9 @@ function HardwareLeaseChip({
     failureTitle: string,
   ): Promise<void> => {
     setPending(true);
-    try {
-      reportHardwareResult(await control({ environmentId, input }), failureTitle);
-    } finally {
-      setPending(false);
-    }
+    const result = await control({ environmentId, input });
+    setPending(false);
+    reportHardwareResult(result, failureTitle);
   };
   return (
     <Menu>

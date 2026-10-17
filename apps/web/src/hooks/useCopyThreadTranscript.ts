@@ -4,7 +4,6 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { useCallback } from "react";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { buildThreadTranscript } from "../lib/threadTranscript";
@@ -22,6 +21,11 @@ import {
 // (neither has written yet), so this id covers transcript-vs-transcript while
 // the epoch covers transcript-vs-everything-else.
 let latestRequestId = 0;
+
+function nextRequestId() {
+  latestRequestId += 1;
+  return latestRequestId;
+}
 
 function transcriptFailureToast(description: string) {
   toastManager.add(
@@ -52,52 +56,47 @@ export function useCopyThreadTranscript() {
     },
   });
 
-  return useCallback(
-    async (threadRef: ScopedThreadRef) => {
-      ensureClipboardEpochTracking();
-      const requestId = ++latestRequestId;
-      const epochAtRequest = clipboardWriteEpoch();
-      const result = await fetchSnapshot({
-        environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId },
-      });
-      // Superseded while fetching — by a newer transcript copy or by anything
-      // else the user copied — so that write owns the clipboard now. Drop this
-      // result without writing or toasting.
-      if (requestId !== latestRequestId || clipboardWriteEpoch() !== epochAtRequest) {
-        return;
-      }
-      if (result._tag === "Failure" && isAtomCommandInterrupted(result)) {
-        return;
-      }
-      const snapshot = result._tag === "Failure" ? null : Option.getOrNull(result.value);
-      if (snapshot === null) {
-        const error = result._tag === "Failure" ? squashAtomCommandFailure(result) : null;
-        transcriptFailureToast(
-          error instanceof Error
-            ? error.message
-            : "Could not load the conversation from the server.",
-        );
-        return;
-      }
-      const thread = snapshot.thread;
-      if (thread === null) {
-        transcriptFailureToast("Could not load the conversation from the server.");
-        return;
-      }
-      const transcript = buildThreadTranscript(thread.title, snapshot.visibleTurnItems);
-      if (transcript.messageCount === 0) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Nothing to copy",
-            description: "This thread has no messages yet.",
-          }),
-        );
-        return;
-      }
-      copyToClipboard(transcript.text, { messageCount: transcript.messageCount });
-    },
-    [copyToClipboard, fetchSnapshot],
-  );
+  return async (threadRef: ScopedThreadRef) => {
+    ensureClipboardEpochTracking();
+    const requestId = nextRequestId();
+    const epochAtRequest = clipboardWriteEpoch();
+    const result = await fetchSnapshot({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId },
+    });
+    // Superseded while fetching — by a newer transcript copy or by anything
+    // else the user copied — so that write owns the clipboard now. Drop this
+    // result without writing or toasting.
+    if (requestId !== latestRequestId || clipboardWriteEpoch() !== epochAtRequest) {
+      return;
+    }
+    if (result._tag === "Failure" && isAtomCommandInterrupted(result)) {
+      return;
+    }
+    const snapshot = result._tag === "Failure" ? null : Option.getOrNull(result.value);
+    if (snapshot === null) {
+      const error = result._tag === "Failure" ? squashAtomCommandFailure(result) : null;
+      transcriptFailureToast(
+        error instanceof Error ? error.message : "Could not load the conversation from the server.",
+      );
+      return;
+    }
+    const thread = snapshot.thread;
+    if (thread === null) {
+      transcriptFailureToast("Could not load the conversation from the server.");
+      return;
+    }
+    const transcript = buildThreadTranscript(thread.title, snapshot.visibleTurnItems);
+    if (transcript.messageCount === 0) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Nothing to copy",
+          description: "This thread has no messages yet.",
+        }),
+      );
+      return;
+    }
+    copyToClipboard(transcript.text, { messageCount: transcript.messageCount });
+  };
 }

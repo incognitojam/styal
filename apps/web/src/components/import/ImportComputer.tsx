@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useMemo, type Ref } from "react";
+import { useEffect, useImperativeHandle, type Ref } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { groupOnboardingProjects } from "../../onboarding/projectImport.logic";
 import { ImportPreferencesView, ImportSourceView } from "./ImportDataView";
@@ -184,24 +184,24 @@ export function HistoryImportComputer({
 }: ImportComputerProps) {
   const history = useHistoryImport(environmentId, busy);
   // Repositories first, newest activity on top, then folders that are not git repositories.
-  const historyGroups = useMemo((): readonly ImportProjectGroup[] => {
-    const { repositories, other } = groupOnboardingProjects(history.candidates);
-    const groups: ImportProjectGroup[] = repositories.map((group) => ({
+  const historyGroups: ImportProjectGroup[] = [];
+  const { repositories, other } = groupOnboardingProjects(history.candidates);
+  for (const group of repositories) {
+    historyGroups.push({
       key: group.key,
       kind: "repository",
       label: group.label,
       ids: group.candidates.map((candidate) => candidate.key),
-    }));
-    if (other.length > 0) {
-      groups.push({
-        key: "other",
-        kind: "other",
-        label: "Other folders",
-        ids: other.map((candidate) => candidate.key),
-      });
-    }
-    return groups;
-  }, [history.candidates]);
+    });
+  }
+  if (other.length > 0) {
+    historyGroups.push({
+      key: "other",
+      kind: "other",
+      label: "Other folders",
+      ids: other.map((candidate) => candidate.key),
+    });
+  }
   const selectedHistoryKeys = new Set(history.selected.map((project) => project.key));
   const projects = history.selected.length;
   const threads = history.selected.reduce((total, project) => total + project.threadCount, 0);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { deriveDiscordPresence } from "../discordPresence";
 import { useEnvironmentShellStatuses, useServerConfigs, useThreadShells } from "../state/entities";
 import { useNowMinute } from "./useNowMinute";
@@ -11,16 +11,12 @@ export function useDiscordPresenceActivity() {
   const nowMinute = useNowMinute();
   const [wakeTime, setWakeTime] = useState(Date.now);
   const now = new Date(Math.max(Date.parse(`${nowMinute}:00.000Z`), wakeTime)).toISOString();
-  const { activity, nextWakeAt } = useMemo(
-    () =>
-      deriveDiscordPresence({
-        threads,
-        serverConfigs,
-        shellStatuses,
-        now,
-      }),
-    [threads, serverConfigs, shellStatuses, now],
-  );
+  const { activity, nextWakeAt } = deriveDiscordPresence({
+    threads,
+    serverConfigs,
+    shellStatuses,
+    now,
+  });
 
   useEffect(() => {
     if (nextWakeAt === null) return;
@@ -29,6 +25,10 @@ export function useDiscordPresenceActivity() {
       Math.min(Math.max(0, nextWakeAt - Date.now()) + 50, 2_147_483_647),
     );
     return () => window.clearTimeout(timer);
-  }, [nextWakeAt, wakeTime]);
+  }, [
+    nextWakeAt,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Each wake arms the next timer, even when the next wake time is unchanged.
+    wakeTime,
+  ]);
   return activity;
 }

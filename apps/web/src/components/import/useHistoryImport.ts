@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AuthOrchestrationOperateScope,
   CommandId,
@@ -37,10 +37,12 @@ const IMPORT_PERMISSION_MESSAGE = "This connection cannot import projects or thr
 /** The CLI history import pipeline used during first setup. */
 export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
   const [progress, setProgress] = useState<readonly HistoryImportProgress[] | null>(null);
-  useEffect(() => {
+  const [progressBusy, setProgressBusy] = useState(busy);
+  if (progressBusy !== busy) {
+    setProgressBusy(busy);
     if (!busy) setProgress(null);
-  }, [busy]);
-  const environmentIds = useMemo(() => [environmentId], [environmentId]);
+  }
+  const environmentIds = [environmentId];
   const scans = useProjectScans(environmentIds);
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const importThreads = useAtomCommand(agentSessionImport, { reportFailure: false });
@@ -69,18 +71,14 @@ export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
     };
   }, []);
 
-  const { available: candidates, recent } = useMemo(
-    () =>
-      partitionOnboardingProjects(
-        scans.flatMap((scan) =>
-          (scan.data?.candidates ?? []).map((candidate) => ({
-            ...candidate,
-            environmentId: scan.environmentId,
-            key: onboardingProjectKey(scan.environmentId, candidate.path),
-          })),
-        ),
-      ),
-    [scans],
+  const { available: candidates, recent } = partitionOnboardingProjects(
+    scans.flatMap((scan) =>
+      (scan.data?.candidates ?? []).map((candidate) => ({
+        ...candidate,
+        environmentId: scan.environmentId,
+        key: onboardingProjectKey(scan.environmentId, candidate.path),
+      })),
+    ),
   );
   const selectedKeys = selectedPaths ?? new Set(recent.map((item) => item.key));
   const selected = candidates.filter((candidate) => selectedKeys.has(candidate.key));

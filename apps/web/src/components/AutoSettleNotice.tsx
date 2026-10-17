@@ -3,7 +3,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/model
 import { settleReasonSentence } from "@t3tools/client-runtime/state/thread-settle-reason";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 import {
   getLocalStorageItem,
@@ -52,10 +52,7 @@ export function AutoSettleNotice() {
     Schema.Boolean,
   );
   const [since] = useState(readOrStartSince);
-  const notice = useMemo(
-    () => resolveAutoSettleNotice<EnvironmentThreadShell>({ threads, since, dismissed }),
-    [dismissed, since, threads],
-  );
+  const notice = resolveAutoSettleNotice<EnvironmentThreadShell>({ threads, since, dismissed });
   const active = useRef<{ readonly key: string; readonly id: ToastId } | null>(null);
 
   const noticeKey =

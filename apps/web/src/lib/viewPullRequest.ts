@@ -1,5 +1,4 @@
 import type { ScopedThreadRef, VcsStatusResult } from "@t3tools/contracts";
-import { useCallback, useMemo } from "react";
 
 import { readLocalApi } from "../localApi";
 import { openPullRequestLink, useOpenChangeRequestLink } from "./openPullRequestLink";
@@ -9,13 +8,10 @@ export function useViewPullRequest(
   gitStatus: VcsStatusResult | null,
   threadRef: ScopedThreadRef | null,
 ) {
-  const threadToastData = useMemo<ThreadToastData | undefined>(
-    () => (threadRef ? { threadRef } : undefined),
-    [threadRef],
-  );
+  const threadToastData: ThreadToastData | undefined = threadRef ? { threadRef } : undefined;
   const pullRequestUrl = gitStatus?.pr?.state === "open" ? gitStatus.pr.url : null;
 
-  const viewPullRequest = useCallback(async () => {
+  const viewPullRequest = async () => {
     const api = readLocalApi();
     if (!api) {
       toastManager.add({
@@ -46,7 +42,7 @@ export function useViewPullRequest(
         }),
       );
     }
-  }, [pullRequestUrl, threadToastData]);
+  };
 
   return { canViewPullRequest: pullRequestUrl !== null, viewPullRequest };
 }
@@ -63,7 +59,7 @@ export function useFocusPullRequestTab(
   const openChangeRequestLink = useOpenChangeRequestLink(threadRef ?? undefined);
   const pullRequestUrl = gitStatus?.pr?.state === "open" ? gitStatus.pr.url : null;
 
-  const focusPullRequestTab = useCallback(async () => {
+  const focusPullRequestTab = async () => {
     if (pullRequestUrl !== null) {
       // A shortcut is not a click: the modifiers that would send a click to the browser are
       // never held here, so the tab is what this opens.
@@ -76,7 +72,7 @@ export function useFocusPullRequestTab(
       if (openChangeRequestLink(inertEvent, pullRequestUrl)) return;
     }
     await viewPullRequest();
-  }, [openChangeRequestLink, pullRequestUrl, viewPullRequest]);
+  };
 
   return { canFocusPullRequestTab: canViewPullRequest, focusPullRequestTab };
 }

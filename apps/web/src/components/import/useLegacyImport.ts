@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ProjectId,
   type EnvironmentId,
@@ -49,11 +49,9 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
     label: "import T3 Code data",
     reportFailure: false,
   });
-  const retained = useRef<LegacyImportPreview | null>(null);
+  const [preview, setPreview] = useState<LegacyImportPreview | null>(null);
   // Keep the review stable during a run and across identical polling responses.
-  if (!busy && !legacyImportPreviewsEqual(retained.current, query.data))
-    retained.current = query.data;
-  const preview = retained.current;
+  if (!busy && !legacyImportPreviewsEqual(preview, query.data)) setPreview(query.data);
   const available = preview?.status === "available" ? preview : null;
   const [selection, setSelection] = useState<ReadonlySet<string> | null>(null);
   const projects = available?.projects ?? [];
@@ -62,21 +60,20 @@ export function useLegacyImport(environmentId: EnvironmentId, busy: boolean) {
   );
   const [includeSettings, setIncludeSettings] = useState(true);
   const preferences = available?.preferences;
-  const changes = useMemo(
-    () =>
-      preferences?.status === "available"
-        ? buildPreferenceComparisonRows(preferences.values, current).filter((row) => row.changed)
-        : [],
-    [preferences, current],
-  );
+  const changes =
+    preferences?.status === "available"
+      ? buildPreferenceComparisonRows(preferences.values, current).filter((row) => row.changed)
+      : [];
   const selectedPreferences = includeSettings && changes.length > 0;
   const [error, setError] = useState<string | null>(null);
   const [preferencesError, setPreferencesError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>();
   const [progress, setProgress] = useState<LegacyImportProgress | null>(null);
-  useEffect(() => {
+  const [progressBusy, setProgressBusy] = useState(busy);
+  if (progressBusy !== busy) {
+    setProgressBusy(busy);
     if (!busy) setProgress(null);
-  }, [busy]);
+  }
 
   const run = async ({
     includeProjects = true,

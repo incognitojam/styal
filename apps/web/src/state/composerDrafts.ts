@@ -6,7 +6,7 @@ import {
   createComposerDraftSyncControllerPool,
   type ComposerDraftSyncController,
 } from "@t3tools/client-runtime/state/composer-drafts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type {
   ComposerDraftCommon,
   ComposerDraftSnapshot,
@@ -131,12 +131,15 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
     threadRef ?? DraftId.make("__composer-draft-sync-disabled__"),
   );
   const controllerRef = useRef<ComposerDraftSyncController | null>(null);
+  const syncEnvironmentId = enabled && threadRef !== null ? threadRef.environmentId : null;
+  const syncThreadId = enabled && threadRef !== null ? threadRef.threadId : null;
 
   useEffect(() => {
-    if (!enabled || threadRef === null) {
+    if (syncEnvironmentId === null || syncThreadId === null) {
       controllerRef.current = null;
       return;
     }
+    const threadRef = scopeThreadRef(syncEnvironmentId, syncThreadId);
     const key = scopedThreadKey(threadRef);
     // Timers and RPC callbacks can run before React renders a send's synchronous clear.
     const readDraft = () => useComposerDraftStore.getState().getComposerDraft(threadRef);
@@ -193,7 +196,7 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
       controllers.release(key, controller);
       if (controllerRef.current === controller) controllerRef.current = null;
     };
-  }, [enabled, threadRef?.environmentId, threadRef?.threadId]);
+  }, [syncEnvironmentId, syncThreadId]);
 
   useEffect(() => {
     if (streamResult !== null && AsyncResult.isSuccess(streamResult)) {
@@ -204,6 +207,7 @@ export function useServerComposerDraftSync(threadRef: ScopedThreadRef | null): v
   useEffect(() => {
     controllerRef.current?.observeLocalChange();
   }, [
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Any change to the local draft is a change for the controller to sync.
     draft.activeProvider,
     draft.images,
     draft.files,

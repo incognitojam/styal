@@ -9,7 +9,7 @@ import {
   RefreshCwIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { type ReactNode, type Ref, useId, useMemo } from "react";
+import { type ReactNode, type Ref, useId } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
@@ -120,13 +120,10 @@ export function ImportSourceView({
   const error = source.error ?? null;
 
   // A path only earns a line of its own when it is the thing telling two rows apart.
-  const repeatedTitles = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const project of projects) {
-      counts.set(project.title, (counts.get(project.title) ?? 0) + 1);
-    }
-    return counts;
-  }, [projects]);
+  const repeatedTitles = new Map<string, number>();
+  for (const project of projects) {
+    repeatedTitles.set(project.title, (repeatedTitles.get(project.title) ?? 0) + 1);
+  }
 
   const selectAll = () => {
     source.select(allSelected ? new Set() : new Set(projects.map((project) => project.id)));
@@ -484,10 +481,7 @@ export function ImportPreferencesView({
   disabled: boolean;
 }) {
   const titleId = useId();
-  const changes = useMemo(
-    () => preferences.changes.filter(({ changed }) => changed),
-    [preferences.changes],
-  );
+  const changes = preferences.changes.filter(({ changed }) => changed);
   const hasChanges = changes.length > 0;
   const checked = preferences.selected && hasChanges;
   const error = preferences.error ?? null;
@@ -673,10 +667,10 @@ export function ImportDataView({
   const back = onBack;
   const importing = busy && progress !== null;
   const canImport = summary.projects > 0 || summary.preferences > 0;
-  const computerItems = useMemo(
-    () => computers.map((computer) => ({ value: computer.id, label: computer.label })),
-    [computers],
-  );
+  const computerItems = computers.map((computer) => ({
+    value: computer.id,
+    label: computer.label,
+  }));
 
   return (
     // Both steps occupy the same viewport-bounded height so their controls stay in place.

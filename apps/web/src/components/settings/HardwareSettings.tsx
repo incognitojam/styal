@@ -209,18 +209,15 @@ function EnvironmentHardwareDevices({
   ) => {
     if (!readEnvironmentScope(environmentId, AuthSettingsWriteScope)) return false;
     setBusy(true);
-    try {
-      const result = await update({
-        environmentId,
-        input: { patch: { hardwareDevices: updateHardwareDevices(devices, device, options) } },
-      });
-      return reportHardwareResult(
-        result,
-        options.remove ? `Could not remove ${device.id}` : `Could not save ${device.id}`,
-      );
-    } finally {
-      setBusy(false);
-    }
+    const result = await update({
+      environmentId,
+      input: { patch: { hardwareDevices: updateHardwareDevices(devices, device, options) } },
+    });
+    setBusy(false);
+    return reportHardwareResult(
+      result,
+      options.remove ? `Could not remove ${device.id}` : `Could not save ${device.id}`,
+    );
   };
 
   return (
@@ -323,11 +320,9 @@ function HardwareDeviceRow({
     failureTitle: string,
   ) => {
     setPending(kind);
-    try {
-      return reportHardwareResult(await control({ environmentId, input }), failureTitle);
-    } finally {
-      setPending(null);
-    }
+    const result = await control({ environmentId, input });
+    setPending(null);
+    return reportHardwareResult(result, failureTitle);
   };
 
   return (
@@ -572,18 +567,13 @@ function HardwareDefinitionStatus({
   const firstReview = config.acceptedDefinition === undefined;
   const accept = async () => {
     setAccepting(true);
-    try {
-      const ok = reportHardwareResult(
-        await configure({
-          environmentId,
-          input: { type: "accept-definition", deviceId: config.id },
-        }),
-        "Could not accept the definition",
-      );
-      if (ok) toastManager.add({ type: "success", title: `${state.name || config.id} updated` });
-    } finally {
-      setAccepting(false);
-    }
+    const result = await configure({
+      environmentId,
+      input: { type: "accept-definition", deviceId: config.id },
+    });
+    setAccepting(false);
+    if (reportHardwareResult(result, "Could not accept the definition"))
+      toastManager.add({ type: "success", title: `${state.name || config.id} updated` });
   };
   return (
     <div className="space-y-1.5">
@@ -655,18 +645,16 @@ function HardwareCredential({
   const header = config.auth?.header ?? "Authorization";
   const setCredential = async (next: string | null) => {
     setSaving(true);
-    try {
-      const ok = reportHardwareResult(
-        await configure({
-          environmentId,
-          input: { type: "set-credential", deviceId: config.id, value: next },
-        }),
-        next === null ? "Could not clear the credential" : "Could not save the credential",
-      );
-      if (ok) setValue("");
-    } finally {
-      setSaving(false);
-    }
+    const result = await configure({
+      environmentId,
+      input: { type: "set-credential", deviceId: config.id, value: next },
+    });
+    setSaving(false);
+    const ok = reportHardwareResult(
+      result,
+      next === null ? "Could not clear the credential" : "Could not save the credential",
+    );
+    if (ok) setValue("");
   };
   return (
     <div className="space-y-1.5">

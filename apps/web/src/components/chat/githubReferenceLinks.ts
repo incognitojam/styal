@@ -8,7 +8,7 @@ import type {
   ScopedThreadRef,
   SourceControlResolvedReference,
 } from "@t3tools/contracts";
-import { createContext, useCallback, useMemo } from "react";
+import { createContext } from "react";
 
 import {
   collectGithubReferences,
@@ -46,13 +46,10 @@ export function useGithubReferenceResolutions(
 ): GithubReferenceLookup {
   const host = surface?.host;
   const repository = surface?.repository;
-  const references = useMemo(
-    () =>
-      host === undefined || repository === undefined
-        ? []
-        : collectGithubReferences({ host, repository }, text),
-    [host, repository, text],
-  );
+  const references =
+    host === undefined || repository === undefined
+      ? []
+      : collectGithubReferences({ host, repository }, text);
 
   const query = useEnvironmentQuery(
     surface && references.length > 0
@@ -64,22 +61,19 @@ export function useGithubReferenceResolutions(
   );
 
   const answered = query.data;
-  const byKey = useMemo(() => {
-    const resolutions = new Map<string, GithubReferenceResolution>();
-    // A reference is keyed by repository and number, which an Enterprise install and github.com
-    // spell identically — so answers from another host are not answers about these references.
-    if (answered === null || answered.host.toLowerCase() !== host?.toLowerCase())
-      return resolutions;
+  const byKey = new Map<string, GithubReferenceResolution>();
+  // A reference is keyed by repository and number, which an Enterprise install and github.com
+  // spell identically — so answers from another host are not answers about these references.
+  if (answered !== null && answered.host.toLowerCase() === host?.toLowerCase()) {
     for (const reference of answered.references) {
-      resolutions.set(
+      byKey.set(
         formatGithubReferenceKey(reference),
         reference.kind === null ? { status: "missing" } : { status: "resolved", reference },
       );
     }
-    return resolutions;
-  }, [answered, host]);
+  }
 
-  return useCallback((key) => byKey.get(key) ?? UNRESOLVED, [byKey]);
+  return (key) => byKey.get(key) ?? UNRESOLVED;
 }
 
 /**
@@ -124,12 +118,9 @@ export function useGithubReferenceOpener(
   lookup: GithubReferenceLookup,
   openChangeRequestLink: (event: ReferenceClickEvent, targetUrl: string) => boolean,
 ): (event: ReferenceClickEvent, key: string, writtenHref: string) => void {
-  return useCallback(
-    (event, key, writtenHref) => {
-      // A modifier means the browser, which the anchor's own default action already does.
-      if (event.metaKey || event.ctrlKey) return;
-      openChangeRequestLink(event, githubReferenceHref(lookup(key), writtenHref));
-    },
-    [lookup, openChangeRequestLink],
-  );
+  return (event, key, writtenHref) => {
+    // A modifier means the browser, which the anchor's own default action already does.
+    if (event.metaKey || event.ctrlKey) return;
+    openChangeRequestLink(event, githubReferenceHref(lookup(key), writtenHref));
+  };
 }

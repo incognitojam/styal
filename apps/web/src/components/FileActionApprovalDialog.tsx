@@ -76,21 +76,19 @@ export function FileActionApprovalDialog({
   const submit = async (approved: boolean) => {
     if (target === null) return;
     setSaving(true);
-    try {
-      const ok = reportHardwareResult(
-        await setApproved({
-          environmentId: target.environmentId,
-          input: { projectId: target.projectId, actionId: target.actionId, approved },
-        }),
-        approved ? "Could not approve the action" : "Could not revoke the approval",
-      );
-      if (!ok) return;
-      query.refresh();
-      onClose();
-      if (approved) onApproved?.();
-    } finally {
-      setSaving(false);
-    }
+    const result = await setApproved({
+      environmentId: target.environmentId,
+      input: { projectId: target.projectId, actionId: target.actionId, approved },
+    });
+    setSaving(false);
+    const ok = reportHardwareResult(
+      result,
+      approved ? "Could not approve the action" : "Could not revoke the approval",
+    );
+    if (!ok) return;
+    query.refresh();
+    onClose();
+    if (approved) onApproved?.();
   };
 
   const fullyApproved = review ? fileActionFullyApproved(review) : false;

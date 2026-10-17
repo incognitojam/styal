@@ -1,4 +1,4 @@
-import { useCallback, type MouseEvent } from "react";
+import { type MouseEvent } from "react";
 import {
   AuthOrchestrationOperateScope,
   AuthPreviewOperateScope,
@@ -43,99 +43,93 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
     threadRef?.environmentId ?? null,
     AuthPreviewOperateScope,
   );
-  const openExternalLinkInPreview = useCallback(
-    (url: string) => {
-      if (!threadRef || !canOperatePreview) {
-        return Promise.resolve(
-          AsyncResult.failure<void, BrowserPreviewUnavailableError>(
-            Cause.fail(
-              new BrowserPreviewUnavailableError({
-                message: "Preview access is unavailable for this client.",
-              }),
-            ),
+  const openExternalLinkInPreview = (url: string) => {
+    if (!threadRef || !canOperatePreview) {
+      return Promise.resolve(
+        AsyncResult.failure<void, BrowserPreviewUnavailableError>(
+          Cause.fail(
+            new BrowserPreviewUnavailableError({
+              message: "Preview access is unavailable for this client.",
+            }),
           ),
-        );
-      }
-      return openUrlInPreview({ threadRef, url, openPreview }).then((result) => {
-        if (result._tag === "Success") recordVisitForThread(threadRef, url);
-        else if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          if (error instanceof BrowserSettingsReadError) {
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Unable to open link in browser",
-                description: error.message,
-              }),
-            );
-          }
+        ),
+      );
+    }
+    return openUrlInPreview({ threadRef, url, openPreview }).then((result) => {
+      if (result._tag === "Success") recordVisitForThread(threadRef, url);
+      else if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        if (error instanceof BrowserSettingsReadError) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Unable to open link in browser",
+              description: error.message,
+            }),
+          );
         }
-        return result;
-      });
-    },
-    [canOperatePreview, openPreview, threadRef],
-  );
-  const onContextMenu = useCallback(
-    (event: MouseEvent<HTMLElement>, href: string) => {
-      if (!resolveExternalWebLinkHost(href)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const api = readLocalApi();
-      if (!api) return;
-      // Read on invocation so a link/unlink elsewhere immediately changes the next menu.
-      const thread = threadRef ? readThreadShell(threadRef) : null;
-      const threadLinkAction =
-        !thread || !canOperateHost
-          ? undefined
-          : pullRequestLinking.isLinked(thread, href)
-            ? "unlink-from-thread"
-            : pullRequestLinking.canLink(href)
-              ? "link-to-thread"
-              : undefined;
-      void showExternalLinkContextMenu({
-        href,
-        canOpenInPreview: canOperatePreview && Boolean(threadRef) && isPreviewSupportedInRuntime(),
-        threadLinkAction,
-        position: { x: event.clientX, y: event.clientY },
-        showContextMenu: (items, position) => api.contextMenu.show(items, position),
-        openInPreview: async (target) => {
-          const result = await openExternalLinkInPreview(target);
-          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-            throw squashAtomCommandFailure(result);
-          }
-        },
-        openExternal: (target) => api.shell.openExternal(target),
-        copyLink: (target) => writeTextToClipboard(target, "link"),
-        updateThreadLink: async (target, linked) => {
-          if (
-            !threadRef ||
-            (!linked && !pullRequestLinking.isLinked(readThreadShell(threadRef), target))
-          )
-            return;
-          if (!readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)) return;
-          await pullRequestLinking.changeLink(threadRef, target, linked);
-        },
-        reportFailure: (operation, cause) => {
-          console.error("[external-link] action failed", { operation, target: href }, cause);
-          if (
-            operation === "link-pull-request-to-thread" ||
-            operation === "unlink-pull-request-from-thread"
-          ) {
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title:
-                  operation === "link-pull-request-to-thread"
-                    ? "Unable to link pull request"
-                    : "Unable to unlink pull request",
-                description: cause instanceof Error ? cause.message : "The request failed.",
-              }),
-            );
-          }
-        },
-      });
-    },
-    [canOperateHost, canOperatePreview, openExternalLinkInPreview, pullRequestLinking, threadRef],
-  );
+      }
+      return result;
+    });
+  };
+  const onContextMenu = (event: MouseEvent<HTMLElement>, href: string) => {
+    if (!resolveExternalWebLinkHost(href)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const api = readLocalApi();
+    if (!api) return;
+    // Read on invocation so a link/unlink elsewhere immediately changes the next menu.
+    const thread = threadRef ? readThreadShell(threadRef) : null;
+    const threadLinkAction =
+      !thread || !canOperateHost
+        ? undefined
+        : pullRequestLinking.isLinked(thread, href)
+          ? "unlink-from-thread"
+          : pullRequestLinking.canLink(href)
+            ? "link-to-thread"
+            : undefined;
+    void showExternalLinkContextMenu({
+      href,
+      canOpenInPreview: canOperatePreview && Boolean(threadRef) && isPreviewSupportedInRuntime(),
+      threadLinkAction,
+      position: { x: event.clientX, y: event.clientY },
+      showContextMenu: (items, position) => api.contextMenu.show(items, position),
+      openInPreview: async (target) => {
+        const result = await openExternalLinkInPreview(target);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          throw squashAtomCommandFailure(result);
+        }
+      },
+      openExternal: (target) => api.shell.openExternal(target),
+      copyLink: (target) => writeTextToClipboard(target, "link"),
+      updateThreadLink: async (target, linked) => {
+        if (
+          !threadRef ||
+          (!linked && !pullRequestLinking.isLinked(readThreadShell(threadRef), target))
+        )
+          return;
+        if (!readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)) return;
+        await pullRequestLinking.changeLink(threadRef, target, linked);
+      },
+      reportFailure: (operation, cause) => {
+        console.error("[external-link] action failed", { operation, target: href }, cause);
+        if (
+          operation === "link-pull-request-to-thread" ||
+          operation === "unlink-pull-request-from-thread"
+        ) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title:
+                operation === "link-pull-request-to-thread"
+                  ? "Unable to link pull request"
+                  : "Unable to unlink pull request",
+              description: cause instanceof Error ? cause.message : "The request failed.",
+            }),
+          );
+        }
+      },
+    });
+  };
   return { onContextMenu, openExternalLinkInPreview };
 }

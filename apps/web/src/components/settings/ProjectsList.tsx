@@ -28,7 +28,7 @@ import {
   PinOffIcon,
   SettingsIcon,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -70,71 +70,60 @@ export function ProjectsList() {
   const [view, setView] = useState<"active" | "archived">("active");
   const [query, setQuery] = useState("");
 
-  const scratchRootByEnvironmentId = useMemo(
-    () =>
-      new Map(
-        environments.map((environment) => [
-          environment.environmentId,
-          environment.serverConfig?.scratchWorkspaceRoot,
-        ]),
-      ),
-    [environments],
+  const scratchRootByEnvironmentId = new Map(
+    environments.map((environment) => [
+      environment.environmentId,
+      environment.serverConfig?.scratchWorkspaceRoot,
+    ]),
   );
-  const projectGroups = useMemo(() => {
-    // The home of threads without a project is not a project to manage.
-    const managed = groups.filter(
-      (group) =>
-        !group.memberProjects.every((member) =>
-          isScratchProject(member, scratchRootByEnvironmentId.get(member.environmentId)),
-        ),
-    );
-    // Manual order is saved per checkout, as in the sidebar.
-    const ordered =
-      projectSortOrder === "manual"
-        ? orderItemsByPreferredIds({
-            items: managed,
-            preferredIds: projectOrder,
-            getId: (group) => group.projectKey,
-            getPreferenceIds: (group) =>
-              group.memberProjects.flatMap((member) => [
-                getProjectOrderKey(member),
-                legacyProjectCwdPreferenceKey(member.workspaceRoot),
-              ]),
-          })
-        : managed;
-    return sortLogicalProjectsForSidebar(ordered, threads, projectSortOrder);
-  }, [groups, projectOrder, projectSortOrder, scratchRootByEnvironmentId, threads]);
-
-  const activityByKey = useMemo(() => {
-    const groupKeyByProjectRef = new Map(
-      projectGroups.flatMap((group) =>
-        group.memberProjectRefs.map(
-          (ref) => [`${ref.environmentId}:${ref.projectId}`, group.projectKey] as const,
-        ),
+  // The home of threads without a project is not a project to manage.
+  const managed = groups.filter(
+    (group) =>
+      !group.memberProjects.every((member) =>
+        isScratchProject(member, scratchRootByEnvironmentId.get(member.environmentId)),
       ),
-    );
-    const activity = new Map<string, { threadCount: number; lastThreadMs: number }>();
-    for (const thread of filterSidebarV2VisibleThreads(threads, null)) {
-      const key = groupKeyByProjectRef.get(`${thread.environmentId}:${thread.projectId}`);
-      if (!key) continue;
-      const entry = activity.get(key) ?? { threadCount: 0, lastThreadMs: Number.NEGATIVE_INFINITY };
-      entry.threadCount += 1;
-      entry.lastThreadMs = Math.max(
-        entry.lastThreadMs,
-        getThreadSortTimestamp(thread, "updated_at"),
-      );
-      activity.set(key, entry);
-    }
-    return new Map(
-      [...activity].map(([key, { threadCount, lastThreadMs }]): [string, ProjectActivity] => [
-        key,
-        {
-          threadCount,
-          lastThreadAt: Number.isFinite(lastThreadMs) ? new Date(lastThreadMs).toISOString() : null,
-        },
-      ]),
-    );
-  }, [projectGroups, threads]);
+  );
+  // Manual order is saved per checkout, as in the sidebar.
+  const ordered =
+    projectSortOrder === "manual"
+      ? orderItemsByPreferredIds({
+          items: managed,
+          preferredIds: projectOrder,
+          getId: (group) => group.projectKey,
+          getPreferenceIds: (group) =>
+            group.memberProjects.flatMap((member) => [
+              getProjectOrderKey(member),
+              legacyProjectCwdPreferenceKey(member.workspaceRoot),
+            ]),
+        })
+      : managed;
+  const projectGroups = sortLogicalProjectsForSidebar(ordered, threads, projectSortOrder);
+
+  const groupKeyByProjectRef = new Map(
+    projectGroups.flatMap((group) =>
+      group.memberProjectRefs.map(
+        (ref) => [`${ref.environmentId}:${ref.projectId}`, group.projectKey] as const,
+      ),
+    ),
+  );
+  const activity = new Map<string, { threadCount: number; lastThreadMs: number }>();
+  for (const thread of filterSidebarV2VisibleThreads(threads, null)) {
+    const key = groupKeyByProjectRef.get(`${thread.environmentId}:${thread.projectId}`);
+    if (!key) continue;
+    const entry = activity.get(key) ?? { threadCount: 0, lastThreadMs: Number.NEGATIVE_INFINITY };
+    entry.threadCount += 1;
+    entry.lastThreadMs = Math.max(entry.lastThreadMs, getThreadSortTimestamp(thread, "updated_at"));
+    activity.set(key, entry);
+  }
+  const activityByKey = new Map(
+    [...activity].map(([key, { threadCount, lastThreadMs }]): [string, ProjectActivity] => [
+      key,
+      {
+        threadCount,
+        lastThreadAt: Number.isFinite(lastThreadMs) ? new Date(lastThreadMs).toISOString() : null,
+      },
+    ]),
+  );
 
   const normalizedQuery = normalizeSearchText(query.trim());
   const matches = (group: SidebarProjectSnapshot) =>

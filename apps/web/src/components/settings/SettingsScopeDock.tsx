@@ -3,7 +3,6 @@ import {
   type ReactNode,
   useContext,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -96,7 +95,7 @@ export function SettingsScopeDockProvider({
     };
   }, [source]);
 
-  const value = useMemo(() => ({ enabled, docked, setSource, setToolbar }), [enabled, docked]);
+  const value = { enabled, docked, setSource, setToolbar };
 
   return (
     <SettingsScopeDockContext value={value}>

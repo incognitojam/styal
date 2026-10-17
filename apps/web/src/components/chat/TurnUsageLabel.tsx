@@ -15,7 +15,7 @@ import {
   type TurnUsageByTurn,
   type TurnUsageView,
 } from "@t3tools/shared/turnUsage";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -31,11 +31,8 @@ export function useTurnUsage(
   enabled: boolean,
 ): TurnUsageByTurn {
   const [previous, setPrevious] = useState(EMPTY_TURN_USAGE);
-  const usage = useMemo(
-    () =>
-      enabled && projection ? deriveProjectionTurnUsage(projection, previous) : EMPTY_TURN_USAGE,
-    [projection, enabled, previous],
-  );
+  const usage =
+    enabled && projection ? deriveProjectionTurnUsage(projection, previous) : EMPTY_TURN_USAGE;
   if (usage !== previous) setPrevious(usage);
   return usage;
 }
@@ -46,10 +43,7 @@ export function useTurnSummaries(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyMap<string, TurnSummaryView> {
   const [previous, setPrevious] = useState<ReadonlyMap<string, TurnSummaryView>>(() => new Map());
-  const summaries = useMemo(
-    () => turnSummaryViews(byTurnId, providers, previous),
-    [byTurnId, providers, previous],
-  );
+  const summaries = turnSummaryViews(byTurnId, providers, previous);
   if (summaries !== previous) setPrevious(summaries);
   return summaries;
 }
