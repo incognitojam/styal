@@ -4434,7 +4434,7 @@ features:
       - apps/web/src/routes/settings.tsx
     tests:
       - apps/web/src/components/settings/SettingsScopeDock.browser.test.tsx
-      - apps/web/src/components/settings/settingsLayout.test.tsx
+      - apps/web/src/components/settings/settingsLayout.browser.test.tsx
       - apps/web/src/components/settings/settingsScopeAxis.test.ts
     upstream:
       status: tracking
