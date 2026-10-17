@@ -2013,7 +2013,7 @@ function renderFeedEntry(
             {turnUsage?.usage ? (
               <>
                 <Text className="font-t3-medium text-xs text-foreground-secondary">·</Text>
-                <TurnUsageText view={turnUsage.usage} tone="secondary" />
+                <TurnUsageText view={turnUsage.usage} />
               </>
             ) : null}
           </View>
