@@ -1308,7 +1308,7 @@ features:
       - apps/web/src/components/diffs/AnnotatableCodeView.tsx
       - apps/web/src/components/diffs/DiffCommentAnnotation.tsx
     tests:
-      - apps/web/src/components/diffs/DiffCommentAnnotation.test.tsx
+      - apps/web/src/components/diffs/DiffCommentAnnotation.browser.test.tsx
       - apps/web/src/components/diffs/commentSubmitShortcut.test.ts
     upstream:
       status: tracking
@@ -4192,7 +4192,7 @@ features:
       - packages/client-runtime/src/connection/routes.ts
       - packages/client-runtime/src/state/connections.ts
     tests:
-      - apps/web/src/components/PermissionUpdateNotice.test.tsx
+      - apps/web/src/components/PermissionUpdateNotice.browser.test.tsx
       - packages/client-runtime/src/connection/registry.test.ts
       - packages/client-runtime/src/connection/routes.test.ts
     upstream:
