@@ -186,18 +186,21 @@ export function ProjectScriptEditorDialog({
   onClose: () => void;
 }) {
   const canEditActions = useEnvironmentScope(environmentId, editScope);
-  const [validationError, setValidationError] = useState<string | null>(null);
+  // Keyed by the request it belongs to: a new request starts without an error,
+  // and a late save from the previous request can't overwrite it.
+  const [errorState, setErrorState] = useState<{
+    readonly request: ProjectScriptEditorRequest;
+    readonly message: string | null;
+  } | null>(null);
+  const validationError =
+    request === null ? null : errorState?.request === request ? errorState.message : null;
+  const setValidationError = (message: string | null) => {
+    if (request !== null) setErrorState({ request, message });
+  };
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useComposerMenuState(!canEditActions);
   const [deleteName, setDeleteName] = useState("");
   const [lastRequest, setLastRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  const [errorRequest, setErrorRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  if (request !== errorRequest) {
-    setErrorRequest(request);
-    if (request) {
-      setLastRequest(request);
-      setValidationError(null);
-    }
-  }
+  if (request !== null && request !== lastRequest) setLastRequest(request);
   // Keep the outgoing copy stable while DialogPopup plays its close animation.
   const displayedRequest = request ?? lastRequest;
   const source = displayedRequest?.source ?? "local";
