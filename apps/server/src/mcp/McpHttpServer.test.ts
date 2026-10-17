@@ -77,6 +77,7 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
       Layer.mock(Orchestrator.OrchestratorV2)({}),
       Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
       Layer.mock(PullRequestService.PullRequestService)({}),
+      AnalyticsService.AnalyticsService.layerTest,
       NodeServices.layer,
     ),
   ),

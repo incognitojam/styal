@@ -26,6 +26,7 @@ import * as Option from "effect/Option";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as WorkflowRunWatchUsage from "../../../telemetry/WorkflowRunWatchUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
@@ -465,4 +466,11 @@ const make = Effect.gen(function* () {
   } satisfies McpToolAccess.Handlers<typeof PullRequestsToolkit.tools>;
 });
 
-export const layer = McpToolAccess.toLayer(PullRequestsToolkit, make);
+export const layer = McpToolAccess.toLayer(
+  PullRequestsToolkit,
+  make.pipe(
+    Effect.flatMap((handlers) =>
+      McpToolAccess.wrapHandlers(handlers, WorkflowRunWatchUsage.observeHandlers),
+    ),
+  ),
+);

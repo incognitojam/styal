@@ -19,6 +19,7 @@ import * as Stream from "effect/Stream";
 import type { Tool } from "effect/ai";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
+import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import {
   type PullRequestTestThread,
   v2PullRequestThread,
@@ -26,6 +27,7 @@ import {
 import * as ProjectService from "../../../project/ProjectService.ts";
 import type { ProviderWorkflowRun } from "../../../pullRequest/PullRequestProvider.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as AnalyticsService from "../../../telemetry/AnalyticsService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as McpToolAccessTestkit from "../../McpToolAccess.testkit.ts";
@@ -143,6 +145,8 @@ interface HarnessOptions {
   /** What the host reports for a workflow run; every run is unreadable when omitted. */
   readonly workflowRun?: ProviderWorkflowRun;
   readonly workflowRuns?: ReadonlyArray<ThreadWorkflowRunWatch>;
+  /** The calling thread's run has ended, so the access check refuses changes. */
+  readonly callerIdle?: boolean;
 }
 
 const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
@@ -151,6 +155,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
   const workflowRuns = yield* Ref.make(options.workflowRuns ?? []);
   const workflowRunReads = yield* Ref.make<ReadonlyArray<number>>([]);
+  const usage: Array<Readonly<Record<string, unknown>>> = [];
   const thread = options.thread === undefined ? makeThread([]) : options.thread;
   const project = options.project === undefined ? makeProject() : options.project;
   const dispatch: Orchestrator.OrchestratorV2Shape["dispatch"] = (command) =>
@@ -204,7 +209,22 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
         ),
     }),
     Layer.succeed(Crypto.Crypto, testCrypto),
-    McpToolAccessTestkit.liveThreadsLayer,
+    options.callerIdle
+      ? Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: (id) =>
+            Effect.succeed(McpToolAccessTestkit.liveThreadShell(id, { activeRunId: null })),
+        })
+      : McpToolAccessTestkit.liveThreadsLayer,
+    Layer.succeed(
+      AnalyticsService.AnalyticsService,
+      AnalyticsService.AnalyticsService.of({
+        record: (_event, properties) =>
+          Effect.sync(() => {
+            usage.push(properties ?? {});
+          }),
+        flush: Effect.void,
+      }),
+    ),
   );
   const toolkit = yield* PullRequestsToolkit.pipe(
     Effect.provide(
@@ -228,7 +248,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
       Effect.provide(layerDependencies),
     );
-  return { commands, call, workflowRunReads };
+  return { commands, call, workflowRunReads, usage };
 });
 
 const watchFields = (run: ThreadWorkflowRunWatch): ThreadWorkflowRunWatch => ({
@@ -613,6 +633,16 @@ describe("workflow run watches", () => {
           run: { url: runningRun.url, name: "Deploy #41" },
         },
       ]);
+      expect(harness.usage).toEqual([
+        {
+          feature: "workflow-run-watch",
+          action: "watch",
+          source: "agent",
+          watchResult: "started",
+          outcome: "success",
+          durationMs: 0,
+        },
+      ]);
     }),
   );
 
@@ -625,6 +655,7 @@ describe("workflow run watches", () => {
       const result = yield* harness.call("watch_workflow_run", { url: runningRun.url });
       expect(result).toMatchObject({ watching: false, conclusion: "failure", failedJobs });
       expect(yield* Ref.get(harness.commands)).toEqual([]);
+      expect(harness.usage).toMatchObject([{ action: "watch", watchResult: "already_completed" }]);
     }),
   );
 
@@ -636,6 +667,23 @@ describe("workflow run watches", () => {
         .pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "WorkflowRunReadFailedError" });
       expect(yield* Ref.get(harness.commands)).toEqual([]);
+      expect(harness.usage).toMatchObject([
+        { action: "watch", outcome: "failure", failureReason: "read_failed" },
+      ]);
+    }),
+  );
+
+  it.effect("records a watch the access check refuses", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ workflowRun: runningRun, callerIdle: true });
+      const error = yield* harness
+        .call("watch_workflow_run", { url: runningRun.url })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "OrchestratorMcpFailure" });
+      expect(yield* Ref.get(harness.workflowRunReads)).toEqual([]);
+      expect(harness.usage).toMatchObject([
+        { action: "watch", outcome: "failure", failureReason: "refused" },
+      ]);
     }),
   );
 
@@ -659,6 +707,7 @@ describe("workflow run watches", () => {
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         { type: "thread.workflow-run.watch", runId: 9001, watching: false },
       ]);
+      expect(harness.usage).toMatchObject([{ action: "unwatch", watchResult: "stopped" }]);
     }),
   );
 });

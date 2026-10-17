@@ -65,6 +65,7 @@ import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as PullRequestWatchReactor from "./PullRequestWatchReactor.ts";
 import * as WorkflowRunWatchReactor from "./WorkflowRunWatchReactor.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { PullRequestProviderError } from "../pullRequest/PullRequestProvider.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -214,6 +215,19 @@ const watchedPullRequestDetail = (input: {
   mergeCapabilities: { merge: true, squash: true, rebase: true },
   viewer: "agent-user",
 });
+
+/** Analytics that keeps each recorded event's properties, for asserting what was sent. */
+const analyticsInto = (events: Array<Readonly<Record<string, unknown>>>) =>
+  Layer.succeed(
+    AnalyticsService.AnalyticsService,
+    AnalyticsService.AnalyticsService.of({
+      record: (_event, properties) =>
+        Effect.sync(() => {
+          events.push(properties ?? {});
+        }),
+      flush: Effect.void,
+    }),
+  );
 
 const seedProject = (input: {
   readonly projectId: ProjectId;
@@ -2569,10 +2583,12 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
 
       let completed = false;
       let reads = 0;
+      const usage: Array<Readonly<Record<string, unknown>>> = [];
       const reactor = yield* WorkflowRunWatchReactor.make.pipe(
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
+            analyticsInto(usage),
             Layer.mock(PullRequestService.PullRequestService)({
               workflowRun: (input) => {
                 reads += 1;
@@ -2616,6 +2632,17 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       yield* reactor.sweep;
       assert.equal(reads, 2);
       assert.deepEqual(yield* notifications, ["Deploy #41: failure"]);
+      // One end event, with a fixed conclusion category and no run data.
+      assert.deepEqual(usage, [
+        {
+          feature: "workflow-run-watch",
+          action: "end",
+          source: "system",
+          endReason: "completed",
+          conclusion: "failure",
+          watchedMinutes: 0,
+        },
+      ]);
     }),
   );
 
@@ -2655,10 +2682,12 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         watching: true,
         run: { url: "https://github.com/pingdotgg/t3code/actions/runs/9002", name: "CI #7" },
       });
+      const usage: Array<Readonly<Record<string, unknown>>> = [];
       const reactor = yield* WorkflowRunWatchReactor.make.pipe(
         Effect.provide(
           Layer.mergeAll(
             NodeServices.layer,
+            analyticsInto(usage),
             Layer.mock(PullRequestService.PullRequestService)({
               workflowRun: () =>
                 Effect.fail(
@@ -2677,6 +2706,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       assert.deepEqual(
         messages.flatMap((message) => message.notification?.summary ?? []),
         ["CI #7: stopped watching, could not read it"],
+      );
+      assert.deepEqual(
+        usage.map((event) => event.endReason),
+        ["unreadable"],
       );
     }),
   );
@@ -2716,6 +2749,31 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const started = (yield* orchestrator.getThreadShell(threadId))?.workflowRuns?.[0];
         assert.isDefined(started);
         if (started === undefined) return;
+        const usage: Array<Readonly<Record<string, unknown>>> = [];
+        const reactor = yield* WorkflowRunWatchReactor.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              NodeServices.layer,
+              analyticsInto(usage),
+              Layer.mock(PullRequestService.PullRequestService)({
+                workflowRun: () =>
+                  Effect.succeed({
+                    name: "CI #8",
+                    url: start.run.url,
+                    completed: false,
+                    conclusion: null,
+                    headBranch: "main",
+                    headSha: "b".repeat(40),
+                    event: "push",
+                    failedJobs: [],
+                  }),
+              }),
+            ),
+          ),
+        );
+        // The reactor sees the running watch before the thread ends it.
+        yield* reactor.sweep;
+        assert.deepEqual(usage, []);
 
         yield* orchestrator.dispatch({
           type: action === "settle" ? "thread.settle" : "thread.archive",
@@ -2723,6 +2781,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           threadId,
         });
         assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
+        yield* reactor.sweep;
+        assert.deepEqual(
+          usage.map((event) => event.endReason),
+          ["stopped"],
+        );
         const late = yield* orchestrator
           .dispatch({
             type: "thread.workflow-run-watch.finish",

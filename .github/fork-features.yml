@@ -4671,6 +4671,7 @@ features:
       - A watched run keeps the thread in the Working list as a monitor background task until the watch ends.
       - Settling, archiving, or stopping the thread ends its workflow run watches, and a finish read before that changes nothing and wakes no one. Subagents and settled or archived threads cannot start one.
       - Eight failed reads in a row end the watch with a wake saying so; a host rate limit only pauses it.
+      - Each tool call and each watch end the server sees records one feature.used event with fixed categories (call result or failure reason; end reason, conclusion category and watched minutes), never run IDs, repositories, URLs, or workflow and job names.
     rationale: Agents waiting on CI outside a pull request (after a merge, deploys, releases, dispatched workflows) otherwise poll or hold a `gh run watch` process, which only some providers can wait on and which a server restart kills.
     implementation_paths:
       - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
@@ -4681,6 +4682,8 @@ features:
       - apps/server/src/provider/RuntimeInstructions.ts
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/gitHubWorkflowRunJson.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
       - packages/client-runtime/src/operations/commands.ts
       - packages/contracts/src/threadPullRequest.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.ts
@@ -4691,6 +4694,7 @@ features:
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
       - packages/client-runtime/src/operations/commands.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/threadPullRequest.ts
@@ -4700,6 +4704,7 @@ features:
       - apps/server/src/orchestration-v2/ThreadStop.test.ts
       - apps/server/src/orchestration-v2/runtimeLayer.test.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.test.ts
+      - apps/server/src/telemetry/AnalyticsService.test.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.test.ts
     upstream:
       status: unassessed

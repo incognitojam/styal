@@ -36,6 +36,7 @@ interface RecordedBatchRequest {
         readonly t3CodeRepository?: string;
         readonly featureUsageVersion?: number;
         readonly deviceUsageVersion?: number;
+        readonly workflowRunWatchUsageVersion?: number;
         readonly buildKind?: string;
         readonly releaseChannel?: string;
       };
@@ -58,6 +59,7 @@ interface RecordedBatchBody {
       readonly t3CodeRepository?: string;
       readonly featureUsageVersion?: number;
       readonly deviceUsageVersion?: number;
+      readonly workflowRunWatchUsageVersion?: number;
       readonly buildKind?: string;
       readonly releaseChannel?: string;
     };
@@ -246,6 +248,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
               event.properties.t3CodeRepository === "incognitojam/styal" &&
               event.properties.featureUsageVersion === 1 &&
               event.properties.deviceUsageVersion === 1 &&
+              event.properties.workflowRunWatchUsageVersion === 1 &&
               event.properties.buildKind === "test" &&
               event.properties.releaseChannel === "unknown",
           ),
