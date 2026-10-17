@@ -9,8 +9,26 @@ export interface ServerUpdateHost {
   readonly continueRunningThreads: boolean;
 }
 
-function labels(hosts: ReadonlyArray<ServerUpdateHost>): string {
+function labels(hosts: ReadonlyArray<Pick<ServerUpdateHost, "serverLabel">>): string {
   return hosts.map((host) => host.serverLabel).join(", ");
+}
+
+/** Names the action consistently before and after checking running work. */
+export function serverUpdateQuestion(
+  hosts: ReadonlyArray<Pick<ServerUpdateHost, "serverLabel" | "desktopApp">>,
+  concern: keyof typeof hostActivityQuestion | null = null,
+): string {
+  const single = hosts.length === 1 ? hosts[0]! : null;
+  const desktopApps = hosts.filter((host) => host.desktopApp);
+  if (desktopApps.length > 0) {
+    return single
+      ? `Update the styal desktop app that runs the ${single.serverLabel}?`
+      : desktopApps.length < hosts.length
+        ? `Update the servers on ${labels(hosts)}?`
+        : `Update the styal desktop apps on ${labels(desktopApps)}?`;
+  }
+  const target = single ? single.serverLabel : `servers on ${labels(hosts)}`;
+  return `Update the ${target}${concern === null ? "?" : hostActivityQuestion[concern]}`;
 }
 
 /**
@@ -40,11 +58,7 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
   if (desktopApps.length > 0) {
     return {
       message: [
-        single
-          ? `Update the styal desktop app that runs the ${single.serverLabel}?`
-          : desktopApps.length < hosts.length
-            ? `Update the servers on ${labels(hosts)}?`
-            : `Update the styal desktop apps on ${labels(desktopApps)}?`,
+        serverUpdateQuestion(hosts),
         desktopApps.length < hosts.length
           ? `The styal desktop ${desktopApps.length === 1 ? "app" : "apps"} on ${labels(desktopApps)} will close and relaunch.`
           : desktopApps.length === 1
@@ -56,10 +70,9 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
     };
   }
   if (concern === null) return null;
-  const target = single ? single.serverLabel : `servers on ${labels(hosts)}`;
   return {
     message: [
-      `Update the ${target}${hostActivityQuestion[concern]}`,
+      serverUpdateQuestion(hosts, concern),
       ...lines,
       ...(incomplete ? ["Running threads and terminals may be interrupted."] : []),
     ].join("\n"),

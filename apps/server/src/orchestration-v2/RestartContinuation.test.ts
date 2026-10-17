@@ -85,6 +85,62 @@ function makeProjection() {
   } as unknown as OrchestrationV2ThreadProjection;
 }
 
+it.effect("skips recovery reads when no displayed project continues after restarts", () =>
+  Effect.gen(function* () {
+    const projection = makeProjection();
+    const eligible = yield* ProviderRuntimeRecovery.listContinuableThreadIds([projection.thread]);
+    assert.equal(eligible.size, 0);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        ServerSettings.layerTest(),
+        // Missing mock methods fail if the default-off path touches recovery state.
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+      ),
+    ),
+  ),
+);
+
+it.effect.each([false, true])(
+  "reads continuation state only for enabled projects (environment %s)",
+  (environmentEnabled) => {
+    const projection = makeProjection();
+    const disabledThreadId = ThreadId.make("thread:disabled-continuation");
+    const disabledProjectId = ProjectId.make("disabled-project");
+    const hiddenThreadId = ThreadId.make("thread:outside-snapshot");
+    const readIds: ThreadId[] = [];
+    return Effect.gen(function* () {
+      const eligible = yield* ProviderRuntimeRecovery.listContinuableThreadIds([
+        projection.thread,
+        { id: disabledThreadId, projectId: disabledProjectId },
+      ]);
+      assert.deepEqual([...eligible], [threadId]);
+      assert.deepEqual(readIds, [threadId]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          ServerSettings.layerTest({
+            continueThreadsAfterServerUpdate: environmentEnabled,
+            projectSettingsOverrides: {
+              [projection.thread.projectId]: { continueThreadsAfterServerUpdate: true },
+              [disabledProjectId]: { continueThreadsAfterServerUpdate: false },
+            },
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getRecoveryThreadIds: () =>
+              Effect.succeed([threadId, disabledThreadId, hiddenThreadId]),
+            getRuntimeRecoveryProjection: (id) =>
+              Effect.sync(() => {
+                readIds.push(id);
+                return projection;
+              }),
+          }),
+        ),
+      ),
+    );
+  },
+);
+
 it("requires matching saved native state for an unfinished root run", () => {
   const projection = makeProjection();
   assert.equal(restartContinuationRun(projection)?.id, runId);

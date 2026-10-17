@@ -1,7 +1,24 @@
-import { ProjectId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  RuntimeRequestId,
+  ThreadId,
+  type OrchestrationV2ThreadShellSnapshot,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { describe, expect, it } from "vite-plus/test";
-import { summarizeHostSessions, withProjects } from "./HostActivity.ts";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import { describe, expect, it } from "@effect/vitest";
+import { DeviceSharing } from "../device/DeviceSharing.ts";
+import {
+  ProjectionStoreV2,
+  type ProjectionRuntimeRecoveryState,
+} from "../orchestration-v2/ProjectionStore.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import { TerminalManager } from "../terminal/Manager.ts";
+import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts";
+import { inspectHostActivity, summarizeHostSessions, withProjects } from "./HostActivity.ts";
 
 const thread = (id: string) => ({
   id: ThreadId.make(id),
@@ -78,6 +95,86 @@ const pendingRequest = (kind: "user_input" | "permission") => ({
   kind,
   createdAt: DateTime.makeUnsafe("2026-10-15T12:00:00.000Z"),
 });
+
+it.effect(
+  "skips idle and waiting recovery reads even with continuation enabled, retaining background work",
+  () => {
+    const threads: Parameters<typeof summarizeHostSessions>[0] = [
+      ...Array.from({ length: 100 }, (_, index) => thread(`idle-${index}`)),
+      { ...thread("preparing"), status: "preparing" },
+      { ...thread("starting"), status: "starting" },
+      { ...thread("running"), status: "running" },
+      {
+        ...thread("monitor"),
+        status: "completed",
+        pendingBackgroundTasks: [{ taskId: "monitor", kind: "monitor" }],
+      },
+      { ...thread("waiting"), status: "waiting" },
+      {
+        ...thread("input"),
+        status: "running",
+        pendingRuntimeRequest: pendingRequest("user_input"),
+      },
+    ];
+    const reads: ThreadId[] = [];
+    return Effect.gen(function* () {
+      const activity = yield* inspectHostActivity;
+      expect(reads).toEqual(["preparing", "starting", "running", "monitor"]);
+      expect(activity).toMatchObject({
+        activeSessions: 4,
+        waitingSessions: 2,
+        continuableSessions: 0,
+      });
+      expect(activity.threads?.map((thread) => thread.threadId)).toEqual([
+        "preparing",
+        "starting",
+        "running",
+        "monitor",
+        "waiting",
+        "input",
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+          Layer.mock(ServerEnvironmentIdentity)({
+            getEnvironmentId: Effect.succeed(EnvironmentId.make("lab")),
+          }),
+          Layer.mock(TerminalManager)({
+            shutdownPreflight: Effect.succeed({
+              terminalsRequiringConfirmation: 0,
+              terminalsWithUnknownActivity: 0,
+            }),
+          }),
+          Layer.mock(DeviceSharing)({ environmentsUsingDevices: Effect.succeed(0) }),
+          Layer.mock(ProjectStoreV2)({ list: () => Effect.succeed([]) }),
+          Layer.mock(ProjectionStoreV2)({
+            getShellSnapshot: () =>
+              Effect.succeed({ threads } as unknown as OrchestrationV2ThreadShellSnapshot),
+            getRecoveryThreadIds: () => Effect.succeed(threads.map((thread) => thread.id)),
+            getRuntimeRecoveryProjection: (id) =>
+              Effect.sync(() => {
+                reads.push(id);
+                return {
+                  thread: {
+                    id,
+                    projectId: ProjectId.make("project"),
+                    archivedAt: null,
+                    deletedAt: null,
+                  },
+                  runs: [],
+                  providerThreads: [],
+                  providerSessions: [],
+                  providerTurns: [],
+                  turnItems: [],
+                } as unknown as ProjectionRuntimeRecoveryState;
+              }),
+          }),
+        ),
+      ),
+    );
+  },
+);
 
 const sampleProject = {
   projectId: ProjectId.make("project"),

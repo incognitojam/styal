@@ -20,6 +20,7 @@ import {
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
 import { HostActivityThreadList } from "./HostActivityThreadList";
+import { Spinner } from "./ui/spinner";
 
 type ConfirmationCopy = {
   readonly title: string;
@@ -121,6 +122,7 @@ export function ConfirmDialogHost() {
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
   const threadActivity = state.status === "idle" ? undefined : state.threadActivity;
+  const loading = state.status !== "idle" && state.loading === true;
   const onCancel = () => respondToConfirmDialog(false);
   const onConfirm = () => respondToConfirmDialog(true);
 
@@ -146,16 +148,23 @@ export function ConfirmDialogHost() {
           <AlertDialogHeader>
             <AlertDialogTitle>{copy.title}</AlertDialogTitle>
             {copy.description ? (
-              <AlertDialogDescription className="whitespace-pre-line">
-                {copy.description}
-              </AlertDialogDescription>
+              <div
+                className={loading ? "flex items-center gap-2 max-sm:justify-center" : undefined}
+                aria-live="polite"
+                aria-busy={loading}
+              >
+                {loading ? <Spinner size="sm" tone="muted" /> : null}
+                <AlertDialogDescription className="whitespace-pre-line">
+                  {copy.description}
+                </AlertDialogDescription>
+              </div>
             ) : null}
           </AlertDialogHeader>
         </div>
         {threadActivity?.length ? <HostActivityThreadList activity={threadActivity} /> : null}
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-          <Button variant={confirmVariant} onClick={onConfirm}>
+          <Button variant={confirmVariant} onClick={onConfirm} disabled={loading}>
             {state.status === "idle" ? "Confirm" : state.confirmLabel}
           </Button>
         </AlertDialogFooter>

@@ -1166,6 +1166,10 @@ export function createServerEnvironmentAtoms<R, E>(
     // Point-in-time check before a restart; a stalled host is treated as unknown activity.
     hostActivity: createEnvironmentCommand(runtime, {
       label: "environment-data:server:host-activity",
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
       execute: (input: EnvironmentRpcInput<typeof WS_METHODS.serverGetHostActivity>) =>
         request(WS_METHODS.serverGetHostActivity, input).pipe(Effect.timeout("5 seconds")),
     }),

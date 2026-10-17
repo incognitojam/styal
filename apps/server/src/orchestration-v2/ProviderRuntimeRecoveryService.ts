@@ -8,6 +8,7 @@ import {
   type OrchestrationV2RestartCancelledBackgroundWork,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ThreadShell,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -70,12 +71,27 @@ export class ProviderRuntimeRecoveryService extends Context.Service<
 >()("@styal/cli/orchestration-v2/ProviderRuntimeRecoveryService") {}
 
 /** The same eligibility used when capturing continuation before server shutdown. */
-export const listContinuableThreadIds = Effect.gen(function* () {
+export const listContinuableThreadIds = Effect.fn(
+  "ProviderRuntimeRecovery.listContinuableThreadIds",
+)(function* (threads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "id" | "projectId">>) {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const settings = yield* ServerSettings.ServerSettingsService;
   const current = yield* settings.getSettings;
   const eligible = new Set<ThreadId>();
+  // The activity check already read project identity. Avoid recovery projections
+  // entirely for projects that will not continue, including the default setting.
+  const enabledThreadIds = new Set(
+    threads
+      .filter(
+        (thread) =>
+          resolveProjectSettings(current, thread.projectId).settings
+            .continueThreadsAfterServerUpdate,
+      )
+      .map((thread) => thread.id),
+  );
+  if (enabledThreadIds.size === 0) return eligible;
   for (const threadId of yield* projections.getRecoveryThreadIds("runtime")) {
+    if (!enabledThreadIds.has(threadId)) continue;
     const projection = yield* projections.getRuntimeRecoveryProjection(threadId);
     if (
       resolveProjectSettings(current, projection.thread.projectId).settings
