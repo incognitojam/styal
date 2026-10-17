@@ -1171,10 +1171,10 @@ features:
       - A device tab the user closed stays closed until the user opens that device again.
     rationale: Upstream gives an agent-opened device either a floating window or a panel tab, and nothing for sessions that started while the thread was not shown, so a running device could be missing from the panel.
     implementation_paths:
-      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/preview/useAgentOpenedPreviews.ts
       - apps/web/src/rightPanelStore.ts
     upstream_paths:
-      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/preview/useAgentOpenedPreviews.ts
       - apps/web/src/rightPanelStore.ts
     tests:
       - apps/web/src/rightPanelStore.test.ts
@@ -2410,6 +2410,7 @@ features:
       - apps/server/src/preview/TerminalBrowserOpen.ts
       - apps/web/src/components/chat/loopbackLinkPreview.ts
       - apps/web/src/components/preview/openTerminalLinkInPreview.ts
+      - apps/web/src/components/preview/useAgentOpenedPreviews.ts
       - apps/web/src/terminal/ghostty/surface.ts
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
