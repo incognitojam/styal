@@ -3973,16 +3973,17 @@ export default function Sidebar() {
           : `${item.kind}:${item.group}`,
     )
     .join("\n");
-  const [heldSidebarListItems, setSidebarListItems] = useState(sidebarListItemsFresh);
+  const [sidebarListItemsState, setSidebarListItems] = useState(sidebarListItemsFresh);
   const [sidebarListItemsKeyState, setSidebarListItemsKeyState] = useState(sidebarListItemsKey);
-  const sidebarListItemsChanged = sidebarListItemsKeyState !== sidebarListItemsKey;
-  if (sidebarListItemsChanged) {
+  let sidebarListItems = sidebarListItemsState;
+  if (sidebarListItemsKeyState !== sidebarListItemsKey) {
     setSidebarListItemsKeyState(sidebarListItemsKey);
     setSidebarListItems(sidebarListItemsFresh);
+    // The rest of this render still runs before React applies the update, and
+    // threadByKey already lacks rows that just left, such as a thread settled
+    // into the collapsed Settled shelf.
+    sidebarListItems = sidebarListItemsFresh;
   }
-  // The rest of this render still runs before React retries it, and rows look
-  // up their threads by these keys, so it must not see the previous list.
-  const sidebarListItems = sidebarListItemsChanged ? sidebarListItemsFresh : heldSidebarListItems;
   const handleThreadDragStart = (event: DragStartEvent) => {
     const activeKey = String(event.active.id);
     contextDragKeyRef.current = activeKey;
