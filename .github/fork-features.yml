@@ -3166,7 +3166,7 @@ features:
   - id: provider-working-state-recovery
     title: Recover truthful Claude working state after compaction
     status: review-needed
-    prs: [290]
+    prs: [290, 881]
     invariants:
       - A cleared Claude transient status keeps an active turn running but returns an idle session to ready after manual context compaction completes.
       - Requesting and compacting states retain their existing presentation, and a delayed provider status cannot leave a completed thread falsely Working.
