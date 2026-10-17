@@ -41,6 +41,15 @@ Claude Code's verbose mode can stay enabled when you use Claude for text generat
 thread titles, branch names, commit messages, and pull request descriptions. On a remote connection,
 T3 Code uses the Claude configuration on the connected server.
 
+## Session history cleanup
+
+On web and desktop, select a Claude instance in **Settings → Providers** to see how long Claude Code
+keeps session files. styal shows the global `cleanupPeriodDays` setting from Claude Code's user
+`settings.json`, or Claude Code's 30-day default when it is not set. Open the file from there in
+your editor, at the `cleanupPeriodDays` line when it is set; on a remote server, the editor opens
+the file over SSH. Refresh provider status after editing to reread it. Project settings can override
+the global value. Deleting session files can remove their history from styal's usage totals.
+
 ## Compact long conversations
 
 Set **Auto-compact after** in the Claude provider settings to an integer between

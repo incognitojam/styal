@@ -2998,6 +2998,38 @@ features:
         - https://github.com/pingdotgg/t3code/issues/2993
         - https://github.com/pingdotgg/t3code/pull/17585
       retire_when: Upstream installs provider updates automatically while gating each install on a version verified by real provider turns.
+  - id: provider-history-retention
+    title: Surface Claude session history cleanup settings
+    status: maintained
+    prs: [856]
+    invariants:
+      - Each Claude instance reports the user-level cleanupPeriodDays from settings.json in the config directory its CLI uses; a missing, unreadable, malformed, or invalid value reports Claude Code's 30-day default.
+      - Web and desktop show the retention period, mark Claude Code's default, and show the settings file under provider settings with an editor picker that opens it locally (at the configured key's line) or over SSH for remote environments; Usage links there for the selected environment.
+      - Reading cleanup settings never changes provider configuration or claims that project, managed, and session overrides have been resolved.
+    implementation_paths:
+      - apps/server/src/provider/Drivers/ClaudeDriver.ts
+      - apps/server/src/provider/Drivers/ClaudeHistoryRetention.ts
+      - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/components/settings/ProviderHistorySettings.tsx
+      - apps/web/src/components/settings/ProviderInstanceCard.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/components/usage/UsagePage.tsx
+      - packages/contracts/src/server.ts
+    upstream_paths:
+      - apps/server/src/provider/Drivers/ClaudeDriver.ts
+      - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/components/settings/ProviderInstanceCard.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/components/usage/UsagePage.tsx
+      - packages/contracts/src/server.ts
+    tests:
+      - apps/server/src/provider/Drivers/ClaudeHistoryRetention.test.ts
+      - apps/web/src/components/usage/UsagePage.test.tsx
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
+      retire_when: Upstream shows provider-owned session cleanup rules with their source per instance and links to them from Usage.
   - id: provider-server-settings-isolation
     title: Keep the server's own settings out of agent processes
     status: maintained

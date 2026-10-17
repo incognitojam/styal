@@ -12,6 +12,7 @@ const testState = vi.hoisted(() => ({
 
 vi.mock("../../env", () => ({ isElectron: false }));
 vi.mock("@tanstack/react-router", () => ({
+  Link: "a",
   useNavigate: () => testState.navigate,
   useCanGoBack: () => testState.canGoBack,
 }));
