@@ -4458,6 +4458,7 @@ features:
       - apps/server/src/project/ProjectSetupScriptRunner.ts
       - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/PersistentThreadTerminals.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/projectScriptEditor.tsx
