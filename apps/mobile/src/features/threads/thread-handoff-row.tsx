@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { resolveHandoffEndpoints } from "@t3tools/client-runtime/handoff";
+import { resolveHandoffEndpoints, shouldShowHandoff } from "@t3tools/client-runtime/handoff";
 import { resolveProviderInstanceDisplayName } from "@t3tools/client-runtime/state/provider-instance-display";
 import type {
   EnvironmentId,
@@ -47,7 +47,7 @@ export function ThreadHandoffRow(props: {
   const endpoints = useAtomValue(endpointsAtom);
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
   if (item.type !== "handoff" || endpoints === null) return null;
-  if (item.title === "Imported context" && item.status === "completed") return null;
+  if (!shouldShowHandoff(item)) return null;
   const color = item.status === "failed" ? "#e11d48" : props.iconColor;
   return (
     <ThreadContextDivider
