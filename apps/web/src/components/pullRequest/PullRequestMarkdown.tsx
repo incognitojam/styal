@@ -7,7 +7,7 @@ import type {
   PullRequestDetailView,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { createContext, useContext } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
@@ -28,6 +28,13 @@ export const PullRequestMarkdownContext = createContext<{
   threadRef: ScopedThreadRef | null;
 } | null>(null);
 
+// Both asset hooks key on the resource's identity; the compiler cannot cache a value
+// across successive hook calls in the component itself.
+function useGitHubMediaResource(cwd: string, fetchUrl: string): AssetResource {
+  "use memo";
+  return { _tag: "github-media", cwd, url: fetchUrl };
+}
+
 function PullRequestGitHubVideo({
   environmentId,
   cwd,
@@ -39,10 +46,7 @@ function PullRequestGitHubVideo({
   url: string;
   fetchUrl: string;
 }) {
-  const resource = useMemo<AssetResource>(
-    () => ({ _tag: "github-media", cwd, url: fetchUrl }),
-    [cwd, fetchUrl],
-  );
+  const resource = useGitHubMediaResource(cwd, fetchUrl);
   const assetUrl = useAssetUrlState(environmentId, resource);
   const refreshAssetUrl = useAssetUrlRefresh(environmentId, resource);
   const src =
@@ -74,24 +78,23 @@ export function PullRequestMarkdown({
 }) {
   const cwd = detail.workspaceRoot;
   // A relative image names a file at the pull request head, not in the local checkout.
-  const imageAssetResource = useCallback(
-    (src: string): Extract<AssetResource, { _tag: "pull-request-file" }> | null => {
-      const path = pullRequestRelativeImagePath(src, detail.provider);
-      return path === null
-        ? null
-        : {
-            _tag: "pull-request-file",
-            projectId: detail.projectId,
-            repository: detail.repository,
-            number: detail.number,
-            path,
-          };
-    },
-    [detail.number, detail.projectId, detail.provider, detail.repository],
-  );
+  const imageAssetResource = (
+    src: string,
+  ): Extract<AssetResource, { _tag: "pull-request-file" }> | null => {
+    const path = pullRequestRelativeImagePath(src, detail.provider);
+    return path === null
+      ? null
+      : {
+          _tag: "pull-request-file",
+          projectId: detail.projectId,
+          repository: detail.repository,
+          number: detail.number,
+          path,
+        };
+  };
   // The host comes from the change request's own address, so an Enterprise install is read as
   // itself rather than as github.com.
-  const referenceContext = useMemo((): GithubReferenceSurface | undefined => {
+  const referenceContext = ((): GithubReferenceSurface | undefined => {
     if (detail.provider !== "github") return undefined;
     let host: string;
     try {
@@ -105,16 +108,15 @@ export function PullRequestMarkdown({
       environmentId,
       cwd: detail.workspaceRoot,
     };
-  }, [detail.provider, detail.repository, detail.url, detail.workspaceRoot, environmentId]);
+  })();
 
   const segments = splitPullRequestBody(text);
   const context = useContext(PullRequestMarkdownContext);
   const repositoryUrl = context?.repositoryUrl;
   const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
-  const extraRemarkPlugins = useMemo<NonNullable<ReactMarkdownOptions["remarkPlugins"]>>(
-    () => (repositoryUrl ? [[remarkPullRequestAutolinks, { repositoryUrl }]] : []),
-    [repositoryUrl],
-  );
+  const extraRemarkPlugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = repositoryUrl
+    ? [[remarkPullRequestAutolinks, { repositoryUrl }]]
+    : [];
   return (
     <div
       className={cn(
