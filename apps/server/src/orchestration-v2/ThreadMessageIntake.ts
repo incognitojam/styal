@@ -21,6 +21,7 @@ export function dispatchWasNotAccepted(error: unknown) {
   if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
   switch (error._tag) {
     case "OrchestratorCommandRejectedError":
+    case "OrchestratorThreadAlreadyExistsError":
     case "OrchestratorProjectionError":
     case "OrchestratorProviderAdapterError":
     case "OrchestratorCommandPreviouslyRejectedError":
