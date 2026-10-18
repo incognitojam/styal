@@ -3754,6 +3754,7 @@ features:
       - packages/client-runtime/src/connection/routes.ts
       - packages/client-runtime/src/state/connections.ts
     tests:
+      - apps/web/src/components/PermissionUpdateNotice.test.tsx
       - packages/client-runtime/src/connection/registry.test.ts
       - packages/client-runtime/src/connection/routes.test.ts
     upstream:

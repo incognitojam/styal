@@ -13,6 +13,8 @@ const state = vi.hoisted(() => ({
   close: vi.fn(),
   save: vi.fn(),
   navigate: vi.fn(),
+  retired: false,
+  retire: vi.fn(async (_input: unknown) => ({ _tag: "Success", value: state.retired })),
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => state.session }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => state.navigate }));
@@ -21,7 +23,13 @@ vi.mock("../state/environments", () => ({
     environments: [{ environmentId: `env-${state.id}`, label: "Work laptop" }],
   }),
 }));
-vi.mock("../state/session", () => ({ environmentSession: { sessionStateAtom: () => null } }));
+vi.mock("@t3tools/client-runtime/connection", () => ({ connectionRouteId: () => "lan" }));
+vi.mock("../connection/catalog", () => ({ environmentCatalog: { retireLegacyPairing: null } }));
+vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.retire }));
+vi.mock("../state/session", () => ({
+  environmentSession: { sessionStateAtom: () => null },
+  usePreparedConnection: () => ({ _tag: "Some", value: { target: {} } }),
+}));
 vi.mock("../hooks/useLocalStorage", () => ({
   getLocalStorageItem: () => state.saved,
   setLocalStorageItem: (...args: unknown[]) => state.save(...args),
@@ -33,6 +41,7 @@ let renderer: ReactTestRenderer;
 beforeEach(() => {
   state.id++;
   state.saved = false;
+  state.retired = false;
   state.session = {
     _tag: "Success",
     waiting: false,
@@ -108,4 +117,21 @@ it("persists the secondary dismissal without relying on the toast close callback
     expect.anything(),
   );
   expect(state.close).toHaveBeenCalledWith("notice");
+});
+
+it("drops an old pairing instead of warning when T3 Connect also reaches the environment", async () => {
+  state.retired = true;
+  await render();
+  expect(state.retire).toHaveBeenCalledWith({
+    environmentId: `env-${state.id}`,
+    activeRouteId: "lan",
+  });
+  expect(state.add).not.toHaveBeenCalled();
+});
+
+it("still tries to drop an old pairing whose notice was dismissed earlier", async () => {
+  state.saved = true;
+  await render();
+  expect(state.retire).toHaveBeenCalledTimes(1);
+  expect(state.add).not.toHaveBeenCalled();
 });
