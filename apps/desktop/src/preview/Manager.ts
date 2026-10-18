@@ -656,7 +656,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     return capture;
   };
   // Each run joins the in-flight capture, or starts one when none is pending.
-  const capturePageWithTimeout = (operation: string, tabId: string, wc: Electron.WebContents) =>
+  const capturePageWithTimeout = (
+    operation: string,
+    tabId: string,
+    wc: Electron.WebContents,
+    timeoutMs = CAPTURE_PAGE_TIMEOUT_MS,
+  ) =>
     Effect.suspend(() => {
       const capture = capturePageSingleFlight(wc);
       // A stalled capture must not be shared with a later attempt.
@@ -674,7 +679,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         () => capture,
       ).pipe(
         Effect.timeoutOrElse({
-          duration: CAPTURE_PAGE_TIMEOUT_MS,
+          duration: timeoutMs,
           orElse: () =>
             release.pipe(
               Effect.andThen(
@@ -684,7 +689,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
                     tabId,
                     webContentsId: wc.id,
                     cause: new PreviewCaptureTimeoutError(
-                      `Preview capture timed out after ${CAPTURE_PAGE_TIMEOUT_MS}ms.`,
+                      `Preview capture timed out after ${timeoutMs}ms.`,
                     ),
                   }),
                 ),
@@ -3477,8 +3482,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         yield* attempt({ operation: "recording.cursor", tabId, webContentsId: wc.id }, () =>
           wc.send(RECORDING_CURSOR_CHANNEL, true, options, tab?.controller),
         );
-        yield* Effect.suspend(() =>
-          capturePageWithTimeout("recording.warmSource", tabId, wc).pipe(Effect.asVoid),
+        yield* capturePageWithTimeout(
+          "recording.warmSource",
+          tabId,
+          wc,
+          CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS,
         ).pipe(Effect.retry({ times: 1 }), Effect.ignore);
         const currentWebContents = yield* requireWebContents(tabId);
         if (currentWebContents !== wc || wc.isDestroyed()) {
