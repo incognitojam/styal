@@ -2,9 +2,10 @@
 
 > For maintainers. Using styal? See [docs/user](../user/).
 
-styal Link is the fork's deployment of upstream's T3 Connect. The mechanics — Clerk JWT
-template, CLI OAuth flow, desktop redirect allowlist, passkeys, sign-up restrictions — are unchanged
-and documented in [T3 Connect setup](./connect-setup.md). This page is the styal-specific configuration:
+styal Link is the fork's deployment of upstream's T3 Connect. Users sign in with an emailed code
+that the relay checks itself ([email sign-in](./connect-setup.md#email-sign-in)); Clerk remains
+only so clients signed in before that can move over, and its setup below stays in place until it is
+removed. The Clerk mechanics are documented in [T3 Connect setup](./connect-setup.md). This page is the styal-specific configuration:
 the values our deployment uses and where each one has to be set. It describes the intended
 configuration; when reality drifts from it, fix reality.
 
@@ -53,8 +54,10 @@ mutation first.
 3. **CLI OAuth application** named `styal CLI`
    ([connect-setup.md § CLI OAuth application](./connect-setup.md#cli-oauth-application)):
    public client (PKCE), scopes `openid profile email offline_access`, the redirect URI from the
-   table above, and `device_authorization_grant_enabled`, which `styal link --headless` and SSH
-   authorization need. Its client ID is `CLERK_CLI_OAUTH_CLIENT_ID`. Check with
+   table above, and `device_authorization_grant_enabled`. Only CLIs from before email sign-in use
+   it, for `styal link --headless` and SSH; current CLIs need the client ID and publishable key
+   to refresh a stale stored Clerk sign-in before moving it to the relay. Its client ID is
+   `CLERK_CLI_OAUTH_CLIENT_ID`. Check with
    `clerk api /oauth_applications`.
 4. **Native API** for desktop
    ([connect-setup.md § Desktop OAuth redirects](./connect-setup.md#desktop-oauth-redirects)):
@@ -158,8 +161,6 @@ than replacing the symlink.
 ## Verifying a build
 
 - `styal link status` reports the expected exposure state instead of "missing public configuration".
-- `styal link login --headless` completes through `https://app.styal.build/connect` and returns to
-  the terminal.
-- The desktop sign-in returns to the app via `styal-dev://app` (dev build) or `styal://app`
-  (packaged build).
-- The web sidebar shows **Sign in to styal Link** on `app.styal.build`.
+- `styal link login` sends a code to the email you enter and signs in once you type it.
+- The web sidebar shows **Sign in to styal Link** on `app.styal.build`, and the code from the email
+  signs in there and in the desktop app.
