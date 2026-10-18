@@ -1,4 +1,3 @@
-import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,
@@ -35,7 +34,8 @@ import { useTerminalCloseConfirmation } from "../../hooks/useTerminalCloseConfir
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { useRelayAccount } from "../../cloud/useRelayAccount";
+import { useT3ConnectAuthPrompt } from "../relay-auth/relayAuthDialogs";
 import { useCompleteOnboarding } from "../../onboarding/firstRun";
 import {
   getOnboardingProviderState,
@@ -546,7 +546,7 @@ function ConnectAccountOption({
   readonly onToggleEnvironment: (environmentId: EnvironmentId, checked: boolean) => void;
 }) {
   const { environments } = useEnvironments();
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn } = useRelayAccount();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   const [expanded, setExpanded] = useState(true);
   const [discoveryReady, setDiscoveryReady] = useState(false);

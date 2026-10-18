@@ -1,5 +1,4 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
-import { useAuth } from "@clerk/expo";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import {
@@ -28,6 +27,7 @@ import {
 } from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { useRelayAuth } from "../cloud/useRelayAuth";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
 import { splitEnvironmentSections } from "./environmentSections";
 
@@ -382,7 +382,7 @@ function PairingScanCard(props: {
  * T3 Account sheet.
  */
 function T3ConnectSection() {
-  const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn } = useRelayAuth();
   const navigation = useNavigation();
   const { connectedEnvironments, onSetEnvironmentEnabled, onRemoveEnvironmentPress } =
     useRemoteConnections();
@@ -407,7 +407,12 @@ function T3ConnectSection() {
         <Pressable
           accessibilityRole="button"
           disabled={!isLoaded}
-          onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
+          onPress={() =>
+            navigation.navigate("SettingsSheet", {
+              screen: "SettingsContent",
+              params: { screen: "SettingsAuth" },
+            })
+          }
           className="min-h-13 flex-row items-center gap-3 rounded-[26px] border-continuous bg-grouped-card px-4 active:opacity-70"
         >
           <View className="min-w-0 flex-1 py-3">

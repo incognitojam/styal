@@ -178,7 +178,11 @@ export function useRemoteConnections() {
             { text: "Cancel", style: "cancel" },
             {
               text: "Open styal Account",
-              onPress: () => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" }),
+              onPress: () =>
+                navigation.navigate("SettingsSheet", {
+                  screen: "SettingsContent",
+                  params: { screen: "SettingsAuth" },
+                }),
             },
             remove,
           ],

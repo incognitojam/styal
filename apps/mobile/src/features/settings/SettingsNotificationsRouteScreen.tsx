@@ -1,7 +1,6 @@
 import { AuthRelayWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../../state/session";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
-import { useAuth } from "@clerk/expo";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import * as Notifications from "expo-notifications";
 import { useNavigation } from "@react-navigation/native";
@@ -36,7 +35,8 @@ import {
   subscribeAgentAwarenessRegistrationStatus,
 } from "../agent-awareness/remoteRegistration";
 import { refreshManagedRelayEnvironments } from "../cloud/managedRelayState";
-import { hasCloudPublicConfig, resolveRelayClerkTokenOptions } from "../cloud/publicConfig";
+import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { useRelayAuth } from "../cloud/useRelayAuth";
 import { runtime } from "../../lib/runtime";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
@@ -103,7 +103,8 @@ function ConfiguredSettingsNotificationsRouteScreen() {
       : agentAwarenessPlatform.subtitle;
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isLoaded, isSignedIn, session } = useRelayAuth();
+  const credential = session?.credential ?? null;
   const { savedConnectionsById } = useSavedRemoteConnections();
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>("checking");
   const [liveActivityStatus, setLiveActivityStatus] = useState<LiveActivityStatus>("checking");
@@ -233,7 +234,11 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         { text: "Cancel", style: "cancel" },
         {
           text: "Continue",
-          onPress: () => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" }),
+          onPress: () =>
+            navigation.navigate("SettingsSheet", {
+              screen: "SettingsContent",
+              params: { screen: "SettingsAuth" },
+            }),
         },
       ],
     );
@@ -273,17 +278,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
       }
       setNotificationStatus("enabled");
     }
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
-    if (tokenResult._tag === "Failure") {
-      setLiveActivityStatus("disabled");
-      const error = squashAtomCommandFailure(tokenResult);
-      Alert.alert(
-        Platform.OS === "android" ? "Ongoing activity unavailable" : "Live Activities unavailable",
-        error instanceof Error ? error.message : "Could not enable agent activity updates.",
-      );
-      return;
-    }
-    if (!tokenResult.value) {
+    if (!credential) {
       promptSignIn();
       setLiveActivityStatus("signed-out");
       return;
@@ -296,7 +291,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
             readEnvironmentScope(environmentId, AuthRelayWriteScope),
           enabled: true,
           previousEnabled: liveActivitiesPreferenceEnabled,
-          clerkToken: tokenResult.value,
+          credential,
           connections,
         }),
       ),
@@ -337,11 +332,11 @@ function ConfiguredSettingsNotificationsRouteScreen() {
   }, [
     connections,
     environmentCount,
-    getToken,
     isSignedIn,
     liveActivitiesPreferenceEnabled,
     promptSignIn,
     savePreferences,
+    credential,
   ]);
 
   const handleDeviceNotificationsChange = useCallback(
@@ -388,21 +383,6 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         setLiveActivityStatus("linking");
         void (async () => {
           try {
-            let token: string | null = null;
-            if (isSignedIn) {
-              const tokenResult = await settlePromise(() =>
-                getToken(resolveRelayClerkTokenOptions()),
-              );
-              if (tokenResult._tag === "Failure") {
-                setLiveActivityStatus("enabled");
-                reportAtomCommandResult(tokenResult, {
-                  label: "live activity disable token lookup",
-                });
-                return;
-              }
-              token = tokenResult.value;
-            }
-
             const updateResult = await settleAsyncResult(() =>
               runtime.runPromiseExit(
                 setLiveActivityUpdatesEnabled({
@@ -410,7 +390,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                     readEnvironmentScope(environmentId, AuthRelayWriteScope),
                   enabled: false,
                   previousEnabled: liveActivitiesPreferenceEnabled,
-                  clerkToken: token,
+                  credential,
                   connections,
                 }),
               ),
@@ -445,13 +425,13 @@ function ConfiguredSettingsNotificationsRouteScreen() {
     [
       activityChannelOff,
       connections,
-      getToken,
       isSignedIn,
       linkEnvironments,
       liveActivityStatus,
       liveActivitiesPreferenceEnabled,
       promptSignIn,
       savePreferences,
+      credential,
     ],
   );
 

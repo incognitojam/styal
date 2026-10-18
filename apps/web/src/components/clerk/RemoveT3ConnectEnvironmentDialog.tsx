@@ -10,7 +10,8 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button, InlineButton } from "../ui/button";
-import { useT3ConnectAccountPage } from "./T3ConnectAccountPages";
+import { useRelayAccount } from "../../cloud/useRelayAccount";
+import { openRelayAccount } from "../relay-auth/relayAuthDialogs";
 
 /**
  * Confirms removing a T3 Connect environment from this device. Removal here
@@ -27,11 +28,11 @@ export function RemoveT3ConnectEnvironmentDialog({
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }) {
-  const accountPage = useT3ConnectAccountPage();
+  const { isSignedIn } = useRelayAccount();
   // Keep the label through the close animation.
   const [shownLabel, setShownLabel] = useState(environmentLabel);
   if (environmentLabel !== null && environmentLabel !== shownLabel) setShownLabel(environmentLabel);
-  const openAccountPage = accountPage.open;
+  const openAccountPage = isSignedIn ? openRelayAccount : null;
 
   return (
     <>
@@ -72,7 +73,6 @@ export function RemoveT3ConnectEnvironmentDialog({
           </AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>
-      {accountPage.portals}
     </>
   );
 }

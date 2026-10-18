@@ -7,14 +7,17 @@ import type { MenuAction } from "@react-native-menu/menu";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { type ReactNode, useRef, useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Alert, Platform, Pressable, View } from "react-native";
 
 import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { SymbolView } from "../../components/AppSymbol";
+import { AppText as Text } from "../../components/AppText";
 import { showConfirmDialog } from "../../components/ConfirmDialogHost";
 import { ControlPillMenu } from "../../components/ControlPill";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { SettingsActionRow } from "../settings/components/SettingsActionRow";
+import { SettingsSection } from "../settings/components/SettingsSection";
 import {
   deregisterManagedRelayEnvironmentCommand,
   useManagedRelayEnvironments,
@@ -49,12 +52,11 @@ function confirmDeregister(environment: RelayClientEnvironmentRecord, onConfirm:
 }
 
 /**
- * The "styal Link" custom page inside Clerk's native user profile: every
- * environment registered to the signed-in account, with account-level
- * deregistration. Mirrors the web UserButton page; connections on this device
- * are managed in Settings instead.
+ * Every server registered to the signed-in styal Link account, with
+ * account-level deregistration. Connections on this device are managed in
+ * Settings instead.
  */
-export function T3ConnectProfilePage() {
+export function RelayLinkedServersSection() {
   const environmentsState = useManagedRelayEnvironments();
   const deregisterEnvironment = useAtomCommand(deregisterManagedRelayEnvironmentCommand, {
     reportFailure: false,
@@ -130,90 +132,77 @@ export function T3ConnectProfilePage() {
   const errorTraceId = environmentsState.errorTraceId;
 
   return (
-    <ScrollView
-      className="flex-1 bg-clerk-page"
-      contentContainerClassName="pb-8"
-      contentInsetAdjustmentBehavior="automatic"
-      refreshControl={
-        <RefreshControl
-          refreshing={environmentsState.isPending && environmentsState.data !== null}
-          onRefresh={environmentsState.refresh}
-        />
-      }
-    >
-      <ClerkSectionHeader>Registered servers</ClerkSectionHeader>
-
-      {environmentsState.error ? (
-        <>
-          <ClerkRow
-            title="Could not load styal Link environments"
-            subtitle={environmentsState.error}
-          />
-          {errorTraceId ? (
-            <ClerkButtonRow
-              label="Copy trace ID"
-              onPress={() => {
-                copyTextWithHaptic(errorTraceId, { target: "connection-trace-id" });
-              }}
+    <>
+      <SettingsSection title="Registered servers">
+        {environmentsState.error ? (
+          <>
+            <ServerRow
+              title="Could not load styal Link environments"
+              subtitle={environmentsState.error}
             />
-          ) : null}
-        </>
-      ) : isInitialLoad ? (
-        <View className="flex-row items-center gap-3 px-6 py-4">
-          <AppActivityIndicator colorClassName={"accent-clerk-foreground-muted"} size="small" />
-          <Text className="text-base text-clerk-foreground-muted">Loading environments</Text>
-        </View>
-      ) : environments.length > 0 ? (
-        environments.map((environment) => (
-          <ClerkRow
-            key={environment.environmentId}
-            title={environment.label}
-            subtitle={`${linkedAtLabel(environment.linkedAt)} · ${endpointLabel(environment)}`}
-            accessory={
-              deregisteringEnvironmentId === environment.environmentId ? (
-                <AppActivityIndicator
-                  colorClassName={"accent-clerk-foreground-muted"}
-                  size="small"
-                />
-              ) : (
-                <ControlPillMenu
-                  actions={ENVIRONMENT_MENU_ACTIONS}
-                  isAnchoredToRight
-                  onPressAction={() =>
-                    confirmDeregister(environment, () => void handleDeregister(environment))
-                  }
-                >
-                  <Pressable
-                    accessibilityLabel={`Actions for ${environment.label}`}
-                    accessibilityRole="button"
-                    disabled={deregisteringEnvironmentId !== null}
-                    className="size-[30px] items-center justify-center active:opacity-60 disabled:opacity-50"
+            {errorTraceId ? (
+              <SettingsActionRow
+                icon="doc.on.doc"
+                label="Copy trace ID"
+                onPress={() => {
+                  copyTextWithHaptic(errorTraceId, { target: "connection-trace-id" });
+                }}
+              />
+            ) : null}
+          </>
+        ) : isInitialLoad ? (
+          <View className="flex-row items-center gap-3 p-4">
+            <AppActivityIndicator colorClassName="accent-icon" size="small" />
+            <Text className="text-base text-foreground-muted">Loading environments</Text>
+          </View>
+        ) : environments.length > 0 ? (
+          environments.map((environment) => (
+            <ServerRow
+              key={environment.environmentId}
+              title={environment.label}
+              subtitle={`${linkedAtLabel(environment.linkedAt)} · ${endpointLabel(environment)}`}
+              accessory={
+                deregisteringEnvironmentId === environment.environmentId ? (
+                  <AppActivityIndicator colorClassName="accent-icon" size="small" />
+                ) : (
+                  <ControlPillMenu
+                    actions={ENVIRONMENT_MENU_ACTIONS}
+                    isAnchoredToRight
+                    onPressAction={() =>
+                      confirmDeregister(environment, () => void handleDeregister(environment))
+                    }
                   >
-                    <View className="rotate-90">
-                      <SymbolView
-                        name="ellipsis"
-                        size={18}
-                        tintColorClassName={"accent-clerk-foreground-muted"}
-                        type="monochrome"
-                      />
-                    </View>
-                  </Pressable>
-                </ControlPillMenu>
-              )
-            }
+                    <Pressable
+                      accessibilityLabel={`Actions for ${environment.label}`}
+                      accessibilityRole="button"
+                      disabled={deregisteringEnvironmentId !== null}
+                      className="size-[30px] items-center justify-center active:opacity-60 disabled:opacity-50"
+                    >
+                      <View className="rotate-90">
+                        <SymbolView
+                          name="ellipsis"
+                          size={18}
+                          tintColorClassName="accent-icon"
+                          type="monochrome"
+                        />
+                      </View>
+                    </Pressable>
+                  </ControlPillMenu>
+                )
+              }
+            />
+          ))
+        ) : (
+          <ServerRow
+            title="No servers registered"
+            subtitle="Link a server from its local Settings to reach it through styal Link."
           />
-        ))
-      ) : (
-        <ClerkRow
-          title="No servers registered"
-          subtitle="Link a server from its local Settings to reach it through styal Link."
-        />
-      )}
-
-      <Text className="px-6 pt-6 text-xs leading-normal text-clerk-foreground-muted">
+        )}
+      </SettingsSection>
+      <Text className="px-2 text-sm text-foreground-muted">
         Connections on this device are managed in Settings.
       </Text>
-    </ScrollView>
+    </>
   );
 }
 
@@ -221,49 +210,29 @@ const ENVIRONMENT_MENU_ACTIONS = [
   { id: "deregister", title: "Deregister", image: "trash", attributes: { destructive: true } },
 ] satisfies MenuAction[];
 
-// Layout primitives that mirror clerk-ios ClerkKitUI's profile rows so a custom
-// page reads as one of Clerk's own screens. System font on purpose: Clerk's
-// native views do not use the app's DM Sans.
-
-function ClerkSectionHeader(props: { readonly children: string }) {
-  return (
-    <Text className="min-h-4 border-b border-clerk-border px-6 pt-8 pb-4 text-xs font-medium tracking-[0.3px] text-clerk-foreground-muted uppercase">
-      {props.children}
-    </Text>
-  );
-}
-
-function ClerkRow(props: {
+function ServerRow(props: {
   readonly title: string;
   readonly subtitle: string;
   readonly accessory?: ReactNode;
 }) {
   return (
-    <View
-      collapsable={false}
-      className="flex-row items-center gap-3 border-b border-clerk-border px-6 py-4"
-    >
+    <View collapsable={false} className="flex-row items-center gap-4 p-4">
+      <SymbolView
+        name="server.rack"
+        size={Platform.OS === "android" ? 24 : 22}
+        tintColorClassName="accent-icon"
+        type="monochrome"
+        weight="regular"
+      />
       <View className="min-w-0 flex-1 gap-0.5">
-        <Text className="min-h-[22px] text-base text-clerk-foreground" numberOfLines={1}>
+        <Text className="text-lg text-foreground android:text-base" numberOfLines={1}>
           {props.title}
         </Text>
-        <Text className="min-h-5 text-sm text-clerk-foreground-muted" numberOfLines={2}>
+        <Text className="text-sm text-foreground-muted" numberOfLines={2}>
           {props.subtitle}
         </Text>
       </View>
       {props.accessory}
     </View>
-  );
-}
-
-function ClerkButtonRow(props: { readonly label: string; readonly onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={props.onPress}
-      className="border-b border-clerk-border px-6 py-4 active:opacity-60"
-    >
-      <Text className="text-base font-semibold text-clerk-foreground">{props.label}</Text>
-    </Pressable>
   );
 }

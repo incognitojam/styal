@@ -7,7 +7,8 @@ import "./fork-theme.css";
 
 import { prepareProviderAuthDelivery } from "./providerAuthDelivery";
 import { isElectron } from "./env";
-import { hasCloudPublicConfig } from "./cloud/publicConfig";
+import { hasCloudPublicConfig, hasLegacyClerkConfig } from "./cloud/publicConfig";
+import { ManagedRelayAuthProvider } from "./cloud/managedAuth";
 import { getRouter } from "./router";
 import {
   syncDocumentElectronPlatformClasses,
@@ -45,14 +46,20 @@ window.addEventListener("vite:preloadError", (event) => {
   }
 });
 
-const app = <AppRoot router={router} />;
+const app = hasCloudPublicConfig() ? (
+  <ManagedRelayAuthProvider>
+    <AppRoot router={router} />
+  </ManagedRelayAuthProvider>
+) : (
+  <AppRoot router={router} />
+);
 
-// Managed auth is cloud-only, and the Electron Clerk provider bundles the full
-// clerk-js runtime. Loading only the selected runtime as a split chunk keeps
-// every Clerk byte out of the startup graph for local-mode users, and keeps
-// the bundled clerk-js out of the browser build entirely.
+// Clerk is mounted only to move existing Clerk sign-ins to relay sessions. The
+// Electron Clerk provider bundles the full clerk-js runtime, so loading only
+// the selected runtime as a split chunk keeps every Clerk byte out of the
+// startup graph for local-mode users, and out of the browser build entirely.
 const managedAuthShellModule =
-  clerkPublishableKey && hasCloudPublicConfig()
+  clerkPublishableKey && hasLegacyClerkConfig()
     ? isElectron
       ? import("./components/clerk/ElectronManagedAuthShell")
       : import("./components/clerk/BrowserManagedAuthShell")

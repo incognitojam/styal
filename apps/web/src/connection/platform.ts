@@ -245,27 +245,9 @@ const layerCapabilities = Layer.effectContext(
         Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
       ),
       missingSession,
-      clerkToken: Effect.gen(function* () {
+      credential: Effect.suspend(() => {
         const session = appAtomRegistry.get(managedRelaySessionAtom);
-        if (session === null) {
-          return yield* missingSession;
-        }
-        const token = yield* session.readClerkToken().pipe(
-          Effect.mapError(
-            (error) =>
-              new ConnectionTransientError({
-                reason: "network",
-                detail: error.message,
-              }),
-          ),
-        );
-        if (token === null) {
-          return yield* new ConnectionBlockedError({
-            reason: "authentication",
-            detail: "The styal Link session is unavailable.",
-          });
-        }
-        return token;
+        return session === null ? missingSession : Effect.succeed(session.credential);
       }),
     });
     const identity = ClientCapabilities.RelayDeviceIdentity.of({

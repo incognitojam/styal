@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 
 import { createDpopProof, loadOrCreateDpopProofKeyPair } from "./dpop";
 import { managedRelayAccessTokenStore } from "./managedRelayTokenStore";
+import { endRelaySession } from "./relaySessionStore";
 
 const layerRelayDpopSigner = Layer.effect(
   ManagedRelay.ManagedRelayDpopSigner,
@@ -69,4 +70,5 @@ export const layer = (relayUrl: string) =>
     relayUrl,
     clientId: RelayMobileClientId,
     accessTokenStore: managedRelayAccessTokenStore,
+    onSessionEnded: endRelaySession,
   }).pipe(Layer.provideMerge(layerRelayDpopSigner));
