@@ -313,19 +313,35 @@ const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
       const providerInstance = yield* providerInstances.getInstance(modelSelection.instanceId);
       const provider =
         providerInstance === undefined ? undefined : yield* providerInstance.snapshot.getSnapshot;
-      const launched = yield* threadLaunch.launch({
-        commandId: CommandId.make(yield* randomUUID),
-        projectId: project.id,
-        title: "New thread",
-        modelSelection,
-        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        runtimeMode: resolveNewThreadRuntimeMode(projectSettings.defaultRuntimeMode, provider),
-        workspaceStrategy: { type: "root" },
-        createdBy: "system",
-        creationSource: "server",
-      });
+      const launched = yield* threadLaunch
+        .launch({
+          commandId: CommandId.make(yield* randomUUID),
+          projectId: project.id,
+          title: "New thread",
+          modelSelection,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: resolveNewThreadRuntimeMode(projectSettings.defaultRuntimeMode, provider),
+          workspaceStrategy: { type: "root" },
+          createdBy: "system",
+          creationSource: "server",
+        })
+        .pipe(
+          // The bootstrap thread is optional; its launch must not prevent opening the app.
+          Effect.catchTags({
+            ThreadManagementProviderInstanceDisabledError: (error) =>
+              Effect.logInfo("Skipped bootstrap thread because its provider instance is disabled", {
+                projectId: project.id,
+                instanceId: error.instanceId,
+              }).pipe(Effect.as(undefined)),
+            ThreadLaunchError: (error) =>
+              Effect.logWarning("Failed to launch bootstrap thread", {
+                projectId: project.id,
+                operation: error.operation,
+              }).pipe(Effect.as(undefined)),
+          }),
+        );
       bootstrapProjectId = project.id;
-      bootstrapThreadId = launched.threadId;
+      bootstrapThreadId = launched?.threadId;
     } else {
       bootstrapProjectId = project.id;
       bootstrapThreadId = existingThread.id;
