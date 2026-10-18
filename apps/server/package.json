@@ -18,7 +18,7 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "node --watch src/bin.ts start",
+    "dev": "node --watch --watch-path=src --watch-path=../../packages --watch-path=package.json src/bin.ts start",
     "build:bundle": "vp pack",
     "start": "node dist/bin.mjs start",
     "typecheck": "tsc-rs --noEmit",
