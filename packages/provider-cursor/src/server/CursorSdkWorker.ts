@@ -53,7 +53,7 @@ parentPort.on('message',async ({id,method,args})=>{
       default: throw new Error('Unknown Cursor worker operation.');
     }
     parentPort.postMessage({id,result});
-  } catch(error) {parentPort.postMessage({id,error:{name:error?.name,message:error?.message??String(error),stack:error?.stack}});}
+  } catch(error) {parentPort.postMessage({id,error:{name:error?.name,message:error?.message??String(error),stack:error?.stack,code:typeof error?.code==='string'?error.code:undefined,status:typeof error?.status==='number'?error.status:undefined}});}
 });
 `;
 
@@ -89,7 +89,7 @@ export function makeCursorSdkWorkerApi(
       id?: number;
       result?: unknown;
       update?: Parameters<NonNullable<typeof onDelta>>[0]["update"];
-      error?: { name: string; message: string; stack?: string };
+      error?: { name: string; message: string; stack?: string; code?: string; status?: number };
     }) => {
       if (frame.update !== undefined) {
         Promise.resolve()
@@ -104,6 +104,8 @@ export function makeCursorSdkWorkerApi(
         const error = new Error(frame.error.message);
         error.name = frame.error.name;
         if (frame.error.stack !== undefined) error.stack = frame.error.stack;
+        if (frame.error.code !== undefined) Object.assign(error, { code: frame.error.code });
+        if (frame.error.status !== undefined) Object.assign(error, { status: frame.error.status });
         request.reject(error);
       } else request.resolve(frame.result);
     },

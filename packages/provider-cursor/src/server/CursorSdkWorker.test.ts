@@ -2,7 +2,51 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { assert, it } from "@effect/vitest";
+import { CursorAgentSdkRunnerError, cursorSdkFailureMessage } from "./CursorAgentSdk.ts";
 import { makeCursorSdkWorkerApi } from "./CursorSdkWorker.ts";
+
+it("preserves SDK failure reasons and diagnostics across the worker boundary", async () => {
+  const scratchDir = NodePath.resolve(import.meta.dirname, "../../../../.scratch");
+  NodeFS.mkdirSync(scratchDir, { recursive: true });
+  const directory = NodeFS.mkdtempSync(NodePath.join(scratchDir, "cursor-worker-errors-"));
+  const modulePath = NodePath.join(directory, "synthetic-sdk.cjs");
+  NodeFS.writeFileSync(
+    modulePath,
+    `
+    class SdkError extends Error {
+      constructor() {
+        super('Too many requests');
+        this.name='SdkError';this.code='resource_exhausted';this.status=429;
+        this.nonserializable=()=>{};
+      }
+    }
+    exports.Agent={create:async()=>({agentId:'synthetic',close(){},async send(){
+      return {id:'run',agentId:'synthetic',wait:async()=>{throw new SdkError();}};
+    }})};
+    `,
+  );
+  try {
+    const api = makeCursorSdkWorkerApi(modulePath, process.env);
+    const session = await api.create({});
+    try {
+      const run = await session.send("synthetic");
+      const cause = await run.wait().then(
+        () => assert.fail("Expected SDK failure"),
+        (error: unknown) => error,
+      );
+      assert.instanceOf(cause, Error);
+      assert.equal((cause as Error).name, "SdkError");
+      assert.equal(
+        cursorSdkFailureMessage(new CursorAgentSdkRunnerError({ method: "run.wait", cause })),
+        "Cursor Agent SDK run.wait failed: Too many requests (resource_exhausted, HTTP 429)",
+      );
+    } finally {
+      await session.close();
+    }
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 it("isolates concurrent provider environments in actual shell children and preserves SDK operations", async () => {
   const scratchDir = NodePath.resolve(import.meta.dirname, "../../../../.scratch");
