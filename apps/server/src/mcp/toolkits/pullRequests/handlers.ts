@@ -25,6 +25,8 @@ import * as Option from "effect/Option";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as WorkflowRunWatchUsage from "../../../telemetry/WorkflowRunWatchUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
@@ -43,6 +45,11 @@ import {
   PullRequestThreadRequiredError,
   PullRequestsToolkit,
   type ThreadPullRequestEntry,
+  WorkflowRunReadFailedError,
+  WorkflowRunTargetIncompleteError,
+  type WorkflowRunTargetInput,
+  WorkflowRunUrlInvalidError,
+  WorkflowRunWatchFailedError,
 } from "./tools.ts";
 
 interface ResolvedTarget {
@@ -107,6 +114,35 @@ const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
   } satisfies ResolvedTarget;
 });
 
+/** Host, repository and run ID from a workflow run URL, or a job URL below one. */
+export function parseWorkflowRunUrl(
+  url: string,
+): { readonly host: string; readonly repository: string; readonly runId: number } | null {
+  if (!URL.canParse(url)) return null;
+  const parsed = new URL(url);
+  const match = /^\/([^/]+\/[^/]+)\/actions\/runs\/(\d+)(?:\/|$)/.exec(parsed.pathname);
+  if (match === null) return null;
+  const runId = Number(match[2]);
+  if (!Number.isSafeInteger(runId) || runId <= 0) return null;
+  return { host: parsed.host.toLowerCase(), repository: match[1]!.toLowerCase(), runId };
+}
+
+const resolveWorkflowRunTarget = Effect.fn("PullRequestsToolkit.resolveWorkflowRunTarget")(
+  function* (input: WorkflowRunTargetInput, project: OrchestrationProjectShell | undefined) {
+    if (input.url !== undefined) {
+      const parsed = parseWorkflowRunUrl(input.url);
+      if (parsed === null) return yield* new WorkflowRunUrlInvalidError({});
+      return parsed;
+    }
+    if (input.repository === undefined || input.runId === undefined) {
+      return yield* new WorkflowRunTargetIncompleteError({});
+    }
+    const host = (input.host ?? projectHostAndProvider(project).host)?.toLowerCase();
+    if (host === undefined) return yield* new PullRequestHostRequiredError({});
+    return { host, repository: input.repository.toLowerCase(), runId: input.runId };
+  },
+);
+
 function entryOf(
   link: ThreadPullRequestLink,
   chains: ReturnType<typeof resolveThreadPullRequestChains>,
@@ -157,6 +193,7 @@ const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
 
   const projects = yield* ProjectService.ProjectService;
+  const pullRequests = yield* PullRequestService.PullRequestService;
   const crypto = yield* Crypto.Crypto;
 
   const commandId = (tag: string, threadId: ThreadId) =>
@@ -170,7 +207,8 @@ const make = Effect.gen(function* () {
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
       | typeof PullRequestListFailedError
-      | typeof PullRequestWatchFailedError,
+      | typeof PullRequestWatchFailedError
+      | typeof WorkflowRunWatchFailedError,
     requested: ThreadId | undefined,
   ) {
     const scope = yield* McpInvocationContext.requireMcpCapability("pull-requests");
@@ -193,7 +231,8 @@ const make = Effect.gen(function* () {
     Failure:
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
-      | typeof PullRequestWatchFailedError,
+      | typeof PullRequestWatchFailedError
+      | typeof WorkflowRunWatchFailedError,
   ) =>
     projects.getShell(thread.projectId).pipe(
       Effect.map(Option.getOrUndefined),
@@ -205,13 +244,17 @@ const make = Effect.gen(function* () {
       Failure:
         | typeof PullRequestLinkFailedError
         | typeof PullRequestUnlinkFailedError
-        | typeof PullRequestWatchFailedError,
+        | typeof PullRequestWatchFailedError
+        | typeof WorkflowRunWatchFailedError,
     ) =>
     <E>(
       cause: Cause.Cause<E>,
     ): Effect.Effect<
       never,
-      PullRequestLinkFailedError | PullRequestUnlinkFailedError | PullRequestWatchFailedError
+      | PullRequestLinkFailedError
+      | PullRequestUnlinkFailedError
+      | PullRequestWatchFailedError
+      | WorkflowRunWatchFailedError
     > =>
       Cause.hasInterruptsOnly(cause)
         ? Effect.failCause(cause as Cause.Cause<never>)
@@ -261,6 +304,82 @@ const make = Effect.gen(function* () {
       url: target.url,
       watching: watchedLink(after)?.watch !== undefined,
       wasWatching: before?.watch !== undefined,
+    };
+  });
+
+  /**
+   * Starts or stops a workflow run watch. A run is read before it is watched, so a wrong ID
+   * fails here and a run that already completed is reported instead of watched.
+   */
+  const setWorkflowRunWatching = Effect.fn("PullRequestsToolkit.setWorkflowRunWatching")(function* (
+    input: WorkflowRunTargetInput,
+    watching: boolean,
+  ) {
+    const thread = yield* requireThread(WorkflowRunWatchFailedError, input.threadId);
+    const project = yield* projectOf(thread, WorkflowRunWatchFailedError);
+    const target = yield* resolveWorkflowRunTarget(input, project);
+    const watchOf = (shell: OrchestrationV2ThreadShell) =>
+      (shell.workflowRuns ?? []).find(
+        (run) =>
+          run.runId === target.runId &&
+          run.host.toLowerCase() === target.host &&
+          run.repository.toLowerCase() === target.repository,
+      );
+    if (watching && thread.lineage.relationshipToParent === "subagent") {
+      return yield* new PullRequestWatchFromSubagentError();
+    }
+    const before = watchOf(thread);
+    const result = {
+      ...target,
+      url:
+        before?.url ?? `https://${target.host}/${target.repository}/actions/runs/${target.runId}`,
+      name: before?.name ?? null,
+      wasWatching: before !== undefined,
+      conclusion: null,
+      failedJobs: [],
+    };
+    if (watching && before !== undefined) return { ...result, watching: true };
+    if (!watching && before === undefined) return { ...result, watching: false };
+    const run = watching
+      ? yield* pullRequests
+          .workflowRun({
+            projectId: thread.projectId,
+            host: target.host,
+            repository: target.repository,
+            runId: target.runId,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) => new WorkflowRunReadFailedError({ detail: cause.message, cause }),
+            ),
+          )
+      : null;
+    if (run?.completed) {
+      return {
+        ...result,
+        url: run.url,
+        name: run.name,
+        watching: false,
+        conclusion: run.conclusion ?? "unknown",
+        failedJobs: run.failedJobs,
+      };
+    }
+    yield* engine
+      .dispatch({
+        type: "thread.workflow-run.watch",
+        commandId: yield* commandId("mcp-workflow-run-watch", thread.id),
+        threadId: thread.id,
+        ...target,
+        watching,
+        ...(run === null ? {} : { run: { url: run.url, name: run.name } }),
+      })
+      .pipe(Effect.catchCause(dispatchFailure(WorkflowRunWatchFailedError)));
+    const after = yield* requireThread(WorkflowRunWatchFailedError, thread.id);
+    return {
+      ...result,
+      url: run?.url ?? result.url,
+      name: run?.name ?? result.name,
+      watching: watchOf(after) !== undefined,
     };
   });
 
@@ -342,7 +461,16 @@ const make = Effect.gen(function* () {
     ),
     watch_pull_request: writesThread((input) => setWatching(input, true)),
     unwatch_pull_request: writesThread((input) => setWatching(input, false)),
+    watch_workflow_run: writesThread((input) => setWorkflowRunWatching(input, true)),
+    unwatch_workflow_run: writesThread((input) => setWorkflowRunWatching(input, false)),
   } satisfies McpToolAccess.Handlers<typeof PullRequestsToolkit.tools>;
 });
 
-export const layer = McpToolAccess.toLayer(PullRequestsToolkit, make);
+export const layer = McpToolAccess.toLayer(
+  PullRequestsToolkit,
+  make.pipe(
+    Effect.flatMap((handlers) =>
+      McpToolAccess.wrapHandlers(handlers, WorkflowRunWatchUsage.observeHandlers),
+    ),
+  ),
+);

@@ -407,6 +407,16 @@ export function summarizeT3ToolCalls(
     case "capabilities":
       label = phrase("Checked", "check", `orchestration capabilities ${times}`);
       break;
+    case "watch-run":
+      label = phrase("Watching", "watch", quantity(selected.length, "workflow run"));
+      break;
+    case "unwatch-run":
+      label = phrase(
+        "Stopped watching",
+        "stop watching",
+        quantity(selected.length, "workflow run"),
+      );
+      break;
   }
   return { label, failedCount };
 }

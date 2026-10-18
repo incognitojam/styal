@@ -42,6 +42,8 @@ import {
   type PullRequestPreview,
 } from "@t3tools/contracts";
 
+import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+
 import { AllowGitHubReserve } from "../sourceControl/GitHubCli.ts";
 import * as GitHubApi from "../sourceControl/GitHubApi.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -137,7 +139,11 @@ import {
   type GitHubReviewThreadPage,
   type GitHubViewerAccess,
 } from "./gitHubPullRequestJson.ts";
-import type { ProviderChangeRequestSummary, ProviderListCursor } from "./PullRequestProvider.ts";
+import type {
+  ProviderChangeRequestSummary,
+  ProviderListCursor,
+  ProviderWorkflowRun,
+} from "./PullRequestProvider.ts";
 
 /**
  * Names the read that produced unusable output, so a failure reports the call it came from
@@ -604,6 +610,13 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<GitHubPullRequestWatchFingerprint | null, GitHubPullRequestCliError>;
 
+    readonly getWorkflowRun: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly runId: number;
+    }) => Effect.Effect<ProviderWorkflowRun, GitHubPullRequestCliError>;
+
     readonly revalidateChecks: Effect.Success<typeof makeChecksRevalidator>;
 
     readonly getPullRequestDetail: (input: {
@@ -897,6 +910,31 @@ export class GitHubPullRequestCli extends Context.Service<
  * The host is not read off the identity: it travels alongside it, because the identity a
  * project records is the path below its host and never names the host itself.
  */
+/** The fields of a GitHub Actions run and its latest attempt's jobs that a watch reads. */
+const decodeGitHubWorkflowRunJson = decodeJsonResult(
+  Schema.Struct({
+    name: Schema.NullOr(Schema.String),
+    run_number: Schema.Int,
+    status: Schema.NullOr(Schema.String),
+    conclusion: Schema.NullOr(Schema.String),
+    html_url: Schema.String,
+    head_branch: Schema.NullOr(Schema.String),
+    head_sha: Schema.String,
+    event: Schema.String,
+  }),
+);
+const decodeGitHubWorkflowRunJobsJson = decodeJsonResult(
+  Schema.Struct({
+    jobs: Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        conclusion: Schema.NullOr(Schema.String),
+        html_url: Schema.NullOr(Schema.String),
+      }),
+    ),
+  }),
+);
+
 function parseRepositorySelector(value: string): {
   readonly owner: string;
   readonly name: string;
@@ -2004,6 +2042,61 @@ export const make = Effect.gen(function* () {
   const getPullRequestWatchFingerprint: GitHubPullRequestCli["Service"]["getPullRequestWatchFingerprint"] =
     (input) => Effect.request(new PullRequestWatchFingerprintRead(input), watchFingerprintResolver);
 
+  /**
+   * A GitHub Actions run, and the jobs that did not pass once it completed. REST reads: they
+   * do not spend the GraphQL budget the pull request pages share.
+   */
+  const getWorkflowRun: GitHubPullRequestCli["Service"]["getWorkflowRun"] = (input) =>
+    Effect.gen(function* () {
+      const { owner, name } = parseRepositorySelector(input.repository);
+      const endpoint = `repos/${owner}/${name}/actions/runs/${input.runId}`;
+      const readJson = <A>(
+        path: string,
+        decode: (raw: string) => Result.Result<A, unknown>,
+      ): Effect.Effect<A, GitHubPullRequestCliError> =>
+        api.rest({ host: input.host, operation: "getWorkflowRun", path }).pipe(
+          Effect.flatMap((response) => {
+            const decoded = decode(response.body.trim());
+            return Result.isSuccess(decoded)
+              ? Effect.succeed(decoded.success)
+              : Effect.fail(
+                  new GitHubPullRequestReadError({
+                    command: "gh",
+                    cwd: input.cwd,
+                    operation: "getWorkflowRun",
+                    cause: decoded.failure,
+                  }),
+                );
+          }),
+        );
+      const run = yield* readJson(endpoint, decodeGitHubWorkflowRunJson);
+      const completed = run.status === "completed";
+      const jobs =
+        completed && run.conclusion !== "success"
+          ? yield* readJson(
+              `${endpoint}/jobs?filter=latest&per_page=100`,
+              decodeGitHubWorkflowRunJobsJson,
+            )
+          : null;
+      return {
+        name: `${run.name ?? "Workflow"} #${run.run_number}`,
+        url: run.html_url,
+        completed,
+        conclusion: completed ? run.conclusion : null,
+        headBranch: run.head_branch,
+        headSha: run.head_sha,
+        event: run.event,
+        failedJobs: (jobs?.jobs ?? [])
+          .filter(
+            (job) =>
+              job.conclusion !== "success" &&
+              job.conclusion !== "skipped" &&
+              job.conclusion !== "neutral",
+          )
+          .map((job) => ({ name: job.name, conclusion: job.conclusion, url: job.html_url })),
+      } satisfies ProviderWorkflowRun;
+    });
+
   return GitHubPullRequestCli.of({
     withVerifiedCredential,
     revalidateChecks,
@@ -2229,6 +2322,7 @@ export const make = Effect.gen(function* () {
 
     getPullRequestSummary,
     getPullRequestWatchFingerprint,
+    getWorkflowRun,
 
     getPullRequestDetail,
     getPullRequestPreview: (input) => {

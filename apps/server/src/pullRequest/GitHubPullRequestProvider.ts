@@ -375,6 +375,9 @@ export const make = Effect.gen(function* () {
         .getPullRequestWatchFingerprint(input)
         .pipe(Effect.mapError(fail("getChangeRequestWatchFingerprint"))),
 
+    getWorkflowRun: (input) =>
+      cli.getWorkflowRun(input).pipe(Effect.mapError(fail("getWorkflowRun"))),
+
     getChangeRequestPreview: (input) =>
       cli.getPullRequestPreview(input).pipe(Effect.mapError(fail("getChangeRequestPreview"))),
 
