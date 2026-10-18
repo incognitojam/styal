@@ -134,6 +134,7 @@ export function useReviewDiffData(input: {
   const selectedSectionId = selectedSection?.id ?? null;
   const source = selectedSection?.source;
   const lazySource = source?.truncated && source.files ? source : null;
+  const generatedPaths = selectedSection?.generatedPaths;
   // Files that load one by one load in reading order; their import lines are not known yet.
   const lazyFiles = useMemo(
     () =>
@@ -149,16 +150,10 @@ export function useReviewDiffData(input: {
               threadKey,
               sectionId: selectedSection?.id ?? null,
               diff: selectedSection?.diff,
-              ...(selectedSection ? { generatedPaths: selectedSection.generatedPaths } : {}),
+              ...(generatedPaths ? { generatedPaths } : {}),
             }),
           ),
-    [
-      lazySource,
-      selectedSection?.diff,
-      selectedSection?.generatedPaths,
-      selectedSection?.id,
-      threadKey,
-    ],
+    [lazySource, selectedSection?.diff, generatedPaths, selectedSection?.id, threadKey],
   );
   const registry = useContext(RegistryContext);
   const { environmentId, cwd } = input;
