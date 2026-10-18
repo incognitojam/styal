@@ -150,6 +150,7 @@ import { StyalToolIcon } from "../StyalToolIcon";
 import { ThreadContextChip } from "../ThreadContextChip";
 import { IssueContextChip } from "../IssueContextChip";
 import {
+  ArrowRightIcon,
   BotIcon,
   BugIcon,
   BrainIcon,
@@ -2080,6 +2081,20 @@ function ContextCompactionTimelineRow({
   row: Extract<TimelineRow, { kind: "standalone-activity" }>;
 }) {
   const Icon = row.style === "restart-note" ? RotateCwIcon : Minimize2Icon;
+  const content = (
+    <span className="flex items-center gap-1.5">
+      <Icon aria-hidden="true" className="size-3" />
+      {row.tokenCounts ? (
+        <>
+          Context compacted {row.tokenCounts.before}
+          <ArrowRightIcon aria-hidden="true" className="size-3" />
+          {row.tokenCounts.after} tokens
+        </>
+      ) : (
+        row.label
+      )}
+    </span>
+  );
   return (
     <div
       role="separator"
@@ -2091,18 +2106,8 @@ function ContextCompactionTimelineRow({
         ref={row.active ? observeVisibleAnimation : undefined}
         className="relative shrink-0 overflow-hidden"
       >
-        <span className="flex items-center gap-1.5">
-          <Icon aria-hidden="true" className="size-3" />
-          {row.label}
-        </span>
-        {row.active ? (
-          <ActivityShimmerOverlay>
-            <span className="flex items-center gap-1.5">
-              <Icon aria-hidden="true" className="size-3" />
-              {row.label}
-            </span>
-          </ActivityShimmerOverlay>
-        ) : null}
+        {content}
+        {row.active ? <ActivityShimmerOverlay>{content}</ActivityShimmerOverlay> : null}
       </span>
       <span className="h-px flex-1 bg-border/70" />
     </div>
