@@ -8,9 +8,10 @@
  *   intake-run.ts apply (--count <n> | --through <upstream-sha> | --commits <sha,...>) [--branch <name>]
  *   intake-run.ts continue [--note <text>] [--feature <id,id>]
  *   intake-run.ts auto --branch <name> [--max <n>] [--push] [--no-rerere]
+ *   intake-run.ts survey [--base HEAD] [--count 100 | --through <sha>] [--json]
  *   intake-run.ts fix-trailers [--base origin/main]
  *   intake-run.ts fix-references [--base origin/main]
- *   intake-run.ts verify [--base origin/main]
+ *   intake-run.ts verify [--base origin/main] [--changed-tests]
  *   intake-run.ts replay <promoted-candidate-sha> [--base <fork-sha>] [--skip-lockfile] [--json] [--dump <dir>]
  *   intake-run.ts score <dump-dir> [--exclude <sha-prefixes>] [--verbose]
  */
@@ -75,7 +76,16 @@ function run(
 }
 
 function git(cwd: string, args: ReadonlyArray<string>, input?: string): string {
-  const result = run(cwd, "git", args, input);
+  let result = run(cwd, "git", args, input);
+  // A styal server polling this checkout's status can hold the index lock for a moment.
+  for (
+    let attempt = 0;
+    attempt < 20 && /index\.lock': File exists/u.test(result.stderr);
+    attempt += 1
+  ) {
+    sleep(250);
+    result = run(cwd, "git", args, input);
+  }
   if (result.status !== 0) {
     throw new Error(
       `git ${args.join(" ")} failed: ${result.stderr.trim() || result.stdout.trim()}`,
@@ -85,6 +95,10 @@ function git(cwd: string, args: ReadonlyArray<string>, input?: string): string {
 }
 
 const lines = (text: string) => text.split("\n").filter((line) => line.length > 0);
+
+function sleep(milliseconds: number) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
 
 // ---------------------------------------------------------------------------------------------
 // One upstream commit
@@ -126,6 +140,8 @@ export interface LockfileReport {
 }
 
 const LOCKFILE = "pnpm-lock.yaml";
+/** Files pnpm reads to resolve the lockfile. */
+const MANIFEST = /(^|\/)package\.json$|^pnpm-workspace\.yaml$/u;
 
 function unmergedFiles(
   cwd: string,
@@ -611,7 +627,12 @@ export function pickUpstreamCommit(
     if (remaining > 0) unresolved.push({ path, hunks: remaining });
     else git(cwd, ["add", "--", path]);
   }
-  if (lockfileConflict) {
+  // pnpm cannot read a manifest that still holds conflict markers, so the lockfile waits for
+  // `continue`, which regenerates it once the manifests are resolved.
+  const manifestsPending = unresolved.some((file) => MANIFEST.test(file.path));
+  if (lockfileConflict && manifestsPending) {
+    unresolved.push({ path: LOCKFILE, hunks: 1 });
+  } else if (lockfileConflict) {
     if (options.skipLockfile) {
       // The fork's lockfile stays as it was; regenerate it before validating the batch.
       git(cwd, ["add", "--", LOCKFILE]);
@@ -861,7 +882,7 @@ export interface QueueEntry {
 
 function queueEntries(
   cwd: string,
-  selection: { count?: number; through?: string },
+  selection: { count?: number; through?: string; forkRef?: string },
 ): ReadonlyArray<QueueEntry> {
   const count = selection.count ?? 200;
   const result = run(cwd, "node", [
@@ -870,6 +891,7 @@ function queueEntries(
     "--count",
     String(count),
     "--json",
+    ...(selection.forkRef === undefined ? [] : ["--fork-ref", selection.forkRef]),
   ]);
   if (result.status !== 0) throw new Error(`queue next failed: ${result.stderr}`);
   const entries = (
@@ -1084,10 +1106,6 @@ export function batchLength(
   return length;
 }
 
-function sleep(milliseconds: number) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
-}
-
 /** Waits for the Fork CI runs on `sha`, returning their conclusion, or null after two hours. */
 const forkRepository = () => process.env.GH_REPO ?? "incognitojam/styal";
 
@@ -1219,6 +1237,137 @@ function autoBatch(
     `Fork CI passed. Promote with:\n\n  GH_REPO=${forkRepository()} gh workflow run promote-upstream-intake.yml -f candidate_branch=${options.branch} -f candidate_sha=${sha}\n`,
   );
   return true;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Survey
+
+export interface SurveyEntry {
+  readonly sha: string;
+  readonly pr: number | null;
+  readonly title: string;
+  readonly status: "clean" | "resolved" | "needs-person";
+  readonly reasons: ReadonlyArray<string>;
+  /** Fork features whose ledger paths the upstream commit changes. */
+  readonly features: ReadonlyArray<string>;
+}
+
+/** Ledger feature ids by the implementation and upstream paths each entry lists. */
+export function ledgerFeaturesByPath(ledger: string): ReadonlyMap<string, ReadonlyArray<string>> {
+  const byPath = new Map<string, Array<string>>();
+  let id: string | undefined;
+  let listing = false;
+  for (const line of ledger.split("\n")) {
+    const entry = /^ {2}- id: (\S+)/u.exec(line);
+    if (entry) {
+      id = entry[1];
+      listing = false;
+      continue;
+    }
+    if (/^ {4}(implementation_paths|upstream_paths):\s*$/u.test(line)) {
+      listing = true;
+      continue;
+    }
+    if (/^ {4}\S/u.test(line)) listing = false;
+    const path = listing ? /^ {6}- (\S+)\s*$/u.exec(line)?.[1] : undefined;
+    if (path && id) byPath.set(path, [...(byPath.get(path) ?? []), id]);
+  }
+  return byPath;
+}
+
+/**
+ * Applies the next queue entries from `base` in a scratch worktree to find the ones that will need
+ * a person, so their work can start before the batch reaches them. A pick that stops takes
+ * upstream's side to keep going; rerere stays off so none of those guesses is recorded.
+ */
+function survey(
+  cwd: string,
+  options: { readonly base: string; readonly count: number; readonly through?: string },
+): ReadonlyArray<SurveyEntry> {
+  const directory = NodePath.join(
+    git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim(),
+    "intake-survey",
+  );
+  run(cwd, "git", ["worktree", "remove", "--force", directory]);
+  NodeFS.rmSync(directory, { recursive: true, force: true });
+  git(cwd, ["worktree", "add", "-q", "--detach", directory, options.base]);
+  const featuresByPath = ledgerFeaturesByPath(readIfExists(NodePath.join(cwd, LEDGER)));
+  const results: Array<SurveyEntry> = [];
+  try {
+    const entries = queueEntries(cwd, {
+      count: options.count,
+      forkRef: options.base,
+      ...(options.through === undefined ? {} : { through: options.through }),
+    });
+    for (const entry of entries) {
+      const changedPaths = lines(
+        git(cwd, [
+          "diff-tree",
+          "--no-commit-id",
+          "--name-only",
+          "-r",
+          "-m",
+          "--first-parent",
+          entry.sha,
+        ]),
+      );
+      const features = [
+        ...new Set(changedPaths.flatMap((path) => featuresByPath.get(path) ?? [])),
+      ].toSorted();
+      let reasons: ReadonlyArray<string>;
+      let status: SurveyEntry["status"];
+      try {
+        const outcome = pickUpstreamCommit(directory, entry.sha, {
+          rerere: false,
+          skipLockfile: true,
+        });
+        const upstreamNames = outcome.status === "stopped" ? [] : addedUpstreamNames(directory);
+        for (const file of outcome.unresolved) {
+          const taken = run(directory, "git", ["checkout", "--theirs", "--", file.path]);
+          git(
+            directory,
+            taken.status === 0 ? ["add", "--", file.path] : ["rm", "-q", "--", file.path],
+          );
+        }
+        commitPick(directory, entry, outcome);
+        const differsWithoutNote =
+          outcome.status !== "stopped" &&
+          commitMatchesUpstream(directory, "HEAD") === false &&
+          forkAdaptationNote(git(directory, ["show", "-s", "--format=%B", "HEAD"])) === null;
+        reasons = autoStopReasons({ outcome, upstreamNames, differsWithoutNote });
+        status =
+          reasons.length > 0 ? "needs-person" : outcome.status === "clean" ? "clean" : "resolved";
+      } catch (error) {
+        run(directory, "git", ["cherry-pick", "--quit"]);
+        run(directory, "git", ["reset", "-q", "--hard", "HEAD"]);
+        reasons = [
+          `could not apply: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`,
+        ];
+        status = "needs-person";
+      }
+      results.push({ sha: entry.sha, pr: entry.pr, title: entry.title, status, reasons, features });
+    }
+  } finally {
+    run(cwd, "git", ["worktree", "remove", "--force", directory]);
+  }
+  return results;
+}
+
+/** One line per commit that needs a person, with its reasons and the fork features it touches. */
+export function summarizeSurvey(entries: ReadonlyArray<SurveyEntry>): string {
+  const count = (status: SurveyEntry["status"]) =>
+    entries.filter((entry) => entry.status === status).length;
+  const parts = [
+    `Surveyed ${entries.length} commits: ${count("clean")} clean, ${count("resolved")} resolved, ${count("needs-person")} need a person.`,
+  ];
+  for (const entry of entries.filter((candidate) => candidate.status === "needs-person")) {
+    parts.push(
+      `\n${entry.sha.slice(0, 10)} ${entry.pr === null ? "direct" : `#${entry.pr}`} ${entry.title}`,
+    );
+    for (const reason of entry.reasons) parts.push(`    ${reason}`);
+    if (entry.features.length > 0) parts.push(`    fork features: ${entry.features.join(", ")}`);
+  }
+  return `${parts.join("\n")}\n`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1483,10 +1632,15 @@ export function verificationEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessE
 
 /**
  * Installs once, then typechecks every package the batch touches, lints its changed files, runs
- * its changed tests, checks formatting, and checks the ledger. Prints one line per step and the
- * failures in full.
+ * the test suite of every package the batch touches (only its changed tests with
+ * `changedTestsOnly`), checks formatting, and checks the ledger. Prints one line per step and the
+ * failures in full. Whole suites catch fork tests an upstream change breaks without touching them.
  */
-function verify(cwd: string, base: string): boolean {
+function verify(
+  cwd: string,
+  base: string,
+  options: { readonly changedTestsOnly?: boolean } = {},
+): boolean {
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
     (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
   );
@@ -1508,6 +1662,11 @@ function verify(cwd: string, base: string): boolean {
   if (sources.length > 0)
     step("lint changed files", "vp", ["lint", "--report-unused-disable-directives", ...sources]);
   for (const directory of owningPackages(cwd, changed)) {
+    if (!options.changedTestsOnly) {
+      if (/"test"\s*:/u.test(readIfExists(NodePath.join(cwd, directory, "package.json"))))
+        step(`tests ${directory}`, "vp", ["test", "run"], NodePath.join(cwd, directory));
+      continue;
+    }
     const tests = changed
       .filter((path) => path.startsWith(`${directory}/`) && /\.test\.tsx?$/u.test(path))
       .map((path) => path.slice(directory.length + 1));
@@ -1811,6 +1970,16 @@ function main() {
     case "continue": {
       const state = JSON.parse(NodeFS.readFileSync(statePath(cwd), "utf8")) as RunState;
       if (state.current === null) throw new Error("No stopped pick to continue.");
+      // A lockfile left for this step: regenerate it now that the manifests are resolved.
+      let lockfile = state.current.outcome.lockfile;
+      if (unmergedFiles(cwd).some((file) => file.path === LOCKFILE)) {
+        if (unmergedFiles(cwd).some((file) => MANIFEST.test(file.path))) {
+          throw new Error("Resolve and stage the package manifests first.");
+        }
+        git(cwd, ["checkout", "--ours", "--", LOCKFILE]);
+        lockfile = regenerateLockfile(cwd, state.current.entry.sha);
+        git(cwd, ["add", "--", LOCKFILE]);
+      }
       if (
         unmergedFiles(cwd).length > 0 ||
         /^\+(<{7}|\|{7}|>{7})( |$)/mu.test(git(cwd, ["diff", "--cached"]))
@@ -1826,9 +1995,16 @@ function main() {
       const changed = lines(git(cwd, ["diff", "--cached", "--name-only", "HEAD"]));
       const keys = rewriteServiceKeys(cwd, state.current.entry.sha, changed);
       const ledger = moveLedgerPathsForStagedRenames(cwd);
+      const regenerated = lockfile !== state.current.outcome.lockfile;
       const outcome = {
         ...state.current.outcome,
-        adaptations: [...state.current.outcome.adaptations, ...keys, ...ledger],
+        adaptations: [
+          ...state.current.outcome.adaptations,
+          ...keys,
+          ...ledger,
+          ...(regenerated ? [{ kind: "lockfile" as const, path: LOCKFILE }] : []),
+        ],
+        ...(lockfile ? { lockfile } : {}),
       };
       commitPick(cwd, state.current.entry, outcome, {
         ...(note ? { note } : {}),
@@ -1854,6 +2030,23 @@ function main() {
       })
         ? 0
         : 2;
+      return;
+    }
+    case "survey": {
+      const count = Number(flag("--count") ?? 100);
+      if (!Number.isInteger(count) || count < 1)
+        throw new Error("--count must be a positive integer.");
+      const through = flag("--through");
+      const results = survey(cwd, {
+        base: flag("--base") ?? "HEAD",
+        count,
+        ...(through === undefined ? {} : { through }),
+      });
+      process.stdout.write(
+        process.argv.includes("--json")
+          ? `${JSON.stringify(results, null, 2)}\n`
+          : summarizeSurvey(results),
+      );
       return;
     }
     case "fix-trailers": {
@@ -1884,7 +2077,11 @@ function main() {
       return;
     }
     case "verify": {
-      process.exitCode = verify(cwd, flag("--base") ?? "origin/main") ? 0 : 1;
+      process.exitCode = verify(cwd, flag("--base") ?? "origin/main", {
+        changedTestsOnly: process.argv.includes("--changed-tests"),
+      })
+        ? 0
+        : 1;
       return;
     }
     case "fix-references": {
@@ -1910,7 +2107,7 @@ function main() {
     }
     default:
       process.stdout.write(
-        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | fix-trailers [--base <ref>] | verify [--base <ref>] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
+        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--changed-tests] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
       );
       process.exitCode = command === undefined ? 0 : 1;
   }

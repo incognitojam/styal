@@ -6,11 +6,13 @@ import {
   namesUpstreamProduct,
   draftAdaptationNote,
   intakeCommitMessage,
+  ledgerFeaturesByPath,
   lockfilePackages,
   mergedModuleMoves,
   moveLedgerPaths,
   overrideSelector,
   rewriteServiceKeyText,
+  summarizeSurvey,
   verificationEnvironment,
 } from "./intake-run.ts";
 
@@ -297,5 +299,56 @@ describe("namesUpstreamProduct", () => {
       ),
     );
     assert.isFalse(namesUpstreamProduct("docs/internals/remote.md", "T3 Connect tunnels"));
+  });
+});
+
+describe("ledgerFeaturesByPath", () => {
+  it("maps implementation and upstream paths to the entries that list them", () => {
+    const ledger = [
+      "features:",
+      "  - id: first",
+      "    invariants:",
+      "      - Not a path.",
+      "    implementation_paths:",
+      "      - apps/web/src/a.ts",
+      "    upstream_paths:",
+      "      - apps/server/src/b.ts",
+      "    tests:",
+      "      - apps/web/src/a.test.ts",
+      "  - id: second",
+      "    implementation_paths:",
+      "      - apps/web/src/a.ts",
+    ].join("\n");
+    const byPath = ledgerFeaturesByPath(ledger);
+    assert.deepStrictEqual(byPath.get("apps/web/src/a.ts"), ["first", "second"]);
+    assert.deepStrictEqual(byPath.get("apps/server/src/b.ts"), ["first"]);
+    assert.isUndefined(byPath.get("apps/web/src/a.test.ts"));
+  });
+});
+
+describe("summarizeSurvey", () => {
+  it("counts each status and lists only the commits that need a person", () => {
+    const summary = summarizeSurvey([
+      { sha: "a".repeat(40), pr: 1, title: "fix: one", status: "clean", reasons: [], features: [] },
+      {
+        sha: "b".repeat(40),
+        pr: 2,
+        title: "feat: two",
+        status: "needs-person",
+        reasons: ["unresolved conflict: apps/web/src/a.ts"],
+        features: ["first"],
+      },
+    ]);
+    assert.strictEqual(
+      summary,
+      [
+        "Surveyed 2 commits: 1 clean, 0 resolved, 1 need a person.",
+        "",
+        "bbbbbbbbbb #2 feat: two",
+        "    unresolved conflict: apps/web/src/a.ts",
+        "    fork features: first",
+        "",
+      ].join("\n"),
+    );
   });
 });
