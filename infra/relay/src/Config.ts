@@ -70,6 +70,10 @@ export class RelayConfiguration extends Context.Service<
     readonly clerkSecretKey: Redacted.Redacted<string>;
     readonly clerkPublishableKey: string;
     readonly clerkJwtAudience: string;
+    /** Keys the stored hashes of email sign-in codes. */
+    readonly signInCodeSecret: Redacted.Redacted<string>;
+    /** Non-production only: the code test accounts sign in with. */
+    readonly testSignInCode?: string;
     readonly apnsDeliveryJobSigningSecret: Redacted.Redacted<string>;
     readonly cloudMintPrivateKey: Redacted.Redacted<string>;
     readonly cloudMintPublicKey: string;
@@ -155,4 +159,62 @@ export const apnsCredentialsConfig: Effect.Effect<ApnsCredentials | null, Config
       bundleId,
       privateKey,
     };
+  });
+
+export type EmailSignInDelivery =
+  | { readonly kind: "disabled" }
+  | { readonly kind: "log" }
+  | { readonly kind: "cloudflare"; readonly fromAddress: string; readonly fromName: string };
+
+export interface EmailSignInSettings {
+  readonly delivery: EmailSignInDelivery;
+  readonly testSignInCode: string | undefined;
+}
+
+const decodeEmailSignInDeliveryKind = Schema.decodeUnknownEffect(
+  Schema.Literals(["cloudflare", "log"]),
+);
+
+/**
+ * Email sign-in stays off until `RELAY_EMAIL_FROM_ADDRESS` is set, or on a
+ * non-production stage `RELAY_EMAIL_DELIVERY=log`. Log delivery and the fixed
+ * test code are refused on prod, where they would let anyone read or skip codes.
+ */
+export const emailSignInConfig = (stage: string) =>
+  Effect.gen(function* () {
+    const fromAddress = (yield* Config.String("RELAY_EMAIL_FROM_ADDRESS").pipe(
+      Config.withDefault(""),
+    )).trim();
+    const fromName =
+      (yield* Config.String("RELAY_EMAIL_FROM_NAME").pipe(Config.withDefault(""))).trim() ||
+      "styal";
+    const deliveryValue =
+      (yield* Config.String("RELAY_EMAIL_DELIVERY").pipe(Config.withDefault(""))).trim() ||
+      "cloudflare";
+    const deliveryKind = yield* decodeEmailSignInDeliveryKind(deliveryValue).pipe(
+      Effect.mapError((error) => new Config.ConfigError(error)),
+    );
+    const testSignInCode =
+      (yield* Config.String("RELAY_TEST_SIGN_IN_CODE").pipe(Config.withDefault(""))).trim() ||
+      undefined;
+
+    const refuse = (message: string) =>
+      Effect.fail(new Config.ConfigError(new ConfigProvider.SourceError({ message })));
+    if (stage === "prod" && deliveryKind === "log") {
+      return yield* refuse("RELAY_EMAIL_DELIVERY=log is not allowed on the prod stage.");
+    }
+    if (stage === "prod" && testSignInCode !== undefined) {
+      return yield* refuse("RELAY_TEST_SIGN_IN_CODE is not allowed on the prod stage.");
+    }
+    if (testSignInCode !== undefined && !/^\d{8}$/.test(testSignInCode)) {
+      return yield* refuse("RELAY_TEST_SIGN_IN_CODE must be eight digits.");
+    }
+
+    const delivery: EmailSignInDelivery =
+      deliveryKind === "log"
+        ? { kind: "log" }
+        : fromAddress === ""
+          ? { kind: "disabled" }
+          : { kind: "cloudflare", fromAddress, fromName };
+    return { delivery, testSignInCode } satisfies EmailSignInSettings;
   });

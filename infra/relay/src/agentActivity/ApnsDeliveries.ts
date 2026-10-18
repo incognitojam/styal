@@ -102,6 +102,11 @@ export type ApnsDeliveryError =
   | LiveActivities.LiveActivityTargetListPersistenceError
   | LiveActivities.LiveActivityDeliveryMarkPersistenceError;
 
+export class ApnsRegistrationEndDeliveryFailed extends Schema.TaggedError<ApnsRegistrationEndDeliveryFailed>()(
+  "ApnsRegistrationEndDeliveryFailed",
+  { cause: Schema.Defect() },
+) {}
+
 export class ApnsDeliveryJobClaimInFlight extends Schema.TaggedError<ApnsDeliveryJobClaimInFlight>()(
   "ApnsDeliveryJobClaimInFlight",
   {
@@ -537,7 +542,7 @@ export class ApnsDeliveries extends Context.Service<
     ) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryError>;
     readonly processSignedJob: (
       body: unknown,
-    ) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryError>;
+    ) => Effect.Effect<RelayDeliveryResult, ApnsDeliveryError | ApnsRegistrationEndDeliveryFailed>;
     readonly sendPushNotification: (input: {
       readonly target: LiveActivityDeliveryTarget;
       readonly token: string;
@@ -1033,7 +1038,11 @@ export const make = Effect.gen(function* () {
       "relay.delivery.kind": payload.kind,
       "relay.delivery.job_id": payload.jobId,
     });
-    return yield* Effect.suspend(() => {
+    return yield* Effect.suspend<
+      RelayDeliveryResult,
+      ApnsDeliveryError | ApnsRegistrationEndDeliveryFailed,
+      never
+    >(() => {
       switch (payload.kind) {
         case "live_activity_start":
         case "live_activity_update":
@@ -1061,6 +1070,50 @@ export const make = Effect.gen(function* () {
             alert: payload.alert ?? null,
           });
         case "live_activity_end":
+          if (payload.registrationRemoved) {
+            // The signed job owns this old card's token even after SQL removal.
+            // Do not validate against or mutate a newer registration, or write
+            // delivery history that recreates the deleted account's data.
+            return Effect.gen(function* () {
+              const target = {
+                user_id: payload.target.userId,
+                device_id: payload.target.deviceId,
+                bundle_id: payload.target.bundleId ?? null,
+                aps_environment: payload.target.apsEnvironment ?? null,
+              };
+              const { request, epochSeconds } = makeLiveActivityDeliveryRequest(
+                apns,
+                {
+                  target,
+                  kind: "live_activity_end",
+                  token: payload.target.token,
+                  aggregate: null,
+                },
+                now,
+              );
+              const result = yield* apns
+                .sendLiveActivityRequest({
+                  credentials: credentialsForTarget(config.apns, target),
+                  request,
+                  issuedAtUnixSeconds: epochSeconds,
+                })
+                .pipe(Effect.mapError((cause) => new ApnsRegistrationEndDeliveryFailed({ cause })));
+              if (
+                !result.ok &&
+                (result.status === 0 || result.status === 429 || result.status >= 500)
+              ) {
+                return yield* new ApnsRegistrationEndDeliveryFailed({ cause: result });
+              }
+              return {
+                deviceId: payload.target.deviceId,
+                kind: "live_activity_end" as const,
+                ok: result.ok,
+                apnsStatus: result.status,
+                apnsReason: result.reason ?? null,
+                apnsId: result.apnsId,
+              };
+            });
+          }
           return sendLiveActivity({
             target: {
               user_id: payload.target.userId,

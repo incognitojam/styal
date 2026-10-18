@@ -3951,6 +3951,58 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9188
       retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
+  - id: relay-email-sign-in
+    title: Sign in to styal Link with an emailed code and a relay-owned session
+    status: maintained
+    prs: []
+    invariants:
+      - The relay signs users in with an eight-digit emailed code bound to the requesting DPoP key; only the newest code for an address and key is live, each code allows five attempts and expires after 10 minutes. A key can request five codes per address per hour, an address receives at most 20 per hour from all keys, bounding guesses to 100 per hour against 100 million codes; issuance and per-code caps hold under concurrent requests.
+      - Signing in returns a session credential that only works with proofs from the key that signed in. It does not rotate and ends after 90 days without use or when the user signs it out. Revocation, sign-out, and expiry pruning queue card-specific Live Activity ends before removing the session's mobile devices and Live Activities in one transaction; the sends run outside that transaction, a registration that arrives between them and the removal gets its own end first, queue failures retain registrations for retry, and legacy registrations without a session remain. Device and Live Activity registrations made with a session are refused once that session is gone. A failed session prune does not stop the cron's other pruning.
+      - Accounts imported from Clerk keep their Clerk user id. During transition, email sign-in rechecks imported email ownership and resolves unmapped verified addresses through Clerk, while exchange refreshes the email mapping. Clerk outages fail as upstream_unavailable instead of splitting accounts or rejecting credentials. A relay without a Clerk secret keeps stored email mappings as they are and makes no Clerk lookups, so removing Clerk later does not split imported accounts.
+      - The account endpoints accept either a Clerk bearer token or a relay DPoP access token with the account scope. DPoP authentication does not call Clerk. Deleting an imported account tears down its environments, then deletes its Clerk identity when Clerk is configured (404 counts as success; outages are retryable upstream_unavailable), then deletes relay data, so a failure at any step leaves the account and its sessions able to retry.
+      - Email sign-in stays off until a sender is configured, and production refuses log delivery and fixed test codes.
+      - Account deletion retries teardown for active links, revoked links, and outstanding allocations, clearing held-hook inboxes before removing allocation records. Teardown failure preserves cleanup state and account sessions for retry. Deletion queues Live Activity ends before removing registrations and removes activity content only for environment/key pairs with no other active account owner; signed removal ends remain deliverable after SQL removal without recreating account records. Deletion takes session row locks before device and Live Activity rows, the same order as registration and session revocation.
+      - Exported traces never carry database driver detail (bound parameters, failing rows, driver messages), so auth persistence failures do not export email addresses; spans keep the query text, SQL state and constraint name.
+    rationale: Clerk ends sessions after a fixed maximum lifetime (seven days by default), which signed styal Link users out of every client regardless of activity. Owning the session in the relay lets sessions last while they are used and gives later account features, such as sharing with another account by email, an account table to build on.
+    implementation_paths:
+      - infra/relay/scripts/import-clerk-users.ts
+      - infra/relay/src/Runtime.ts
+      - infra/relay/src/agentActivity/LiveActivityCleanup.ts
+      - infra/relay/src/auth/AccountAuth.ts
+      - infra/relay/src/auth/AccountData.ts
+      - infra/relay/src/auth/Accounts.ts
+      - infra/relay/src/auth/AuthSessions.ts
+      - infra/relay/src/auth/ClerkDirectory.ts
+      - infra/relay/src/auth/EmailSender.ts
+      - infra/relay/src/auth/EmailSignInCodes.ts
+      - infra/relay/src/auth/clerkImport.ts
+      - infra/relay/src/pruneExpiredState.ts
+    upstream_paths:
+      - infra/relay/src/Config.ts
+      - infra/relay/src/auth/RelayTokens.ts
+      - infra/relay/src/http/Api.ts
+      - infra/relay/src/observability.ts
+      - infra/relay/src/persistence/schema.ts
+      - infra/relay/src/worker.ts
+      - packages/contracts/src/relay.ts
+    tests:
+      - infra/relay/src/Config.test.ts
+      - infra/relay/src/Runtime.test.ts
+      - infra/relay/src/agentActivity/ApnsDeliveries.test.ts
+      - infra/relay/src/auth/AccountAuth.test.ts
+      - infra/relay/src/auth/AccountData.postgres.test.ts
+      - infra/relay/src/auth/AuthSessions.postgres.test.ts
+      - infra/relay/src/auth/ClerkDirectory.test.ts
+      - infra/relay/src/auth/clerkImport.test.ts
+      - infra/relay/src/http/AuthApi.test.ts
+      - infra/relay/src/observability.postgres.test.ts
+      - infra/relay/src/pruneExpiredState.test.ts
+      - packages/contracts/src/relay.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream replaces Clerk with relay-owned sessions that stay valid while used, on every client.
+
   - id: restart-stopped-tool-calls
     title: Show tool calls a server restart killed as stopped
     status: review-needed

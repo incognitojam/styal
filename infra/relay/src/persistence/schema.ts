@@ -3,6 +3,7 @@ import type {
   RelayAgentActivityState,
   RelayAgentAwarenessPreferences,
   RelayManagedEndpointOrigin,
+  RelayPublicClientId,
 } from "@t3tools/contracts/relay";
 import {
   boolean,
@@ -21,6 +22,8 @@ export const relayMobileDevices = pgTable(
   {
     userId: varchar("user_id", { length: 255 }).notNull(),
     deviceId: varchar("device_id", { length: 255 }).notNull(),
+    // Null for registrations made with legacy Clerk-exchanged tokens.
+    sessionId: varchar("session_id", { length: 64 }),
     label: text("label").notNull().default("iOS device"),
     platform: varchar("platform", { length: 16 }).notNull().$type<"ios" | "android">(),
     iosMajorVersion: integer("ios_major_version"),
@@ -36,6 +39,7 @@ export const relayMobileDevices = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.deviceId] }),
+    index("idx_relay_mobile_devices_session_id").on(table.sessionId),
     uniqueIndex("idx_relay_mobile_devices_push_token").on(table.pushToken),
     uniqueIndex("idx_relay_mobile_devices_push_to_start_token").on(table.pushToStartToken),
   ],
@@ -197,5 +201,59 @@ export const relayDpopProofs = pgTable(
   (table) => [
     primaryKey({ columns: [table.thumbprint, table.jti] }),
     index("idx_relay_dpop_proofs_expires_at").on(table.expiresAt),
+  ],
+);
+
+export const relayUsers = pgTable(
+  "relay_users",
+  {
+    // Accounts migrated from Clerk keep their Clerk user id.
+    userId: varchar("user_id", { length: 191 }).primaryKey(),
+    // Null when Clerk no longer verifies the mapped address. The account and
+    // its data keep their identity while that email becomes available again.
+    email: varchar("email", { length: 320 }),
+    lastSignInAt: varchar("last_sign_in_at", { length: 64 }),
+    createdAt: varchar("created_at", { length: 64 }).notNull(),
+    updatedAt: varchar("updated_at", { length: 64 }).notNull(),
+  },
+  (table) => [uniqueIndex("idx_relay_users_email").on(table.email)],
+);
+
+export const relayEmailSignInCodes = pgTable(
+  "relay_email_sign_in_codes",
+  {
+    codeId: varchar("code_id", { length: 64 }).primaryKey(),
+    email: varchar("email", { length: 320 }).notNull(),
+    // Only the DPoP key that requested the code can redeem it.
+    thumbprint: varchar("thumbprint", { length: 128 }).notNull(),
+    codeHash: varchar("code_hash", { length: 64 }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    consumedAt: varchar("consumed_at", { length: 64 }),
+    expiresAt: varchar("expires_at", { length: 64 }).notNull(),
+    createdAt: varchar("created_at", { length: 64 }).notNull(),
+  },
+  (table) => [
+    index("idx_relay_email_sign_in_codes_email").on(table.email, table.createdAt),
+    index("idx_relay_email_sign_in_codes_expires_at").on(table.expiresAt),
+  ],
+);
+
+export const relayAuthSessions = pgTable(
+  "relay_auth_sessions",
+  {
+    sessionId: varchar("session_id", { length: 64 }).primaryKey(),
+    userId: varchar("user_id", { length: 191 }).notNull(),
+    clientId: varchar("client_id", { length: 32 }).notNull().$type<RelayPublicClientId>(),
+    thumbprint: varchar("thumbprint", { length: 128 }).notNull(),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    label: text("label"),
+    lastUsedAt: varchar("last_used_at", { length: 64 }).notNull(),
+    // Sliding: moves forward as the session is used.
+    expiresAt: varchar("expires_at", { length: 64 }).notNull(),
+    createdAt: varchar("created_at", { length: 64 }).notNull(),
+  },
+  (table) => [
+    index("idx_relay_auth_sessions_user").on(table.userId),
+    index("idx_relay_auth_sessions_expires_at").on(table.expiresAt),
   ],
 );

@@ -152,6 +152,10 @@ The `production` GitHub environment must define these Actions variables:
 - `CLERK_JWT_TEMPLATE`
 - `APNS_ENVIRONMENT`, `APNS_TEAM_ID`, `APNS_KEY_ID`, and `APNS_BUNDLE_ID` only when enabling
   mobile push; leave the group unset (together with `APNS_PRIVATE_KEY`) until the mobile app ships
+- `RELAY_EMAIL_FROM_ADDRESS` and optionally `RELAY_EMAIL_FROM_NAME` to turn on email sign-in for
+  `prod`; see [email sign-in](../../docs/operations/connect-setup.md#email-sign-in)
+- `RELAY_DEV_EMAIL_FROM_ADDRESS`, `RELAY_DEV_EMAIL_DELIVERY` (`log` to write codes to the worker
+  log instead), and `RELAY_DEV_TEST_SIGN_IN_CODE` for the `dev` stage
 
 The `production` GitHub environment must define these Actions secrets:
 

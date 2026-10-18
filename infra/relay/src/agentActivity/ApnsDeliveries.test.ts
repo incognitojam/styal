@@ -46,6 +46,7 @@ const config = RelayConfiguration.RelayConfiguration.of({
   clerkSecretKey: Redacted.make("clerk-secret"),
   clerkPublishableKey: "pk_test_test",
   clerkJwtAudience: "t3-code-relay",
+  signInCodeSecret: Redacted.make("test-sign-in-code-secret"),
   cloudMintPrivateKey: Redacted.make("cloud-private-key"),
   cloudMintPublicKey: "cloud-public-key",
   managedEndpointBaseDomain: undefined,
@@ -255,6 +256,117 @@ function layerFor(input: {
 }
 
 describe("ApnsDeliveries", () => {
+  it.effect.each([
+    { registration: "removed", status: 200 },
+    { registration: "replaced", status: 200 },
+    { registration: "replaced", status: 410 },
+  ])(
+    "delivers a signed removal end after the registration is $registration ($status) without restoring account rows",
+    ({ registration, status }) => {
+      const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+      const markedDeliveries: Array<
+        Parameters<LiveActivities.LiveActivities["Service"]["markDelivery"]>[0]
+      > = [];
+      const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+      const invalidatedTokens: Array<
+        Parameters<LiveActivities.LiveActivities["Service"]["invalidateDeliveryToken"]>[0]
+      > = [];
+      const signed = signApnsDeliveryJob({
+        secret: config.apnsDeliveryJobSigningSecret,
+        payload: makeApnsDeliveryJobPayload({
+          kind: "live_activity_end",
+          registrationRemoved: true,
+          userId: "usr_synthetic",
+          deviceId: target.device_id,
+          token: "old-card-token",
+          bundleId: "com.example.relay.test",
+          apsEnvironment: "sandbox",
+          aggregate: null,
+          createdAt: "1970-01-01T00:00:00.000Z",
+          expiresAt: "1970-01-01T00:10:00.000Z",
+          jobId: "removal-end",
+        }),
+      });
+      return Effect.gen(function* () {
+        const service = yield* ApnsDeliveries.ApnsDeliveries;
+        expect((yield* service.processSignedJob(signed)).ok).toBe(status === 200);
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.url).toBe("https://api.sandbox.push.apple.com/3/device/old-card-token");
+        expect(requests[0]?.headers["apns-topic"]).toBe(
+          "com.example.relay.test.push-type.liveactivity",
+        );
+        const body = requests[0]?.body;
+        expect(body?._tag).toBe("Uint8Array");
+        if (body?._tag === "Uint8Array") {
+          expect(JSON.parse(new TextDecoder().decode(body.body))).toMatchObject({
+            aps: { event: "end" },
+          });
+        }
+        expect(invalidatedTokens).toEqual([]);
+        expect(attempts).toEqual([]);
+        expect(markedDeliveries).toEqual([]);
+      }).pipe(
+        Effect.provide(
+          layerFor({
+            attempts,
+            markedDeliveries,
+            invalidatedTokens,
+            config: signingConfig,
+            currentTargets:
+              registration === "removed"
+                ? []
+                : [{ ...target, activity_push_token: "new-card-token" }],
+            execute: (request) =>
+              Effect.sync(() => {
+                requests.push(request);
+                return HttpClientResponse.fromWeb(
+                  request,
+                  new Response(status === 410 ? JSON.stringify({ reason: "Unregistered" }) : "", {
+                    status,
+                  }),
+                );
+              }),
+          }),
+        ),
+      );
+    },
+  );
+
+  it.effect("retries a removal end when APNs is temporarily unavailable", () => {
+    const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
+    const signed = signApnsDeliveryJob({
+      secret: config.apnsDeliveryJobSigningSecret,
+      payload: makeApnsDeliveryJobPayload({
+        kind: "live_activity_end",
+        registrationRemoved: true,
+        userId: "usr_synthetic",
+        deviceId: target.device_id,
+        token: "old-card-token",
+        aggregate: null,
+        createdAt: "1970-01-01T00:00:00.000Z",
+        expiresAt: "1970-01-01T00:10:00.000Z",
+        jobId: "removal-end",
+      }),
+    });
+    return Effect.gen(function* () {
+      const service = yield* ApnsDeliveries.ApnsDeliveries;
+      expect((yield* Effect.flip(service.processSignedJob(signed)))._tag).toBe(
+        "ApnsRegistrationEndDeliveryFailed",
+      );
+      expect(attempts).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        layerFor({
+          attempts,
+          currentTargets: [],
+          config: signingConfig,
+          execute: (request) =>
+            Effect.succeed(HttpClientResponse.fromWeb(request, new Response("", { status: 503 }))),
+        }),
+      ),
+    );
+  });
+
   it.effect("skips Apple delivery when an Android-only relay disables APNs", () => {
     const attempts: Array<DeliveryAttempts.DeliveryAttemptInput> = [];
     const queuedJobs: Array<SignedApnsDeliveryJob> = [];

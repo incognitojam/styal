@@ -1,6 +1,8 @@
 # T3 Connect
 
-T3 Connect uses Clerk for cloud identity. The relay manages environment links,
+The relay is the identity provider for cloud accounts: users sign in with an
+emailed code, and Clerk remains only for clients that have not moved over yet
+(see [Relay sessions](#relay-sessions)). The relay manages environment links,
 credentials for reaching environments, and managed tunnel allocations. After
 bootstrap, clients send application traffic through the environment's tunnel
 hostname; the relay Worker does not proxy their HTTP or WebSocket sessions.
@@ -154,6 +156,32 @@ managed folder can hold another release. Such a binary still runs as a fallback
 while the pin installs. Every binary needs `CLOUDFLARED_MIN_VERSION`, the oldest
 release that accepts every flag the connector is started with. Raise it whenever
 a new flag is added.
+
+## Relay sessions
+
+Signing in creates a session row and returns a long-lived session credential
+bound to the client's DPoP key thumbprint. Every use of it, and every access
+token issued from it, needs a proof from that key, so a copied credential is
+useless without the key. Because of that binding the credential does not
+rotate: rotation with reuse detection would sign users out whenever two tabs,
+or a CLI and its background server, refreshed at once, or a phone was
+suspended between the relay's response and saving it. Sessions end after 90
+days without a refresh, with no hard cap, or when deleted
+([sessions](../../infra/relay/src/auth/AuthSessions.ts)).
+
+Access tokens from a session carry every scope its client id allows, including
+`account` for the `client` group, and the session id as `sid`. The relay
+checks that the session still exists on every request with such a token, so
+revoking a session ends its access tokens at once; tokens from a Clerk sign-in
+have no session and last until they expire.
+
+Sign-in codes are bound to the key that requested them, and only the newest
+code for an address and key is live. Attempts are spent and checked in one
+statement so concurrent guesses cannot pass the cap
+([codes](../../infra/relay/src/auth/EmailSignInCodes.ts)). Accounts imported
+from Clerk keep their Clerk user id, which is why the import must run before
+email sign-in is enabled: a Clerk user signing in by email without an imported
+row would get a new id and lose their links.
 
 ## OAuth traps
 

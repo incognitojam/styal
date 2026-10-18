@@ -4,7 +4,6 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Postgres";
 import * as Config from "effect/Config";
 import * as Cause from "effect/Cause";
-import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -29,15 +28,10 @@ import * as RelayHttpApi from "./http/Api.ts";
 import { ManagedEndpointZone, RelayApiZone, RelayDeploymentConfig } from "./zone.ts";
 import { RelayObservability } from "./observability.ts";
 import * as Observability from "./observability.ts";
-import * as DeliveryAttempts from "./agentActivity/DeliveryAttempts.ts";
-import * as AgentActivityRows from "./agentActivity/AgentActivityRows.ts";
-import * as Devices from "./agentActivity/Devices.ts";
-import * as DpopProofs from "./auth/DpopProofs.ts";
-import * as RelayTokens from "./auth/RelayTokens.ts";
-import * as EnvironmentCredentials from "./environments/EnvironmentCredentials.ts";
-import * as EnvironmentLinks from "./environments/EnvironmentLinks.ts";
-import * as ManagedEndpointAllocations from "./environments/ManagedEndpointAllocations.ts";
-import * as LiveActivities from "./agentActivity/LiveActivities.ts";
+import * as AccountAuth from "./auth/AccountAuth.ts";
+import * as RelayRuntime from "./Runtime.ts";
+import { pruneExpiredState } from "./pruneExpiredState.ts";
+import * as EmailSender from "./auth/EmailSender.ts";
 import * as RelayDb from "./db.ts";
 import {
   RelayApnsDeliveryDeadLetterQueue,
@@ -45,27 +39,16 @@ import {
   RelayFcmDeliveryQueue,
   RelayFcmDeliveryDeadLetterQueue,
 } from "./queues.ts";
-import * as WebCrypto from "./WebCrypto.ts";
-import * as FcmAssertionSigner from "./agentActivity/FcmAssertionSigner.ts";
-import * as FcmClient from "./agentActivity/FcmClient.ts";
 import * as FcmDeliveryQueueSender from "./agentActivity/FcmDeliveryQueueSender.ts";
-import * as FcmDeliveries from "./agentActivity/FcmDeliveries.ts";
 import * as FcmDeliveryQueueConsumer from "./agentActivity/FcmDeliveryQueueConsumer.ts";
 import * as RelayConfiguration from "./Config.ts";
-import * as AgentActivityPublisher from "./agentActivity/AgentActivityPublisher.ts";
 import * as ApnsClient from "./agentActivity/ApnsClient.ts";
 import * as ApnsProviderTokens from "./agentActivity/ApnsProviderTokens.ts";
 import * as ApnsDeliveryQueue from "./agentActivity/ApnsDeliveryQueue.ts";
 import * as ApnsDeliveries from "./agentActivity/ApnsDeliveries.ts";
-import * as EnvironmentConnector from "./environments/EnvironmentConnector.ts";
-import * as EnvironmentLinker from "./environments/EnvironmentLinker.ts";
-import * as EnvironmentPublishSignatures from "./environments/EnvironmentPublishSignatures.ts";
 import * as ManagedEndpointProvider from "./environments/ManagedEndpointProvider.ts";
 import * as ManagedEndpointReaper from "./environments/ManagedEndpointReaper.ts";
-import * as ManagedTunnelLimits from "./environments/ManagedTunnelLimits.ts";
-import * as MobileRegistrations from "./agentActivity/MobileRegistrations.ts";
 import * as HookForwarder from "./hooks/HookForwarder.ts";
-import * as HeldHooks from "./hooks/HeldHooks.ts";
 import * as HookInbox from "./hooks/HookInbox.ts";
 import * as HookInboxObject from "./hooks/HookInboxObject.ts";
 
@@ -92,20 +75,11 @@ const layerHttpPlatformNotSupported = Layer.succeed(HttpPlatform.HttpPlatform, {
   fileWebResponse: () => Effect.die("Relay API does not serve file responses"),
 });
 
-const layerRelayApi = Layer.mergeAll(
-  RelayHttpApi.layerHealthApi,
-  RelayHttpApi.layerMetadataApi,
-  RelayHttpApi.layerMobileApi,
-  RelayHttpApi.layerClientApi,
-  RelayHttpApi.layerTokenApi,
-  RelayHttpApi.layerDpopClientApi,
-  RelayHttpApi.layerServerApi,
-);
-
 const CloudMintKeyPair = Alchemy.KeyPair("CloudMintKeyPair");
 const ApnsDeliveryJobSigningSecret = Alchemy.makeRandom("ApnsDeliveryJobSigningSecret", {
   bytes: 32,
 });
+const SignInCodeSecret = Alchemy.makeRandom("SignInCodeSecret", { bytes: 32 });
 
 export class Api extends Cloudflare.Worker<Api, {}>()("Api") {}
 
@@ -134,6 +108,7 @@ export const layer = Api.make(
     const relayApiZone = yield* RelayApiZone;
     const managedEndpointZone = yield* ManagedEndpointZone;
     const randomApnsDeliveryJobSigningSecret = yield* ApnsDeliveryJobSigningSecret;
+    const randomSignInCodeSecret = yield* SignInCodeSecret;
     yield* RelayObservability;
 
     //
@@ -152,10 +127,15 @@ export const layer = Api.make(
       ),
     );
     const apnsDeliveryJobSigningSecret = yield* randomApnsDeliveryJobSigningSecret;
+    const signInCodeSecret = yield* randomSignInCodeSecret;
     const apnsDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(apnsDeliveryQueue);
     const fcmDeliveryQueueSender = yield* Cloudflare.Queues.WriteQueue(fcmDeliveryQueue);
 
-    const clerkSecretKey = yield* Config.Redacted("CLERK_SECRET_KEY");
+    // Unset or empty turns off Clerk lookups: email sign-in then creates
+    // relay-owned accounts and account deletion skips Clerk.
+    const clerkSecretKey = yield* Config.Redacted("CLERK_SECRET_KEY").pipe(
+      Config.withDefault(Redacted.make("")),
+    );
     const clerkPublishableKey = yield* Config.String("CLERK_PUBLISHABLE_KEY");
     const clerkJwtAudience = yield* Config.String("CLERK_JWT_AUDIENCE");
 
@@ -199,6 +179,29 @@ export const layer = Api.make(
     });
     const hookInboxes = yield* HookInboxObject.HookInboxObject;
 
+    const emailSignIn = yield* RelayConfiguration.emailSignInConfig(stage);
+    const signInEmail =
+      emailSignIn.delivery.kind === "cloudflare"
+        ? yield* Cloudflare.Email.Send(
+            yield* Cloudflare.Email.SendEmail("SIGN_IN_EMAIL", {
+              allowedSenderAddresses: [emailSignIn.delivery.fromAddress],
+            }),
+          )
+        : undefined;
+    if (emailSignIn.delivery.kind === "disabled") {
+      yield* Effect.logInfo("Email sign-in is not configured; RELAY_EMAIL_FROM_ADDRESS is unset.");
+    }
+    // Per client IP. Namespace ids are account-wide and these keys do not
+    // differ per stage on their own, so they carry the stage.
+    const signInStartRateLimit = yield* Cloudflare.RateLimit("SIGN_IN_START_RATE_LIMIT", {
+      namespaceId: 1003,
+      simple: { limit: 10, period: 60 },
+    });
+    const signInVerifyRateLimit = yield* Cloudflare.RateLimit("SIGN_IN_VERIFY_RATE_LIMIT", {
+      namespaceId: 1004,
+      simple: { limit: 30, period: 60 },
+    });
+
     //
     // 3. Runtime layers and app construction
     //
@@ -210,6 +213,8 @@ export const layer = Api.make(
         ...(fcmServiceAccount ? { fcmServiceAccount } : {}),
         apns: apnsCredentials,
         apnsDeliveryJobSigningSecret: yield* apnsDeliveryJobSigningSecret,
+        signInCodeSecret: yield* signInCodeSecret,
+        ...(emailSignIn.testSignInCode ? { testSignInCode: emailSignIn.testSignInCode } : {}),
         clerkSecretKey,
         clerkPublishableKey,
         clerkJwtAudience,
@@ -248,75 +253,84 @@ export const layer = Api.make(
         hookInboxes.getByName(endpointKey).clear().pipe(inboxCall("clear", endpointKey)),
     });
 
-    const layerRuntime = Layer.empty.pipe(
-      Layer.provideMerge(MobileRegistrations.layer),
-      Layer.provideMerge(AgentActivityPublisher.layer),
-      Layer.provideMerge(EnvironmentConnector.layer),
-      Layer.provideMerge(EnvironmentLinker.layer),
-      Layer.provideMerge(
-        Layer.mergeAll(
-          EnvironmentPublishSignatures.layer,
-          ManagedEndpointReaper.layer,
-          HeldHooks.layer,
-        ),
-      ),
-      Layer.provideMerge(
-        ManagedEndpointProvider.layerCloudflareBindings(
-          managedEndpointTunnelBinding,
-          managedEndpointDnsBinding,
-          alchemyRuntimeContext,
-        ),
-      ),
-      Layer.provideMerge(DpopProofs.layer),
-      Layer.provideMerge(ApnsDeliveries.layer),
-      Layer.provideMerge(
-        FcmDeliveries.layer.pipe(
-          Layer.provide(
-            Layer.succeed(FcmDeliveryQueueSender.FcmDeliveryQueueSender, {
-              send: (body) =>
-                fcmDeliveryQueueSender
-                  .send(body)
-                  .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
-            }),
-          ),
-          Layer.provideMerge(
-            FcmClient.layer.pipe(
-              Layer.provide(FcmAssertionSigner.layer),
-              Layer.provide(
-                Layer.succeed(WebCrypto.WebCrypto, { subtle: globalThis.crypto.subtle }),
+    const emailDelivery = emailSignIn.delivery;
+    const layerEmailSender =
+      signInEmail !== undefined && emailDelivery.kind === "cloudflare"
+        ? Layer.succeed(
+            EmailSender.EmailSender,
+            EmailSender.make((email) =>
+              signInEmail
+                .send({
+                  from: { email: emailDelivery.fromAddress, name: emailDelivery.fromName },
+                  to: email.to,
+                  subject: email.subject,
+                  text: email.text,
+                  html: email.html,
+                })
+                .pipe(
+                  Effect.asVoid,
+                  Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
+                  Effect.mapError(
+                    (error) =>
+                      new EmailSender.EmailSendFailed({ detail: emailSendFailureDetail(error) }),
+                  ),
+                ),
+            ),
+          )
+        : emailDelivery.kind === "log"
+          ? EmailSender.layerLog
+          : EmailSender.layerDisabled;
+
+    // Fails open like the hook limiter; the per-address caps in Postgres still apply.
+    const allowSignIn =
+      (limiter: typeof signInStartRateLimit) =>
+      (key: string): Effect.Effect<boolean> =>
+        limiter.limit({ key: `${stage}:${key}` }).pipe(
+          Effect.map((result) => result.success),
+          Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext),
+          Effect.catch((error) =>
+            Effect.logWarning("Sign-in rate limiter unavailable", { error: error.message }).pipe(
+              Effect.andThen(
+                Effect.annotateCurrentSpan({ "relay.auth.rate_limiter_failed_open": true }),
               ),
+              Effect.as(true),
             ),
           ),
-        ),
+        );
+    const layerSignInRateLimiter = Layer.succeed(AccountAuth.SignInRateLimiter, {
+      allowStart: allowSignIn(signInStartRateLimit),
+      allowVerify: allowSignIn(signInVerifyRateLimit),
+    });
+
+    const layerBindings = Layer.mergeAll(
+      layerEmailSender,
+      layerSignInRateLimiter,
+      layerHookInbox,
+      ManagedEndpointProvider.layerCloudflareClients(
+        managedEndpointTunnelBinding,
+        managedEndpointDnsBinding,
+        alchemyRuntimeContext,
       ),
-      Layer.provideMerge(
-        apnsCredentials === null
-          ? ApnsClient.layerDisabled
-          : ApnsClient.layer.pipe(Layer.provideMerge(ApnsProviderTokens.layer)),
-      ),
-      Layer.provideMerge(
-        ApnsDeliveryQueue.layerCloudflareQueues(apnsDeliveryQueueSender, alchemyRuntimeContext),
-      ),
-      Layer.provideMerge(Layer.mergeAll(AgentActivityRows.layer, Devices.layer, layerHookInbox)),
-      Layer.provideMerge(EnvironmentCredentials.layer),
-      Layer.provideMerge(
-        Layer.mergeAll(
-          EnvironmentLinks.layer,
-          ManagedEndpointAllocations.layer,
-          ManagedTunnelLimits.layer,
-        ),
-      ),
-      Layer.provideMerge(LiveActivities.layer),
-      Layer.provideMerge(DeliveryAttempts.layer),
-      Layer.provideMerge(RelayTokens.layer),
-      Layer.provideMerge(
-        RelayDb.RelayTransactions.layer.pipe(
-          Layer.provideMerge(Layer.succeed(RelayDb.RelayDb, db)),
-        ),
-      ),
-      Layer.provideMerge(Layer.effect(RelayConfiguration.RelayConfiguration, loadSettings)),
-      Layer.provideMerge(layerWebcrypto),
+      apnsCredentials === null
+        ? ApnsClient.layerDisabled
+        : ApnsClient.layer.pipe(Layer.provideMerge(ApnsProviderTokens.layer)),
+      Layer.succeed(ApnsDeliveryQueue.ApnsDeliveryQueueSender, {
+        send: (body) =>
+          apnsDeliveryQueueSender
+            .send(body)
+            .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
+      }),
+      Layer.succeed(FcmDeliveryQueueSender.FcmDeliveryQueueSender, {
+        send: (body) =>
+          fcmDeliveryQueueSender
+            .send(body)
+            .pipe(Effect.provideService(Alchemy.RuntimeContext, alchemyRuntimeContext)),
+      }),
+      Layer.succeed(RelayDb.RelayDb, db),
+      Layer.effect(RelayConfiguration.RelayConfiguration, loadSettings),
+      layerWebcrypto,
     );
+    const layerRuntime = RelayRuntime.layerServices.pipe(Layer.provideMerge(layerBindings));
 
     // Fails open: a limiter outage must not drop webhooks the environment would accept.
     const allowWith =
@@ -340,17 +354,8 @@ export const layer = Api.make(
       allowEndpoint: allowWith(hookEndpointRateLimit),
     });
 
-    const layerApp = Layer.merge(
-      layerRelayApi,
-      HookForwarder.layerApi.pipe(
-        Layer.provide(HookForwarder.layer),
-        Layer.provide(layerHookRateLimiter),
-      ),
-    ).pipe(
-      Layer.provideMerge(RelayHttpApi.layerClientAuth),
-      Layer.provideMerge(RelayHttpApi.layerDpopClientAuth),
-      Layer.provideMerge(RelayHttpApi.layerEnvironmentAuth),
-      Layer.provide(layerRuntime),
+    const layerApp = RelayRuntime.makeAppLayer(layerRuntime).pipe(
+      Layer.provide(layerHookRateLimiter),
     );
 
     yield* Cloudflare.Queues.consumeQueueMessages<unknown>(
@@ -397,24 +402,7 @@ export const layer = Api.make(
       () =>
         Effect.all(
           [
-            DpopProofs.DpopProofReplay.pipe(
-              Effect.flatMap((dpopProofs) => dpopProofs.pruneExpired),
-              // Keep completed thread rows long enough to show their final state.
-              Effect.andThen(
-                Effect.all([AgentActivityRows.AgentActivityRows, DateTime.now]).pipe(
-                  Effect.flatMap(([activityRows, now]) =>
-                    activityRows.pruneTerminal({
-                      updatedBefore: DateTime.formatIso(DateTime.subtract(now, { minutes: 30 })),
-                    }),
-                  ),
-                ),
-              ),
-              Effect.catchCause((cause) =>
-                Cause.hasInterrupts(cause)
-                  ? Effect.interrupt
-                  : Effect.logWarning("Failed to prune expired relay state", { cause }),
-              ),
-            ),
+            pruneExpiredState,
             ManagedEndpointReaper.ManagedEndpointReaper.pipe(
               Effect.flatMap((reaper) => reaper.sweep.pipe(Effect.timeout("2 minutes"))),
               Effect.tap((result) =>
@@ -470,6 +458,7 @@ export const layer = Api.make(
         Layer.provideMerge(Cloudflare.Tunnel.ReadWriteTunnelBinding),
         Layer.provideMerge(Cloudflare.DNS.ReadWriteDnsHttp),
         Layer.provideMerge(Cloudflare.Workers.RateLimitBinding),
+        Layer.provideMerge(Cloudflare.Email.SendBinding),
         Layer.provideMerge(HookInboxObject.layer),
         // The worker runtime opens its own HTTP span around ours. Ours carries
         // the route, header redaction and webhook URL redaction, and drops a
@@ -497,5 +486,11 @@ export const layer = Api.make(
     ),
   ),
 );
+
+/** Cloudflare's error code (such as E_DAILY_LIMIT_EXCEEDED) without the message, which can name the recipient. */
+function emailSendFailureDetail(error: { readonly message: string; readonly cause?: unknown }) {
+  const text = `${error.message} ${error.cause instanceof Error ? error.cause.message : ""}`;
+  return /\bE_[A-Z_]+\b/.exec(text)?.[0] ?? "send_failed";
+}
 
 export default layer;

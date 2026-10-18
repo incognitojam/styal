@@ -51,6 +51,7 @@ const settings: RelayConfiguration.RelayConfiguration["Service"] = {
   clerkSecretKey: Redacted.make("clerk-secret-key"),
   clerkPublishableKey: "pk_test_test",
   clerkJwtAudience: "t3-code-relay",
+  signInCodeSecret: Redacted.make("test-sign-in-code-secret"),
   apnsDeliveryJobSigningSecret: Redacted.make("apns-delivery-secret"),
   cloudMintPrivateKey: Redacted.make(mintKeys.privateKey),
   cloudMintPublicKey: mintKeys.publicKey,

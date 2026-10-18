@@ -77,6 +77,7 @@ const config = {
   clerkSecretKey: Redacted.make("unused"),
   clerkPublishableKey: "unused",
   clerkJwtAudience: "unused",
+  signInCodeSecret: Redacted.make("test-sign-in-code-secret"),
   apnsDeliveryJobSigningSecret: Redacted.make("unused"),
   cloudMintPrivateKey: Redacted.make("unused"),
   cloudMintPublicKey: "unused",
