@@ -217,6 +217,18 @@ function claudePromptCacheTtlMs(
   return undefined;
 }
 
+function claudeMessageInputTokens(usage: {
+  readonly input_tokens: number;
+  readonly cache_creation_input_tokens?: number | null;
+  readonly cache_read_input_tokens?: number | null;
+}): number {
+  return (
+    usage.input_tokens +
+    (usage.cache_creation_input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0)
+  );
+}
+
 export function claudeProviderTurnTokenUsage(
   usage: {
     readonly input_tokens: number;
@@ -228,10 +240,7 @@ export function claudeProviderTurnTokenUsage(
   modelSelection: ModelSelection,
   updatedAt: string,
 ) {
-  const inputTokens =
-    usage.input_tokens +
-    (usage.cache_creation_input_tokens ?? 0) +
-    (usage.cache_read_input_tokens ?? 0);
+  const inputTokens = claudeMessageInputTokens(usage);
   const outputTokens = usage.output_tokens;
   const promptCacheTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
   return {
@@ -301,6 +310,29 @@ function claudeTerminalTurnTokenUsage(
     : usage;
 }
 
+type ClaudeMessageUsage = Parameters<typeof claudeProviderTurnTokenUsage>[0];
+
+// message_delta usage is cumulative for its message. Fields it leaves null or
+// absent keep their message_start value; explicit zeros replace it.
+function mergeClaudeStreamUsage(
+  current: ClaudeMessageUsage,
+  delta: {
+    readonly input_tokens?: number | null;
+    readonly cache_creation_input_tokens?: number | null;
+    readonly cache_read_input_tokens?: number | null;
+    readonly output_tokens: number;
+  },
+): ClaudeMessageUsage {
+  return {
+    ...current,
+    input_tokens: delta.input_tokens ?? current.input_tokens,
+    cache_creation_input_tokens:
+      delta.cache_creation_input_tokens ?? current.cache_creation_input_tokens ?? null,
+    cache_read_input_tokens:
+      delta.cache_read_input_tokens ?? current.cache_read_input_tokens ?? null,
+    output_tokens: delta.output_tokens,
+  };
+}
 export const CLAUDE_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(CLAUDE_PROVIDER);
 const DEFAULT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({});
 // Entry extensions the Claude SDK runs through node instead of executing.
@@ -3100,6 +3132,11 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
+  // Usage of the latest root request, merged from its stream events. Its
+  // assistant snapshots repeat message_start usage, which some proxies send
+  // as zeros, so they only fill in input the stream has not reported. A
+  // compaction makes the usage stale (null) without forgetting the request.
+  streamUsage: { readonly messageId: string; usage: ClaudeMessageUsage | null } | null;
   readonly toolCalls: Map<string, ActiveClaudeToolCall>;
   readonly ignoredTaskIds: Set<string>;
   readonly announcedUsageLimits: Set<string>;
@@ -3835,6 +3872,42 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
         const emitProviderEvent = (event: ProviderAdapter.ProviderAdapterV2Event) =>
           Queue.offer(events, event).pipe(Effect.asVoid);
+
+        // Reports one root request's usage as the current context. Usage
+        // without input is a placeholder, never a measurement.
+        const emitContextUsage = Effect.fnUntraced(function* (
+          context: ActiveClaudeTurnContext,
+          usage: ClaudeMessageUsage,
+        ) {
+          const now = yield* DateTime.now;
+          const tokenUsage = claudeProviderTurnTokenUsage(
+            usage,
+            context.input.modelSelection,
+            DateTime.formatIso(now),
+          );
+          if (tokenUsage.inputTokens <= 0) return;
+          yield* emitProviderEvent({
+            type: "provider_turn.updated",
+            driver: CLAUDE_PROVIDER,
+            threadId: context.input.threadId,
+            providerTurn: {
+              id: context.providerTurnId,
+              providerThreadId: context.input.providerThread.id,
+              nodeId: context.input.rootNodeId,
+              runAttemptId: context.input.attemptId,
+              nativeTurnRef: {
+                driver: CLAUDE_PROVIDER,
+                nativeId: context.nativeTurnId,
+                strength: "strong",
+              },
+              ordinal: context.providerTurnOrdinal,
+              status: "running",
+              startedAt: context.startedAt,
+              completedAt: null,
+              tokenUsage,
+            },
+          });
+        });
 
         // Claude emits retry progress but no recovered frame; the next
         // assistant message is the first reliable evidence of recovery.
@@ -7298,7 +7371,45 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               reasoning.streamBlocks.clear();
               if (input.replayed !== true) {
                 context.streamingMessageId = event.message.id;
-                context.streamedUsageByMessageId.set(event.message.id, event.message.usage);
+                if (event.message.usage !== undefined) {
+                  context.streamedUsageByMessageId.set(event.message.id, event.message.usage);
+                }
+              }
+              const usage: ClaudeMessageUsage | undefined = event.message.usage;
+              context.streamUsage =
+                usage === undefined ? null : { messageId: event.message.id, usage };
+              if (usage !== undefined) yield* emitContextUsage(context, usage);
+            } else if (event.type === "message_delta") {
+              const usage: typeof event.usage | undefined = event.usage;
+              const stream = context.streamUsage;
+              if (stream?.usage && usage !== undefined) {
+                stream.usage = mergeClaudeStreamUsage(stream.usage, usage);
+                yield* emitContextUsage(context, stream.usage);
+              }
+              const messageId = context.streamingMessageId;
+              if (input.replayed !== true && messageId !== undefined && usage !== undefined) {
+                const started = context.streamedUsageByMessageId.get(messageId);
+                context.streamedUsageByMessageId.set(messageId, {
+                  input_tokens: usage.input_tokens ?? started?.input_tokens ?? null,
+                  cache_read_input_tokens:
+                    usage.cache_read_input_tokens ?? started?.cache_read_input_tokens ?? null,
+                  cache_creation_input_tokens:
+                    usage.cache_creation_input_tokens ??
+                    started?.cache_creation_input_tokens ??
+                    null,
+                  output_tokens: usage.output_tokens ?? started?.output_tokens ?? null,
+                });
+                const turnUsage = claudeStreamedTurnTokenUsage(context);
+                if (turnUsage !== undefined) {
+                  yield* emitProviderEvent({
+                    type: "provider_turn.updated",
+                    driver: CLAUDE_PROVIDER,
+                    providerTurn: {
+                      ...providerTurnPayload({ context, status: "running", completedAt: null }),
+                      turnTokenUsage: turnUsage,
+                    },
+                  });
+                }
               }
             } else if (
               event.type === "content_block_start" &&
@@ -7326,32 +7437,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   itemId,
                   delta: event.delta.thinking,
                 });
-              }
-            } else if (event.type === "message_delta" && input.replayed !== true) {
-              const messageId = context.streamingMessageId;
-              if (messageId !== undefined) {
-                const started = context.streamedUsageByMessageId.get(messageId);
-                context.streamedUsageByMessageId.set(messageId, {
-                  input_tokens: event.usage.input_tokens ?? started?.input_tokens ?? null,
-                  cache_read_input_tokens:
-                    event.usage.cache_read_input_tokens ?? started?.cache_read_input_tokens ?? null,
-                  cache_creation_input_tokens:
-                    event.usage.cache_creation_input_tokens ??
-                    started?.cache_creation_input_tokens ??
-                    null,
-                  output_tokens: event.usage.output_tokens ?? started?.output_tokens ?? null,
-                });
-                const usage = claudeStreamedTurnTokenUsage(context);
-                if (usage !== undefined) {
-                  yield* emitProviderEvent({
-                    type: "provider_turn.updated",
-                    driver: CLAUDE_PROVIDER,
-                    providerTurn: {
-                      ...providerTurnPayload({ context, status: "running", completedAt: null }),
-                      turnTokenUsage: usage,
-                    },
-                  });
-                }
               }
             } else if (event.type === "content_block_stop") {
               const itemId = reasoning.streamBlocks.get(event.index);
@@ -7440,6 +7525,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
 
           if (message.type === "system" && message.subtype === "compact_boundary") {
+            if (context.streamUsage !== null) context.streamUsage.usage = null;
             const now = yield* DateTime.now;
             const nativeItemId = message.uuid;
             const postTokens = message.compact_metadata.post_tokens;
@@ -7599,31 +7685,23 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               message.message.usage !== undefined &&
               message.message.model !== "<synthetic>"
             ) {
-              yield* emitProviderEvent({
-                type: "provider_turn.updated",
-                driver: CLAUDE_PROVIDER,
-                threadId: context.input.threadId,
-                providerTurn: {
-                  id: context.providerTurnId,
-                  providerThreadId: context.input.providerThread.id,
-                  nodeId: context.input.rootNodeId,
-                  runAttemptId: context.input.attemptId,
-                  nativeTurnRef: {
-                    driver: CLAUDE_PROVIDER,
-                    nativeId: context.nativeTurnId,
-                    strength: "strong",
-                  },
-                  ordinal: context.providerTurnOrdinal,
-                  status: "running",
-                  startedAt: context.startedAt,
-                  completedAt: null,
-                  tokenUsage: claudeProviderTurnTokenUsage(
-                    message.message.usage,
-                    context.input.modelSelection,
-                    DateTime.formatIso(now),
-                  ),
-                },
-              });
+              const snapshotUsage = message.message.usage;
+              const stream = context.streamUsage;
+              if (stream === null || stream.messageId !== message.message.id) {
+                // Remember the request so a compaction can mark its later snapshots stale.
+                context.streamUsage = { messageId: message.message.id, usage: snapshotUsage };
+                yield* emitContextUsage(context, snapshotUsage);
+              } else if (
+                stream.usage !== null &&
+                claudeMessageInputTokens(stream.usage) <= 0 &&
+                claudeMessageInputTokens(snapshotUsage) > 0
+              ) {
+                stream.usage = {
+                  ...snapshotUsage,
+                  output_tokens: Math.max(snapshotUsage.output_tokens, stream.usage.output_tokens),
+                };
+                yield* emitContextUsage(context, stream.usage);
+              }
             }
             const parentToolUseId = message.parent_tool_use_id;
             const snapshotModel =
@@ -9075,6 +9153,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 snapshots: new Set(),
                 blocks: new Map(),
               },
+              streamUsage: null,
               toolCalls: new Map(),
               ignoredTaskIds: new Set(),
               announcedUsageLimits: new Set(),
