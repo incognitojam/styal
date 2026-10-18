@@ -5281,6 +5281,7 @@ features:
       - apps/web/src/components/chat/SubagentTooltipContent.tsx
       - apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx
       - apps/web/src/components/chat/TurnUsageLabel.tsx
+      - apps/web/src/components/chat/WorkflowOpeningBlock.tsx
       - packages/contracts/src/legacyTurnUsage.ts
       - packages/shared/src/turnUsage.ts
     upstream_paths:

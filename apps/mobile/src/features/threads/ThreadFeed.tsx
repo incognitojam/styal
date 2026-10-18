@@ -24,6 +24,7 @@ import {
   resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
+import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   type OrchestrationMessageContext,
   ThreadId,
@@ -238,6 +239,7 @@ import {
   environmentThreadShells,
   threadEnvironment,
 } from "../../state/threads";
+import { ThreadWorkflowOpening, useWorkflowOpening } from "./thread-workflow-opening";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useV2ItemSupport } from "../../state/v2-item-support";
 import {
@@ -1090,6 +1092,7 @@ function renderFeedEntry(
     readonly markdownContentWidth: number;
     readonly contentWidth: number;
     readonly threadTitle: string;
+    readonly workflowOpening: WorkflowOpening | null;
   },
 ) {
   const entry = info.item;
@@ -1265,6 +1268,15 @@ function renderFeedEntry(
         ? props.turnUsageByTurnId.get((message.legacyTurnId ?? message.runId)!)
         : undefined;
 
+    if (isUser && props.workflowOpening?.messageId === message.id) {
+      return (
+        <ThreadWorkflowOpening
+          environmentId={props.environmentId}
+          threadId={props.threadId}
+          opening={props.workflowOpening}
+        />
+      );
+    }
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
       const intent = resolveUserMessageIntent(message.inputIntent);
@@ -1836,6 +1848,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   }, [props.detailThreadRef]);
   const restartRuns = useAtomValue(restartRunsAtom);
   const continuedRunRoots = useMemo(() => deriveFeedContinuedRunRoots(restartRuns), [restartRuns]);
+  const workflowOpening = useWorkflowOpening(props.environmentId, props.threadId);
   const deviceType = useDeviceType();
   const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
   const openPullRequest = useOpenPullRequest();
@@ -2185,6 +2198,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       themeAppearance,
       userBubbleColor,
       viewportWidth,
+      workflowOpening,
     }),
     [
       props.worktreeSetup,
@@ -2201,6 +2215,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       themeAppearance,
       userBubbleColor,
       viewportWidth,
+      workflowOpening,
     ],
   );
   const reportHeaderMaterialVisibility = useCallback(
@@ -2657,6 +2672,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               threadTitle: props.threadTitle,
               skills: props.skills,
               workspaceRoot: props.workspaceRoot,
+              workflowOpening,
             })}
             {props.worktreeSetup && info.index === setupAnchorIndex ? (
               <WorktreeSetupCard key={props.threadId} {...props.worktreeSetup} />
@@ -2707,6 +2723,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       props.threadTitle,
       props.skills,
       props.workspaceRoot,
+      workflowOpening,
       renderMarkdownImage,
       renderViewedImage,
       renderReasoning,
