@@ -76,7 +76,6 @@ import {
   insertComposerDraftText,
   insertComposerDraftContext,
   clearComposerDraftContent,
-  composerDraftsAtom,
   composerContextImportsAtom,
   ensureComposerDraftsLoaded,
   getComposerDraftSnapshot,
@@ -86,6 +85,7 @@ import {
   setComposerDraftText,
   updateComposerDraftSettings,
   useComposerDraft,
+  useComposerDraftSettings,
 } from "./use-composer-drafts";
 import {
   resolveComposerDispatchMode,
@@ -195,7 +195,6 @@ export function useThreadComposerState() {
   } = useThreadSelection();
   const selectedThreadProjection = useSelectedThreadProjection();
   const selectedThreadVisibleTurnItems = useSelectedThreadVisibleTurnItems();
-  const composerDrafts = useAtomValue(composerDraftsAtom);
   const acknowledgedMessages = useAtomValue(acknowledgedThreadMessagesAtom);
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
@@ -311,26 +310,23 @@ export function useThreadComposerState() {
       : queuedRunEdit === null
         ? selectedThreadKey
         : queuedEditDraftKey(selectedThreadKey, queuedRunEdit.runId);
-  const editedDraft = composerDraftKey ? composerDrafts[composerDraftKey] : null;
-  const selectedDraft = selectedThreadKey ? composerDrafts[selectedThreadKey] : null;
-  const draftMessage = editedDraft?.text ?? "";
-  const draftAttachments = editedDraft?.attachments ?? [];
+  const selectedDraft = useComposerDraftSettings(selectedThreadKey);
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
   const selectedThread = selectedThreadShell;
-  const modelSelection = selectedDraft?.modelSelection ?? selectedThread?.modelSelection ?? null;
+  const modelSelection = selectedDraft.modelSelection ?? selectedThread?.modelSelection ?? null;
   const pendingHandoff = resolvePendingHandoff(
     selectedThreadProjection?.projection,
     modelSelection,
     selectedEnvironmentRuntime?.serverConfig?.providers ?? [],
   );
-  const runtimeMode = selectedDraft?.runtimeMode ?? selectedThread?.runtimeMode ?? null;
+  const runtimeMode = selectedDraft.runtimeMode ?? selectedThread?.runtimeMode ?? null;
   const selectedProvider = selectedEnvironmentRuntime?.serverConfig?.providers.find(
     (provider) => provider.instanceId === modelSelection?.instanceId,
   );
   const interactionMode = selectedThread
     ? resolveProviderInteractionMode(
         selectedProvider,
-        selectedDraft?.interactionMode ?? selectedThread.interactionMode,
+        selectedDraft.interactionMode ?? selectedThread.interactionMode,
       )
     : null;
   const canSwitchThreadProvider = threadAllowsProviderSwitch({
@@ -984,8 +980,6 @@ export function useThreadComposerState() {
     runlessWorkActive,
     providerSubagentStatus,
     isCompacting,
-    draftMessage,
-    draftAttachments,
     composerDraftKey,
     followUpBehavior,
     canSteerActiveTurn,

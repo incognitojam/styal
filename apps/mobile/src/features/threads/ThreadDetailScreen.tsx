@@ -89,7 +89,7 @@ import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import type { TurnSummaryView } from "@t3tools/shared/turnUsage";
 import type { ComposerEditorHandle } from "../../components/ComposerEditor";
 import type { StatusTone } from "../../components/StatusPill";
-import type { DraftComposerAttachment } from "../../lib/composerImages";
+import { getComposerDraftSnapshot } from "../../state/use-composer-drafts";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import {
   ANDROID_READING_MAX_WIDTH,
@@ -190,8 +190,6 @@ export interface ThreadDetailScreenProps {
   readonly activePendingUserInputDrafts: Record<string, PendingUserInputDraftAnswer>;
   readonly activePendingUserInputAnswers: Record<string, string | ReadonlyArray<string>> | null;
   readonly respondingUserInputId: RuntimeRequestId | null;
-  readonly draftMessage: string;
-  readonly draftAttachments: ReadonlyArray<DraftComposerAttachment>;
   readonly connectionStateLabel: EnvironmentConnectionPhase;
   readonly threadSyncStatus?: EnvironmentThreadStatus;
   readonly historyControls?: ThreadFeedHistoryControls;
@@ -955,8 +953,10 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
   };
 
   const handleUseArtifactTemplate = (template: CodexArtifactTemplate) => {
-    const nextDraft = appendCodexArtifactTemplateUsePrompt(props.draftMessage, template);
-    if (nextDraft !== props.draftMessage) props.onChangeDraftMessage(nextDraft);
+    const draftMessage =
+      props.composerDraftKey === null ? "" : getComposerDraftSnapshot(props.composerDraftKey).text;
+    const nextDraft = appendCodexArtifactTemplateUsePrompt(draftMessage, template);
+    if (nextDraft !== draftMessage) props.onChangeDraftMessage(nextDraft);
     requestAnimationFrame(() => {
       composerEditorRef.current?.focus();
       composerEditorRef.current?.setSelection({ start: nextDraft.length, end: nextDraft.length });
@@ -1336,8 +1336,6 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                         canOperateThread={props.canOperateThread}
                         reportedModelSelection={reportedModelSelection}
                         editorRef={composerEditorRef}
-                        draftMessage={props.draftMessage}
-                        draftAttachments={props.draftAttachments}
                         placeholder="Ask the repo agent, or run a command…"
                         contentMaxWidth={contentMaxWidth}
                         connectionState={props.connectionStateLabel}
