@@ -131,6 +131,24 @@ function withServices<A, E>(
   return effect.pipe(Effect.provide(layerServices(options)));
 }
 
+/** Answers the relay's access-token refresh so `fetchMock` sees only the requests under test. */
+function withRelayAccessToken(
+  fetchMock: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+) {
+  return (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).endsWith("/v1/auth/token")
+      ? Promise.resolve(
+          Response.json({
+            access_token: "relay-access-token",
+            token_type: "DPoP",
+            expires_in: 1_800,
+            scope: "environment:connect environment:status account",
+            user: { id: "account-1", email: "someone@example.com" },
+          }),
+        )
+      : fetchMock(input, init);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
@@ -157,7 +175,7 @@ describe("web cloud link environment client", () => {
           publishAgentActivity: false,
         }),
       );
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
       vi.stubGlobal("window", {
         location: { origin: "t3code://app" },
         desktopBridge: {

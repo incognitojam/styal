@@ -16,6 +16,7 @@ import { setLiveActivityUpdatesEnabled } from "./liveActivityPreferences";
 import { updateAgentAwarenessRegistrationPreferences } from "./remoteRegistration";
 
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   deleteItemAsync: vi.fn(),
   getItemAsync: vi.fn(),
   setItemAsync: vi.fn(),
@@ -39,6 +40,8 @@ vi.mock("../cloud/linkEnvironment", async (importOriginal) => ({
 vi.mock("./remoteRegistration", () => ({
   updateAgentAwarenessRegistrationPreferences: vi.fn(() => Effect.void),
 }));
+
+const credential = { accountId: "account-1", refreshToken: "styal_rt_session_secret" };
 
 const connection: SavedRemoteConnection = {
   environmentId: "env-1" as EnvironmentId,
@@ -85,7 +88,7 @@ describe("liveActivityPreferences", () => {
         setLiveActivityUpdatesEnabled({
           enabled: false,
           previousEnabled: true,
-          clerkToken: "clerk-token",
+          credential,
           connections: [connection],
           canConfigureEnvironment: () => true,
         }),
@@ -99,12 +102,12 @@ describe("liveActivityPreferences", () => {
         liveActivitiesEnabled: true,
       });
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenNthCalledWith(1, {
-        clerkToken: "clerk-token",
+        credential,
         connection,
         liveActivitiesEnabled: false,
       });
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenNthCalledWith(2, {
-        clerkToken: "clerk-token",
+        credential,
         connection,
         liveActivitiesEnabled: true,
       });
@@ -121,7 +124,7 @@ describe("liveActivityPreferences", () => {
       yield* setLiveActivityUpdatesEnabled({
         enabled: true,
         previousEnabled: false,
-        clerkToken: "clerk-token",
+        credential,
         connections: [readOnlyConnection, connection],
         canConfigureEnvironment: (environmentId) => environmentId === connection.environmentId,
       });
@@ -130,7 +133,7 @@ describe("liveActivityPreferences", () => {
         liveActivitiesEnabled: true,
       });
       expect(linkEnvironmentToCloudWithPreference).toHaveBeenCalledExactlyOnceWith({
-        clerkToken: "clerk-token",
+        credential,
         connection,
         liveActivitiesEnabled: true,
       });
@@ -149,7 +152,7 @@ describe("liveActivityPreferences", () => {
       yield* setLiveActivityUpdatesEnabled({
         enabled: false,
         previousEnabled: true,
-        clerkToken: "clerk-token",
+        credential,
         connections: [connection],
         canConfigureEnvironment: () => canConfigureEnvironment,
       });

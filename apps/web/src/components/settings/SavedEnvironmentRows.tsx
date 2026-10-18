@@ -67,7 +67,7 @@ import {
   ServerUpdateProgress,
 } from "../ServerUpdateAction";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogs";
 
 type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;
@@ -517,7 +517,6 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
     tunnelLimit,
     reconcileCloudState,
   } = useCloudLinkController();
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
   const [isUpdating, setIsUpdating] = useState(false);
   const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
 
@@ -536,7 +535,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
   // a fresh sign-in offers both linking and publishing.
   const signedOut = isSignedIn === false;
   const signInButton = (
-    <Button size="sm" variant="outline" onClick={openAuthPrompt}>
+    <Button size="sm" variant="outline" onClick={openRelaySignIn}>
       Sign in
     </Button>
   );

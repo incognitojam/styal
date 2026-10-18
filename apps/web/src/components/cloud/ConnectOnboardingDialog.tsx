@@ -1,4 +1,3 @@
-import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthRelayReadScope, AuthRelayWriteScope, type AuthSessionState } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -8,8 +7,10 @@ import {
   CONNECT_ONBOARDING_OPT_OUT_STORAGE_KEY,
   ConnectOnboardingOptOutSchema,
   EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE,
+  interactiveRelaySignInAtom,
 } from "~/cloud/connectOnboarding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { useRelayAccount } from "~/cloud/useRelayAccount";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { isHostedStaticApp } from "~/hostedPairing";
@@ -29,8 +30,8 @@ import { toastManager } from "../ui/toast";
 import { WizardSteps, WizardPopup, WizardHeader, WizardPanel, WizardFooter } from "../ui/wizard";
 
 /**
- * Opens on every in-session sign-in because sign-out removes the connected relay environments.
- * A cold load with a restored session does not count as a sign-in.
+ * Opens on every interactive sign-in because sign-out removes the connected relay environments.
+ * Restoring a saved sign-in and silently moving a Clerk sign-in over do not count.
  */
 export function ConnectOnboardingDialog() {
   if (!hasCloudPublicConfig()) return null;
@@ -43,8 +44,8 @@ type OnboardingStep = "publish" | "devices";
 const EMPTY_SESSION_STATE_ATOM = Atom.make(AsyncResult.initial<AuthSessionState>());
 
 function ConfiguredConnectOnboardingDialog() {
-  // Pending Clerk sessions must not look signed out or activation would look like a new sign-in.
-  const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const { isSignedIn, accountId: userId } = useRelayAccount();
+  const interactiveSignIn = useAtomValue(interactiveRelaySignInAtom);
   const [optOutState, setOptOutState] = useLocalStorage(
     CONNECT_ONBOARDING_OPT_OUT_STORAGE_KEY,
     EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE,
@@ -81,8 +82,7 @@ function ConfiguredConnectOnboardingDialog() {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [prefilledFromLinkState, setPrefilledFromLinkState] = useState(false);
-  // Start undefined so an existing account never looks like a fresh sign-in.
-  const [observedAccount, setObservedAccount] = useState<string | null | undefined>(undefined);
+  const [observedSignIn, setObservedSignIn] = useState(interactiveSignIn);
 
   if (step === "publish" && sessionScopesKnown && !showPublishStep && !isApplying) {
     setStep("devices");
@@ -90,14 +90,11 @@ function ConfiguredConnectOnboardingDialog() {
 
   const optOutAccounts = optOutState.optOutAccounts;
 
-  // A signed-in snapshot without userId is incomplete; recording signed-out would fake a fresh sign-in.
-  if (isLoaded && !(isSignedIn && !userId)) {
-    const nextAccount = isSignedIn && userId ? userId : null;
-    if (nextAccount !== observedAccount) {
-      setObservedAccount(nextAccount);
-      if (observedAccount !== undefined && nextAccount !== null) {
-        setRequestedAccount(nextAccount);
-      }
+  // Only an interactive sign-in while this dialog is mounted requests setup.
+  if (interactiveSignIn !== observedSignIn) {
+    setObservedSignIn(interactiveSignIn);
+    if (interactiveSignIn !== null && isSignedIn && userId === interactiveSignIn.accountId) {
+      setRequestedAccount(userId);
     }
   }
 

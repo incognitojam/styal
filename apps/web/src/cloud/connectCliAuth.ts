@@ -7,7 +7,7 @@ import {
 import { clerkFrontendApiUrlFromPublishableKey } from "@t3tools/shared/relayAuth";
 
 import { isHostedStaticApp } from "../hostedPairing";
-import { hasCloudPublicConfig, resolveCloudPublicConfig, trimNonEmpty } from "./publicConfig";
+import { hasLegacyClerkConfig, resolveCloudPublicConfig, trimNonEmpty } from "./publicConfig";
 
 function resolveConnectCliOAuthClientId(): string | null {
   return trimNonEmpty(import.meta.env.VITE_CLERK_CLI_OAUTH_CLIENT_ID as string | undefined);
@@ -20,7 +20,16 @@ function hasConnectCliAuthConfig(): boolean {
 }
 
 export function connectCliAuthRoutesEnabled(): boolean {
-  return isHostedStaticApp() && hasCloudPublicConfig() && hasConnectCliAuthConfig();
+  return isHostedStaticApp() && hasLegacyClerkConfig() && hasConnectCliAuthConfig();
+}
+
+/** Legacy CLI OAuth must keep its Clerk session until authorization finishes. */
+export function isLegacyCliConnectRoute(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    connectCliAuthRoutesEnabled() &&
+    (window.location.pathname === "/connect" || window.location.pathname === "/connect-agent")
+  );
 }
 
 export function buildConnectCliClerkAuthorizeUrl(request: ConnectAuthorizeRequest): string | null {

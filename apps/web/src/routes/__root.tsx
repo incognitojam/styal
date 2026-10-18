@@ -24,6 +24,7 @@ import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachine
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
+import { RelayAuthDialogs } from "../components/relay-auth/RelayAuthDialogs";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { DiscordPresenceSync } from "../components/desktop/DiscordPresenceSync";
@@ -170,6 +171,7 @@ function RootRouteBranch() {
   if (pathname === "/welcome") {
     return (
       <>
+        <RelayAuthDialogs />
         <CustomSnoozeDialogHost />
         <GuestShareDialogHost />
         <CommandPalette>
@@ -207,6 +209,7 @@ function RootRouteBranch() {
         {isElectron ? <RunningThreadKeepAlive /> : null}
         <RelayClientInstallDialog />
         <ConnectOnboardingDialog />
+        <RelayAuthDialogs />
         <SshPasswordPromptDialog />
         <DiscordPresenceSync />
         <SnapShotCoordinator />

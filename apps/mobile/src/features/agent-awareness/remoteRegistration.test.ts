@@ -28,8 +28,9 @@ import {
   getAgentAwarenessRegistrationStatus,
   refreshAgentAwarenessRegistration,
   registerLiveActivityPushToken,
-  releaseAgentAwarenessRelayTokenProvider,
-  setAgentAwarenessRelayTokenProvider,
+  releaseAgentAwarenessRelayCredential,
+  setAgentAwarenessRelayCredential,
+  unregisterAgentAwarenessDeviceForCurrentUser,
   updateAgentAwarenessRegistrationPreferences,
 } from "./remoteRegistration";
 import * as Notifications from "expo-notifications";
@@ -128,6 +129,7 @@ vi.mock("expo-crypto", () => ({
 }));
 
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   getItemAsync: (key: string) => Promise.resolve(secureStore.get(key) ?? null),
   setItemAsync: (key: string, value: string) => {
     secureStore.set(key, value);
@@ -184,6 +186,10 @@ vi.mock("../../persistence/imperative", () => ({
     return Promise.resolve();
   }),
 }));
+
+function credentialFor(accountId: string) {
+  return { accountId, refreshToken: `styal_rt_${accountId}_secret` };
+}
 
 function proofIat(proof: string): number {
   const payload = proof.split(".")[1];
@@ -328,10 +334,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     const registeredTokens: Array<string> = [];
     vi.stubGlobal("fetch", async (request: RequestInfo | URL, init?: RequestInit) => {
       const url = request instanceof Request ? request.url : String(request);
-      if (url.endsWith("/v1/client/dpop-token")) {
+      if (url.endsWith("/v1/auth/token")) {
         return Response.json({
           access_token: "relay-dpop-token",
-          issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+          user: { id: "user-a", email: null },
           token_type: "DPoP",
           expires_in: 300,
           scope: "mobile:registration",
@@ -346,7 +352,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       return Response.json({ ok: true });
     });
     Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test/" } };
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    setAgentAwarenessRelayCredential(credentialFor("user-a"));
     let tokenListener: ((event: { readonly pushToken: string }) => void) | undefined;
     const activity = {
       getId: () => "activity-1",
@@ -383,10 +389,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     });
     vi.stubGlobal("fetch", async (request: RequestInfo | URL, init?: RequestInit) => {
       const url = request instanceof Request ? request.url : String(request);
-      if (url.endsWith("/v1/client/dpop-token")) {
+      if (url.endsWith("/v1/auth/token")) {
         return Response.json({
           access_token: "relay-dpop-token",
-          issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+          user: { id: "user-a", email: null },
           token_type: "DPoP",
           expires_in: 300,
           scope: "mobile:registration",
@@ -405,7 +411,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       return Response.json({ ok: true });
     });
     Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test/" } };
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    setAgentAwarenessRelayCredential(credentialFor("user-a"));
     let tokenListener: ((event: { readonly pushToken: string }) => void) | undefined;
     const activity = {
       getId: () => "activity-1",
@@ -453,10 +459,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     const registrations: unknown[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
-      if (request.url.endsWith("/v1/client/dpop-token")) {
+      if (request.url.endsWith("/v1/auth/token")) {
         return Response.json({
           access_token: "relay-dpop-token",
-          issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+          user: { id: "user-a", email: null },
           token_type: "DPoP",
           expires_in: 300,
           scope: "mobile:registration",
@@ -468,7 +474,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       return Response.json({ ok: true });
     });
     Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test/" } };
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    setAgentAwarenessRelayCredential(credentialFor("user-a"));
     const activity = {
       getId: () => "activity-1",
       getPushToken: vi.fn(() => Promise.resolve("activity-token")),
@@ -508,10 +514,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       end,
     };
     widgetMocks.getInstances.mockReturnValue([activity] as never);
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    setAgentAwarenessRelayCredential(credentialFor("user-a"));
     expect(appStateMock.listeners).toHaveLength(1);
 
-    setAgentAwarenessRelayTokenProvider(null);
+    setAgentAwarenessRelayCredential(null);
 
     expect(end).toHaveBeenCalledWith("immediate");
     expect(widgetMocks.dismissEnded).toHaveBeenCalled();
@@ -523,10 +529,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       const url = request instanceof Request ? request.url : String(request);
       return Promise.resolve(
         Response.json(
-          url.endsWith("/v1/client/dpop-token")
+          url.endsWith("/v1/auth/token")
             ? {
                 access_token: "relay-dpop-token",
-                issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+                user: { id: "user-a", email: null },
                 token_type: "DPoP",
                 expires_in: 300,
                 scope: "mobile:registration",
@@ -542,7 +548,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       },
     };
 
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    setAgentAwarenessRelayCredential(credentialFor("user-a"));
 
     return Effect.gen(function* () {
       yield* runBackgroundOperations();
@@ -582,7 +588,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         url: "https://relay.example.test/",
       },
     };
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    setAgentAwarenessRelayCredential(credentialFor("user-a"));
 
     return Effect.gen(function* () {
       yield* runBackgroundOperations();
@@ -602,7 +608,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         url: "https://relay.example.test/",
       },
     };
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"));
+    setAgentAwarenessRelayCredential(credentialFor("user-a"));
 
     return Effect.gen(function* () {
       yield* refreshAgentAwarenessRegistration();
@@ -614,30 +620,6 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       yield* refreshAgentAwarenessRegistration();
       expect(getAgentAwarenessRegistrationStatus()).toBe("registered");
       expect(saveAgentAwarenessRegistrationRecord).not.toHaveBeenCalled();
-    }).pipe(Effect.provide(layerRelayTest));
-  });
-
-  it.effect("continues queued device registration after a failed auth lookup", () => {
-    Constants.expoConfig!.extra = {
-      relay: {
-        url: "https://relay.example.test/",
-      },
-    };
-
-    const tokenProvider = vi
-      .fn<() => Promise<string | null>>()
-      .mockRejectedValueOnce(new Error("auth unavailable"))
-      .mockResolvedValue("clerk-token-user-a");
-    setAgentAwarenessRelayTokenProvider(tokenProvider);
-    const tokenListener = vi.mocked(Notifications.addPushTokenListener).mock.calls.at(-1)?.[0];
-    expect(tokenListener).toBeDefined();
-    tokenListener?.({ type: "ios", data: "rotated-apns-token" } as never);
-
-    return Effect.gen(function* () {
-      yield* runBackgroundOperations();
-
-      expect(backgroundRuntime.pending).toHaveLength(0);
-      expect(tokenProvider).toHaveBeenCalledTimes(2);
     }).pipe(Effect.provide(layerRelayTest));
   });
 
@@ -653,10 +635,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       const registrations: unknown[] = [];
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = new Request(input, init);
-        if (request.url.endsWith("/v1/client/dpop-token")) {
+        if (request.url.endsWith("/v1/auth/token")) {
           return Response.json({
             access_token: "dpop",
-            issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+            user: { id: "user-a", email: null },
             token_type: "DPoP",
             expires_in: 300,
             scope: "mobile:registration",
@@ -666,7 +648,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         return Response.json({ ok: true });
       });
       Constants.expoConfig!.extra = { relay: { url: "https://permission-relay.example.test" } };
-      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk"), "user-a");
+      setAgentAwarenessRelayCredential(credentialFor("user-a"));
       return Effect.gen(function* () {
         yield* runBackgroundOperations();
         expect(registrations.at(-1)).toMatchObject({
@@ -702,10 +684,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     Object.defineProperty(rejectedResponse.headers, "getSetCookie", { value: undefined });
     vi.stubGlobal("fetch", (request: RequestInfo | URL) => {
       const url = request instanceof Request ? request.url : String(request);
-      const response = url.endsWith("/v1/client/dpop-token")
+      const response = url.endsWith("/v1/auth/token")
         ? Response.json({
             access_token: "relay-dpop-token",
-            issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+            user: { id: "user-a", email: null },
             token_type: "DPoP",
             expires_in: 300,
             scope: "mobile:registration",
@@ -715,7 +697,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       return Promise.resolve(response);
     });
     Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
-    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"), "user-a");
+    setAgentAwarenessRelayCredential(credentialFor("user-a"));
 
     return Effect.gen(function* () {
       // Hermes' compiled error hashing reads the response's cookie getter.
@@ -745,8 +727,8 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
       vi.spyOn(Platform, "Version", "get").mockReturnValue(36);
       Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
-      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token"), "user-a");
-      releaseAgentAwarenessRelayTokenProvider();
+      setAgentAwarenessRelayCredential(credentialFor("user-a"));
+      releaseAgentAwarenessRelayCredential();
       vi.mocked(configureAndroidAgentNotifications).mockClear();
       return Effect.gen(function* () {
         yield* runBackgroundOperations();
@@ -755,4 +737,75 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       }).pipe(Effect.provide(layerRelayTest));
     },
   );
+
+  it.effect("re-registers when the same account signs in with a new relay session", () => {
+    Constants.expoConfig!.extra = {
+      relay: {
+        url: "https://relay.example.test/",
+      },
+    };
+    const session = (id: string) => ({
+      accountId: "user-a",
+      refreshToken: `styal_rt_${id.repeat(32)}_${"f".repeat(64)}`,
+    });
+    setAgentAwarenessRelayCredential(session("a"));
+
+    return Effect.gen(function* () {
+      yield* refreshAgentAwarenessRegistration();
+      expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(1);
+      setAgentAwarenessRelayCredential(session("b"));
+      yield* refreshAgentAwarenessRegistration();
+      expect(saveAgentAwarenessRegistrationRecord).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(layerRelayTest));
+  });
+
+  it.effect("unregisters the device with the signed-in session before sign-out", () => {
+    const requests: Array<{
+      readonly url: string;
+      readonly method: string;
+      readonly body: unknown;
+    }> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      const text = await request.text();
+      requests.push({
+        url: request.url,
+        method: request.method,
+        body: text ? JSON.parse(text) : null,
+      });
+      return request.url.endsWith("/v1/auth/token")
+        ? Response.json({
+            access_token: "relay-dpop-token",
+            user: { id: "user-a", email: null },
+            token_type: "DPoP",
+            expires_in: 300,
+            scope: "mobile:registration",
+          })
+        : Response.json({ ok: true });
+    });
+    Constants.expoConfig!.extra = { relay: { url: "https://unregister-relay.example.test" } };
+
+    return Effect.gen(function* () {
+      yield* unregisterAgentAwarenessDeviceForCurrentUser(credentialFor("user-a"));
+      expect(requests).toEqual([
+        {
+          url: "https://unregister-relay.example.test/v1/auth/token",
+          method: "POST",
+          body: { refresh_token: "styal_rt_user-a_secret" },
+        },
+        {
+          url: "https://unregister-relay.example.test/v1/mobile/devices/device-1",
+          method: "DELETE",
+          body: null,
+        },
+      ]);
+    }).pipe(
+      Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch),
+      Effect.provide(
+        ManagedRelayLayer.layer("https://unregister-relay.example.test").pipe(
+          Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Dpop.layer)),
+        ),
+      ),
+    );
+  });
 });
