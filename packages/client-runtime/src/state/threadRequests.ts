@@ -115,7 +115,9 @@ export function derivePendingThreadRequests(
       ...(item?.type === "approval_request" && item.options !== undefined
         ? { options: item.options }
         : {}),
-      responseCapability: responseCapability === "live" ? "live" : "not_resumable",
+      // A server-answered request is as answerable as a live provider one.
+      responseCapability:
+        responseCapability === "live" || responseCapability === "server" ? "live" : "not_resumable",
     });
   }
 

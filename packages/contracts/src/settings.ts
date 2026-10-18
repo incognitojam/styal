@@ -1,5 +1,6 @@
 import { EnvironmentDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import { DeviceIdleShutdownMinutes, DeviceIdleShutdownSetting } from "./deviceIdleShutdown.ts";
+import { HardwareDeviceConfigs } from "./hardware.ts";
 import {
   AuthSettingsWriteScope,
   AuthProvidersManageScope,
@@ -1042,6 +1043,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "defaultProjectScripts",
   "enableAgentBrowserAccess",
   "enableAgentDeviceAccess",
+  "enableAgentHardwareAccess",
   "textGenerationModelSelection",
   "sourceControlWriterModelSelection",
   "sourceControlWritingStyle",
@@ -1073,6 +1075,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
@@ -1218,6 +1221,14 @@ export const ServerSettings = Schema.Struct({
   environmentDeviceHosts: EnvironmentDeviceHostConfigs.pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  /**
+   * Whether agents may lease and call registered hardware through the
+   * `hardware_*` MCP tools. Server-authoritative, applied when the provider
+   * session is prepared, like `enableAgentDeviceAccess`.
+   */
+  enableAgentHardwareAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Network devices on this environment; definitions live in project repositories. */
+  hardwareDevices: HardwareDeviceConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
@@ -1531,6 +1542,8 @@ export const ServerSettingsPatch = Schema.Struct({
   deviceIdleShutdownMinutes: Schema.optionalKey(Schema.NullOr(DeviceIdleShutdownMinutes)),
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),
+  enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
+  hardwareDevices: Schema.optionalKey(HardwareDeviceConfigs),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),

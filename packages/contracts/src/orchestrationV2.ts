@@ -1071,6 +1071,8 @@ export const OrchestrationV2RuntimeRequest = Schema.Struct({
   responseCapability: Schema.Union([
     Schema.Struct({ type: Schema.Literal("live"), providerSessionId: ProviderSessionId }),
     Schema.Struct({ type: Schema.Literal("message") }),
+    /** Answered in place by a server service, such as a hardware call waiting on approval. */
+    Schema.Struct({ type: Schema.Literal("server") }),
     Schema.Struct({ type: Schema.Literal("not_resumable"), reason: Schema.String }),
   ]),
   createdAt: Schema.DateTimeUtc,
@@ -3264,6 +3266,25 @@ const OrchestrationV2InternalCommand = Schema.Union([
     reason: Schema.String,
     placeholder: Schema.optional(Schema.String),
     secretStatus: OrchestrationV2SecretRequestStatus,
+  }),
+  /**
+   * Opens or cancels an approval a server service waits on, such as a
+   * hardware call. Internal so no client can create one; the user answers it
+   * with `runtime-request.respond` like any provider approval.
+   */
+  Schema.Struct({
+    type: Schema.Literal("server_approval.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    /** The run's root node; the approval node hangs off it. */
+    nodeId: NodeId,
+    requestId: RuntimeRequestId,
+    approvalStatus: Schema.Literals(["pending", "cancelled"]),
+    toolName: TrimmedNonEmptyString,
+    toolInput: Schema.optional(Schema.Unknown),
+    prompt: Schema.String,
+    options: Schema.optional(Schema.Array(ProviderApprovalOption)),
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

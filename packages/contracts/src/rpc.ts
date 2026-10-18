@@ -299,6 +299,14 @@ import {
   DeviceSession,
   DeviceShutdownInput,
 } from "./device.ts";
+import {
+  HardwareAuditListInput,
+  HardwareAuditListResult,
+  HardwareConfigureInput,
+  HardwareControlInput,
+  HardwareError,
+  HardwareServiceState,
+} from "./hardware.ts";
 import {} from "./previewAutomation.ts";
 import {
   ServerConfigStreamEvent,
@@ -503,6 +511,11 @@ export const WS_METHODS = {
   deviceDetail: "device.detail",
   deviceAction: "device.action",
 
+  // Hardware methods
+  hardwareControl: "hardware.control",
+  hardwareConfigure: "hardware.configure",
+  hardwareAuditList: "hardware.auditList",
+
   // Server meta
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
@@ -615,6 +628,7 @@ export const WS_METHODS = {
   subscribePreviewEvents: "subscribePreviewEvents",
   subscribeDiscoveredLocalServers: "subscribeDiscoveredLocalServers",
   subscribeDeviceState: "subscribeDeviceState",
+  subscribeHardwareState: "subscribeHardwareState",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
@@ -1717,6 +1731,30 @@ const WsSubscribeDeviceStateRpc = Rpc.make(WS_METHODS.subscribeDeviceState, {
   stream: true,
 });
 
+const HardwareRpcError = Schema.Union([HardwareError, EnvironmentAuthorizationError]);
+
+// Few RPCs on purpose: every one widens the RPC group's types, which TypeScript
+// already struggles to resolve.
+const WsHardwareControlRpc = Rpc.make(WS_METHODS.hardwareControl, {
+  payload: HardwareControlInput,
+  error: HardwareRpcError,
+});
+const WsHardwareConfigureRpc = Rpc.make(WS_METHODS.hardwareConfigure, {
+  payload: HardwareConfigureInput,
+  error: HardwareRpcError,
+});
+const WsHardwareAuditListRpc = Rpc.make(WS_METHODS.hardwareAuditList, {
+  payload: HardwareAuditListInput,
+  success: HardwareAuditListResult,
+  error: HardwareRpcError,
+});
+const WsSubscribeHardwareStateRpc = Rpc.make(WS_METHODS.subscribeHardwareState, {
+  payload: Schema.Struct({}),
+  success: HardwareServiceState,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 const WsOrchestrationV2DispatchCommandRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.dispatchCommand, {
   payload: OrchestrationV2RpcSchemas.dispatchCommand.input,
   success: OrchestrationV2RpcSchemas.dispatchCommand.output,
@@ -2161,6 +2199,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsDeviceDetailRpc,
   WsDeviceActionRpc,
   WsSubscribeDeviceStateRpc,
+  WsHardwareControlRpc,
+  WsHardwareConfigureRpc,
+  WsHardwareAuditListRpc,
+  WsSubscribeHardwareStateRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,

@@ -398,6 +398,9 @@ export function summarizeT3ToolCalls(
     case "device":
       label = phrase("Used", "use", `device controls ${times}`);
       break;
+    case "hardware":
+      label = phrase("Used", "use", `hardware ${times}`);
+      break;
     case "html-preview":
       label = phrase("Previewed", "preview", quantity(selected.length, "HTML page"));
       break;

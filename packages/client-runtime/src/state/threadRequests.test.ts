@@ -184,3 +184,55 @@ it("restores old text answers without mutating history or replacing unchanged ro
   expect(project(answered)).toBe(result);
   expect(project({ ...answered, visibleTurnItems: [...rows] })[0]).toBe(result[0]);
 });
+
+it("lets the user answer an approval a server service is waiting on", () => {
+  const approvalId = RuntimeRequestId.make("hardware-approval");
+  const approvalNodeId = NodeId.make("hardware-approval-node");
+  const { approvals } = derivePendingThreadRequests({
+    runtimeRequests: [
+      {
+        id: approvalId,
+        nodeId: approvalNodeId,
+        providerTurnId: null,
+        nativeRequestRef: null,
+        kind: "permission",
+        status: "pending",
+        responseCapability: { type: "server" },
+        createdAt: v2Now,
+        resolvedAt: null,
+      },
+    ],
+    turnItems: [
+      {
+        id: TurnItemId.make("hardware-approval-item"),
+        threadId: v2Projection.thread.id,
+        runId: null,
+        nodeId: approvalNodeId,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "waiting",
+        title: null,
+        startedAt: v2Now,
+        completedAt: null,
+        updatedAt: v2Now,
+        type: "approval_request",
+        requestId: approvalId,
+        requestKind: "permission",
+        toolName: "hardware_call",
+        prompt: 'Run "reboot" on tree: POST /reboot',
+        options: [{ decision: "acceptForSession", label: "Allow for this lease" }],
+      },
+    ],
+  });
+  expect(approvals).toEqual([
+    expect.objectContaining({
+      requestId: approvalId,
+      responseCapability: "live",
+      detail: 'Run "reboot" on tree: POST /reboot',
+      options: [{ decision: "acceptForSession", label: "Allow for this lease" }],
+    }),
+  ]);
+});

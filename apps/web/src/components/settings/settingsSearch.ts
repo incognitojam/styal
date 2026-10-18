@@ -19,6 +19,7 @@ export type SettingsPath =
   | "/settings/snap-shot"
   | "/settings/providers"
   | "/settings/integrations"
+  | "/settings/hardware"
   | "/settings/scheduled-tasks"
   | "/settings/source-control"
   | "/settings/storage"
@@ -95,6 +96,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
   "/settings/integrations": "Integrations",
+  "/settings/hardware": "Hardware",
   "/settings/scheduled-tasks": "Scheduled Tasks",
   "/settings/source-control": "Source Control",
   "/settings/storage": "Storage",
@@ -758,6 +760,21 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["xcode android studio sdk avd runtime"],
   },
   {
+    id: "agent-hardware-access",
+    title: "Agent hardware access",
+    to: "/settings/hardware",
+    scope: "project-defaults",
+    searchTerms: ["allow lease devices microcontroller pico led http tools project override"],
+  },
+  {
+    id: "hardware-devices",
+    title: "Hardware devices",
+    to: "/settings/hardware",
+    searchTerms: [
+      "add device microcontroller pico led http address credential token definition lease revoke pause audit activity",
+    ],
+  },
+  {
     id: "browser-profiles",
     title: "Browser profiles",
     to: "/settings/integrations",
@@ -1048,6 +1065,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/keybindings": null,
   "/settings/providers": null,
   "/settings/integrations": null,
+  "/settings/hardware": null,
   "/settings/source-control": "environment-defaults",
   "/settings/storage": "project-defaults",
   "/settings/connections": "connections",

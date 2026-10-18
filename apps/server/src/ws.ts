@@ -190,6 +190,7 @@ import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DeviceService from "./device/DeviceService.ts";
+import * as HardwareService from "./hardware/HardwareService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as DeviceSharing from "./device/DeviceSharing.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -1263,6 +1264,7 @@ const layerWsRpc = (
       const pullRequests = yield* PullRequestService.PullRequestService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* ClientFeatureUsage.devices(clientAnalyticsProps);
+      const hardware = yield* HardwareService.HardwareService;
       const deviceSharing = yield* DeviceSharing.DeviceSharing;
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
@@ -3050,6 +3052,10 @@ const layerWsRpc = (
         [WS_METHODS.deviceDetail]: (input) => deviceService.detail(input),
         [WS_METHODS.deviceAction]: (input) => deviceService.action(input),
         [WS_METHODS.subscribeDeviceState]: (_input) => DeviceService.stateStream(deviceService),
+        [WS_METHODS.hardwareControl]: (input) => hardware.control(input),
+        [WS_METHODS.hardwareConfigure]: (input) => hardware.configure(input),
+        [WS_METHODS.hardwareAuditList]: (input) => hardware.auditList(input),
+        [WS_METHODS.subscribeHardwareState]: (_input) => hardware.stateStream,
         [WS_METHODS.subscribeDiscoveredLocalServers]: (input) =>
           Stream.callback<DiscoveredLocalServerList>((queue) =>
             Effect.gen(function* () {

@@ -25,6 +25,7 @@ import {
   type ModelSelection,
   OrchestrationV2Command,
   type OrchestrationV2InternalCommand,
+  type OrchestrationV2RuntimeRequest,
   type OrchestrationV2ServerCommand,
   type ThreadPullRequestLink,
   type ThreadPullRequestWatch,
@@ -503,6 +504,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.created.record":
       return command.parentThreadId;
     case "secret_request.record":
+    case "server_approval.record":
       return command.threadId;
     case "thread.fork":
     case "thread.merge_back":
@@ -7217,6 +7219,143 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
+  /**
+   * Opens or cancels an approval that a server service waits on. Opening
+   * writes the same node, runtime request and `approval_request` item a
+   * provider approval does, so every approval surface shows it; the request's
+   * `server` capability means the respond path resolves it in place. Both
+   * directions are idempotent: a retry finds the request as it already is.
+   */
+  const dispatchServerApprovalRecord = Effect.fn("orchestrationV2.dispatch.serverApprovalRecord")(
+    function* (
+      command: Extract<OrchestrationV2InternalCommand, { readonly type: "server_approval.record" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const projection = yield* projectionStore
+        .getThreadRecords(
+          command.threadId,
+          ["runs", "nodes", "turnItems", "attempts", "providerTurns", "runtimeRequests"],
+          { turnItemTypes: ["approval_request"], messageRoles: [] },
+        )
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      const run = projection.runs.find((candidate) => candidate.id === command.runId);
+      if (run === undefined || run.rootNodeId !== command.nodeId) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Node ${command.nodeId} is not the root of run ${command.runId}.`,
+        });
+      }
+      const existing = projection.runtimeRequests.find(
+        (request) => request.id === command.requestId,
+      );
+      if (existing !== undefined && existing.responseCapability.type !== "server") {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Runtime request ${command.requestId} is not a server approval.`,
+        });
+      }
+      const pending = command.approvalStatus === "pending";
+      const now = yield* DateTime.now;
+      if (pending ? existing !== undefined : existing?.status !== "pending") {
+        if (existing === undefined) {
+          return yield* new OrchestratorDispatchError({
+            commandId: command.commandId,
+            commandType: command.type,
+            cause: `Server approval ${command.requestId} was never opened.`,
+          });
+        }
+        // Already open, or already answered: the request stays as it is.
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "runtime-request.updated",
+          threadId: command.threadId,
+          runId: command.runId,
+          nodeId: existing.nodeId,
+          providerInstanceId: run.providerInstanceId,
+          occurredAt: now,
+          payload: existing,
+        });
+        return;
+      }
+
+      const nodeId = idAllocator.derive.approvalNode({ requestId: command.requestId });
+      const turnItemId = idAllocator.derive.approvalTurnItem({ requestId: command.requestId });
+      const providerTurnId = providerTurnForRun(projection, run)?.id ?? null;
+      const existingNode = projection.nodes.find((node) => node.id === nodeId);
+      const existingItem = projection.turnItems.find((item) => item.id === turnItemId);
+      const node: OrchestrationV2ExecutionNode = {
+        id: nodeId,
+        threadId: command.threadId,
+        runId: command.runId,
+        parentNodeId: command.nodeId,
+        rootNodeId: command.nodeId,
+        kind: "approval_request",
+        status: pending ? "waiting" : "cancelled",
+        countsForRun: false,
+        providerThreadId: run.providerThreadId,
+        providerTurnId,
+        nativeItemRef: null,
+        runtimeRequestId: command.requestId,
+        checkpointScopeId: null,
+        startedAt: existingNode?.startedAt ?? now,
+        completedAt: pending ? null : now,
+      };
+      const request: OrchestrationV2RuntimeRequest = {
+        id: command.requestId,
+        nodeId,
+        providerTurnId,
+        nativeRequestRef: null,
+        kind: "permission",
+        status: pending ? "pending" : "cancelled",
+        responseCapability: { type: "server" },
+        createdAt: existing?.createdAt ?? now,
+        resolvedAt: pending ? null : now,
+      };
+      const turnItem: OrchestrationV2TurnItem = {
+        id: turnItemId,
+        threadId: command.threadId,
+        runId: command.runId,
+        nodeId,
+        providerThreadId: run.providerThreadId,
+        providerTurnId,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: existingItem?.ordinal ?? (yield* nextTurnItemOrdinal(projection)),
+        status: pending ? "waiting" : "cancelled",
+        title: null,
+        startedAt: existingItem?.startedAt ?? now,
+        completedAt: pending ? null : now,
+        updatedAt: now,
+        type: "approval_request",
+        requestId: command.requestId,
+        requestKind: "permission",
+        toolName: command.toolName,
+        ...(command.toolInput === undefined ? {} : { toolInput: command.toolInput }),
+        prompt: command.prompt,
+        ...(command.options === undefined ? {} : { options: command.options }),
+      };
+      const emitEvent = emit(events, command);
+      const scope = {
+        threadId: command.threadId,
+        runId: command.runId,
+        nodeId,
+        providerInstanceId: run.providerInstanceId,
+        occurredAt: now,
+      };
+      yield* emitEvent({ type: "node.updated", ...scope, payload: node });
+      yield* emitEvent({ type: "runtime-request.updated", ...scope, payload: request });
+      yield* emitEvent({ type: "turn-item.updated", ...scope, payload: turnItem });
+    },
+  );
+
   const dispatchRuntimeRequestRespond = (
     command: Extract<OrchestrationV2Command, { readonly type: "runtime-request.respond" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -10573,6 +10712,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "secret_request.record":
         yield* dispatchSecretRequestRecord(command, events);
+        break;
+      case "server_approval.record":
+        yield* dispatchServerApprovalRecord(command, events);
         break;
       default:
         return yield* dispatchUnsupported(command);
