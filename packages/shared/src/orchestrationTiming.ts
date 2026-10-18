@@ -46,8 +46,8 @@ export function formatDuration(durationMs: number): string {
     const tenths = Math.round(durationMs / 100) / 10;
     return tenths >= 10 ? "10s" : `${tenths.toFixed(1)}s`;
   }
-  if (Math.round(durationMs / 1_000) < 60) return `${Math.round(durationMs / 1_000)}s`;
   const totalSeconds = Math.round(durationMs / 1_000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
   const hours = Math.floor(totalSeconds / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
