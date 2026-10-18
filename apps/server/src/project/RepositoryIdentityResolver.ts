@@ -1,4 +1,5 @@
 import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
+import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
 import {
   detectSourceControlProviderFromGitRemoteUrl,
   normalizeGitRemoteUrl,
@@ -82,8 +83,10 @@ function pickPrimaryRemote(
   return remoteName && remoteUrl ? { remoteName, remoteUrl } : null;
 }
 
-function repositoryPathOf(canonicalKey: string): string {
-  return canonicalKey.split("/").slice(1).join("/");
+function repositoryPathOf(canonicalKey: string, remoteUrl: string): string {
+  const canonicalPath = canonicalKey.split("/").slice(1).join("/");
+  const displayPath = repositoryPathFromRemoteUrl(remoteUrl);
+  return displayPath?.toLowerCase() === canonicalPath ? displayPath : canonicalPath;
 }
 
 function buildRepositoryOrigin(
@@ -93,7 +96,7 @@ function buildRepositoryOrigin(
   if (!originUrl) return undefined;
   const originKey = normalizeGitRemoteUrl(originUrl);
   if (originKey === canonicalKey) return undefined;
-  const displayName = repositoryPathOf(originKey);
+  const displayName = repositoryPathOf(originKey, originUrl);
   return { canonicalKey: originKey, ...(displayName ? { displayName } : {}) };
 }
 
@@ -111,7 +114,7 @@ function buildRepositoryIdentity(input: {
       ? `${remoteHost}/${input.repositoryPath}`
       : remoteCanonicalKey;
   const sourceControlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
-  const repositoryPath = repositoryPathOf(canonicalKey);
+  const repositoryPath = repositoryPathOf(canonicalKey, input.remoteUrl);
   const repositoryPathSegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
   const [owner] = repositoryPathSegments;
   const repositoryName = repositoryPathSegments.at(-1);
