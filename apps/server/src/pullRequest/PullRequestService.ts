@@ -1780,6 +1780,12 @@ export const make = Effect.gen(function* () {
             reviewers: changeRequest.reviewers,
             labels: changeRequest.labels,
             checks: changeRequest.checks,
+            ...(changeRequest.deployments === undefined
+              ? {}
+              : { deployments: changeRequest.deployments }),
+            ...(changeRequest.deploymentsTruncated === undefined
+              ? {}
+              : { deploymentsTruncated: changeRequest.deploymentsTruncated }),
             mergeCapabilities: changeRequest.mergeCapabilities,
             viewerPermissions: changeRequest.viewerPermissions,
             ...(viewer === null || viewer.trim().length === 0 ? {} : { viewer }),

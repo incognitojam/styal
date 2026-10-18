@@ -11,6 +11,7 @@ import type {
   PullRequestCheck,
   PullRequestChecks,
   PullRequestComment,
+  PullRequestDeployment,
   PullRequestFileViewed,
   PullRequestCommit,
   PullRequestInvolvement,
@@ -237,6 +238,8 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly closedAt: string | null;
   readonly reviewers: ReadonlyArray<PullRequestActor>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
+  readonly deployments?: ReadonlyArray<PullRequestDeployment>;
+  readonly deploymentsTruncated?: boolean;
   readonly mergeCapabilities: PullRequestMergeCapabilities;
   readonly viewerPermissions: PullRequestViewerPermissions;
   /** Absent from a host that cannot apply repository policy to its merge verdict. */

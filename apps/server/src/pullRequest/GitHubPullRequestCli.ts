@@ -1692,21 +1692,28 @@ export const make = Effect.gen(function* () {
   const getPullRequestDetail: GitHubPullRequestCli["Service"]["getPullRequestDetail"] = (input) => {
     const { owner, name } = parseRepositorySelector(input.repository);
     return AllowGitHubReserve.pipe(
-      Effect.flatMap((allowReserve) =>
-        graphqlRead({
-          allowReserve,
-          cwd: input.cwd,
-          host: input.host,
-          operation: "getPullRequestDetail",
-          variables: {
-            owner,
-            name,
-            number: input.number,
-            headRef: `refs/pull/${input.number}/head`,
-          },
-          query: pullRequestCoreGraphQlQuery(input.host),
-          decode: decodePullRequestCoreJson,
-        }).pipe(
+      Effect.flatMap((allowReserve) => {
+        const readCore = (includeDeployments: boolean) =>
+          graphqlRead({
+            allowReserve,
+            cwd: input.cwd,
+            host: input.host,
+            operation: "getPullRequestDetail",
+            variables: {
+              owner,
+              name,
+              number: input.number,
+              headRef: `refs/pull/${input.number}/head`,
+            },
+            query: pullRequestCoreGraphQlQuery(input.host, includeDeployments),
+            decode: decodePullRequestCoreJson,
+          });
+        // Deployment access is optional; retry rejected reads once without deployment fields.
+        return readCore(true).pipe(
+          Effect.catchTags({
+            GitHubApiResponseError: () => readCore(false),
+            GitHubApiNotFoundError: () => readCore(false),
+          }),
           // Past a hundred checks the first page would let the rest imply success, so the whole
           // rollup is walked instead.
           Effect.filterOrElse(
@@ -1729,8 +1736,8 @@ export const make = Effect.gen(function* () {
                 })),
               ),
           ),
-        ),
-      ),
+        );
+      }),
     );
   };
 

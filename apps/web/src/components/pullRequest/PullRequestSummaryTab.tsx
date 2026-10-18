@@ -24,6 +24,8 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button } from "../ui/button";
 import { PullRequestEditButton } from "./PullRequestEditButton";
+import { PullRequestDeployments } from "./PullRequestDeployments";
+import { pullRequestDeploymentsTitle } from "./pullRequestDeployments.logic";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -815,6 +817,21 @@ export function PullRequestSummaryTab({
           ) : null}
         </div>
       </section>
+
+      {detail.deployments && detail.deployments.length > 0 ? (
+        <Section
+          key={`deployments:${detail.url}`}
+          title={pullRequestDeploymentsTitle(detail.deployments)}
+        >
+          <PullRequestDeployments
+            environmentId={environmentId}
+            deployments={detail.deployments}
+            headSha={detail.headSha}
+            truncated={detail.deploymentsTruncated === true}
+            threadRef={threadRef}
+          />
+        </Section>
+      ) : null}
 
       <Section key={`description:${detail.url}`} title="Description" keepMounted>
         <div className="group">

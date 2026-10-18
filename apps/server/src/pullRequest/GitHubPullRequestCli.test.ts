@@ -3816,6 +3816,266 @@ layer("GitHubPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("keeps the latest attempt per environment across PR history and the head commit", () =>
+    Effect.gen(function* () {
+      const deployment = (id: string, environment: string, createdAt: string) => ({
+        id,
+        environment,
+        createdAt,
+        updatedAt: "2026-07-03T00:00:00Z",
+        state: "ACTIVE",
+        commitOid: "abc123",
+        latestStatus: {
+          state: "SUCCESS",
+          updatedAt: "2026-07-03T00:01:00Z",
+          description: "Ready",
+          environmentUrl: "https://preview.example.com",
+          logUrl: "https://example.com/logs",
+        },
+      });
+      const old = {
+        ...deployment("old", "preview", "2026-07-01T00:00:00Z"),
+        state: "INACTIVE",
+        updatedAt: "2026-07-04T00:00:00Z",
+      };
+      const current = deployment("current", "preview", "2026-07-02T00:00:00Z");
+      // GitHub timestamps have second precision; a new head attempt can tie the prior one.
+      const pending = { ...current, id: "building", state: "PENDING", latestStatus: null };
+      const failed = {
+        ...deployment("failed", "staging", "2026-07-02T01:00:00Z"),
+        state: "ERROR",
+        latestStatus: {
+          state: "ERROR",
+          updatedAt: "2026-07-02T01:05:00Z",
+          description: "Build failed",
+          environmentUrl: "javascript:alert(1)",
+          logUrl: "https://example.com/failure",
+        },
+      };
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(
+          output(
+            encodeJson(
+              coreResponse({
+                timelineItems: {
+                  nodes: [
+                    { deployment: old },
+                    null,
+                    { deployment: current },
+                    { deployment: failed },
+                  ],
+                  pageInfo: { hasPreviousPage: true },
+                },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: null,
+                        deployments: { nodes: [pending, null], pageInfo: { hasNextPage: false } },
+                      },
+                    },
+                  ],
+                },
+              }),
+            ),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      const detail = yield* cli.getPullRequestDetail({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+      });
+      expect(detail.deployments).toEqual([
+        {
+          id: "building",
+          environment: "preview",
+          status: "pending",
+          description: null,
+          environmentUrl: null,
+          logUrl: null,
+          commitSha: "abc123",
+          createdAt: "2026-07-02T00:00:00Z",
+          updatedAt: "2026-07-03T00:00:00Z",
+        },
+        {
+          id: "failed",
+          environment: "staging",
+          status: "error",
+          description: "Build failed",
+          environmentUrl: null,
+          logUrl: "https://example.com/failure",
+          commitSha: "abc123",
+          createdAt: "2026-07-02T01:00:00Z",
+          updatedAt: "2026-07-02T01:05:00Z",
+        },
+      ]);
+      expect(detail.deploymentsTruncated).toBe(true);
+      expect(mockedExecute).toHaveBeenCalledOnce();
+    }),
+  );
+
+  it.effect(
+    "reports pending, inactive and unfamiliar deployment states without guessing success",
+    () =>
+      Effect.gen(function* () {
+        const nodes = [
+          "PENDING",
+          "QUEUED",
+          "WAITING",
+          "IN_PROGRESS",
+          "FAILURE",
+          "DESTROYED",
+          "FUTURE_STATE",
+          "ACTIVE",
+          "SUCCESS",
+          "ABANDONED",
+        ].map((state) => ({
+          id: state,
+          environment: state,
+          state,
+          commitOid: "head",
+          createdAt: "2026-07-02T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+          latestStatus:
+            state === "ABANDONED"
+              ? {
+                  state: "PENDING",
+                  updatedAt: "2026-07-02T00:00:00Z",
+                  description: null,
+                  environmentUrl: null,
+                  logUrl: null,
+                }
+              : null,
+        }));
+        mockedExecute.mockReturnValueOnce(
+          Effect.succeed(
+            output(
+              encodeJson(
+                coreResponse({
+                  timelineItems: { nodes: [], pageInfo: { hasPreviousPage: false } },
+                  commits: {
+                    nodes: [
+                      {
+                        commit: {
+                          statusCheckRollup: null,
+                          deployments: { nodes, pageInfo: { hasNextPage: false } },
+                        },
+                      },
+                    ],
+                  },
+                }),
+              ),
+            ),
+          ),
+        );
+        const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+        const detail = yield* cli.getPullRequestDetail({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+        });
+        expect(
+          Object.fromEntries(
+            detail.deployments?.map((deployment) => [deployment.environment, deployment.status]) ??
+              [],
+          ),
+        ).toEqual({
+          PENDING: "pending",
+          QUEUED: "queued",
+          WAITING: "waiting",
+          IN_PROGRESS: "in-progress",
+          FAILURE: "failure",
+          DESTROYED: "inactive",
+          FUTURE_STATE: "unknown",
+          ACTIVE: "success",
+          SUCCESS: "success",
+          ABANDONED: "inactive",
+        });
+        expect(detail.deploymentsTruncated).toBe(false);
+      }),
+  );
+
+  it.effect("keeps PR detail readable when deployment fields are refused", () =>
+    Effect.gen(function* () {
+      const context = { host: "github.com", operation: "getPullRequestDetail" };
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      for (const failure of [
+        new GitHubApi.GitHubApiResponseError({ ...context, status: 403 }),
+        new GitHubApi.GitHubApiNotFoundError(context),
+      ]) {
+        mockedExecute.mockReturnValueOnce(Effect.fail(failure));
+        mockedExecute.mockReturnValueOnce(
+          Effect.succeed(
+            output(encodeJson(coreResponse({ title: "Readable without deployments" }))),
+          ),
+        );
+        const detail = yield* cli.getPullRequestDetail({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+        });
+        expect(detail.title).toBe("Readable without deployments");
+        expect(detail.viewerAccess.canWrite).toBe(true);
+        expect(detail.deployments).toBeUndefined();
+      }
+      expect(mockedExecute).toHaveBeenCalledTimes(4);
+      for (const index of [0, 2]) {
+        expect(queryAt(index)).toContain("deployments(first:");
+        expect(queryAt(index + 1)).not.toContain("deployments(first:");
+        expect(queryAt(index + 1)).not.toContain("DEPLOYED_EVENT");
+      }
+    }),
+  );
+
+  it.effect("preserves authentication and quota failures without a fallback request", () =>
+    Effect.gen(function* () {
+      const context = { host: "github.com", operation: "getPullRequestDetail" };
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      for (const failure of [
+        new GitHubApi.GitHubApiAuthenticationError(context),
+        new GitHubApi.GitHubApiRateLimitError(context),
+      ]) {
+        mockedExecute.mockReturnValueOnce(Effect.fail(failure));
+        const error = yield* Effect.flip(
+          cli.getPullRequestDetail({
+            cwd: "/w",
+            repository: "acme/web",
+            host: "github.com",
+            number: 7,
+          }),
+        );
+        expect(error).toBe(failure);
+      }
+      expect(mockedExecute).toHaveBeenCalledTimes(2);
+    }),
+  );
+
+  it.effect("stops after one fallback when the PR itself is inaccessible", () =>
+    Effect.gen(function* () {
+      const failure = new GitHubApi.GitHubApiNotFoundError({
+        host: "github.com",
+        operation: "getPullRequestDetail",
+      });
+      mockedExecute.mockReturnValue(Effect.fail(failure));
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+      const error = yield* Effect.flip(
+        cli.getPullRequestDetail({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+        }),
+      );
+      expect(error).toBe(failure);
+      expect(mockedExecute).toHaveBeenCalledTimes(2);
+    }),
+  );
+
   it.effect("decodes reviewers, labels and workflow checks without another detail read", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(
