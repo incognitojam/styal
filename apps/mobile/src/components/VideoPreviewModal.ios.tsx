@@ -1,6 +1,8 @@
 import * as Dialog from "./ui/Dialog";
 import { useIsFocused } from "@react-navigation/native";
 import { requireNativeModule } from "expo";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useEffectEvent, useId, useState } from "react";
 import { Keyboard } from "react-native";
 
@@ -77,18 +79,28 @@ function NativeVideoPreview(props: {
           ? await loadLocalAttachmentPreview(localAttachment, controller.signal)
           : null;
       if (localAttachment !== null && !file) return;
-      try {
-        if (controller.signal.aborted) return;
-        const uri = file?.uri ?? (needsFreshUrl ? await refreshAssetUrl() : playbackUrl);
-        if (controller.signal.aborted) return;
-        if (uri === null) throw new Error("Could not load this video.");
-        ready = true;
-        await NativeControls.presentVideo(uri, name, source.sourceIdentifier ?? "", identifier);
-        if (!controller.signal.aborted) onRequestClose();
-      } finally {
-        // Native completion follows dismissal, so local playback keeps its file lease.
+      if (controller.signal.aborted) {
         file?.dispose();
+        return;
       }
+      const loaded = await settlePromise(
+        async () => file?.uri ?? (needsFreshUrl ? await refreshAssetUrl() : playbackUrl),
+      );
+      if (controller.signal.aborted || AsyncResult.isFailure(loaded) || loaded.value === null) {
+        file?.dispose();
+        if (controller.signal.aborted) return;
+        if (AsyncResult.isFailure(loaded)) throw squashAtomCommandFailure(loaded);
+        throw new Error("Could not load this video.");
+      }
+      const uri = loaded.value;
+      ready = true;
+      const presented = await settlePromise(() =>
+        NativeControls.presentVideo(uri, name, source.sourceIdentifier ?? "", identifier),
+      );
+      // Native completion follows dismissal, so local playback keeps its file lease.
+      file?.dispose();
+      if (AsyncResult.isFailure(presented)) throw squashAtomCommandFailure(presented);
+      if (!controller.signal.aborted) onRequestClose();
     })().catch((error: unknown) => {
       if (controller.signal.aborted) return;
       // AVKit gives no retry, so re-mint now; the cached URL may simply have expired.
