@@ -1,9 +1,10 @@
 # Product usage data
 
-The T3 Code server sends product usage events to PostHog, associated with a hashed account or
-installation identifier. Events include the provider, model, reasoning effort, permission mode,
-turn result, duration, how many approval requests the turn raised, how many actions Codex's Auto
-reviewer approved or denied, and main-agent token totals when available. Approval and review
+The styal server sends product usage events to styal's own PostHog project on PostHog EU Cloud,
+associated with a hashed account or installation identifier. They do not go to T3 Code's analytics.
+Events include the provider, model, reasoning effort, permission mode, turn result, duration, how
+many approval requests the turn raised, how many actions Codex's Auto reviewer approved or denied,
+the build's release channel, and main-agent token totals when available. Approval and review
 counts never include the command or file involved.
 
 Agent browser usage includes the operation name, whether it succeeded, failed, or was cancelled,
@@ -83,6 +84,8 @@ app keeps its own copy in **Settings → About → Diagnostics** either way.
 To disable collection, set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before
 starting it. This stops product events from being recorded or sent. Test and CI processes default to
 collection disabled; `T3CODE_TELEMETRY_ENABLED=true` explicitly enables it.
+To send events to your own PostHog project instead, set `T3CODE_POSTHOG_HOST` and
+`T3CODE_POSTHOG_KEY`.
 
 ## Error reports
 

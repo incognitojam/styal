@@ -1,6 +1,6 @@
 # Product analytics
 
-The server owns PostHog delivery, opt-out, and identity for every connected client.
+The server owns analytics delivery, opt-out, and identity for every connected client.
 [Identity selection](../../apps/server/src/telemetry/Identify.ts) hashes an available
 provider account ID, falling back to an installation-scoped ID. This identity can
 span several clients; it does not identify a browser session. Clients do not load
@@ -76,7 +76,11 @@ normalization or building reports.
 
 ## Delivery
 
-A send can fail after PostHog has stored the batch, so every retry is a copy.
+The server sends batches straight to PostHog's batch endpoint, the styal project on
+PostHog EU Cloud unless `T3CODE_POSTHOG_HOST` and `T3CODE_POSTHOG_KEY` point it
+elsewhere. Upstream builds send to T3 Code's `ingest.t3.codes` proxy instead; the
+fork must never default to it. A send can fail after PostHog has stored the batch,
+so every retry is a copy.
 [Delivery](../../apps/server/src/telemetry/AnalyticsService.ts) gives each event a
 uuid when it is recorded, backs off after a failed send, and drops a batch after a
 few tries. Without these limits, one stuck batch was sent every second for days.
