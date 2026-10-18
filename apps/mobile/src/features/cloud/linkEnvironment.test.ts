@@ -44,6 +44,7 @@ vi.mock("react-native", () => ({
 }));
 
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   deleteItemAsync: vi.fn(),
   getItemAsync: vi.fn(),
   setItemAsync: vi.fn(),
@@ -136,6 +137,26 @@ function validLinkChallengeResponse() {
   };
 }
 
+const credential = { accountId: "user_123", refreshToken: "styal_rt_session_secret" };
+
+/** Answers the relay access-token request so each fetch mock sees only the calls under test. */
+function withRelayAccessToken(
+  fetchMock: (url: string | URL, init?: RequestInit) => Promise<Response>,
+) {
+  return (url: string | URL, init?: RequestInit) =>
+    String(url).endsWith("/v1/auth/token")
+      ? Promise.resolve(
+          Response.json({
+            access_token: "relay-access-token",
+            token_type: "DPoP",
+            expires_in: 1_800,
+            scope: "account environment:connect environment:status mobile:registration",
+            user: { id: credential.accountId, email: null },
+          }),
+        )
+      : fetchMock(url, init);
+}
+
 function requestBodyText(body: BodyInit | null | undefined): string {
   return body instanceof Uint8Array ? new TextDecoder().decode(body) : String(body ?? "");
 }
@@ -159,11 +180,11 @@ describe("mobile cloud link environment client", () => {
           }
           return Promise.resolve(Response.json(validLinkResponse("env-other")));
         });
-        vi.stubGlobal("fetch", fetchMock);
+        vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
 
         const error = yield* withCloudServices(
           linkEnvironmentToCloudWithPreference({
-            clerkToken: "clerk-token",
+            credential,
             connection: savedConnection,
             liveActivitiesEnabled: true,
           }),
@@ -195,11 +216,11 @@ describe("mobile cloud link environment client", () => {
           }),
         );
       });
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
 
       const error = yield* withCloudServices(
         linkEnvironmentToCloudWithPreference({
-          clerkToken: "clerk-token",
+          credential,
           connection: savedConnection,
           liveActivitiesEnabled: true,
         }),
@@ -232,11 +253,11 @@ describe("mobile cloud link environment client", () => {
           Response.json({ ok: true, endpointRuntimeStatus: { status: "configured" } }),
         );
       });
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
 
       yield* withCloudServices(
         linkEnvironmentToCloudWithPreference({
-          clerkToken: "clerk-token",
+          credential,
           connection: savedConnection,
           liveActivitiesEnabled: false,
         }),

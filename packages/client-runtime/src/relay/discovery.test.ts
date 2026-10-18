@@ -58,10 +58,6 @@ function status(
   };
 }
 
-function token(accountId: string): string {
-  return `${btoa(JSON.stringify({ alg: "RS256" }))}.${btoa(JSON.stringify({ sub: accountId })).replace(/=+$/u, "")}.c2lnbmF0dXJl`;
-}
-
 const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   const networkStatus = yield* SubscriptionRef.make<NetworkStatus>("online");
   const listCalls = yield* Ref.make(0);
@@ -70,11 +66,15 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
   const listFailure = yield* Ref.make<ManagedRelay.ManagedRelayClientError | null>(null);
   const secondListCall = yield* Deferred.make<void>();
   const listGate = yield* Ref.make<Deferred.Deferred<void> | null>(null);
-  const clerkToken = yield* Ref.make<string | null>(token("account-1"));
   const tokenGate = yield* Ref.make<{
     readonly requested: Deferred.Deferred<void>;
     readonly release: Deferred.Deferred<void>;
   } | null>(null);
+  // The signed-in credential, or null when signed out.
+  const credential = yield* Ref.make<{
+    readonly accountId: string;
+    readonly refreshToken: string;
+  } | null>({ accountId: "account-1", refreshToken: "styal_rt_account-1" });
   const sessionIdentity = { accountId: "account-1" };
   const wakeups = yield* SubscriptionRef.make<{
     readonly sequence: number;
@@ -103,6 +103,14 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
 
   const client = ManagedRelay.ManagedRelayClient.of({
     relayUrl: "https://relay.example.test",
+    startEmailSignIn: () => Effect.die("unused"),
+    verifyEmailSignIn: () => Effect.die("unused"),
+    exchangeClerkSession: () => Effect.die("unused"),
+    signOut: () => Effect.die("unused"),
+    getAccount: () => Effect.die("unused"),
+    listSessions: () => Effect.die("unused"),
+    revokeSession: () => Effect.die("unused"),
+    deleteAccount: () => Effect.die("unused"),
     listEnvironments: () =>
       Effect.gen(function* () {
         const count = yield* Ref.updateAndGet(listCalls, (current) => current + 1);
@@ -146,12 +154,12 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
         Layer.succeed(
           ClientCapabilities.CloudSession,
           ClientCapabilities.CloudSession.of({
-            identity: Ref.get(clerkToken).pipe(
+            identity: Ref.get(credential).pipe(
               Effect.map((token) =>
                 token === null ? Option.none() : Option.some(sessionIdentity),
               ),
             ),
-            clerkToken: Ref.get(tokenGate).pipe(
+            credential: Ref.get(tokenGate).pipe(
               Effect.flatMap((gate) =>
                 gate === null
                   ? Effect.void
@@ -159,7 +167,7 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
                       Effect.andThen(Deferred.await(gate.release)),
                     ),
               ),
-              Effect.andThen(Ref.get(clerkToken)),
+              Effect.andThen(Ref.get(credential)),
               Effect.filterOrFail(
                 (token) => token !== null,
                 () =>
@@ -194,8 +202,8 @@ const makeHarness = Effect.fn("RelayDiscoveryTest.makeHarness")(function* () {
     listedEnvironments,
     listFailure,
     listGate,
-    clerkToken,
     tokenGate,
+    credential,
     networkStatus,
     secondListCall,
     statusRequests,
@@ -311,7 +319,7 @@ describe("RelayEnvironmentDiscovery", () => {
         yield* discovery.refresh;
         const gate = yield* Deferred.make<void>();
         yield* Ref.set(harness.listGate, gate);
-        yield* Ref.set(harness.clerkToken, token("account-2"));
+        yield* Ref.set(harness.credential, { accountId: "account-2", refreshToken: "styal_rt_account-2" });
         yield* Ref.set(harness.listedEnvironments, []);
         const refresh = yield* Effect.forkChild(discovery.refresh);
         yield* Deferred.await(harness.secondListCall);
@@ -489,6 +497,14 @@ describe("RelayEnvironmentDiscovery", () => {
       const networkStatus = yield* SubscriptionRef.make<NetworkStatus>("online");
       const client = ManagedRelay.ManagedRelayClient.of({
         relayUrl: "https://relay.example.test",
+        startEmailSignIn: () => Effect.die("unused"),
+        verifyEmailSignIn: () => Effect.die("unused"),
+        exchangeClerkSession: () => Effect.die("unused"),
+        signOut: () => Effect.die("unused"),
+        getAccount: () => Effect.die("unused"),
+        listSessions: () => Effect.die("unused"),
+        revokeSession: () => Effect.die("unused"),
+        deleteAccount: () => Effect.die("unused"),
         listEnvironments: () =>
           Effect.fail(
             new ManagedRelay.ManagedRelayRequestTimeoutError({
@@ -518,7 +534,10 @@ describe("RelayEnvironmentDiscovery", () => {
             Layer.succeed(ManagedRelay.ManagedRelayClient, client),
             Layer.succeed(ClientCapabilities.CloudSession, {
               identity: Effect.succeedSome({ accountId: "account-1" }),
-              clerkToken: Effect.succeed("clerk-token"),
+              credential: Effect.succeed({
+                accountId: "account-1",
+                refreshToken: "styal_rt_account-1",
+              }),
               missingSession: Effect.fail(
                 new ConnectionBlockedError({ reason: "authentication", detail: "Signed out." }),
               ),
@@ -632,7 +651,7 @@ describe("RelayEnvironmentDiscovery", () => {
         }
         yield* discovery.refresh;
         expect((yield* SubscriptionRef.get(discovery.state)).environments.size).toBe(2);
-        yield* Ref.set(harness.clerkToken, null);
+        yield* Ref.set(harness.credential, null);
         yield* discovery.refresh;
 
         const state = yield* SubscriptionRef.get(discovery.state);
@@ -660,7 +679,7 @@ describe("RelayEnvironmentDiscovery", () => {
           Stream.runHead,
         );
 
-        yield* Ref.set(harness.clerkToken, null);
+        yield* Ref.set(harness.credential, null);
         yield* harness.wake("credentials-changed");
         yield* SubscriptionRef.changes(discovery.state).pipe(
           Stream.filter((state) => state.environments.size === 0),

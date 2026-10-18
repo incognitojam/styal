@@ -1,4 +1,4 @@
-import { useAuth } from "@clerk/react";
+import { useRelayAccount } from "../../cloud/useRelayAccount";
 import { useAtomValue } from "@effect/atom-react";
 import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
 import {
@@ -43,7 +43,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { relayEnvironmentDiscovery } from "~/state/relay";
 import { useEnvironmentScope, useEnvironmentSessionState } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { openRelaySignIn } from "../relay-auth/relayAuthDialogs";
 import { CommandBlock } from "../CommandBlock";
 import { AccessOption, accessConfig } from "../auth/ConnectAgentSurface";
 import { useAccessEnvironment } from "../settings/useAccessEnvironment";
@@ -231,7 +231,7 @@ function useGrantableLevels(environment: EnvironmentPresentation) {
 
 function useGate(environment: EnvironmentPresentation) {
   const environmentId = environment.environmentId;
-  const { isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const { isSignedIn } = useRelayAccount();
   const controller = useCloudLinkController(environmentId);
   const canReadRelay = useEnvironmentScope(environmentId, AuthRelayReadScope);
   const thisMachine =
@@ -361,7 +361,6 @@ function GateScreen({
 }) {
   const name = environment.label;
   const turnOnHere = useT3ConnectTurnOn(environment.environmentId);
-  const { openAuthPrompt } = useT3ConnectAuthPrompt();
   const retry = (onClick: () => void) => (
     <Button variant="outline" onClick={onClick}>
       Check again
@@ -385,11 +384,11 @@ function GateScreen({
             `styal Link gives ${name} that address. Each app still needs your approval.`,
           ]}
         >
-          {/* Clerk's sign-in is its own modal, so this dialog closes first. */}
+          {/* Close this dialog before opening sign-in. */}
           <Button
             onClick={() => {
               close();
-              openAuthPrompt();
+              openRelaySignIn();
             }}
           >
             Sign in to styal Link

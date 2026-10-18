@@ -13,7 +13,8 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button, InlineButton } from "../ui/button";
-import { useT3ConnectAccountPage } from "./T3ConnectAccountPages";
+import { useRelayAccount } from "../../cloud/useRelayAccount";
+import { openRelayAccount } from "../relay-auth/relayAuthDialogs";
 
 export function RemoveT3ConnectEnvironmentDialog({
   environmentLabel,
@@ -26,7 +27,7 @@ export function RemoveT3ConnectEnvironmentDialog({
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }) {
-  const accountPage = useT3ConnectAccountPage();
+  const { isSignedIn } = useRelayAccount();
   const discovery = useRelayEnvironmentDiscovery();
   const registration = environmentId
     ? Discovery.relayEnvironmentRegistration(discovery, environmentId)
@@ -38,12 +39,11 @@ export function RemoveT3ConnectEnvironmentDialog({
   ) {
     setShown({ label: environmentLabel, registration });
   }
-  const openAccountPage = accountPage.open;
-  const accountPageLink = openAccountPage ? (
+  const accountPageLink = isSignedIn ? (
     <InlineButton
       onClick={() => {
         onCancel();
-        openAccountPage();
+        openRelayAccount();
       }}
     >
       styal Link settings
@@ -90,7 +90,6 @@ export function RemoveT3ConnectEnvironmentDialog({
           </AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>
-      {accountPage.portals}
     </>
   );
 }

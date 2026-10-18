@@ -5,6 +5,7 @@ import { vi } from "vite-plus/test";
 const secureStore = vi.hoisted(() => new Map<string, string>());
 
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   getItemAsync: vi.fn((key: string) => Promise.resolve(secureStore.get(key) ?? null)),
   setItemAsync: vi.fn((key: string, value: string) => {
     secureStore.set(key, value);
@@ -16,7 +17,37 @@ vi.mock("expo-secure-store", () => ({
   }),
 }));
 
+import * as SecureStore from "expo-secure-store";
+
 import { managedRelayAccessTokenStore } from "./managedRelayTokenStore";
+
+it.effect("round-trips and clears persisted managed relay access tokens", () =>
+  Effect.gen(function* () {
+    secureStore.clear();
+    const entries = [
+      {
+        accountId: "user-1",
+        clientId: "t3-mobile",
+        relayUrl: "https://relay.example.test",
+        thumbprint: "thumbprint",
+        scopes: ["environment:connect"],
+        accessToken: "access-token",
+        expiresAtMillis: 1_800_000,
+      },
+    ] as const;
+
+    yield* managedRelayAccessTokenStore.save(entries);
+    expect(yield* managedRelayAccessTokenStore.load).toEqual(entries);
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+      "styal.cloud.relay-access-tokens",
+      expect.any(String),
+      { keychainAccessible: "after-first-unlock-this-device-only" },
+    );
+
+    yield* managedRelayAccessTokenStore.clear;
+    expect(yield* managedRelayAccessTokenStore.load).toEqual([]);
+  }),
+);
 
 it.effect("falls back to an empty cache when persisted data is invalid", () =>
   Effect.gen(function* () {

@@ -53,9 +53,6 @@ const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
 const AgentAwarenessOperation = Schema.Literals([
   "read-notification-permissions",
   "read-native-push-token",
-  "read-device-registration-relay-token",
-  "read-device-unregistration-relay-token",
-  "read-live-activity-registration-relay-token",
   "load-device-registration-identifier",
   "load-device-registration-preferences",
   "load-device-unregistration-identifier",
@@ -123,9 +120,10 @@ export function subscribeAgentAwarenessRegistrationStatus(listener: () => void):
   };
 }
 let activeLiveActivityRegistrationRetry: ReturnType<typeof setTimeout> | null = null;
-let relayTokenProvider: (() => Promise<string | null>) | null = null;
-let relayTokenProviderIdentity: string | null = null;
+let relayCredential: ManagedRelay.ManagedRelayCredential | null = null;
+let registrationStopped = false;
 let deviceRegistrationGeneration = 0;
+const registrationLock = Semaphore.makeUnsafe(1);
 let activeDeviceRegistration: {
   readonly input: DeviceRegistrationInput;
   operation: Promise<void>;
@@ -167,23 +165,20 @@ function canRegisterPushNotifications(): boolean {
   return Platform.OS === "ios" || Platform.OS === "android";
 }
 
-function shouldRegisterAgentAwarenessDeviceForProvider(
-  previousIdentity: string | null,
-  identity: string | undefined,
-): boolean {
-  return identity === undefined || identity !== previousIdentity;
-}
-
-export function setAgentAwarenessRelayTokenProvider(
-  provider: (() => Promise<string | null>) | null,
-  identity?: string,
+/**
+ * Sets the styal Link sign-in used for device and Live Activity registration,
+ * or null on sign-out. Setting the same account again only retries a
+ * registration that has not succeeded yet.
+ */
+export function setAgentAwarenessRelayCredential(
+  credential: ManagedRelay.ManagedRelayCredential | null,
 ): void {
-  const isExistingIdentity =
-    provider !== null &&
-    !shouldRegisterAgentAwarenessDeviceForProvider(relayTokenProviderIdentity, identity);
+  if (credential !== null && registrationStopped) return;
+  const previousAccountId = relayCredential?.accountId ?? null;
+  const isExistingIdentity = credential !== null && credential.accountId === previousAccountId;
   if (!isExistingIdentity) {
-    // An unset JS identity may mean remount; native configure checks the persisted account on cold start.
-    if (relayTokenProviderIdentity && identity !== relayTokenProviderIdentity) {
+    // No previous JS account is a remount; native configure checks the persisted account on cold start.
+    if (previousAccountId !== null) {
       clearAndroidAgentNotifications();
     }
     if (provider) {
@@ -195,9 +190,8 @@ export function setAgentAwarenessRelayTokenProvider(
     pendingDeviceRegistration = null;
     registeredActivityPushTokens.clear();
   }
-  relayTokenProvider = provider;
-  relayTokenProviderIdentity = provider ? (identity ?? null) : null;
-  if (!provider) {
+  relayCredential = credential;
+  if (!credential) {
     clearAndroidAgentNotifications();
     pushTokenSubscription?.remove();
     pushTokenSubscription = null;
@@ -223,6 +217,7 @@ export function setAgentAwarenessRelayTokenProvider(
     "active live activity registration after cloud sign-in failed",
   );
   if (isExistingIdentity) {
+    // A same-account re-activation only retries a registration that never succeeded.
     if (registrationStatus !== "registered") {
       enqueueDeviceRegistration({}, "device registration retry after cloud session refresh failed");
     }
@@ -231,10 +226,9 @@ export function setAgentAwarenessRelayTokenProvider(
   enqueueDeviceRegistration({}, "device registration after cloud sign-in failed");
 }
 
-// Provider remounts retain a valid relay registration; teardown must preserve it and lock-screen activities.
-export function releaseAgentAwarenessRelayTokenProvider(): void {
-  relayTokenProvider = null;
-  relayTokenProviderIdentity = null;
+// Remounts while signed in keep the relay registration; teardown must preserve it and lock-screen activities.
+export function releaseAgentAwarenessRelayCredential(): void {
+  relayCredential = null;
   deviceRegistrationGeneration++;
   activeDeviceRegistration = null;
   pendingDeviceRegistration = null;
@@ -247,6 +241,26 @@ export function releaseAgentAwarenessRelayTokenProvider(): void {
     clearTimeout(activeLiveActivityRegistrationRetry);
     activeLiveActivityRegistrationRetry = null;
   }
+}
+
+/** Fences queued work and waits for dispatched registrations before the final unregister. */
+export const stopAgentAwarenessRegistration = Effect.suspend(() => {
+  registrationStopped = true;
+  releaseAgentAwarenessRelayCredential();
+  setRegistrationStatus("unknown");
+  registeredActivityPushTokens.clear();
+  return registrationLock.withPermits(1)(
+    Effect.promise(() =>
+      clearAgentAwarenessRegistrationRecord().catch((error: unknown) => {
+        logRegistrationError("clear registration record on sign-out failed", error);
+      }),
+    ),
+  );
+});
+
+/** Allows the auth bridge to activate a new sign-in, or retry after account deletion fails. */
+export function resumeAgentAwarenessRegistration(): void {
+  registrationStopped = false;
 }
 
 function iosMajorVersion(): number {
@@ -324,19 +338,6 @@ const nativePushTokenRegistration = Effect.fn("remoteRegistration.nativePushToke
   },
 );
 
-const relayToken = Effect.fn("remoteRegistration.relayToken")(function* (
-  operation: "read-device-registration-relay-token" | "read-live-activity-registration-relay-token",
-) {
-  const provider = relayTokenProvider;
-  if (!provider) {
-    return null;
-  }
-  return yield* Effect.tryPromise({
-    try: provider,
-    catch: (cause) => new AgentAwarenessOperationError({ operation, cause }),
-  });
-});
-
 function registrationSignature(body: RelayDeviceRegistrationRequest): string {
   return [
     body.deviceId,
@@ -370,16 +371,14 @@ const registerDeviceWithRelay = Effect.fn("remoteRegistration.registerDeviceWith
     setRegistrationStatus("unknown");
     return;
   }
-  const token = yield* relayToken("read-device-registration-relay-token");
-  if (expectedGeneration !== deviceRegistrationGeneration) {
-    return;
-  }
-  if (!token) {
+  const credential = relayCredential;
+  if (!credential) {
     setRegistrationStatus("unknown");
     return;
   }
 
-  const identity = relayTokenProviderIdentity ?? "";
+  // Registrations belong to a relay session, so a new sign-in of the same account registers again.
+  const identity = `${credential.accountId}|${ManagedRelay.managedRelaySessionId(credential) ?? ""}`;
   const persisted = yield* Effect.tryPromise({
     try: () => loadAgentAwarenessRegistrationRecord(),
     catch: (cause) =>
@@ -411,8 +410,9 @@ const registerDeviceWithRelay = Effect.fn("remoteRegistration.registerDeviceWith
   }
 
   const client = yield* ManagedRelay.ManagedRelayClient;
+  if (expectedGeneration !== deviceRegistrationGeneration) return;
   yield* client.registerDevice({
-    clerkToken: token,
+    credential,
     payload,
   });
   if (expectedGeneration !== deviceRegistrationGeneration) {
@@ -431,29 +431,17 @@ const registerDeviceWithRelay = Effect.fn("remoteRegistration.registerDeviceWith
       logRegistrationError("persist registration record failed", error);
     }),
   );
-});
+}, registrationLock.withPermits(1));
 
 const unregisterDeviceWithRelay = Effect.fn("remoteRegistration.unregisterDeviceWithRelay")(
   function* (input: {
     readonly deviceId: string;
-    readonly tokenProvider: () => Promise<string | null>;
+    readonly credential: ManagedRelay.ManagedRelayCredential;
   }): Effect.fn.Return<void, AgentAwarenessRegistrationError, ManagedRelay.ManagedRelayClient> {
     if (!readRelayConfig()) return;
-    const token = yield* Effect.tryPromise({
-      try: input.tokenProvider,
-      catch: (cause) =>
-        new AgentAwarenessOperationError({
-          operation: "read-device-unregistration-relay-token",
-          cause,
-        }),
-    });
-    if (!token) {
-      return;
-    }
-
     const client = yield* ManagedRelay.ManagedRelayClient;
     yield* client.unregisterDevice({
-      clerkToken: token,
+      credential: input.credential,
       deviceId: input.deviceId,
     });
   },
@@ -471,15 +459,17 @@ export function armAgentAwarenessLiveActivityForLocalWork(input: {
   readonly threadTitle: string;
   readonly projectTitle: string;
 }): void {
-  if (!canRegisterRemoteLiveActivities() || !relayTokenProvider) {
+  if (!canRegisterRemoteLiveActivities() || !relayCredential) {
     return;
   }
   if (!environmentPublishesAgentActivity(input.environmentId)) {
     return;
   }
+  const generation = deviceRegistrationGeneration;
   void loadPreferences()
     .catch(() => null)
     .then((preferences) => {
+      if (generation !== deviceRegistrationGeneration || !relayCredential) return;
       if (preferences?.liveActivitiesEnabled === false) {
         return;
       }
@@ -537,12 +527,12 @@ const readAgentActivitySnapshot: () => Effect.Effect<
 > = Effect.fn("remoteRegistration.readAgentActivitySnapshot")(
   function* () {
     if (!readRelayConfig()) return null;
-    const token = yield* relayToken("read-live-activity-registration-relay-token");
-    if (!token) {
+    const credential = relayCredential;
+    if (!credential) {
       return null;
     }
     const client = yield* ManagedRelay.ManagedRelayClient;
-    return yield* client.getAgentActivitySnapshot({ clerkToken: token });
+    return yield* client.getAgentActivitySnapshot({ credential });
   },
   Effect.catch((error) =>
     Effect.sync(() => {
@@ -555,20 +545,22 @@ const readAgentActivitySnapshot: () => Effect.Effect<
 const registerLiveActivityWithRelay = Effect.fn("remoteRegistration.registerLiveActivityWithRelay")(
   function* (
     body: RelayLiveActivityRegistrationRequest,
+    expectedGeneration: number,
   ): Effect.fn.Return<boolean, AgentAwarenessRegistrationError, ManagedRelay.ManagedRelayClient> {
+    if (expectedGeneration !== deviceRegistrationGeneration) return false;
     if (!readRelayConfig()) return false;
-    const token = yield* relayToken("read-live-activity-registration-relay-token");
-    if (!token) {
-      return false;
-    }
+    const credential = relayCredential;
+    if (!credential) return false;
 
     const client = yield* ManagedRelay.ManagedRelayClient;
+    if (expectedGeneration !== deviceRegistrationGeneration) return false;
     yield* client.registerLiveActivity({
-      clerkToken: token,
+      credential,
       payload: body,
     });
-    return true;
+    return expectedGeneration === deviceRegistrationGeneration;
   },
+  registrationLock.withPermits(1),
 );
 
 function logRegistrationError(context: string, error: unknown): void {
@@ -631,7 +623,11 @@ function startPendingDeviceRegistration(): void {
     const result = await settleAsyncResult(() =>
       runtime.runPromiseExit(registerDevice(next.input, generation)),
     );
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+    if (
+      generation === deviceRegistrationGeneration &&
+      result._tag === "Failure" &&
+      !isAtomCommandInterrupted(result)
+    ) {
       // Refresh failures leave the relay's accepted registration intact; preserve registered status.
       if (registrationStatus !== "registered") {
         setRegistrationStatus("failed");
@@ -646,6 +642,7 @@ function startPendingDeviceRegistration(): void {
 }
 
 function enqueueDeviceRegistration(input: DeviceRegistrationInput, context: string): void {
+  if (!relayCredential) return;
   if (
     activeDeviceRegistration &&
     !registrationAddsInformation(activeDeviceRegistration.input, input)
@@ -666,6 +663,7 @@ const registerDevice = Effect.fn("remoteRegistration.registerDevice")(function* 
   input: RegisterDeviceInput = {},
   expectedGeneration = deviceRegistrationGeneration,
 ): Effect.fn.Return<void, AgentAwarenessRegistrationError, ManagedRelay.ManagedRelayClient> {
+  if (!relayCredential || expectedGeneration !== deviceRegistrationGeneration) return;
   if (!canRegisterPushNotifications()) {
     return;
   }
@@ -693,10 +691,10 @@ const registerDevice = Effect.fn("remoteRegistration.registerDevice")(function* 
     input.preferencesOverride,
   );
   if (expectedGeneration !== deviceRegistrationGeneration) return;
-  if (relayTokenProvider && relayTokenProviderIdentity) {
+  if (relayCredential) {
     configureAndroidAgentNotifications(
       deviceId,
-      relayTokenProviderIdentity,
+      relayCredential.accountId,
       preferences.liveActivitiesEnabled !== false,
     );
   }
@@ -850,8 +848,8 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
     clearTimeout(activeLiveActivityRegistrationRetry);
     activeLiveActivityRegistrationRetry = null;
   }
-  relayTokenProvider = null;
-  relayTokenProviderIdentity = null;
+  relayCredential = null;
+  registrationStopped = false;
   deviceRegistrationGeneration++;
   activeDeviceRegistration = null;
   pendingDeviceRegistration = null;
@@ -864,11 +862,11 @@ export function __resetAgentAwarenessRemoteRegistrationForTest(): void {
 }
 
 export const unregisterAgentAwarenessDeviceForCurrentUser: (
-  tokenProvider: () => Promise<string | null>,
+  credential: ManagedRelay.ManagedRelayCredential,
 ) => Effect.Effect<void, never, ManagedRelay.ManagedRelayClient> = Effect.fn(
   "remoteRegistration.unregisterAgentAwarenessDeviceForCurrentUser",
 )(
-  function* (tokenProvider: () => Promise<string | null>) {
+  function* (credential: ManagedRelay.ManagedRelayCredential) {
     const deviceId = yield* Effect.tryPromise({
       try: () => loadAgentAwarenessDeviceId(),
       catch: (cause) =>
@@ -880,7 +878,7 @@ export const unregisterAgentAwarenessDeviceForCurrentUser: (
     if (!deviceId) {
       return;
     }
-    yield* unregisterDeviceWithRelay({ deviceId, tokenProvider });
+    yield* unregisterDeviceWithRelay({ deviceId, credential });
   },
   Effect.catch((error) =>
     Effect.sync(() => {
@@ -891,9 +889,13 @@ export const unregisterAgentAwarenessDeviceForCurrentUser: (
 
 export const registerLiveActivityPushToken = Effect.fn(
   "remoteRegistration.registerLiveActivityPushToken",
-)(function* (input: {
-  readonly activity: LiveActivity<AgentActivityProps>;
-}): Effect.fn.Return<boolean, AgentAwarenessRegistrationError, ManagedRelay.ManagedRelayClient> {
+)(function* (
+  input: {
+    readonly activity: LiveActivity<AgentActivityProps>;
+  },
+  expectedGeneration: number = deviceRegistrationGeneration,
+): Effect.fn.Return<boolean, AgentAwarenessRegistrationError, ManagedRelay.ManagedRelayClient> {
+  if (expectedGeneration !== deviceRegistrationGeneration) return false;
   if (!canRegisterRemoteLiveActivities()) {
     return false;
   }
@@ -909,11 +911,12 @@ export const registerLiveActivityPushToken = Effect.fn(
             cause,
           }),
       });
+      if (expectedGeneration !== deviceRegistrationGeneration) return false;
       if (!activityPushToken) {
         return false;
       }
 
-      return yield* registerLiveActivityPushTokenValue({ activityPushToken });
+      return yield* registerLiveActivityPushTokenValue({ activityPushToken }, expectedGeneration);
     }),
   );
 });
@@ -930,7 +933,12 @@ function observeLiveActivityPushTokens(
   activity.addPushTokenListener((event) => {
     if (!event.pushToken) return;
     runRegistrationInBackground(
-      lock.withPermit(registerLiveActivityPushTokenValue({ activityPushToken: event.pushToken })),
+      lock.withPermit(
+        registerLiveActivityPushTokenValue(
+          { activityPushToken: event.pushToken },
+          deviceRegistrationGeneration,
+        ),
+      ),
       "live activity token listener registration failed",
     );
   });
@@ -939,9 +947,13 @@ function observeLiveActivityPushTokens(
 
 const registerLiveActivityPushTokenValue = Effect.fn(
   "remoteRegistration.registerLiveActivityPushTokenValue",
-)(function* (input: {
-  readonly activityPushToken: string;
-}): Effect.fn.Return<boolean, AgentAwarenessRegistrationError, ManagedRelay.ManagedRelayClient> {
+)(function* (
+  input: {
+    readonly activityPushToken: string;
+  },
+  expectedGeneration: number,
+): Effect.fn.Return<boolean, AgentAwarenessRegistrationError, ManagedRelay.ManagedRelayClient> {
+  if (!relayCredential || expectedGeneration !== deviceRegistrationGeneration) return false;
   const acceptedAt = registeredActivityPushTokens.get(input.activityPushToken);
   if (
     acceptedAt !== undefined &&
@@ -957,10 +969,15 @@ const registerLiveActivityPushTokenValue = Effect.fn(
         cause,
       }),
   });
-  const registered = yield* registerLiveActivityWithRelay({
-    deviceId,
-    activityPushToken: input.activityPushToken,
-  });
+  if (expectedGeneration !== deviceRegistrationGeneration) return false;
+  const registered = yield* registerLiveActivityWithRelay(
+    {
+      deviceId,
+      activityPushToken: input.activityPushToken,
+    },
+    expectedGeneration,
+  );
+  if (expectedGeneration !== deviceRegistrationGeneration) return false;
   if (registered) {
     registeredActivityPushTokens.set(input.activityPushToken, yield* Clock.currentTimeMillis);
   }
@@ -968,7 +985,7 @@ const registerLiveActivityPushTokenValue = Effect.fn(
 });
 
 function scheduleActiveLiveActivityRegistrationRetry(): void {
-  if (activeLiveActivityRegistrationRetry || !relayTokenProvider) {
+  if (activeLiveActivityRegistrationRetry || !relayCredential) {
     return;
   }
 
@@ -984,7 +1001,8 @@ function scheduleActiveLiveActivityRegistrationRetry(): void {
 export const refreshActiveLiveActivityRemoteRegistration = Effect.fn(
   "remoteRegistration.refreshActiveLiveActivityRemoteRegistration",
 )(function* (): Effect.fn.Return<void, never, ManagedRelay.ManagedRelayClient> {
-  if (!canRegisterRemoteLiveActivities() || !relayTokenProvider) {
+  const generation = deviceRegistrationGeneration;
+  if (!canRegisterRemoteLiveActivities() || !relayCredential) {
     return;
   }
 
@@ -1110,8 +1128,9 @@ export const refreshActiveLiveActivityRemoteRegistration = Effect.fn(
     }
   }
 
+  if (generation !== deviceRegistrationGeneration) return;
   const registrationResults = yield* Effect.forEach(activities, (activity) =>
-    registerLiveActivityPushToken({ activity }).pipe(
+    registerLiveActivityPushToken({ activity }, generation).pipe(
       Effect.map((registered) => !registered),
       Effect.catch((error) =>
         Effect.sync(() => {
@@ -1122,6 +1141,7 @@ export const refreshActiveLiveActivityRemoteRegistration = Effect.fn(
     ),
   );
 
+  if (generation !== deviceRegistrationGeneration) return;
   if (registrationResults.some(Boolean)) {
     scheduleActiveLiveActivityRegistrationRetry();
   }

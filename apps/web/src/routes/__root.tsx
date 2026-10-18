@@ -25,6 +25,7 @@ import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachine
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
+import { RelayAuthDialogs } from "../components/relay-auth/RelayAuthDialogs";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { DiscordPresenceSync } from "../components/desktop/DiscordPresenceSync";
@@ -183,6 +184,7 @@ function RootRouteBranch() {
   // first-run gate and the event router, whose first navigation would leave the page.
   const appHosts = (
     <>
+      <RelayAuthDialogs />
       {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
       {primaryEnvironmentAuthenticated || localEnvironmentDisabled ? (
         <DesktopWebLinkCoordinator />

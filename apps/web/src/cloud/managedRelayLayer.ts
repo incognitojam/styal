@@ -8,8 +8,11 @@ const layerRelayDpopSigner = DpopProof.layerSigner({
   keyStore: "indexed-db",
   loadOrCreateKey: loadOrCreateProofKey(),
 });
+import { endRelaySession } from "./relaySessionStore";
 
 export const layer = (relayUrl: string) =>
-  ManagedRelay.layer({ relayUrl, clientId: RelayWebClientId }).pipe(
-    Layer.provideMerge(layerRelayDpopSigner),
-  );
+  ManagedRelay.layer({
+    relayUrl,
+    clientId: RelayWebClientId,
+    onSessionEnded: endRelaySession,
+  }).pipe(Layer.provideMerge(layerRelayDpopSigner));

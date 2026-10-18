@@ -74,6 +74,7 @@ vi.mock("expo", () => ({
 }));
 
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   deleteItemAsync: mocks.deleteItemAsync,
   getItemAsync: mocks.getItemAsync,
   setItemAsync: mocks.setItemAsync,

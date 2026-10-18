@@ -1,11 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useAuth } from "@clerk/react";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
 import { AuthRelayReadScope, AuthRelayWriteScope, type EnvironmentId } from "@t3tools/contracts";
+import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { ManagedRelay } from "@t3tools/client-runtime/relay";
 import {
   isAtomCommandInterrupted,
-  settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
@@ -25,7 +24,6 @@ import {
   updateEnvironmentPreferences as updateEnvironmentPreferencesAtom,
 } from "./linkEnvironmentAtoms";
 import { readCachedCloudLinkState, useCloudLinkState } from "./cloudLinkState";
-import { resolveRelayClerkTokenOptions } from "./publicConfig";
 import { isManagedTunnelActive } from "./t3ConnectState";
 
 export interface CloudLinkDesiredState {
@@ -52,7 +50,8 @@ function tunnelLimitFromLinkFailure(cause: unknown): number | null {
 }
 
 export function useCloudLinkController(environmentId: EnvironmentId | null) {
-  const { getToken, isSignedIn } = useAuth();
+  const session = useAtomValue(managedRelaySessionAtom);
+  const isSignedIn = session !== null;
   const refreshRelayEnvironments = useAtomCommand(relayEnvironmentDiscovery.refresh, {
     reportFailure: false,
   });
@@ -137,16 +136,12 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
     if (!canManageLink()) return false;
     const wantsLink = desired.managedTunnel || desired.publish;
     if (wantsLink && readLinkState() === null) return false;
-    const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
-    if (!canManageLink()) return false;
+    const credential = session?.credential ?? null;
 
     // A failed mutation may have partially applied, so refresh server state on every exit.
     if (!wantsLink) {
-      // Unlink needs no relay token; failed token reads must still allow it.
-      const unlinkResult = await unlinkEnvironment({
-        target,
-        clerkToken: tokenResult._tag === "Success" ? (tokenResult.value ?? null) : null,
-      });
+      // Unlink works signed out too, so the user can always turn styal Link off.
+      const unlinkResult = await unlinkEnvironment({ target, credential });
       refreshManagedTunnelUsage();
       if (unlinkResult._tag === "Failure") {
         if (!isAtomCommandInterrupted(unlinkResult)) {
@@ -168,12 +163,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
     } else {
       const currentLinkState = readLinkState();
       if (currentLinkState === null) return false;
-      if (tokenResult._tag === "Failure") {
-        reportUpdateFailure(squashAtomCommandFailure(tokenResult));
-        return false;
-      }
-      const clerkToken = tokenResult.value;
-      if (!clerkToken) {
+      if (!credential) {
         reportUpdateFailure(new Error("Sign in to styal Link before enabling this."));
         return false;
       }
@@ -185,7 +175,7 @@ export function useCloudLinkController(environmentId: EnvironmentId | null) {
       ) {
         const linkResult = await linkEnvironment({
           target,
-          clerkToken,
+          credential,
           mode: desired.managedTunnel ? "managed" : "publish_only",
         });
         // Any link attempt can change the account's tunnel count.

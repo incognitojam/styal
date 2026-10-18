@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 
 import { loadOrCreateProofKey } from "./dpop";
 import { managedRelayAccessTokenStore } from "./managedRelayTokenStore";
+import { endRelaySession } from "./relaySessionStore";
 
 const layerRelayDpopSigner = DpopProof.layerSigner({
   keyStore: "expo-secure-store",
@@ -15,4 +16,5 @@ export const layer = (relayUrl: string) =>
     relayUrl,
     clientId: RelayMobileClientId,
     accessTokenStore: managedRelayAccessTokenStore,
+    onSessionEnded: endRelaySession,
   }).pipe(Layer.provideMerge(layerRelayDpopSigner));

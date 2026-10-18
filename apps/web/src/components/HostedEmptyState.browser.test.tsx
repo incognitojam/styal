@@ -15,12 +15,11 @@ const discovery = vi.hoisted(() => ({
   register: vi.fn(),
 }));
 
-vi.mock(import("@clerk/react"), async (original) => ({
-  ...(await original()),
-  useAuth: (() => ({ isLoaded: true, isSignedIn: true })) as never,
+vi.mock(import("../cloud/useRelayAccount"), () => ({
+  useRelayAccount: (() => ({ isLoaded: true, isSignedIn: true })) as never,
 }));
-vi.mock(import("./clerk/useT3ConnectAuthPrompt"), () => ({
-  useT3ConnectAuthPrompt: () => ({ authPrompt: null, openAuthPrompt: vi.fn() }),
+vi.mock(import("./relay-auth/relayAuthDialogs"), () => ({
+  openRelaySignIn: vi.fn(),
 }));
 vi.mock(import("~/state/use-atom-command"), async (original) => {
   const { relayEnvironmentDiscovery } = await import("~/state/relay");
