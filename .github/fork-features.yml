@@ -3735,7 +3735,7 @@ features:
   - id: retire-legacy-pairing-with-link
     title: Drop a pre-split pairing when styal Link reaches the same environment
     status: maintained
-    prs: []
+    prs: [907]
     invariants:
       - When a client's session over a saved pairing has only pre-split permissions and the environment also has a styal Link route, the client removes that pairing route (and learned routes borrowing its token) instead of telling the user to pair again.
       - A pairing that is the only way to reach an environment is kept, and the existing permission notice still shows for it.
