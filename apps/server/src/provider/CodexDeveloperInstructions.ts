@@ -8,9 +8,16 @@ import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeI
 
 import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
-  T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+  T3_CODE_ORCHESTRATION_SECTIONS,
   renderProviderToolInstructions,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
+
+/**
+ * Codex cuts the middle out of any `additionalContext` value over 1,000 tokens,
+ * which it counts as UTF-8 bytes divided by four. It does this silently, so
+ * every value built here has to fit.
+ */
+export const CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES = 4_000;
 
 const browserToolInstructionBlock = (mcpServerName: McpServerName): string =>
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim()
@@ -249,12 +256,18 @@ export function buildCodexAdditionalContext(
     }
     if (value) addPart();
   }
-  // Separate keys keep each value under Codex's per-entry token cap.
+  // Separate keys keep each value under Codex's per-entry cap. Codex emits
+  // entries in key order, so the numbering preserves the authored order.
   return {
-    t3_code_orchestration: {
-      kind: "application",
-      value: renderProviderToolInstructions(T3_CODE_ORCHESTRATION_INSTRUCTIONS, mcpServerName),
-    },
+    ...Object.fromEntries(
+      T3_CODE_ORCHESTRATION_SECTIONS.map((section, index) => [
+        `t3_code_orchestration_${String(index + 1).padStart(2, "0")}`,
+        {
+          kind: "application" as const,
+          value: renderProviderToolInstructions(section, mcpServerName),
+        },
+      ]),
+    ),
     t3_code_runtime: {
       kind: "application",
       value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
