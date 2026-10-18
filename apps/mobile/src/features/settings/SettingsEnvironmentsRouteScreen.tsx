@@ -162,16 +162,20 @@ export function SettingsEnvironmentsRouteScreen() {
           ) : undefined
         }
       >
-        <LocalEnvironmentList
-          environments={localEnvironments}
-          expandedId={null}
-          onToggle={openEnvironment}
-          opensDetails
-          onReconnect={onReconnectEnvironment}
-          onRemove={onRemoveEnvironmentPress}
-          onSetEnabled={onSetEnvironmentEnabled}
-          onUpdate={handleUpdateEnvironment}
-        />
+        {/* The empty state would claim nothing is connected above a list of
+            styal Link environments, so it only shows when there are none. */}
+        {localEnvironments.length > 0 || connectedCloudEnvironments.length === 0 ? (
+          <LocalEnvironmentList
+            environments={localEnvironments}
+            expandedId={null}
+            onToggle={openEnvironment}
+            opensDetails
+            onReconnect={onReconnectEnvironment}
+            onRemove={onRemoveEnvironmentPress}
+            onSetEnabled={onSetEnvironmentEnabled}
+            onUpdate={handleUpdateEnvironment}
+          />
+        ) : null}
 
         {/* Always mounted: already-connected relay environments must stay
             visible (and removable) even when cloud config is missing or the
