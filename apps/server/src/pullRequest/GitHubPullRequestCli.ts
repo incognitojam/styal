@@ -1,8 +1,4 @@
 import { removeAgentCredits } from "./mergeMessage.ts";
-import {
-  decodeGitHubWorkflowRunJobsJson,
-  decodeGitHubWorkflowRunJson,
-} from "./gitHubWorkflowRunJson.ts";
 import { KnownWorkflowRuns, makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
 import * as Cause from "effect/Cause";
@@ -45,6 +41,8 @@ import {
   type PullRequestUpdateMethod,
   type PullRequestPreview,
 } from "@t3tools/contracts";
+
+import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
 import { AllowGitHubReserve } from "../sourceControl/GitHubCli.ts";
 import * as GitHubApi from "../sourceControl/GitHubApi.ts";
@@ -912,6 +910,31 @@ export class GitHubPullRequestCli extends Context.Service<
  * The host is not read off the identity: it travels alongside it, because the identity a
  * project records is the path below its host and never names the host itself.
  */
+/** The fields of a GitHub Actions run and its latest attempt's jobs that a watch reads. */
+const decodeGitHubWorkflowRunJson = decodeJsonResult(
+  Schema.Struct({
+    name: Schema.NullOr(Schema.String),
+    run_number: Schema.Int,
+    status: Schema.NullOr(Schema.String),
+    conclusion: Schema.NullOr(Schema.String),
+    html_url: Schema.String,
+    head_branch: Schema.NullOr(Schema.String),
+    head_sha: Schema.String,
+    event: Schema.String,
+  }),
+);
+const decodeGitHubWorkflowRunJobsJson = decodeJsonResult(
+  Schema.Struct({
+    jobs: Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        conclusion: Schema.NullOr(Schema.String),
+        html_url: Schema.NullOr(Schema.String),
+      }),
+    ),
+  }),
+);
+
 function parseRepositorySelector(value: string): {
   readonly owner: string;
   readonly name: string;
@@ -2031,9 +2054,9 @@ export const make = Effect.gen(function* () {
         path: string,
         decode: (raw: string) => Result.Result<A, unknown>,
       ): Effect.Effect<A, GitHubPullRequestCliError> =>
-        github.execute({ cwd: input.cwd, args: ["api", "--hostname", input.host, path] }).pipe(
-          Effect.flatMap((result) => {
-            const decoded = decode(result.stdout.trim());
+        api.rest({ host: input.host, operation: "getWorkflowRun", path }).pipe(
+          Effect.flatMap((response) => {
+            const decoded = decode(response.body.trim());
             return Result.isSuccess(decoded)
               ? Effect.succeed(decoded.success)
               : Effect.fail(
