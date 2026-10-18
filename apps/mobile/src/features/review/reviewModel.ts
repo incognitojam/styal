@@ -3,7 +3,6 @@ import type { ChangeTypes, FileDiffMetadata } from "@pierre/diffs/types";
 import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import type { ReviewDiffPreviewSource } from "@t3tools/contracts";
 import { orderDiffFiles } from "@t3tools/shared/diffFileOrder";
-import { unquoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 import * as Order from "effect/Order";
@@ -382,8 +381,8 @@ function buildRenderableRows(file: FileDiffMetadata): ReadonlyArray<ReviewRender
 }
 
 function mapRenderableFile(file: FileDiffMetadata): ReviewRenderableFile {
-  const path = unquoteGitPatchPath(file.name || file.prevName || "");
-  const previousPath = file.prevName ? unquoteGitPatchPath(file.prevName) : null;
+  const path = file.name || file.prevName || "";
+  const previousPath = file.prevName || null;
   const additions = file.hunks.reduce((total, hunk) => total + hunk.additionLines, 0);
   const deletions = file.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0);
   const cacheKey = file.cacheKey ?? `${previousPath ?? "none"}:${path}:${file.type}`;

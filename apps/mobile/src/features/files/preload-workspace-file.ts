@@ -1,3 +1,5 @@
+import { AuthFilesystemReadScope } from "@t3tools/contracts";
+import { readEnvironmentScope } from "../../state/session";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 
@@ -26,6 +28,7 @@ export function preloadWorkspaceFileContents(input: {
   readonly theme: ReviewDiffTheme;
 }): void {
   if (
+    !readEnvironmentScope(input.environmentId, AuthFilesystemReadScope) ||
     isBrowserPreviewFile(input.relativePath) ||
     isImagePreviewFile(input.relativePath) ||
     isVideoPreviewFile(input.relativePath)

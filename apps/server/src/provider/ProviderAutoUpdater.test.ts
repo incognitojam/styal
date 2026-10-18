@@ -16,7 +16,7 @@ import * as ModelManifest from "./ModelManifest.ts";
 import { decideProviderAutoUpdate, make } from "./ProviderAutoUpdater.ts";
 import type { ProviderMaintenanceCapabilities } from "./providerMaintenance.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
-import { ProviderRegistry } from "./Services/ProviderRegistry.ts";
+import { ProviderRegistry } from "./ProviderRegistry.ts";
 
 const codex: ServerProvider = {
   instanceId: ProviderInstanceId.make("codex"),

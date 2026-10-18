@@ -5,8 +5,10 @@ import {
   resolveMentionedTime,
   type ResolvedMentionedTime,
 } from "@t3tools/client-runtime/mentioned-times";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useRef } from "react";
+import type { EnvironmentId } from "@t3tools/contracts";
 
+import { reportForkClientUsage } from "../../forkClientUsage";
 import { useClientSettings } from "../../hooks/useSettings";
 import { formatMentionedTimeLabel, formatRelativeToNow } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -26,15 +28,28 @@ function isSameReaderDay(leftMs: number, rightMs: number): boolean {
  * not report its zone, renders as plain text.
  */
 export function MentionedTimeChip(props: {
+  environmentId: EnvironmentId | null;
   time: MentionedTime;
   anchor: MentionedTimeAnchor;
   children: ReactNode;
 }) {
   const { time, anchor } = props;
   const resolved = useMemo(() => resolveMentionedTime(time, anchor), [time, anchor]);
+  const reported = useRef(false);
   if (resolved === null) return props.children;
   return (
-    <Tooltip>
+    <Tooltip
+      onOpenChange={(open, details) => {
+        if (open && !details.isCanceled && !reported.current) {
+          const pending = reportForkClientUsage(props.environmentId, {
+            feature: "mentioned-time-chips",
+            action: "details_opened",
+          });
+          // Unsupported servers leave the chip eligible if support arrives later.
+          if (pending) reported.current = true;
+        }
+      }}
+    >
       <TooltipTrigger
         render={
           <span className="cursor-default rounded-sm bg-foreground/[0.06] px-0.75 box-decoration-clone hover:bg-foreground/10" />

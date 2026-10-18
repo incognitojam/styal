@@ -27,7 +27,20 @@ type FeatureUsage =
       readonly source: "user" | "agent";
       readonly devicePlatform?: DevicePlatform | undefined;
       readonly deviceLocation?: "local" | "remote" | undefined;
+    }
+  | {
+      readonly feature: "workflow-run-watch";
+      readonly action: "watch" | "unwatch";
+      readonly source: "agent";
     };
+
+/** What a successful watch_workflow_run or unwatch_workflow_run call did. */
+export type WorkflowRunWatchResult =
+  | "started"
+  | "already_watching"
+  | "already_completed"
+  | "stopped"
+  | "not_watching";
 
 export interface ClientDimensions {
   readonly surface?: ClientSurface | undefined;
@@ -51,16 +64,48 @@ function deviceFailureReason(cause: Cause.Cause<unknown>) {
       return "unavailable";
     case "DeviceNotFoundError":
       return "not_found";
+    // Another thread is using the device; a contested device, not a broken one.
+    case "DeviceHeldError":
+      return "in_use";
     default:
       return "operation_failed";
   }
 }
 
-/** Observe one public operation, preserving its result, failure and interruption. */
+function workflowRunWatchFailureReason(cause: Cause.Cause<unknown>) {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  const failure = typeof error === "object" && error !== null ? error : undefined;
+  switch (failure !== undefined && "_tag" in failure ? failure._tag : undefined) {
+    // Access checks fail this way before the tool runs; orchestration_error is an internal failure.
+    case "OrchestratorMcpFailure":
+      return failure !== undefined && "code" in failure && failure.code === "orchestration_error"
+        ? "operation_failed"
+        : "refused";
+    case "WorkflowRunReadFailedError":
+      return "read_failed";
+    case "WorkflowRunUrlInvalidError":
+    case "WorkflowRunTargetIncompleteError":
+    case "PullRequestHostRequiredError":
+      return "invalid_target";
+    case "McpCapabilityUnavailableError":
+      return "unavailable";
+    case "PullRequestWatchFromSubagentError":
+    case "WorkflowRunWatchFailedError":
+      return "refused";
+    default:
+      return "operation_failed";
+  }
+}
+
+/**
+ * Observe one public operation, preserving its result, failure and interruption.
+ * `watchResult` reads the category of a successful workflow run watch call from its result.
+ */
 export const observe = <A, E, R>(
   usage: FeatureUsage,
   effect: Effect.Effect<A, E, R>,
   client: ClientDimensions = {},
+  watchResult?: (value: A) => WorkflowRunWatchResult,
 ) =>
   Effect.gen(function* () {
     const analytics = yield* AnalyticsService.AnalyticsService;
@@ -77,6 +122,14 @@ export const observe = <A, E, R>(
             Exit.isFailure(exit) &&
             !Cause.hasInterruptsOnly(exit.cause)
               ? { failureReason: deviceFailureReason(exit.cause) }
+              : {}),
+            ...(usage.feature === "workflow-run-watch" &&
+            Exit.isFailure(exit) &&
+            !Cause.hasInterruptsOnly(exit.cause)
+              ? { failureReason: workflowRunWatchFailureReason(exit.cause) }
+              : {}),
+            ...(watchResult !== undefined && Exit.isSuccess(exit)
+              ? { watchResult: watchResult(exit.value) }
               : {}),
             ...(usage.feature === "devices"
               ? {

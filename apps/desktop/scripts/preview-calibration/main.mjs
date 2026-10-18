@@ -11,6 +11,7 @@ import { HostProcessPlatform, HostProcessArchitecture } from "@t3tools/shared/ho
 import * as DesktopEnvironment from "../../src/app/DesktopEnvironment.ts";
 import * as DesktopConfig from "../../src/app/DesktopConfig.ts";
 import * as BrowserSession from "../../src/preview/BrowserSession.ts";
+import * as DesktopBrowserHost from "../../src/preview/DesktopBrowserHost.ts";
 import * as PreviewManager from "../../src/preview/Manager.ts";
 import * as DesktopRendererHistory from "../../src/telemetry/DesktopRendererHistory.ts";
 import { resolveBrowserViewportLayout } from "../../../web/src/browser/browserViewportLayout.ts";
@@ -76,6 +77,7 @@ async function run() {
       runningUnderArm64Translation: false,
     });
     const runtime = PreviewManager.layer.pipe(
+      Layer.provide(DesktopBrowserHost.layer),
       Layer.provide(BrowserSession.layer),
       // Calibration measures captures; renderer telemetry would only add files to its artifacts.
       Layer.provide(
@@ -96,8 +98,9 @@ async function run() {
           const tabId = "viewport-calibration";
           yield* manager.createTab(tabId);
           yield* manager.registerWebview(tabId, guest.id);
+          // Agents drive tabs from the environment server now; the page is read here directly.
           const evaluate = (expression) =>
-            manager.automationEvaluate(tabId, { expression, returnByValue: true });
+            Effect.promise(() => guest.executeJavaScript(expression));
           let footprint = { width: 440, height: 275 };
           const paint = () =>
             Effect.promise(async () => {
@@ -147,16 +150,14 @@ async function run() {
           const check = (name, requestedWidth, requestedHeight) =>
             Effect.gen(function* () {
               yield* paint();
-              const snapshot = yield* manager.automationSnapshot(tabId);
-              const png = Buffer.from(snapshot.screenshot.data, "base64");
+              const artifact = yield* manager.captureScreenshot(tabId);
+              const png = yield* Effect.promise(() => NodeFSP.readFile(artifact.path));
               yield* Effect.promise(() =>
                 NodeFSP.writeFile(NodePath.join(outputDir, `${name}.png`), png),
               );
               const image = nativeImage.createFromBuffer(png);
               NodeAssert.ok(!image.isEmpty(), `${name}: empty capture`);
               const { width, height } = image.getSize();
-              NodeAssert.equal(snapshot.screenshot.width, width);
-              NodeAssert.equal(snapshot.screenshot.height, height);
               const pixels = image.toBitmap();
               // Reference pixels are solid CSS colors, independent of fonts and platform
               // rasterization. Distinct corners expose both clipping and repeated tiles.
@@ -194,20 +195,6 @@ async function run() {
                 Math.abs(width / height - requestedWidth / requestedHeight) < 0.02,
                 `${name}: capture aspect ratio`,
               );
-              NodeAssert.deepEqual(
-                snapshot.consoleEntries.filter((entry) => entry.level === "error"),
-                [],
-              );
-              const center = yield* evaluate(
-                "window.clicks=[]; (()=>{const r=document.querySelector('button').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()",
-              );
-              yield* manager.automationClick(tabId, { locator: "button" });
-              const clicks = yield* evaluate("window.clicks");
-              NodeAssert.equal(clicks.length, 1, `${name}: click missed button`);
-              NodeAssert.ok(
-                Math.abs(clicks[0].x - center.x) <= 1 && Math.abs(clicks[0].y - center.y) <= 1,
-                `${name}: click coordinate mismatch`,
-              );
               measurements.push({
                 name,
                 requestedWidth,
@@ -216,7 +203,7 @@ async function run() {
                 capture: { width, height },
               });
               console.log(
-                `PASS ${name}: ${metrics.width}x${metrics.height}, capture ${width}x${height}, click at button center`,
+                `PASS ${name}: ${metrics.width}x${metrics.height}, capture ${width}x${height}`,
               );
             });
           for (const pageZoom of [0.9, 1, 1.1]) {

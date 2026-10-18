@@ -1,4 +1,5 @@
 import * as NodeZlib from "node:zlib";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- The Vite config runs outside Effect.
 import * as NodeCrypto from "node:crypto";
 
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
@@ -10,7 +11,10 @@ import "vite-plus/test/config";
 import { defaultAllowedOrigins, defineConfig, type Connect, type Plugin } from "vite-plus";
 import pkg from "./package.json" with { type: "json" };
 
-import { DEV_PROXIED_PATH_PREFIXES } from "@t3tools/shared/devProxy";
+import {
+  DEV_PROXIED_ORIGIN_PRESERVING_PREFIXES,
+  DEV_PROXIED_PATH_PREFIXES,
+} from "@t3tools/shared/devProxy";
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
@@ -204,7 +208,7 @@ export default defineConfig(() => {
         "@clerk/clerk-js",
         "@clerk/react/internal",
         "@pierre/diffs",
-        "@pierre/diffs/editor",
+        "@pierre/diffs/edit",
         "@pierre/diffs/react",
         "@pierre/diffs/worker/worker.js",
         "effect/Array",
@@ -272,7 +276,7 @@ export default defineConfig(() => {
                 prefix,
                 {
                   target: devProxyTarget,
-                  changeOrigin: true,
+                  changeOrigin: !DEV_PROXIED_ORIGIN_PRESERVING_PREFIXES.has(prefix),
                   ...(prefix === "/ws" || prefix === "/api" ? { ws: true } : {}),
                 },
               ]),

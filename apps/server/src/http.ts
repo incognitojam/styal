@@ -49,6 +49,7 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as TerminalBrowserOpen from "./preview/TerminalBrowserOpen.ts";
+import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 
@@ -77,7 +78,9 @@ export function normalizeTerminalBrowserOpenUrl(rawUrl: string): string | null {
 // HTML previews are agent output, not the app. The sandbox gives the document an
 // opaque origin: scripts run, but same-origin cookies, storage, and API calls are
 // out of reach. Relative sibling assets still load through their signed URLs.
-const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals";
+// No modals: agent HTML can open without a click (inline renders, and mobile
+// loads it as the top document), and must not raise blocking dialogs.
+const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups";
 
 // Types a browser may render as a document if a proxy strips the disposition
 // header. Downloads of these fall back to octet-stream.
@@ -266,11 +269,11 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   return yield* HttpServerResponse.file(asset.path, { status, offset, bytesToRead, headers });
 });
 
-export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
+export const layerHttpCompression = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,
 });
 
-export const browserApiCorsLayer = Layer.unwrap(
+export const layerBrowserApiCors = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     const devOrigin = config.devUrl?.origin;
@@ -333,7 +336,7 @@ const authenticateRawRouteWithScope = (
     }
   });
 
-export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
+export const layerServerEnvironmentHttpApi = HttpApiBuilder.group(
   EnvironmentHttpApi,
   "metadata",
   Effect.fnUntraced(function* (handlers) {
@@ -356,7 +359,7 @@ class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecor
 // tracing this proxy would add more server spans than it forwards.
 // withTracerEnabled(false) drops the handler's spans, including the forward.
 // untracedRequestsLayer drops the HTTP server span.
-export const otlpTracesProxyRouteLayer = HttpRouter.add(
+export const layerOtlpTracesProxyRoute = HttpRouter.add(
   "POST",
   OTLP_TRACES_PROXY_PATH,
   Effect.gen(function* () {
@@ -418,16 +421,16 @@ const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_P
 // privately, so it is provided to the served layer, never merged into the
 // routes. Add paths here instead of providing it again. The query string is
 // ignored, as in routing.
-const untracedRequestsLayer = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
+const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
   const queryIndex = request.url.indexOf("?");
-  return UNTRACED_REQUEST_PATHS.has(
-    queryIndex === -1 ? request.url : request.url.slice(0, queryIndex),
-  );
+  const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
+  // Webhook URLs carry their secret token in the path, so they never reach a trace.
+  return UNTRACED_REQUEST_PATHS.has(path) || path.startsWith(`${WEBHOOK_ROUTE_PREFIX}/`);
 });
 
-export const withUntracedRequests = Layer.provide(untracedRequestsLayer);
+export const withUntracedRequests = Layer.provide(layerUntracedRequests);
 
-export const terminalBrowserOpenRouteLayer = HttpRouter.add(
+export const layerTerminalBrowserOpenRoute = HttpRouter.add(
   "POST",
   TerminalBrowserOpen.TERMINAL_BROWSER_OPEN_PATH,
   Effect.gen(function* () {
@@ -454,9 +457,7 @@ export const terminalBrowserOpenRouteLayer = HttpRouter.add(
       return HttpServerResponse.text("Bad Request", { status: 400 });
     }
 
-    const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
-    const environmentId = yield* serverEnvironment.getEnvironmentId;
-    return yield* browserOpen.openInPreview({ environmentId, owner, url }).pipe(
+    return yield* browserOpen.openInPreview({ owner, url }).pipe(
       Effect.as(HttpServerResponse.empty({ status: 204 })),
       Effect.catch((cause) =>
         Effect.logWarning("failed to route terminal browser-open request to preview", {
@@ -475,7 +476,7 @@ export const terminalBrowserOpenRouteLayer = HttpRouter.add(
   }),
 );
 
-export const assetRouteLayer = Layer.unwrap(
+export const layerAssetRoute = Layer.unwrap(
   Effect.gen(function* () {
     const pullRequests = yield* PullRequestService.PullRequestService;
     return HttpRouter.add(
@@ -594,7 +595,7 @@ export const assetRouteLayer = Layer.unwrap(
   }),
 );
 
-export const attachmentUploadRouteLayer = HttpRouter.add(
+export const layerAttachmentUploadRoute = HttpRouter.add(
   "POST",
   `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/*`,
   Effect.gen(function* () {
@@ -822,7 +823,7 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
 );
 
 // Read the installed build's manifest once. Unknown files use revalidation.
-export const staticAndDevRouteLayer = Layer.unwrap(
+export const layerStaticAndDevRoute = Layer.unwrap(
   loadImmutableBuildAssets.pipe(
     Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
   ),

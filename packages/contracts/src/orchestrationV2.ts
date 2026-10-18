@@ -55,6 +55,8 @@ import {
   ThreadPullRequestSnapshot,
   ThreadPullRequestStack,
   ThreadPullRequestWatch,
+  ThreadWorkflowRunKey,
+  ThreadWorkflowRunWatch,
 } from "./threadPullRequest.ts";
 import {
   ProviderApprovalDecision,
@@ -381,6 +383,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
       pre-linking servers still decode. */
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
+  /** CI workflow runs the server watches for this thread's agent. */
+  workflowRuns: Schema.optional(Schema.Array(ThreadWorkflowRunWatch)),
   /** Pull request discovered from the thread's current branch. */
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
@@ -1398,6 +1402,26 @@ export const OrchestrationV2WebSearchResult = Schema.Struct({
 });
 export type OrchestrationV2WebSearchResult = typeof OrchestrationV2WebSearchResult.Type;
 
+export const OrchestrationV2SecretRequestStatus = Schema.Literals([
+  "pending",
+  "saved",
+  "declined",
+  "cancelled",
+]);
+export type OrchestrationV2SecretRequestStatus = typeof OrchestrationV2SecretRequestStatus.Type;
+
+/**
+ * A secret an agent asked the user for. The value never passes through
+ * orchestration: the item carries only what was asked and how it was answered.
+ */
+const OrchestrationV2SecretRequestFields = {
+  type: Schema.Literal("secret_request"),
+  label: TrimmedNonEmptyString,
+  reason: Schema.String,
+  placeholder: Schema.optional(Schema.String),
+  secretStatus: OrchestrationV2SecretRequestStatus,
+} as const;
+
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1590,6 +1614,10 @@ export const OrchestrationV2TurnItem = Schema.Union([
     targetRunId: Schema.NullOr(RunId),
     targetProviderInstanceId: ProviderInstanceId,
     targetModel: TrimmedNonEmptyString,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemBaseFields,
+    ...OrchestrationV2SecretRequestFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1892,6 +1920,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   /** Pull request the user linked to this thread (#8160). */
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
+  /** CI workflow runs the server watches for this thread's agent. */
+  workflowRuns: Schema.optional(Schema.Array(ThreadWorkflowRunWatch)),
   /** Pull request discovered from the thread's current branch. */
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   lineage: OrchestrationV2AppThreadLineage,
@@ -2386,6 +2416,10 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
+    ...OrchestrationV2SecretRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("subagent"),
     subagentId: NodeId,
     origin: Schema.Literals(["provider_native", "app_owned"]),
@@ -2849,6 +2883,18 @@ export const OrchestrationV2Command = Schema.Union([
       Schema.Struct({ url: TrimmedNonEmptyString, source: ThreadPullRequestLinkSource }),
     ),
   }),
+  /** Start or stop the server watching a CI workflow run for this thread's agent. */
+  Schema.Struct({
+    type: Schema.Literal("thread.workflow-run.watch"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...ThreadWorkflowRunKey.fields,
+    watching: Schema.Boolean,
+    /** Required to start a watch. */
+    run: Schema.optional(
+      Schema.Struct({ url: TrimmedNonEmptyString, name: TrimmedNonEmptyString }),
+    ),
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.sync"),
     commandId: CommandId,
@@ -3108,6 +3154,7 @@ export const OrchestrationV2Command = Schema.Union([
     targetThreadId: ThreadId,
     targetRunId: Schema.NullOr(RunId),
   }),
+
   Schema.Struct({
     type: Schema.Literal("provider.switch"),
     commandId: CommandId,
@@ -3144,6 +3191,25 @@ const OrchestrationV2InternalCommand = Schema.Union([
       }),
     ),
   }),
+  /**
+   * Ends a workflow run watch, waking the agent in the same transaction when `wake` is set.
+   * Rejected once the watch started at `startedAt` has ended, and a wake is rejected on a
+   * settled or archived thread, so a read that raced either changes nothing.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.workflow-run-watch.finish"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...ThreadWorkflowRunKey.fields,
+    startedAt: IsoDateTime,
+    wake: Schema.optional(
+      Schema.Struct({
+        messageId: MessageId,
+        text: Schema.String,
+        notification: OrchestrationV2Notification,
+      }),
+    ),
+  }),
   /** Records that the provider rollback `requestId` failed for good. */
   Schema.Struct({
     type: Schema.Literal("checkpoint.rollback.fail"),
@@ -3167,14 +3233,31 @@ const OrchestrationV2InternalCommand = Schema.Union([
   }),
   /**
    * Stop for one thread, whatever it is doing: interrupts its running turn, holds its queue,
-   * ends its pull request watches, and drops pending delegated-task wakes. Nothing to stop is
-   * an accepted no-op. Delegated tasks under the thread get their own `thread.stop`.
+   * ends its pull request and workflow run watches, and drops pending delegated-task wakes.
+   * Nothing to stop is an accepted no-op. Delegated tasks under the thread get their own
+   * `thread.stop`.
    */
   Schema.Struct({
     type: Schema.Literal("thread.stop"),
     commandId: CommandId,
     threadId: ThreadId,
     reason: Schema.optional(Schema.String),
+  }),
+  /**
+   * Records or updates a secret an agent asked the user for. Internal so no
+   * client can mark a request saved without the value being stored.
+   */
+  Schema.Struct({
+    type: Schema.Literal("secret_request.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    nodeId: NodeId,
+    turnItemId: TurnItemId,
+    label: TrimmedNonEmptyString,
+    reason: Schema.String,
+    placeholder: Schema.optional(Schema.String),
+    secretStatus: OrchestrationV2SecretRequestStatus,
   }),
 ]);
 export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalCommand.Type;

@@ -9,8 +9,9 @@ description: Test styal's native iOS and Android app through its Device panel an
 
 Call `device_list`, then `device_open` with the selected host and device IDs.
 Choose a device that is not in `openInOtherThreads`: another thread's agent may
-be driving it. If every running device is taken, open a stopped one, or ask the
-user before sharing. styal boots the device and shows its live stream in the Device panel. Follow its
+be driving it. If every running device is taken, open a stopped one. `device_open`
+refuses a device whose entry has `inUse: true` and names the holding thread; pass
+`takeOver: true` only after the user agrees. styal boots the device and shows its live stream in the Device panel. Follow its
 returned `quickStart`, using the exact `agentDevice.command` and all `targetArgs`
 on every operation. Use `device_screenshot` to inspect the screen.
 

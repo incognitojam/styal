@@ -5,6 +5,10 @@ import {
   type AuthPairingLink,
   type ServerAuthBootstrapMethod,
 } from "@t3tools/contracts";
+import {
+  DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
+  isValidDesktopBootstrapToken,
+} from "@t3tools/shared/desktopBootstrapToken";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -63,6 +67,15 @@ export class UnavailableBootstrapCredentialError extends Schema.TaggedError<Unav
 ) {
   override get message(): string {
     return "Bootstrap credential is no longer available.";
+  }
+}
+
+export class BootstrapCredentialScopeNotGrantedError extends Schema.TaggedError<BootstrapCredentialScopeNotGrantedError>()(
+  "BootstrapCredentialScopeNotGrantedError",
+  {},
+) {
+  override get message(): string {
+    return "The requested authentication scope was not granted.";
   }
 }
 
@@ -171,6 +184,7 @@ export const isBootstrapCredentialInternalError = Schema.is(BootstrapCredentialI
 export const BootstrapCredentialError = Schema.Union([
   BootstrapCredentialInvalidError,
   BootstrapCredentialInternalError,
+  BootstrapCredentialScopeNotGrantedError,
 ]);
 export type BootstrapCredentialError = typeof BootstrapCredentialError.Type;
 
@@ -217,6 +231,7 @@ export class PairingGrantStore extends Context.Service<
       credential: string,
       input?: {
         readonly proofKeyThumbprint?: string;
+        readonly requestedScopes?: ReadonlyArray<AuthEnvironmentScope>;
       },
     ) => Effect.Effect<BootstrapGrant, BootstrapCredentialError>;
   }
@@ -229,7 +244,7 @@ interface StoredBootstrapGrant extends BootstrapGrant {
 type ConsumeResult =
   | {
       readonly _tag: "error";
-      readonly reason: "not-found" | "expired";
+      readonly reason: "not-found" | "expired" | "scope-not-granted";
       readonly error: BootstrapCredentialError;
     }
   | {
@@ -300,7 +315,15 @@ export const make = Effect.gen(function* () {
       id,
     }).pipe(Effect.asVoid);
 
-  if (config.desktopBootstrapToken) {
+  // A desktop that sends its secret rotates the renderer's token, so accept
+  // whichever token the secret derives for the current window instead of
+  // seeding one fixed token. Older desktops only send the token.
+  const desktopBootstrapSecret = config.desktopBootstrapSecret;
+  const consumeRotatingDesktopToken = (credential: string, nowMs: number) =>
+    desktopBootstrapSecret !== undefined &&
+    isValidDesktopBootstrapToken(desktopBootstrapSecret, credential, nowMs);
+
+  if (config.desktopBootstrapToken && desktopBootstrapSecret === undefined) {
     yield* seedGrant(config.desktopBootstrapToken, {
       method: "desktop-bootstrap",
       scopes: AuthAdministrativeScopes,
@@ -420,6 +443,16 @@ export const make = Effect.gen(function* () {
   const consume: PairingGrantStore["Service"]["consume"] = Effect.fn("PairingGrantStore.consume")(
     function* (credential, input) {
       const now = yield* DateTime.now;
+      if (consumeRotatingDesktopToken(credential, now.epochMilliseconds)) {
+        return {
+          method: "desktop-bootstrap",
+          scopes: AuthAdministrativeScopes,
+          subject: "desktop-bootstrap",
+          expiresAt: DateTime.add(now, {
+            milliseconds: DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
+          }),
+        } satisfies BootstrapGrant;
+      }
       const seededResult: ConsumeResult = yield* Ref.modify(
         seededGrantsRef,
         (current): readonly [ConsumeResult, Map<string, StoredBootstrapGrant>] => {
@@ -456,6 +489,20 @@ export const make = Effect.gen(function* () {
                 error: new BootstrapCredentialProofKeyMismatchError({}),
               },
               next,
+            ];
+          }
+
+          if (
+            input?.requestedScopes !== undefined &&
+            !input.requestedScopes.some((scope) => grant.scopes.includes(scope))
+          ) {
+            return [
+              {
+                _tag: "error",
+                reason: "scope-not-granted",
+                error: new BootstrapCredentialScopeNotGrantedError({}),
+              },
+              current,
             ];
           }
 
@@ -497,10 +544,16 @@ export const make = Effect.gen(function* () {
         return yield* seededResult.error;
       }
 
+      // The scope check is part of the UPDATE's WHERE clause so a rejected
+      // request cannot consume a one-time link. The re-check below only
+      // explains why nothing matched.
       const consumed = yield* pairingLinks
         .consumeAvailable({
           credential,
           proofKeyThumbprint: input?.proofKeyThumbprint ?? null,
+          ...(input?.requestedScopes !== undefined
+            ? { requestedScopes: input.requestedScopes }
+            : {}),
           consumedAt: now,
           now,
         })
@@ -544,6 +597,13 @@ export const make = Effect.gen(function* () {
         matching.value.proofKeyThumbprint !== input?.proofKeyThumbprint
       ) {
         return yield* new BootstrapCredentialProofKeyMismatchError({});
+      }
+
+      if (
+        input?.requestedScopes !== undefined &&
+        !input.requestedScopes.some((scope) => matching.value.scopes.includes(scope))
+      ) {
+        return yield* new BootstrapCredentialScopeNotGrantedError({});
       }
 
       return yield* new UnavailableBootstrapCredentialError({});

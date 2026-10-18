@@ -11,6 +11,7 @@ import { acpMcpBridgeCommand, acpMcpCallCommand } from "./cli/acpMcpBridge.ts";
 import { authCommand } from "./cli/auth.ts";
 import { connectCompatibilityCommand, linkCommand } from "./cli/connect.ts";
 import { appCommand } from "./cli/app.ts";
+import { browserCommand } from "./cli/browser.ts";
 import { driveCommand } from "./cli/drive.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
@@ -26,7 +27,7 @@ import { themeCommand } from "./cli/theme.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
 
-const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
+const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 const connectPublicConfigMissingMessage =
   "styal Link commands are unavailable: this build is missing styal Link public configuration.";
@@ -71,6 +72,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       driveCommand,
       pairCommand,
       authCommand,
+      browserCommand,
       projectCommand,
       serviceCommand,
       updateCommand,
@@ -91,7 +93,7 @@ export const cli = makeCli();
 export function runCli() {
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
-    Effect.provide(CliRuntimeLayer),
+    Effect.provide(layerCliRuntime),
     NodeRuntime.runMain,
   );
 }

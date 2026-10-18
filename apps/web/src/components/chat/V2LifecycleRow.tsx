@@ -10,13 +10,18 @@ import { environmentThreadDetails } from "../../state/threads";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import * as DateTime from "effect/DateTime";
 import { WorkLogRow } from "./WorkLog";
-import { resolveHandoffEndpoints, type HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
+import {
+  resolveHandoffEndpoints,
+  shouldShowHandoff,
+  type HandoffTimelineRun,
+} from "@t3tools/client-runtime/handoff";
 import { Fragment } from "react";
 import { formatSubagentDisplayTitle } from "@t3tools/client-runtime/state/subagent-display";
 import {
   ProviderDriverKind,
   type OrchestrationV2Notification,
   type OrchestrationV2TurnItem,
+  type OrchestrationV2Subagent,
   type ProviderInstanceId,
   type ServerProvider,
   type ThreadId,
@@ -120,6 +125,7 @@ export function V2LifecycleRow(props: {
     );
   }
   if (item.type === "handoff") {
+    if (!shouldShowHandoff(item)) return null;
     const { from: fromEndpoints, to } = resolveHandoffEndpoints(item, props.runs);
     return (
       <TimelineSystemDivider
@@ -212,6 +218,8 @@ export function V2LifecycleRow(props: {
       <SubagentTimelineLink
         parentRef={scopeThreadRef(props.environmentId, item.threadId)}
         subagentId={item.subagentId}
+        providerInstanceId={item.providerInstanceId}
+        origin={item.origin}
         status={item.status}
         driver={item.driver}
         provider={props.providerStatuses.find(
@@ -370,6 +378,8 @@ export function SubagentNotificationLink(props: {
     <SubagentTimelineLink
       parentRef={props.parentRef}
       subagentId={agent.id}
+      providerInstanceId={agent.providerInstanceId}
+      origin={agent.origin}
       status={agent.status}
       driver={agent.driver}
       provider={props.providerStatuses.find(
@@ -395,6 +405,8 @@ export function SubagentNotificationLink(props: {
 function SubagentTimelineLink(props: {
   readonly parentRef: ScopedThreadRef;
   readonly subagentId: NodeId;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly origin: OrchestrationV2Subagent["origin"];
   readonly driver: ProviderDriverKind;
   readonly provider: ServerProvider | undefined;
   readonly providers: ReadonlyArray<ServerProvider>;
@@ -540,6 +552,8 @@ function SubagentTimelineTooltip(
     <SubagentTooltipContent
       title={formatSubagentDisplayTitle(child?.title ?? props.title)}
       model={props.model}
+      providerInstanceId={props.providerInstanceId}
+      origin={props.origin}
       provider={props.provider}
       providers={props.providers}
       driver={props.driver}

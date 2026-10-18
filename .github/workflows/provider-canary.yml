@@ -332,6 +332,7 @@ jobs:
         with:
           filters: |
             @styal/cli...
+            @t3tools/scripts...
 
       - id: record
         name: Record versions in the model manifest

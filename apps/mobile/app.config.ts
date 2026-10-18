@@ -228,7 +228,7 @@ const config: ExpoConfig = {
   slug: "styal",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "2.0.0",
+  version: "2.1.0",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -277,6 +277,9 @@ const config: ExpoConfig = {
       NSLocalNetworkUsageDescription:
         "Allow styal to connect to styal servers on your local network or tailnet.",
       NSPhotoLibraryAddUsageDescription: "Allow styal to save images to your photo library.",
+      // "Audio, AirPlay, and Picture in Picture": the browser screen's system
+      // picture in picture needs it to start and to stay up outside the app.
+      UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that

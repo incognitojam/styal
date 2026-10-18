@@ -71,6 +71,15 @@ export class PullRequestProviderError extends Schema.TaggedError<PullRequestProv
   }
 }
 
+/**
+ * `status` moves with the state, mergeability, head, or checks, which the detail read reports;
+ * `remarks` moves with comments and reviews, which only the activity read reports.
+ */
+export interface ProviderChangeRequestWatchFingerprint {
+  readonly status: string;
+  readonly remarks: string;
+}
+
 export interface PullRequestProviderFailure {
   readonly reason: PullRequestProviderError["reason"];
   readonly retryAt?: number | undefined;
@@ -318,6 +327,26 @@ export interface ProviderFileRevisions {
   readonly complete?: boolean;
 }
 
+/** A CI workflow run as a watch sees it. */
+export interface ProviderWorkflowRun {
+  /** The workflow and run number, such as "CI #812". */
+  readonly name: string;
+  readonly url: string;
+  /** True once the run finished, whatever its conclusion. */
+  readonly completed: boolean;
+  /** The host's word for how it ended, such as "success" or "failure"; null while running. */
+  readonly conclusion: string | null;
+  readonly headBranch: string | null;
+  readonly headSha: string;
+  readonly event: string;
+  /** Jobs of the latest attempt that did not succeed or skip; read only once the run completed. */
+  readonly failedJobs: ReadonlyArray<{
+    readonly name: string;
+    readonly conclusion: string | null;
+    readonly url: string | null;
+  }>;
+}
+
 export interface ProviderRepositoryRef {
   readonly cwd: string;
   /** Provider-native repository identity, e.g. `owner/repo` or `group/subgroup/project`. */
@@ -452,6 +481,20 @@ export interface PullRequestProviderApi {
   readonly getChangeRequestSummary?: (
     input: ProviderRepositoryRef & { readonly number: number },
   ) => Effect.Effect<ProviderChangeRequestSummary, PullRequestProviderError>;
+
+  /**
+   * A cheap fingerprint of what a pull request watch reports, so it reads the change request in
+   * full only when this moves. Null when the host gave no answer for it. Optional: a host
+   * without one has its watched change requests read in full on every pass.
+   */
+  readonly getChangeRequestWatchFingerprint?: (
+    input: ProviderRepositoryRef & { readonly number: number },
+  ) => Effect.Effect<ProviderChangeRequestWatchFingerprint | null, PullRequestProviderError>;
+
+  /** A CI workflow run, for watching it. Optional: only GitHub Actions is read. */
+  readonly getWorkflowRun?: (
+    input: ProviderRepositoryRef & { readonly runId: number },
+  ) => Effect.Effect<ProviderWorkflowRun, PullRequestProviderError>;
 
   /**
    * The host-native stack a change request belongs to, or null when it is not stacked. Optional

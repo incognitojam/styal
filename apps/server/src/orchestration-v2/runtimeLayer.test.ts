@@ -32,6 +32,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -42,13 +43,13 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ServerConfig from "../config.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import * as OrchestrationEventStore from "../persistence/Services/OrchestrationEventStore.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts";
-import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -63,29 +64,30 @@ import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryServic
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as PullRequestWatchReactor from "./PullRequestWatchReactor.ts";
+import * as WorkflowRunWatchReactor from "./WorkflowRunWatchReactor.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import {
+  PullRequestProviderError,
+  type ProviderWorkflowRun,
+} from "../pullRequest/PullRequestProvider.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import type { ProviderAdapterV2SessionRuntime, ProviderAdapterV2Shape } from "./ProviderAdapter.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
-import {
-  OrchestrationEventInfrastructureLayerLive,
-  OrchestrationV2EventSinkLayerLive,
-  OrchestrationV2LayerLive,
-  ProjectServiceLayerLive,
-} from "./runtimeLayer.ts";
+import * as RuntimeLayer from "./runtimeLayer.ts";
 import { shellStreamItemFromThreadShell } from "./ShellStream.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 
-const PlatformTestLayer = Layer.merge(
+const layerPlatformTest = Layer.merge(
   NodeServices.layer,
   Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
     resolveLink: () => Effect.die("unused title link"),
   }),
 );
 
-const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
+const layerServerConfig = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-orchestration-v2-runtime-layer-",
 });
 
@@ -95,20 +97,20 @@ const modelSelection = {
 } satisfies ModelSelection;
 const alternateInstanceId = ProviderInstanceId.make("codex_alternate");
 
-const VcsDriverRegistryTestLayer = VcsDriverRegistry.layer.pipe(
+const layerVcsDriverRegistryTest = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProcess.layer),
-  Layer.provide(ServerConfigLayer),
-  Layer.provide(PlatformTestLayer),
+  Layer.provide(layerServerConfig),
+  Layer.provide(layerPlatformTest),
 );
 
-const CheckpointStoreTestLayer = CheckpointStore.layer.pipe(
-  Layer.provide(VcsDriverRegistryTestLayer),
+const layerCheckpointStoreTest = CheckpointStore.layer.pipe(
+  Layer.provide(layerVcsDriverRegistryTest),
 );
-const GitWorkflowTestLayer = Layer.mock(GitWorkflow.GitWorkflowService)({
+const layerGitWorkflowTest = Layer.mock(GitWorkflow.GitWorkflowService)({
   pruneWorktrees: () => Effect.void,
   createWorktree: () => Effect.succeed({} as never),
 });
-const ProjectServiceTestLayer = Layer.mock(ProjectService.ProjectService)({
+const layerProjectServiceTest = Layer.mock(ProjectService.ProjectService)({
   getById: () => Effect.succeed(Option.none()),
 });
 
@@ -148,7 +150,7 @@ const alternateProviderInstance = {
   },
 } satisfies ProviderInstance;
 
-const TestProviderInstanceRegistry = Layer.succeed(
+const layerTestProviderInstanceRegistry = Layer.succeed(
   ProviderInstanceRegistry.ProviderInstanceRegistry,
   {
     getInstance: (instanceId) =>
@@ -165,6 +167,71 @@ const TestProviderInstanceRegistry = Layer.succeed(
 );
 
 /** Seed a project row the way a committed `project.created` event folds into it. */
+/** A watched pull request as the host reports it: open, mergeable, with a failing lint check. */
+const watchedPullRequestDetail = (input: {
+  readonly projectId: ProjectId;
+  readonly number: number;
+  readonly at: string;
+}): PullRequestDetail => ({
+  provider: "github",
+  capabilities: {
+    diff: true,
+    comment: true,
+    actions: [],
+    mergeMethods: [],
+    search: false,
+    review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
+    reviewers: { request: false, listCandidates: false },
+  },
+  viewerPermissions: {
+    actions: [],
+    comment: true,
+    resolve: true,
+    verdicts: [],
+    requestReviewers: false,
+  },
+  projectId: input.projectId,
+  projectTitle: "Watch wake",
+  workspaceRoot: "/workspace/watch",
+  repository: "pingdotgg/t3code",
+  number: input.number,
+  title: "Watched pull request",
+  body: "",
+  url: `https://github.com/pingdotgg/t3code/pull/${input.number}`,
+  author: { login: "agent-user", name: null, avatarUrl: null },
+  state: "open",
+  isDraft: false,
+  mergeability: "mergeable",
+  additions: 1,
+  deletions: 0,
+  changedFiles: 1,
+  headBranch: "feature",
+  headSha: "abc1234def",
+  baseBranch: "main",
+  createdAt: input.at,
+  updatedAt: input.at,
+  mergedAt: null,
+  closedAt: null,
+  reviewers: [],
+  labels: [],
+  checks: [{ name: "lint", status: "failure", description: null, url: null }],
+  mergeCapabilities: { merge: true, squash: true, rebase: true },
+  viewer: "agent-user",
+});
+
+/** Analytics that keeps each recorded event's properties, for asserting what was sent. */
+const analyticsInto = (events: Array<Readonly<Record<string, unknown>>>) =>
+  Layer.succeed(
+    AnalyticsService.AnalyticsService,
+    AnalyticsService.AnalyticsService.of({
+      record: (_event, properties) =>
+        Effect.sync(() => {
+          events.push(properties ?? {});
+        }),
+      flush: Effect.void,
+    }),
+  );
+
 const seedProject = (input: {
   readonly projectId: ProjectId;
   readonly title: string;
@@ -214,41 +281,41 @@ const moveProject = (projectId: ProjectId, workspaceRoot: string, updatedAt: str
     }),
   );
 
-const TestLayer = Layer.mergeAll(
-  OrchestrationV2LayerLive,
-  OrchestrationV2EventSinkLayerLive,
+const layerTest = Layer.mergeAll(
+  RuntimeLayer.layer,
+  RuntimeLayer.layerEventSink,
   ProjectStore.layer,
   ProjectionStore.layer,
   EffectOutbox.layer,
   ThreadCommandExecutor.layer,
 ).pipe(
   Layer.provide(McpSessionRegistryTestkit.layer),
-  Layer.provide(SqlitePersistenceMemory),
-  Layer.provide(CheckpointStoreTestLayer),
-  Layer.provide(ServerConfigLayer),
+  Layer.provide(SqlitePersistence.layerMemory),
+  Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerServerConfig),
   Layer.provide(ServerSettings.layerTest()),
-  Layer.provide(TestProviderInstanceRegistry),
-  Layer.provide(GitWorkflowTestLayer),
-  Layer.provide(ProjectServiceTestLayer),
-  Layer.provide(PlatformTestLayer),
+  Layer.provide(layerTestProviderInstanceRegistry),
+  Layer.provide(layerGitWorkflowTest),
+  Layer.provide(layerProjectServiceTest),
+  Layer.provide(layerPlatformTest),
 );
 
-const LegacyImportTestLayer = OrchestrationV2LayerLive.pipe(
+const layerLegacyImportTest = RuntimeLayer.layer.pipe(
   Layer.provide(McpSessionRegistryTestkit.layer),
-  Layer.provideMerge(SqlitePersistenceMemory),
-  Layer.provide(CheckpointStoreTestLayer),
-  Layer.provide(ServerConfigLayer),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
+  Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerServerConfig),
   Layer.provide(ServerSettings.layerTest()),
-  Layer.provide(TestProviderInstanceRegistry),
-  Layer.provide(GitWorkflowTestLayer),
-  Layer.provide(ProjectServiceTestLayer),
-  Layer.provide(PlatformTestLayer),
+  Layer.provide(layerTestProviderInstanceRegistry),
+  Layer.provide(layerGitWorkflowTest),
+  Layer.provide(layerProjectServiceTest),
+  Layer.provide(layerPlatformTest),
 );
 
-const ProjectDeletionTestLayer = Layer.mergeAll(
-  OrchestrationV2LayerLive.pipe(Layer.provide(ProjectServiceLayerLive)),
-  ProjectServiceLayerLive,
-  OrchestrationV2EventSinkLayerLive,
+const layerProjectDeletionTest = Layer.mergeAll(
+  RuntimeLayer.layer.pipe(Layer.provide(RuntimeLayer.layerProjectService)),
+  RuntimeLayer.layerProjectService,
+  RuntimeLayer.layerEventSink,
   ThreadCommandExecutor.layer,
 ).pipe(
   Layer.provide(
@@ -274,16 +341,103 @@ const ProjectDeletionTestLayer = Layer.mergeAll(
     }),
   ),
   Layer.provide(McpSessionRegistryTestkit.layer),
-  Layer.provide(SqlitePersistenceMemory),
-  Layer.provide(CheckpointStoreTestLayer),
-  Layer.provide(ServerConfigLayer),
+  Layer.provide(SqlitePersistence.layerMemory),
+  Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerServerConfig),
   Layer.provide(ServerSettings.layerTest()),
-  Layer.provide(TestProviderInstanceRegistry),
-  Layer.provide(GitWorkflowTestLayer),
-  Layer.provide(PlatformTestLayer),
+  Layer.provide(layerTestProviderInstanceRegistry),
+  Layer.provide(layerGitWorkflowTest),
+  Layer.provide(layerPlatformTest),
 );
 
-it.layer(ProjectDeletionTestLayer)("project deletion during thread commands", (it) => {
+const runUrl = (runId: number) => `https://github.com/pingdotgg/t3code/actions/runs/${runId}`;
+
+/** Run `runId` as the host reports it: running unless overridden. */
+const hostRun = (
+  runId: number,
+  overrides: Partial<ProviderWorkflowRun> = {},
+): ProviderWorkflowRun => ({
+  name: `CI #${runId}`,
+  url: runUrl(runId),
+  completed: false,
+  conclusion: null,
+  headBranch: "main",
+  headSha: "a".repeat(40),
+  event: "push",
+  failedJobs: [],
+  ...overrides,
+});
+
+/** Creates a thread in its own project that watches run `runId`, named `CI #<runId>`. */
+const watchRunFromNewThread = (slug: string, runId: number) =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const threadId = ThreadId.make(`runtime-workflow-run-${slug}`);
+    const projectId = ProjectId.make(`workflow-run-${slug}-project`);
+    yield* seedProject({
+      projectId,
+      title: slug,
+      workspaceRoot: `/workspace/workflow-run-${slug}`,
+      defaultModelSelection: null,
+      createdAt: "2026-10-01T00:00:00.000Z",
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      createdBy: "user",
+      creationSource: "web",
+      commandId: CommandId.make(`workflow-run-${slug}-create`),
+      threadId,
+      projectId,
+      title: slug,
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+    });
+    const key = { host: "github.com", repository: "pingdotgg/t3code", runId };
+    const start = {
+      type: "thread.workflow-run.watch" as const,
+      threadId,
+      ...key,
+      watching: true,
+      run: { url: runUrl(runId), name: `CI #${runId}` },
+    };
+    yield* orchestrator.dispatch({
+      ...start,
+      commandId: CommandId.make(`workflow-run-${slug}-start`),
+    });
+    return { threadId, projectId, key, start };
+  });
+
+/** A workflow run reactor reading runs through `workflowRun`, with its analytics events. */
+const workflowRunReactor = (
+  workflowRun: PullRequestService.PullRequestService["Service"]["workflowRun"],
+) =>
+  Effect.gen(function* () {
+    const usage: Array<Readonly<Record<string, unknown>>> = [];
+    const reactor = yield* WorkflowRunWatchReactor.make.pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          analyticsInto(usage),
+          Layer.mock(PullRequestService.PullRequestService)({ workflowRun }),
+        ),
+      ),
+    );
+    return { reactor, usage };
+  });
+
+const notificationsOf = (threadId: ThreadId) =>
+  Effect.flatMap(Orchestrator.OrchestratorV2, (orchestrator) =>
+    orchestrator.getThreadRecords(threadId, ["messages"]),
+  ).pipe(
+    Effect.map(({ messages }) =>
+      messages.flatMap((message) => message.notification?.summary ?? []),
+    ),
+  );
+
+it.layer(layerProjectDeletionTest)("project deletion during thread commands", (it) => {
   it.effect("waits for an in-flight thread update before planning deletion", () =>
     Effect.gen(function* () {
       const projects = yield* ProjectService.ProjectService;
@@ -387,11 +541,11 @@ it.layer(ProjectDeletionTestLayer)("project deletion during thread commands", (i
   );
 });
 
-const SharedApplicationDataPlaneTestLayer = Layer.mergeAll(
-  OrchestrationV2LayerLive.pipe(Layer.provide(ProjectServiceLayerLive)),
-  ProjectServiceLayerLive,
-  OrchestrationV2EventSinkLayerLive,
-  OrchestrationEventInfrastructureLayerLive,
+const layerSharedApplicationDataPlaneTest = Layer.mergeAll(
+  RuntimeLayer.layer.pipe(Layer.provide(RuntimeLayer.layerProjectService)),
+  RuntimeLayer.layerProjectService,
+  RuntimeLayer.layerEventSink,
+  RuntimeLayer.layerEventInfrastructure,
 ).pipe(
   Layer.provide(
     Layer.mock(WorkspacePaths.WorkspacePaths)({
@@ -418,16 +572,16 @@ const SharedApplicationDataPlaneTestLayer = Layer.mergeAll(
     }),
   ),
   Layer.provide(McpSessionRegistryTestkit.layer),
-  Layer.provideMerge(SqlitePersistenceMemory),
-  Layer.provide(CheckpointStoreTestLayer),
-  Layer.provide(ServerConfigLayer),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
+  Layer.provide(layerCheckpointStoreTest),
+  Layer.provide(layerServerConfig),
   Layer.provide(ServerSettings.layerTest()),
-  Layer.provide(TestProviderInstanceRegistry),
-  Layer.provide(GitWorkflowTestLayer),
-  Layer.provide(PlatformTestLayer),
+  Layer.provide(layerTestProviderInstanceRegistry),
+  Layer.provide(layerGitWorkflowTest),
+  Layer.provide(layerPlatformTest),
 );
 
-it.layer(TestLayer)("OrchestrationV2LayerLive", (it) => {
+it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
   it.effect("emits model updates separately from provider switches", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -783,7 +937,7 @@ it.layer(TestLayer)("OrchestrationV2LayerLive", (it) => {
           assert.deepEqual(yield* outbox.listByCommandId(commandId), []);
         }
       }
-    }).pipe(Effect.provide(Layer.fresh(TestLayer))),
+    }).pipe(Effect.provide(Layer.fresh(layerTest))),
   );
 
   it.effect("resolves delivery intent against the active run and starts after it completes", () =>
@@ -1424,7 +1578,7 @@ it.layer(TestLayer)("OrchestrationV2LayerLive", (it) => {
   );
 });
 
-it.layer(LegacyImportTestLayer)("OrchestrationV2 legacy import", (it) => {
+it.layer(layerLegacyImportTest)("OrchestrationV2 legacy import", (it) => {
   it.effect("hydrates imported transcripts before commands and propagates hydration failures", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -1624,7 +1778,7 @@ it.layer(LegacyImportTestLayer)("OrchestrationV2 legacy import", (it) => {
   );
 });
 
-it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
+it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
   it.effect("applies lifecycle commands idempotently and emits archive/removal shell deltas", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -2352,6 +2506,63 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("archiving ends watches, and an archived thread cannot start one", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-pull-request-watch-archive");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("pr-watch-archive-create"),
+        threadId,
+        projectId: ProjectId.make("pr-watch-archive-project"),
+        title: "Archive watched PR",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const watch = {
+        type: "thread.pull-request.watch" as const,
+        threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 7,
+        watching: true,
+        link: { url: "https://github.com/pingdotgg/t3code/pull/7", source: "agent" as const },
+      };
+      const watched = Effect.map(
+        orchestrator.getThreadShell(threadId),
+        (thread) => thread?.pullRequests?.[0]?.watch !== undefined,
+      );
+      yield* orchestrator.dispatch({
+        ...watch,
+        commandId: CommandId.make("pr-watch-archive-start"),
+      });
+      assert.isTrue(yield* watched);
+
+      yield* orchestrator.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("pr-watch-archive"),
+        threadId,
+      });
+      assert.isFalse(yield* watched);
+      const refused = yield* orchestrator
+        .dispatch({ ...watch, commandId: CommandId.make("pr-watch-archive-restart") })
+        .pipe(Effect.flip);
+      assert.equal(refused._tag, "OrchestratorDispatchError");
+
+      yield* orchestrator.dispatch({
+        type: "thread.unarchive",
+        commandId: CommandId.make("pr-watch-unarchive"),
+        threadId,
+      });
+      assert.isFalse(yield* watched);
+    }),
+  );
+
   it.effect("ends a watch it cannot read, and tells the agent", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -2411,6 +2622,556 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("wakes the agent once when a watched workflow run completes", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, projectId, key } = yield* watchRunFromNewThread("completes", 9001);
+      const shell = yield* orchestrator.getThreadShell(threadId);
+      assert.deepEqual(shell?.pendingBackgroundTasks, [
+        {
+          taskId: "workflow-run-watch:github.com/pingdotgg/t3code/9001",
+          description: "Watching CI #9001",
+          kind: "monitor",
+        },
+      ]);
+
+      const url = runUrl(9001);
+      let completed = false;
+      let reads = 0;
+      const { reactor, usage } = yield* workflowRunReactor((input) => {
+        reads += 1;
+        assert.deepEqual(input, { projectId, ...key });
+        return Effect.succeed(
+          hostRun(9001, {
+            completed,
+            conclusion: completed ? "failure" : null,
+            failedJobs: completed
+              ? [{ name: "publish", conclusion: "failure", url: `${url}/job/1` }]
+              : [],
+          }),
+        );
+      });
+
+      yield* reactor.sweep;
+      assert.equal(reads, 1);
+      assert.deepEqual(yield* notificationsOf(threadId), []);
+      assert.lengthOf((yield* orchestrator.getThreadShell(threadId))?.workflowRuns ?? [], 1);
+
+      completed = true;
+      yield* reactor.sweep;
+      assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
+      assert.deepEqual(yield* notificationsOf(threadId), ["CI #9001: failure"]);
+      const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
+      assert.include(messages[0]?.text ?? "", `- publish ${url}/job/1`);
+
+      // The watch ended, so later passes read nothing and wake no one.
+      yield* reactor.sweep;
+      assert.equal(reads, 2);
+      assert.deepEqual(yield* notificationsOf(threadId), ["CI #9001: failure"]);
+      // One end event, with a fixed conclusion category and no run data.
+      assert.deepEqual(usage, [
+        {
+          feature: "workflow-run-watch",
+          action: "end",
+          source: "system",
+          endReason: "completed",
+          conclusion: "failure",
+          watchedMinutes: 0,
+        },
+      ]);
+    }),
+  );
+
+  it.effect("ends a workflow run watch it cannot read, and tells the agent", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId } = yield* watchRunFromNewThread("unreadable", 9002);
+      const { reactor, usage } = yield* workflowRunReactor(() =>
+        Effect.fail(
+          new PullRequestOperationError({ operation: "workflowRun", detail: "Not Found" }),
+        ),
+      );
+      for (let pass = 0; pass < 7; pass += 1) yield* reactor.sweep;
+      assert.lengthOf((yield* orchestrator.getThreadShell(threadId))?.workflowRuns ?? [], 1);
+      yield* reactor.sweep;
+
+      assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
+      assert.deepEqual(yield* notificationsOf(threadId), [
+        "CI #9002: stopped watching, could not read it",
+      ]);
+      assert.deepEqual(
+        usage.map((event) => event.endReason),
+        ["unreadable"],
+      );
+    }),
+  );
+
+  it.effect.each(["settle", "archive"] as const)(
+    "a workflow run watch ends on %s, and a late finish changes nothing",
+    (action) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const { threadId, key, start } = yield* watchRunFromNewThread(action, 9003);
+        const started = (yield* orchestrator.getThreadShell(threadId))?.workflowRuns?.[0];
+        assert.isDefined(started);
+        if (started === undefined) return;
+        const { reactor, usage } = yield* workflowRunReactor(() => Effect.succeed(hostRun(9003)));
+        // The reactor sees the running watch before the thread ends it.
+        yield* reactor.sweep;
+        assert.deepEqual(usage, []);
+
+        yield* orchestrator.dispatch({
+          type: action === "settle" ? "thread.settle" : "thread.archive",
+          commandId: CommandId.make(`workflow-run-${action}`),
+          threadId,
+        });
+        assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
+        yield* reactor.sweep;
+        assert.deepEqual(
+          usage.map((event) => event.endReason),
+          ["stopped"],
+        );
+        const late = yield* orchestrator
+          .dispatch({
+            type: "thread.workflow-run-watch.finish",
+            commandId: CommandId.make(`workflow-run-${action}-late`),
+            threadId,
+            ...key,
+            startedAt: started.startedAt,
+            wake: {
+              messageId: MessageId.make(`workflow-run-${action}-late-wake`),
+              text: "Finished",
+              notification: { source: { kind: "monitor" }, outcome: "completed", summary: "CI" },
+            },
+          })
+          .pipe(Effect.flip);
+        assert.equal(late._tag, "OrchestratorDispatchError");
+        const refused = yield* orchestrator
+          .dispatch({ ...start, commandId: CommandId.make(`workflow-run-${action}-restart`) })
+          .pipe(Effect.flip);
+        assert.equal(refused._tag, "OrchestratorDispatchError");
+        assert.deepEqual(yield* notificationsOf(threadId), []);
+      }),
+  );
+
+  it.effect(
+    "reads a watched pull request once a pass, waits out rate limits, and skips quiet passes",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const projectId = ProjectId.make("pr-watch-shared-project");
+        yield* seedProject({
+          projectId,
+          title: "Watch shared",
+          workspaceRoot: "/workspace/watch-shared",
+          defaultModelSelection: null,
+          createdAt: "2026-10-01T00:00:00.000Z",
+        });
+        const threadIds = ["one", "two"].map((name) =>
+          ThreadId.make(`runtime-pull-request-watch-shared-${name}`),
+        );
+        const watchFrom = (threadId: ThreadId) =>
+          Effect.gen(function* () {
+            yield* orchestrator.dispatch({
+              type: "thread.create",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`create:${threadId}`),
+              threadId,
+              projectId,
+              title: "Watch shared",
+              modelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+            });
+            yield* orchestrator.dispatch({
+              type: "thread.pull-request.watch",
+              commandId: CommandId.make(`watch:${threadId}`),
+              threadId,
+              host: "github.com",
+              repository: "pingdotgg/t3code",
+              number: 9,
+              watching: true,
+              link: { url: "https://github.com/pingdotgg/t3code/pull/9", source: "agent" },
+            });
+          });
+        for (const threadId of threadIds) yield* watchFrom(threadId);
+        const rateLimited = new PullRequestOperationError({
+          operation: "getChangeRequest",
+          detail: "github requests are paused until the rate limit resets",
+          cause: new PullRequestProviderError({
+            provider: "github",
+            operation: "getChangeRequest",
+            reason: "rate-limited",
+            detail: "paused",
+          }),
+        });
+        let host: "rate-limited" | "open" | "closed" = "rate-limited";
+        let reads = 0;
+        const reactor = yield* PullRequestWatchReactor.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              NodeServices.layer,
+              Layer.mock(PullRequestService.PullRequestService)({
+                detail: () =>
+                  Effect.suspend(() => {
+                    reads += 1;
+                    return host === "rate-limited"
+                      ? Effect.fail(rateLimited)
+                      : Effect.succeed({
+                          ...watchedPullRequestDetail({
+                            projectId,
+                            number: 9,
+                            at: "2026-10-02T12:00:00.000Z",
+                          }),
+                          state: host,
+                          checks: [
+                            { name: "lint", status: "success", description: null, url: null },
+                          ],
+                        });
+                  }),
+                activity: () =>
+                  host === "rate-limited"
+                    ? Effect.fail(rateLimited)
+                    : Effect.succeed({
+                        comments: [],
+                        commentCount: 0,
+                        commentsTruncated: false,
+                        reviewThreads: [],
+                        commits: [],
+                      }),
+              }),
+            ),
+          ),
+        );
+        const summaries = (threadId: ThreadId) =>
+          Effect.map(orchestrator.getThreadRecords(threadId, ["messages"]), ({ messages }) =>
+            messages.flatMap((message) => message.notification?.summary ?? []),
+          );
+        const watching = (threadId: ThreadId) =>
+          Effect.map(
+            orchestrator.getThreadShell(threadId),
+            (thread) => thread?.pullRequests?.[0]?.watch !== undefined,
+          );
+
+        // However long the host stays rate limited, the watch waits instead of giving up, and
+        // both threads share one read a pass.
+        for (let pass = 0; pass < 20; pass += 1) yield* reactor.sweep;
+        assert.equal(reads, 20);
+        for (const threadId of threadIds) {
+          assert.isTrue(yield* watching(threadId));
+          assert.deepEqual(yield* summaries(threadId), []);
+        }
+
+        host = "open";
+        yield* reactor.sweep;
+        assert.equal(reads, 21);
+        for (const threadId of threadIds) {
+          assert.deepEqual(yield* summaries(threadId), ["#9: checks passed"]);
+        }
+
+        // Nothing in flight and nothing moved, so the next pass spends no request.
+        yield* reactor.sweep;
+        assert.equal(reads, 21);
+
+        // A new watch on the quiet pull request takes its first look on the next pass.
+        const late = ThreadId.make("runtime-pull-request-watch-shared-late");
+        yield* watchFrom(late);
+        yield* reactor.sweep;
+        assert.equal(reads, 22);
+        assert.deepEqual(yield* summaries(late), ["#9: checks passed"]);
+        for (const threadId of threadIds) {
+          assert.deepEqual(yield* summaries(threadId), ["#9: checks passed"]);
+        }
+        threadIds.push(late);
+
+        // The quiet reread finds the pull request closed, ends both watches, and says so.
+        host = "closed";
+        yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+        assert.equal(reads, 23);
+        for (const threadId of threadIds) {
+          assert.isFalse(yield* watching(threadId));
+          assert.deepEqual(yield* summaries(threadId), [
+            "#9: checks passed",
+            "#9: closed, stopped watching",
+          ]);
+        }
+      }),
+  );
+
+  it.effect("reports how long an ended watch was quiet", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-pull-request-watch-ended");
+      const projectId = ProjectId.make("pr-watch-ended-project");
+      yield* seedProject({
+        projectId,
+        title: "Watch ended",
+        workspaceRoot: "/workspace/watch-ended",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("pr-watch-ended-create"),
+        threadId,
+        projectId,
+        title: "Watch ended",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const key = { host: "github.com", repository: "pingdotgg/t3code", number: 11 };
+      const watching = (on: boolean, id: string) =>
+        orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-ended-${id}`),
+          threadId,
+          ...key,
+          watching: on,
+          link: { url: "https://github.com/pingdotgg/t3code/pull/11", source: "agent" },
+        });
+      yield* watching(true, "start");
+
+      let headSha = "aaaaaaa";
+      const ended: Array<unknown> = [];
+      const capture = Logger.make(({ message }) => {
+        const [text, fields] = Array.isArray(message) ? message : [message];
+        if (text === "pull request watch ended") ended.push(fields);
+      });
+      const reactor = yield* PullRequestWatchReactor.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            Layer.mock(PullRequestService.PullRequestService)({
+              detail: () =>
+                Effect.sync(() => ({
+                  ...watchedPullRequestDetail({ projectId, number: key.number, at: "2026-10-02" }),
+                  headSha,
+                  checks: [],
+                })),
+              activity: () =>
+                Effect.succeed({
+                  comments: [],
+                  commentCount: 0,
+                  commentsTruncated: false,
+                  reviewThreads: [],
+                  commits: [],
+                }),
+            }),
+          ),
+        ),
+      );
+      const sweep = reactor.sweep.pipe(Effect.provide(Logger.layer([capture])));
+
+      // The first read learns the head. A push 6 hours later, then 2 quiet hours.
+      yield* sweep;
+      yield* TestClock.adjust("6 hours");
+      headSha = "bbbbbbb";
+      yield* sweep;
+      yield* TestClock.adjust("2 hours");
+      yield* sweep;
+      yield* watching(false, "stop");
+      // The end is reported once.
+      yield* sweep;
+      yield* sweep;
+
+      assert.deepEqual(ended, [
+        {
+          threadId,
+          pullRequest: "github.com/pingdotgg/t3code#11",
+          reason: "stopped",
+          minutes: 480,
+          quietMinutes: 120,
+          longestQuietMinutes: 360,
+          wakes: 0,
+          reads: 3,
+          partial: false,
+        },
+      ]);
+    }),
+  );
+
+  it.effect("with a host fingerprint, a watch reads only what moved", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projectId = ProjectId.make("pr-watch-fingerprint-project");
+      const threadId = ThreadId.make("runtime-pull-request-watch-fingerprint");
+      yield* seedProject({
+        projectId,
+        title: "Watch fingerprint",
+        workspaceRoot: "/workspace/watch-fingerprint",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("pr-watch-fingerprint-create"),
+        threadId,
+        projectId,
+        title: "Watch fingerprint",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-fingerprint-start"),
+        threadId,
+        host: "github.com",
+        repository: "pingdotgg/t3code",
+        number: 11,
+        watching: true,
+        link: { url: "https://github.com/pingdotgg/t3code/pull/11", source: "agent" },
+      });
+
+      let fingerprint: { status: string; remarks: string } | "rate-limited" = {
+        status: "OPEN pending",
+        remarks: "0",
+      };
+      type CheckStatus = "pending" | "success" | "failure";
+      // What the host says now, and what a read answers: a read right after a cache fill can
+      // still answer from before a change until the cache is invalidated.
+      let checks: { lint: CheckStatus; test: CheckStatus } = { lint: "pending", test: "pending" };
+      let cachedChecks: typeof checks | null = null;
+      let comments: Array<PullRequestComment> = [];
+      let detailReads = 0;
+      let activityReads = 0;
+      const reactor = yield* PullRequestWatchReactor.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            NodeServices.layer,
+            Layer.mock(PullRequestService.PullRequestService)({
+              watchFingerprint: () =>
+                Effect.suspend(() =>
+                  fingerprint === "rate-limited"
+                    ? Effect.fail(
+                        new PullRequestOperationError({
+                          operation: "watchFingerprint",
+                          detail: "paused",
+                          cause: new PullRequestProviderError({
+                            provider: "github",
+                            operation: "getChangeRequestWatchFingerprint",
+                            reason: "rate-limited",
+                            detail: "paused",
+                          }),
+                        }),
+                      )
+                    : Effect.succeed(fingerprint),
+                ),
+              invalidate: () =>
+                Effect.sync(() => {
+                  cachedChecks = null;
+                }),
+              detail: () =>
+                Effect.sync(() => {
+                  detailReads += 1;
+                  const answer = cachedChecks ?? checks;
+                  cachedChecks = null;
+                  return {
+                    ...watchedPullRequestDetail({
+                      projectId,
+                      number: 11,
+                      at: "2026-10-02T12:00:00.000Z",
+                    }),
+                    checks: Object.entries(answer).map(([name, status]) => ({
+                      name,
+                      status,
+                      description: null,
+                      url: null,
+                    })),
+                  };
+                }),
+              activity: () =>
+                Effect.sync(() => {
+                  activityReads += 1;
+                  return {
+                    comments,
+                    commentCount: comments.length,
+                    commentsTruncated: false,
+                    reviewThreads: [],
+                    commits: [],
+                  };
+                }),
+            }),
+          ),
+        ),
+      );
+      const reads = () => ({ detail: detailReads, activity: activityReads });
+      const summaries = Effect.map(
+        orchestrator.getThreadRecords(threadId, ["messages"]),
+        ({ messages }) => messages.flatMap((message) => message.notification?.summary ?? []),
+      );
+
+      // The first look reads everything.
+      yield* reactor.sweep;
+      assert.deepEqual(reads(), { detail: 1, activity: 1 });
+
+      // While checks run, the cheap detail is read every pass: check counts by state cannot
+      // tell which check finished, so a failure can arrive with the fingerprint unchanged.
+      checks = { lint: "failure", test: "pending" };
+      yield* reactor.sweep;
+      assert.deepEqual(reads(), { detail: 2, activity: 1 });
+      assert.deepEqual(yield* summaries, ["#11: checks failed"]);
+
+      // When the fingerprint moves, a cached answer from before the move is not trusted.
+      yield* TestClock.adjust("1 millis");
+      cachedChecks = checks;
+      checks = { lint: "failure", test: "success" };
+      fingerprint = { status: "OPEN settled", remarks: "0" };
+      yield* reactor.sweep;
+      assert.deepEqual(reads(), { detail: 3, activity: 1 });
+
+      // Nothing in flight and nothing moved, so the passes read nothing.
+      for (let pass = 0; pass < 5; pass += 1) yield* reactor.sweep;
+      assert.deepEqual(reads(), { detail: 3, activity: 1 });
+
+      // A new comment moves the remarks, which take the activity read too.
+      yield* TestClock.adjust("1 millis");
+      comments = [
+        {
+          id: "comment-1",
+          kind: "issue-comment",
+          author: { login: "reviewer", name: null, avatarUrl: null },
+          body: "Please rename this.",
+          createdAt: "2999-01-01T00:00:00.000Z",
+          url: null,
+          path: null,
+          reviewState: null,
+        },
+      ];
+      fingerprint = { status: "OPEN settled", remarks: "1" };
+      yield* reactor.sweep;
+      assert.deepEqual(reads(), { detail: 4, activity: 2 });
+      assert.deepEqual(yield* summaries, ["#11: checks failed", "#11: new comments"]);
+
+      // While the host is rate limited, a pass reads nothing and the watch stays on.
+      fingerprint = "rate-limited";
+      yield* reactor.sweep;
+      assert.deepEqual(reads(), { detail: 4, activity: 2 });
+      assert.isDefined((yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch);
+
+      // Edits inside review threads leave no trace in the fingerprint, so the activity is read
+      // again after half an hour regardless.
+      fingerprint = { status: "OPEN settled", remarks: "1" };
+      yield* TestClock.adjust("30 minutes");
+      yield* reactor.sweep;
+      assert.deepEqual(reads(), { detail: 5, activity: 3 });
+      assert.deepEqual(yield* summaries, ["#11: checks failed", "#11: new comments"]);
+    }),
+  );
+
   it.effect.each([
     "single page",
     "paginated",
@@ -2463,52 +3224,7 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
       });
 
       const at = "2026-10-02T12:00:00.000Z";
-      const detail: PullRequestDetail = {
-        provider: "github",
-        capabilities: {
-          diff: true,
-          comment: true,
-          actions: [],
-          mergeMethods: [],
-          search: false,
-          review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
-          reviewers: { request: false, listCandidates: false },
-        },
-        viewerPermissions: {
-          actions: [],
-          comment: true,
-          resolve: true,
-          verdicts: [],
-          requestReviewers: false,
-        },
-        projectId,
-        projectTitle: "Watch wake",
-        workspaceRoot: "/workspace/watch",
-        repository: key.repository,
-        number: key.number,
-        title: "Watched pull request",
-        body: "",
-        url,
-        author: { login: "agent-user", name: null, avatarUrl: null },
-        state: "open",
-        isDraft: false,
-        mergeability: "mergeable",
-        additions: 1,
-        deletions: 0,
-        changedFiles: 1,
-        headBranch: "feature",
-        headSha: "abc1234def",
-        baseBranch: "main",
-        createdAt: at,
-        updatedAt: at,
-        mergedAt: null,
-        closedAt: null,
-        reviewers: [],
-        labels: [],
-        checks: [{ name: "lint", status: "failure", description: null, url: null }],
-        mergeCapabilities: { merge: true, squash: true, rebase: true },
-        viewer: "agent-user",
-      };
+      const detail = watchedPullRequestDetail({ projectId, number: key.number, at });
       const initialWatch = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
       assert.isDefined(initialWatch);
       const remark: PullRequestComment = {
@@ -3974,7 +4690,7 @@ it.layer(TestLayer)("OrchestrationV2LayerLive lifecycle", (it) => {
   );
 });
 
-it.layer(SharedApplicationDataPlaneTestLayer)("pending provider interruption", (it) => {
+it.layer(layerSharedApplicationDataPlaneTest)("pending provider interruption", (it) => {
   it.effect("interrupts a pending provider start without launching provider work", () =>
     Effect.gen(function* () {
       const projects = yield* ProjectService.ProjectService;
@@ -4048,7 +4764,7 @@ it.layer(SharedApplicationDataPlaneTestLayer)("pending provider interruption", (
   );
 });
 
-it.layer(SharedApplicationDataPlaneTestLayer)("snooze projection", (it) => {
+it.layer(layerSharedApplicationDataPlaneTest)("snooze projection", (it) => {
   it.effect("carries snooze state through the V2 shell projection", () =>
     Effect.gen(function* () {
       const projects = yield* ProjectService.ProjectService;
@@ -4123,7 +4839,7 @@ it.layer(SharedApplicationDataPlaneTestLayer)("snooze projection", (it) => {
   );
 });
 
-it.layer(SharedApplicationDataPlaneTestLayer)("visited projection", (it) => {
+it.layer(layerSharedApplicationDataPlaneTest)("visited projection", (it) => {
   it.effect("carries the visited watermark through the V2 shell projection", () =>
     Effect.gen(function* () {
       const projects = yield* ProjectService.ProjectService;
@@ -4231,7 +4947,7 @@ it.layer(SharedApplicationDataPlaneTestLayer)("visited projection", (it) => {
   );
 });
 
-it.layer(SharedApplicationDataPlaneTestLayer)("shared application data plane", (it) => {
+it.layer(layerSharedApplicationDataPlaneTest)("shared application data plane", (it) => {
   it.effect("orders retained project transactions and V2 thread transactions in one source", () =>
     Effect.gen(function* () {
       const projects = yield* ProjectService.ProjectService;
@@ -4306,7 +5022,7 @@ it.layer(SharedApplicationDataPlaneTestLayer)("shared application data plane", (
   );
 });
 
-it.layer(TestLayer)("usage-limit recovery", (it) => {
+it.layer(layerTest)("usage-limit recovery", (it) => {
   it.effect.each(["interrupted", "usage_limit"] as const)(
     "manually resumes an %s run ahead of its queued message only once",
     (reason) =>

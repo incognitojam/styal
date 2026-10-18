@@ -11,7 +11,7 @@ import {
   makeClaudeRestartReplayHarness,
 } from "../Adapters/ClaudeAdapterV2.testkit.ts";
 import * as IdAllocator from "../IdAllocator.ts";
-import { makeSqlitePersistenceLive } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { provideDeterministicTestRuntime } from "./DeterministicRuntime.ts";
 import { CLAUDE_BACKGROUND_SUBAGENT_AFTER_ROOT_PROMPT } from "./fixtures/claude_background_subagent_after_root/input.ts";
 import {
@@ -28,7 +28,7 @@ const SESSION_ID = "cca274e4-25ae-4171-b972-bbb31118517e";
 const FIRST_AFTER_RESTART = "Is the background subagent done yet?";
 const SECOND_AFTER_RESTART = "Thanks. Anything else?";
 const NOTE = [
-  "Note: the T3 server restarted, and this background work was cancelled before it finished. It will not report back:",
+  "Note: the styal server restarted, and this background work was cancelled before it finished. It will not report back:",
   "- subagent: Background subagent test",
 ].join("\n");
 
@@ -171,7 +171,7 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
     ...materialized.steps.slice(firstIdle + 1),
   ];
   const { harness, assertComplete } = makeClaudeRestartReplayHarness(transcript);
-  const databaseLayer = makeSqlitePersistenceLive(path.join(tempDir, "state.sqlite")).pipe(
+  const layerDatabase = SqlitePersistence.layerFromPath(path.join(tempDir, "state.sqlite")).pipe(
     Layer.provide(NodeServices.layer),
   );
   const scenario = (name: string, steps: typeof materialized.steps) => ({
@@ -185,7 +185,7 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
 
   const before = yield* Effect.scoped(
     runOrchestratorV2ProviderReplayScenario(scenario("before-restart", phase1Steps), harness, {
-      databaseLayer,
+      databaseLayer: layerDatabase,
       continueThreadsAfterServerUpdate: input.continueThreadsAfterServerUpdate,
       prepareForShutdownOnClose: true,
     }),
@@ -196,7 +196,7 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
 
   const after = yield* Effect.scoped(
     runOrchestratorV2ProviderReplayScenario(scenario("after-restart", phase2Steps), harness, {
-      databaseLayer,
+      databaseLayer: layerDatabase,
       recoverOnStartup: true,
       continueThreadsAfterServerUpdate: input.continueThreadsAfterServerUpdate,
     }),

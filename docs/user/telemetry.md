@@ -9,6 +9,15 @@ and its duration. It does not include visited URLs, page content, screenshots, s
 input, or evaluated code. Device panel actions and agent device tools record their operation and
 outcome, whether the device is local or remote when known, and its platform when reported. Device
 names, identifiers, screenshots and action arguments are not collected.
+Agent workflow run watches record whether each watch or unwatch call started, stopped, or
+found a run already finished, and how each watch ended: the run's conclusion, a failure to read
+it, or being stopped, with how many minutes it was watched. Repositories, run links, and workflow
+or job names are not collected.
+
+Web and desktop clients also record explicit diff-order selections and when you open a
+mentioned time's explanation. The web app records when a new-build notice is visible and
+when you choose Refresh. These events use the relevant paired environment's telemetry setting.
+File paths, written times, deployment identifiers, and composer drafts are not collected.
 
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
@@ -38,3 +47,6 @@ logs alongside an error are not sent.
 
 To stop error reports while keeping usage events, set `T3CODE_ERROR_REPORTING_ENABLED=false`.
 Disabling telemetry with `T3CODE_TELEMETRY_ENABLED=false` stops both.
+
+The desktop app reads the variable from your shell profile (for example `~/.zshrc`) on macOS and
+Linux, so export it there and restart the app. On Windows, set it as a user environment variable.

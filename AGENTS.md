@@ -85,6 +85,7 @@ The most common defect in this repo is a change that works on the path you teste
 
 - [How styal differs from T3 Code](docs/user/styal-differences.md) is the curated user-facing overview. Update it in the same PR when a notable difference is added, materially changed, or removed. Check the current upstream implementation before claiming a difference, describe refinements precisely, and record the comparison revision. Remove highlights when the described behavior becomes shared.
 - The [fork feature ledger](.github/fork-features.yml) records maintained capabilities, invariants, implementation paths, and test evidence. Update the relevant entry when changing fork behavior; add an entry for a new maintained divergence, with a `rationale` when the reason is not obvious from its invariants. Upstream intake relies on it to decide whether a conflicting fork change stays. Its coverage is incremental, and inclusion is not proof that a feature remains exclusive to styal.
+- Measure use of a new or materially changed fork feature in the same PR; see [Measure a fork feature](docs/operations/feature-usage.md#measure-a-fork-feature).
 - Follow the [ledger maintenance guide](docs/internals/fork-feature-ledger.md) for upstream overlap and retirement decisions. Keep the overview concise rather than copying every ledger entry. Nightly changelogs use PR and commit titles; the overview is maintained through reviewed edits.
 
 ## Dev servers
@@ -180,8 +181,9 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 ## Taste
 
 - Complexity belongs at the adapter boundary. Orchestration stays pure, UI stays dumb.
+- Client mutations use `createEnvironmentRpcCommand`. Add protected methods to `CLIENT_GUARDED_RPC_SCOPES` in contracts and use the command's `permissionAtom` for UI availability. Grants are checked at execution against the destination environment; the server remains authoritative. Keep raw RPC clients inside `rpc/`, and extend the permission behavior tests when adding a protected method.
 - Server features are services; transports stay thin. A `ws.ts` RPC handler, HTTP route, or MCP tool decodes input, calls one service method, and maps errors. See [Effect services](docs/internals/effect-services.md).
-- `apps/web/src/components/ui` exports own their look. Pick a `variant` or `size`; do not restyle one with `className`. If none fits and the look is a generic concept, add a variant to the component; a look that belongs to one feature stays in that feature's own component, not in `components/ui`. Layout classes (width, flex, margin, position) belong on the parent. `shadcn/no-restyle` fails lint on violations.
+- `apps/web/src/components/ui` exports own their look. Pick a `variant` or `size`; do not restyle one with `className`. If none fits and the look is a generic concept, add a variant to the component; a look that belongs to one feature stays in that feature's own component, not in `components/ui`. Layout classes (width, flex, margin, position) belong on the parent. `shadcn/no-restyle` fails lint on violations. See [Web UI](docs/internals/web-ui.md).
 - Inferred types over annotations. `any` is the enemy.
 - Comments describe how a thing is used, and move when the code moves. To be used mostly to describe functions, not to annotate every line of behavior.
 - Our users drive agents all day and notice a dropped frame, a lying spinner, and a stale label. No continuously repainting animations; they peg the GPU on high-refresh displays.

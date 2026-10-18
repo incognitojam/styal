@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DeviceHeldError,
   DeviceHostUnavailableError,
   EnvironmentId,
   ProviderInstanceId,
@@ -11,10 +12,12 @@ import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/ai";
 
 import * as ServerConfig from "../config.ts";
+import { DeviceActivity } from "../device/DeviceIdle.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
 
 const environmentId = EnvironmentId.make("environment-device-test");
 const threadId = ThreadId.make("thread-device-test");
@@ -82,7 +85,7 @@ new DataView(png.buffer).setUint32(12, 0x49484452);
 new DataView(png.buffer).setUint32(16, 1206);
 new DataView(png.buffer).setUint32(20, 2622);
 
-const DeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
+const layerDeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
   state: Effect.succeed(state),
   list: Effect.succeed(state),
   open: (input) =>
@@ -101,10 +104,11 @@ const DeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
   agentTarget: () => Effect.succeed(["--config", "/host.json", "--session", "thread-device"]),
 });
 
-const TestLayer = McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
   Layer.provide(AnalyticsService.AnalyticsService.layerTest),
   Layer.provideMerge(McpServer.McpServer.layer),
-  Layer.provideMerge(DeviceServiceMock),
+  Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
+  Layer.provideMerge(layerDeviceServiceMock),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" })),
   Layer.provide(NodeServices.layer),
 );
@@ -140,11 +144,11 @@ it.effect("registers the device tools and returns the screenshot as image conten
         .pipe(callWith(["preview"]), Effect.provideService(McpSchema.McpServerClient, client));
       expect(denied.isError).toBe(true);
     }),
-  ).pipe(Effect.provide(TestLayer)),
+  ).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("rejects unavailable agent access before booting or opening a device", () => {
-  const unavailable = Layer.mock(DeviceService.DeviceService)({
+  const layerUnavailable = Layer.mock(DeviceService.DeviceService)({
     list: Effect.succeed(state),
     agentTarget: () =>
       Effect.fail(
@@ -172,17 +176,18 @@ it.effect("rejects unavailable agent access before booting or opening a device",
   }).pipe(
     Effect.scoped,
     Effect.provide(
-      McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+      McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provide(AnalyticsService.AnalyticsService.layerTest),
         Layer.provideMerge(McpServer.McpServer.layer),
-        Layer.provide(unavailable),
+        Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(layerUnavailable),
         Layer.provide(NodeServices.layer),
       ),
     ),
   );
 });
 
-it.effect("reports another thread's device and does not open it unless named", () => {
+it.effect("names the thread using a device and opens it only on a take-over", () => {
   const emulator = {
     hostId: "local",
     id: "emulator-5554",
@@ -214,64 +219,83 @@ it.effect("reports another thread's device and does not open it unless named", (
       },
     ],
   };
-  let opened = 0;
+  const other = ThreadId.make("thread-other");
+  const takeOvers: Array<boolean | undefined> = [];
+  // Stands in for the device lifecycle layer, which refuses an in-use device without takeOver.
   const service = Layer.mock(DeviceService.DeviceService)({
     state: Effect.succeed(shared),
     list: Effect.succeed(shared),
     agentTarget: () => Effect.succeed(["--session", "thread-device"]),
     agentCli: Effect.succeed("/cli"),
-    open: (input) =>
-      Effect.sync(() => {
-        opened += 1;
-        return {
-          threadId: input.threadId,
-          hostId: "local",
-          deviceId: input.deviceId,
-          platform: input.platform,
-          openedAt: "2026-10-09T00:00:01.000Z",
-        };
-      }),
+    open: (input) => {
+      takeOvers.push(input.takeOver);
+      return input.takeOver === true
+        ? Effect.succeed({
+            threadId: input.threadId,
+            hostId: "local",
+            deviceId: input.deviceId,
+            platform: input.platform,
+            openedAt: "2026-10-09T00:00:01.000Z",
+          })
+        : Effect.fail(
+            new DeviceHeldError({
+              hostId: "local",
+              deviceId: input.deviceId,
+              threadIds: [other],
+            }),
+          );
+    },
   });
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const call = (name: string, args: Record<string, unknown>) =>
-      server
-        .callTool({ name, arguments: args })
-        .pipe(
-          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(["device"])),
-          Effect.provideService(McpSchema.McpServerClient, client),
-        );
+      server.callTool({ name, arguments: args }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(["device"])),
+        Effect.provideService(McpSchema.McpServerClient, client),
+        Effect.provideService(DeviceActivity, {
+          ...DeviceActivity.defaultValue(),
+          inUse: () =>
+            Effect.succeed([{ threadId: other, hostId: "local", deviceId: "emulator-5554" }]),
+        }),
+      );
+    const text = (result: { readonly content: ReadonlyArray<unknown> }) =>
+      result.content.flatMap((part) =>
+        typeof part === "object" && part !== null && "text" in part ? [part.text] : [],
+      );
 
     const listed = yield* call("device_list", {});
     expect(listed.structuredContent).toMatchObject({
       open: [],
-      openInOtherThreads: [{ hostId: "local", deviceId: "emulator-5554" }],
+      openInOtherThreads: [
+        { hostId: "local", deviceId: "emulator-5554", threadId: "thread-other", inUse: true },
+      ],
     });
 
     const implicit = yield* call("device_open", { platform: "android" });
     expect(implicit.isError).toBe(true);
-    expect(implicit.content).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "text",
-          text: expect.stringContaining("Another thread has pixel_7_api_37 (emulator-5554) open"),
-        }),
-      ]),
+    expect(text(implicit).join("\n")).toContain(
+      "Another thread is using pixel_7_api_37 (emulator-5554)",
     );
-    expect(opened).toBe(0);
+    expect(takeOvers).toEqual([]);
 
     const named = yield* call("device_open", { deviceId: "emulator-5554" });
-    expect(named.isError).toBe(false);
-    expect((named.structuredContent as { quickStart: string }).quickStart).toMatch(
-      /^Another thread also has this device open/,
+    expect(named.isError).toBe(true);
+    expect(text(named).join("\n")).toContain("in use by thread thread-other");
+
+    const takenOver = yield* call("device_open", { deviceId: "emulator-5554", takeOver: true });
+    expect(takenOver.isError).toBe(false);
+    expect(takeOvers).toEqual([undefined, true]);
+    // The mocked state keeps the other session, as a connected environment's hold would.
+    expect((takenOver.structuredContent as { quickStart: string }).quickStart).toMatch(
+      /^Thread thread-other also has this device open/,
     );
-    expect(opened).toBe(1);
   }).pipe(
     Effect.scoped,
     Effect.provide(
-      McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+      McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provide(AnalyticsService.AnalyticsService.layerTest),
         Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(service),
         Layer.provide(
           ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-shared-test-" }),

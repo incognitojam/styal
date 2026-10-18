@@ -1,3 +1,5 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as Effect from "effect/Effect";
 import * as NodeModule from "node:module";
 import * as NodeVM from "node:vm";
 import { EnvironmentId, ProviderInstanceId, ThreadId, TurnItemId } from "@t3tools/contracts";
@@ -20,6 +22,7 @@ import { ThreadToolkit } from "../thread/tools.ts";
 import { WorktreeToolkit } from "../worktree/tools.ts";
 import { DeviceToolkit } from "../device/tools.ts";
 import { PullRequestsToolkit } from "../pullRequests/tools.ts";
+import { HtmlToolkit } from "../html/tools.ts";
 
 /** The same published catalog checked by core.test, also used for visual intake fixtures. */
 export const publishedToolkits = [
@@ -33,6 +36,7 @@ export const publishedToolkits = [
   PreviewControlsToolkit,
   DeviceToolkit,
   PullRequestsToolkit,
+  HtmlToolkit,
 ];
 
 export const publishedTools = publishedToolkits.flatMap((toolkit) => Object.values(toolkit.tools));
@@ -103,14 +107,16 @@ export async function providerToolFixtures(): Promise<ProviderToolFixture[]> {
         add("Claude", wildcard.replace("*", tool.name));
         add(
           "Codex",
-          projectCodexDynamicToolItem({
-            type: "mcpToolCall",
-            id: tool.name,
-            server,
-            tool: tool.name,
-            arguments: {},
-            status: "completed",
-          }).toolName,
+          Effect.runSync(
+            projectCodexDynamicToolItem({
+              type: "mcpToolCall",
+              id: tool.name,
+              server,
+              tool: tool.name,
+              arguments: {},
+              status: "completed",
+            }).pipe(Effect.provide(NodeCrypto.layer)),
+          ).toolName,
         );
         add(
           "Cursor",

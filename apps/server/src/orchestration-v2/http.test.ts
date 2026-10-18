@@ -20,12 +20,12 @@ import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as ServerConfig from "../config.ts";
 import * as Startup from "../serverRuntimeStartup.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
-import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
+import { layerMemory } from "../persistence/Sqlite.ts";
+import * as OrchestrationEventStoreLayer from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
-import { orchestrationHttpApiLayer } from "./http.ts";
+import * as OrchestrationHttp from "./http.ts";
 
 class TestApi extends HttpApi.make("environment").add(EnvironmentHttpApi.groups.orchestration) {}
 
@@ -37,7 +37,7 @@ it.effect(
       let queued = 0;
       const makeRoutes = (operate: boolean) =>
         HttpApiBuilder.layer(TestApi).pipe(
-          Layer.provide(orchestrationHttpApiLayer),
+          Layer.provide(OrchestrationHttp.layer),
           Layer.provide(
             Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
               effect.pipe(
@@ -73,8 +73,8 @@ it.effect(
           ),
           Layer.provide(Layer.mock(ProjectEnrichment.ProjectEnrichmentService)({})),
           Layer.provide(ProjectStore.layer),
-          Layer.provide(OrchestrationEventStoreLive),
-          Layer.provide(SqlitePersistenceMemory),
+          Layer.provide(OrchestrationEventStoreLayer.layer),
+          Layer.provide(layerMemory),
           Layer.provide(
             ServerConfig.layerTest(process.cwd(), { prefix: "synthetic-http-dispatch-" }),
           ),

@@ -1,4 +1,4 @@
-import { otlpSerializationLayer } from "@t3tools/shared/observability";
+import * as SharedObservability from "@t3tools/shared/observability";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -9,9 +9,9 @@ import * as OtlpLogger from "effect/observability/OtlpLogger";
 import * as ServerConfig from "./config.ts";
 import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
 
-export const ServerLoggerLive = Effect.gen(function* () {
+export const layer = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
-  const minimumLogLevelLayer = Layer.succeed(References.MinimumLogLevel, config.logLevel);
+  const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
   // Loggers are installed before the services that deliver reports exist, so
   // error entries wait in this sink until ErrorReporting.layer drains it.
   const errorReportSink = ErrorReporting.makeErrorReportSink();
@@ -40,19 +40,19 @@ export const ServerLoggerLive = Effect.gen(function* () {
   // Recording events on spans is also the shape OpenTelemetry is deprecating,
   // in favor of the log-based events this logger emits:
   // https://opentelemetry.io/blog/2026/deprecating-span-events/
-  const loggerLayer = Logger.layer(
+  const layerLogger = Logger.layer(
     otlpLogger === undefined
       ? [Logger.consolePretty(), Logger.tracerLogger, errorReportLogger]
       : [Logger.consolePretty(), otlpLogger, errorReportLogger],
     { mergeWithExisting: false },
   ).pipe(
     Layer.provide(OtlpExporter.layerFlusher),
-    Layer.provide(otlpSerializationLayer(logs.protocol)),
+    Layer.provide(SharedObservability.layerOtlpSerialization(logs.protocol)),
   );
 
   return Layer.mergeAll(
-    loggerLayer,
-    minimumLogLevelLayer,
+    layerLogger,
+    layerMinimumLogLevel,
     Layer.succeed(ErrorReporting.ErrorReportSink, errorReportSink),
   );
 }).pipe(Layer.unwrap);

@@ -1,5 +1,6 @@
 import {
-  AuthOrchestrationOperateScope,
+  AuthEnvironmentMaintainScope,
+  sessionGrantsScope,
   type AuthSessionState,
   type ExecutionEnvironmentCapabilities,
   type ServerProvider,
@@ -17,7 +18,7 @@ export function canMaintainEnvironment(session: AuthSessionState | null, connect
   return (
     connected &&
     session?.authenticated === true &&
-    session.scopes?.includes(AuthOrchestrationOperateScope) === true
+    sessionGrantsScope(session, AuthEnvironmentMaintainScope)
   );
 }
 
@@ -43,6 +44,13 @@ export function canUpdateEnvironmentProvider(provider: ServerProvider) {
     provider.updateState?.status !== "running" &&
     provider.updateState?.status !== "queued"
   );
+}
+
+/** Whether the latest release is newer than the version the provider canary verified. */
+export function isLatestProviderVersionUntested(provider: ServerProvider) {
+  const latest = provider.versionAdvisory?.latestVersion;
+  const verified = provider.compatibilityAdvisory?.verifiedVersion;
+  return Boolean(latest && verified && compareSemverVersions(latest, verified) > 0);
 }
 
 /** Preserve the host's release channel and never offer a downgrade. */

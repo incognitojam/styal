@@ -122,7 +122,7 @@ features:
       - apps/mobile/src/lib/modelOptions.ts
       - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts
       - apps/server/src/provider/AntigravityModels.ts
-      - apps/server/src/provider/Layers/AntigravityProvider.ts
+      - apps/server/src/provider/AntigravityProvider.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
@@ -135,7 +135,7 @@ features:
     upstream_paths:
       - apps/mobile/src/lib/modelOptions.ts
       - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts
-      - apps/server/src/provider/Layers/AntigravityProvider.ts
+      - apps/server/src/provider/AntigravityProvider.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.ts
@@ -148,7 +148,7 @@ features:
     tests:
       - apps/mobile/src/lib/modelOptions.test.ts
       - apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.test.ts
-      - apps/server/src/provider/Layers/AntigravityProvider.test.ts
+      - apps/server/src/provider/AntigravityProvider.test.ts
       - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/acp/AntigravityAcpSupport.test.ts
       - apps/server/src/textGeneration/AntigravityTextGeneration.test.ts
@@ -495,12 +495,12 @@ features:
     rationale: A server update resumes a running session in a new server process as soon as the old server exits, and the SDK's close returns before the CLI does, so without the wait two CLIs can hold the same session and transcript.
     implementation_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
-      - apps/server/src/provider/Layers/ClaudeProcess.ts
+      - apps/server/src/provider/ClaudeProcess.ts
     upstream_paths:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
     tests:
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
-      - apps/server/src/provider/Layers/ClaudeProcess.test.ts
+      - apps/server/src/provider/ClaudeProcess.test.ts
     upstream:
       status: partial
       tracking:
@@ -588,13 +588,13 @@ features:
       - New Codex threads select GPT-6.1-Sol when available, then GPT-6-Sol, then GPT-6-Astra, then an older available model; an unavailable preferred model never blocks the live Codex catalog.
       - A Codex model's default reasoning effort is the one a turn without an explicit effort actually runs at, medium when the model supports it.
     implementation_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - packages/contracts/src/model.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - packages/contracts/src/model.ts
     tests:
-      - apps/server/src/provider/Layers/CodexProvider.test.ts
+      - apps/server/src/provider/CodexProvider.test.ts
     upstream:
       status: tracking
       tracking:
@@ -634,14 +634,14 @@ features:
     invariants:
       - Codex catalog labels use spaces before word suffixes, such as GPT-6 Luna and GPT-6.1 Sol, while preserving model IDs and the hyphen before the version.
     implementation_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/provider/model-manifest.json
       - packages/shared/src/model.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - packages/shared/src/model.ts
     tests:
-      - apps/server/src/provider/Layers/CodexProvider.test.ts
+      - apps/server/src/provider/CodexProvider.test.ts
       - packages/shared/src/model.test.ts
     upstream:
       status: tracking
@@ -769,7 +769,7 @@ features:
       - Startup history repairs index their temporary event lookups so upgrading large imported histories does not repeatedly scan every repair for each event.
       - Legacy history metadata rewrites preserve JSON byte alignment where possible, avoiding writes of unchanged SQLite overflow pages; ordering updates preserve each historical event's own payload.
       - Imported native V2 sessions remain stopped while durable native conversation references remain resumable; process sessions, pending effects, and runtime requests never migrate.
-      - Resuming imported V1 history records a visible context handoff on its receiving run, including the selected target model and available source metadata, even before any V2 run has completed.
+      - Resuming imported V1 history records a context handoff on its receiving run, including the selected target model and available source metadata, even before any V2 run has completed. Web, desktop, and mobile silently restore completed imported context when no provider change is known; provider and account switches, including those on the first restored turn, and unsuccessful restoration remain visible.
       - Fork imports retain history through the chosen source run even when ancestors are deleted, excluded, not yet imported, or fail during the batch. Materialized history keeps original fork lineage and never duplicates when an ancestor is imported later.
     implementation_paths:
       - apps/server/src/dataImport/LegacyHistoryWriter.ts
@@ -801,6 +801,7 @@ features:
       - apps/web/src/onboarding/firstRun.logic.ts
       - apps/web/src/routes/welcome.tsx
       - apps/web/src/state/dataImport.ts
+      - packages/client-runtime/src/handoff.ts
       - packages/contracts/src/dataImport.ts
     upstream_paths:
       - apps/server/src/assets/AssetAccess.ts
@@ -838,6 +839,7 @@ features:
       - apps/web/src/onboarding/firstRun.logic.test.ts
       - apps/web/src/onboarding/projectImport.logic.test.ts
       - apps/web/src/state/dataImport.test.ts
+      - packages/client-runtime/src/handoff.test.ts
       - packages/contracts/src/dataImport.test.ts
     upstream:
       status: partial
@@ -1042,7 +1044,7 @@ features:
     status: maintained
     prs: [746, 805]
     invariants:
-      - Web, desktop, and mobile clients can authorize an already connected environment as a device host without SSH configuration.
+      - Web, desktop, and mobile clients with settings:write on both environments can authorize an already connected environment as a device host without SSH configuration; devices:operate stays in the legacy wire vocabulary for older clients.
       - Device-only credentials are stored in the source server's secret store and remain usable after client disconnects or server restarts.
       - Peer access is limited to local devices and expires. Removing a host revokes access when the target is reachable; offline removal reports how to revoke the remaining grant. Ordinary client credentials cannot use peer endpoints.
       - Thread and driver sessions are distinct across environments, and agents see other environments' device reservations.
@@ -1087,10 +1089,11 @@ features:
   - id: device-idle-shutdown
     title: Hand devices back on demand and shut down unused simulators
     status: maintained
-    prs: [832]
+    prs: [832, 887]
     invariants:
       - device_close releases every agent-device session device_open handed the thread for that device, recorded when each was handed out (so an Android AVD that boots under a new id still releases), and leaves the device booted. Unconfirmed releases are retried per session name on the next hand-over or power-off without blocking cleanup of other names; a missing session after failed cleanup remains uncertain across reopen until a successful release or stopped daemon confirms it.
-      - When an agent opens a device nobody is watching, other local threads' holds on it are released if their thread is not working. Connected environments' holds are not reclaimed. device_open prefers a free device and takes an idle-held one only when none is free, never one someone is watching. Opening a device from the Device panel never takes it from an agent, and holds are never released on a timer.
+      - When an agent opens a device nobody is watching, other local threads' holds on it are released if their thread is not working. Connected environments' holds are not reclaimed. device_open prefers a free device and takes an idle-held one only when none is free. An agent open of a device that a working thread holds, someone watches, or another environment holds fails with DeviceHeldError naming those threads unless it passes takeOver, which releases every local holder's hold and shares the device with connected environments' holders. Opening a device from the Device panel never takes it from an agent or is refused, and holds are never released on a timer.
+      - The sweep closes sessions of archived threads, and agent holds of deleted threads. A Device panel session from a thread the projections do not know stays, since it may be a draft's.
       - A session handed back or over is refused by the agent-device launcher, with a message to call device_open, until device_open hands it out again; agent-device itself does not stop a released session driving the device by its selector.
       - Lifecycle work on one device is serialized, an Android device by AVD name across its boot, so a reopen waits for a hand-over or release in progress. Hand-over happens within an environment, not across connected environments.
       - Powering a device off, by close, shutdown, or the sweep, first releases every agent's claim on it, including connected environments' claims named from the peer environment id, and forgets the device's boot record. Revoking a peer's grant on the device environment closes that peer's sessions.
@@ -1152,11 +1155,11 @@ features:
   - id: device-tool-thread-awareness
     title: Agents see devices other threads have open
     status: maintained
-    prs: [681]
+    prs: [681, 887]
     invariants:
-      - device_list reports devices that other threads have open, separately from the calling thread's own devices.
+      - device_list reports devices that other threads have open, separately from the calling thread's own devices, naming each holding thread and whether it is using the device.
       - device_open without a device id opens a booted device no other thread has open. When every booted device is open elsewhere, it takes one whose holders are not working and that nobody is watching, handing it over (see device-idle-shutdown); otherwise it returns an error naming them instead of taking one over.
-      - Opening another thread's device by id still works. Its quick start warns that another agent may be driving it, unless the device was handed over from an idle thread.
+      - Opening a device another thread is using fails with DeviceHeldError naming that thread unless takeOver is passed (see device-idle-shutdown). When the device stays shared, as with another environment's holder, the quick start names the thread whose agent may be driving it.
     rationale: Several agents share one machine's simulators and emulators. Upstream returns only the calling thread's devices, so an agent could load its own build onto an app another agent was testing.
     implementation_paths:
       - .agents/skills/test-styal-mobile/SKILL.md
@@ -1184,6 +1187,7 @@ features:
       - Turn, working-tree, branch, and pull request diffs order source dependencies first, their tests next, and repository-attributed or recognized generated output last across web, desktop, and mobile review surfaces. A working-tree or branch diff too large to load at once loads its files in that tier order, by path within each tier, since their import lines are not known until they load.
       - Test and generated tiers remain visible, generated files start collapsed, and explicit reader fold choices take precedence over automatic classification.
       - One persisted web preference switches the diff panel and pull request Code tab between relevance and alphabetical order.
+      - Explicit web and desktop sort choices emit bounded client-usage events for the owning environment; default rendering is not counted as a choice and file paths are never reported.
     rationale: Upstream orders files by relevance only in the web pull request Code tab, by name patterns alone, without tier labels, collapsed generated files, or a way back to alphabetical order (upstream #6039). The fork moved that ordering into shared code so turn, working-tree, and branch diffs and mobile review read the same way, and lets repository `linguist-generated` attributes mark generated files.
     implementation_paths:
       - .gitattributes
@@ -1198,6 +1202,7 @@ features:
       - apps/web/src/components/diffs/useReviewFilePatches.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.ts
       - apps/web/src/diffPanelStore.ts
+      - apps/web/src/forkClientUsage.ts
       - packages/shared/src/diffFileOrder.ts
       - packages/shared/src/generatedFiles.ts
     upstream_paths:
@@ -1601,7 +1606,7 @@ features:
       - apps/server/src/cloud/serviceProtocol.ts
       - apps/server/src/device/sshDeviceScript.ts
       - apps/server/src/provider/AntigravityInstallation.ts
-      - apps/server/src/provider/Services/ProviderAuthService.ts
+      - apps/server/src/provider/ProviderAuthService.ts
       - apps/server/src/provider/model-manifest.json
       - apps/server/vite.config.ts
       - apps/web/src/branding.logic.ts
@@ -1704,6 +1709,7 @@ features:
     prs: [840, 859]
     rationale: Maintainers need observed feature adoption to evaluate the cost of retaining fork behavior.
     invariants:
+      - Allowlisted client interactions share one reporting method, a negotiated vocabulary version, and an event-local instrumentation version, with socket-scoped attribution and the paired environment's telemetry opt-out; diff-order selections, opened time explanations, and web refresh requests are counted separately from visible update-notice exposure, with no content or identifiers.
       - Agent browser tools emit one structural feature.used event per public operation, including failures and cancellation, with action, outcome, and duration but no operation arguments or results.
       - Internal metadata reads do not inflate agent usage, and telemetry failures never change the operation's result.
       - Device panel operations and public agent device tools record bounded usage and outcomes without names, device identifiers, arguments, or images; discovery is distinct from adoption and environment forwarding is not counted again as a manual action.
@@ -1723,6 +1729,8 @@ features:
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/ws.ts
       - apps/server/vite.config.ts
+      - apps/web/src/forkClientUsage.ts
+      - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/server/src/telemetry/AnalyticsService.ts
     tests:
@@ -1732,7 +1740,9 @@ features:
       - apps/server/src/mcp/McpDeviceToolkit.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
       - apps/server/src/telemetry/BuildContext.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/web/src/components/chat/MentionedTimeChip.test.tsx
     upstream:
       status: tracking
       tracking:
@@ -1802,7 +1812,7 @@ features:
       - apps/mobile/src/features/cloud/publicConfig.test.ts
       - apps/server/src/cli/connect.test.ts
       - apps/server/src/cli/pair.test.ts
-      - apps/server/src/cloud/http.test.ts
+      - apps/server/src/cloud/CloudLink.lifecycle.test.ts
       - apps/server/src/cloud/publicConfig.test.ts
       - apps/web/src/cloud/linkEnvironment.test.ts
       - infra/relay/src/Config.test.ts
@@ -1880,8 +1890,6 @@ features:
     status: maintained
     prs: []
     invariants:
-      - Browser automation failures carry only allowlisted error kinds and network codes across the client boundary; arbitrary causes, messages, URLs, selectors, and evaluated scripts remain excluded from this diagnostic field.
-      - Browser automation failures also carry an allowlisted client step, such as page capture or viewport rendering, so the agent's error names where the client stopped without exposing page content.
       - Release server builds report every Error or Fatal log entry, and every RPC handler defect, as a PostHog `$exception` event through the analytics delivery path, sharing its identity and opt-out.
       - Reports carry only the thrown value and log message, scrubbed of home directories, user names, emails, URL credentials and queries, and token-like strings; log annotations are never sent.
       - Operators can disable reports alone with `T3CODE_ERROR_REPORTING_ENABLED=false`; development servers do not report unless it is set to true.
@@ -1900,7 +1908,6 @@ features:
       - apps/server/src/serverLogger.ts
       - apps/server/src/telemetry/ErrorReporting.ts
       - apps/server/vite.config.ts
-      - apps/web/src/components/preview/previewAutomationErrors.ts
       - packages/contracts/src/previewAutomation.ts
       - packages/shared/src/previewErrorDiagnostics.ts
     upstream_paths:
@@ -1913,7 +1920,6 @@ features:
       - apps/server/src/mcp/PreviewAutomationBroker.test.ts
       - apps/server/src/observability/RpcInstrumentation.test.ts
       - apps/server/src/telemetry/ErrorReporting.test.ts
-      - apps/web/src/components/preview/previewAutomationRequestConsumer.test.ts
       - packages/shared/src/previewErrorDiagnostics.test.ts
     upstream:
       status: unassessed
@@ -1959,7 +1965,7 @@ features:
     status: review-needed
     prs: [31, 773]
     invariants:
-      - The command palette lists the current project's open GitHub issues through the GitHub CLI, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as an inline context chip.
+      - The command palette lists the current project's open GitHub issues through GitHub's API, with `gh` or an environment token supplying the credential, with distinct states for a missing CLI, missing authentication, and no open issues, and choosing one opens a new draft with the issue attached as an inline context chip.
       - The attached issue is an `issue` composer context record carrying the issue's title, body, and comments, so drafts, queued-message edits, copy and paste, sent-message chips, and the provider prompt handle it like any other context kind.
       - The same issue always gets the same context id, so attaching it again does not add a second chip.
       - Messages sent before issues became context records keep showing their trailing issue block as a chip in the web timeline and stay out of copied transcripts.
@@ -1968,6 +1974,7 @@ features:
       - apps/mobile/src/components/ComposerContextSheet.tsx
       - apps/server/src/sourceControl/GitHubSourceControlProvider.ts
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/server/src/sourceControl/gitHubIssues.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/IssueContextChip.tsx
@@ -2082,6 +2089,7 @@ features:
       - PR links in descriptions and comments of any tab beside a thread open another tab beside that thread when the repository is available in its environment; Cmd/Ctrl-click retains browser navigation.
       - Reference resolution is environment-scoped, authorized, and cached without leaking repository context across projects.
     implementation_paths:
+      - apps/server/src/sourceControl/GitHubApi.ts
       - apps/server/src/sourceControl/gitHubReferences.ts
       - apps/server/src/sourceControl/referenceCache.ts
       - apps/web/src/components/ChatMarkdown.tsx
@@ -2225,20 +2233,22 @@ features:
       - Loopback links opened from chat or terminal activity resolve on the environment machine in the integrated browser, unless a Cmd/Ctrl-click asks for the system browser.
       - The browser link preference applies to other web links; choosing the system browser does not redirect loopback development links away from their environment.
       - Unsupported links retain an external-browser path and never strand the user behind an unavailable preview runtime.
+      - A link a terminal opens becomes the user's own server browser tab, not an agent's, so idle cleanup and agent tab limits leave it alone, and it opens in the right panel whatever the floating-preview setting.
     implementation_paths:
       - apps/desktop/src/preview/BrowserSession.ts
       - apps/server/src/preview/TerminalBrowserOpen.ts
       - apps/web/src/components/chat/loopbackLinkPreview.ts
-      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
       - apps/web/src/components/preview/openTerminalLinkInPreview.ts
       - apps/web/src/terminal/ghostty/surface.ts
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/server/src/http.ts
+      - apps/server/src/preview/Manager.ts
       - apps/server/src/terminal/Manager.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
-      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
+      - packages/contracts/src/preview.ts
     tests:
       - apps/desktop/src/preview/BrowserSession.test.ts
       - apps/server/src/preview/TerminalBrowserOpen.test.ts
@@ -2294,11 +2304,13 @@ features:
       - Times without a date take the occurrence nearest to when the message was sent, unless a tense cue in the same sentence ("next", "merged") points the other way and the nearest occurrence is more than three hours on the wrong side.
       - Durations such as "finished in 36 seconds" and single-digit zone-less clocks such as "2:48" are not marked.
       - Timeline labels ending in a punctuation colon retain their clock and explicit zone; extra colon-separated tokens and file line/column references stay unmarked.
+      - Opening a time explanation emits at most one structural client-usage event per mounted chip through the message's environment, without sending the time, timezone, message content, or identifiers.
     implementation_paths:
       - apps/server/src/environment/ServerEnvironment.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/MentionedTimeChip.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/forkClientUsage.ts
       - apps/web/src/markdown-mentioned-times.ts
       - apps/web/src/timestampFormat.ts
       - packages/client-runtime/src/mentionedTimes.ts
@@ -2311,6 +2323,7 @@ features:
       - packages/contracts/src/environment.ts
     tests:
       - apps/server/src/environment/ServerEnvironment.test.ts
+      - apps/web/src/components/chat/MentionedTimeChip.test.tsx
       - apps/web/src/markdown-mentioned-times.test.tsx
       - packages/client-runtime/src/mentionedTimes.test.ts
     upstream:
@@ -2743,12 +2756,10 @@ features:
       - apps/web/src/browser/HostedBrowserWebview.tsx
       - apps/web/src/browser/browserRecording.ts
       - apps/web/src/browser/browserSurfaceStore.ts
-      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
     upstream_paths:
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/HostedBrowserWebview.tsx
       - apps/web/src/browser/browserRecording.ts
-      - apps/web/src/components/preview/PreviewAutomationHosts.tsx
     tests:
       - apps/desktop/src/preview/Manager.test.ts
       - apps/web/src/browser/browserRecording.test.ts
@@ -2770,7 +2781,7 @@ features:
     prs: [193, 197, 198, 217, 833, 841]
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback. Presentation accounts for independent desktop window and page zoom, including zoom changes, so the requested CSS viewport fits its visible and captured surface.
-      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots capture the displayed surface rather than tiling it, and annotation crops and automation clicks are given in logical page coordinates and mapped into that surface.
+      - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots the user takes capture the displayed surface rather than tiling it, and annotation crops are given in logical page coordinates and mapped into that surface. Agent input and captures on a desktop tab follow upstream's server-driven browser, which does not map them through the fitted scale.
       - Floating browser and device previews remain visible but do not send pointer or keyboard input to their page or device; dragging anywhere on the view-only surface moves the frame, double-clicking it opens that source in the right panel, and its frame controls remain usable.
     implementation_paths:
       - .github/workflows/fork-ci.yml
@@ -3005,7 +3016,7 @@ features:
   - id: provider-auto-updates
     title: Install canary-verified provider updates automatically
     status: maintained
-    prs: []
+    prs: [868]
     invariants:
       - With automatic provider updates and provider update checks on (both default on), a non-dev server installs a provider version in the background only when an `autoUpdates` entry in the matching compatibility policy of a manifest fetched from main in the last two days names it, for the installation's own npm package, verified on a published styal build the server's code contains (a later nightly, or a stable release of a later version; a stable or same build itself). It installs the newest such version and never anything newer. The bundled manifest never authorizes an automatic install.
       - Only installers that can pin a version take part, and they install exactly the verified version; native self-updaters and Homebrew are never run in the background.
@@ -3014,27 +3025,39 @@ features:
       - Every six hours and on demand, the provider canary workflow verifies each new release against the published stable and nightly styal builds, checked out from their release tags, and records a version with the build it passed on only after real turns (tool use, checkpoint, resume, interrupt, approval, rewind, native subagent, restart) pass, retrying a failed run once. It proposes the manifest change as a pull request to main. The open canary pull request's own additions are carried over rather than verified again; entries withdrawn from main are not brought back.
       - The canary keeps one "Provider canary status" issue with at most one problem per provider and kind (failed, blocked, skipped) plus failed jobs. A problem clears only when a later run checks that provider again. The issue gets a comment only when a new problem appears or every problem clears, and closes when every check passes.
       - Clients show the setting only as on for environments that advertise the `providerAutoUpdates` capability.
+      - Provider snapshots carry the version automatic updates would install (`compatibilityAdvisory.verifiedVersion`), from the same recent-manifest rule, and omit it when none applies.
+      - The web provider update prompt leaves out a provider on an environment with automatic updates on when that provider has a verified version, passes its health check, and its installer can pin a version, including when the newest release is not verified yet; it still appears in Settings → Providers. Other providers still get the prompt.
+      - Web and mobile provider settings say when the latest release is newer than the verified version.
       - The web Providers settings page links to the provider update check and automatic update rows in Settings → General, which stay in General.
     rationale: Upstream keeps provider updates user-initiated (closed issue 2993) and its open background-install pull request has no tested-version gate. styal updates providers for users by default, so every automatic install is limited to a release the canary verified.
     implementation_paths:
       - .github/workflows/provider-canary.yml
+      - apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx
       - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
+      - apps/mobile/src/features/settings/environment-maintenance.ts
       - apps/server/scripts/verify-provider-live.ts
       - apps/server/src/environment/ServerEnvironment.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/ProviderAutoUpdater.ts
+      - apps/server/src/provider/ProviderRegistry.ts
       - apps/server/src/provider/providerCompatibility.ts
       - apps/server/src/provider/providerMaintenanceRunner.ts
       - apps/server/src/server.ts
+      - apps/web/src/components/ProviderUpdateLaunchNotification.environments.ts
+      - apps/web/src/components/ProviderUpdateLaunchNotification.logic.ts
+      - apps/web/src/components/ProviderUpdatePrimaryNotification.tsx
       - apps/web/src/components/settings/ProviderSettingsPanel.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
+      - apps/web/src/components/settings/providerStatus.ts
       - packages/contracts/src/environment.ts
+      - packages/contracts/src/server.ts
       - packages/contracts/src/settings.ts
       - scripts/provider-canary.ts
     upstream_paths:
       - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
       - apps/server/src/environment/ServerEnvironment.ts
       - apps/server/src/provider/ModelManifest.ts
+      - apps/server/src/provider/ProviderRegistry.ts
       - apps/server/src/provider/model-manifest.json
       - apps/server/src/provider/providerCompatibility.ts
       - apps/server/src/provider/providerMaintenanceRunner.ts
@@ -3043,12 +3066,16 @@ features:
       - apps/web/src/components/settings/ProviderSettingsPanel.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - packages/contracts/src/environment.ts
+      - packages/contracts/src/server.ts
       - packages/contracts/src/settings.ts
     tests:
+      - apps/mobile/src/features/settings/environment-maintenance.test.ts
       - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/ProviderAutoUpdater.test.ts
       - apps/server/src/provider/providerCompatibility.test.ts
       - apps/server/src/provider/providerMaintenanceRunner.test.ts
+      - apps/web/src/components/ProviderUpdateLaunchNotification.logic.test.ts
+      - apps/web/src/components/settings/providerStatus.test.ts
       - scripts/provider-canary.test.ts
     upstream:
       status: tracking
@@ -3140,16 +3167,16 @@ features:
       - A restart keeps the last known windows from the provider status cache until a live probe replaces them.
       - Signing out of Codex clears its windows instead of keeping the previous account's windows as a failed read.
     implementation_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/provider/providerStatusCache.ts
     upstream_paths:
-      - apps/server/src/provider/Layers/CodexProvider.ts
+      - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/provider/providerStatusCache.ts
       - apps/server/src/provider/providerUsageLimits.ts
       - packages/contracts/src/providerUsageLimits.ts
       - packages/shared/src/usageLimits.ts
     tests:
-      - apps/server/src/provider/Layers/ProviderRegistry.test.ts
+      - apps/server/src/provider/ProviderRegistry.test.ts
       - apps/server/src/provider/providerStatusCache.test.ts
       - apps/server/src/provider/providerUsageLimits.test.ts
     upstream:
@@ -3334,7 +3361,7 @@ features:
     status: maintained
     prs: [103, 288]
     invariants:
-      - Repository-relative image references in GitHub pull request descriptions and comments resolve against the pull request head, not the local checkout, through a bounded short-lived same-origin asset URL read with the environment's authorized GitHub CLI.
+      - Repository-relative image references in GitHub pull request descriptions and comments resolve against the pull request head, not the local checkout, through a bounded short-lived same-origin asset URL read through GitHub's API with the environment's GitHub credential.
       - Qualified GitHub URLs, including blob, raw, asset-branch and attachment URLs, take upstream's `github-media` path; external and unsupported image URLs keep the default resolution.
       - Relative repository images render through the shared Markdown asset image, so they open in the pull request's image gallery like every other description image.
     rationale: Upstream resolves a relative image in a pull request body against the local workspace, which shows a missing or different file whenever the pull request head is not checked out there.
@@ -3769,17 +3796,18 @@ features:
       retire_when: Upstream distinguishes replacement-turn handoffs from same-turn follow-ups and settles both without false ready or Working states.
 
   - id: server-restart-continuation-note
-    title: Show where a thread continued after a server restart
+    title: Response continuity and timing
     status: review-needed
-    prs: [515, 744, 802, 877]
+    prs: [515, 744, 802, 877, 889, 892]
     invariants:
       - Restart recovery records a durable server-created continuation message and an explicit restartContinuationOfRunId link; retries do not dispatch the same recovery message twice and newer user work takes precedence.
       - Web and mobile render the recovery prompt as a standalone note inside the response the restart cut short, preserving one final answer and one worked duration with the outage excluded. A continuation of a completed or waiting run, prompted only about its cancelled background work, starts its own response under the note and leaves the earlier final answer visible; unrelated background wake continuations remain separate.
       - The standalone restart divider reads Server restarted, remaining accurate after the continued response finishes.
       - While a linked replacement run is working, earlier assistant footers stay hidden and tools remain scoped to their own run; a new user message starts a separate response.
-      - The live conversation timer on web and mobile, and the working time in thread lists, include work before each linked restart and exclude outage gaps, matching completed or stopped response duration, including quiet work through its recorded end time; new user prompts start a fresh timer. Restart continuations carry this as a work start moved later by each outage, and later wakes keep it.
+      - The live conversation timer on web and mobile measures the current response, includes work before each linked restart, and excludes outage gaps, matching completed or stopped response duration. Background wakes start separate response clocks; thread lists retain the task-wide clock carried across wakes. Both clocks include quiet work through its recorded end time, and new user prompts start fresh timers.
       - Each prompt starts at most one response. Separate background responses exclude earlier response work and idle time; collapsed or start-positioned tool rows retain completion timing boundaries, and stopped responses include the full duration of overlapping tools.
       - Recovery closes dead streaming messages and unfinished provider work using their last recorded update times, while event and run lifecycle timestamps still record when recovery occurred.
+      - A prompted continuation of a turn the restart cut mid-way tells the agent that the styal server restarted and interrupted the turn, so a killed command is not mistaken for the command's own failure; a settled turn's continuation carries only its cancelled background-work note. Codex resumes a cut turn natively and receives no prompt unless the turn also lost background work.
     rationale: Upstream V2 durable continuation messages and explicit run lineage supersede V1 restart activity events and their inferred turn linkage. The fork retains the note presentation, linked response folding, outage exclusion, and mobile footer behavior against canonical V2 recovery state.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
@@ -3860,8 +3888,10 @@ features:
       - Manual update instructions reserve service update for detected legacy services; absent update capability is treated as an unknown installation, with serve qualified for terminal launches and service or container users directed to their existing deployment method.
       - Foreground start commands are labeled as starts and preserve guidance to reuse the existing data directory and startup options rather than implying that launching another process updates a running server.
       - A foreground server that proves it runs from a global npm install of `@styal/cli` (the prefix's `bin/styal` resolves to the running launcher, and the platform executable matches the launcher version) advertises that prefix, and its instructions copy `npm install --global --prefix '<prefix>' @styal/cli@<version>`; servers started by npx, pnpm dlx, or bunx get `serve` through the same runner, and unproven installs, including Windows, keep the npx `serve` start command. The service migration command does not change with the installation.
-      - In-app server updates check the server's host activity first; idle servers update without a dialog, while active or waiting threads, running terminal commands, or a failed check require confirmation, and cancelling leaves the server running.
-      - Mobile environment updates check host activity the same way but always confirm, in a sheet that lists the affected threads by project; dismissing the sheet cancels the update.
+      - In-app server updates immediately open a cancellable dialog while checking host activity, with Update disabled until the check finishes. Idle servers then update automatically, while active or waiting threads, running terminal commands, or a failed check require confirmation; cancelling leaves the server running and late check results cannot reopen the dialog.
+      - Mobile environment updates check host activity while the Update row shows progress, then always confirm in a sheet that lists the affected threads by project; dismissing the sheet cancels the update.
+      - Activity checks skip detailed continuation recovery reads for idle or waiting threads and projects with continuation disabled, respecting project overrides before loading thread recovery state while retaining settled threads with live background work.
+      - Overlapping host activity checks within a client share the in-flight request per environment, including retries after cancelling an update dialog; completion or failure clears the shared request so later checks read fresh activity.
       - When thread continuation is requested, the confirmation says a thread will continue only if the same selection the continuation step uses includes it; every other active thread is described as interrupted.
       - Continuation after an update also covers settled threads whose background work (monitors, background shells, subagents) is live; after the restart they receive a prompt to restart that work instead of a promptless turn continuation.
       - A turn the restart cut short is recorded as interrupted before its continuation turn starts, rather than closed as completed when the resumed session reports ready.
@@ -3873,11 +3903,14 @@ features:
       - apps/server/src/cli/invocation.ts
       - apps/server/src/environment/HostActivity.ts
       - apps/server/src/serverRuntimeStartup.ts
+      - apps/web/src/components/ConfirmDialogHost.tsx
       - apps/web/src/components/ServerUpdateAction.logic.ts
       - apps/web/src/components/ServerUpdateAction.tsx
+      - apps/web/src/confirmDialog.ts
       - apps/web/src/versionSkew.ts
       - docs/user/background-service.md
       - docs/user/updating.md
+      - packages/client-runtime/src/state/server.ts
       - packages/shared/src/hostActivity.ts
     upstream_paths:
       - apps/server/src/cli/invocation.ts
@@ -3893,9 +3926,12 @@ features:
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
       - apps/server/src/orchestration-v2/RestartContinuation.test.ts
       - apps/server/src/serverRuntimeStartup.test.ts
+      - apps/web/src/components/ConfirmDialogHost.test.tsx
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/components/ServerUpdateAction.test.tsx
+      - apps/web/src/confirmDialog.test.ts
       - apps/web/src/versionSkew.test.ts
+      - packages/client-runtime/src/state/hostActivity.test.ts
       - packages/shared/src/hostActivity.test.ts
     upstream:
       status: partial
@@ -4395,6 +4431,28 @@ features:
         - https://github.com/pingdotgg/t3code/pull/16172
       retire_when: Upstream undoes thread actions from focused text fields without taking text undo after edits or held-key repeats.
 
+  - id: thread-handoff-pending-work
+    title: Show pending context handoffs as working immediately
+    status: maintained
+    prs: []
+    invariants:
+      - Sending a message on an existing idle thread moves it into the Working section while context handoff dispatch is pending on web, desktop, and mobile.
+      - A rejected send restores the previous thread presentation; an accepted send retains pending work until the corresponding shell update arrives.
+      - Sending another message preserves live run status and pending approvals rather than replacing them with pending handoff state.
+    implementation_paths:
+      - packages/client-runtime/src/state/threadCommands.ts
+      - packages/client-runtime/src/state/threadLifecycle.ts
+    upstream_paths:
+      - packages/client-runtime/src/state/threadCommands.ts
+      - packages/client-runtime/src/state/threadLifecycle.ts
+    tests:
+      - packages/client-runtime/src/state/threadCommands.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/e3b35d1b2440b104f0bc2e357377c348121234dd/packages/client-runtime/src/state/threadCommands.ts
+      retire_when: Upstream presents pending sends as working before handoff dispatch finishes, with rejection rollback and shell reconciliation on every client.
+
   - id: thread-lifecycle-analytics
     title: Record thread lifecycle analytics
     status: maintained
@@ -4599,23 +4657,23 @@ features:
       - Clients connected to a server that reports only the next expiry keep showing the next-expiry summary.
     implementation_paths:
       - apps/mobile/src/features/usage/UsageLimitsSection.tsx
-      - apps/server/src/provider/Layers/claudeResetCredits.ts
-      - apps/server/src/provider/Layers/codexUsageLimits.ts
+      - apps/server/src/provider/claudeResetCredits.ts
+      - apps/server/src/provider/codexUsageLimits.ts
       - apps/server/src/usage/cliproxyApi.ts
       - apps/web/src/components/usage/UsageLimitsPooled.tsx
       - packages/contracts/src/providerUsageLimits.ts
       - packages/shared/src/usageLimits.ts
     upstream_paths:
       - apps/mobile/src/features/usage/UsageLimitsSection.tsx
-      - apps/server/src/provider/Layers/claudeResetCredits.ts
-      - apps/server/src/provider/Layers/codexUsageLimits.ts
+      - apps/server/src/provider/claudeResetCredits.ts
+      - apps/server/src/provider/codexUsageLimits.ts
       - apps/server/src/usage/cliproxyApi.ts
       - apps/web/src/components/usage/UsageLimitsPooled.tsx
       - packages/contracts/src/providerUsageLimits.ts
       - packages/shared/src/usageLimits.ts
     tests:
-      - apps/server/src/provider/Layers/claudeResetCredits.test.ts
-      - apps/server/src/provider/Layers/codexUsageLimits.test.ts
+      - apps/server/src/provider/claudeResetCredits.test.ts
+      - apps/server/src/provider/codexUsageLimits.test.ts
       - apps/server/src/usage/cliproxyApi.test.ts
       - packages/shared/src/usageLimits.test.ts
     upstream:
@@ -4629,16 +4687,20 @@ features:
     status: maintained
     prs: [858]
     invariants:
+      - Visible notices emit feature.exposed and explicit refresh clicks emit feature.used through one supported paired environment with the shared opt-out; skipped or failed exposure reports can retry on a later sighting, and a blocked reload allows another refresh after two seconds. Polls, hidden sidebars, deployment identifiers, and composer content are not collected, and telemetry cannot prevent a refresh.
       - Production browser clients compare the loaded build with a fresh manifest from the page's own origin, independently of paired environments; every build, including rebuilds of one commit, has a distinct identifier.
       - A changed build shows a manual refresh action in the sidebar without interrupting work; a rollback to the loaded build clears the notice, while failed or malformed checks preserve the last known state.
       - Checks pause while hidden or offline, resume on visibility, focus, or connectivity changes, and never overlap; Electron keeps its native updater and development builds keep HMR.
     implementation_paths:
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/web/public/_headers
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/WebBuildUpdateProvider.tsx
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/src/components/sidebar/SidebarWebUpdatePill.tsx
+      - apps/web/src/forkClientUsage.ts
       - apps/web/src/webBuildUpdate.ts
+      - apps/web/src/webBuildUpdateUsage.ts
       - apps/web/vite.config.ts
       - apps/web/vite/buildMetadata.ts
     upstream_paths:
@@ -4646,12 +4708,63 @@ features:
       - apps/web/src/components/sidebar/SidebarUpdatePill.tsx
       - apps/web/vite.config.ts
     tests:
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/webBuildUpdate.test.ts
+      - apps/web/src/webBuildUpdateUsage.test.ts
     upstream:
       status: tracking
       tracking:
         - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
       retire_when: Upstream detects new static web deployments from the page's origin and offers a manual refresh independently of desktop and paired-server updates.
+
+  - id: workflow-run-watch
+    title: Wake agents when a watched CI workflow run completes
+    status: maintained
+    prs: [896]
+    invariants:
+      - watch_workflow_run reads the GitHub Actions run first; a run that already completed is reported to the agent instead of watched, and an unreadable run is an error.
+      - The server reads each watched run every two minutes and wakes the agent once when it completes, naming its conclusion and the jobs of the latest attempt that did not pass, then ends the watch in the same step.
+      - A watched run keeps the thread in the Working list as a monitor background task until the watch ends.
+      - Settling, archiving, or stopping the thread ends its workflow run watches, and a finish read before that changes nothing and wakes no one. Subagents and settled or archived threads cannot start one.
+      - Eight failed reads in a row end the watch with a wake saying so; a host rate limit only pauses it.
+      - Each tool call and each watch end the server sees records one feature.used event with fixed categories (call result or failure reason; end reason, conclusion category and watched minutes), never run IDs, repositories, URLs, or workflow and job names.
+    rationale: Agents waiting on CI outside a pull request (after a merge, deploys, releases, dispatched workflows) otherwise poll or hold a `gh run watch` process, which only some providers can wait on and which a server restart kills.
+    implementation_paths:
+      - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
+      - apps/server/src/mcp/toolkits/pullRequests/tools.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/WorkflowRunWatchReactor.ts
+      - apps/server/src/orchestration-v2/workflowRunWatch.ts
+      - apps/server/src/provider/RuntimeInstructions.ts
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
+      - packages/client-runtime/src/operations/commands.ts
+      - packages/contracts/src/threadPullRequest.ts
+      - packages/shared/src/orchestrationV2PendingBackgroundWork.ts
+    upstream_paths:
+      - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
+      - apps/server/src/mcp/toolkits/pullRequests/tools.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/pullRequest/GitHubPullRequestCli.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - packages/client-runtime/src/operations/commands.ts
+      - packages/contracts/src/orchestrationV2.ts
+      - packages/contracts/src/threadPullRequest.ts
+      - packages/shared/src/orchestrationV2PendingBackgroundWork.ts
+    tests:
+      - apps/server/src/mcp/toolkits/pullRequests/handlers.test.ts
+      - apps/server/src/orchestration-v2/ThreadStop.test.ts
+      - apps/server/src/orchestration-v2/runtimeLayer.test.ts
+      - apps/server/src/orchestration-v2/workflowRunWatch.test.ts
+      - apps/server/src/telemetry/AnalyticsService.test.ts
+      - packages/shared/src/orchestrationV2PendingBackgroundWork.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream wakes agents when a CI workflow run outside a watched pull request completes, without a provider-held watcher process.
 
   - id: workspace-path-presentation
     title: Keep workspace file paths concise and actionable

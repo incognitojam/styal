@@ -406,6 +406,22 @@ export function createThreadEnvironmentAtoms<R, E>(
   return {
     ...commands,
     snapshotAtom: optimistic.snapshotAtom,
+    startTurn: optimistic.wrap(commands.startTurn, (thread, _input, now) =>
+      thread.activityRunStatus != null || thread.activeRunId !== null
+        ? thread
+        : {
+            ...thread,
+            // Dispatch prepares context handoffs before committing the new run.
+            // Keep the thread working through that wait without inventing a run id.
+            status: "starting",
+            activityRunStatus: "starting",
+            activityRunStartedAt: now,
+            settledOverride: null,
+            settledAt: null,
+            snoozedAt: null,
+            snoozedUntil: null,
+          },
+    ),
     settle: optimistic.wrap(commands.settle, (thread, _input, now, accepted) =>
       !accepted &&
       (thread.pendingRuntimeRequest !== null ||

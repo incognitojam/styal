@@ -1,18 +1,27 @@
 import { act, type ReactElement } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { AuthSessionState, type EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import {
+  completeConfirmDialogClose,
+  readConfirmDialogState,
+  registerConfirmDialogHost,
+  resetConfirmDialogForTests,
+  respondToConfirmDialog,
+} from "~/confirmDialog";
 
 const testState = vi.hoisted(() => ({
   updateServer: vi.fn(),
   hostActivity: vi.fn(),
-  confirm: vi.fn(),
   toast: vi.fn(),
   copy: vi.fn(),
   continueThreadsAfterServerUpdate: false,
+  session: null as AsyncResult.AsyncResult<AuthSessionState, Error> | null,
+  sessionAtom: Symbol("session"),
 }));
 
 vi.mock("~/hooks/useCopyToClipboard", () => ({
@@ -24,15 +33,19 @@ vi.mock("~/hooks/useSettings", () => ({
     selector: (settings: { continueThreadsAfterServerUpdate: boolean }) => unknown,
   ) => selector({ continueThreadsAfterServerUpdate: testState.continueThreadsAfterServerUpdate }),
 }));
+vi.mock("@effect/atom-react", () => ({ useAtomValue: () => testState.session }));
+vi.mock("~/rpc/atomRegistry", () => ({
+  appAtomRegistry: { get: () => testState.session },
+}));
+vi.mock("~/state/session", () => ({
+  environmentSession: { sessionStateAtom: () => testState.sessionAtom },
+}));
 vi.mock("~/state/server", () => ({
   serverEnvironment: { updateServer: "updateServer", hostActivity: "hostActivity" },
 }));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: string) =>
     command === "hostActivity" ? testState.hostActivity : testState.updateServer,
-}));
-vi.mock("~/confirmDialog", () => ({
-  requestConfirmDialog: testState.confirm,
 }));
 vi.mock("./ui/toast", () => ({
   toastManager: { add: testState.toast },
@@ -45,6 +58,8 @@ import {
   type ServerUpdateTarget,
 } from "./ServerUpdateAction";
 
+const decodeSessionState = Schema.decodeUnknownSync(AuthSessionState);
+
 type ActionElement = ReactElement<{
   readonly onClick?: () => void;
 }>;
@@ -56,6 +71,14 @@ function renderAction(): ActionElement {
     selfUpdate: "boot-service",
     targetVersion: "0.0.31",
   }) as ActionElement;
+}
+
+function deferred<A>() {
+  let resolve!: (value: A) => void;
+  const promise = new Promise<A>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
 }
 
 async function flushPromises(): Promise<void> {
@@ -71,17 +94,89 @@ const idleActivity = {
   environmentsUsingDevices: 0,
 };
 
+const legacyAuth = {
+  policy: "remote-reachable",
+  bootstrapMethods: ["one-time-token"],
+  sessionMethods: ["bearer-access-token"],
+  sessionCookieName: "t3_session",
+} as const;
+
+const currentSession = {
+  authenticated: true,
+  scopes: ["environment:maintain"],
+  auth: {
+    ...legacyAuth,
+    serverUpdateScope: "environment:maintain",
+  },
+} as const satisfies AuthSessionState;
+
 describe("ServerUpdateAction", () => {
   beforeEach(() => {
     testState.updateServer.mockReset();
     testState.hostActivity.mockReset();
     testState.hostActivity.mockResolvedValue(AsyncResult.success(idleActivity));
-    // No confirm-dialog host is mounted, which the component treats as consent.
-    testState.confirm.mockReset();
-    testState.confirm.mockReturnValue(undefined);
+    resetConfirmDialogForTests();
     testState.toast.mockReset();
     testState.copy.mockReset();
     testState.continueThreadsAfterServerUpdate = false;
+    testState.session = AsyncResult.success(currentSession);
+  });
+
+  it.each([
+    { serverUpdateScope: undefined, scopes: ["orchestration:operate"], allowed: true },
+    { serverUpdateScope: undefined, scopes: ["orchestration:read"], allowed: false },
+    {
+      serverUpdateScope: "environment:maintain",
+      scopes: ["orchestration:operate"],
+      allowed: false,
+    },
+    {
+      serverUpdateScope: "environment:maintain",
+      scopes: ["environment:maintain"],
+      allowed: true,
+    },
+  ] as const)(
+    "uses the advertised update scope $serverUpdateScope with grant $scopes",
+    async ({ serverUpdateScope, scopes, allowed }) => {
+      testState.session = AsyncResult.success(
+        decodeSessionState({
+          ...currentSession,
+          scopes,
+          auth: {
+            ...legacyAuth,
+            ...(serverUpdateScope === undefined ? {} : { serverUpdateScope }),
+          },
+        }),
+      );
+      testState.updateServer.mockResolvedValue(
+        AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+      );
+
+      renderAction().props.onClick?.();
+      await flushPromises();
+
+      expect(testState.updateServer).toHaveBeenCalledTimes(allowed ? 1 : 0);
+    },
+  );
+
+  it("keeps a known grant usable while the session refreshes", async () => {
+    testState.session = AsyncResult.waiting(AsyncResult.success(currentSession));
+    testState.updateServer.mockResolvedValue(
+      AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+    );
+
+    renderAction().props.onClick?.();
+    await flushPromises();
+
+    expect(testState.updateServer).toHaveBeenCalledOnce();
+  });
+
+  it("does not dispatch an update after maintenance access is removed", async () => {
+    const action = renderAction();
+    testState.session = AsyncResult.success({ ...currentSession, scopes: [] });
+    action.props.onClick?.();
+    await flushPromises();
+    expect(testState.updateServer).not.toHaveBeenCalled();
   });
 
   it("reports success only after the shared update flow reconnects", async () => {
@@ -177,6 +272,7 @@ describe("ServerUpdateAction", () => {
   });
 
   it("updates an idle server without asking", async () => {
+    registerConfirmDialogHost();
     testState.updateServer.mockResolvedValue(
       AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
     );
@@ -184,23 +280,86 @@ describe("ServerUpdateAction", () => {
     renderAction().props.onClick?.();
     await flushPromises();
 
-    expect(testState.confirm).not.toHaveBeenCalled();
+    expect(readConfirmDialogState().status).toBe("idle");
     expect(testState.updateServer).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens immediately and prevents updates until running work has been checked", async () => {
+    registerConfirmDialogHost();
+    const result = AsyncResult.success({ ...idleActivity, activeSessions: 1 });
+    const activity = deferred<typeof result>();
+    testState.hostActivity.mockReturnValue(activity.promise);
+    testState.updateServer.mockResolvedValue(
+      AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+    );
+
+    const action = renderAction();
+    action.props.onClick?.();
+    action.props.onClick?.();
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "confirming",
+      loading: true,
+      message: "Update the Test server?\nChecking for running work…",
+    });
+    expect(testState.hostActivity).toHaveBeenCalledTimes(1);
+    respondToConfirmDialog(true);
+    await flushPromises();
+    expect(testState.updateServer).not.toHaveBeenCalled();
+
+    activity.resolve(result);
+    await flushPromises();
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "confirming",
+      message: expect.stringContaining("1 thread will be interrupted."),
+    });
+    expect(readConfirmDialogState()).not.toHaveProperty("loading");
+    respondToConfirmDialog(true);
+    await flushPromises();
+    expect(testState.updateServer).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a pending check immediately and ignores its result after a retry", async () => {
+    registerConfirmDialogHost();
+    const result = AsyncResult.success(idleActivity);
+    const activity = deferred<typeof result>();
+    testState.hostActivity
+      .mockReturnValueOnce(activity.promise)
+      .mockResolvedValue(AsyncResult.success({ ...idleActivity, activeSessions: 2 }));
+    const action = renderAction();
+    action.props.onClick?.();
+    respondToConfirmDialog(false);
+    await flushPromises();
+    completeConfirmDialogClose();
+    expect(readConfirmDialogState().status).toBe("idle");
+
+    action.props.onClick?.();
+    await flushPromises();
+    activity.resolve(result);
+    await flushPromises();
+    expect(readConfirmDialogState()).toMatchObject({
+      status: "confirming",
+      message: expect.stringContaining("2 threads will be interrupted."),
+    });
+    expect(testState.updateServer).not.toHaveBeenCalled();
+    respondToConfirmDialog(false);
+    await flushPromises();
   });
 
   it("keeps running work when the user cancels the confirmation", async () => {
     testState.hostActivity.mockResolvedValue(
       AsyncResult.success({ ...idleActivity, activeSessions: 1 }),
     );
-    testState.confirm.mockResolvedValue(false);
+    registerConfirmDialogHost();
 
     renderAction().props.onClick?.();
     await flushPromises();
 
-    expect(testState.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("1 thread will be interrupted."),
-      { confirmLabel: "Update" },
-    );
+    expect(readConfirmDialogState()).toMatchObject({
+      message: expect.stringContaining("1 thread will be interrupted."),
+      confirmLabel: "Update",
+    });
+    respondToConfirmDialog(false);
+    await flushPromises();
     expect(testState.updateServer).not.toHaveBeenCalled();
   });
 
@@ -208,12 +367,14 @@ describe("ServerUpdateAction", () => {
     testState.hostActivity.mockResolvedValue(
       AsyncResult.success({ ...idleActivity, terminalsRequiringConfirmation: 2 }),
     );
-    testState.confirm.mockResolvedValue(true);
+    registerConfirmDialogHost();
     testState.updateServer.mockResolvedValue(
       AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
     );
 
     renderAction().props.onClick?.();
+    await flushPromises();
+    respondToConfirmDialog(true);
     await flushPromises();
 
     expect(testState.updateServer).toHaveBeenCalledTimes(1);
@@ -221,15 +382,17 @@ describe("ServerUpdateAction", () => {
 
   it("asks before updating when activity cannot be checked", async () => {
     testState.hostActivity.mockResolvedValue(AsyncResult.failure(Cause.fail("unavailable")));
-    testState.confirm.mockResolvedValue(false);
+    registerConfirmDialogHost();
 
     renderAction().props.onClick?.();
     await flushPromises();
 
-    expect(testState.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("Could not check the Test server for running work."),
-      { confirmLabel: "Update" },
-    );
+    expect(readConfirmDialogState()).toMatchObject({
+      message: expect.stringContaining("Could not check the Test server for running work."),
+      confirmLabel: "Update",
+    });
+    respondToConfirmDialog(false);
+    await flushPromises();
     expect(testState.updateServer).not.toHaveBeenCalled();
   });
 
@@ -317,8 +480,7 @@ describe("ServerUpdatesAction", () => {
     testState.updateServer.mockReset();
     testState.hostActivity.mockReset();
     testState.hostActivity.mockResolvedValue(AsyncResult.success(idleActivity));
-    testState.confirm.mockReset();
-    testState.confirm.mockReturnValue(undefined);
+    resetConfirmDialogForTests();
     testState.toast.mockReset();
   });
   afterEach(async () => {
@@ -397,7 +559,7 @@ describe("ServerUpdatesAction", () => {
   });
 
   it("asks once for desktop machines and cancels the entire batch", async () => {
-    testState.confirm.mockResolvedValue(false);
+    registerConfirmDialogHost();
     const button = await mount(
       targets.map((target, index) =>
         index < 2 ? { ...target, selfUpdate: "desktop-managed", desktopAppUpdate: true } : target,
@@ -407,10 +569,11 @@ describe("ServerUpdatesAction", () => {
       button.props.onClick();
     });
 
-    expect(testState.confirm).toHaveBeenCalledTimes(1);
-    expect(testState.confirm).toHaveBeenCalledWith(expect.stringContaining("Laptop, Office"), {
+    expect(readConfirmDialogState()).toMatchObject({
+      message: expect.stringContaining("Laptop, Office"),
       confirmLabel: "Update",
     });
+    await act(async () => respondToConfirmDialog(false));
     expect(testState.updateServer).not.toHaveBeenCalled();
     expect(button.props.disabled).toBe(false);
   });
@@ -419,7 +582,7 @@ describe("ServerUpdatesAction", () => {
     testState.hostActivity
       .mockResolvedValueOnce(AsyncResult.success(idleActivity))
       .mockResolvedValueOnce(AsyncResult.success({ ...idleActivity, activeSessions: 2 }));
-    testState.confirm.mockResolvedValue(true);
+    registerConfirmDialogHost();
     testState.updateServer.mockResolvedValue(success);
     const button = await mount();
     await act(async () => {
@@ -427,11 +590,12 @@ describe("ServerUpdatesAction", () => {
     });
 
     expect(testState.hostActivity).toHaveBeenCalledTimes(2);
-    expect(testState.confirm).toHaveBeenCalledTimes(1);
-    expect(testState.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("2 threads will be interrupted."),
-      { confirmLabel: "Update" },
-    );
+    expect(readConfirmDialogState()).toMatchObject({
+      message: expect.stringContaining("2 threads will be interrupted."),
+      confirmLabel: "Update",
+    });
+    expect(testState.updateServer).not.toHaveBeenCalled();
+    await act(async () => respondToConfirmDialog(true));
     expect(testState.updateServer).toHaveBeenCalledTimes(2);
   });
 });

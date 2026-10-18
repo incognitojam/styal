@@ -1115,9 +1115,7 @@ describe("V2 continued response working clock", () => {
     expect(Date.parse(iso(45)) - Date.parse(effective!)).toBe(25 * 60_000);
   });
 
-  it("uses a stamped work start as is because the server already moved it past outages", () => {
-    // The server stamps continuations and later wakes with the start of the
-    // work they continue, moved later by each restart outage.
+  it("times a background wake separately from the work it follows", () => {
     const wake = RunId.make("wake");
     const continued = {
       ...projection,
@@ -1133,6 +1131,57 @@ describe("V2 continued response working clock", () => {
     ).toBe(iso(20));
     expect(
       continuedResponseWorkStartedAt({ startedAt: iso(20), runId: wake, projection: continued }),
+    ).toBe(iso(50));
+  });
+
+  it("excludes previous responses and monitor waits when a wake is restarted", () => {
+    const wake = RunId.make("wake");
+    const recovery = RunId.make("recovery");
+    const effective = continuedResponseWorkStartedAt({
+      startedAt: iso(30),
+      runId: recovery,
+      projection: {
+        runs: [
+          { ...run(first, 0), status: "completed", completedAt: at(9) },
+          { ...run(wake, 20), status: "cancelled", completedAt: at(50), workStartedAt: at(0) },
+          { ...run(recovery, 50, wake), workStartedAt: at(30) },
+        ],
+        turnItems: [item(first, 9), item(wake, 25)],
+      },
+    });
+    expect(effective).toBe(iso(45));
+    expect(Date.parse(iso(55)) - Date.parse(effective!)).toBe(10 * 60_000);
+  });
+
+  it.each(["completed", "waiting"] as const)(
+    "starts a separate response when recovery follows a %s run",
+    (status) => {
+      expect(
+        continuedResponseWorkStartedAt({
+          startedAt: iso(20),
+          runId: second,
+          projection: {
+            runs: [
+              { ...run(first, 0), status, completedAt: at(10) },
+              { ...run(second, 20, first), workStartedAt: at(20) },
+            ],
+            turnItems: [item(first, 10)],
+          },
+        }),
+      ).toBe(iso(20));
+    },
+  );
+
+  it("starts a new wake clock while the provider is preparing", () => {
+    expect(
+      continuedResponseWorkStartedAt({
+        startedAt: iso(0),
+        runId: second,
+        projection: {
+          runs: [{ ...run(second, 20), startedAt: null, workStartedAt: at(0) }],
+          turnItems: [],
+        },
+      }),
     ).toBe(iso(20));
   });
 

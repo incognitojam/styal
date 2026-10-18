@@ -5,6 +5,7 @@ import {
   type ExecutionEnvironmentPlatformOs,
   type ProviderDriverKind,
   type ProviderInstanceId,
+  type ServerConfig,
   type ServerProvider,
 } from "@t3tools/contracts";
 import {
@@ -157,6 +158,47 @@ export function collectProviderUpdateCandidates(
   providers: ReadonlyArray<ServerProvider>,
 ): ProviderUpdateCandidate[] {
   return dedupeProvidersByDriver(providers.filter(isProviderUpdateCandidate));
+}
+
+/** Whether the environment installs verified provider updates in the background. */
+export function environmentAutoUpdatesProviders(
+  config: Pick<ServerConfig, "environment" | "settings"> | null,
+): boolean {
+  return (
+    config?.environment.capabilities.providerAutoUpdates === true &&
+    config.settings.enableProviderUpdateChecks &&
+    config.settings.autoUpdateProviders
+  );
+}
+
+/**
+ * Whether the background updater looks after `provider`: a verified version
+ * is known and the provider's own installer can install it. Mirrors
+ * `decideProviderAutoUpdate` on the server.
+ */
+function isAutoUpdatedProvider(provider: ServerProvider): boolean {
+  return (
+    provider.status !== "error" &&
+    provider.compatibilityAdvisory?.verifiedVersion !== undefined &&
+    provider.versionAdvisory?.canUpdate === true &&
+    provider.versionAdvisory.canInstallVersion === true
+  );
+}
+
+/**
+ * Update candidates to prompt about. When the environment updates providers in
+ * the background, a provider that updater looks after is left to it, including
+ * a newer release not verified yet; Settings still offers a manual update.
+ */
+export function collectPromptedProviderUpdateCandidates(
+  providers: ReadonlyArray<ServerProvider>,
+  autoUpdatesProviders: boolean,
+): ProviderUpdateCandidate[] {
+  return collectProviderUpdateCandidates(
+    autoUpdatesProviders
+      ? providers.filter((provider) => !isAutoUpdatedProvider(provider))
+      : providers,
+  );
 }
 
 export function isProviderSettingsUpdateCandidate(
@@ -710,6 +752,7 @@ export interface LocalEnvironmentProvidersInput {
   readonly isPrimary: boolean;
   readonly connectionState: EnvironmentUpdateConnectionState;
   readonly providers: ReadonlyArray<ServerProvider>;
+  readonly autoUpdatesProviders: boolean;
 }
 
 export interface LocalEnvironmentUpdateGroup {
@@ -737,9 +780,10 @@ export function buildLocalEnvironmentUpdateGroups(
     label: environment.label,
     isPrimary: environment.isPrimary,
     isSettling: environment.connectionState === "connecting",
-    candidates: collectProviderUpdateCandidates(environment.providers).filter((candidate) =>
-      canOneClickUpdateProviderCandidate(candidate, environment.providers),
-    ),
+    candidates: collectPromptedProviderUpdateCandidates(
+      environment.providers,
+      environment.autoUpdatesProviders,
+    ).filter((candidate) => canOneClickUpdateProviderCandidate(candidate, environment.providers)),
     providers: environment.providers,
   }));
   const isAnySettling = environments.some(

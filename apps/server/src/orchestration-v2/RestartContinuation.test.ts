@@ -16,7 +16,12 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ServerSettings from "../serverSettings.ts";
-import { restartContinuationRun, continueRestartedRun } from "./RestartContinuation.ts";
+import {
+  CONTINUE_PROMPT,
+  INTERRUPTED_TURN_NOTE,
+  restartContinuationRun,
+  continueRestartedRun,
+} from "./RestartContinuation.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -32,6 +37,7 @@ const driver = ProviderDriverKind.make("codex");
 const providerThreadId = ProviderThreadId.make("provider-thread:restart");
 const sessionId = ProviderSessionId.make("session:restart");
 const attemptId = RunAttemptId.make("attempt:restart");
+const INTERRUPTED_CONTINUATION = `${INTERRUPTED_TURN_NOTE}\n\n${CONTINUE_PROMPT}`;
 
 function makeProjection() {
   return {
@@ -84,6 +90,62 @@ function makeProjection() {
     turnItems: [],
   } as unknown as OrchestrationV2ThreadProjection;
 }
+
+it.effect("skips recovery reads when no displayed project continues after restarts", () =>
+  Effect.gen(function* () {
+    const projection = makeProjection();
+    const eligible = yield* ProviderRuntimeRecovery.listContinuableThreadIds([projection.thread]);
+    assert.equal(eligible.size, 0);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        ServerSettings.layerTest(),
+        // Missing mock methods fail if the default-off path touches recovery state.
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+      ),
+    ),
+  ),
+);
+
+it.effect.each([false, true])(
+  "reads continuation state only for enabled projects (environment %s)",
+  (environmentEnabled) => {
+    const projection = makeProjection();
+    const disabledThreadId = ThreadId.make("thread:disabled-continuation");
+    const disabledProjectId = ProjectId.make("disabled-project");
+    const hiddenThreadId = ThreadId.make("thread:outside-snapshot");
+    const readIds: ThreadId[] = [];
+    return Effect.gen(function* () {
+      const eligible = yield* ProviderRuntimeRecovery.listContinuableThreadIds([
+        projection.thread,
+        { id: disabledThreadId, projectId: disabledProjectId },
+      ]);
+      assert.deepEqual([...eligible], [threadId]);
+      assert.deepEqual(readIds, [threadId]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          ServerSettings.layerTest({
+            continueThreadsAfterServerUpdate: environmentEnabled,
+            projectSettingsOverrides: {
+              [projection.thread.projectId]: { continueThreadsAfterServerUpdate: true },
+              [disabledProjectId]: { continueThreadsAfterServerUpdate: false },
+            },
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getRecoveryThreadIds: () =>
+              Effect.succeed([threadId, disabledThreadId, hiddenThreadId]),
+            getRuntimeRecoveryProjection: (id) =>
+              Effect.sync(() => {
+                readIds.push(id);
+                return projection;
+              }),
+          }),
+        ),
+      ),
+    );
+  },
+);
 
 it("requires matching saved native state for an unfinished root run", () => {
   const projection = makeProjection();
@@ -232,6 +294,10 @@ it.effect("prompts a settled thread's continuation with the note of its lost wor
       "sleep 25 && echo DONE",
     );
     assert.notInclude(command.type === "message.dispatch" ? command.text : "", "Continue where");
+    assert.notInclude(
+      command.type === "message.dispatch" ? command.text : "",
+      INTERRUPTED_TURN_NOTE,
+    );
   }),
 );
 
@@ -338,7 +404,7 @@ it.effect("does not duplicate delivery and yields to newer user work or opt-out"
     const commands: Parameters<
       ThreadManagementService.ThreadManagementService["Service"]["dispatch"]
     >[0][] = [];
-    const threads = Layer.mock(ThreadManagementService.ThreadManagementService)({
+    const layerThreads = Layer.mock(ThreadManagementService.ThreadManagementService)({
       getThreadRecords: () => Effect.succeed(projection),
       recoverDelegatedTask: () => Effect.void,
       dispatch: (command) => {
@@ -348,12 +414,16 @@ it.effect("does not duplicate delivery and yields to newer user work or opt-out"
         return Effect.succeed({} as never);
       },
     });
-    const enabled = Layer.merge(
-      threads,
+    const layerEnabled = Layer.merge(
+      layerThreads,
       ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
     );
-    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(enabled));
-    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(enabled));
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(layerEnabled),
+    );
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(layerEnabled),
+    );
     assert.lengthOf(commands, 1);
     assert.match(String(commands[0]!.commandId), /run:restart$/);
     if (commands[0]!.type === "message.dispatch")
@@ -371,12 +441,17 @@ it.effect("does not duplicate delivery and yields to newer user work or opt-out"
         },
       ],
     };
-    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(enabled));
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(layerEnabled),
+    );
     assert.lengthOf(commands, 1);
     projection = { ...projection, runs: [projection.runs[0]!] };
     yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
       Effect.provide(
-        Layer.merge(threads, ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false })),
+        Layer.merge(
+          layerThreads,
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: false }),
+        ),
       ),
     );
     assert.lengthOf(commands, 1);
@@ -587,7 +662,7 @@ it.effect("continues a cut run past queued follow-ups, which stay held", () =>
       ...cut,
       runs: [...cut.runs, queuedFollowUp],
     } as unknown as OrchestrationV2ThreadProjection);
-    assert.deepEqual(texts, ["Continue where you left off."]);
+    assert.deepEqual(texts, [INTERRUPTED_CONTINUATION]);
   }),
 );
 
@@ -616,7 +691,7 @@ it.effect("continues a resumed queued run that ran after an earlier continuation
       ...cut,
       runs: [...cut.runs, finishedContinuation],
     } as unknown as OrchestrationV2ThreadProjection);
-    assert.deepEqual(texts, ["Continue where you left off."]);
+    assert.deepEqual(texts, [INTERRUPTED_CONTINUATION]);
   }),
 );
 
@@ -656,7 +731,7 @@ it.effect("tells a turn cut mid-way about the background work it lost", () =>
     );
     assert.lengthOf(texts, 1);
     assert.include(texts[0]!, "Background reviewer");
-    assert.isTrue(texts[0]!.endsWith("Continue where you left off."));
+    assert.isTrue(texts[0]!.endsWith(INTERRUPTED_CONTINUATION));
   }),
 );
 
@@ -696,6 +771,7 @@ it.effect(
       assert.lengthOf(texts, 1);
       assert.include(texts[0]!, "sleep 25 && echo DONE");
       assert.notInclude(texts[0]!, "Continue where");
+      assert.notInclude(texts[0]!, INTERRUPTED_TURN_NOTE);
     }),
 );
 

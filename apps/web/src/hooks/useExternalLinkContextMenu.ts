@@ -1,5 +1,9 @@
 import { useCallback, type MouseEvent } from "react";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthPreviewOperateScope,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -22,6 +26,7 @@ import { readLocalApi } from "~/localApi";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { readThreadShell } from "~/state/entities";
 import { previewEnvironment } from "~/state/preview";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { writeTextToClipboard } from "./useCopyToClipboard";
 import { usePullRequestLinking } from "./usePullRequestLinking";
@@ -29,14 +34,24 @@ import { usePullRequestLinking } from "./usePullRequestLinking";
 /** Link actions shared by Markdown links and PR chips, scoped to their conversation. */
 export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
   const pullRequestLinking = usePullRequestLinking(threadRef?.environmentId);
+  const canOperateHost = useEnvironmentScope(
+    threadRef?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  const canOperatePreview = useEnvironmentScope(
+    threadRef?.environmentId ?? null,
+    AuthPreviewOperateScope,
+  );
   const openExternalLinkInPreview = useCallback(
     (url: string) => {
-      if (!threadRef) {
+      if (!threadRef || !canOperatePreview) {
         return Promise.resolve(
           AsyncResult.failure<void, BrowserPreviewUnavailableError>(
             Cause.fail(
-              new BrowserPreviewUnavailableError({ message: "Thread context is unavailable." }),
+              new BrowserPreviewUnavailableError({
+                message: "Preview access is unavailable for this client.",
+              }),
             ),
           ),
         );
@@ -58,7 +73,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
         return result;
       });
     },
-    [openPreview, threadRef],
+    [canOperatePreview, openPreview, threadRef],
   );
   const onContextMenu = useCallback(
     (event: MouseEvent<HTMLElement>, href: string) => {
@@ -69,16 +84,17 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
       if (!api) return;
       // Read on invocation so a link/unlink elsewhere immediately changes the next menu.
       const thread = threadRef ? readThreadShell(threadRef) : null;
-      const threadLinkAction = !thread
-        ? undefined
-        : pullRequestLinking.isLinked(thread, href)
-          ? "unlink-from-thread"
-          : pullRequestLinking.canLink(href)
-            ? "link-to-thread"
-            : undefined;
+      const threadLinkAction =
+        !thread || !canOperateHost
+          ? undefined
+          : pullRequestLinking.isLinked(thread, href)
+            ? "unlink-from-thread"
+            : pullRequestLinking.canLink(href)
+              ? "link-to-thread"
+              : undefined;
       void showExternalLinkContextMenu({
         href,
-        canOpenInPreview: Boolean(threadRef) && isPreviewSupportedInRuntime(),
+        canOpenInPreview: canOperatePreview && Boolean(threadRef) && isPreviewSupportedInRuntime(),
         threadLinkAction,
         position: { x: event.clientX, y: event.clientY },
         showContextMenu: (items, position) => api.contextMenu.show(items, position),
@@ -96,6 +112,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
             (!linked && !pullRequestLinking.isLinked(readThreadShell(threadRef), target))
           )
             return;
+          if (!readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)) return;
           await pullRequestLinking.changeLink(threadRef, target, linked);
         },
         reportFailure: (operation, cause) => {
@@ -118,7 +135,7 @@ export function useExternalLinkContextMenu(threadRef?: ScopedThreadRef) {
         },
       });
     },
-    [openExternalLinkInPreview, pullRequestLinking, threadRef],
+    [canOperateHost, canOperatePreview, openExternalLinkInPreview, pullRequestLinking, threadRef],
   );
   return { onContextMenu, openExternalLinkInPreview };
 }

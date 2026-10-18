@@ -16,7 +16,7 @@ import { getLocalEnvironmentEnabled, setLocalEnvironmentEnabled } from "./localE
 
 // `relaunch` declares the lifecycle runtime services as requirements even
 // though the mocked relaunch never touches them.
-const unusedLifecycleRuntimeLayer = Layer.mergeAll(
+const layerUnusedLifecycleRuntime = Layer.mergeAll(
   Layer.succeed(
     DesktopObservability.DesktopTrace,
     DesktopObservability.DesktopTrace.of({ flush: Effect.void }),
@@ -52,7 +52,7 @@ describe("local environment IPC", () => {
             return true;
           }),
       }),
-      unusedLifecycleRuntimeLayer,
+      layerUnusedLifecycleRuntime,
     );
     return Effect.gen(function* () {
       yield* setLocalEnvironmentEnabled.handler(false);
@@ -77,7 +77,7 @@ describe("local environment IPC", () => {
       Layer.mock(DesktopLifecycle.DesktopLifecycle, {
         relaunch: () => Effect.succeed(false),
       }),
-      unusedLifecycleRuntimeLayer,
+      layerUnusedLifecycleRuntime,
     );
     return Effect.gen(function* () {
       yield* setLocalEnvironmentEnabled.handler(false);

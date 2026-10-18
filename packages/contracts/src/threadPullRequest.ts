@@ -137,3 +137,26 @@ export const ThreadPullRequestLink = Schema.Struct({
   watch: Schema.optional(ThreadPullRequestWatch),
 });
 export type ThreadPullRequestLink = typeof ThreadPullRequestLink.Type;
+
+/**
+ * A CI workflow run the server watches for a thread's agent, present only while watched. The
+ * server wakes the agent once when the run completes and drops the watch in the same step.
+ */
+export const ThreadWorkflowRunWatch = Schema.Struct({
+  host: TrimmedNonEmptyString,
+  repository: TrimmedNonEmptyString,
+  runId: PositiveInt,
+  url: TrimmedNonEmptyString,
+  /** The workflow and run number as the host names them, such as "CI #812". */
+  name: TrimmedNonEmptyString,
+  startedAt: IsoDateTime,
+});
+export type ThreadWorkflowRunWatch = typeof ThreadWorkflowRunWatch.Type;
+
+/** Identity of a watched workflow run: host-level, like a pull request link's. */
+export const ThreadWorkflowRunKey = Schema.Struct({
+  host: TrimmedNonEmptyString,
+  repository: TrimmedNonEmptyString,
+  runId: PositiveInt,
+});
+export type ThreadWorkflowRunKey = typeof ThreadWorkflowRunKey.Type;

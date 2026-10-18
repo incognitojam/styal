@@ -33,13 +33,13 @@ import { vi } from "vite-plus/test";
 import { cli } from "../binCli.ts";
 import * as ServerConfig from "../config.ts";
 import * as Startup from "../serverRuntimeStartup.ts";
-import * as Sqlite from "../persistence/Layers/Sqlite.ts";
-import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
+import * as Sqlite from "../persistence/Sqlite.ts";
+import * as OrchestrationEventStoreLayer from "../persistence/OrchestrationEventStore.ts";
 import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
-import { orchestrationHttpApiLayer } from "../orchestration-v2/http.ts";
+import * as OrchestrationHttp from "../orchestration-v2/http.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeSchemaDocument = Schema.decodeSync(
@@ -100,7 +100,11 @@ const makeScenario = (root: string) =>
     return { home, scenarioFile, example, summary };
   });
 const persistence = (home: string) =>
-  Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, OrchestrationEventStoreLive).pipe(
+  Layer.mergeAll(
+    ProjectionStore.layer,
+    ProjectStore.layer,
+    OrchestrationEventStoreLayer.layer,
+  ).pipe(
     Layer.provideMerge(Sqlite.layerConfig),
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), home)),
     Layer.provideMerge(NodeServices.layer),
@@ -210,7 +214,7 @@ it.effect(
       const requests: Request[] = [];
       let operate = false;
       const routes = HttpApiBuilder.layer(TestApi).pipe(
-        Layer.provide(orchestrationHttpApiLayer),
+        Layer.provide(OrchestrationHttp.layer),
         Layer.provide(
           Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
             Effect.suspend(() =>

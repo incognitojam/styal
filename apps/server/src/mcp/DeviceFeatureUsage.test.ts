@@ -10,6 +10,7 @@ import * as DeviceService from "../device/DeviceService.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
 
 const client = McpSchema.McpServerClient.of({
   clientId: 1,
@@ -29,8 +30,9 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const events: Array<{ event: string; properties: unknown }> = [];
-      const layer = McpHttpServer.DeviceToolkitRegistrationLive.pipe(
+      const layer = McpHttpServer.layerDeviceToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(
           Layer.mock(DeviceService.DeviceService)({
             list: Effect.succeed({

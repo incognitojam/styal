@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AuthOrchestrationOperateScope,
   CommandId,
   type EnvironmentId,
   type ProjectId,
@@ -19,6 +20,7 @@ import { newProjectId } from "../../lib/utils";
 import { agentSessionImport } from "../../state/agentSessions";
 import { readProjects } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
+import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { ImportOutcome } from "./types";
 
@@ -29,6 +31,8 @@ export interface HistoryImportProgress {
   readonly importedCount?: number;
   readonly skippedCount?: number;
 }
+
+const IMPORT_PERMISSION_MESSAGE = "This connection cannot import projects or thread history.";
 
 /** The CLI history import pipeline used during first setup. */
 export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
@@ -42,6 +46,12 @@ export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
   const importThreads = useAtomCommand(agentSessionImport, { reportFailure: false });
   const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string> | null>(null);
   const [importError, setImportError] = useState("");
+  const canImport = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const visibleImportError = !canImport
+    ? IMPORT_PERMISSION_MESSAGE
+    : importError === IMPORT_PERMISSION_MESSAGE
+      ? ""
+      : importError;
   // Keep project creation attempts separate from completed history imports so both can retry.
   const importedProjectsRef = useRef(new Map<string, ScopedProjectRef>());
   const projectsWithImportedHistoryRef = useRef(new Map<string, ScopedProjectRef>());
@@ -78,6 +88,12 @@ export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
   const run = async (): Promise<ImportOutcome> => {
     const selection = selected;
     if (selection.length === 0) return { success: true };
+    // Recheck before each write: the grant can change while an import is running.
+    const hasAccess = () => readEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+    if (!hasAccess()) {
+      setImportError(IMPORT_PERMISSION_MESSAGE);
+      return { success: false };
+    }
     setImportError("");
     lastImportSelectionRef.current = selection.map((candidate) => candidate.key);
     const importGeneration = importGenerationRef.current;
@@ -114,6 +130,10 @@ export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
         importGeneration !== importGenerationRef.current ||
         importedProjects !== importedProjectsRef.current
       ) {
+        return { success: false };
+      }
+      if (!hasAccess()) {
+        setImportError(IMPORT_PERMISSION_MESSAGE);
         return { success: false };
       }
       updateProgress(candidate.key, { status: "importing" });
@@ -157,6 +177,11 @@ export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
           }
         }
 
+        if (!hasAccess()) {
+          updateProgress(candidate.key, { status: "failed" });
+          setImportError(IMPORT_PERMISSION_MESSAGE);
+          return { success: false };
+        }
         const threadImportResult = await importThreads({
           environmentId,
           input: { projectId, expectedWorkspaceRoot: candidate.path },
@@ -239,7 +264,7 @@ export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
     scan: scans[0]!,
     candidates,
     selected,
-    error: importError,
+    error: visibleImportError,
     run,
     setSelected: (keys: ReadonlySet<string>) => setSelectedPaths(keys),
   };

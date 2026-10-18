@@ -596,6 +596,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   hidden = false,
   shortcutLabel,
   iconOnly = false,
+  disabled = false,
   ...persistence
 }: TraitsMenuContentProps &
   TraitsPersistence & {
@@ -604,9 +605,10 @@ export const TraitsPicker = memo(function TraitsPicker({
     shortcutLabel?: string;
     /** The composer has collapsed the trigger to its icon, so the tooltip shows the values. */
     iconOnly?: boolean;
+    disabled?: boolean;
   }) {
   const composerFloatingLayerProps = useComposerMenuProps();
-  const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden);
+  const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled);
   const { descriptors, primarySelectDescriptor, ultrathinkPromptControlled } =
     getTraitsSectionVisibility({
       provider,
@@ -647,7 +649,7 @@ export const TraitsPicker = memo(function TraitsPicker({
     <Menu
       open={isMenuOpen}
       onOpenChange={(open) => {
-        setIsMenuOpen(open);
+        setIsMenuOpen(open && !disabled);
       }}
     >
       <Tooltip>
@@ -656,6 +658,7 @@ export const TraitsPicker = memo(function TraitsPicker({
             <MenuTrigger
               render={
                 <ComposerControl
+                  disabled={disabled}
                   aria-label={triggerLabel}
                   data-composer-shortcut={isComposerOwned ? "composer.effort" : undefined}
                   size={size}

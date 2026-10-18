@@ -6,6 +6,7 @@ import {
   type DeviceSummary,
   DeviceToolUnavailableError,
   LOCAL_DEVICE_HOST_ID,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
@@ -18,6 +19,7 @@ import { DeviceActivity } from "../../../device/DeviceIdle.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
 import * as DeviceFeatureUsage from "../../../telemetry/DeviceFeatureUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import { DeviceScreenshotToolkit, DeviceStandardToolkit, DeviceToolkit } from "./tools.ts";
 
 /** The flags that pin every agent-device command to one device. */
@@ -80,21 +82,40 @@ const requireDeviceAccess = McpInvocationContext.requireThreadMcpCapability("dev
 
 type DeviceRef = { readonly hostId: DeviceHostId; readonly deviceId: DeviceId };
 
-/** Devices another thread has open. Its agent may be driving them right now. */
+type ThreadDeviceRef = DeviceRef & { readonly threadId: ThreadId };
+
+/**
+ * Devices other threads have open, once per thread. `inUse` lists the sessions an
+ * agent open must not take silently; see `DeviceActivity.inUse`.
+ */
 export function devicesOpenInOtherThreads(
-  sessions: ReadonlyArray<DeviceRef & { readonly threadId: string }>,
+  sessions: ReadonlyArray<ThreadDeviceRef>,
+  inUse: ReadonlyArray<ThreadDeviceRef>,
   threadId: string,
-): ReadonlyArray<DeviceRef> {
-  const refs = new Map<string, DeviceRef>();
+): ReadonlyArray<ThreadDeviceRef & { readonly inUse: boolean }> {
+  const key = (ref: ThreadDeviceRef) => JSON.stringify([ref.threadId, ref.hostId, ref.deviceId]);
+  const used = new Set(inUse.map(key));
+  const refs = new Map<string, ThreadDeviceRef & { readonly inUse: boolean }>();
   for (const session of sessions) {
     if (session.threadId === threadId) continue;
-    refs.set(`${session.hostId}\u0000${session.deviceId}`, {
+    refs.set(key(session), {
       hostId: session.hostId,
       deviceId: session.deviceId,
+      threadId: session.threadId,
+      inUse: used.has(key(session)),
     });
   }
   return [...refs.values()];
 }
+
+/** Devices other threads have open that an agent open would hand over. */
+const reclaimableDevices = (open: ReadonlyArray<DeviceRef & { readonly inUse: boolean }>) =>
+  open.filter(
+    (ref) =>
+      !open.some(
+        (other) => other.inUse && other.hostId === ref.hostId && other.deviceId === ref.deviceId,
+      ),
+  );
 
 const isListed = (refs: ReadonlyArray<DeviceRef>, device: DeviceSummary) =>
   refs.some((ref) => ref.hostId === device.hostId && ref.deviceId === device.id);
@@ -144,7 +165,7 @@ export const pickDevice = (
     if (booted.length > 0) {
       // Never take over another thread's device implicitly; its agent may be mid-run.
       return yield* new DeviceToolUnavailableError({
-        reason: `Another thread has ${booted.map((device) => `${device.name} (${device.id})`).join(", ")} open. Pass deviceId: a stopped device from device_list to start it, or one of these to share it.`,
+        reason: `Another thread is using ${booted.map((device) => `${device.name} (${device.id})`).join(", ")}. Pass deviceId: a stopped device from device_list to start it, or, if the user agrees, one of these with takeOver: true.`,
       });
     }
     return candidates[0]!;
@@ -153,7 +174,7 @@ export const pickDevice = (
 const toolError = (error: DeviceError | DeviceToolUnavailableError) => error;
 
 const handlers = {
-  device_list: (input) =>
+  device_list: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* requireDeviceAccess;
       const devices = yield* DeviceService.DeviceService;
@@ -179,11 +200,13 @@ const handlers = {
         open,
         openInOtherThreads: devicesOpenInOtherThreads(
           [...state.sessions, ...(state.externalSessions ?? [])],
+          yield* (yield* DeviceActivity).inUse(scope.thread.threadId),
           scope.thread.threadId,
         ),
       };
     }).pipe(Effect.mapError(toolError)),
-  device_open: (input) =>
+  ),
+  device_open: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* requireDeviceAccess;
       const devices = yield* DeviceService.DeviceService;
@@ -194,12 +217,15 @@ const handlers = {
             "Device support is off. Ask the user to enable it in the Device panel before installing or starting device tools.",
         });
       }
+      const activity = yield* DeviceActivity;
       const openInOtherThreads = devicesOpenInOtherThreads(
         [...state.sessions, ...(state.externalSessions ?? [])],
+        yield* activity.inUse(scope.thread.threadId),
         scope.thread.threadId,
       );
-      // Prefer a free device; otherwise take one a thread holds but is not using.
-      const reclaimable = yield* (yield* DeviceActivity).reclaimable(scope.thread.threadId);
+      const reclaimable = reclaimableDevices(openInOtherThreads);
+      // Prefer a free device, then one a thread holds but is not using, then on a
+      // take-over any device. The service refuses an in-use device without takeOver.
       const target = yield* pickDevice(state.devices, openInOtherThreads, input).pipe(
         Effect.catch((error) =>
           reclaimable.length === 0
@@ -215,6 +241,9 @@ const handlers = {
                 input,
               ),
         ),
+        Effect.catch((error) =>
+          input.takeOver === true ? pickDevice(state.devices, [], input) : Effect.fail(error),
+        ),
       );
       // Resolve consent and agent connectivity before booting or registering a session.
       const agentArgs = yield* devices.agentTarget({
@@ -227,8 +256,17 @@ const handlers = {
         hostId: target.hostId,
         deviceId: target.id,
         platform: target.platform,
+        ...(input.takeOver === undefined ? {} : { takeOver: input.takeOver }),
       });
       const after = yield* devices.state;
+      // A take-over cannot release another environment's hold, which keeps the device shared.
+      const stillInUse = devicesOpenInOtherThreads(
+        [...after.sessions, ...(after.externalSessions ?? [])],
+        openInOtherThreads.filter((ref) => ref.inUse),
+        scope.thread.threadId,
+      ).filter(
+        (ref) => ref.inUse && ref.hostId === session.hostId && ref.deviceId === session.deviceId,
+      );
       const device =
         after.devices.find(
           (candidate) => candidate.hostId === session.hostId && candidate.id === session.deviceId,
@@ -260,16 +298,17 @@ const handlers = {
         device,
         agentDevice: { command, targetArgs },
         quickStart: [
-          ...(isListed(openInOtherThreads, target) && !isListed(reclaimable, target)
+          ...(stillInUse.length > 0
             ? [
-                "Another thread also has this device open, and its agent may be driving it. Coordinate with the user before changing apps or state.",
+                `Thread ${stillInUse.map((ref) => ref.threadId).join(", ")} also has this device open, and its agent may be driving it. Coordinate with the user before changing apps or state.`,
               ]
             : []),
           agentDeviceQuickStart(device, targetArgs, command),
         ].join("\n"),
       };
     }).pipe(Effect.mapError(toolError)),
-  device_screenshot: (input) =>
+  ),
+  device_screenshot: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* requireDeviceAccess;
       const devices = yield* DeviceService.DeviceService;
@@ -295,7 +334,8 @@ const handlers = {
         },
       };
     }).pipe(Effect.mapError(toolError)),
-  device_close: (input) =>
+  ),
+  device_close: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* requireDeviceAccess;
       const devices = yield* DeviceService.DeviceService;
@@ -307,7 +347,8 @@ const handlers = {
       });
       return {};
     }).pipe(Effect.mapError(toolError)),
-} satisfies Parameters<typeof DeviceToolkit.toLayer>[0];
+  ),
+} satisfies McpToolAccess.Handlers<typeof DeviceToolkit.tools>;
 
 /** Width and height from the IHDR chunk; a PNG that lacks one reports 0×0. */
 export function pngDimensions(png: Uint8Array): { width: number; height: number } {
@@ -324,12 +365,17 @@ export function pngDimensions(png: Uint8Array): { width: number; height: number 
 
 const { device_screenshot, ...standardHandlers } = handlers;
 
-export const DeviceStandardToolkitHandlersLive = DeviceStandardToolkit.toLayer(
-  DeviceFeatureUsage.observeHandlers(standardHandlers),
+export const layerStandard = McpToolAccess.toLayer(
+  DeviceStandardToolkit,
+  McpToolAccess.wrapHandlers(standardHandlers, DeviceFeatureUsage.observeHandlers),
 );
 
-export const DeviceScreenshotToolkitHandlersLive = DeviceScreenshotToolkit.toLayer(
-  Effect.map(DeviceFeatureUsage.snapshotObserver, (observe) => ({
-    device_screenshot: (input) => observe(device_screenshot(input)),
-  })),
+export const layerScreenshot = McpToolAccess.toLayer(
+  DeviceScreenshotToolkit,
+  McpToolAccess.wrapHandlers({ device_screenshot }, (handlers) =>
+    Effect.map(DeviceFeatureUsage.snapshotObserver, (observe) => ({
+      device_screenshot: (input: Parameters<typeof handlers.device_screenshot>[0]) =>
+        observe(handlers.device_screenshot(input)),
+    })),
+  ),
 );

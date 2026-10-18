@@ -27,18 +27,16 @@ import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import {
-  resolveProviderAutoUpdateVersion,
+  resolveRecentProviderAutoUpdateVersion,
   stableProviderVersion,
 } from "./providerCompatibility.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
-import { ProviderRegistry } from "./Services/ProviderRegistry.ts";
+import { ProviderRegistry } from "./ProviderRegistry.ts";
 
 const FIRST_PASS_DELAY = Duration.minutes(2);
 const PASS_INTERVAL = Duration.minutes(30);
 /** One attempt per instance and version in this window, so a failing install is not retried every pass. */
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1_000;
-/** A manifest older than this may still list a version that was since withdrawn. */
-const MANIFEST_MAX_AGE_MS = 2 * 24 * 60 * 60 * 1_000;
 
 /** The version to install on `provider`, or null to leave it alone. */
 export function decideProviderAutoUpdate(
@@ -94,18 +92,13 @@ export const make = Effect.gen(function* () {
   ) {
     const remote = yield* manifestService.remote;
     const now = yield* Clock.currentTimeMillis;
-    if (
-      remote === null ||
-      now < remote.fetchedAtMs ||
-      now - remote.fetchedAtMs > MANIFEST_MAX_AGE_MS
-    )
-      return null;
     const capabilities = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
       provider.instanceId,
       provider.driver,
     );
-    return resolveProviderAutoUpdateVersion(
-      remote.manifest.compatibility,
+    return resolveRecentProviderAutoUpdateVersion(
+      remote,
+      now,
       provider.driver,
       capabilities.packageName,
     );

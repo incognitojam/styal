@@ -1,8 +1,8 @@
-import * as NodeCrypto from "node:crypto";
 import * as NodeBuffer from "node:buffer";
 
 import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -160,6 +160,8 @@ export interface CreateWorktreeOptions {
    * own t3.json.
    */
   readonly submodules?: WorktreeSubmodules | null;
+  /** The `worktreesDirectory` setting, used when the input has no explicit path. */
+  readonly worktreesDirectory?: string;
 }
 
 export interface GitCommitProgress {
@@ -400,6 +402,11 @@ export class GitVcsDriver extends Context.Service<
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;
+    /**
+     * Absolute paths of every live worktree of the repository at `cwd`, the
+     * main checkout included. Worktrees whose directory is gone are left out.
+     */
+    readonly listWorktreePaths: (cwd: string) => Effect.Effect<string[], GitCommandError>;
     readonly deleteLocalBranch: (
       input: GitDeleteLocalBranchInput,
     ) => Effect.Effect<void, GitCommandError>;
@@ -538,6 +545,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const vcsProcess = yield* VcsProcess.VcsProcess;
+  const crypto = yield* Crypto.Crypto;
   const capabilities = {
     kind: "git" as const,
     supportsWorktrees: true,
@@ -813,10 +821,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         "sparse.expectFilesOutsideOfPatterns=false",
       ];
       const gitCommonDir = yield* resolveGitCommonDir(input.cwd);
-      const tempIndexPath = path.join(
-        gitCommonDir,
-        `styal-checkpoint-index-${NodeCrypto.randomUUID()}`,
-      );
+      const indexId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      const tempIndexPath = path.join(gitCommonDir, `styal-checkpoint-index-${indexId}`);
       const commitEnv: NodeJS.ProcessEnv = {
         ...process.env,
         GIT_INDEX_FILE: tempIndexPath,
@@ -1291,5 +1297,5 @@ export const make = Effect.gen(function* () {
   return GitVcsDriver.of(git);
 });
 
-export const vcsLayer = Layer.effect(VcsDriver.VcsDriver, makeVcsDriver);
+export const layerVcs = Layer.effect(VcsDriver.VcsDriver, makeVcsDriver);
 export const layer = Layer.effect(GitVcsDriver, make);

@@ -62,6 +62,7 @@ import {
   type PullRequestLabelCandidateList,
   type PullRequestLabelChangeInput,
   type PullRequestSetFilesViewedInput,
+  type PullRequestState,
   type PullRequestSubmitReviewInput,
   PullRequestStack,
   PullRequestSummary,
@@ -88,7 +89,9 @@ import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit
 import {
   type ProviderChangeRequest,
   type ProviderListCursor,
+  type ProviderChangeRequestWatchFingerprint,
   type ProviderPullRequestFile,
+  type ProviderWorkflowRun,
   type PullRequestProviderApi,
   PullRequestProviderError,
 } from "./PullRequestProvider.ts";
@@ -137,7 +140,21 @@ const REPOSITORY_SEARCH_CHUNK = 100;
  * `invalidate` rather than a flag on the read, so an ordinary read can never opt out.
  */
 const LIST_CACHE_TTL = Duration.seconds(30);
-const DETAIL_CACHE_TTL = Duration.seconds(15);
+/**
+ * Each connected client re-reads the pull request it shows on focus, on a timer, and after every
+ * turn, so detail, activity, and preview answers are shared for the clients' own minute of
+ * staleness. A merged change request cannot change again and is held for ten. A closed one is
+ * not: it can reopen, and a watch started on it reads it to learn whether it did.
+ */
+const DETAIL_CACHE_TTL = Duration.seconds(60);
+const MERGED_DETAIL_CACHE_TTL = Duration.minutes(10);
+const detailTimeToLive = (state: PullRequestState | undefined) =>
+  state === "merged" ? MERGED_DETAIL_CACHE_TTL : DETAIL_CACHE_TTL;
+/**
+ * Checks and the watch fingerprint stay short: they are how a running check's result reaches the
+ * page and a watched pull request's change reaches its watch.
+ */
+const CHECKS_CACHE_TTL = Duration.seconds(15);
 const DIFF_CACHE_TTL = Duration.seconds(60);
 /** A commit is content-addressed, so its own diff cannot change under its key. */
 const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
@@ -222,6 +239,19 @@ export class PullRequestService extends Context.Service<
     readonly checks: (
       input: PullRequestRef,
     ) => Effect.Effect<PullRequestChecks | null, PullRequestError>;
+    /**
+     * What a pull request watch compares between passes, so it reads detail and activity only
+     * when something moved. Null when the host has no fingerprint or gave none for this one.
+     */
+    /** A CI workflow run in a repository the project can read, for watching it. */
+    readonly workflowRun: (
+      input: Pick<PullRequestRef, "projectId" | "host" | "repository"> & {
+        readonly runId: number;
+      },
+    ) => Effect.Effect<ProviderWorkflowRun, PullRequestError>;
+    readonly watchFingerprint: (
+      input: PullRequestRef,
+    ) => Effect.Effect<ProviderChangeRequestWatchFingerprint | null, PullRequestError>;
     readonly activity: (
       input: PullRequestRef,
     ) => Effect.Effect<PullRequestActivity, PullRequestError>;
@@ -588,6 +618,17 @@ function withRateLimitBackoff(
     ...(api.getChangeRequestStack === undefined
       ? {}
       : { getChangeRequestStack: wrap("getChangeRequestStack", api.getChangeRequestStack) }),
+    ...(api.getChangeRequestWatchFingerprint === undefined
+      ? {}
+      : {
+          getChangeRequestWatchFingerprint: wrap(
+            "getChangeRequestWatchFingerprint",
+            api.getChangeRequestWatchFingerprint,
+          ),
+        }),
+    ...(api.getWorkflowRun === undefined
+      ? {}
+      : { getWorkflowRun: wrap("getWorkflowRun", api.getWorkflowRun) }),
     getChangeRequestActivity: wrap("getChangeRequestActivity", api.getChangeRequestActivity),
     ...(api.getReviewThreadComments === undefined
       ? {}
@@ -842,7 +883,9 @@ export const make = Effect.gen(function* () {
    * targeting can fall back to another checkout on the host. Azure derives its organization
    * from the checkout, so it requires a matching repository.
    */
-  const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
+  const requireProject = (
+    ref: Pick<PullRequestRef, "projectId" | "host" | "repository">,
+  ): Effect.Effect<SupportedProject, PullRequestError> =>
     listWorkspaceProjects({ projectId: ref.projectId }).pipe(
       Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
         const own = supported[0];
@@ -1556,7 +1599,7 @@ export const make = Effect.gen(function* () {
               ? operation.pipe(Effect.provideService(routingCredential, identity), Effect.result)
               : Effect.fail(rejected()),
         )
-        .pipe(Effect.catchTag("PullRequestProviderError", () => Effect.fail(rejected())));
+        .pipe(Effect.catchTags({ PullRequestProviderError: () => Effect.fail(rejected()) }));
       return yield* Effect.fromResult(result);
     });
 
@@ -1826,6 +1869,27 @@ export const make = Effect.gen(function* () {
             })),
           ),
       ),
+    );
+
+  const workflowRun: PullRequestService["Service"]["workflowRun"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap((project): Effect.Effect<ProviderWorkflowRun, PullRequestError> => {
+        const read = project.api.getWorkflowRun;
+        if (read === undefined) {
+          return Effect.fail(
+            new PullRequestOperationError({
+              operation: "workflowRun",
+              detail: "Only GitHub Actions workflow runs can be watched.",
+            }),
+          );
+        }
+        return read({
+          cwd: project.project.workspaceRoot,
+          repository: project.repository,
+          host: project.host,
+          runId: input.runId,
+        }).pipe(Effect.mapError(toPullRequestError("workflowRun")));
+      }),
     );
 
   const threadComments: PullRequestService["Service"]["threadComments"] = (input) =>
@@ -3026,7 +3090,31 @@ export const make = Effect.gen(function* () {
     },
     {
       capacity: DETAIL_CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? CHECKS_CACHE_TTL : Duration.zero),
+    },
+  );
+
+  const watchFingerprintCache = yield* Cache.makeWith(
+    (key: string) => {
+      const input = refOfCacheKey(key);
+      return requireProject(input).pipe(
+        Effect.flatMap((project) =>
+          project.api.getChangeRequestWatchFingerprint === undefined
+            ? Effect.succeed(null)
+            : project.api
+                .getChangeRequestWatchFingerprint({
+                  cwd: project.project.workspaceRoot,
+                  repository: project.repository,
+                  host: project.host,
+                  number: input.number,
+                })
+                .pipe(Effect.mapError(toPullRequestError("watchFingerprint"))),
+        ),
+      );
+    },
+    {
+      capacity: DETAIL_CACHE_CAPACITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? CHECKS_CACHE_TTL : Duration.zero),
     },
   );
 
@@ -3053,7 +3141,8 @@ export const make = Effect.gen(function* () {
     },
     {
       capacity: DETAIL_CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) ? detailTimeToLive(exit.value.state) : Duration.zero,
     },
   );
   const summaryFromDetail = (
@@ -3117,7 +3206,9 @@ export const make = Effect.gen(function* () {
     },
     {
       capacity: DETAIL_CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
+      // Activity carries no state of its own; the detail or summary read under the same key does.
+      timeToLive: (exit, key) =>
+        Exit.isSuccess(exit) ? detailTimeToLive(lastGoodSummary.peek(key)?.state) : Duration.zero,
     },
   );
 
@@ -3127,7 +3218,8 @@ export const make = Effect.gen(function* () {
     },
     {
       capacity: DETAIL_CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) ? detailTimeToLive(exit.value.state) : Duration.zero,
     },
   );
   const preview: PullRequestService["Service"]["preview"] = (input) => {
@@ -3408,7 +3500,11 @@ export const make = Effect.gen(function* () {
     refreshAfterTurn,
     detail: credentialCached(detail),
     checks: credentialCached((input) => Cache.get(checksCache, refCacheKey(input))),
+    watchFingerprint: credentialCached((input) =>
+      Cache.get(watchFingerprintCache, refCacheKey(input)),
+    ),
     activity: credentialCached(activity),
+    workflowRun,
     preview: credentialCached(preview),
     threadComments,
     diff: credentialCached(diff),

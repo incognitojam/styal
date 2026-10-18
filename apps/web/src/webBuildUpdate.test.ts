@@ -29,7 +29,7 @@ describe("web build update checks", () => {
     const onChange = vi.fn();
     stop = watchWebBuildUpdates("build-a", onChange);
     await vi.advanceTimersByTimeAsync(0);
-    expect(onChange).toHaveBeenLastCalledWith(false);
+    expect(onChange).toHaveBeenLastCalledWith(null);
     expect(fetchBuild).toHaveBeenCalledWith(new URL("/build.json", window.location.origin), {
       cache: "no-store",
       signal: expect.any(AbortSignal),
@@ -37,11 +37,15 @@ describe("web build update checks", () => {
 
     fetchBuild.mockResolvedValue(manifest("build-b"));
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(onChange).toHaveBeenLastCalledWith(true);
+    expect(onChange).toHaveBeenLastCalledWith("build-b");
+
+    fetchBuild.mockResolvedValue(manifest("build-c"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(onChange).toHaveBeenLastCalledWith("build-c");
 
     fetchBuild.mockResolvedValue(manifest("build-a"));
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(onChange).toHaveBeenLastCalledWith(false);
+    expect(onChange).toHaveBeenLastCalledWith(null);
   });
 
   it.each([
@@ -64,7 +68,7 @@ describe("web build update checks", () => {
       fetchBuild.mockResolvedValue(manifest("build-b"));
       stop = watchWebBuildUpdates("build-a", onChange);
       await vi.advanceTimersByTimeAsync(0);
-      expect(onChange).toHaveBeenLastCalledWith(true);
+      expect(onChange).toHaveBeenLastCalledWith("build-b");
       onChange.mockClear();
 
       fetchBuild.mockResolvedValue(response());
@@ -73,7 +77,7 @@ describe("web build update checks", () => {
 
       fetchBuild.mockResolvedValue(manifest("build-a"));
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(onChange).toHaveBeenLastCalledWith(false);
+      expect(onChange).toHaveBeenLastCalledWith(null);
     },
   );
 
@@ -87,7 +91,7 @@ describe("web build update checks", () => {
     fetchBuild.mockResolvedValue(manifest("build-b"));
     window.dispatchEvent(new Event("focus"));
     await vi.advanceTimersByTimeAsync(0);
-    expect(onChange).toHaveBeenLastCalledWith(true);
+    expect(onChange).toHaveBeenLastCalledWith("build-b");
     expect(fetchBuild).toHaveBeenCalledTimes(2);
   });
 
@@ -166,7 +170,7 @@ describe("web build update checks", () => {
 
     fetchBuild.mockResolvedValue(manifest("build-b"));
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(onChange).toHaveBeenLastCalledWith(true);
+    expect(onChange).toHaveBeenLastCalledWith("build-b");
     expect(fetchBuild).toHaveBeenCalledTimes(2);
   });
 });

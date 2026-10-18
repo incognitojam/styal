@@ -1,4 +1,4 @@
-// @effect-diagnostics globalTimers:off - Vitest reporters run outside an Effect runtime and this timer is the process-level teardown failsafe.
+// @effect-diagnostics globalTimers:off nodeBuiltinImport:off - Vitest reporters run outside an Effect runtime and this timer is the process-level teardown failsafe.
 import * as NodeTimers from "node:timers";
 
 const teardownGuardMs = 15_000;

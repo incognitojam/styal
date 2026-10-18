@@ -6,6 +6,7 @@ import {
   canMaintainEnvironment,
   canUpdateEnvironmentProvider,
   findEnvironmentUpdate,
+  isLatestProviderVersionUntested,
   supportsEnvironmentUpdate,
 } from "./environment-maintenance";
 
@@ -53,6 +54,56 @@ describe("environment maintenance access", () => {
     expect(canMaintainEnvironment(null, true)).toBe(false);
   });
 
+  it.each([
+    { scopes: ["environment:maintain"], expected: true },
+    { scopes: ["orchestration:operate"], expected: false },
+    { scopes: ["providers:manage"], expected: false },
+  ] as const)("uses the advertised update permission for $scopes", ({ scopes, expected }) => {
+    expect(
+      canMaintainEnvironment(
+        {
+          authenticated: true,
+          auth: {
+            policy: "remote-reachable",
+            bootstrapMethods: [],
+            sessionMethods: [],
+            sessionCookieName: "session",
+            serverUpdateScope: "environment:maintain",
+          },
+          scopes,
+        },
+        true,
+      ),
+    ).toBe(expected);
+  });
+
+  it.each([
+    { permissions: ["environment:maintain"], expected: true },
+    { permissions: ["providers:manage"], expected: false },
+    { permissions: [], expected: false },
+  ] as const)(
+    "honors exact permissions over legacy scopes: $permissions",
+    ({ permissions, expected }) => {
+      expect(
+        canMaintainEnvironment(
+          {
+            authenticated: true,
+            auth: {
+              policy: "remote-reachable",
+              bootstrapMethods: [],
+              sessionMethods: [],
+              sessionCookieName: "session",
+              serverUpdateScope: "environment:maintain",
+            },
+            scopes: ["orchestration:operate"],
+            permissions,
+          },
+          true,
+        ),
+      ).toBe(expected);
+    },
+  );
+
   it("requires remote desktop update support for desktop hosts", () => {
     expect(supportsEnvironmentUpdate({})).toBe(false);
     expect(supportsEnvironmentUpdate({ serverSelfUpdate: "respawn" })).toBe(true);
@@ -60,6 +111,22 @@ describe("environment maintenance access", () => {
     expect(
       supportsEnvironmentUpdate({ serverSelfUpdate: "desktop-managed", desktopAppUpdate: true }),
     ).toBe(true);
+  });
+
+  it("marks a latest release newer than the verified version as untested", () => {
+    const withVerified = (verifiedVersion: string) => ({
+      ...provider,
+      compatibilityAdvisory: {
+        status: "supported" as const,
+        message: null,
+        recommendedVersion: null,
+        recommendedRange: null,
+        verifiedVersion,
+      },
+    });
+    expect(isLatestProviderVersionUntested(withVerified("1.0.5"))).toBe(true);
+    expect(isLatestProviderVersionUntested(withVerified("1.1.0"))).toBe(false);
+    expect(isLatestProviderVersionUntested(provider)).toBe(false);
   });
 
   it("excludes unavailable, manual, busy, and incompatible provider updates", () => {

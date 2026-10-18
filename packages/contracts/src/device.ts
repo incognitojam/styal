@@ -254,6 +254,12 @@ export const DeviceOpenInput = Schema.Struct({
   platform: DevicePlatform,
   /** Boot the simulator or emulator when it is not running. Defaults to true. */
   boot: Schema.optional(Schema.Boolean),
+  /**
+   * Agent opens only: release other threads' holds on the device even while
+   * their agents work. Without it, a device another thread is using fails with
+   * `DeviceHeldError`. Device panel opens never take a device from an agent.
+   */
+  takeOver: Schema.optional(Schema.Boolean),
 });
 export type DeviceOpenInput = typeof DeviceOpenInput.Type;
 
@@ -568,8 +574,20 @@ export class DeviceActionUnavailableError extends Schema.TaggedError<DeviceActio
   }
 }
 
+export class DeviceHeldError extends Schema.TaggedError<DeviceHeldError>()("DeviceHeldError", {
+  hostId: DeviceHostId,
+  deviceId: DeviceId,
+  /** Threads using the device: their agent is working, someone watches it, or another environment holds it. */
+  threadIds: Schema.Array(ThreadId),
+}) {
+  override get message(): string {
+    return `Device ${this.deviceId} on host ${this.hostId} is in use by thread ${this.threadIds.join(", ")}: its agent may be driving it, or the user is watching it. Pick another device, or ask the user and pass takeOver: true to release that thread's hold.`;
+  }
+}
+
 export const DeviceError = Schema.Union([
   DeviceHostUnavailableError,
+  DeviceHeldError,
   DevicePlatformUnavailableError,
   DeviceNotFoundError,
   DeviceBootError,
@@ -587,8 +605,20 @@ export const DeviceToolListResult = Schema.Struct({
   devices: Schema.Array(DeviceSummary),
   /** Devices already open in this thread's Device panel. */
   open: Schema.Array(Schema.Struct({ hostId: DeviceHostId, deviceId: DeviceId })),
-  /** Devices another thread has open; its agent may be driving them. */
-  openInOtherThreads: Schema.Array(Schema.Struct({ hostId: DeviceHostId, deviceId: DeviceId })),
+  /** Devices other threads have open, one entry per thread. */
+  openInOtherThreads: Schema.Array(
+    Schema.Struct({
+      hostId: DeviceHostId,
+      deviceId: DeviceId,
+      threadId: ThreadId,
+      /**
+       * The thread's agent is working, someone is watching the device, or another
+       * environment holds it, so device_open needs takeOver. Otherwise device_open
+       * hands the device over.
+       */
+      inUse: Schema.Boolean,
+    }),
+  ),
 });
 export type DeviceToolListResult = typeof DeviceToolListResult.Type;
 
@@ -606,6 +636,12 @@ export const DeviceToolOpenInput = Schema.Struct({
   ),
   hostId: Schema.optional(
     DeviceHostId.annotate({ description: "Device host from device_list. Defaults to local." }),
+  ),
+  takeOver: Schema.optional(
+    Schema.Boolean.annotate({
+      description:
+        "Take the device from another thread that is using it, releasing that thread's hold. Only when the user asked for it. Defaults to false.",
+    }),
   ),
 }).annotate({
   description:
@@ -677,6 +713,7 @@ export class DeviceToolUnavailableError extends Schema.TaggedError<DeviceToolUna
 export const DeviceToolError = Schema.Union([
   DeviceToolUnavailableError,
   DeviceHostUnavailableError,
+  DeviceHeldError,
   DevicePlatformUnavailableError,
   DeviceNotFoundError,
   DeviceBootError,

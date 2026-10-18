@@ -126,7 +126,10 @@ styal installs provider updates in the background once it has tested the new
 version: an automated check runs real agent turns against each new Codex,
 Claude Code, and OpenCode release before styal installs it automatically. A
 release that has not passed is never installed automatically, but you can
-still install the newest version yourself from **Settings → Providers**.
+still install the newest version yourself from **Settings → Providers**, which
+says when the newest release has not been tested yet. While automatic updates
+are on, styal does not show an update prompt for providers it updates
+automatically.
 
 Each provider release is tested against the current stable and nightly styal
 builds, so an environment on an older styal build receives provider updates

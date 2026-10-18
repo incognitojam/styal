@@ -8,7 +8,10 @@
  * threads from driving it. The daemon owning that claim never exits while the
  * server runs, so nothing else releases it. Closing a device releases both.
  * A hold whose thread is not working is released when another agent opens the
- * device, so idle holds cost nothing until a device is actually needed. A
+ * device, so idle holds cost nothing until a device is actually needed. An agent
+ * opening a device a working thread holds, or someone watches, is refused unless
+ * it asks to take the device over; archived and deleted threads lose their
+ * sessions on the next sweep. A
  * device this server booted that nobody watches and no working thread holds
  * shuts down after `deviceIdleShutdownMinutes`; devices booted outside styal
  * are never shut down.
@@ -18,6 +21,7 @@
  * lifecycle methods and drives everything else through its public interface.
  */
 import {
+  DeviceHeldError,
   DeviceHostId,
   DeviceId,
   DevicePlatform,
@@ -32,6 +36,7 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -72,9 +77,17 @@ interface DeviceActivityShape {
   readonly touchThreads: (match: (threadId: ThreadId) => boolean) => Effect.Effect<void>;
   /** Remembers which environment a peer thread prefix belongs to, so its claims can be named. */
   readonly notePeer: (threadPrefix: string, environmentId: string) => void;
-  /** Devices other threads hold but are not using, which an agent open would hand over. */
-  readonly reclaimable: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<DeviceRef>>;
+  /**
+   * Other threads' sessions that an agent open in `threadId` must not take silently:
+   * their agent is working, someone watches the device, or another environment holds it.
+   */
+  readonly inUse: (threadId: ThreadId) => Effect.Effect<ReadonlyArray<ThreadDeviceRef>>;
 }
+
+type ThreadDeviceRef = DeviceRef & { readonly threadId: ThreadId };
+
+/** Whether a thread can still use the devices it holds. */
+export type DeviceThreadStatus = "working" | "idle" | "archived" | "missing";
 
 /**
  * Use the transports report. The default ignores it, so code paths built
@@ -87,7 +100,7 @@ export class DeviceActivity extends Context.Reference<DeviceActivityShape>(
       watch: () => Effect.void,
       touchThreads: () => Effect.void,
       notePeer: () => {},
-      reclaimable: () => Effect.succeed([]),
+      inUse: () => Effect.succeed([]),
     }),
   },
 ) {}
@@ -149,8 +162,14 @@ const onDevice = (hostId: string, deviceId: string) => (entry: DeviceRef) =>
   entry.hostId === hostId && entry.deviceId === deviceId;
 
 /** A thread still working may drive its devices at any moment. */
-const threadKeepsDevices = (thread: OrchestrationV2ThreadShell) =>
-  thread.activeRunId !== null || (thread.pendingBackgroundTasks?.length ?? 0) > 0;
+const threadStatus = (thread: OrchestrationV2ThreadShell | null): DeviceThreadStatus =>
+  thread === null
+    ? "missing"
+    : thread.activeRunId !== null || (thread.pendingBackgroundTasks?.length ?? 0) > 0
+      ? "working"
+      : thread.archivedAt !== null
+        ? "archived"
+        : "idle";
 
 export const make = Effect.fn("DeviceIdle.make")(function* (
   inner: DeviceService.DeviceService["Service"],
@@ -165,10 +184,11 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     readonly agentEndpoint: (hostId: DeviceHostId) => Effect.Effect<AgentDeviceEndpoint | null>;
     /** This environment's id, which connected environments use to name their claims here. */
     readonly environmentId: string;
-    readonly threadBusy: (threadId: ThreadId) => Effect.Effect<boolean>;
+    readonly threadStatus: (threadId: ThreadId) => Effect.Effect<DeviceThreadStatus>;
   },
 ) {
   const { ledger } = options;
+  const crypto = yield* Crypto.Crypto;
   const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
   const booted = new Map(
     (yield* ledger.load).map((record) => [deviceKey(record.hostId, record.deviceId), record]),
@@ -177,8 +197,20 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   const startedAt = yield* Clock.currentTimeMillis;
   const lastUsedAt = new Map<string, number>();
   const viewers = new Map<string, number>();
-  /** agent-device session names handed out by `agentTarget`, keyed by the device id asked for. */
-  const targeted = new Map<string, string>();
+  /**
+   * agent-device session names handed out by `agentTarget`, keyed by the device id asked
+   * for, with how many agent opens have yet to consume it. Concurrent agent opens of one
+   * device from one thread each count, so a refused open cannot turn its sibling into a
+   * Device panel open.
+   */
+  const targeted = new Map<string, { readonly name: string; readonly pending: number }>();
+  /** Marks one agent open of `key` as finished with its session name. */
+  const consumeTarget = (key: string) => {
+    const entry = targeted.get(key);
+    if (!entry) return;
+    if (entry.pending <= 1) targeted.delete(key);
+    else targeted.set(key, { name: entry.name, pending: entry.pending - 1 });
+  };
   const holds = new Map<string, Hold>();
   /** Claims whose release the daemon did not confirm, retried on the next reclaim or power-off. */
   const unreleased = new Map<string, Hold>();
@@ -248,7 +280,10 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
    * names its claims from its own id and this environment's host id there; an
    * Android device may have been asked for by AVD name before it booted.
    */
-  const holdFor = (session: DeviceSession, state: DeviceServiceState): Hold | undefined => {
+  const holdFor = Effect.fn("DeviceIdle.holdFor")(function* (
+    session: DeviceSession,
+    state: DeviceServiceState,
+  ) {
     const own = holds.get(holdKey(session.threadId, session.hostId, session.deviceId));
     if (own) return own;
     if (!session.threadId.startsWith(PEER_THREAD_PREFIX)) return undefined;
@@ -263,21 +298,51 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       threadId: session.threadId,
       hostId: session.hostId,
       deviceId: session.deviceId,
-      names: ids.map((id) =>
+      names: yield* Effect.forEach(ids, (id) =>
         agentDeviceSession(
           `${environmentId}:${session.threadId.slice(separator + 1)}`,
           environmentDeviceHostId(options.environmentId),
           id,
-        ),
+        ).pipe(Effect.provideService(Crypto.Crypto, crypto)),
       ),
-    };
-  };
+    } satisfies Hold;
+  });
 
+  const threadBusy = (threadId: ThreadId) =>
+    options.threadStatus(threadId).pipe(Effect.map((status) => status === "working"));
   /** Reclaim only local holders: another environment's launcher cannot revoke its old session here. */
   const holderIdle = (hold: Hold) =>
     hold.threadId.startsWith(PEER_THREAD_PREFIX)
       ? Effect.succeed(false)
-      : options.threadBusy(hold.threadId).pipe(Effect.map((busy) => !busy));
+      : threadBusy(hold.threadId).pipe(Effect.map((busy) => !busy));
+
+  /** See `DeviceActivity.inUse`. */
+  const inUseBy = Effect.fn("DeviceIdle.inUseBy")(function* (
+    threadId: ThreadId,
+    state: DeviceServiceState,
+  ) {
+    const found: Array<ThreadDeviceRef> = [];
+    for (const session of state.sessions) {
+      if (session.threadId === threadId) continue;
+      const hold = yield* holdFor(session, state);
+      if (
+        viewers.has(deviceKey(session.hostId, session.deviceId)) ||
+        (hold && !(yield* holderIdle(hold)))
+      )
+        found.push(session);
+    }
+    // A device environment lists this environment's own sessions among its others.
+    for (const session of state.externalSessions ?? []) {
+      if (
+        session.threadId !== threadId &&
+        !state.sessions.some(
+          (own) => own.threadId === session.threadId && onDevice(own.hostId, own.deviceId)(session),
+        )
+      )
+        found.push(session);
+    }
+    return found.map(({ threadId, hostId, deviceId }) => ({ threadId, hostId, deviceId }));
+  });
 
   /** Attempts every session independently and returns only names whose cleanup remains uncertain. */
   const releaseClaim = Effect.fn("DeviceIdle.releaseClaim")(function* (
@@ -361,25 +426,32 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   ) {
     const state = yield* inner.state;
     for (const session of state.sessions.filter(onDevice(hostId, deviceId))) {
-      const hold = holdFor(session, state);
+      const hold = yield* holdFor(session, state);
       if (hold) yield* release(hold);
     }
     yield* retryUnreleased(hostId, deviceId);
   });
 
-  /** Hands over a device from other threads that hold it but are not using it. */
+  /**
+   * Hands over a device from other threads that hold it but are not using it, or
+   * from every local holder on a take-over. A connected environment's hold is never
+   * released here: its agents reach the daemon directly, past the launcher that
+   * refuses released sessions.
+   */
   const reclaim = Effect.fn("DeviceIdle.reclaim")(function* (
     threadId: ThreadId,
     hostId: string,
     deviceId: string,
+    takeOver: boolean,
   ) {
     // Someone watching the device keeps it with its holders.
-    if (viewers.has(deviceKey(hostId, deviceId))) return;
+    if (!takeOver && viewers.has(deviceKey(hostId, deviceId))) return;
     const state = yield* inner.state;
     for (const session of state.sessions.filter(onDevice(hostId, deviceId))) {
-      if (session.threadId === threadId) continue;
-      const hold = holdFor(session, state);
-      if (!hold || !(yield* holderIdle(hold))) continue;
+      if (session.threadId === threadId || session.threadId.startsWith(PEER_THREAD_PREFIX))
+        continue;
+      const hold = yield* holdFor(session, state);
+      if (!hold || (!takeOver && !(yield* holderIdle(hold)))) continue;
       yield* release(hold);
       yield* inner.close({ threadId: session.threadId, hostId, deviceId });
       yield* Effect.logInfo("Handed device to another thread", {
@@ -387,6 +459,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
         threadId,
         hostId,
         deviceId,
+        takeOver,
       });
     }
     yield* retryUnreleased(hostId, deviceId);
@@ -397,7 +470,8 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       Effect.tap((args) => {
         const name = args[args.indexOf("--session") + 1];
         if (!name) return Effect.void;
-        targeted.set(holdKey(input.threadId, input.hostId, input.deviceId), name);
+        const key = holdKey(input.threadId, input.hostId, input.deviceId);
+        targeted.set(key, { name, pending: (targeted.get(key)?.pending ?? 0) + 1 });
         return Effect.void;
       }),
     );
@@ -408,9 +482,26 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       Effect.gen(function* () {
         const hostId = input.hostId ?? LOCAL_DEVICE_HOST_ID;
         const asked = holdKey(input.threadId, hostId, input.deviceId);
-        const name = targeted.get(asked);
-        // Only an agent open hands a device over; the user opening a panel never does.
-        if (name) yield* reclaim(input.threadId, hostId, input.deviceId);
+        const name = targeted.get(asked)?.name;
+        // Only an agent open hands a device over or is refused one; the user opening a
+        // panel shares the stream and never takes the device from an agent.
+        if (name) {
+          // A thread reopening a device it already holds is never refused.
+          const held = holds.has(asked)
+            ? []
+            : (yield* inUseBy(input.threadId, yield* inner.state)).filter(
+                onDevice(hostId, input.deviceId),
+              );
+          if (held.length > 0 && input.takeOver !== true) {
+            consumeTarget(asked);
+            return yield* new DeviceHeldError({
+              hostId,
+              deviceId: input.deviceId,
+              threadIds: [...new Set(held.map((entry) => entry.threadId))],
+            });
+          }
+          yield* reclaim(input.threadId, hostId, input.deviceId, input.takeOver === true);
+        }
         const updates = yield* inner.subscribe;
         const session = yield* inner.open(input);
         const key = deviceKey(session.hostId, session.deviceId);
@@ -436,7 +527,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
           // Only a completed open hands the session out again. Keep it refused while
           // a concurrent hand-over is releasing this thread's earlier session.
           yield* setReleased([name], false);
-          targeted.delete(asked);
+          consumeTarget(asked);
           const opened = holdKey(session.threadId, session.hostId, session.deviceId);
           // A thread reopening a device keeps every session name it was given until each is released.
           const previous = [
@@ -464,7 +555,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   ) {
     if (shutdown) yield* releaseDevice(session.hostId, session.deviceId);
     else {
-      const hold = holdFor(session, yield* inner.state);
+      const hold = yield* holdFor(session, yield* inner.state);
       if (hold) yield* release(hold);
     }
     yield* inner.close({
@@ -524,20 +615,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
         ),
       ),
     notePeer: (threadPrefix, environmentId) => void peers.set(threadPrefix, environmentId),
-    reclaimable: Effect.fn("DeviceIdle.reclaimable")(function* (threadId) {
-      const state = yield* inner.state;
-      const devices = new Map<string, DeviceRef>();
-      const busy = new Set<string>();
-      for (const session of state.sessions) {
-        if (session.threadId === threadId) continue;
-        const key = deviceKey(session.hostId, session.deviceId);
-        const hold = holdFor(session, state);
-        // Someone watching the device, or a thread working on it, keeps it.
-        if (viewers.has(key) || (hold && !(yield* holderIdle(hold)))) busy.add(key);
-        else devices.set(key, { hostId: session.hostId, deviceId: session.deviceId });
-      }
-      return [...devices].filter(([key]) => !busy.has(key)).map(([, ref]) => ref);
-    }),
+    inUse: (threadId) => inner.state.pipe(Effect.flatMap((state) => inUseBy(threadId, state))),
   };
 
   /**
@@ -557,6 +635,36 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     for (const key of holds.keys()) if (!live.has(key)) holds.delete(key);
     if (!input.agentAccess) unreleased.clear();
 
+    // An archived or deleted thread can no longer use its devices. A thread that is not
+    // in the projections yet may be a draft with an open Device panel, so only an
+    // agent's hold counts it as deleted.
+    for (const session of state.sessions) {
+      if (session.threadId.startsWith(PEER_THREAD_PREFIX)) continue;
+      // Decide under the device lock, so a thread unarchived and reopened while the
+      // sweep waited keeps its new session.
+      yield* Effect.gen(function* () {
+        const current = yield* inner.state;
+        if (
+          !current.sessions.some(
+            (candidate) =>
+              candidate.threadId === session.threadId &&
+              onDevice(session.hostId, session.deviceId)(candidate),
+          )
+        )
+          return;
+        const status = yield* options.threadStatus(session.threadId);
+        if (status !== "archived" && !(status === "missing" && (yield* holdFor(session, current))))
+          return;
+        yield* closeOne(session, false);
+        yield* Effect.logInfo("Released a device from a thread that ended", {
+          threadId: session.threadId,
+          hostId: session.hostId,
+          deviceId: session.deviceId,
+          status,
+        });
+      }).pipe(withDevice(session.hostId, session.deviceId));
+    }
+
     const stopped: Array<DeviceShutdownInput> = [];
     if (input.shutdownAfter === null) return { stopped };
     const shutdownAfter = Duration.toMillis(input.shutdownAfter);
@@ -568,11 +676,11 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       deviceId: string,
     ) {
       for (const session of current.sessions.filter(onDevice(hostId, deviceId))) {
-        const hold = holdFor(session, current);
+        const hold = yield* holdFor(session, current);
         if (
           hold &&
           !hold.threadId.startsWith(PEER_THREAD_PREFIX) &&
-          (yield* options.threadBusy(hold.threadId))
+          (yield* threadBusy(hold.threadId))
         ) {
           yield* markUsed(deviceKey(hostId, deviceId));
           return true;
@@ -647,6 +755,7 @@ const live = Layer.effectContext(
     const config = yield* ServerConfig.ServerConfig;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const crypto = yield* Crypto.Crypto;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const settings = yield* ServerSettings.ServerSettingsService;
     const environment = yield* ServerEnvironment.ServerEnvironment;
@@ -676,10 +785,10 @@ const live = Layer.effectContext(
           ),
       },
       // An unreadable projection keeps the device.
-      threadBusy: (threadId) =>
+      threadStatus: (threadId) =>
         projections.getThreadShell(threadId).pipe(
-          Effect.map((thread) => thread !== null && threadKeepsDevices(thread)),
-          Effect.orElseSucceed(() => true),
+          Effect.map(threadStatus),
+          Effect.orElseSucceed((): DeviceThreadStatus => "working"),
         ),
       ledger: {
         load: fs.readFileString(ledgerPath).pipe(
@@ -704,7 +813,9 @@ const live = Layer.effectContext(
       agentEndpoint: (hostId) =>
         hostId === LOCAL_DEVICE_HOST_ID
           ? inner.currentAgentEndpoint(hostId)
-          : fs.readFileString(agentDeviceConfigPath(config.stateDir, hostId, path)).pipe(
+          : agentDeviceConfigPath(config.stateDir, hostId, path).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.flatMap((file) => fs.readFileString(file)),
               Effect.flatMap(Schema.decodeUnknownEffect(AgentDeviceConfig)),
               Effect.map((saved): AgentDeviceEndpoint => ({
                 baseUrl: saved.daemonBaseUrl,

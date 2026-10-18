@@ -32,6 +32,16 @@ type AffectedThread = {
   readonly thread: HostActivityThread;
 };
 
+function isActiveHostThread(thread: HostThread): boolean {
+  if (thread.pendingRuntimeRequest !== null || thread.status === "waiting") return false;
+  return (
+    thread.status === "preparing" ||
+    thread.status === "starting" ||
+    thread.status === "running" ||
+    (thread.pendingBackgroundTasks?.length ?? 0) > 0
+  );
+}
+
 /** Counts the work a restart would stop and lists each affected thread once. */
 export function summarizeHostSessions(
   threads: ReadonlyArray<HostThread>,
@@ -43,7 +53,7 @@ export function summarizeHostSessions(
   const affected: AffectedThread[] = [];
   for (const thread of threads) {
     const reasons: HostActivityThread["reasons"][number][] = [];
-    let active = false;
+    const active = isActiveHostThread(thread);
     if (thread.pendingRuntimeRequest !== null || thread.status === "waiting") {
       waitingSessions += 1;
       const kind = thread.pendingRuntimeRequest?.kind;
@@ -62,10 +72,7 @@ export function summarizeHostSessions(
       thread.status === "starting" ||
       thread.status === "running"
     ) {
-      active = true;
       reasons.push(thread.status);
-    } else if ((thread.pendingBackgroundTasks?.length ?? 0) > 0) {
-      active = true;
     }
     for (const task of thread.pendingBackgroundTasks ?? []) {
       if (!reasons.includes(task.kind)) reasons.push(task.kind);
@@ -118,7 +125,9 @@ export const inspectHostActivity = Effect.gen(function* () {
   // invisible here. A restart stops the hub and daemon they are driving.
   const environmentsUsingDevices = yield* (yield* DeviceSharing).environmentsUsingDevices;
   const snapshot = yield* projections.getShellSnapshot().pipe(Effect.mapError(readFailed));
-  const continuable = yield* listContinuableThreadIds.pipe(
+  const continuable = yield* listContinuableThreadIds(
+    snapshot.threads.filter(isActiveHostThread),
+  ).pipe(
     Effect.catchCause((cause) =>
       Effect.logWarning("could not read continuable threads", { cause }).pipe(
         Effect.as(new Set<string>()),

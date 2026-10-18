@@ -6,14 +6,13 @@ import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { EnvironmentId, ThreadId, type PreviewAutomationRequest } from "@t3tools/contracts";
+import { ThreadId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
-import * as PreviewAutomationBroker from "../mcp/PreviewAutomationBroker.ts";
+import * as PreviewManager from "./Manager.ts";
 import * as TerminalBrowserOpen from "./TerminalBrowserOpen.ts";
 
 function listenOnRandomPort(server: NodeHttp.Server | NodeNet.Server): Promise<number> {
@@ -45,13 +44,13 @@ it.layer(NodeServices.layer)("TerminalBrowserOpen", (it) => {
         prefix: "t3-terminal-browser-open-",
       });
       const configLayer = ServerConfig.layerTest(process.cwd(), baseDir);
-      const { browserOpen, broker, config } = yield* Effect.gen(function* () {
-        const broker = yield* PreviewAutomationBroker.make;
+      const { browserOpen, previews, config } = yield* Effect.gen(function* () {
+        const previews = yield* PreviewManager.make;
         return {
           browserOpen: yield* TerminalBrowserOpen.make.pipe(
-            Effect.provideService(PreviewAutomationBroker.PreviewAutomationBroker, broker),
+            Effect.provideService(PreviewManager.PreviewManager, previews),
           ),
-          broker,
+          previews,
           config: yield* ServerConfig.ServerConfig,
         };
       }).pipe(Effect.provide(configLayer));
@@ -86,35 +85,16 @@ it.layer(NodeServices.layer)("TerminalBrowserOpen", (it) => {
       expect(yield* browserOpen.resolve(firstToken ?? "")).toBeUndefined();
       expect(yield* browserOpen.resolve(secondToken ?? "")).toEqual(owner);
 
-      let routedRequest: PreviewAutomationRequest | undefined;
-      const events = yield* broker.connect({
-        clientId: "desktop-1",
-        environmentId: EnvironmentId.make("environment-1"),
-      });
-      yield* Stream.runForEach(events, (event) => {
-        if (event.type === "connected") return Effect.void;
-        routedRequest = event.request;
-        return broker.respond({
-          clientId: "desktop-1",
-          connectionId: event.connectionId,
-          requestId: event.request.requestId,
-          ok: true,
-          result: { available: true },
-        });
-      }).pipe(Effect.forkScoped);
-      yield* Effect.yieldNow;
-
-      yield* browserOpen.openInPreview({
-        environmentId: EnvironmentId.make("environment-1"),
-        owner,
-        url: "http://localhost:5173/app",
-      });
-      expect(routedRequest).toMatchObject({
+      yield* browserOpen.openInPreview({ owner, url: "http://localhost:5173/app" });
+      const { sessions } = yield* previews.list({ threadId: owner.threadId });
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).toMatchObject({
         threadId: "thread-1",
-        operation: "open",
-        input: { url: "http://localhost:5173/app", reuseExistingTab: false },
-        presentation: "right-panel",
+        runtime: "server",
+        reveal: true,
+        revealSurface: "right-panel",
       });
+      expect(sessions[0]?.automationOwner).toBeUndefined();
 
       yield* browserOpen.unregister(owner);
       expect(yield* browserOpen.resolve(secondToken ?? "")).toBeUndefined();

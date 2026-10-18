@@ -17,6 +17,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -82,6 +83,7 @@ function buildTurnDiffResult(
 export const make = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
+  const crypto = yield* Crypto.Crypto;
 
   /** Best-effort `linguist-generated` attribution for a computed patch; failure yields none. */
   const resolveGeneratedDiffPaths = Effect.fn("resolveGeneratedDiffPaths")(function* (
@@ -178,25 +180,25 @@ export const make = Effect.gen(function* () {
         });
       }
 
+      // The root scope is shared by every run in this thread. Its runId
+      // tracks the latest owner, while ordinal zero stays the baseline.
+      const firstScope =
+        input.fromTurnCount === 0
+          ? projection.checkpointScopes.find((scope) => scope.kind === "root_run")
+          : undefined;
       const fromCheckpointRef =
         input.fromTurnCount === 0
-          ? (() => {
-              // The root scope is shared by every run in this thread. Its
-              // runId tracks the latest owner, while ordinal zero stays the baseline.
-              if (toCheckpoint.legacyCheckpointTurnCount != null) {
+          ? toCheckpoint.legacyCheckpointTurnCount != null
+            ? (() => {
                 const baseline = toCheckpoint.ref.replace(/\/turn\/\d+$/, "/turn/0");
                 return baseline === toCheckpoint.ref ? undefined : CheckpointRef.make(baseline);
-              }
-              const firstScope = projection.checkpointScopes.find(
-                (scope) => scope.kind === "root_run",
-              );
-              return firstScope === undefined
-                ? undefined
-                : checkpointRefForScopeOrdinal({
-                    scopeId: firstScope.id,
-                    ordinalWithinScope: 0,
-                  });
-            })()
+              })()
+            : firstScope === undefined
+              ? undefined
+              : yield* checkpointRefForScopeOrdinal({
+                  scopeId: firstScope.id,
+                  ordinalWithinScope: 0,
+                }).pipe(Effect.provideService(Crypto.Crypto, crypto))
           : readyCheckpoints.find(
               (checkpoint) => checkpointCount(checkpoint) === input.fromTurnCount,
             )?.ref;

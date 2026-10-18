@@ -8,11 +8,11 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as ServerConfig from "../config.ts";
 import * as ModelManifest from "./ModelManifest.ts";
-import { ProviderRegistryLive } from "./Layers/ProviderRegistry.ts";
-import * as ProviderRegistry from "./Services/ProviderRegistry.ts";
-import * as ProviderInstanceRegistry from "./Services/ProviderInstanceRegistry.ts";
+import * as ProviderRegistry from "./ProviderRegistry.ts";
+import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "./ProviderDriver.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./providerMaintenance.ts";
 import { BUILT_IN_DRIVERS } from "./builtInDrivers.ts";
@@ -366,7 +366,7 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
         })),
       ),
     );
-    const dependencies = Layer.mergeAll(
+    const layerDependencies = Layer.mergeAll(
       Layer.succeed(ModelManifest.ModelManifest, {
         current: Ref.get(manifest),
         refresh,
@@ -406,7 +406,72 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
       assert.strictEqual(updated?.compatibilityAdvisory?.status, "supported");
       assert.strictEqual(updated?.status, "error");
       assert.strictEqual(updated?.message, "Authentication failed");
-    }).pipe(Effect.provide(ProviderRegistryLive.pipe(Layer.provide(dependencies))));
+    }).pipe(Effect.provide(ProviderRegistry.layer.pipe(Layer.provide(layerDependencies))));
+  }).pipe(Effect.scoped),
+);
+
+it.effect("publishes the verified version from a recent remote manifest", () =>
+  Effect.gen(function* () {
+    const healthy: ServerProvider = { ...provider, version: "2.1.0", status: "ready" };
+    const manifest: ModelManifest.ModelManifestData = {
+      version: 1,
+      currentModels: {},
+      compatibility: [
+        {
+          ...policy,
+          t3CodeRange: ">=0.0.0",
+          autoUpdates: [{ version: "2.4.0", package: "pkg", styal: "0.0.1" }],
+        },
+      ],
+    };
+    const instance: ProviderInstance = {
+      instanceId: provider.instanceId,
+      driverKind: driver,
+      enabled: true,
+      displayName: undefined,
+      continuationIdentity: { driverKind: driver, continuationKey: "test-codex" },
+      snapshot: {
+        getSnapshot: Effect.succeed(healthy),
+        refresh: Effect.succeed(healthy),
+        streamChanges: Stream.empty,
+        applyUsageLimits: () => Effect.void,
+        resolveMaintenance: () =>
+          Effect.succeed(
+            makeManualOnlyProviderMaintenanceCapabilities({ provider: driver, packageName: "pkg" }),
+          ),
+      },
+      orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+      textGeneration: {} as ProviderInstance["textGeneration"],
+    };
+    const dependencies = Layer.mergeAll(
+      Layer.succeed(ModelManifest.ModelManifest, {
+        current: Effect.succeed(manifest),
+        refresh: Effect.succeed(manifest),
+        forceRefresh: Effect.succeed(manifest),
+        refreshInBackground: Effect.void,
+        remote: Effect.succeed({ manifest, fetchedAtMs: 0 }),
+      }),
+      Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+        getInstance: (id) => Effect.succeed(id === instance.instanceId ? instance : undefined),
+        listInstances: Effect.succeed([instance]),
+        listUnavailable: Effect.succeed([]),
+        streamChanges: Stream.empty,
+        subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
+      }),
+      ServerConfig.layerTest(process.cwd(), { prefix: "compatibility-verified-test" }).pipe(
+        Layer.provideMerge(NodeServices.layer),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const registry = yield* ProviderRegistry.ProviderRegistry;
+      const fresh = yield* registry.refreshInstance(provider.instanceId);
+      assert.strictEqual(fresh[0]?.compatibilityAdvisory?.verifiedVersion, "2.4.0");
+      // A manifest older than two days may list a withdrawn version.
+      yield* TestClock.adjust("3 days");
+      const stale = yield* registry.refreshInstance(provider.instanceId);
+      assert.strictEqual(stale[0]?.compatibilityAdvisory?.status, "supported");
+      assert.strictEqual(stale[0]?.compatibilityAdvisory?.verifiedVersion, undefined);
+    }).pipe(Effect.provide(ProviderRegistry.layer.pipe(Layer.provide(dependencies))));
   }).pipe(Effect.scoped),
 );
 

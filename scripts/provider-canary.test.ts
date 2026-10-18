@@ -293,8 +293,13 @@ describe("provider canary record", () => {
       new Date(Date.parse(bundled.updatedAt) + 1000),
     );
     expect(next.endsWith("}\n")).toBe(true);
-    // Seven new lines for the autoUpdates array; the rest of the file keeps its layout.
-    expect(next.split("\n").length).toBe(text.split("\n").length + 7);
+    // Only autoUpdates arrays and updatedAt change; the rest of the file keeps its layout.
+    const layout = (manifestText: string) =>
+      manifestText
+        .replace(/\n\s*"autoUpdates": \[[\s\S]*?\n\s*\],/g, "")
+        .replace(/"updatedAt": "[^"]*"/, "");
+    expect(layout(next)).toBe(layout(text));
+    expect(next).not.toBe(text);
   });
 });
 

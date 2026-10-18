@@ -8,6 +8,7 @@ import {
   type OrchestrationV2RestartCancelledBackgroundWork,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2ThreadShell,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -70,12 +71,27 @@ export class ProviderRuntimeRecoveryService extends Context.Service<
 >()("@styal/cli/orchestration-v2/ProviderRuntimeRecoveryService") {}
 
 /** The same eligibility used when capturing continuation before server shutdown. */
-export const listContinuableThreadIds = Effect.gen(function* () {
+export const listContinuableThreadIds = Effect.fn(
+  "ProviderRuntimeRecovery.listContinuableThreadIds",
+)(function* (threads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "id" | "projectId">>) {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const settings = yield* ServerSettings.ServerSettingsService;
   const current = yield* settings.getSettings;
   const eligible = new Set<ThreadId>();
+  // The activity check already read project identity. Avoid recovery projections
+  // entirely for projects that will not continue, including the default setting.
+  const enabledThreadIds = new Set(
+    threads
+      .filter(
+        (thread) =>
+          resolveProjectSettings(current, thread.projectId).settings
+            .continueThreadsAfterServerUpdate,
+      )
+      .map((thread) => thread.id),
+  );
+  if (enabledThreadIds.size === 0) return eligible;
   for (const threadId of yield* projections.getRecoveryThreadIds("runtime")) {
+    if (!enabledThreadIds.has(threadId)) continue;
     const projection = yield* projections.getRuntimeRecoveryProjection(threadId);
     if (
       resolveProjectSettings(current, projection.thread.projectId).settings
@@ -175,6 +191,17 @@ function resolveStaleBackgroundItemProviderInstanceId(
   }
   return projection.providerThreads[0]?.providerInstanceId ?? projection.thread.providerInstanceId;
 }
+
+/** An open item closed by recovery. A secret card also closes its form, so it takes no answer. */
+const cancelledItem = (
+  item: OrchestrationV2ThreadProjection["turnItems"][number],
+  now: DateTime.Utc,
+): OrchestrationV2ThreadProjection["turnItems"][number] => {
+  const timestamps = cancelledItemTimestamps(item, now);
+  return item.type === "secret_request" && item.secretStatus === "pending"
+    ? { ...item, status: "cancelled", secretStatus: "cancelled", ...timestamps }
+    : { ...item, status: "cancelled", ...timestamps };
+};
 
 /**
  * Provider threads with background work reconciliation would cancel and
@@ -481,7 +508,7 @@ export const make = Effect.gen(function* () {
             ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
             providerInstanceId: run.providerInstanceId,
             occurredAt: now,
-            payload: { ...item, status: "cancelled", ...cancelledItemTimestamps(item, now) },
+            payload: cancelledItem(item, now),
           });
         }
       }
@@ -511,7 +538,7 @@ export const make = Effect.gen(function* () {
           ...(item.nodeId === null || item.nodeId === undefined ? {} : { nodeId: item.nodeId }),
           providerInstanceId,
           occurredAt: now,
-          payload: { ...item, status: "cancelled", ...cancelledItemTimestamps(item, now) },
+          payload: cancelledItem(item, now),
         });
         if (item.nodeId !== null && item.nodeId !== undefined) {
           const staleItemNode = projection.nodes.find(

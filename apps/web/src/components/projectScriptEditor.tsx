@@ -1,7 +1,10 @@
-import type {
-  ProjectScript,
-  ProjectScriptIcon,
-  ResolvedKeybindingsConfig,
+import {
+  AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
+  type EnvironmentId,
+  type ProjectScript,
+  type ProjectScriptIcon,
+  type ResolvedKeybindingsConfig,
   T3ProjectFileScript,
 } from "@t3tools/contracts";
 import {
@@ -35,6 +38,8 @@ import {
 } from "~/lib/projectScriptKeybindings";
 import { keybindingFromKeyboardEvent } from "~/components/settings/KeybindingsSettings.logic";
 import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
+import { useComposerMenuState } from "./chat/useComposerMenuState";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -97,7 +102,8 @@ export interface NewProjectScriptInput {
   runOnWorktreeCreate: boolean;
   /** Setup scripts only: hold the agent until the script exits. */
   waitForSetup: boolean;
-  keybinding: string | null;
+  /** Omit to preserve the current shortcut when the form did not edit it. */
+  keybinding?: string | null;
 }
 
 export type ProjectScriptActionResult = AtomCommandResult<void, unknown>;
@@ -156,12 +162,16 @@ export function editorRequestForScript(
  * being edited via `request`; the dialog owns the form state and validation.
  */
 export function ProjectScriptEditorDialog({
+  environmentId,
+  editScope = AuthOrchestrationOperateScope,
   request,
   scripts,
   onSubmit,
   onDelete,
   onClose,
 }: {
+  environmentId: EnvironmentId;
+  editScope?: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
   request: ProjectScriptEditorRequest | null;
   /** Existing scripts, used to derive a unique id for new scripts. */
   scripts: ReadonlyArray<ProjectScript>;
@@ -172,16 +182,18 @@ export function ProjectScriptEditorDialog({
   onDelete: (scriptId: string) => void;
   onClose: () => void;
 }) {
+  const canEditActions = useEnvironmentScope(environmentId, editScope);
+  const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const formId = React.useId();
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
-  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditActions);
   const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
   const [waitForSetup, setWaitForSetup] = useState(false);
   const [keybinding, setKeybinding] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useComposerMenuState(!canEditActions);
   const [lastRequest, setLastRequest] = useState<ProjectScriptEditorRequest | null>(null);
   const [savingRequest, setSavingRequest] = useState<ProjectScriptEditorRequest | null>(null);
   const pendingSubmissionRef = useRef<{ request: ProjectScriptEditorRequest } | null>(null);
@@ -222,7 +234,7 @@ export function ProjectScriptEditorDialog({
     setKeybinding(request.initial.keybinding ?? "");
     setValidationError(null);
     setSavingRequest(null);
-  }, [request]);
+  }, [request, setIconPickerOpen]);
 
   const close = () => {
     pendingSubmissionRef.current = null;
@@ -232,6 +244,8 @@ export function ProjectScriptEditorDialog({
   };
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (!readEnvironmentScope(environmentId, editScope)) return;
+    if (!readEnvironmentScope(environmentId, AuthSettingsWriteScope)) return;
     if (event.key === "Tab") return;
     event.preventDefault();
     if (event.key === "Backspace" || event.key === "Delete") {
@@ -246,6 +260,17 @@ export function ProjectScriptEditorDialog({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!request || pendingSubmissionRef.current !== null) return;
+    if (!readEnvironmentScope(environmentId, editScope)) {
+      setValidationError("This connection cannot change project actions.");
+      return;
+    }
+    const changesKeybinding =
+      (keybinding.trim() || null) !== (request.initial.keybinding?.trim() || null);
+    const canChangeKeybinding = readEnvironmentScope(environmentId, AuthSettingsWriteScope);
+    if (changesKeybinding && !canChangeKeybinding) {
+      setValidationError("This connection cannot change keyboard shortcuts.");
+      return;
+    }
     const trimmedName = name.trim();
     const trimmedCommand = command.trim();
     if (trimmedName.length === 0) {
@@ -276,7 +301,9 @@ export function ProjectScriptEditorDialog({
         icon,
         runOnWorktreeCreate,
         waitForSetup: runOnWorktreeCreate && waitForSetup,
-        keybinding: keybindingRule?.key ?? null,
+        ...((request.scriptId === null && canChangeKeybinding) || changesKeybinding
+          ? { keybinding: keybindingRule?.key ?? null }
+          : {}),
       } satisfies NewProjectScriptInput;
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : "Failed to save action.");
@@ -329,7 +356,7 @@ export function ProjectScriptEditorDialog({
           </DialogHeader>
           <DialogPanel>
             <form id={formId} onSubmit={submit}>
-              <fieldset className="space-y-4" disabled={isSaving}>
+              <fieldset className="space-y-4" disabled={isSaving || !canEditActions}>
                 <div className="space-y-1.5">
                   <Label htmlFor="script-name">Name</Label>
                   <div className="flex items-center gap-2">
@@ -384,6 +411,7 @@ export function ProjectScriptEditorDialog({
                 <div className="space-y-1.5">
                   <Label htmlFor="script-keybinding">Keybinding</Label>
                   <Input
+                    disabled={!canWriteSettings}
                     id="script-keybinding"
                     placeholder="Press shortcut"
                     value={keybinding}
@@ -445,7 +473,7 @@ export function ProjectScriptEditorDialog({
                 type="button"
                 variant="destructive-outline"
                 className="mr-auto"
-                disabled={isSaving}
+                disabled={isSaving || !canEditActions}
                 onClick={() => setDeleteConfirmOpen(true)}
               >
                 Delete
@@ -454,7 +482,7 @@ export function ProjectScriptEditorDialog({
             <Button type="button" variant="outline" onClick={close}>
               Cancel
             </Button>
-            <Button form={formId} type="submit" disabled={isSaving}>
+            <Button form={formId} type="submit" disabled={isSaving || !canEditActions}>
               {isSaving
                 ? "Saving…"
                 : isEnablingSetup
@@ -469,7 +497,7 @@ export function ProjectScriptEditorDialog({
         </DialogPopup>
       </Dialog>
 
-      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+      <AlertDialog open={deleteConfirmOpen && canEditActions} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete action "{name}"?</AlertDialogTitle>
@@ -479,9 +507,13 @@ export function ProjectScriptEditorDialog({
             <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
             <Button
               variant="destructive"
-              disabled={isSaving}
+              disabled={isSaving || !canEditActions}
               onClick={() => {
                 if (!request?.scriptId) return;
+                if (!readEnvironmentScope(environmentId, editScope)) {
+                  setValidationError("This connection cannot change project actions.");
+                  return;
+                }
                 setDeleteConfirmOpen(false);
                 close();
                 onDelete(request.scriptId);

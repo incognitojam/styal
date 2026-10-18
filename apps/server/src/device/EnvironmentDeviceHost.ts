@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Device host ids are derived synchronously where device state is matched.
 import * as NodeCrypto from "node:crypto";
 import {
   DeviceEnvironmentInfo,

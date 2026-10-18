@@ -7,6 +7,7 @@ import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import {
   buildLocalEnvironmentUpdateGroups,
   deriveEnvironmentDisplayLabel,
+  environmentAutoUpdatesProviders,
   type EnvironmentUpdateConnectionState,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
@@ -87,6 +88,7 @@ export function useLocalEnvironmentUpdateGroups(): {
           ? "ready"
           : normalizeConnectionState(environment.connection.phase),
         providers: serverConfig?.providers ?? [],
+        autoUpdatesProviders: environmentAutoUpdatesProviders(serverConfig),
       });
     }
 

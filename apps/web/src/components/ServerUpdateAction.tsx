@@ -1,3 +1,11 @@
+import { useAtomValue } from "@effect/atom-react";
+import {
+  AuthEnvironmentMaintainScope,
+  type AuthSessionState,
+  sessionGrantsScope,
+} from "@t3tools/contracts";
+import type { AsyncResult } from "effect/reactivity";
+import { environmentSession } from "~/state/session";
 import type { EnvironmentId, ServerInstallation } from "@t3tools/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
@@ -12,9 +20,10 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand, type ServerUpdateCapability } from "~/versionSkew";
-import { serverUpdateConfirmation } from "./ServerUpdateAction.logic";
+import { serverUpdateConfirmation, serverUpdateQuestion } from "./ServerUpdateAction.logic";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -94,6 +103,8 @@ function useServerUpdates() {
   });
   const updateOne = async (target: ServerUpdateTarget, failureTitle: string) => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
+    if (!canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))))
+      return;
     try {
       const result = await updateServer({
         environmentId,
@@ -124,42 +135,44 @@ function useServerUpdates() {
   };
   return async (targets: ReadonlyArray<ServerUpdateTarget>) => {
     const claimed = targets.filter(
-      (target) => !pendingUpdateEnvironmentIds.has(target.environmentId),
+      (target) =>
+        canUpdateServer(
+          appAtomRegistry.get(environmentSession.sessionStateAtom(target.environmentId)),
+        ) && !pendingUpdateEnvironmentIds.has(target.environmentId),
     );
     if (claimed.length === 0) return;
     for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
+    const hosts = claimed.map((target) => ({
+      serverLabel: target.serverLabel,
+      desktopApp: target.selfUpdate === "desktop-managed",
+      continueRunningThreads: continuesRunningThreads(target),
+    }));
     try {
       // This is the only confirmation in the flow; the remote machines restart
       // without asking anyone there, so work started from any client counts.
-      const activities = await Promise.all(
-        claimed.map(async ({ environmentId }) => {
-          const activity = await readHostActivity({ environmentId, input: {} });
-          return activity._tag === "Success" ? activity.value : null;
-        }),
-      );
-      const confirmation = serverUpdateConfirmation(
-        claimed.map((target, index) => ({
-          serverLabel: target.serverLabel,
-          activity: activities[index] ?? null,
-          desktopApp: target.selfUpdate === "desktop-managed",
-          continueRunningThreads: continuesRunningThreads(target),
-        })),
+      const prepare = async () => {
+        const activities = await Promise.all(
+          claimed.map(async ({ environmentId }) => {
+            const activity = await readHostActivity({ environmentId, input: {} });
+            return activity._tag === "Success" ? activity.value : null;
+          }),
+        );
+        return serverUpdateConfirmation(
+          hosts.map((host, index) => ({
+            ...host,
+            activity: activities[index] ?? null,
+          })),
+        );
+      };
+      const confirmation = requestConfirmDialog(
+        `${serverUpdateQuestion(hosts)}\nChecking for running work…`,
+        { confirmLabel: "Update" },
+        { prepare },
       );
       // No themed host mounted (undefined) means proceed: the click itself
       // was the request.
-      if (
-        confirmation !== null &&
-        !(
-          (await requestConfirmDialog(confirmation.message, {
-            confirmLabel: "Update",
-            ...(confirmation.threadActivity.length
-              ? { threadActivity: confirmation.threadActivity }
-              : {}),
-          })) ?? true
-        )
-      ) {
-        return;
-      }
+      if (confirmation === undefined) await prepare();
+      else if (!(await confirmation)) return;
       await Promise.all(
         claimed.map((target) =>
           updateOne(
@@ -210,6 +223,11 @@ export function ServerUpdatesAction({
       {label}
     </Button>
   );
+}
+
+function canUpdateServer(result: AsyncResult.AsyncResult<AuthSessionState, unknown>): boolean {
+  if (result._tag !== "Success" || !result.value.authenticated) return false;
+  return sessionGrantsScope(result.value, AuthEnvironmentMaintainScope);
 }
 
 /**
@@ -271,6 +289,8 @@ export function ServerUpdateAction({
   className,
   appearance = "button",
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
+  const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
+  const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
   const continueThreadsAfterServerUpdate = useEnvironmentSettings(
     environmentId,
     (settings) => settings.continueThreadsAfterServerUpdate,
@@ -445,6 +465,7 @@ export function ServerUpdateAction({
               variant="ghost-muted"
               className={className}
               aria-label={`${actionLabel} for ${serverLabel}`}
+              disabled={!canUpdate}
               onClick={onClick}
             />
           }
@@ -457,7 +478,13 @@ export function ServerUpdateAction({
   }
 
   return (
-    <Button size={size} variant={variant} className={className} onClick={onClick}>
+    <Button
+      size={size}
+      variant={variant}
+      className={className}
+      disabled={!canUpdate}
+      onClick={onClick}
+    >
       {actionLabel}
     </Button>
   );

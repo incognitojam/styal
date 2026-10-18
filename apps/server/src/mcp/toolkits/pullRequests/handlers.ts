@@ -25,8 +25,10 @@ import * as Option from "effect/Option";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as WorkflowRunWatchUsage from "../../../telemetry/WorkflowRunWatchUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
-import { assertTargetWithinLimits } from "../../threadAccess.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
   type ListThreadPullRequestsResult,
   PullRequestLinkFailedError,
@@ -38,11 +40,16 @@ import {
   PullRequestNotOpenError,
   type PullRequestTargetInput,
   PullRequestWatchFailedError,
+  PullRequestWatchFromSubagentError,
   PullRequestThreadNotFoundError,
-  PullRequestThreadAboveLimitsError,
   PullRequestThreadRequiredError,
   PullRequestsToolkit,
   type ThreadPullRequestEntry,
+  WorkflowRunReadFailedError,
+  WorkflowRunTargetIncompleteError,
+  type WorkflowRunTargetInput,
+  WorkflowRunUrlInvalidError,
+  WorkflowRunWatchFailedError,
 } from "./tools.ts";
 
 interface ResolvedTarget {
@@ -107,6 +114,35 @@ const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
   } satisfies ResolvedTarget;
 });
 
+/** Host, repository and run ID from a workflow run URL, or a job URL below one. */
+export function parseWorkflowRunUrl(
+  url: string,
+): { readonly host: string; readonly repository: string; readonly runId: number } | null {
+  if (!URL.canParse(url)) return null;
+  const parsed = new URL(url);
+  const match = /^\/([^/]+\/[^/]+)\/actions\/runs\/(\d+)(?:\/|$)/.exec(parsed.pathname);
+  if (match === null) return null;
+  const runId = Number(match[2]);
+  if (!Number.isSafeInteger(runId) || runId <= 0) return null;
+  return { host: parsed.host.toLowerCase(), repository: match[1]!.toLowerCase(), runId };
+}
+
+const resolveWorkflowRunTarget = Effect.fn("PullRequestsToolkit.resolveWorkflowRunTarget")(
+  function* (input: WorkflowRunTargetInput, project: OrchestrationProjectShell | undefined) {
+    if (input.url !== undefined) {
+      const parsed = parseWorkflowRunUrl(input.url);
+      if (parsed === null) return yield* new WorkflowRunUrlInvalidError({});
+      return parsed;
+    }
+    if (input.repository === undefined || input.runId === undefined) {
+      return yield* new WorkflowRunTargetIncompleteError({});
+    }
+    const host = (input.host ?? projectHostAndProvider(project).host)?.toLowerCase();
+    if (host === undefined) return yield* new PullRequestHostRequiredError({});
+    return { host, repository: input.repository.toLowerCase(), runId: input.runId };
+  },
+);
+
 function entryOf(
   link: ThreadPullRequestLink,
   chains: ReturnType<typeof resolveThreadPullRequestChains>,
@@ -157,6 +193,7 @@ const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
 
   const projects = yield* ProjectService.ProjectService;
+  const pullRequests = yield* PullRequestService.PullRequestService;
   const crypto = yield* Crypto.Crypto;
 
   const commandId = (tag: string, threadId: ThreadId) =>
@@ -170,7 +207,8 @@ const make = Effect.gen(function* () {
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
       | typeof PullRequestListFailedError
-      | typeof PullRequestWatchFailedError,
+      | typeof PullRequestWatchFailedError
+      | typeof WorkflowRunWatchFailedError,
     requested: ThreadId | undefined,
   ) {
     const scope = yield* McpInvocationContext.requireMcpCapability("pull-requests");
@@ -188,53 +226,13 @@ const make = Effect.gen(function* () {
     return thread.value;
   });
 
-  /**
-   * A thread whose pull requests the caller may change: its own, or one that
-   * runs within the caller's modes.
-   */
-  const requireWritableThread = Effect.fn("PullRequestsToolkit.requireWritableThread")(function* (
-    Failure:
-      | typeof PullRequestLinkFailedError
-      | typeof PullRequestUnlinkFailedError
-      | typeof PullRequestWatchFailedError,
-    requested: ThreadId | undefined,
-  ) {
-    const thread = yield* requireThread(Failure, requested);
-    const scope = yield* McpInvocationContext.McpInvocationContext;
-    if (thread.id === scope.thread?.threadId) return thread;
-    const limits =
-      scope.thread === undefined
-        ? {
-            runtimeMode: scope.client?.runtimeModeCeiling ?? ("approval-required" as const),
-            interactionMode: "default" as const,
-          }
-        : yield* engine.getThreadShell(scope.thread.threadId).pipe(
-            Effect.mapError((cause) => new Failure({ cause })),
-            Effect.map((caller) =>
-              // A thread caller changes other threads only while its own run is live.
-              caller === null ||
-              caller.archivedAt !== null ||
-              caller.activeRunId === null ||
-              caller.providerInstanceId !== scope.thread?.providerInstanceId
-                ? undefined
-                : { runtimeMode: caller.runtimeMode, interactionMode: caller.interactionMode },
-            ),
-          );
-    if (limits === undefined) {
-      return yield* new PullRequestThreadAboveLimitsError({ threadId: thread.id });
-    }
-    yield* assertTargetWithinLimits(limits, thread).pipe(
-      Effect.mapError(() => new PullRequestThreadAboveLimitsError({ threadId: thread.id })),
-    );
-    return thread;
-  });
-
   const projectOf = (
     thread: OrchestrationV2ThreadShell,
     Failure:
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
-      | typeof PullRequestWatchFailedError,
+      | typeof PullRequestWatchFailedError
+      | typeof WorkflowRunWatchFailedError,
   ) =>
     projects.getShell(thread.projectId).pipe(
       Effect.map(Option.getOrUndefined),
@@ -246,13 +244,17 @@ const make = Effect.gen(function* () {
       Failure:
         | typeof PullRequestLinkFailedError
         | typeof PullRequestUnlinkFailedError
-        | typeof PullRequestWatchFailedError,
+        | typeof PullRequestWatchFailedError
+        | typeof WorkflowRunWatchFailedError,
     ) =>
     <E>(
       cause: Cause.Cause<E>,
     ): Effect.Effect<
       never,
-      PullRequestLinkFailedError | PullRequestUnlinkFailedError | PullRequestWatchFailedError
+      | PullRequestLinkFailedError
+      | PullRequestUnlinkFailedError
+      | PullRequestWatchFailedError
+      | WorkflowRunWatchFailedError
     > =>
       Cause.hasInterruptsOnly(cause)
         ? Effect.failCause(cause as Cause.Cause<never>)
@@ -266,17 +268,21 @@ const make = Effect.gen(function* () {
     input: PullRequestTargetInput,
     watching: boolean,
   ) {
-    const thread = yield* requireWritableThread(PullRequestWatchFailedError, input.threadId);
+    const thread = yield* requireThread(PullRequestWatchFailedError, input.threadId);
     const project = yield* projectOf(thread, PullRequestWatchFailedError);
     const target = yield* resolveTarget(input, project);
     const watchedLink = (shell: OrchestrationV2ThreadShell) =>
       threadPullRequestsOf(shell).find(
         (link) => link.source !== "stack-dismissed" && threadPullRequestKeysEqual(link, target),
       );
+    if (watching && thread.lineage.relationshipToParent === "subagent") {
+      return yield* new PullRequestWatchFromSubagentError();
+    }
     const before = watchedLink(thread);
-    const state = before?.snapshot?.state;
-    if (watching && state !== undefined && state !== "open") {
-      return yield* new PullRequestNotOpenError({ state });
+    // A merged pull request cannot reopen. A closed one can, and its saved state may be stale,
+    // so the watch starts and its first read ends it if the host still says closed.
+    if (watching && before?.snapshot?.state === "merged") {
+      return yield* new PullRequestNotOpenError({ state: "merged" });
     }
     yield* engine
       .dispatch({
@@ -301,10 +307,91 @@ const make = Effect.gen(function* () {
     };
   });
 
-  return PullRequestsToolkit.of({
-    link_pull_request: (input) =>
+  /**
+   * Starts or stops a workflow run watch. A run is read before it is watched, so a wrong ID
+   * fails here and a run that already completed is reported instead of watched.
+   */
+  const setWorkflowRunWatching = Effect.fn("PullRequestsToolkit.setWorkflowRunWatching")(function* (
+    input: WorkflowRunTargetInput,
+    watching: boolean,
+  ) {
+    const thread = yield* requireThread(WorkflowRunWatchFailedError, input.threadId);
+    const project = yield* projectOf(thread, WorkflowRunWatchFailedError);
+    const target = yield* resolveWorkflowRunTarget(input, project);
+    const watchOf = (shell: OrchestrationV2ThreadShell) =>
+      (shell.workflowRuns ?? []).find(
+        (run) =>
+          run.runId === target.runId &&
+          run.host.toLowerCase() === target.host &&
+          run.repository.toLowerCase() === target.repository,
+      );
+    if (watching && thread.lineage.relationshipToParent === "subagent") {
+      return yield* new PullRequestWatchFromSubagentError();
+    }
+    const before = watchOf(thread);
+    const result = {
+      ...target,
+      url:
+        before?.url ?? `https://${target.host}/${target.repository}/actions/runs/${target.runId}`,
+      name: before?.name ?? null,
+      wasWatching: before !== undefined,
+      conclusion: null,
+      failedJobs: [],
+    };
+    if (watching && before !== undefined) return { ...result, watching: true };
+    if (!watching && before === undefined) return { ...result, watching: false };
+    const run = watching
+      ? yield* pullRequests
+          .workflowRun({
+            projectId: thread.projectId,
+            host: target.host,
+            repository: target.repository,
+            runId: target.runId,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) => new WorkflowRunReadFailedError({ detail: cause.message, cause }),
+            ),
+          )
+      : null;
+    if (run?.completed) {
+      return {
+        ...result,
+        url: run.url,
+        name: run.name,
+        watching: false,
+        conclusion: run.conclusion ?? "unknown",
+        failedJobs: run.failedJobs,
+      };
+    }
+    yield* engine
+      .dispatch({
+        type: "thread.workflow-run.watch",
+        commandId: yield* commandId("mcp-workflow-run-watch", thread.id),
+        threadId: thread.id,
+        ...target,
+        watching,
+        ...(run === null ? {} : { run: { url: run.url, name: run.name } }),
+      })
+      .pipe(Effect.catchCause(dispatchFailure(WorkflowRunWatchFailedError)));
+    const after = yield* requireThread(WorkflowRunWatchFailedError, thread.id);
+    return {
+      ...result,
+      url: run?.url ?? result.url,
+      name: run?.name ?? result.name,
+      watching: watchOf(after) !== undefined,
+    };
+  });
+
+  /** A tool that changes `threadId`, or the caller's own thread when it is omitted. */
+  const writesThread = <P extends { readonly threadId?: ThreadId | undefined }, A, E, R>(
+    handle: (params: P) => Effect.Effect<A, E, R>,
+  ) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle);
+
+  return {
+    link_pull_request: writesThread((input) =>
       Effect.gen(function* () {
-        const thread = yield* requireWritableThread(PullRequestLinkFailedError, input.threadId);
+        const thread = yield* requireThread(PullRequestLinkFailedError, input.threadId);
         const project = yield* projectOf(thread, PullRequestLinkFailedError);
         const target = yield* resolveTarget(input, project);
         const existing = threadPullRequestsOf(thread).find((link) =>
@@ -332,9 +419,10 @@ const make = Effect.gen(function* () {
           );
         return { ...target, alreadyLinked };
       }),
-    unlink_pull_request: (input) =>
+    ),
+    unlink_pull_request: writesThread((input) =>
       Effect.gen(function* () {
-        const thread = yield* requireWritableThread(PullRequestUnlinkFailedError, input.threadId);
+        const thread = yield* requireThread(PullRequestUnlinkFailedError, input.threadId);
         const project = yield* projectOf(thread, PullRequestUnlinkFailedError);
         const target = yield* resolveTarget(input, project);
         if (!threadPullRequestsOf(thread).some((link) => threadPullRequestKeysEqual(link, target)))
@@ -365,13 +453,24 @@ const make = Effect.gen(function* () {
           wasLinked,
         };
       }),
-    list_thread_pull_requests: (input) =>
+    ),
+    list_thread_pull_requests: McpToolAccess.reads((input) =>
       requireThread(PullRequestListFailedError, input.threadId).pipe(
         Effect.map(listThreadPullRequests),
       ),
-    watch_pull_request: (input) => setWatching(input, true),
-    unwatch_pull_request: (input) => setWatching(input, false),
-  });
+    ),
+    watch_pull_request: writesThread((input) => setWatching(input, true)),
+    unwatch_pull_request: writesThread((input) => setWatching(input, false)),
+    watch_workflow_run: writesThread((input) => setWorkflowRunWatching(input, true)),
+    unwatch_workflow_run: writesThread((input) => setWorkflowRunWatching(input, false)),
+  } satisfies McpToolAccess.Handlers<typeof PullRequestsToolkit.tools>;
 });
 
-export const PullRequestsToolkitHandlersLive = PullRequestsToolkit.toLayer(make);
+export const layer = McpToolAccess.toLayer(
+  PullRequestsToolkit,
+  make.pipe(
+    Effect.flatMap((handlers) =>
+      McpToolAccess.wrapHandlers(handlers, WorkflowRunWatchUsage.observeHandlers),
+    ),
+  ),
+);

@@ -3,6 +3,7 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   type ExecutionEnvironmentDescriptor,
+  FORK_CLIENT_USAGE_VERSION,
 } from "@t3tools/contracts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Context from "effect/Context";
@@ -239,6 +240,7 @@ export const make = Effect.gen(function* () {
       threadAutoSettlement: true,
       storageCleanup: true,
       projectWorktreeCleanup: true,
+      worktreesDirectory: true,
       threadRestartContinuation: true,
       providerAutoUpdates: true,
       projectSettingsOverrides: true,
@@ -258,6 +260,7 @@ export const make = Effect.gen(function* () {
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
       composerDraftSync: true,
+      forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
       serverResolvedCommandContext: true,
       environmentIcon: true,
       projectCloneTracking: true,
@@ -269,6 +272,7 @@ export const make = Effect.gen(function* () {
         ? { serverSelfUpdateProgress: true }
         : {}),
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
+      serverBrowser: true,
     },
   };
 
@@ -286,7 +290,7 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const identityLayer = Layer.effect(ServerEnvironmentIdentity, makeIdentity);
+export const layerIdentity = Layer.effect(ServerEnvironmentIdentity, makeIdentity);
 
 /**
  * ServerEnvironment is acquired from persisted filesystem and host-process
@@ -295,6 +299,6 @@ export const identityLayer = Layer.effect(ServerEnvironmentIdentity, makeIdentit
  * ServerSecretStore backing the descriptor's publishing capability.
  */
 export const layer = Layer.effect(ServerEnvironment, make).pipe(
-  Layer.provideMerge(identityLayer),
+  Layer.provideMerge(layerIdentity),
   Layer.provide(ProcessRunner.layer),
 );

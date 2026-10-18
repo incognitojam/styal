@@ -4,6 +4,7 @@ import type {
   ServerProviderVersionAdvisory,
   ServerProviderCompatibilityAdvisory,
 } from "@t3tools/contracts";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 
 /**
  * Visual treatment for each server-reported provider status. Centralized so
@@ -121,6 +122,20 @@ export function getProviderVersionLabel(version: string | null | undefined) {
   return /^\d/.test(version) ? `v${version}` : version;
 }
 
+/**
+ * Says so when the latest release is newer than the version the provider
+ * canary verified with this styal release. Automatic updates stop at the
+ * verified version.
+ */
+function getUntestedLatestVersionNote(
+  latestVersion: string | null,
+  verifiedVersion: string | undefined,
+): string | null {
+  if (!latestVersion || !verifiedVersion) return null;
+  if (compareSemverVersions(latestVersion, verifiedVersion) <= 0) return null;
+  return `styal has not tested ${getProviderVersionLabel(latestVersion)} yet. The newest tested version is ${getProviderVersionLabel(verifiedVersion)}.`;
+}
+
 const COMPATIBILITY_TITLES = {
   graceful: "Limited support",
   unsupported: "Unsupported version",
@@ -174,14 +189,16 @@ export function getProviderVersionAdvisoryPresentation(
   const label = "Update available";
   const version = advisory.latestVersion;
   const versionLabel = getProviderVersionLabel(version);
+  const untestedNote = getUntestedLatestVersionNote(version, compatibility?.verifiedVersion);
+  const detail =
+    advisory.message ??
+    (versionLabel
+      ? `${label}: install ${versionLabel}.`
+      : `${label}: install the latest provider version.`);
 
   return {
     title: label,
-    detail:
-      advisory.message ??
-      (versionLabel
-        ? `${label}: install ${versionLabel}.`
-        : `${label}: install the latest provider version.`),
+    detail: untestedNote ? `${detail} ${untestedNote}` : detail,
     updateCommand: advisory.updateCommand,
     emphasis: "normal" as const,
     targetVersion: null,

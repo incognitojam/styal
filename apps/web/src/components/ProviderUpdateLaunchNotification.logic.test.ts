@@ -11,6 +11,7 @@ import { AsyncResult } from "effect/reactivity";
 import {
   buildLocalEnvironmentUpdateGroups,
   canOneClickUpdateProviderCandidate,
+  collectPromptedProviderUpdateCandidates,
   collectProviderUpdateCandidates,
   collectProviderUpdateOutcomeSnapshots,
   collectUpdatedProviderSnapshots,
@@ -53,6 +54,9 @@ function provider(input: {
   readonly version?: string | null;
   readonly latestVersion?: string | null;
   readonly canUpdate?: boolean;
+  readonly canInstallVersion?: boolean;
+  readonly verifiedVersion?: string;
+  readonly status?: ServerProvider["status"];
   readonly updateCommand?: string | null;
   readonly updateState?: ServerProvider["updateState"];
   readonly advisoryStatus?: NonNullable<ServerProvider["versionAdvisory"]>["status"];
@@ -63,7 +67,7 @@ function provider(input: {
     enabled: input.enabled ?? true,
     installed: true,
     version: input.version ?? "1.0.0",
-    status: "ready",
+    status: input.status ?? "ready",
     auth: { status: "authenticated" },
     checkedAt,
     models: [],
@@ -75,9 +79,23 @@ function provider(input: {
       latestVersion: "latestVersion" in input ? input.latestVersion : "1.1.0",
       updateCommand: "updateCommand" in input ? input.updateCommand : "npm install -g provider",
       canUpdate: input.canUpdate ?? true,
+      ...(input.canInstallVersion !== undefined
+        ? { canInstallVersion: input.canInstallVersion }
+        : {}),
       checkedAt,
       message: "Update available.",
     },
+    ...(input.verifiedVersion !== undefined
+      ? {
+          compatibilityAdvisory: {
+            status: "supported",
+            message: null,
+            recommendedVersion: null,
+            recommendedRange: null,
+            verifiedVersion: input.verifiedVersion,
+          },
+        }
+      : {}),
   };
 
   if (input.updateState) {
@@ -92,6 +110,35 @@ function updateCandidate(input: Parameters<typeof provider>[0]): ProviderUpdateC
 }
 
 describe("provider update launch notification logic", () => {
+  describe("collectPromptedProviderUpdateCandidates", () => {
+    const providers = [
+      provider({ driver: driver("codex"), canInstallVersion: true, verifiedVersion: "1.0.5" }),
+      provider({ driver: driver("cursor"), canInstallVersion: false, verifiedVersion: "1.0.5" }),
+      provider({ driver: driver("opencode"), canUpdate: false, updateCommand: null }),
+      provider({ driver: driver("claudeAgent"), canInstallVersion: true }),
+      provider({
+        driver: driver("grok"),
+        canInstallVersion: true,
+        verifiedVersion: "1.0.5",
+        status: "error",
+      }),
+    ];
+
+    it("prompts for every update when background updates are off", () => {
+      expect(
+        collectPromptedProviderUpdateCandidates(providers, false).map((entry) => entry.driver),
+      ).toEqual(["codex", "cursor", "opencode", "claudeAgent", "grok"]);
+    });
+
+    it("skips providers the background updater looks after", () => {
+      // claudeAgent has no verified version and grok fails its health check,
+      // so the background updater leaves both alone.
+      expect(
+        collectPromptedProviderUpdateCandidates(providers, true).map((entry) => entry.driver),
+      ).toEqual(["cursor", "opencode", "claudeAgent", "grok"]);
+    });
+  });
+
   it("detects enabled providers with a latest-version advisory", () => {
     expect(isProviderUpdateCandidate(provider({ driver: driver("codex") }))).toBe(true);
     expect(isProviderUpdateCandidate(provider({ driver: driver("codex"), enabled: false }))).toBe(
@@ -793,6 +840,26 @@ describe("provider update launch notification logic", () => {
       isPrimary: input.isPrimary ?? false,
       connectionState: input.connectionState ?? "ready",
       providers: input.providers,
+      autoUpdatesProviders: input.autoUpdatesProviders ?? false,
+    });
+
+    it("leaves updates to an environment that installs them in the background", () => {
+      const providers = [
+        provider({ driver: driver("codex"), canInstallVersion: true, verifiedVersion: "1.1.0" }),
+        provider({
+          driver: driver("claudeAgent"),
+          canInstallVersion: true,
+          verifiedVersion: "1.1.0",
+        }),
+      ];
+      const { groups } = buildLocalEnvironmentUpdateGroups([
+        environment({ environmentId: "env-windows", isPrimary: true, providers }),
+        environment({ environmentId: "env-wsl", providers, autoUpdatesProviders: true }),
+      ]);
+
+      expect(environmentGroupsWithUpdates(groups).map((group) => group.environmentId)).toEqual([
+        "env-windows",
+      ]);
     });
 
     it("groups each environment's outdated one-click candidates", () => {

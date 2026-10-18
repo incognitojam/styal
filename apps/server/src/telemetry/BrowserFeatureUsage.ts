@@ -31,6 +31,11 @@ export const observeHandlers = Effect.fnUntraced(function* (handlers: Handlers) 
     preview_type: (input, context) => observe("type", handlers.preview_type(input, context)),
     preview_press: (input, context) => observe("press", handlers.preview_press(input, context)),
     preview_scroll: (input, context) => observe("scroll", handlers.preview_scroll(input, context)),
+    preview_hover: (input, context) => observe("hover", handlers.preview_hover(input, context)),
+    preview_select: (input, context) => observe("select", handlers.preview_select(input, context)),
+    preview_drag: (input, context) => observe("drag", handlers.preview_drag(input, context)),
+    preview_upload: (input, context) => observe("upload", handlers.preview_upload(input, context)),
+    preview_dialog: (input, context) => observe("dialog", handlers.preview_dialog(input, context)),
     preview_evaluate: (input, context) =>
       observe("evaluate", handlers.preview_evaluate(input, context)),
     preview_wait_for: (input, context) =>

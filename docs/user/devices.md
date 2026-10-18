@@ -70,9 +70,10 @@ If the thread has several devices open, choose one in the viewer. Closing the
 viewer stops streaming and leaves the device available to the agent. Device
 activity also appears in the thread timeline.
 
-Agents can see which devices other threads have open. An agent opens one of
-those only when it names it explicitly, so for parallel work start another
-simulator or emulator.
+Agents can see which thread holds each device. An agent cannot open a device
+another thread's agent is working on, or that someone is watching, unless you
+tell it to take the device over, so for parallel work start another simulator or
+emulator. Opening a device in your own Device panel never takes it from an agent.
 
 Agents drive the device through the `agent-device` command line. styal
 installs and starts it only after **Agent device access** is enabled. iOS
@@ -86,7 +87,7 @@ started from then on; your own Device panel is unaffected.
 
 ## Idle devices
 
-Agents hand a device back when they finish testing, so other threads can use it; it stays booted. A device held by a thread that is not working is handed to the next agent that needs one, so agents only take turns when devices run short; hand-over happens within an environment, not across connected environments. Simulators and emulators styal started shut down once no working thread holds them and nobody has watched them for 10 minutes, even if one is still open in a Device panel tab; devices you started yourself keep running. Change the period or choose **Never** under **Shut down idle devices** in **Settings → Integrations → Devices**, or **Settings → Devices** in the mobile app.
+Agents hand a device back when they finish testing, so other threads can use it; it stays booted. A device held by a thread that is not working is handed to the next agent that needs one, so agents only take turns when devices run short; hand-over happens within an environment, not across connected environments. Archiving or deleting a thread releases its devices. Simulators and emulators styal started shut down once no working thread holds them and nobody has watched them for 10 minutes, even if one is still open in a Device panel tab; devices you started yourself keep running. Change the period or choose **Never** under **Shut down idle devices** in **Settings → Integrations → Devices**, or **Settings → Devices** in the mobile app.
 
 ## Remote connections
 

@@ -13,7 +13,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Share devices between connected environments.** Share one styal environment's simulators with another from web, desktop, or mobile settings without configuring SSH or choosing an IP address. styal selects a reachable address and tries saved alternatives when needed. Device access persists after the client closes and can be revoked. T3 Code still connects remote device hosts through SSH as of [revision 98a6246](https://github.com/pingdotgg/t3code/tree/98a6246d07624432a6e6d0ab4fb87bede90a49a6). [Use devices from another environment](./devices.md#devices-from-another-environment).
 
-- **Agents hand devices back, and idle simulators shut down.** `device_close` releases a thread's hold on a simulator or emulator so another agent can take it, and a device held by a thread that is not working is handed to the next agent that needs one. Simulators styal started stop after a configurable idle period once no working thread holds them and nobody watches them; devices you started yourself keep running. T3 Code never releases an agent's device claim or shuts idle devices down automatically as of [revision 40a7908](https://github.com/pingdotgg/t3code/tree/40a7908df54d5069c93835032c9e955b56b55f1d). [Idle devices](./devices.md#idle-devices).
+- **Agents hand devices back, and idle simulators shut down.** `device_close` releases a thread's hold on a simulator or emulator so another agent can take it, and a device held by a thread that is not working is handed to the next agent that needs one. An agent cannot open a device another thread is using unless told to take it over, and archived threads release their devices. Simulators styal started stop after a configurable idle period once no working thread holds them and nobody watches them; devices you started yourself keep running. T3 Code never releases an agent's device claim or shuts idle devices down automatically as of [revision 40a7908](https://github.com/pingdotgg/t3code/tree/40a7908df54d5069c93835032c9e955b56b55f1d). [Idle devices](./devices.md#idle-devices).
 
 ## Mobile
 
@@ -149,6 +149,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   update methods. [Code review](./source-control.md#review-and-merge).
   Compared with [T3 Code revision a493946](https://github.com/pingdotgg/t3code/tree/a493946bb42ab16e1d18285dac3e9e4603651330),
   checked September 23, 2026.
+- **Agents wait for CI outside pull requests.** T3 Code agents can already watch a pull request and
+  wake when its checks finish. styal agents can also watch a single GitHub Actions run, such as CI
+  after a merge, a deploy, or a workflow they started, and wake once it completes with the jobs that
+  did not pass. [Watch a workflow run](./source-control.md#watch-a-workflow-run).
+  Compared with [T3 Code revision 13aa882](https://github.com/pingdotgg/t3code/tree/13aa882c22d584de5388dfce3b3ca413387ba059),
+  checked October 17, 2026.
 
 - **Code review findings in the conversation.** When Claude Code's `/code-review` reports its
   findings, they appear as a list with links to each file and line, and stay visible after the turn

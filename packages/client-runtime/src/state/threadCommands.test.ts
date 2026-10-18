@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   CommandId,
+  MessageId,
+  RunId,
   RuntimeRequestId,
   EnvironmentId,
   ORCHESTRATION_V2_WS_METHODS,
@@ -23,7 +25,9 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
-import { createThreadEnvironmentAtoms } from "./threadCommands.ts";
+import { createThreadEnvironmentAtoms, type StartThreadTurnInput } from "./threadCommands.ts";
+import { presentThreadShell } from "./models.ts";
+import { isThreadWorking } from "./threadInbox.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("remote");
 const THREAD_ID = ThreadId.make("thread");
@@ -39,6 +43,19 @@ const USER_INPUT = {
   kind: "user_input" as const,
   createdAt: NOW,
 };
+const HANDOFF_INPUT = {
+  threadId: THREAD_ID,
+  modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "test-model" },
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  dispatchMode: "start",
+  message: {
+    messageId: MessageId.make("handoff-message"),
+    role: "user",
+    text: "Continue",
+    attachments: [],
+  },
+} satisfies StartThreadTurnInput;
 const SNAPSHOT: OrchestrationV2ShellSnapshot = {
   snapshotSequence: 1,
   schemaVersion: 2,
@@ -125,6 +142,114 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* () {
 });
 
 describe("remote thread lifecycle commands", () => {
+  it.effect.each(["completed", "failed"] as const)(
+    "moves a %s thread into Working while handoff dispatch is pending and restores it on failure",
+    (status) =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness();
+        const initial = {
+          ...SNAPSHOT,
+          threads: [
+            {
+              ...SNAPSHOT.threads[0]!,
+              latestRunId: RunId.make("previous-run"),
+              status,
+              interactionMode: "plan" as const,
+              hasActionableProposedPlan: true,
+              settledOverride: "settled" as const,
+              settledAt: NOW,
+            },
+          ],
+        };
+        h.registry.set(h.snapshotAtom(ENVIRONMENT_ID), initial);
+        const result = h.commands.startTurn.run(h.registry, {
+          environmentId: ENVIRONMENT_ID,
+          input: HANDOFF_INPUT,
+        });
+        const pending = h.registry.get(h.visibleAtom)!.threads[0]!;
+        expect(pending.settledOverride).toBeNull();
+        expect(isThreadWorking(presentThreadShell(ENVIRONMENT_ID, pending))).toBe(true);
+        expect(pending.activeRunId).toBeNull();
+        const request = yield* Queue.take(h.requests);
+        expect(request.command.type).toBe("message.dispatch");
+        expect(h.registry.get(h.snapshotAtom(ENVIRONMENT_ID))).toBe(initial);
+        yield* Deferred.fail(request.reply, new Error("Handoff rejected"));
+        expect((yield* Effect.promise(() => result))._tag).toBe("Failure");
+        expect(h.registry.get(h.visibleAtom)).toBe(initial);
+      }),
+  );
+
+  it.effect("keeps handoff work visible until the acknowledged shell arrives", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      const initial = {
+        ...SNAPSHOT,
+        threads: [
+          {
+            ...SNAPSHOT.threads[0]!,
+            latestRunId: RunId.make("previous-run"),
+            status: "completed" as const,
+          },
+        ],
+      };
+      const source = h.snapshotAtom(ENVIRONMENT_ID);
+      h.registry.set(source, initial);
+      const result = h.commands.startTurn.run(h.registry, {
+        environmentId: ENVIRONMENT_ID,
+        input: HANDOFF_INPUT,
+      });
+      const request = yield* Queue.take(h.requests);
+      yield* Deferred.succeed(request.reply, { sequence: 3 });
+      expect((yield* Effect.promise(() => result))._tag).toBe("Success");
+      h.registry.set(source, { ...initial, snapshotSequence: 2 });
+      expect(
+        isThreadWorking(
+          presentThreadShell(ENVIRONMENT_ID, h.registry.get(h.visibleAtom)!.threads[0]!),
+        ),
+      ).toBe(true);
+      const completed = { ...initial, snapshotSequence: 3 };
+      h.registry.set(source, completed);
+      expect(h.registry.get(h.visibleAtom)).toBe(completed);
+      expect(isThreadWorking(presentThreadShell(ENVIRONMENT_ID, completed.threads[0]!))).toBe(
+        false,
+      );
+    }),
+  );
+
+  it.effect("preserves a live run and its pending approval while sending another message", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      const runId = RunId.make("live-run");
+      const initial = {
+        ...SNAPSHOT,
+        threads: [
+          {
+            ...SNAPSHOT.threads[0]!,
+            latestRunId: runId,
+            activeRunId: runId,
+            status: "running" as const,
+            activityRunStatus: "running" as const,
+            pendingRuntimeRequest: APPROVAL,
+          },
+        ],
+      };
+      h.registry.set(h.snapshotAtom(ENVIRONMENT_ID), initial);
+      const result = h.commands.startTurn.run(h.registry, {
+        environmentId: ENVIRONMENT_ID,
+        input: HANDOFF_INPUT,
+      });
+      const request = yield* Queue.take(h.requests);
+      expect(h.registry.get(h.visibleAtom)?.threads[0]).toBe(initial.threads[0]);
+      expect(
+        isThreadWorking(
+          presentThreadShell(ENVIRONMENT_ID, h.registry.get(h.visibleAtom)!.threads[0]!),
+        ),
+      ).toBe(false);
+      yield* Deferred.fail(request.reply, new Error("Send rejected"));
+      yield* Effect.promise(() => result);
+    }),
+  );
+
   const actions = [
     ["settle", {}, { settledOverride: "settled", pinnedAt: null, snoozedUntil: null }],
     ["unsettle", { reason: "user" }, { settledOverride: "active", settledAt: null }],

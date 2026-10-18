@@ -1,6 +1,6 @@
 import { ProviderInstanceId, RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { resolveHandoffEndpoints, type HandoffTimelineRun } from "./handoff.ts";
+import { resolveHandoffEndpoints, shouldShowHandoff, type HandoffTimelineRun } from "./handoff.ts";
 
 const from = ProviderInstanceId.make("codex_personal");
 const to = ProviderInstanceId.make("claudeAgent");
@@ -19,6 +19,57 @@ const run = (
   ordinal,
   providerInstanceId: instanceId,
   modelSelection: { instanceId, model },
+});
+
+describe("handoff visibility shared by web and mobile", () => {
+  const restoration = {
+    ...item,
+    title: "Imported context",
+    status: "completed" as const,
+    fromProviderInstanceIds: [to],
+  };
+
+  it("silently restores history with the same provider or no known source", () => {
+    expect(shouldShowHandoff(restoration)).toBe(false);
+    expect(shouldShowHandoff({ ...restoration, fromProviderInstanceIds: [] })).toBe(false);
+  });
+
+  it("shows a provider switch on the first restored turn", () => {
+    expect(shouldShowHandoff({ ...restoration, fromProviderInstanceIds: [from] })).toBe(true);
+  });
+
+  it("shows a switch between accounts of the same provider", () => {
+    expect(
+      shouldShowHandoff({
+        ...restoration,
+        fromProviderInstanceIds: [ProviderInstanceId.make("claude_work")],
+      }),
+    ).toBe(true);
+  });
+
+  it("preserves a provider switch recorded only in source model metadata", () => {
+    expect(
+      shouldShowHandoff({
+        ...restoration,
+        fromProviderInstanceIds: [],
+        fromModelSelections: [{ instanceId: from, model: "source-model" }],
+      }),
+    ).toBe(true);
+  });
+
+  it.each(["pending", "running", "waiting", "failed", "cancelled", "interrupted"] as const)(
+    "keeps %s history restoration visible",
+    (status) => {
+      expect(shouldShowHandoff({ ...restoration, status })).toBe(true);
+    },
+  );
+
+  it.each(["Provider handoff", "Fork context", "Merge-back context", null])(
+    "keeps other handoff titles visible: %s",
+    (title) => {
+      expect(shouldShowHandoff({ ...restoration, title })).toBe(true);
+    },
+  );
 });
 
 describe("handoff endpoints shared by web and mobile", () => {
