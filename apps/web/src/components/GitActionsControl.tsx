@@ -1216,8 +1216,8 @@ export default function GitActionsControl({
     await viewPullRequestLink();
   };
 
-  // React 19.2 leaves useEffectEvent stale inside the memoized details panel.
-  // Bind each render's actions to its checkout and thread, including retained toast actions.
+  // Not an effect event: retained toast actions must stay bound to the checkout and
+  // thread of the render that created them, not follow later selections.
   async function runGitActionWithToast({
     action,
     commitMessage,
