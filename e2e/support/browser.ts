@@ -158,6 +158,21 @@ export async function openApp(environment: Environment): Promise<App> {
 }
 
 /**
+ * The palette focuses a newly shown input one frame after it mounts, so keys typed before that
+ * go to the previously focused element.
+ */
+async function waitForPaletteInputFocus(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const active = document.activeElement;
+    return (
+      active instanceof HTMLInputElement &&
+      active.closest("[role=dialog]") !== null &&
+      !active.hasAttribute("data-e2e-left-palette-input")
+    );
+  });
+}
+
+/**
  * Runs a command palette item. Types `query`, then presses Enter only if the highlighted
  * item contains `expected`, so a search that ranks something else first fails the test
  * instead of running the wrong command. Pass `open: false` to type into a palette view
@@ -174,9 +189,14 @@ export async function runPaletteItem(
     await page.keyboard.press("ControlOrMeta+k");
     await palette.waitFor();
   }
+  await waitForPaletteInputFocus(page);
   await page.keyboard.type(query);
   const highlighted = palette.locator("[data-highlighted]").filter({ hasText: expected });
   await highlighted.first().waitFor({ timeout: 30_000 });
+  // Marks this input so a following wait finds the input the item shows next.
+  await page.evaluate(() =>
+    document.activeElement?.setAttribute("data-e2e-left-palette-input", ""),
+  );
   await page.keyboard.press("Enter");
 }
 
@@ -236,9 +256,11 @@ export async function sendMessage(
  */
 export async function addProject(page: Page, path: string): Promise<void> {
   await runPaletteItem(page, "add project", "Add project");
-  await page.keyboard.type(`${path}/`);
-  await page.getByRole("button", { name: "Add (Enter)" }).waitFor();
-  await page.keyboard.press("Enter");
+  await waitForPaletteInputFocus(page);
+  // Typing "/" switches the palette to directory browsing, which mounts a new input that takes
+  // focus a frame later, so typing the path key by key can drop keys. Fill it in one input event.
+  await page.getByRole("dialog").locator("input:focus").fill(`${path}/`);
+  await page.getByRole("button", { name: "Add (Enter)" }).click();
   const name = path.split("/").at(-1);
   await page.getByRole("button", { name: `New thread in ${name}` }).waitFor();
 }
