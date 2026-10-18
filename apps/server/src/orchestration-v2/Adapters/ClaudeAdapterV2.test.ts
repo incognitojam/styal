@@ -24,10 +24,10 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
-  CheckpointId,
   ChatAttachmentId,
   ChatFileAttachment,
   ChatImageAttachment,
+  CheckpointId,
   ClaudeSettings,
   EnvironmentId,
   MessageId,
@@ -2391,6 +2391,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly nativeSessionId?: string;
     readonly settings?: ClaudeSettings;
     readonly freshQueueOnReopen?: boolean;
+    readonly readSessionHistory?: ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape["readSessionHistory"];
+    readonly forkSession?: ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape["forkSession"];
   }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -2519,7 +2521,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 close: options?.close?.(sdkMessages) ?? Effect.void,
               };
             }),
-          forkSession: () => Effect.die("unused forkSession"),
+          ...(options?.readSessionHistory === undefined
+            ? {}
+            : { readSessionHistory: options.readSessionHistory }),
+          forkSession: options?.forkSession ?? (() => Effect.die("unused forkSession")),
           subagentLaunchToolUseId: () => Effect.succeed(options?.subagentLaunchToolUseId ?? null),
           assertComplete: Effect.void,
         },
@@ -3781,6 +3786,208 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       if (terminal.status !== "failed") return;
       assert.equal(terminal.failure.message, cliText);
       assert.equal(terminal.failure.code, "api_error_403");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  const lastProviderTurn = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) => {
+    const event = events.findLast((candidate) => candidate.type === "provider_turn.updated");
+    if (event?.type !== "provider_turn.updated") {
+      throw new Error("Expected a provider turn update.");
+    }
+    return event.providerTurn;
+  };
+  const makeRollbackHistory = (assistantUuid?: string) => {
+    const row = (type: "user" | "assistant", uuid: string) => ({
+      type,
+      uuid,
+      message: { content: uuid },
+      parent_tool_use_id: null,
+    });
+    const retained = [
+      row("user", "prompt-retained"),
+      ...(assistantUuid === undefined ? [] : [row("assistant", assistantUuid)]),
+    ];
+    return {
+      setPromptUuid: (uuid: string) => {
+        retained[0]!.uuid = uuid;
+      },
+      readSessionHistory: (input) =>
+        Effect.succeed(
+          input.sessionId === "forked"
+            ? retained.map((message) => ({ ...message, uuid: `forked:${message.uuid}` }))
+            : [...retained, row("user", "prompt-removed")],
+        ),
+      forkSession: (input) =>
+        Effect.sync(() => {
+          assert.equal(input.options.upToMessageId, retained.at(-1)?.uuid);
+          return { sessionId: "forked" };
+        }),
+    } satisfies Pick<
+      ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape,
+      "readSessionHistory" | "forkSession"
+    > & { setPromptUuid: (uuid: string) => void };
+  };
+
+  it.effect(
+    "rolls back to the main-thread assistant message when a subagent frame comes last",
+    () =>
+      Effect.gen(function* () {
+        const mainUuid = "00000000-0000-4000-8000-000000000641";
+        const history = makeRollbackHistory(mainUuid);
+        const harness = yield* makeWakeHarnessWithOptions({
+          close: (sdkMessages) => Queue.shutdown(sdkMessages),
+          ...history,
+        });
+        const now = yield* DateTime.now;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-cursor-main"),
+            text: "Continue.",
+            attachments: [],
+          }),
+        );
+        yield* Queue.offerAll(harness.sdkMessages, [
+          makeAssistantTextFrame({ uuid: mainUuid, text: "Delegating." }),
+          makeAssistantErrorFrame({
+            uuid: "00000000-0000-4000-8000-000000000642",
+            error: undefined,
+            parentToolUseId: "toolu_subagent",
+          }),
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000643", result: "Done." }),
+        ]);
+        yield* Queue.take(harness.terminalReceipts);
+
+        const providerTurn = lastProviderTurn(harness.events);
+        history.setPromptUuid(harness.promptUuid(0));
+        assert.equal(providerTurn.nativeTurnRef?.nativeId, mainUuid);
+        const rolledBack = yield* harness.runtime.rollbackThread({
+          providerThread: harness.providerThread,
+          target: {
+            type: "provider_turn",
+            checkpointId: CheckpointId.make("checkpoint-claude-cursor-main"),
+            appRunOrdinal: 1,
+            providerTurn,
+          },
+          providerThreadTurns: [
+            providerTurn,
+            {
+              ...providerTurn,
+              id: ProviderTurnId.make("provider-turn-claude-cursor-next"),
+              nativePromptRef: {
+                driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+                nativeId: "prompt-removed",
+                strength: "strong",
+              },
+              ordinal: 2,
+            },
+          ],
+        });
+        assert.isNull(rolledBack.providerThread.nativeConversationHeadRef);
+        assert.equal(rolledBack.providerTurns[0]?.nativeTurnRef?.nativeId, `forked:${mainUuid}`);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+  );
+
+  it.effect("never records a subagent uuid for a turn with no main-thread assistant message", () =>
+    Effect.gen(function* () {
+      // The continuation turn reopens the query, and rollback shut the first queue down.
+      const history = makeRollbackHistory();
+      const harness = yield* makeWakeHarnessWithOptions({
+        close: (sdkMessages) => Queue.shutdown(sdkMessages),
+        freshQueueOnReopen: true,
+        ...history,
+      });
+      const now = yield* DateTime.now;
+      const subagentUuid = "00000000-0000-4000-8000-000000000644";
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-claude-cursor-subagent-only"),
+          text: "Background task completed.",
+          attachments: [],
+        }),
+      );
+      yield* Queue.offerAll(harness.sdkMessages, [
+        makeAssistantErrorFrame({
+          uuid: subagentUuid,
+          error: undefined,
+          parentToolUseId: "toolu_subagent",
+        }),
+        makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000645", result: "Done." }),
+      ]);
+      yield* Queue.take(harness.terminalReceipts);
+
+      const providerTurn = lastProviderTurn(harness.events);
+      history.setPromptUuid(harness.promptUuid(0));
+      assert.notEqual(providerTurn.nativeTurnRef?.nativeId, subagentUuid);
+      const rollbackTo = (providerThreadTurns: ReadonlyArray<typeof providerTurn>) =>
+        harness.runtime.rollbackThread({
+          providerThread: harness.providerThread,
+          target: {
+            type: "provider_turn",
+            checkpointId: CheckpointId.make("checkpoint-claude-cursor-subagent-only"),
+            appRunOrdinal: 1,
+            providerTurn,
+          },
+          providerThreadTurns,
+        });
+
+      const error = yield* rollbackTo([providerTurn]).pipe(Effect.flip);
+      assert.instanceOf(error, ProviderAdapter.ProviderAdapterRollbackThreadError);
+      assert.include(String(error.cause), "exact Claude turn boundary is unavailable");
+      const rolledBack = yield* rollbackTo([
+        providerTurn,
+        {
+          ...providerTurn,
+          id: ProviderTurnId.make("provider-turn-claude-cursor-next"),
+          nativePromptRef: {
+            driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+            nativeId: "prompt-removed",
+            strength: "strong",
+          },
+          ordinal: 2,
+        },
+      ]);
+      assert.isNull(rolledBack.providerThread.nativeConversationHeadRef);
+      assert.isNull(rolledBack.providerTurns[0]?.nativeTurnRef);
+
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: rolledBack.providerThread,
+          now,
+          attemptId: RunAttemptId.make("attempt-claude-cursor-subagent-only-next"),
+          text: "Continue.",
+          attachments: [],
+          providerTurnOrdinal: 2,
+        }),
+      );
+      const reopenedQueue = harness.processQueues[1];
+      assert.isDefined(reopenedQueue);
+      if (reopenedQueue === undefined) return;
+      yield* Queue.offerAll(reopenedQueue, [
+        makeAssistantTextFrame({
+          uuid: "00000000-0000-4000-8000-000000000646",
+          text: "Continuing.",
+        }),
+        makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000647", result: "Done." }),
+      ]);
+      const next = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(next.status, "completed");
+      // The reopened query must resume from the whole transcript, not pin a subagent uuid.
+      assert.isUndefined(harness.getOpenedOptions()?.resumeSessionAt);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
