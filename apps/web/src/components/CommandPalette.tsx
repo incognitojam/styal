@@ -4036,7 +4036,7 @@ function OpenCommandPaletteDialog(props: {
         </div>
       ) : null}
       {remoteProjectContext ? (
-        <div className="p-2 pb-0">
+        <div className="shrink-0 p-2 pb-0">
           <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
             {remoteProjectContext.label}
           </div>
