@@ -350,6 +350,14 @@ jobs:
       - name: Setup test dependencies
         uses: ./.github/actions/setup-deps
 
+      # The server-hosted browser's tests launch Playwright's headless Chromium.
+      # Skipped until the server depends on playwright-core.
+      - name: Install Chromium for server browser integration tests
+        run: |
+          if [ -f apps/server/node_modules/playwright-core/cli.js ]; then
+            node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+          fi
+
       - name: Test server
         env:
           T3CODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/styal-transfer-budget.md
