@@ -9,6 +9,16 @@ styal is in active development. The hosted web app at [app.styal.build](https://
 live, with rough edges and incomplete functionality. Importing T3 Code projects and preferences
 works. This overview focuses on desktop and web; the mobile app is a work in progress.
 
+## styal Link sign-in
+
+- **Sign in with an emailed code, and stay signed in.** styal Link signs you in with an eight-digit
+  code sent to your email, the same way on web, desktop, mobile, and the command line, where you type
+  the code into the terminal. A sign-in lasts while you keep using it, up to 90 days without use,
+  and your account lists every signed-in device so you can sign any of them out. T3 Code signs in
+  through Clerk, so a sign-in ends when Clerk's maximum session lifetime runs out, as of
+  [revision 9c16146](https://github.com/pingdotgg/t3code/tree/9c161462c94f7d9d6d9169da5c841457cbadf213).
+  [styal Link](./remote-access.md#styal-link).
+
 ## Devices
 
 - **Share devices between connected environments.** Share one styal environment's simulators with another from web, desktop, or mobile settings without configuring SSH or choosing an IP address. styal selects a reachable address and tries saved alternatives when needed. Device access persists after the client closes and can be revoked. T3 Code still connects remote device hosts through SSH as of [revision 98a6246](https://github.com/pingdotgg/t3code/tree/98a6246d07624432a6e6d0ab4fb87bede90a49a6). [Use devices from another environment](./devices.md#devices-from-another-environment).

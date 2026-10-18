@@ -200,6 +200,10 @@
       "types": "./src/desktopBootstrapToken.ts",
       "import": "./src/desktopBootstrapToken.ts"
     },
+    "./dpopProof": {
+      "types": "./src/dpopProof.ts",
+      "import": "./src/dpopProof.ts"
+    },
     "./dpopCommon": {
       "types": "./src/dpopCommon.ts",
       "import": "./src/dpopCommon.ts"

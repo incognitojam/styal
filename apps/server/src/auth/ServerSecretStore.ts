@@ -1,4 +1,5 @@
 import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -228,12 +229,55 @@ export const make = Effect.gen(function* () {
     const secretPath = resolveSecretPath(name);
     return Effect.scoped(
       Effect.gen(function* () {
-        const file = yield* fileSystem.open(secretPath, {
+        // A crash can leave a temporary hard link to a published secret. Only
+        // sweep old files for this secret, so concurrent creators keep theirs.
+        yield* Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const entries = yield* fileSystem.readDirectory(serverConfig.secretsDir);
+          yield* Effect.forEach(
+            entries.filter((entry) => entry.startsWith(`${name}.bin.`) && entry.endsWith(".tmp")),
+            (entry) =>
+              Effect.gen(function* () {
+                const temporaryPath = path.join(serverConfig.secretsDir, entry);
+                const stat = yield* fileSystem.stat(temporaryPath);
+                if (
+                  stat.type === "File" &&
+                  Option.isSome(stat.mtime) &&
+                  now - stat.mtime.value.getTime() > 5 * 60_000
+                ) {
+                  yield* fileSystem.remove(temporaryPath);
+                }
+              }).pipe(Effect.ignore),
+            { discard: true },
+          );
+        }).pipe(Effect.ignore);
+        const uuid = yield* crypto.randomUUIDv4;
+        const tempPath = `${secretPath}.${uuid}.tmp`;
+        yield* Effect.addFinalizer(() => fileSystem.remove(tempPath).pipe(Effect.ignore));
+        const file = yield* fileSystem.open(tempPath, {
           flag: "wx",
           mode: 0o600,
         });
         yield* file.writeAll(value);
         yield* file.sync;
+        // Prefer publishing complete contents. Hard links fail if another
+        // process won, unlike rename, without exposing an empty final file.
+        yield* fileSystem.link(tempPath, secretPath).pipe(
+          Effect.catchIf(
+            (cause) => cause.reason._tag !== "AlreadyExists",
+            () =>
+              Effect.gen(function* () {
+                // Some writable filesystems do not support hard links. Keep
+                // exclusive creation there too; never replace another winner.
+                const published = yield* fileSystem.open(secretPath, {
+                  flag: "wx",
+                  mode: 0o600,
+                });
+                yield* published.writeAll(value);
+                yield* published.sync;
+              }),
+          ),
+        );
         yield* fileSystem.chmod(secretPath, 0o600);
       }),
     ).pipe(
