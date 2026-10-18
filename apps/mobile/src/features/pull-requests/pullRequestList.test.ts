@@ -92,6 +92,8 @@ describe("recycled PR list rows", () => {
     { autoMergeEnabled: true },
     { inMergeQueue: true },
     { state: "closed" as const },
+    { mergeability: "conflicting" as const },
+    { baseBranch: "release" },
     { author: { login: "another", name: null, avatarUrl: null } },
     { author: { login: "octocat", name: null, avatarUrl: "https://example.com/avatar.png" } },
     { labels: [{ name: "bug", color: "ff0000" }] },

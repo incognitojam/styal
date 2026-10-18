@@ -2,21 +2,23 @@ import type { PullRequestActivity, PullRequestCheck, PullRequestComment } from "
 import { describe, expect, it } from "vite-plus/test";
 import {
   pullRequestChecksSummary,
+  pullRequestConflict,
   pullRequestReviewSummary,
   pullRequestStatus,
 } from "./pullRequestStatus";
+import { PullRequestGlyph } from "./pullRequestGlyphs";
 
 describe("mobile pull request merge intent", () => {
   it("retains the open state and distinguishes enabled auto-merge from queue membership", () => {
     const pr = { state: "open", isDraft: false, autoMergeEnabled: true } as const;
     expect(pullRequestStatus(pr)).toMatchObject({
-      icon: "arrow.triangle.pull",
+      icon: PullRequestGlyph.pullRequest,
       label: "Open",
       mergeIntent: "auto-merge",
       accessibleLabel: "Open · Auto-merge enabled",
     });
     expect(pullRequestStatus({ ...pr, inMergeQueue: true })).toMatchObject({
-      icon: "arrow.triangle.pull",
+      icon: PullRequestGlyph.pullRequest,
       mergeIntent: "queued",
       accessibleLabel: "Open · In merge queue",
     });
@@ -138,5 +140,32 @@ describe("mobile overview check status", () => {
     expect(
       pullRequestChecksSummary({ checks: [check("success"), check("pending"), check("failure")] }),
     ).toMatchObject({ title: "1 check failing", count: "1 of 3" });
+  });
+});
+
+describe("mobile pull request conflict", () => {
+  it("names the base branch of an open pull request with conflicts", () => {
+    expect(
+      pullRequestConflict({
+        state: "open",
+        isDraft: false,
+        mergeability: "conflicting",
+        baseBranch: "main",
+      })?.label,
+    ).toBe("Conflicts with main");
+    expect(
+      pullRequestConflict({ state: "open", isDraft: false, mergeability: "conflicting" })?.label,
+    ).toBe("Has conflicts");
+  });
+
+  it.each([
+    { state: "open" as const, isDraft: true, mergeability: "conflicting" as const },
+    { state: "merged" as const, isDraft: false, mergeability: "conflicting" as const },
+    { state: "closed" as const, isDraft: false, mergeability: "conflicting" as const },
+    { state: "open" as const, isDraft: false, mergeability: "mergeable" as const },
+    { state: "open" as const, isDraft: false, mergeability: "unknown" as const },
+    { state: "open" as const, isDraft: false },
+  ])("stays quiet when it cannot conflict or has not been reported: %j", (pr) => {
+    expect(pullRequestConflict(pr)).toBeNull();
   });
 });

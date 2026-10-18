@@ -30,6 +30,7 @@ import { pullRequestStackMerge, singlePullRequestMergeAllowed } from "./pullRequ
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
 import { usePullRequestPermissions } from "./usePullRequestPermissions";
 import type { PullRequestStackState } from "./usePullRequestStack";
+import { PullRequestGlyph } from "./pullRequestGlyphs";
 
 export function PullRequestMergeControls(props: {
   readonly pr: PullRequestDetail;
@@ -206,7 +207,7 @@ export function PullRequestMergeControls(props: {
               <AppActivityIndicator size="small" colorClassName="accent-icon-muted" />
             ) : (
               <SymbolView
-                name="arrow.triangle.merge"
+                name={PullRequestGlyph.merged}
                 size={16}
                 tintColorClassName={
                   canMerge ? "accent-prominent-action-foreground" : "accent-icon-muted"
@@ -284,7 +285,7 @@ export function PullRequestMergeControls(props: {
       {mergeIntent ? (
         <View className="flex-row items-center gap-1.5 px-1">
           <PullRequestMergeIntentIcon
-            name="arrow.triangle.pull"
+            name={PullRequestGlyph.pullRequest}
             size={14}
             tintColorClassName="accent-adaptive-emerald-600-400"
             mergeIntent={mergeIntent}

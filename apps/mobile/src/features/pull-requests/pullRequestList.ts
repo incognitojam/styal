@@ -82,6 +82,8 @@ export function pullRequestListRowsAreEqual(
       previous.isDraft === next.isDraft &&
       previous.autoMergeEnabled === next.autoMergeEnabled &&
       previous.inMergeQueue === next.inMergeQueue &&
+      previous.mergeability === next.mergeability &&
+      previous.baseBranch === next.baseBranch &&
       previous.updatedAt === next.updatedAt &&
       previous.additions === next.additions &&
       previous.deletions === next.deletions &&

@@ -12,14 +12,23 @@ import {
   THREAD_LIST_V2_SIDEBAR_ROW_STYLE,
   THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE,
 } from "../threads/thread-list-v2-row-appearance";
-import { PullRequestAvatar, PullRequestDiffStats } from "./PullRequestPresentation";
+import {
+  PullRequestAvatar,
+  PullRequestConflictBadge,
+  PullRequestDiffStats,
+} from "./PullRequestPresentation";
 import {
   pullRequestLabelColor,
   pullRequestListReviewStatus,
   pullRequestListRowsAreEqual,
   type EnvironmentPullRequestListEntry,
 } from "./pullRequestList";
-import { pullRequestStatus } from "./pullRequestStatus";
+import {
+  pullRequestChecksStatus,
+  pullRequestConflict,
+  pullRequestStatus,
+} from "./pullRequestStatus";
+import { PullRequestGlyph } from "./pullRequestGlyphs";
 
 export const PullRequestListRow = memo(
   function PullRequestListRow(props: {
@@ -48,13 +57,9 @@ export const PullRequestListRow = memo(
         ? "text-drawer-foreground-muted"
         : "text-foreground-tertiary";
     const status = pullRequestStatus(item);
+    const conflict = pullRequestConflict(item);
     const review = pullRequestListReviewStatus(item);
-    const checkTint =
-      item.checksState === "passing"
-        ? "accent-adaptive-emerald-600-400"
-        : item.checksState === "failing"
-          ? "accent-danger-foreground"
-          : "accent-warning-foreground";
+    const checks = item.checksState ? pullRequestChecksStatus(item.checksState) : null;
     return (
       <View style={props.sidebar ? THREAD_LIST_V2_SIDEBAR_ROW_CONTAINER_STYLE : undefined}>
         <Menu
@@ -66,7 +71,7 @@ export const PullRequestListRow = memo(
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: props.selected, busy: props.busy }}
-            accessibilityLabel={`Pull request ${item.number}, ${item.title}, ${status.accessibleLabel}, by ${item.author?.login ?? "unknown author"}${review ? `, ${review.accessibleLabel}` : ""}${item.checksState ? `, checks ${item.checksState}` : ""}${item.stack ? `, stack ${item.stack.position} of ${item.stack.size}` : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}, ${item.additions} additions, ${item.deletions} deletions`}
+            accessibilityLabel={`Pull request ${item.number}, ${item.title}, ${status.accessibleLabel}${conflict ? `, ${conflict.label.toLowerCase()}` : ""}, by ${item.author?.login ?? "unknown author"}${review ? `, ${review.accessibleLabel}` : ""}${item.checksState ? `, checks ${item.checksState}` : ""}${item.stack ? `, stack ${item.stack.position} of ${item.stack.size}` : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}, ${item.additions} additions, ${item.deletions} deletions`}
             accessibilityHint="Double tap to open. Touch and hold for quick actions."
             onPress={() => props.onSelect(item)}
             disabled={props.busy}
@@ -80,13 +85,24 @@ export const PullRequestListRow = memo(
               props.busy && "opacity-50",
             )}
           >
-            <View className={props.sidebar ? "pt-0.5" : "pt-2.5"}>
+            <View className={cn("self-start", props.sidebar ? "pt-0.5" : "pt-2.5")}>
               <PullRequestMergeIntentIcon
                 name={status.icon}
                 size={20}
                 tintColorClassName={status.tint}
                 mergeIntent={status.mergeIntent}
               />
+              {conflict ? (
+                <PullRequestConflictBadge
+                  surfaceClassName={
+                    props.selected
+                      ? "text-thread-selected"
+                      : props.sidebar
+                        ? "text-drawer"
+                        : "text-screen"
+                  }
+                />
+              ) : null}
             </View>
             <View
               className={cn(
@@ -102,7 +118,7 @@ export const PullRequestListRow = memo(
                 {item.stack ? (
                   <View className="flex-row items-center gap-1">
                     <SymbolView
-                      name="square.3.layers.3d"
+                      name={PullRequestGlyph.stack}
                       size={12}
                       tintColorClassName={
                         props.selected
@@ -161,19 +177,9 @@ export const PullRequestListRow = memo(
                     </Text>
                   ) : null}
                 </View>
-                {item.checksState ? (
+                {checks ? (
                   <View className="shrink-0" accessibilityLabel={`Checks ${item.checksState}`}>
-                    <SymbolView
-                      name={
-                        item.checksState === "passing"
-                          ? "checkmark.circle"
-                          : item.checksState === "failing"
-                            ? "xmark.circle.fill"
-                            : "clock"
-                      }
-                      size={13}
-                      tintColorClassName={checkTint}
-                    />
+                    <SymbolView name={checks.icon} size={13} tintColorClassName={checks.tint} />
                   </View>
                 ) : null}
                 {review ? (
