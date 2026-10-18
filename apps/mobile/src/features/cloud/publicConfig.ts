@@ -73,8 +73,16 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
   } satisfies CloudPublicConfig;
 }
 
+/** styal Link needs only a relay. */
 export function hasCloudPublicConfig(): boolean {
-  const config = resolveCloudPublicConfig();
+  return resolveCloudPublicConfig().relay.url !== null;
+}
+
+/**
+ * Whether this build can still read an older Clerk sign-in to move it to the
+ * relay. Clerk is otherwise unused.
+ */
+export function hasLegacyClerkConfig(config = resolveCloudPublicConfig()): boolean {
   return Boolean(config.clerk.publishableKey && config.clerk.jwtTemplate && config.relay.url);
 }
 

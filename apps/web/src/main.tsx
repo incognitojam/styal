@@ -5,7 +5,8 @@ import "@fontsource-variable/inter";
 import "./index.css";
 import "./fork-theme.css";
 
-import { hasCloudPublicConfig } from "./cloud/publicConfig";
+import { hasCloudPublicConfig, hasLegacyClerkConfig } from "./cloud/publicConfig";
+import { ManagedRelayAuthProvider } from "./cloud/managedAuth";
 import { isElectron } from "./env";
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
@@ -28,11 +29,18 @@ window.addEventListener("vite:preloadError", (event) => {
   }
 });
 
-const app = <AppRoot router={router} />;
+const app = hasCloudPublicConfig() ? (
+  <ManagedRelayAuthProvider>
+    <AppRoot router={router} />
+  </ManagedRelayAuthProvider>
+) : (
+  <AppRoot router={router} />
+);
 
-// Split by runtime to keep Clerk out of local startup and clerk-js out of browser builds.
+// Clerk is mounted only to move existing Clerk sign-ins to relay sessions. Split by runtime to
+// keep Clerk out of local startup and clerk-js out of browser builds.
 const managedAuthShellModule =
-  clerkPublishableKey && hasCloudPublicConfig()
+  clerkPublishableKey && hasLegacyClerkConfig()
     ? isElectron
       ? import("./components/clerk/ElectronManagedAuthShell")
       : import("./components/clerk/BrowserManagedAuthShell")

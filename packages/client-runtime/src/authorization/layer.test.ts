@@ -27,6 +27,8 @@ import { BearerConnectionTarget } from "../connection/model.ts";
 import * as ConnectionProfileStore from "../connection/profileStore.ts";
 import * as ConnectionResolver from "../connection/resolver.ts";
 
+const SESSION_CREDENTIAL = { accountId: "account-1", refreshToken: "styal_rt_account-1" };
+
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const ENDPOINT = {
   httpBaseUrl: "https://environment.example.test",
@@ -127,7 +129,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   readonly bootstrap?: RelayEnvironmentConnectResponse;
   readonly beforeBootstrap?: Effect.Effect<void, ManagedRelay.ManagedRelayClientError>;
   readonly beforePut?: Effect.Effect<void>;
-  readonly clerkToken?: ClientCapabilities.CloudSession["Service"]["clerkToken"];
+  readonly credential?: ClientCapabilities.CloudSession["Service"]["credential"];
   readonly missingSession?: ClientCapabilities.CloudSession["Service"]["missingSession"];
 }) {
   const tokens = yield* Ref.make(
@@ -189,6 +191,14 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
   const unexpected = () => Effect.die("Unexpected relay request");
   const relay = ManagedRelay.ManagedRelayClient.of({
     relayUrl: "https://relay.example.test",
+    startEmailSignIn: () => Effect.die("unused"),
+    verifyEmailSignIn: () => Effect.die("unused"),
+    exchangeClerkSession: () => Effect.die("unused"),
+    signOut: () => Effect.die("unused"),
+    getAccount: () => Effect.die("unused"),
+    listSessions: () => Effect.die("unused"),
+    revokeSession: () => Effect.die("unused"),
+    deleteAccount: () => Effect.die("unused"),
     listEnvironments: unexpected,
     listDevices: unexpected,
     createEnvironmentLinkChallenge: unexpected,
@@ -219,7 +229,7 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
         Layer.succeed(ManagedRelay.ManagedRelayClient, relay),
         Layer.succeed(ClientCapabilities.CloudSession, {
           identity: Ref.get(session),
-          clerkToken: input.clerkToken ?? Effect.succeed("clerk-session"),
+          credential: input.credential ?? Effect.succeed(SESSION_CREDENTIAL),
           missingSession:
             input.missingSession ??
             Effect.fail(
@@ -943,7 +953,7 @@ describe("RemoteEnvironmentAuthorization", () => {
         missingSession: Effect.fail(
           new ConnectionTransientError({
             reason: "network",
-            detail: "Can't reach styal Link sign-in. Check your connection.",
+            detail: "Couldn't read the saved styal Link sign-in. Try again, or sign in again.",
           }),
         ),
       });
@@ -957,7 +967,7 @@ describe("RemoteEnvironmentAuthorization", () => {
       );
       expect(error).toMatchObject({
         _tag: "ConnectionTransientError",
-        detail: "Can't reach styal Link sign-in. Check your connection.",
+        detail: "Couldn't read the saved styal Link sign-in. Try again, or sign in again.",
       });
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
     }),
