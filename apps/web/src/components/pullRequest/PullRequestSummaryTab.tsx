@@ -824,6 +824,7 @@ export function PullRequestSummaryTab({
           title={pullRequestDeploymentsTitle(detail.deployments)}
         >
           <PullRequestDeployments
+            environmentId={environmentId}
             deployments={detail.deployments}
             headSha={detail.headSha}
             truncated={detail.deploymentsTruncated === true}

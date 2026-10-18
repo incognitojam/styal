@@ -3325,7 +3325,7 @@ features:
   - id: pull-request-deployments
     title: Surface GitHub deployment environments in pull requests
     status: maintained
-    prs: []
+    prs: [883]
     invariants:
       - The web and desktop pull request Summary shows the latest deployment attempt per GitHub environment, including status, commit, environment URL, and logs where available.
       - Deployment history remains visible when the PR head advances, and pending head deployments supersede earlier attempts in the same environment.
@@ -3333,6 +3333,7 @@ features:
       - The section names failed or running deployments in its heading and shows five rows before Show all.
       - Inactive deployments do not offer an environment link; only HTTP and HTTPS deployment URLs are exposed.
       - Deployment reads are bounded within the existing detail query, report potentially missing environments, and refresh with PR detail. If GitHub refuses the extended query, one retry without deployment fields preserves access to the PR; authentication and quota errors propagate without retry.
+      - Explicit Open, Logs and Show all actions report bounded usage through the owning environment; older reporting servers and telemetry failures never block those actions.
     implementation_paths:
       - apps/server/src/pullRequest/GitHubPullRequestCli.ts
       - apps/server/src/pullRequest/PullRequestProvider.ts
@@ -3341,6 +3342,7 @@ features:
       - apps/web/src/components/pullRequest/PullRequestDeployments.tsx
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
       - apps/web/src/components/pullRequest/pullRequestDeployments.logic.ts
+      - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/pullRequest.ts
     upstream_paths:
       - apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx
@@ -3348,6 +3350,7 @@ features:
     tests:
       - apps/server/src/pullRequest/GitHubPullRequestCli.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/pullRequest/PullRequestDeployments.test.tsx
       - apps/web/src/components/pullRequest/pullRequestDeployments.logic.test.ts
     upstream:

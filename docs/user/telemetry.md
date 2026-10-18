@@ -19,6 +19,8 @@ mentioned time's explanation. The web app records when a new-build notice is vis
 when you choose Refresh. These events use the relevant paired environment's telemetry setting.
 File paths, written times, deployment identifiers, and composer drafts are not collected.
 
+Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
+
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 

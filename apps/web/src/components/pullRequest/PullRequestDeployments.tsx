@@ -1,4 +1,4 @@
-import type { PullRequestDeployment, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestDeployment, ScopedThreadRef } from "@t3tools/contracts";
 import {
   ArrowUpRightIcon,
   CircleCheckIcon,
@@ -10,6 +10,7 @@ import {
 import { useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
+import { reportForkClientUsage } from "~/forkClientUsage";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
@@ -45,19 +46,35 @@ export function PullRequestDeployments({
   truncated,
   threadRef,
   headSha,
+  environmentId,
 }: {
   deployments: ReadonlyArray<PullRequestDeployment>;
   truncated: boolean;
   threadRef: ScopedThreadRef | null;
   headSha?: string | undefined;
+  environmentId?: EnvironmentId | undefined;
 }) {
   const openLink = useOpenLink(threadRef);
   const [showAll, setShowAll] = useState(false);
-  const open = (url: string) => {
-    void openLink(url).catch((error: unknown) => {
-      console.error(error);
-      toastManager.add({ type: "error", title: "Unable to open deployment" });
+  const report = (
+    action: "open_environment" | "open_logs" | "show_all",
+    outcome: "success" | "failure",
+  ) => {
+    void reportForkClientUsage(environmentId, {
+      feature: "pull-request-deployments",
+      action,
+      outcome,
     });
+  };
+  const open = (url: string, action: "open_environment" | "open_logs") => {
+    void openLink(url).then(
+      () => report(action, "success"),
+      (error: unknown) => {
+        report(action, "failure");
+        console.error(error);
+        toastManager.add({ type: "error", title: "Unable to open deployment" });
+      },
+    );
   };
   const ordered = orderPullRequestDeployments(deployments);
   const canCollapse = ordered.length > PULL_REQUEST_DEPLOYMENT_PAGE;
@@ -130,7 +147,7 @@ export function PullRequestDeployments({
                   <Button
                     size="xs"
                     variant="ghost-muted"
-                    onClick={() => open(logUrl)}
+                    onClick={() => open(logUrl, "open_logs")}
                     aria-label={`View deployment logs for ${deployment.environment}`}
                   >
                     Logs
@@ -140,7 +157,7 @@ export function PullRequestDeployments({
                   <Button
                     size="xs"
                     variant="ghost-muted"
-                    onClick={() => open(environmentUrl)}
+                    onClick={() => open(environmentUrl, "open_environment")}
                     aria-label={`Open ${deployment.environment}`}
                   >
                     Open
@@ -166,7 +183,10 @@ export function PullRequestDeployments({
               variant="ghost-muted"
               size="xs"
               aria-expanded={showAll}
-              onClick={() => setShowAll(!showAll)}
+              onClick={() => {
+                setShowAll(!showAll);
+                if (!showAll) report("show_all", "success");
+              }}
             >
               {showAll ? "Show less" : `Show all ${ordered.length}`}
             </Button>
