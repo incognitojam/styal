@@ -1,5 +1,7 @@
 {
   "id": "/",
+  "name": "styal",
+  "short_name": "styal",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
