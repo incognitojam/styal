@@ -1,3 +1,5 @@
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/reactivity";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
@@ -99,7 +101,7 @@ function ProjectOverviewContent(props: {
   }) => {
     setIsOrganizing(true);
     void (async () => {
-      try {
+      const result = await settlePromise(async () => {
         for (const member of props.allMembers) {
           const result = await updateOrganization({
             environmentId: member.environmentId,
@@ -107,9 +109,9 @@ function ProjectOverviewContent(props: {
           });
           if (result._tag === "Failure") return;
         }
-      } finally {
-        setIsOrganizing(false);
-      }
+      });
+      setIsOrganizing(false);
+      if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
     })();
   };
   const nextName = (draftName ?? displayName).trim();
@@ -119,19 +121,16 @@ function ProjectOverviewContent(props: {
     if (!canSave) return;
     setIsSaving(true);
     void (async () => {
-      try {
-        const results = await Promise.all(
-          props.members.map((member) =>
-            updateProject({
-              environmentId: member.environmentId,
-              input: { projectId: member.id, title: nextName },
-            }),
-          ),
-        );
-        if (results.every((result) => result._tag !== "Failure")) setDraftName(null);
-      } finally {
-        setIsSaving(false);
-      }
+      const results = await Promise.all(
+        props.members.map((member) =>
+          updateProject({
+            environmentId: member.environmentId,
+            input: { projectId: member.id, title: nextName },
+          }),
+        ),
+      );
+      setIsSaving(false);
+      if (results.every((result) => result._tag !== "Failure")) setDraftName(null);
     })();
   };
 
