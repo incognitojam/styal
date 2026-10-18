@@ -269,7 +269,7 @@ import {
 } from "../sidebarProjectGrouping";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import type { Project } from "../types";
-import { useFocusPullRequestTab, useViewPullRequest } from "../lib/viewPullRequest";
+import { useFocusPullRequestTab, createViewPullRequest } from "../lib/viewPullRequest";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
@@ -1190,7 +1190,7 @@ function OpenCommandPaletteDialog(props: {
         })
       : null,
   );
-  const { canViewPullRequest, viewPullRequest } = useViewPullRequest(
+  const { canViewPullRequest, viewPullRequest } = createViewPullRequest(
     activeThreadGitStatus.data,
     activeThreadRef,
   );

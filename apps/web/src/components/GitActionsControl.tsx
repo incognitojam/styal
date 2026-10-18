@@ -118,7 +118,7 @@ import {
 } from "./chat/threadDetailsPanelStyles";
 import { getSourceControlPresentation, sourceControlIcon } from "~/sourceControlPresentation";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { useViewPullRequest } from "~/lib/viewPullRequest";
+import { createViewPullRequest } from "~/lib/viewPullRequest";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { useOpenLink } from "~/browser/useOpenLink";
 
@@ -1090,7 +1090,7 @@ export default function GitActionsControl({
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
-  const { viewPullRequest: viewPullRequestLink } = useViewPullRequest(
+  const { viewPullRequest: viewPullRequestLink } = createViewPullRequest(
     gitStatusForActions,
     activeThreadRef,
   );

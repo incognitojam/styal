@@ -6,7 +6,7 @@ import { useCallback, useMemo } from "react";
 import { fileRoutePathSegments, resolveWorkspaceRelativeFilePath } from "../files/filePath";
 import { resolveScaledTextRole } from "../../lib/appearancePreferences";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
-import { useFontFamily } from "../../lib/useFontFamily";
+import { FONT_FAMILIES } from "../../lib/fontFamilies";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -21,8 +21,8 @@ export function PendingQuestionText(props: {
   const openLink = useOpenPullRequest();
   const theme = useUniwindTheme();
   const { appearance } = useAppearancePreferences();
-  const fontFamily = useFontFamily("regular");
-  const boldFontFamily = useFontFamily("bold");
+  const fontFamily = FONT_FAMILIES.regular;
+  const boldFontFamily = FONT_FAMILIES.bold;
   const textStyle = useMemo(
     () => ({
       color: theme["--color-foreground"],

@@ -4,7 +4,7 @@ import { readLocalApi } from "../localApi";
 import { openPullRequestLink, useOpenChangeRequestLink } from "./openPullRequestLink";
 import { stackedThreadToast, toastManager, type ThreadToastData } from "../components/ui/toast";
 
-export function useViewPullRequest(
+export function createViewPullRequest(
   gitStatus: VcsStatusResult | null,
   threadRef: ScopedThreadRef | null,
 ) {
@@ -55,7 +55,7 @@ export function useFocusPullRequestTab(
   gitStatus: VcsStatusResult | null,
   threadRef: ScopedThreadRef | null,
 ) {
-  const { canViewPullRequest, viewPullRequest } = useViewPullRequest(gitStatus, threadRef);
+  const { canViewPullRequest, viewPullRequest } = createViewPullRequest(gitStatus, threadRef);
   const openChangeRequestLink = useOpenChangeRequestLink(threadRef ?? undefined);
   const pullRequestUrl = gitStatus?.pr?.state === "open" ? gitStatus.pr.url : null;
 

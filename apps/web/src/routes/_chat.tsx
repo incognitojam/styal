@@ -32,7 +32,7 @@ import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useEnvironmentQuery } from "~/state/query";
 import { vcsEnvironment } from "~/state/vcs";
-import { useFocusPullRequestTab, useViewPullRequest } from "~/lib/viewPullRequest";
+import { useFocusPullRequestTab, createViewPullRequest } from "~/lib/viewPullRequest";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 
 function ChatRouteGlobalShortcuts() {
@@ -66,7 +66,7 @@ function ChatRouteGlobalShortcuts() {
         })
       : null,
   );
-  const { viewPullRequest } = useViewPullRequest(gitStatusQuery.data, routeThreadRef);
+  const { viewPullRequest } = createViewPullRequest(gitStatusQuery.data, routeThreadRef);
   const { focusPullRequestTab } = useFocusPullRequestTab(gitStatusQuery.data, routeThreadRef);
   const projectGroups = buildSidebarProjectSnapshots({
     projects,

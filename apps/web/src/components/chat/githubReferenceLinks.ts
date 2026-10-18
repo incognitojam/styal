@@ -114,7 +114,7 @@ interface ReferenceClickEvent {
 
 /** Clicked before its answer arrives, a reference follows the link as written: the right page, in
  * a browser. Holding the click to open it as a tab was not worth the pending click. */
-export function useGithubReferenceOpener(
+export function createGithubReferenceOpener(
   lookup: GithubReferenceLookup,
   openChangeRequestLink: (event: ReferenceClickEvent, targetUrl: string) => boolean,
 ): (event: ReferenceClickEvent, key: string, writtenHref: string) => void {

@@ -117,7 +117,7 @@ import {
   GithubReferenceThreadContext,
   MISSING_GITHUB_REFERENCE_ATTRIBUTE,
   missingGithubReferenceTitle,
-  useGithubReferenceOpener,
+  createGithubReferenceOpener,
   useGithubReferenceResolutions,
   type GithubReferenceSurface,
 } from "./chat/githubReferenceLinks";
@@ -2536,7 +2536,7 @@ function useChatMarkdownState({
   const openDeferredMarkdownLink = useOpenLink(threadRef);
   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
   const lookupReference = useGithubReferenceResolutions(referenceContext, text);
-  const openReference = useGithubReferenceOpener(lookupReference, openChangeRequestLink);
+  const openReference = createGithubReferenceOpener(lookupReference, openChangeRequestLink);
   // Where a left click opened the integrated browser and it could not be opened, the click still
   // asked for the link: fall back to the browser the link would have used on its own.
   const openLinkInIntegratedBrowser = async (url: string) => {
