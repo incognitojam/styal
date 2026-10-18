@@ -61,6 +61,9 @@ const DROPPED_REQUEST_HEADERS = new Set([
   // Hop-by-hop: fetch frames the forwarded body itself and rejects this header.
   "transfer-encoding",
   "accept-encoding",
+  // Describes the client's HTTPS hop to T3. The hub builds its own origin from it and then
+  // rejects the loopback Origin set below, so every mutation fails over T3 Connect.
+  "x-forwarded-proto",
 ]);
 
 const isWebSocketUpgrade = (request: HttpServerRequest.HttpServerRequest) =>
