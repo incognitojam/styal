@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -25,7 +26,7 @@ import {
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
 import { CLOUD_CLI_DESIRED_LINK_SECRET } from "./CliState.ts";
-import * as CliTokenManager from "./CliTokenManager.ts";
+import * as CliSession from "./CliSession.ts";
 import { RelayManagedEndpointRecoveryRegistrationRequest } from "@t3tools/contracts/relay";
 import {
   CLOUD_ENDPOINT_CONFIRMED_ORIGIN,
@@ -99,13 +100,23 @@ describe("consumeCloudReplayGuards", () => {
   );
 });
 
-describe("releaseManagedTunnelOnShutdown", () => {
-  const cliToken: CliTokenManager.PersistedToken = {
-    accessToken: "cli-access-token",
-    refreshToken: "cli-refresh-token",
-    expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
-  };
+const unusedCliSession: CliSession.CloudCliSession["Service"] = {
+  startEmailSignIn: () => Effect.die("unused"),
+  verifyEmailSignIn: () => Effect.die("unused"),
+  currentIdentity: Effect.die("unused"),
+  storedIdentity: Effect.die("unused"),
+  hasCredential: Effect.die("unused"),
+  authorize: () => Effect.die("unused"),
+  signOut: Effect.die("unused"),
+};
 
+// Stands in for a signed proof: records which request the session authorized.
+const cliAuthorizationHeaders = (method: string, url: string) => ({
+  authorization: "DPoP cli-access-token",
+  dpop: `proof ${method} ${url}`,
+});
+
+describe("releaseManagedTunnelOnShutdown", () => {
   function makeMemorySecretStore(initial: Iterable<readonly [string, string]> = []) {
     const values = new Map<string, Uint8Array>(
       Array.from(initial, ([name, value]) => [name, new TextEncoder().encode(value)] as const),
@@ -137,7 +148,7 @@ describe("releaseManagedTunnelOnShutdown", () => {
     readonly respond?: () => Response;
     readonly address?: HttpServer.HttpServer["Service"]["address"];
     readonly respondEffect?: Effect.Effect<Response>;
-    readonly getExisting?: CliTokenManager.CloudCliTokenManager["Service"]["getExisting"];
+    readonly authorize?: CliSession.CloudCliSession["Service"]["authorize"];
   }
 
   const writeLauncherState = (update: ServiceUpdateRecord) =>
@@ -208,13 +219,13 @@ describe("releaseManagedTunnelOnShutdown", () => {
           EnvironmentAuth.EnvironmentAuth.of({} as EnvironmentAuth.EnvironmentAuth["Service"]),
         ),
         Effect.provideService(
-          CliTokenManager.CloudCliTokenManager,
-          CliTokenManager.CloudCliTokenManager.of({
-            get: unusedSecretStoreOperation(),
-            getExisting: harness.getExisting ?? Effect.succeedSome(cliToken),
-            hasCredential: unusedSecretStoreOperation(),
-            store: () => unusedSecretStoreOperation(),
-            clear: unusedSecretStoreOperation(),
+          CliSession.CloudCliSession,
+          CliSession.CloudCliSession.of({
+            ...unusedCliSession,
+            hasCredential: Effect.succeed(true),
+            authorize:
+              harness.authorize ??
+              ((method, url) => Effect.succeedSome(cliAuthorizationHeaders(method, url))),
           }),
         ),
         Effect.provideService(
@@ -281,10 +292,48 @@ describe("releaseManagedTunnelOnShutdown", () => {
       expect(request.url).toBe(
         "https://relay.example.test/v1/client/environment-links/env_123/tunnel",
       );
-      expect(request.headers.authorization).toBe("Bearer cli-access-token");
+      expect(request.headers.authorization).toBe("DPoP cli-access-token");
+      expect(request.headers.dpop).toBe(
+        "proof DELETE https://relay.example.test/v1/client/environment-links/env_123/tunnel",
+      );
       expect(values.has(CLOUD_ENDPOINT_RUNTIME_CONFIG)).toBe(false);
       expect(values.has(CLOUD_ENDPOINT_CONFIRMED_ORIGIN)).toBe(false);
     }).pipe(provideReleaseHarness({ store, applyConfigCalls, requests }));
+  });
+
+  it.effect("authorizes the CLI link challenge with the relay session's DPoP headers", () => {
+    const { store } = makeMemorySecretStore(managedLinkSecrets);
+    const applyConfigCalls: Array<unknown> = [];
+    const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+
+    return Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      const error = yield* Effect.flip(
+        link.reconcileDesiredLinkIfStillDesired("http://127.0.0.1:3773"),
+      );
+
+      expect(error._tag).toBe("RelayRequestError");
+      expect(requests).toHaveLength(1);
+      const request = requests[0]!;
+      expect(request.method).toBe("POST");
+      expect(request.url).toBe("https://relay.example.test/v1/client/environment-link-challenges");
+      expect(request.headers.authorization).toBe("DPoP cli-access-token");
+      expect(request.headers.dpop).toBe(
+        "proof POST https://relay.example.test/v1/client/environment-link-challenges",
+      );
+    }).pipe(
+      provideReleaseHarness({
+        store,
+        applyConfigCalls,
+        requests,
+        respond: () => new Response(null, { status: 401 }),
+      }),
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({ env: { T3CODE_RELAY_URL: "https://relay.example.test" } }),
+        ),
+      ),
+    );
   });
 
   it.effect("leaves the tunnel of a web/mobile-installed link untouched", () => {

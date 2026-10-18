@@ -14,7 +14,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as AgentAwarenessRelay from "../relay/AgentAwarenessRelay.ts";
-import * as CliTokenManager from "./CliTokenManager.ts";
+import * as CliSession from "./CliSession.ts";
 import * as CloudLink from "./CloudLink.ts";
 import * as ConnectReachability from "./ConnectReachability.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
@@ -99,7 +99,7 @@ const withService = <A, E>(
         latest: Effect.succeedNone,
       }),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
-      Layer.mock(CliTokenManager.CloudCliTokenManager)({}),
+      Layer.mock(CliSession.CloudCliSession)({}),
       Layer.mock(HttpServer.HttpServer)({
         address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
       }),

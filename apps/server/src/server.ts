@@ -186,7 +186,7 @@ import {
   retryDesiredLinkReconcile,
   retryManagedTunnelRegistration,
 } from "./cloud/managedTunnelStartup.ts";
-import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
+import * as CloudCliSession from "./cloud/CliSession.ts";
 import * as CloudCliState from "./cloud/CliState.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
@@ -770,16 +770,16 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(
     Layer.mergeAll(
-      CloudCliTokenManager.layer.pipe(
-        Layer.provide(ServerSecretStore.layer),
-        Layer.provide(ExternalLauncher.layer),
-      ),
+      CloudCliSession.layer.pipe(Layer.provide(ServerSecretStore.layer)),
       layerCloudManagedEndpointRuntime,
     ).pipe(traceShutdown("cloud")),
   ),
 );
 
-const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
+const layerRuntimeDependencies = CloudCliSession.layerStartupAdoption.pipe(
+  // Credential adoption runs even when an already-linked tunnel needs no
+  // account authorization. Its scoped retry fiber never gates local startup.
+  Layer.provideMerge(layerRuntimeCoreDependencies),
   Layer.provideMerge(DeviceSharing.layer.pipe(Layer.provide(layerRuntimeCoreDependencies))),
   Layer.provideMerge(layerUsage.pipe(traceShutdown("usage"))),
   Layer.provideMerge(layerBackground.pipe(traceShutdown("background"))),
