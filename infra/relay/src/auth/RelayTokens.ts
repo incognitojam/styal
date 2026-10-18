@@ -1,4 +1,6 @@
 import {
+  RelayAccountScope,
+  RelayCliClientId,
   RelayDpopAccessTokenScope,
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
@@ -49,9 +51,11 @@ const RelayDpopAccessTokenClaims = Schema.Struct({
   jti: Schema.String,
   iat: Schema.Int,
   exp: Schema.Int,
-  client_id: Schema.Literals([RelayMobileClientId, RelayWebClientId]),
+  client_id: Schema.Literals([RelayMobileClientId, RelayWebClientId, RelayCliClientId]),
   scope: Schema.String,
   cnf: Schema.Struct({ jkt: Schema.String }),
+  // Relay sign-in session; absent on tokens exchanged from a Clerk token.
+  sid: Schema.optional(Schema.String),
 });
 export type RelayDpopAccessTokenClaims = Omit<typeof RelayDpopAccessTokenClaims.Type, "scope"> & {
   readonly scope: ReadonlyArray<RelayDpopAccessTokenScope>;
@@ -68,9 +72,22 @@ const allowedScopesByClientId: Record<
     RelayEnvironmentConnectScope,
     RelayEnvironmentStatusScope,
     RelayMobileRegistrationScope,
+    RelayAccountScope,
   ]),
-  [RelayWebClientId]: new Set([RelayEnvironmentConnectScope, RelayEnvironmentStatusScope]),
+  [RelayWebClientId]: new Set([
+    RelayEnvironmentConnectScope,
+    RelayEnvironmentStatusScope,
+    RelayAccountScope,
+  ]),
+  [RelayCliClientId]: new Set([RelayAccountScope]),
 };
+
+/** Every scope a client may hold. Session access tokens carry all of them. */
+export function scopesForClient(
+  clientId: RelayPublicClientId,
+): ReadonlyArray<RelayDpopAccessTokenScope> {
+  return [...allowedScopesByClientId[clientId]];
+}
 
 function resolveDpopAccessTokenScopes(input: {
   readonly clientId: RelayPublicClientId;
@@ -107,6 +124,7 @@ export class RelayTokens extends Context.Service<
       readonly expiresAtEpochSeconds: number;
       readonly clientId: RelayPublicClientId;
       readonly scopes: ReadonlyArray<RelayDpopAccessTokenScope>;
+      readonly sessionId?: string;
     }) => Effect.Effect<string, RelayJwtError>;
     readonly verifyDpopAccessToken: (input: {
       readonly token: string;
@@ -181,6 +199,7 @@ const make = Effect.gen(function* () {
         client_id: input.clientId,
         scope: encodeOAuthScope(input.scopes),
         cnf: { jkt: input.proofKeyThumbprint },
+        ...(input.sessionId ? { sid: input.sessionId } : {}),
       },
     });
   });

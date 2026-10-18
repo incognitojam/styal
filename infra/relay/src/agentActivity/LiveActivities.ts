@@ -13,10 +13,15 @@ import * as Effect from "effect/Effect";
 import * as Function from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, sql } from "drizzle-orm";
 
 import * as RelayDb from "../db.ts";
-import { relayLiveActivities, relayMobileDevices } from "../persistence/schema.ts";
+import {
+  relayAuthSessions,
+  relayLiveActivities,
+  relayMobileDevices,
+} from "../persistence/schema.ts";
+import { DeviceNotOwnedBySession, DeviceSessionRevoked, lockDeviceOwnership } from "./Devices.ts";
 
 export class LiveActivityRegistrationPersistenceError extends Schema.TaggedError<LiveActivityRegistrationPersistenceError>()(
   "LiveActivityRegistrationPersistenceError",
@@ -97,10 +102,20 @@ export type TargetRow = DeviceRow & LiveActivityRow;
 export class LiveActivities extends Context.Service<
   LiveActivities,
   {
+    /**
+     * With a session, fails with DeviceNotOwnedBySession unless that session
+     * registered the device, and with DeviceSessionRevoked once that session is
+     * gone, as device registration does, so a request racing revocation or
+     * account deletion cannot restore a removed registration.
+     */
     readonly register: (input: {
       readonly userId: string;
+      readonly sessionId?: string;
       readonly registration: RelayLiveActivityRegistrationRequest;
-    }) => Effect.Effect<void, LiveActivityRegistrationPersistenceError>;
+    }) => Effect.Effect<
+      void,
+      LiveActivityRegistrationPersistenceError | DeviceSessionRevoked | DeviceNotOwnedBySession
+    >;
     readonly listTargets: (input: {
       readonly userId: string;
     }) => Effect.Effect<ReadonlyArray<TargetRow>, LiveActivityTargetListPersistenceError>;
@@ -141,7 +156,7 @@ const make = Effect.gen(function* () {
       yield* Effect.annotateCurrentSpan({
         "relay.mobile.device_id": input.registration.deviceId,
       });
-      yield* Effect.gen(function* () {
+      const register = Effect.gen(function* () {
         const updatedAt = DateTime.formatIso(yield* DateTime.now);
         const registration = input.registration;
         const [current] = yield* db
@@ -209,6 +224,54 @@ const make = Effect.gen(function* () {
             }),
         ),
       );
+      const sessionId = input.sessionId;
+      if (sessionId === undefined) return yield* register;
+      yield* db.$client
+        .withTransaction(
+          Effect.gen(function* () {
+            // Same session lock as Devices.register: session revocation and
+            // account deletion delete this row before registrations.
+            const live = yield* db
+              .select({ sessionId: relayAuthSessions.sessionId })
+              .from(relayAuthSessions)
+              .where(
+                and(
+                  eq(relayAuthSessions.sessionId, sessionId),
+                  eq(relayAuthSessions.userId, input.userId),
+                  gt(relayAuthSessions.expiresAt, DateTime.formatIso(yield* DateTime.now)),
+                ),
+              )
+              .for("update");
+            if (live.length === 0) return yield* new DeviceSessionRevoked({});
+            yield* lockDeviceOwnership(db, input.userId, input.registration.deviceId);
+            const owned = yield* db
+              .select({ deviceId: relayMobileDevices.deviceId })
+              .from(relayMobileDevices)
+              .where(
+                and(
+                  eq(relayMobileDevices.userId, input.userId),
+                  eq(relayMobileDevices.deviceId, input.registration.deviceId),
+                  eq(relayMobileDevices.sessionId, sessionId),
+                ),
+              )
+              .for("update");
+            if (owned.length === 0) return yield* new DeviceNotOwnedBySession({});
+            yield* register;
+          }),
+        )
+        .pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "DeviceSessionRevoked" ||
+            cause._tag === "DeviceNotOwnedBySession" ||
+            cause._tag === "LiveActivityRegistrationPersistenceError"
+              ? cause
+              : new LiveActivityRegistrationPersistenceError({
+                  userId: input.userId,
+                  deviceId: input.registration.deviceId,
+                  cause,
+                }),
+          ),
+        );
     }),
 
     listTargets: Effect.fn("relay.live_activities.list_targets")(function* (input) {
@@ -239,7 +302,17 @@ const make = Effect.gen(function* () {
             eq(relayLiveActivities.deviceId, relayMobileDevices.deviceId),
           ),
         )
-        .where(eq(relayMobileDevices.userId, input.userId))
+        .where(
+          and(
+            eq(relayMobileDevices.userId, input.userId),
+            // Delivery ends with the session, without waiting for pruning to remove the rows.
+            sql`(${relayMobileDevices.sessionId} is null or exists (
+              select 1 from ${relayAuthSessions}
+              where ${relayAuthSessions.sessionId} = ${relayMobileDevices.sessionId}
+                and ${relayAuthSessions.expiresAt} > ${DateTime.formatIso(yield* DateTime.now)}
+            ))`,
+          ),
+        )
         .pipe(
           Effect.flatMap((rows) =>
             Effect.forEach(

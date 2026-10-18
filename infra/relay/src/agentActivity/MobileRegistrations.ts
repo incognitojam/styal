@@ -25,12 +25,20 @@ export class MobileRegistrations extends Context.Service<
   {
     readonly registerDevice: (input: {
       readonly userId: string;
+      readonly sessionId?: string;
       readonly payload: RelayDeviceRegistrationRequest;
-    }) => Effect.Effect<{ readonly ok: true }, MobileRegistrationError>;
+    }) => Effect.Effect<
+      { readonly ok: true },
+      MobileRegistrationError | Devices.DeviceSessionRevoked
+    >;
     readonly registerLiveActivity: (input: {
       readonly userId: string;
+      readonly sessionId?: string;
       readonly payload: RelayLiveActivityRegistrationRequest;
-    }) => Effect.Effect<{ readonly ok: true }, MobileRegistrationError>;
+    }) => Effect.Effect<
+      { readonly ok: true },
+      MobileRegistrationError | Devices.DeviceSessionRevoked | Devices.DeviceNotOwnedBySession
+    >;
     readonly unregisterDevice: (input: {
       readonly userId: string;
       readonly deviceId: string;
@@ -53,7 +61,11 @@ const make = Effect.gen(function* () {
         "relay.mobile.device_id": input.payload.deviceId,
         "relay.mobile.platform": input.payload.platform,
       });
-      yield* devices.register({ userId: input.userId, registration: input.payload });
+      yield* devices.register({
+        userId: input.userId,
+        registration: input.payload,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      });
       yield* publisher
         .replayForLiveActivityRegistration({
           userId: input.userId,
@@ -74,7 +86,11 @@ const make = Effect.gen(function* () {
         yield* Effect.annotateCurrentSpan({
           "relay.mobile.device_id": input.payload.deviceId,
         });
-        yield* liveActivities.register({ userId: input.userId, registration: input.payload });
+        yield* liveActivities.register({
+          userId: input.userId,
+          registration: input.payload,
+          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        });
         yield* publisher
           .replayForLiveActivityRegistration({
             userId: input.userId,
