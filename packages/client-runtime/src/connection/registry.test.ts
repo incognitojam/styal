@@ -1991,6 +1991,47 @@ describe("EnvironmentRegistry routes", () => {
     }),
   );
 
+  it.effect("retires an old pairing only while T3 Connect still reaches the environment", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [LAN_TARGET, RELAY_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const environmentId = LAN_TARGET.environmentId;
+        expect(yield* registry.retireLegacyPairing(environmentId, "relay")).toBe(false);
+        expect(yield* registry.retireLegacyPairing(environmentId, LAN_TARGET.connectionId)).toBe(
+          true,
+        );
+        expect(routesOf(yield* Ref.get(harness.storedTargets), environmentId)).toEqual([
+          RELAY_TARGET,
+        ]);
+        expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("keeps an old pairing that is the only way in", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [LAN_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        expect(
+          yield* registry.retireLegacyPairing(LAN_TARGET.environmentId, LAN_TARGET.connectionId),
+        ).toBe(false);
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          LAN_TARGET,
+        ]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("removing the last route forgets the environment", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness(

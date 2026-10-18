@@ -50,6 +50,7 @@ import {
   entryWithRoutes,
   findRouteToSameAddress,
   isLearned,
+  legacyPairingRouteId,
   mergeLearnedRoutes,
   routesAfterRemoving,
   upsertRoute,
@@ -123,6 +124,22 @@ export class EnvironmentRegistry extends Context.Service<
       routeId: string,
     ) => Effect.Effect<
       void,
+      | Persistence.ConnectionPersistenceError
+      | ConnectionAttemptError
+      | EnvironmentNotRegisteredError
+      | PlatformEnvironmentRemovalError
+    >;
+    /**
+     * Drops the paired route that `activeRouteId` signs in with, when the
+     * caller found that pairing's session predates granular permissions and
+     * the environment can also be reached through T3 Connect. Returns whether
+     * a route was dropped; otherwise the pairing is the user's to replace.
+     */
+    readonly retireLegacyPairing: (
+      environmentId: EnvironmentId,
+      activeRouteId: string,
+    ) => Effect.Effect<
+      boolean,
       | Persistence.ConnectionPersistenceError
       | ConnectionAttemptError
       | EnvironmentNotRegisteredError
@@ -953,16 +970,42 @@ export const make = Effect.gen(function* () {
       environmentId,
       Effect.gen(function* () {
         const entry = yield* userEntry(environmentId);
-        const routes = connectionRoutes(entry);
-        const route = routes.find((candidate) => connectionRouteId(candidate.target) === routeId);
-        if (route === undefined) return;
-        const remaining = routesAfterRemoving(routes, routeId);
-        if (remaining.length === 0) return yield* removeLocked(environmentId);
-        yield* replaceRoutesLocked(entry, remaining);
-        const profile = Option.getOrNull(route.profile);
-        if (profile !== null && isSshConnectionProfile(profile)) {
-          yield* disconnectSsh(environmentId, profile);
-        }
+        yield* removeRouteLocked(entry, routeId);
+      }),
+    );
+  });
+
+  const removeRouteLocked = Effect.fnUntraced(function* (
+    entry: ConnectionCatalogEntry,
+    routeId: string,
+  ) {
+    const environmentId = entry.target.environmentId;
+    const routes = connectionRoutes(entry);
+    const route = routes.find((candidate) => connectionRouteId(candidate.target) === routeId);
+    if (route === undefined) return;
+    const remaining = routesAfterRemoving(routes, routeId);
+    if (remaining.length === 0) return yield* removeLocked(environmentId);
+    yield* replaceRoutesLocked(entry, remaining);
+    const profile = Option.getOrNull(route.profile);
+    if (profile !== null && isSshConnectionProfile(profile)) {
+      yield* disconnectSsh(environmentId, profile);
+    }
+  });
+
+  const retireLegacyPairing = Effect.fn("EnvironmentRegistry.retireLegacyPairing")(function* (
+    environmentId: EnvironmentId,
+    activeRouteId: string,
+  ) {
+    // Decided under the lock so a route list changed since the caller read the
+    // session cannot lose its only way in.
+    return yield* withLeaseLock(
+      environmentId,
+      Effect.gen(function* () {
+        const entry = yield* userEntry(environmentId);
+        const routeId = legacyPairingRouteId(entry, activeRouteId);
+        if (routeId === null) return false;
+        yield* removeRouteLocked(entry, routeId);
+        return true;
       }),
     );
   });
@@ -1162,6 +1205,7 @@ export const make = Effect.gen(function* () {
     reconcilePlatform,
     remove,
     removeRoute,
+    retireLegacyPairing,
     reorderRoutes,
     removeRelayEnvironments,
     retryNow,

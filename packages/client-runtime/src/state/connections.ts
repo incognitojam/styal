@@ -170,6 +170,20 @@ export function createEnvironmentCatalogAtoms<R, E>(
         Effect.flatMap((registry) => registry.removeRoute(input.environmentId, input.routeId)),
       ),
   });
+  const retireLegacyPairing = createRuntimeCommand(runtime, {
+    label: "environment-catalog:retire-legacy-pairing",
+    scheduler: commandScheduler,
+    concurrency: serial,
+    execute: (input: {
+      readonly environmentId: EnvironmentIdType;
+      readonly activeRouteId: string;
+    }) =>
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.flatMap((registry) =>
+          registry.retireLegacyPairing(input.environmentId, input.activeRouteId),
+        ),
+      ),
+  });
   const reorderRoutes = createRuntimeCommand(runtime, {
     label: "environment-catalog:reorder-routes",
     scheduler: commandScheduler,
@@ -203,6 +217,7 @@ export function createEnvironmentCatalogAtoms<R, E>(
     register,
     remove,
     removeRoute,
+    retireLegacyPairing,
     reorderRoutes,
     removeRelayEnvironments,
     retryNow,

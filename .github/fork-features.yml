@@ -3732,6 +3732,34 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream records tool calls that a restart or crash left unfinished as stopped, preserves their last recorded payload and timestamps for ordering and duration across the outage, and shows them in both clients.
 
+  - id: retire-legacy-pairing-with-link
+    title: Drop a pre-split pairing when styal Link reaches the same environment
+    status: maintained
+    prs: []
+    invariants:
+      - When a client's session over a saved pairing has only pre-split permissions and the environment also has a styal Link route, the client removes that pairing route (and learned routes borrowing its token) instead of telling the user to pair again.
+      - A pairing that is the only way to reach an environment is kept, and the existing permission notice still shows for it.
+      - Routes that already sign in with styal Link are never removed by this check.
+    rationale: Upstream keeps recorded grants unchanged across the permission split (pingdotgg/t3code#10298). A pairing next to a Link route only shadows Link's current grant on the LAN, and Link learns the same LAN address with its own credential.
+    implementation_paths:
+      - apps/mobile/src/components/PermissionUpdateNotice.tsx
+      - apps/web/src/components/PermissionUpdateNotice.tsx
+      - packages/client-runtime/src/connection/registry.ts
+      - packages/client-runtime/src/connection/routes.ts
+      - packages/client-runtime/src/state/connections.ts
+    upstream_paths:
+      - apps/mobile/src/components/PermissionUpdateNotice.tsx
+      - apps/web/src/components/PermissionUpdateNotice.tsx
+      - packages/client-runtime/src/connection/registry.ts
+      - packages/client-runtime/src/connection/routes.ts
+      - packages/client-runtime/src/state/connections.ts
+    tests:
+      - packages/client-runtime/src/connection/registry.test.ts
+      - packages/client-runtime/src/connection/routes.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream clients stop preferring a pre-split pairing over styal Link, or upstream drops the pairing route automatically when Link reaches the same environment.
   - id: review-findings-card
     title: Show code-review findings as a card
     status: maintained
