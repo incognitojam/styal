@@ -2848,21 +2848,23 @@ features:
 
   - id: pending-question-answer-drafts
     title: Keep unsubmitted question answers when the chat view remounts
-    status: maintained
+    status: review-needed
     prs: [656]
     invariants:
       - Typed answers, selected options, and the current question of a pending agent question survive the web chat view unmounting and remounting, such as after an environment reconnects or a round trip through Settings, while the question stays open.
       - Drafts remain isolated by environment, thread, and request.
     implementation_paths:
-      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/usePendingThreadRequests.ts
       - apps/web/src/pendingUserInputDrafts.ts
     upstream_paths:
-      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/usePendingThreadRequests.ts
     tests:
+      - apps/web/src/components/chat/ComposerPendingUserInputPanel.navigation.browser.test.tsx
       - apps/web/src/pendingUserInputDrafts.test.ts
     upstream:
-      status: unassessed
-      tracking: []
+      status: equivalent
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/13865
       retire_when: Upstream keeps unsubmitted web question answers outside the chat view component so a remount does not discard them.
 
   - id: pending-question-answer-history

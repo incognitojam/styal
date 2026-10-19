@@ -16,7 +16,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -26,6 +26,8 @@ import {
   carryDisplacedCustomAnswerIntoPrompt,
   derivePendingUserInputProgress,
   projectPendingUserInputAnswer,
+  pendingUserInputRequestKey,
+  pruneResolvedUserInputDrafts,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
@@ -88,7 +90,6 @@ function makePendingCustomAnswerSetter(input: {
 export function usePendingThreadRequests(input: {
   readonly environmentId: EnvironmentId;
   readonly activeThreadId: ThreadId | null;
-  // The effect that prunes stale question drafts re-runs when this object changes.
   readonly activeThread: { readonly id: ThreadId } | undefined;
   readonly serverProjection: OrchestrationV2ThreadProjection | null;
   readonly supportsQuestionAttachments: boolean;
@@ -124,8 +125,11 @@ export function usePendingThreadRequests(input: {
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     RuntimeRequestId[]
   >([]);
+  const projectedThreadId = serverProjection?.thread.id;
   const pendingRequests =
-    serverProjection === null ? NO_PENDING_REQUESTS : derivePendingThreadRequests(serverProjection);
+    serverProjection !== null && serverProjection.thread.id === activeThreadId
+      ? derivePendingThreadRequests(serverProjection)
+      : NO_PENDING_REQUESTS;
   // The projection changes on every streamed event, so shared empties keep the
   // composer and approval panel from re-rendering while nothing is pending.
   const pendingApprovals =
@@ -137,20 +141,20 @@ export function usePendingThreadRequests(input: {
       ? NO_PENDING_USER_INPUTS
       : derivePendingUserInputs(pendingRequests.userInputs);
   const activePendingUserInput = pendingUserInputs[0] ?? null;
-  const activePendingRequestKey = JSON.stringify([
+  const activePendingRequestKey = pendingUserInputRequestKey(
     environmentId,
     activeThreadId,
     activePendingUserInput?.requestId,
-  ]);
+  );
   const activePendingStoredAnswers = usePendingUserInputDrafts(
     (state) => state.answersByRequestKey[activePendingRequestKey],
   );
   const activePendingStoredQuestionIndex = usePendingUserInputDrafts(
     (state) => state.questionIndexByRequestKey[activePendingRequestKey],
   );
-  // Prefilled answers go into the shared draft store, after render, so edits
+  // Prefilled answers go into the shared draft store before paint, so edits
   // start from the prefill and a remount keeps it.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!activePendingUserInput) return;
     const { answersByRequestKey } = usePendingUserInputDrafts.getState();
     const drafts = answersByRequestKey[activePendingRequestKey] ?? EMPTY_PENDING_USER_INPUT_ANSWERS;
@@ -159,7 +163,7 @@ export function usePendingThreadRequests(input: {
     usePendingUserInputDrafts.setState({
       answersByRequestKey: { ...answersByRequestKey, [activePendingRequestKey]: seeded },
     });
-  }, [activePendingUserInput, activePendingRequestKey]);
+  }, [activePendingRequestKey, activePendingUserInput]);
   const pendingQuestionDraftKeys = activeThreadId
     ? pendingUserInputs.flatMap((request) =>
         request.questions.map((question) =>
@@ -197,9 +201,29 @@ export function usePendingThreadRequests(input: {
     ),
   );
   useEffect(() => {
-    if (!activeThread) return;
+    // A thread shell can arrive before its requests; missing detail is not resolution.
+    if (!activeThread || projectedThreadId !== activeThread.id) return;
     const questionThread = activeThread;
     const currentRequests = pendingUserInputs;
+    const pendingRequestIds = currentRequests.map((request) => request.requestId);
+    usePendingUserInputDrafts.setState((existing) => {
+      const answersByRequestKey = pruneResolvedUserInputDrafts(
+        existing.answersByRequestKey,
+        environmentId,
+        questionThread.id,
+        pendingRequestIds,
+      );
+      const questionIndexByRequestKey = pruneResolvedUserInputDrafts(
+        existing.questionIndexByRequestKey,
+        environmentId,
+        questionThread.id,
+        pendingRequestIds,
+      );
+      return answersByRequestKey === existing.answersByRequestKey &&
+        questionIndexByRequestKey === existing.questionIndexByRequestKey
+        ? existing
+        : { answersByRequestKey, questionIndexByRequestKey };
+    });
     const prefix = questionAttachmentDraftPrefix(environmentId, questionThread.id);
     const retained = new Set(
       currentRequests.flatMap((request) =>
@@ -221,7 +245,7 @@ export function usePendingThreadRequests(input: {
       if (key.startsWith(prefix) && !retained.has(DraftId.make(key)))
         clearQuestionAttachmentDraft(DraftId.make(key));
     }
-  }, [environmentId, activeThread, pendingUserInputs]);
+  }, [environmentId, activeThread, projectedThreadId, pendingUserInputs]);
   const activePendingDraftAnswers =
     !activePendingUserInput || !activeThreadId
       ? EMPTY_PENDING_USER_INPUT_ANSWERS
