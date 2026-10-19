@@ -7,6 +7,7 @@ import {
   type ProjectId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { requireEnvironmentScope, failEnvironmentInternal } from "../auth/http.ts";
@@ -124,7 +125,11 @@ export const inspectHostActivity = Effect.gen(function* () {
   // Threads using a shared device run on the other environment, so their activity is
   // invisible here. A restart stops the hub and daemon they are driving.
   const environmentsUsingDevices = yield* (yield* DeviceSharing).environmentsUsingDevices;
-  const snapshot = yield* projections.getShellSnapshot().pipe(Effect.mapError(readFailed));
+  // Reads every thread, so run it off the event loop: a slow read on a large
+  // database otherwise stalls the server past the client's timeout.
+  const snapshot = yield* projections
+    .getShellSnapshot()
+    .pipe(NodeSqliteClient.readOnly, Effect.mapError(readFailed));
   const continuable = yield* listContinuableThreadIds(
     snapshot.threads.filter(isActiveHostThread),
   ).pipe(
