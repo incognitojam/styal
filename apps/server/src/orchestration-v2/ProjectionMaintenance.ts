@@ -133,7 +133,13 @@ export const layer: Layer.Layer<
           yield* sql`DELETE FROM orchestration_v2_projection_run_attempts`;
           yield* sql`DELETE FROM orchestration_v2_projection_runs`;
           yield* sql`DELETE FROM orchestration_v2_projection_threads`;
-          yield* sql`DELETE FROM styal_projection_legacy_turn_usage`;
+          // Upstream migration tests rebuild on upstream's schema, which lacks this fork table.
+          const [legacyTurnUsage] = yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'styal_projection_legacy_turn_usage'
+          `;
+          if (legacyTurnUsage !== undefined) {
+            yield* sql`DELETE FROM styal_projection_legacy_turn_usage`;
+          }
           yield* sql`DELETE FROM orchestration_v2_turn_item_positions`;
 
           const pageSize = 500;
