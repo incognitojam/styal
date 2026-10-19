@@ -176,6 +176,18 @@ type ObservedUsage =
       readonly reviewState: "approved" | "rejected";
     };
 
+/**
+ * Agent tools that report each call as `feature.used` with the fork's vocabulary and
+ * outcomes. Every tool in the browser, device and hardware toolkits is observed, so
+ * upstream's generic `mcp.tool.invoked` skips them to report each call once.
+ */
+export const toolReportedAsFeatureUsage = (tool: string) =>
+  tool.startsWith("preview_") ||
+  tool.startsWith("device_") ||
+  tool.startsWith("hardware_") ||
+  tool === "watch_workflow_run" ||
+  tool === "unwatch_workflow_run";
+
 /** What a successful watch_workflow_run or unwatch_workflow_run call did. */
 export type WorkflowRunWatchResult =
   | "started"
