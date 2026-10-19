@@ -61,7 +61,7 @@ export function providerInstallerKind(
   return INSTALLER_BY_LOCK_KEY[lockKey] ?? "native";
 }
 
-export function providerInventoryProperties(input: {
+function providerInventoryProperties(input: {
   readonly provider: ServerProvider;
   readonly capabilities: ProviderMaintenanceCapabilities;
   readonly autoUpdatesEnabled: boolean;
@@ -101,7 +101,7 @@ const INVENTORY_INTERVAL = Duration.hours(24);
  * `takeBusySkips` returns and resets the background updates skipped per
  * instance since the previous report.
  */
-export const reportProviderInventory = (
+const reportProviderInventory = (
   takeBusySkips: Effect.Effect<ReadonlyMap<ProviderInstanceId, number>>,
 ) =>
   Effect.gen(function* () {
@@ -180,7 +180,7 @@ export interface ProviderUpdateStart {
   readonly targetVersion: string | undefined;
 }
 
-export function providerUpdateFinishedProperties(
+function providerUpdateFinishedProperties(
   input: ProviderUpdateStart & {
     readonly resultVersion: string | null | undefined;
     readonly status: ServerProviderUpdateState["status"];
