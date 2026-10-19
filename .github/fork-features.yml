@@ -2174,6 +2174,8 @@ features:
       - apps/server/src/mcp/toolkits/hardware/handlers.ts
       - apps/server/src/mcp/toolkits/hardware/tools.ts
       - apps/server/src/persistence/ForkMigrations/010_HardwareLeases.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/server/src/telemetry/HardwareFeatureUsage.ts
       - apps/web/src/components/hardware/HardwareLeaseChip.tsx
       - apps/web/src/components/settings/HardwareSettings.tsx
       - apps/web/src/components/settings/hardwareSettings.logic.ts
@@ -2189,9 +2191,12 @@ features:
       - apps/server/src/orchestration-v2/Orchestrator.ts
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/server.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/chat/ChatHeader.tsx
       - packages/client-runtime/src/state/threadRequests.ts
+      - packages/contracts/src/clientRpcPermissions.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/rpc.ts
       - packages/contracts/src/settings.ts
@@ -2200,7 +2205,9 @@ features:
       - apps/server/src/hardware/HardwareDefinition.test.ts
       - apps/server/src/hardware/HardwareService.test.ts
       - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
+      - apps/server/src/telemetry/FeatureUsage.test.ts
       - apps/web/src/components/settings/hardwareSettings.logic.test.ts
+      - packages/client-runtime/src/state/commandPermissions.test.ts
       - packages/client-runtime/src/state/hardware.test.ts
       - packages/client-runtime/src/state/threadRequests.test.ts
     upstream:

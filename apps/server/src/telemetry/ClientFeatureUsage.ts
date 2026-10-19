@@ -6,6 +6,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import * as DeviceService from "../device/DeviceService.ts";
+import * as HardwareService from "../hardware/HardwareService.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as FeatureUsage from "./FeatureUsage.ts";
 
@@ -92,6 +93,39 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
           deviceLocation: location(input.hostId),
         },
         service.action(input),
+      ),
+  });
+});
+
+/** Observe the user's hardware lease and device controls from a client with a surface. */
+export const hardware = Effect.fnUntraced(function* (client: FeatureUsage.ClientDimensions) {
+  const service = yield* HardwareService.HardwareService;
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  if (!client.surface) return service;
+  const observe = <A, E, R>(
+    action: Extract<Parameters<typeof FeatureUsage.observe>[0], { feature: "hardware" }>["action"],
+    effect: Effect.Effect<A, E, R>,
+  ) =>
+    FeatureUsage.observe({ feature: "hardware", action, source: "user" }, effect, client).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+    );
+  return HardwareService.HardwareService.of({
+    ...service,
+    control: (input) =>
+      observe(
+        input.type === "revoke"
+          ? "revoke"
+          : input.type === "set-keep"
+            ? "keep"
+            : input.paused
+              ? "pause"
+              : "resume",
+        service.control(input),
+      ),
+    configure: (input) =>
+      observe(
+        input.type === "accept-definition" ? "accept_definition" : "set_credential",
+        service.configure(input),
       ),
   });
 });

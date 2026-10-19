@@ -9,6 +9,10 @@ and its duration. It does not include visited URLs, page content, screenshots, s
 input, or evaluated code. Device panel actions and agent device tools record their operation and
 outcome, whether the device is local or remote when known, and its platform when reported. Device
 names, identifiers, screenshots and action arguments are not collected.
+Hardware tools and the hardware lease controls in Settings and the thread header record their
+operation, its outcome, and for an agent's device call the action's access tier. Device names,
+addresses, action names, arguments, responses and uploaded files are not collected, and calls
+scripts make through a lease's proxy are not recorded.
 Agent workflow run watches record whether each watch or unwatch call started, stopped, or
 found a run already finished, and how each watch ended: the run's conclusion, a failure to read
 it, or being stopped, with how many minutes it was watched. Repositories, run links, and workflow

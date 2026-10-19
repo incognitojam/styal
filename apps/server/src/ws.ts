@@ -190,7 +190,6 @@ import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DeviceService from "./device/DeviceService.ts";
-import * as HardwareService from "./hardware/HardwareService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as DeviceSharing from "./device/DeviceSharing.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -1264,7 +1263,7 @@ const layerWsRpc = (
       const pullRequests = yield* PullRequestService.PullRequestService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* ClientFeatureUsage.devices(clientAnalyticsProps);
-      const hardware = yield* HardwareService.HardwareService;
+      const hardware = yield* ClientFeatureUsage.hardware(clientAnalyticsProps);
       const deviceSharing = yield* DeviceSharing.DeviceSharing;
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();

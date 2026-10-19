@@ -3,6 +3,7 @@ import type {
   ClientSurface,
   DeviceActionType,
   DevicePlatform,
+  HardwareTier,
   PreviewAutomationOperation,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -27,6 +28,23 @@ type FeatureUsage =
       readonly source: "user" | "agent";
       readonly devicePlatform?: DevicePlatform | undefined;
       readonly deviceLocation?: "local" | "remote" | undefined;
+    }
+  | {
+      readonly feature: "hardware";
+      readonly action:
+        | "list"
+        | "acquire"
+        | "call"
+        | "release"
+        | "revoke"
+        | "pause"
+        | "resume"
+        | "keep"
+        | "accept_definition"
+        | "set_credential";
+      readonly source: "user" | "agent";
+      /** For `call`: the action's tier, never its name or arguments. */
+      readonly hardwareTier?: HardwareTier | undefined;
     }
   | {
       readonly feature: "workflow-run-watch";
@@ -67,6 +85,39 @@ function deviceFailureReason(cause: Cause.Cause<unknown>) {
     // Another thread is using the device; a contested device, not a broken one.
     case "DeviceHeldError":
       return "in_use";
+    default:
+      return "operation_failed";
+  }
+}
+
+/** Bounded categories; contention and the user's own refusals are not broken operations. */
+function hardwareFailureReason(cause: Cause.Cause<unknown>) {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  const failure = typeof error === "object" && error !== null ? error : undefined;
+  const tag = failure !== undefined && "_tag" in failure ? failure._tag : undefined;
+  if (tag === "OrchestratorMcpFailure") return "refused";
+  if (tag !== "HardwareToolError" || failure === undefined || !("code" in failure)) {
+    return "operation_failed";
+  }
+  switch (failure.code) {
+    case "busy":
+      return "in_use";
+    case "offline":
+    case "request_failed":
+      return "device_unreachable";
+    case "approval_declined":
+      return "declined";
+    case "approval_timeout":
+      return "approval_timeout";
+    case "not_held":
+    case "paused":
+    case "forbidden":
+      return "refused";
+    case "not_found":
+    case "invalid_request":
+      return "invalid_request";
+    case "unavailable":
+      return "unavailable";
     default:
       return "operation_failed";
   }
@@ -127,6 +178,14 @@ export const observe = <A, E, R>(
             Exit.isFailure(exit) &&
             !Cause.hasInterruptsOnly(exit.cause)
               ? { failureReason: workflowRunWatchFailureReason(exit.cause) }
+              : {}),
+            ...(usage.feature === "hardware" &&
+            Exit.isFailure(exit) &&
+            !Cause.hasInterruptsOnly(exit.cause)
+              ? { failureReason: hardwareFailureReason(exit.cause) }
+              : {}),
+            ...(usage.feature === "hardware" && usage.hardwareTier
+              ? { hardwareTier: usage.hardwareTier }
               : {}),
             ...(watchResult !== undefined && Exit.isSuccess(exit)
               ? { watchResult: watchResult(exit.value) }
