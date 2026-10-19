@@ -469,13 +469,13 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     <View className="border-t border-border-subtle">
                       <SettingsSwitchRow
                         icon="arrow.down.circle"
-                        label="Update providers automatically"
+                        label="styal managed updates"
                         subtitle={
                           !supportsProviderAutoUpdates
-                            ? "Update older servers to install provider updates automatically."
+                            ? "Update older servers to use styal managed updates."
                             : projectSelected
                               ? "Environment-wide setting. Select All projects to change it."
-                              : "Install tested provider updates while no threads are running."
+                              : "styal manages provider updates, installing only tested versions."
                         }
                         value={supportsProviderAutoUpdates && uniform("autoUpdateProviders")}
                         disabled={

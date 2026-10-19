@@ -298,15 +298,17 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Provider updates
 
-- **Tested provider updates install themselves.** Each environment installs new Codex, Claude Code,
-  and OpenCode releases in the background once an automated check has run real agent turns against
-  them, once none of that provider's own threads are running. This covers providers installed with npm or a
-  similar package manager, and native Claude Code and Codex installs on macOS and Linux. Turn this off in **Settings → General**. T3 Code
+- **styal managed updates.** Each environment manages its provider CLI versions: it installs new
+  Codex, Claude Code, and OpenCode releases in the background only after an automated check has run
+  real agent turns against them, once none of that provider's own threads are running. This covers
+  providers installed with npm or a similar package manager, and native Claude Code and Codex installs
+  on macOS and Linux, where styal manages updates in place of the provider's own updater. Turn this off in
+  **Settings → General**. T3 Code
   updates providers only when you choose to, as of
   [revision 40a7908](https://github.com/pingdotgg/t3code/tree/40a7908df54d5069c93835032c9e955b56b55f1d);
   automatic installs exist there only as an open pull request
   ([#17585](https://github.com/pingdotgg/t3code/pull/17585)) without a tested-version gate.
-  [Automatic provider updates](./updating.md#automatic-provider-updates).
+  [styal managed updates](./updating.md#styal-managed-updates).
 
 ## Error reports
 

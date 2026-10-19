@@ -107,6 +107,13 @@ describe("searchSettings", () => {
     expect(searchSettings("administrative access")[0]?.id).toBe("connections-environment");
   });
 
+  it("finds managed provider updates by their new and old names", () => {
+    expect(searchableSetting("provider-auto-updates").title).toBe("styal managed updates");
+    for (const query of ["managed updates", "automatic provider updates", "codex self updater"]) {
+      expect(searchSettings(query)[0]?.id).toBe("provider-auto-updates");
+    }
+  });
+
   it("keeps the fork cloud service name while accepting the upstream alias", () => {
     expect(searchableSetting("t3-connect").title).toBe("styal Link");
     expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "t3-connect")?.searchTerms).toContain(

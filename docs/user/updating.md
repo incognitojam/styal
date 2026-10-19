@@ -121,32 +121,27 @@ five seconds to exit. This can interrupt running work.
 at once. Hover it to see which providers it will update. Providers that only
 offer a manual update command are not included.
 
-### Automatic provider updates
+### styal managed updates
 
-styal installs provider updates in the background once it has tested the new
-version: an automated check runs real agent turns against each new Codex,
-Claude Code, and OpenCode release before styal installs it automatically. A
-release that has not passed is never installed automatically, but you can
-still install the newest version yourself from **Settings → Providers**, which
-says when the newest release has not been tested yet. While automatic updates
-are on, styal does not show an update prompt for providers it updates
-automatically.
+With **styal managed updates** on, styal manages your provider CLI versions. It
+installs only versions it has tested: an automated check runs real agent turns
+against each new Codex, Claude Code, and OpenCode release on the current stable
+and nightly styal builds. It installs in the background once none of that
+provider's threads are running or waiting for you; a turn that starts during an
+install waits for it. styal never moves a provider back, and it does not show an
+update prompt for providers it manages. **Settings → Providers** says when the
+newest release has not been tested yet, and you can still install it yourself.
 
-Each provider release is tested against the current stable and nightly styal
-builds, so an environment on an older styal build receives provider updates
-again once styal itself is updated. A provider updates once none of its own
-threads are running or waiting for you; threads on other providers do not hold
-it back. A turn that starts on a provider while it is installing waits for the
-install to finish. Updates cover providers installed with npm, Bun, pnpm, Yarn,
-Vite+ or Volta, and on macOS and Linux also Claude Code and Codex installed with
-their own native installers. Their built-in updaters can still move them past the
-tested version; styal never moves a provider back. Installing a tested Codex
-version stops Codex's own automatic updates until you next update it from
-**Settings → Providers** or with `codex update`. Providers installed with
-Homebrew, other native installers, or a native installer on Windows keep updating
-the way they always have. Turn automatic updates off with **Update providers
-automatically** in **Settings → General**, or in **Settings → Maintenance** on
-mobile. They need provider update checks on.
+Managed updates are on by default. Turn them on or off in **Settings → General**
+(**Settings → Maintenance** on mobile); they need provider update checks on.
+They cover providers installed with npm, Bun, pnpm, Yarn, Vite+, or Volta, and on
+macOS and Linux also Claude Code and Codex installed with their own installers.
+Homebrew, other native installers, and native installs on Windows keep updating
+the way they always have.
+
+For native Claude Code and Codex installs, styal manages updates in place of the
+provider's own updater. To hand updates back to the provider, turn managed updates
+off, then select **Update** for it in **Settings → Providers** once.
 
 ## Mobile updates
 

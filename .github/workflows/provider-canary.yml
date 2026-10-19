@@ -377,7 +377,7 @@ jobs:
           git push --force origin "$CANARY_BRANCH"
           body="$(printf '%s\n\n%s\n\n%s\n' \
             "Real provider turns passed for $SUMMARY on styal $BUILDS: a tool turn, checkpoint, resume, interrupt, approval, rewind, native subagent, and follow-ups after a server restart." \
-            "Merging this adds them to \`autoUpdates\` in the model manifest. Servers whose code contains those builds, with automatic provider updates on, then install them." \
+            "Merging this adds them to \`autoUpdates\` in the model manifest. Servers whose code contains those builds, with styal managed updates on, then install them." \
             "Canary run: $RUN_URL")"
           number="$(gh pr list --head "$CANARY_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
           if [[ -n "$number" ]]; then
