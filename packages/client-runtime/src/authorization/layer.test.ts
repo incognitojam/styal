@@ -17,6 +17,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { ConnectionBlockedError, ConnectionTransientError } from "../connection/model.ts";
 import { DPOP_UNKNOWN_HINT } from "../relay/errorPresentation.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
+import { managedRelayMissingSessionError } from "../relay/managedRelayState.ts";
 import * as RpcHttp from "../rpc/http.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as RemoteEnvironmentAuthorization from "./service.ts";
@@ -1009,6 +1010,30 @@ describe("RemoteEnvironmentAuthorization", () => {
         detail: "Can't reach styal Link sign-in. Check your connection.",
       });
       expect(yield* Ref.get(harness.bootstrapCalls)).toBe(0);
+    }),
+  );
+
+  it.effect("connects once a loading cloud session loads", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        responses: [Response.json(DESCRIPTOR), accessToken("loaded-token")],
+        missingSession: Effect.fail(managedRelayMissingSessionError("loading")),
+      });
+      yield* Ref.set(harness.session, Option.none());
+      yield* Effect.gen(function* () {
+        const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
+        const pending = yield* remote
+          .authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID })
+          .pipe(Effect.flip);
+        expect(pending).toMatchObject({
+          _tag: "ConnectionBlockedError",
+          detail: "Waiting for the styal Link sign-in to load.",
+        });
+        yield* Ref.set(harness.session, Option.some({ accountId: "account-1" }));
+        const loaded = yield* remote.authorizeDpopHttp({ expectedEnvironmentId: ENVIRONMENT_ID });
+        expect(loaded.httpAuthorization.accessToken).toBe("loaded-token");
+      }).pipe(Effect.provide(harness.layer));
+      expect(yield* Ref.get(harness.bootstrapCalls)).toBe(1);
     }),
   );
 

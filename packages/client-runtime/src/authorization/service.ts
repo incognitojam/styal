@@ -561,6 +561,7 @@ export const make = Effect.gen(function* () {
         }
         cachedTicketTimeouts.delete(input.expectedEnvironmentId);
       }
+      yield* assertSession(selected.identity);
       selected = yield* getDpopToken({
         ...input,
         rejectedAccessToken: cachedToken.accessToken,

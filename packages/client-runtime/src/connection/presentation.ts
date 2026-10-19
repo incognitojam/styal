@@ -144,6 +144,8 @@ export function routeFailureLabel(failure: ConnectionRouteFailure): string {
       return "styal Link unavailable";
     case "remote-unavailable":
       return "Server error";
+    case "session-pending":
+      return "Waiting for sign-in";
     case "authentication":
       return "Sign-in rejected";
     case "permission":
