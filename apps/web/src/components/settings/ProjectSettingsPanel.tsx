@@ -299,7 +299,7 @@ function CheckoutRow({
   );
 }
 
-export type ProjectSettingsCategory = "general" | "integrations" | "source-control" | "project";
+export type ProjectSettingsCategory = "general" | "source-control" | "project";
 
 export function ProjectSettingsPanel({
   projectKey,
