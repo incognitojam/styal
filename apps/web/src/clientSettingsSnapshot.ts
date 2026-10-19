@@ -91,6 +91,8 @@ export function clientSettingsSnapshot(
     browserDefaultViewport: settings.browserDefaultViewport._tag,
     browserDefaultZoomFactor: settings.browserDefaultZoomFactor,
     browserDefaultAppearance: settings.browserDefaultAppearance,
+    browserSearchEngine: settings.browserSearchEngine,
+    browserCustomSearchUrlCustomized: settings.browserCustomSearchUrl !== "",
     browserProfileCount: settings.browserProfiles.length,
     browserDefaultProfileCustomized:
       settings.browserDefaultProfileId !== DEFAULT_BROWSER_PROFILE_ID,

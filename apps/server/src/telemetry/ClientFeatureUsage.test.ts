@@ -409,6 +409,8 @@ it.effect(
         browserDefaultViewport: "fill",
         browserDefaultZoomFactor: 1,
         browserDefaultAppearance: "system",
+        browserSearchEngine: "google",
+        browserCustomSearchUrlCustomized: false,
         browserProfileCount: 1,
         browserDefaultProfileCustomized: false,
         browserRecordingFrameRate: 30,

@@ -5,6 +5,7 @@ import { PreviewAppearancePreference, PreviewZoomFactor } from "./preview.ts";
 import {
   AppearanceContrast,
   BrowserLinkTarget,
+  BrowserSearchEngine,
   BrowserRecordingFrameRate,
   ChatWidth,
   CodeFontSize,
@@ -30,7 +31,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 10;
+export const FORK_CLIENT_USAGE_VERSION = 11;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -101,6 +102,8 @@ export const ClientSettingsSnapshot = Schema.Struct({
   browserDefaultViewport: Schema.Literals(["fill", "freeform", "preset"]),
   browserDefaultZoomFactor: PreviewZoomFactor,
   browserDefaultAppearance: PreviewAppearancePreference,
+  browserSearchEngine: BrowserSearchEngine,
+  browserCustomSearchUrlCustomized: Schema.Boolean,
   browserProfileCount: NonNegativeInt,
   browserDefaultProfileCustomized: Schema.Boolean,
   browserRecordingFrameRate: BrowserRecordingFrameRate,

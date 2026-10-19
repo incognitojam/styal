@@ -22,6 +22,7 @@ import {
   normalizePreviewUrl,
   resolveAddressBarInput,
   previewPdfAssetUrl,
+  resolveSearchUrlTemplate,
 } from "@t3tools/shared/preview";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
@@ -36,6 +37,7 @@ import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerD
 import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { ensureLocalApi } from "~/localApi";
+import { getClientSettings } from "~/hooks/useSettings";
 import {
   rememberPreviewUrl,
   updatePreviewServerSnapshot,
@@ -284,7 +286,7 @@ export function PreviewView({
 
   const handleSubmitUrl = async (next: string) => {
     try {
-      const resolved = resolveAddressBarInput(next);
+      const resolved = resolveAddressBarInput(next, resolveSearchUrlTemplate(getClientSettings()));
       if (await navigateToResolvedUrl(resolved)) {
         recordVisitForThread(threadRef, resolved);
       }
