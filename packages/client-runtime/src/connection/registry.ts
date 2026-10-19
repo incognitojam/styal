@@ -21,6 +21,7 @@ import {
   type ConnectionRoute,
   type PlatformConnectionRegistration,
   type PrimaryConnectionRegistration,
+  BearerConnectionCredential,
   SshConnectionProfile,
   connectionRegistrationCatalogEntry,
 } from "./catalog.ts";
@@ -32,6 +33,7 @@ import type {
   ConnectionTarget,
   NetworkStatus,
   PersistedConnectionTarget,
+  PreparedConnection,
   SupervisorConnectionState,
 } from "./model.ts";
 import { ConnectionBlockedError } from "./model.ts";
@@ -57,6 +59,7 @@ import {
 } from "./routes.ts";
 
 const isSshConnectionProfile = Schema.is(SshConnectionProfile);
+const isBearerCredential = Schema.is(BearerConnectionCredential);
 
 function unsupportedState(
   entry: ConnectionCatalogEntry,
@@ -130,14 +133,16 @@ export class EnvironmentRegistry extends Context.Service<
       | PlatformEnvironmentRemovalError
     >;
     /**
-     * Drops the paired route that `activeRouteId` signs in with, when the
-     * caller found that pairing's session predates granular permissions and
-     * the environment can also be reached through T3 Connect. Returns whether
-     * a route was dropped; otherwise the pairing is the user's to replace.
+     * Drops the paired route the `checked` connection signs in with, when the
+     * caller found that connection's session predates granular permissions and
+     * the environment can also be reached through T3 Connect. Nothing is
+     * dropped once the pairing holds a different token than `checked` used.
+     * Returns whether a route was dropped. Use `retireLegacyPairing` from
+     * `legacyPairing.ts`, which first confirms T3 Connect signs in.
      */
     readonly retireLegacyPairing: (
       environmentId: EnvironmentId,
-      activeRouteId: string,
+      checked: PreparedConnection,
     ) => Effect.Effect<
       boolean,
       | Persistence.ConnectionPersistenceError
@@ -994,7 +999,7 @@ export const make = Effect.gen(function* () {
 
   const retireLegacyPairing = Effect.fn("EnvironmentRegistry.retireLegacyPairing")(function* (
     environmentId: EnvironmentId,
-    activeRouteId: string,
+    checked: PreparedConnection,
   ) {
     // Decided under the lock so a route list changed since the caller read the
     // session cannot lose its only way in.
@@ -1002,8 +1007,19 @@ export const make = Effect.gen(function* () {
       environmentId,
       Effect.gen(function* () {
         const entry = yield* userEntry(environmentId);
-        const routeId = legacyPairingRouteId(entry, activeRouteId);
+        const routeId = legacyPairingRouteId(entry, connectionRouteId(checked.target));
         if (routeId === null) return false;
+        // Pairing the same address again keeps the route id but saves a new
+        // token, whose permissions the caller has not checked.
+        const credential = Option.getOrNull(yield* credentials.get(routeId));
+        if (
+          credential === null ||
+          !isBearerCredential(credential) ||
+          checked.httpAuthorization?._tag !== "Bearer" ||
+          checked.httpAuthorization.token !== credential.token
+        ) {
+          return false;
+        }
         yield* removeRouteLocked(entry, routeId);
         return true;
       }),

@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { connectionRouteId } from "@t3tools/client-runtime/connection";
+import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import { sessionHasLegacyPermissions } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
@@ -15,7 +15,9 @@ import { useAtomCommand } from "../state/use-atom-command";
 const storageKey = "t3code.permission-update.v1";
 const dismissedThisLaunch = new Set<string>();
 const shownThisLaunch = new Set<string>();
-const checkedThisLaunch = new Set<string>();
+// Each connection is checked once, since a new connection may sign in with a
+// different pairing or have gained a T3 Connect route.
+const checkedConnections = new WeakSet<PreparedConnection>();
 
 export function PermissionUpdateNotice() {
   const { environments } = useEnvironments();
@@ -39,7 +41,7 @@ export function PermissionUpdateNotice() {
               !session.waiting &&
               sessionHasLegacyPermissions(session.value) &&
               prepared !== null
-              ? [{ environment, activeRouteId: connectionRouteId(prepared.target) }]
+              ? [{ environment, prepared }]
               : [];
           }),
         ),
@@ -51,13 +53,19 @@ export function PermissionUpdateNotice() {
   // so it is dropped instead of asking the user to pair again. This runs even
   // for environments whose notice was already acknowledged.
   useEffect(() => {
-    for (const { environment, activeRouteId } of affected) {
+    for (const { environment, prepared } of affected) {
       const { environmentId } = environment;
-      if (checkedThisLaunch.has(environmentId)) continue;
-      checkedThisLaunch.add(environmentId);
-      void retireLegacyPairing({ environmentId, activeRouteId }).then((result) => {
-        if (result._tag === "Success" && result.value) return;
-        setNeedsNotice((current) => new Set(current).add(environmentId));
+      if (checkedConnections.has(prepared)) continue;
+      checkedConnections.add(prepared);
+      void retireLegacyPairing({ environmentId, checked: prepared }).then((result) => {
+        const retired = result._tag === "Success" && result.value;
+        setNeedsNotice((current) => {
+          if (retired ? !current.has(environmentId) : current.has(environmentId)) return current;
+          const next = new Set(current);
+          if (retired) next.delete(environmentId);
+          else next.add(environmentId);
+          return next;
+        });
       });
     }
   }, [affected, retireLegacyPairing]);

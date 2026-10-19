@@ -7,7 +7,9 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import { retireLegacyPairing as retireLegacyPairingEffect } from "../connection/legacyPairing.ts";
+import { AVAILABLE_CONNECTION_STATE, type PreparedConnection } from "../connection/model.ts";
+import type * as ConnectionResolver from "../connection/resolver.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import {
   GitHubRoutingPermissions,
@@ -46,7 +48,10 @@ const EMPTY_ENVIRONMENT_CATALOG_STATE: EnvironmentCatalogState = Object.freeze({
 });
 
 export function createEnvironmentCatalogAtoms<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
+  runtime: Atom.AtomRuntime<
+    EnvironmentRegistry.EnvironmentRegistry | ConnectionResolver.ConnectionResolver | R,
+    E
+  >,
 ) {
   const commandScheduler = createAtomCommandScheduler();
   const serial = { mode: "serial" as const, key: () => "environment-catalog" };
@@ -173,16 +178,17 @@ export function createEnvironmentCatalogAtoms<R, E>(
   const retireLegacyPairing = createRuntimeCommand(runtime, {
     label: "environment-catalog:retire-legacy-pairing",
     scheduler: commandScheduler,
-    concurrency: serial,
+    // Signing in through T3 Connect first can take seconds, so this does not
+    // hold up the other catalog commands; the registry lock covers the change.
+    concurrency: {
+      mode: "serial",
+      key: (input: { readonly environmentId: EnvironmentIdType }) =>
+        `retire-legacy-pairing:${input.environmentId}`,
+    },
     execute: (input: {
       readonly environmentId: EnvironmentIdType;
-      readonly activeRouteId: string;
-    }) =>
-      EnvironmentRegistry.EnvironmentRegistry.pipe(
-        Effect.flatMap((registry) =>
-          registry.retireLegacyPairing(input.environmentId, input.activeRouteId),
-        ),
-      ),
+      readonly checked: PreparedConnection;
+    }) => retireLegacyPairingEffect(input.environmentId, input.checked),
   });
   const reorderRoutes = createRuntimeCommand(runtime, {
     label: "environment-catalog:reorder-routes",

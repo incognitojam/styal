@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   save: vi.fn(),
   navigate: vi.fn(),
   retired: false,
+  prepared: { target: {} },
   retire: vi.fn(async (_input: unknown) => ({ _tag: "Success", value: state.retired })),
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => state.session }));
@@ -23,12 +24,11 @@ vi.mock("../state/environments", () => ({
     environments: [{ environmentId: `env-${state.id}`, label: "Work laptop" }],
   }),
 }));
-vi.mock("@t3tools/client-runtime/connection", () => ({ connectionRouteId: () => "lan" }));
 vi.mock("../connection/catalog", () => ({ environmentCatalog: { retireLegacyPairing: null } }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.retire }));
 vi.mock("../state/session", () => ({
   environmentSession: { sessionStateAtom: () => null },
-  usePreparedConnection: () => ({ _tag: "Some", value: { target: {} } }),
+  usePreparedConnection: () => ({ _tag: "Some", value: state.prepared }),
 }));
 vi.mock("../hooks/useLocalStorage", () => ({
   getLocalStorageItem: () => state.saved,
@@ -42,6 +42,7 @@ beforeEach(() => {
   state.id++;
   state.saved = false;
   state.retired = false;
+  state.prepared = { target: {} };
   state.session = {
     _tag: "Success",
     waiting: false,
@@ -124,7 +125,7 @@ it("drops an old pairing instead of warning when T3 Connect also reaches the env
   await render();
   expect(state.retire).toHaveBeenCalledWith({
     environmentId: `env-${state.id}`,
-    activeRouteId: "lan",
+    checked: state.prepared,
   });
   expect(state.add).not.toHaveBeenCalled();
 });
@@ -134,4 +135,13 @@ it("still tries to drop an old pairing whose notice was dismissed earlier", asyn
   await render();
   expect(state.retire).toHaveBeenCalledTimes(1);
   expect(state.add).not.toHaveBeenCalled();
+});
+
+it("checks each new connection again but shows the notice once", async () => {
+  await render();
+  expect(state.add).toHaveBeenCalledTimes(1);
+  state.prepared = { target: {} };
+  await act(async () => renderer.update(<PermissionUpdateNotice />));
+  expect(state.retire).toHaveBeenCalledTimes(2);
+  expect(state.add).toHaveBeenCalledTimes(1);
 });

@@ -55,6 +55,8 @@ import {
 import * as Persistence from "../platform/persistence.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
 import * as EnvironmentRegistry from "./registry.ts";
+import * as ConnectionResolver from "./resolver.ts";
+import { retireLegacyPairing } from "./legacyPairing.ts";
 import {
   GitHubRoutingPermissions,
   type StoredGitHubRoutingPermission,
@@ -1991,6 +1993,23 @@ describe("EnvironmentRegistry routes", () => {
     }),
   );
 
+  const checkedOver = (target: ConnectionTarget, token: string | null): PreparedConnection => ({
+    environmentId: target.environmentId,
+    label: target.label,
+    httpBaseUrl: LAN_PROFILE.httpBaseUrl,
+    socketUrl: `${LAN_PROFILE.wsBaseUrl}ws`,
+    httpAuthorization: token === null ? null : { _tag: "Bearer", token },
+    target,
+  });
+  const linkResolver = (prepare: ConnectionResolver.ConnectionResolver["Service"]["prepare"]) =>
+    Layer.succeed(
+      ConnectionResolver.ConnectionResolver,
+      ConnectionResolver.ConnectionResolver.of({
+        prepare,
+        prepareForUpdate: () => Effect.die("Unexpected update authorization"),
+      }),
+    );
+
   it.effect("retires an old pairing only while T3 Connect still reaches the environment", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness(
@@ -2001,14 +2020,42 @@ describe("EnvironmentRegistry routes", () => {
       yield* Effect.gen(function* () {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
         const environmentId = LAN_TARGET.environmentId;
-        expect(yield* registry.retireLegacyPairing(environmentId, "relay")).toBe(false);
-        expect(yield* registry.retireLegacyPairing(environmentId, LAN_TARGET.connectionId)).toBe(
-          true,
-        );
+        expect(
+          yield* registry.retireLegacyPairing(environmentId, checkedOver(RELAY_TARGET, null)),
+        ).toBe(false);
+        expect(
+          yield* registry.retireLegacyPairing(
+            environmentId,
+            checkedOver(LAN_TARGET, BEARER_CREDENTIAL.token),
+          ),
+        ).toBe(true);
         expect(routesOf(yield* Ref.get(harness.storedTargets), environmentId)).toEqual([
           RELAY_TARGET,
         ]);
         expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("keeps a pairing saved again with a token whose session was not checked", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [LAN_TARGET, RELAY_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        expect(
+          yield* registry.retireLegacyPairing(
+            LAN_TARGET.environmentId,
+            checkedOver(LAN_TARGET, "token-before-pairing-again"),
+          ),
+        ).toBe(false);
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          LAN_TARGET,
+          RELAY_TARGET,
+        ]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
@@ -2023,12 +2070,87 @@ describe("EnvironmentRegistry routes", () => {
       yield* Effect.gen(function* () {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
         expect(
-          yield* registry.retireLegacyPairing(LAN_TARGET.environmentId, LAN_TARGET.connectionId),
+          yield* registry.retireLegacyPairing(
+            LAN_TARGET.environmentId,
+            checkedOver(LAN_TARGET, BEARER_CREDENTIAL.token),
+          ),
         ).toBe(false);
         expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
           LAN_TARGET,
         ]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("keeps an old pairing when T3 Connect cannot sign in", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [LAN_TARGET, RELAY_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      const attempted = yield* Ref.make<ReadonlyArray<string>>([]);
+      yield* Effect.gen(function* () {
+        expect(
+          yield* retireLegacyPairing(
+            LAN_TARGET.environmentId,
+            checkedOver(LAN_TARGET, BEARER_CREDENTIAL.token),
+          ),
+        ).toBe(false);
+        expect(yield* Ref.get(attempted)).toEqual(["relay"]);
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          LAN_TARGET,
+          RELAY_TARGET,
+        ]);
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            harness.layer,
+            linkResolver((entry) =>
+              Ref.update(attempted, (ids) => [...ids, connectionRouteId(entry.target)]).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    new ConnectionBlockedError({
+                      reason: "authentication",
+                      detail: "Sign in to T3 Connect again.",
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Effect.scoped,
+      );
+    }),
+  );
+
+  it.effect("drops an old pairing once T3 Connect signs in", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [LAN_TARGET, RELAY_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Effect.gen(function* () {
+        expect(
+          yield* retireLegacyPairing(
+            LAN_TARGET.environmentId,
+            checkedOver(LAN_TARGET, BEARER_CREDENTIAL.token),
+          ),
+        ).toBe(true);
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          RELAY_TARGET,
+        ]);
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            harness.layer,
+            linkResolver((entry) => Effect.succeed(checkedOver(entry.target, null))),
+          ),
+        ),
+        Effect.scoped,
+      );
     }),
   );
 

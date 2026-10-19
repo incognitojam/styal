@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { connectionRouteId } from "@t3tools/client-runtime/connection";
+import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import { sessionHasLegacyPermissions, type EnvironmentId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
@@ -12,8 +12,11 @@ import { environmentSession, usePreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
 import { toastManager } from "./ui/toast";
 
-// Check each environment once per launch, and keep an active toast across
-// remounts, including Strict Mode effect replay.
+// Each connection is checked once, since a new connection may sign in with a
+// different pairing or have gained a T3 Connect route. The notice shows once
+// per environment per launch, and an active toast survives remounts, including
+// Strict Mode effect replay.
+const checked = new WeakSet<PreparedConnection>();
 const shown = new Set<EnvironmentId>();
 
 function showPermissionNotice(input: {
@@ -81,15 +84,13 @@ function EnvironmentPermissionNotice({
       prepared._tag === "None"
     )
       return;
-    if (shown.has(environmentId)) return;
-    shown.add(environmentId);
+    if (checked.has(prepared.value)) return;
+    checked.add(prepared.value);
     // An old pairing is redundant when T3 Connect also reaches the environment,
     // so it is dropped instead of asking the user to pair again.
-    void retireLegacyPairing({
-      environmentId,
-      activeRouteId: connectionRouteId(prepared.value.target),
-    }).then((result) => {
-      if (result._tag === "Success" && result.value) return;
+    void retireLegacyPairing({ environmentId, checked: prepared.value }).then((result) => {
+      if ((result._tag === "Success" && result.value) || shown.has(environmentId)) return;
+      shown.add(environmentId);
       showPermissionNotice({ environmentId, label, navigate });
     });
   }, [environmentId, label, navigate, prepared, retireLegacyPairing, session]);
