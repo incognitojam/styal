@@ -3055,7 +3055,8 @@ const layerWsRpc = (
         [WS_METHODS.hardwareControl]: (input) => hardware.control(input),
         [WS_METHODS.hardwareConfigure]: (input) => hardware.configure(input),
         [WS_METHODS.hardwareAuditList]: (input) => hardware.auditList(input),
-        [WS_METHODS.subscribeHardwareState]: (_input) => hardware.stateStream,
+        [WS_METHODS.subscribeHardwareState]: (input) =>
+          hardware.stateStream({ probeHealth: input.probeHealth === true }),
         [WS_METHODS.subscribeDiscoveredLocalServers]: (input) =>
           Stream.callback<DiscoveredLocalServerList>((queue) =>
             Effect.gen(function* () {

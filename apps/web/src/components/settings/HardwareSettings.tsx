@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 /**
  * Hardware settings - network devices agents lease through the server, such
  * as a microcontroller with an HTTP API. Instances live in server settings;
@@ -14,7 +15,6 @@ import {
   updateHardwareDevices,
 } from "@t3tools/client-runtime/state/hardware";
 import {
-  AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
   HARDWARE_DEFINITION_DIRECTORY,
@@ -196,7 +196,7 @@ function EnvironmentHardwareDevices({
   visible: (device: HardwareDeviceConfig) => boolean;
 }) {
   const canWrite = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
-  const { state, loaded, error } = useHardwareState(environmentId);
+  const { state, loaded, error } = useHardwareState(environmentId, { probeHealth: true });
   const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const [editing, setEditing] = useState<{ original: HardwareDeviceConfig | null } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -307,7 +307,7 @@ function HardwareDeviceRow({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const canOperate = useAtomValue(hardwareEnvironment.control.permissionAtom(environmentId));
   const canWrite = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const control = useAtomCommand(hardwareEnvironment.control, { reportFailure: false });
   const [pending, setPending] = useState<"pause" | "revoke" | null>(null);
@@ -368,7 +368,9 @@ function HardwareDeviceRow({
               expiry={hardwareLeaseExpiryLabel(lease, nowMs)}
             />
           ) : (
-            <p className="text-xs text-muted-foreground">Free</p>
+            <p className="text-xs text-muted-foreground">
+              {state?.cleaningUp ? "Running the last lease's release steps" : "Free"}
+            </p>
           )}
           {state && state.queue.length > 0 ? (
             <p className="text-xs text-muted-foreground">
@@ -453,8 +455,9 @@ function HardwareDeviceRow({
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke {name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              The thread holding it loses access now, and the device's release steps run to put it
-              back the way it was. The next waiting thread gets it after that.
+              The thread holding it can no longer change the device, though anyone may still read
+              its status. Its release steps run to put it back; if the device does not answer, they
+              keep retrying for a few minutes. The next waiting thread gets it once they finish.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -560,7 +563,7 @@ function HardwareDefinitionStatus({
   config: HardwareDeviceConfig;
   state: HardwareDeviceState;
 }) {
-  const canWrite = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const canWrite = useAtomValue(hardwareEnvironment.configure.permissionAtom(environmentId));
   const configure = useAtomCommand(hardwareEnvironment.configure, { reportFailure: false });
   const [accepting, setAccepting] = useState(false);
   const { definition } = state;
@@ -645,7 +648,7 @@ function HardwareCredential({
   config: HardwareDeviceConfig;
   state: HardwareDeviceState;
 }) {
-  const canWrite = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const canWrite = useAtomValue(hardwareEnvironment.configure.permissionAtom(environmentId));
   const configure = useAtomCommand(hardwareEnvironment.configure, { reportFailure: false });
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -895,13 +898,21 @@ function HardwareDeviceEditor({
         </DialogHeader>
         <DialogPanel>
           <div className="space-y-4">
-            <EditorField label="Id" error={errorFor("id")} hint="Agents use it to name the device.">
+            <EditorField
+              label="Id"
+              error={errorFor("id")}
+              hint={
+                original
+                  ? "Fixed once added: its credential and lease history are kept under it."
+                  : "Agents use it to name the device."
+              }
+            >
               <Input
-                autoFocus
+                autoFocus={!original}
                 required
                 font="mono"
                 value={draft.id}
-                disabled={busy}
+                disabled={busy || original !== null}
                 placeholder="tree"
                 aria-invalid={errorFor("id") ? true : undefined}
                 onBlur={() => touch("id")}

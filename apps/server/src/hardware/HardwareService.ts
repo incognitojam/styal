@@ -71,6 +71,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { VcsProcess } from "../vcs/VcsProcess.ts";
@@ -100,6 +101,7 @@ const APPROVAL_TIMEOUT = Duration.minutes(10);
 const APPROVAL_POLL_INTERVAL = Duration.millis(500);
 const RELEASE_RETRY_WINDOW_MS = 10 * 60_000;
 const RELEASE_RETRY_INTERVAL = Duration.seconds(30);
+const AUDIT_PRUNE_INTERVAL_MS = 60 * 60_000;
 const CALL_TIMEOUT = Duration.seconds(15);
 const UPLOAD_TIMEOUT = Duration.seconds(90);
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
@@ -109,10 +111,28 @@ const PROXY_PATH_PREFIX = "/api/hardware/proxy";
 const secretName = (deviceId: HardwareDeviceId) => `hardware-device-${deviceId}`;
 
 interface Lease extends HardwareStore.StoredLease {
-  /** Actions the user allowed for the rest of this lease. */
-  readonly approvedActions: ReadonlySet<string>;
+  /**
+   * Actions the user allowed for the rest of this lease, by name, with the
+   * request shape they approved. A reshaped action asks again.
+   */
+  readonly approvedActions: ReadonlyMap<string, string>;
   readonly lastPersistedActivityAt: number;
-  readonly lastRenewHookAt: number;
+  /** When each renew hook step last ran, by its index. */
+  readonly renewRunAt: ReadonlyMap<number, number>;
+  readonly lastCleanupAttemptAt: number;
+}
+
+/** A lease that has not ended. An ended one keeps its entry until its cleanup finishes. */
+const isHeld = (lease: Lease | undefined): lease is Lease =>
+  lease !== undefined && lease.releasingUntil === null;
+
+/** Where a request goes: a configured device, or one a release plan remembers. */
+interface Target {
+  readonly id: HardwareDeviceId;
+  readonly baseUrl: string;
+  readonly auth?:
+    | { readonly header?: string | undefined; readonly scheme?: string | undefined }
+    | undefined;
 }
 
 interface Waiter {
@@ -152,8 +172,13 @@ export class HardwareService extends Context.Service<
   HardwareService,
   {
     readonly state: Effect.Effect<HardwareServiceState>;
-    /** Current state first, then every change. Probes device health while subscribed. */
-    readonly stateStream: Stream.Stream<HardwareServiceState>;
+    /**
+     * Current state first, then every change. Device health is probed while
+     * any subscriber passed `probeHealth`.
+     */
+    readonly stateStream: (options: {
+      readonly probeHealth: boolean;
+    }) => Stream.Stream<HardwareServiceState>;
     readonly listForThread: (
       threadId: ThreadId,
       device?: HardwareDeviceId,
@@ -191,6 +216,15 @@ const threadBusy = (shell: OrchestrationV2ThreadShell | null) =>
 
 const threadGone = (shell: OrchestrationV2ThreadShell | null) =>
   shell === null || shell.deletedAt != null || shell.archivedAt != null;
+
+/** The request an action makes. Approvals and in-flight calls are bound to it. */
+const actionShape = (action: HardwareActionDefinition) =>
+  encodeJson([
+    action.method,
+    action.path,
+    action.body ?? null,
+    [...(action.query ?? [])].toSorted(),
+  ]);
 
 /** Reads `a.b.c` out of a JSON value, for the health summary line. */
 const readPath = (value: unknown, path: string): unknown => {
@@ -240,7 +274,11 @@ export const make = Effect.gen(function* () {
   const runtime = yield* Ref.make(new Map<HardwareDeviceId, DeviceRuntime>());
   const credentialPresent = yield* Ref.make(new Map<HardwareDeviceId, boolean>());
   const lastFetchAt = yield* Ref.make(new Map<string, number>());
-  const subscribers = yield* Ref.make(0);
+  /** Subscribers that show device health; health is probed while there are any. */
+  const probeSubscribers = yield* Ref.make(0);
+  /** Whether each held lease's thread was busy at the last tick, to publish when that flips. */
+  const lastBusy = new Map<HardwareDeviceId, boolean>();
+  const lastPruneAt = yield* Ref.make(0);
   const updates = yield* PubSub.sliding<HardwareServiceState>(16);
   /** Swapped on every lease change; waiters re-check when it completes. */
   const leaseChanged = yield* Ref.make(yield* Deferred.make<void>());
@@ -435,7 +473,8 @@ export const make = Effect.gen(function* () {
     device: HardwareDeviceConfig,
   ) {
     const state = yield* runtimeFor(device.id);
-    const lease = (yield* Ref.get(leases)).get(device.id);
+    const entry = (yield* Ref.get(leases)).get(device.id);
+    const lease = isHeld(entry) ? entry : undefined;
     const queue = (yield* Ref.get(queues)).get(device.id) ?? [];
     const effective = effectiveFor(device, state.definition);
     const shell = lease === undefined ? null : yield* getShell(lease.threadId);
@@ -472,6 +511,7 @@ export const make = Effect.gen(function* () {
             },
       queue: queue.map((waiter) => ({ threadId: waiter.threadId, queuedAt: iso(waiter.queuedAt) })),
       paused: state.paused,
+      cleaningUp: entry !== undefined && lease === undefined,
       hasCredential: (yield* Ref.get(credentialPresent)).get(device.id) ?? false,
       definition: {
         status,
@@ -501,7 +541,7 @@ export const make = Effect.gen(function* () {
   // Device requests
 
   const credentialHeaders = Effect.fn("HardwareService.credentialHeaders")(function* (
-    device: HardwareDeviceConfig,
+    device: Target,
   ) {
     const value = yield* secrets
       .get(secretName(device.id))
@@ -515,15 +555,17 @@ export const make = Effect.gen(function* () {
   });
 
   const sendRequest = Effect.fn("HardwareService.send")(function* (
-    device: HardwareDeviceConfig,
+    device: Target,
     action: HardwareActionDefinition,
     query: ReadonlyArray<readonly [string, string]>,
     body: Uint8Array | undefined,
   ) {
-    const url = new URL(
-      action.path.replace(/^\//, ""),
-      device.baseUrl.endsWith("/") ? device.baseUrl : `${device.baseUrl}/`,
-    );
+    const base = new URL(device.baseUrl.endsWith("/") ? device.baseUrl : `${device.baseUrl}/`);
+    const url = new URL(action.path.replace(/^\//, ""), base);
+    // The credential goes only to the configured device, whatever the path says.
+    if (url.origin !== base.origin) {
+      return yield* toolError("forbidden", `Refusing a request that leaves ${base.origin}.`);
+    }
     for (const [key, value] of query) url.searchParams.append(key, value);
     const request = HttpClientRequest.make(action.method)(url).pipe(
       HttpClientRequest.setHeaders(yield* credentialHeaders(device)),
@@ -541,7 +583,7 @@ export const make = Effect.gen(function* () {
     };
   });
   const send = (
-    device: HardwareDeviceConfig,
+    device: Target,
     action: HardwareActionDefinition,
     query: ReadonlyArray<readonly [string, string]>,
     body?: Uint8Array,
@@ -601,10 +643,12 @@ export const make = Effect.gen(function* () {
 
   // Hooks
 
-  const runHooks = Effect.fn("HardwareService.runHooks")(function* (
+  /** A hook's steps resolved for one lease, from the accepted definition only. */
+  const hookPlan = Effect.fn("HardwareService.hookPlan")(function* (
     device: HardwareDeviceConfig,
-    lease: { readonly threadId: ThreadId; readonly purpose: string },
+    purpose: string,
     kind: "acquire" | "renew" | "release",
+    only?: ReadonlySet<number>,
   ) {
     const effective = effectiveFor(device, (yield* runtimeFor(device.id)).definition);
     const accepted = device.acceptedDefinition;
@@ -613,20 +657,46 @@ export const make = Effect.gen(function* () {
     const hookActions = effective?.hookActions ?? accepted?.actions ?? {};
     const ttl =
       effective?.deviceTtlSeconds ?? accepted?.deviceTtlSeconds ?? DEFAULT_DEVICE_TTL_SECONDS;
+    const planned: Array<HardwareStore.ReleasePlan["steps"][number]> = [];
+    steps.forEach((step, index) => {
+      const definition = hookActions[step.action];
+      if (definition === undefined || (only !== undefined && !only.has(index))) return;
+      planned.push({
+        action: step.action,
+        definition,
+        query: Object.entries(step.query ?? {}).map(
+          ([key, value]) => [key, fillTemplate(value, { purpose }, ttl)] as const,
+        ),
+      });
+    });
+    return {
+      baseUrl: device.baseUrl,
+      ...(device.auth === undefined ? {} : { auth: device.auth }),
+      steps: planned,
+    } satisfies HardwareStore.ReleasePlan;
+  });
+
+  /** Runs a plan's steps against the device it names; true when every step succeeded. */
+  const runPlan = Effect.fn("HardwareService.runPlan")(function* (
+    deviceId: HardwareDeviceId,
+    plan: HardwareStore.ReleasePlan,
+    threadId: ThreadId,
+    kind: "acquire" | "renew" | "release",
+  ) {
+    const target: Target = {
+      id: deviceId,
+      baseUrl: plan.baseUrl,
+      ...(plan.auth === undefined ? {} : { auth: plan.auth }),
+    };
     let failed = false;
-    for (const step of steps) {
-      const action = hookActions[step.action];
-      if (action === undefined) continue;
-      const query = Object.entries(step.query ?? {}).map(
-        ([key, value]) => [key, fillTemplate(value, lease, ttl)] as const,
-      );
-      const result = yield* send(device, action, query).pipe(Effect.result);
+    for (const step of plan.steps) {
+      const result = yield* send(target, step.definition, step.query).pipe(Effect.result);
       const ok = result._tag === "Success" && result.success.status < 400;
       if (!ok) failed = true;
       yield* store.audit({
-        deviceId: device.id,
+        deviceId,
         actor: "system",
-        threadId: lease.threadId,
+        threadId,
         event: "hook",
         action: step.action,
         detail: {
@@ -640,32 +710,50 @@ export const make = Effect.gen(function* () {
     return !failed;
   });
 
-  /** Release hooks retry for a while when the device is unreachable, without holding anything up. */
-  const runReleaseHooks = (device: HardwareDeviceConfig, lease: Lease) =>
-    runHooks(device, lease, "release").pipe(
-      Effect.flatMap((ok) =>
-        ok
-          ? Effect.void
-          : runHooks(device, lease, "release").pipe(
-              Effect.flatMap((retried) => (retried ? Effect.void : Effect.fail("retry" as const))),
-              Effect.retry(
-                Schedule.spaced(RELEASE_RETRY_INTERVAL).pipe(
-                  Schedule.upTo({ duration: Duration.millis(RELEASE_RETRY_WINDOW_MS) }),
-                ),
-              ),
-              Effect.catch(() =>
-                Effect.logWarning("Hardware release hooks did not complete", {
-                  deviceId: device.id,
-                }),
-              ),
-              Effect.forkIn(scope),
-              Effect.asVoid,
-            ),
-      ),
-    );
-
   // Leases
 
+  const setLease = (lease: Lease) =>
+    Ref.update(leases, (map) => new Map(map).set(lease.deviceId, lease));
+  const dropLease = (deviceId: HardwareDeviceId) =>
+    Ref.update(leases, (map) => {
+      const next = new Map(map);
+      next.delete(deviceId);
+      return next;
+    });
+
+  /**
+   * Runs an ended lease's release hooks. The lease's row and entry stay until
+   * they succeed or the retry window closes, so nobody acquires the device
+   * mid-cleanup and a restart resumes it. Callers hold the device lock.
+   */
+  const attemptCleanup = Effect.fn("HardwareService.attemptCleanup")(function* (
+    deviceId: HardwareDeviceId,
+  ) {
+    const lease = (yield* Ref.get(leases)).get(deviceId);
+    if (lease === undefined || lease.releasingUntil === null) return;
+    const now = yield* Clock.currentTimeMillis;
+    yield* setLease({ ...lease, lastCleanupAttemptAt: now });
+    const ok = yield* runPlan(deviceId, lease.releasePlan, lease.threadId, "release");
+    if (!ok && now < lease.releasingUntil) return;
+    if (!ok) {
+      yield* store.audit({
+        deviceId,
+        actor: "system",
+        threadId: lease.threadId,
+        event: "cleanup.failed",
+        detail: { reason: "The release hooks did not succeed before the retry window closed." },
+      });
+    }
+    yield* store.deleteLease(deviceId);
+    yield* dropLease(deviceId);
+    yield* notifyLeaseChanged;
+  });
+
+  /**
+   * Ends a held lease and starts its cleanup. The ended state is written
+   * before anything else, without interruption, so a crash or cancelled call
+   * after this point still cleans up. Callers hold the device lock.
+   */
   const endLease = Effect.fn("HardwareService.endLease")(function* (
     deviceId: HardwareDeviceId,
     event: "lease.released" | "lease.revoked" | "lease.expired",
@@ -673,32 +761,49 @@ export const make = Effect.gen(function* () {
     reason: string,
   ) {
     const lease = (yield* Ref.get(leases)).get(deviceId);
-    if (lease === undefined) return false;
-    yield* Ref.update(leases, (map) => {
-      const next = new Map(map);
-      next.delete(deviceId);
-      return next;
-    });
-    yield* store.deleteLease(deviceId);
-    yield* store.audit({ deviceId, actor, threadId: lease.threadId, event, detail: { reason } });
+    if (!isHeld(lease)) return false;
     const device = yield* findDevice(deviceId);
-    if (device !== undefined) yield* runReleaseHooks(device, lease);
-    yield* notifyLeaseChanged;
+    // A removed device keeps the plan it had when the lease was granted.
+    const releasePlan =
+      device === undefined ? lease.releasePlan : yield* hookPlan(device, lease.purpose, "release");
+    const now = yield* Clock.currentTimeMillis;
+    const ended: Lease = {
+      ...lease,
+      releasePlan,
+      releasingUntil: now + RELEASE_RETRY_WINDOW_MS,
+      approvedActions: new Map(),
+    };
+    yield* Effect.uninterruptible(
+      Effect.gen(function* () {
+        yield* store.saveLease(ended);
+        yield* setLease(ended);
+        yield* store.audit({
+          deviceId,
+          actor,
+          threadId: lease.threadId,
+          event,
+          detail: { reason },
+        });
+        yield* notifyLeaseChanged;
+      }),
+    );
+    yield* attemptCleanup(deviceId);
     return true;
   });
 
   const touch = Effect.fn("HardwareService.touch")(function* (deviceId: HardwareDeviceId) {
     const now = yield* Clock.currentTimeMillis;
     const lease = (yield* Ref.get(leases)).get(deviceId);
-    if (lease === undefined) return;
+    if (!isHeld(lease)) return;
     const persist = now - lease.lastPersistedActivityAt >= ACTIVITY_WRITE_INTERVAL_MS;
     const next: Lease = {
       ...lease,
       lastActivityAt: now,
       lastPersistedActivityAt: persist ? now : lease.lastPersistedActivityAt,
     };
-    yield* Ref.update(leases, (map) => new Map(map).set(deviceId, next));
-    if (persist) yield* store.saveLease(next);
+    yield* setLease(next);
+    // Activity is advisory; a failed write only shortens the lease after a restart.
+    if (persist) yield* store.saveLease(next).pipe(Effect.ignore);
   });
 
   const holderTitle = Effect.fn("HardwareService.holderTitle")(function* (
@@ -710,7 +815,19 @@ export const make = Effect.gen(function* () {
     return shell?.title ?? "another thread";
   });
 
-  /** The device and the caller's thread, refused when the thread's project may not use it. */
+  const accessAllowed = (projectId: HardwareDeviceConfig["projectId"]) =>
+    settingsService.getSettings.pipe(
+      Effect.map(
+        (settings) =>
+          resolveProjectSettings(settings, projectId).settings.enableAgentHardwareAccess,
+      ),
+      Effect.orElseSucceed(() => false),
+    );
+
+  /**
+   * The device and the caller's thread, refused when the thread's project may
+   * not use it or agent hardware access is off for that project.
+   */
   const resolve = Effect.fn("HardwareService.resolve")(function* (
     threadId: ThreadId,
     deviceId: HardwareDeviceId,
@@ -723,6 +840,12 @@ export const make = Effect.gen(function* () {
         `No hardware device "${deviceId}" is registered for this project. Call hardware_list.`,
       );
     }
+    if (!(yield* accessAllowed(device.projectId))) {
+      return yield* toolError(
+        "forbidden",
+        "Agent hardware access is turned off for this project. The user can enable it in Settings → Hardware.",
+      );
+    }
     return { device, shell };
   });
 
@@ -731,6 +854,12 @@ export const make = Effect.gen(function* () {
     lease: Lease,
     threadId: ThreadId,
   ) {
+    if (lease.releasingUntil !== null) {
+      return toolError(
+        "busy",
+        `${deviceId} is still running the previous lease's cleanup. Pass wait=true to queue.`,
+      );
+    }
     const holder = yield* holderTitle(lease, threadId);
     const queue = (yield* Ref.get(queues)).get(deviceId) ?? [];
     const shell = yield* getShell(lease.threadId);
@@ -743,6 +872,9 @@ export const make = Effect.gen(function* () {
       `"${holder}" holds ${deviceId} for "${lease.purpose}", ${until}. ${queue.length} waiting. Pass wait=true to queue, or ask the user to revoke it.`,
     );
   });
+
+  const storeFailure = () =>
+    toolError("unavailable", "Could not record the lease. Try again in a moment.");
 
   const grant = Effect.fn("HardwareService.grant")(function* (
     device: HardwareDeviceConfig,
@@ -760,12 +892,16 @@ export const make = Effect.gen(function* () {
       idleMinutes: input.idleMinutes ?? DEFAULT_IDLE_MINUTES,
       hardExpiresAt: now + HARD_CAP_MS,
       keepUntilReleased: false,
-      approvedActions: new Set(),
+      releasePlan: yield* hookPlan(device, input.purpose, "release"),
+      releasingUntil: null,
+      approvedActions: new Map(),
       lastPersistedActivityAt: now,
-      lastRenewHookAt: now,
+      renewRunAt: new Map(),
+      lastCleanupAttemptAt: 0,
     };
-    yield* Ref.update(leases, (map) => new Map(map).set(device.id, lease));
-    yield* store.saveLease(lease);
+    // Persisted first: a lease nobody can find after a restart could never be cleaned up.
+    yield* store.saveLease(lease).pipe(Effect.mapError(storeFailure));
+    yield* setLease(lease);
     yield* store.audit({
       deviceId: device.id,
       actor: "thread",
@@ -773,7 +909,12 @@ export const make = Effect.gen(function* () {
       event: "lease.granted",
       detail: { purpose: input.purpose },
     });
-    yield* runHooks(device, lease, "acquire");
+    yield* runPlan(
+      device.id,
+      yield* hookPlan(device, input.purpose, "acquire"),
+      threadId,
+      "acquire",
+    );
     yield* notifyLeaseChanged;
     return lease;
   });
@@ -786,33 +927,50 @@ export const make = Effect.gen(function* () {
       ),
     ).pipe(Effect.andThen(publish));
 
+  /** The caller's running turn, which an approval card or a queued acquire belongs to. */
+  const activeRun = (threadId: ThreadId) =>
+    threads.getThreadRecords(threadId, ["runs"]).pipe(
+      Effect.map((records) => ThreadManagementService.latestActiveRun(records)),
+      Effect.orElseSucceed(() => undefined),
+    );
+
   const acquire: HardwareService["Service"]["acquire"] = (threadId, input) =>
     Effect.gen(function* () {
       const { device } = yield* resolve(threadId, input.device);
       yield* loadDefinition(device, { fetch: true });
+      const run = yield* activeRun(threadId);
       const waitUntil =
         (yield* Clock.currentTimeMillis) + (input.waitMinutes ?? DEFAULT_WAIT_MINUTES) * 60_000;
       let queued = false;
       const attempt = Effect.fn("HardwareService.acquireAttempt")(function* () {
-        const runtimeState = yield* runtimeFor(device.id);
-        if (runtimeState.paused) {
-          return yield* toolError("paused", `The user paused ${device.id}. Try again later.`);
+        // A waiter is granted only while its turn still runs and its device and access remain.
+        const { device: latest } = yield* resolve(threadId, input.device);
+        if (queued && run !== undefined) {
+          const live = yield* activeRun(threadId);
+          if (live?.id !== run.id) {
+            return yield* toolError("unavailable", "The turn waiting for the device ended.");
+          }
         }
-        const current = (yield* Ref.get(leases)).get(device.id);
-        if (current?.threadId === threadId) {
+        const runtimeState = yield* runtimeFor(latest.id);
+        if (runtimeState.paused) {
+          return yield* toolError("paused", `The user paused ${latest.id}. Try again later.`);
+        }
+        const current = (yield* Ref.get(leases)).get(latest.id);
+        if (isHeld(current) && current.threadId === threadId) {
+          const now = yield* Clock.currentTimeMillis;
           const renewed: Lease = {
             ...current,
             purpose: input.purpose,
             idleMinutes: input.idleMinutes ?? current.idleMinutes,
-            lastActivityAt: yield* Clock.currentTimeMillis,
-            lastPersistedActivityAt: yield* Clock.currentTimeMillis,
+            lastActivityAt: now,
+            lastPersistedActivityAt: now,
           };
-          yield* Ref.update(leases, (map) => new Map(map).set(device.id, renewed));
-          yield* store.saveLease(renewed);
+          yield* store.saveLease(renewed).pipe(Effect.mapError(storeFailure));
+          yield* setLease(renewed);
           yield* publish;
           return Option.some(renewed);
         }
-        const queue = (yield* Ref.get(queues)).get(device.id) ?? [];
+        const queue = (yield* Ref.get(queues)).get(latest.id) ?? [];
         const ahead = queue.findIndex((waiter) => waiter.threadId === threadId);
         if (current !== undefined || ahead > 0 || (ahead === -1 && queue.length > 0)) {
           if (!input.wait) {
@@ -820,24 +978,24 @@ export const make = Effect.gen(function* () {
               ? Effect.fail(
                   toolError(
                     "busy",
-                    `${queue.length} threads are waiting for ${device.id}. Pass wait=true to queue.`,
+                    `${queue.length} threads are waiting for ${latest.id}. Pass wait=true to queue.`,
                   ),
                 )
-              : Effect.flatMap(busyError(device.id, current, threadId), Effect.fail);
+              : Effect.flatMap(busyError(latest.id, current, threadId), Effect.fail);
           }
           return Option.none<Lease>();
         }
-        const health = yield* probe(device);
+        const health = yield* probe(latest);
         if (health.status !== "online") {
           if (!input.wait) {
             return yield* toolError(
               "offline",
-              `${device.id} did not answer at ${device.baseUrl}. Pass wait=true to wait for it.`,
+              `${latest.id} did not answer at ${latest.baseUrl}. Pass wait=true to wait for it.`,
             );
           }
           return Option.none<Lease>();
         }
-        return Option.some(yield* grant(device, threadId, input));
+        return Option.some(yield* grant(latest, threadId, input));
       });
       while (true) {
         const signal = yield* Ref.get(leaseChanged);
@@ -895,7 +1053,9 @@ export const make = Effect.gen(function* () {
 
   /**
    * Opens an approval card in the caller's thread and waits for the answer.
-   * The card closes as cancelled if the call ends any other way.
+   * Opening and closing are one acquire/release pair, so however the call
+   * ends, the card closes. It also closes when `stillValid` turns false, such
+   * as when the lease it was asked under ends.
    */
   const requestApproval = Effect.fn("HardwareService.requestApproval")(function* (input: {
     readonly threadId: ThreadId;
@@ -903,17 +1063,16 @@ export const make = Effect.gen(function* () {
     readonly actionName: string;
     readonly prompt: string;
     readonly toolInput: unknown;
+    readonly stillValid: Effect.Effect<boolean>;
   }) {
-    const records = yield* threads
-      .getThreadRecords(input.threadId, ["runs"])
-      .pipe(Effect.mapError(() => toolError("unavailable", "Could not read this thread.")));
-    const run = ThreadManagementService.latestActiveRun(records);
+    const run = yield* activeRun(input.threadId);
     if (run === undefined || run.rootNodeId === null) {
       return yield* toolError(
         "forbidden",
         "This action needs the user's approval, which can only be asked during a running turn.",
       );
     }
+    const rootNodeId = run.rootNodeId;
     const requestId = RuntimeRequestId.make(`runtime-request:hardware:${NodeCrypto.randomUUID()}`);
     const record = (approvalStatus: "pending" | "cancelled") =>
       threads.dispatch({
@@ -921,7 +1080,7 @@ export const make = Effect.gen(function* () {
         commandId: CommandId.make(`hardware-approval:${requestId}:${approvalStatus}`),
         threadId: input.threadId,
         runId: run.id,
-        nodeId: run.rootNodeId!,
+        nodeId: rootNodeId,
         requestId,
         approvalStatus,
         toolName: "hardware_call",
@@ -933,18 +1092,7 @@ export const make = Effect.gen(function* () {
           { decision: "decline", label: "Decline" },
         ],
       });
-    yield* record("pending").pipe(
-      Effect.mapError(() => toolError("unavailable", "Could not ask the user for approval.")),
-    );
-    yield* store.audit({
-      deviceId: input.device.id,
-      actor: "thread",
-      threadId: input.threadId,
-      event: "approval.requested",
-      action: input.actionName,
-      detail: { prompt: input.prompt },
-    });
-    const decision = yield* Effect.gen(function* () {
+    const wait = Effect.gen(function* () {
       while (true) {
         const projection = yield* threads
           .getThreadRecords(input.threadId, ["runtimeRequests", "runs"])
@@ -955,6 +1103,7 @@ export const make = Effect.gen(function* () {
         }
         const live = projection?.runs.find((candidate) => candidate.id === run.id);
         if (live !== undefined && !ThreadManagementService.isActiveRun(live)) return "cancel";
+        if (!(yield* input.stillValid)) return "cancel";
         yield* Effect.sleep(APPROVAL_POLL_INTERVAL);
       }
     }).pipe(
@@ -962,7 +1111,23 @@ export const make = Effect.gen(function* () {
         duration: APPROVAL_TIMEOUT,
         orElse: () => Effect.succeed<ProviderApprovalDecision | "timeout">("timeout"),
       }),
-      Effect.onExit(() => record("cancelled").pipe(Effect.ignore)),
+    );
+    const decision = yield* Effect.acquireUseRelease(
+      record("pending").pipe(
+        Effect.mapError(() => toolError("unavailable", "Could not ask the user for approval.")),
+      ),
+      () =>
+        store
+          .audit({
+            deviceId: input.device.id,
+            actor: "thread",
+            threadId: input.threadId,
+            event: "approval.requested",
+            action: input.actionName,
+            detail: { prompt: input.prompt },
+          })
+          .pipe(Effect.andThen(wait)),
+      () => record("cancelled").pipe(Effect.ignore),
     );
     yield* store.audit({
       deviceId: input.device.id,
@@ -1050,24 +1215,31 @@ export const make = Effect.gen(function* () {
 
   type CallVia = "tool" | "proxy";
 
+  /** The thread's actions on a device right now, after definition and worktree rules. */
+  const currentActions = Effect.fn("HardwareService.currentActions")(function* (
+    device: HardwareDeviceConfig,
+    shell: OrchestrationV2ThreadShell,
+  ) {
+    const effective = effectiveFor(device, yield* loadDefinition(device));
+    return effective === null ? null : yield* actionsForThread(device, shell, effective);
+  });
+
   const performCall = Effect.fn("HardwareService.performCall")(function* (
     threadId: ThreadId,
     input: HardwareToolCallInput,
     via: CallVia,
   ) {
     const { device, shell } = yield* resolve(threadId, input.device);
-    const runtimeState = yield* runtimeFor(device.id);
-    if (runtimeState.paused) {
+    if ((yield* runtimeFor(device.id)).paused) {
       return yield* toolError("paused", `The user paused ${device.id}.`);
     }
-    const effective = effectiveFor(device, yield* loadDefinition(device));
-    if (effective === null) {
+    const actions = yield* currentActions(device, shell);
+    if (actions === null) {
       return yield* toolError(
         "unavailable",
         `${device.id} has no usable definition on the default branch. The user can check Settings → Hardware.`,
       );
     }
-    const actions = yield* actionsForThread(device, shell, effective);
     const action = actions[input.action];
     if (action === undefined) {
       return yield* toolError(
@@ -1075,6 +1247,7 @@ export const make = Effect.gen(function* () {
         `${device.id} has no action "${input.action}". Actions: ${Object.keys(actions).toSorted().join(", ")}.`,
       );
     }
+    const shape = actionShape(action);
     const query = Object.entries(input.query ?? {}).map(
       ([key, value]) => [key, String(value)] as const,
     );
@@ -1091,6 +1264,8 @@ export const make = Effect.gen(function* () {
     if (action.body === "file" && input.bodyFile === undefined) {
       return yield* toolError("invalid_request", `"${input.action}" sends a file; pass bodyFile.`);
     }
+    // Operate and approve calls are bound to the lease held now; everything below re-checks it.
+    let heldToken: string | null = null;
     if (action.tier !== "read") {
       const lease = (yield* Ref.get(leases)).get(device.id);
       if (lease === undefined) {
@@ -1099,9 +1274,14 @@ export const make = Effect.gen(function* () {
           `"${input.action}" needs a lease. Call hardware_acquire for ${device.id} first.`,
         );
       }
-      if (lease.threadId !== threadId)
+      if (!isHeld(lease) || lease.threadId !== threadId)
         return yield* Effect.flatMap(busyError(device.id, lease, threadId), Effect.fail);
+      heldToken = lease.token;
     }
+    const sameLease = Effect.map(Ref.get(leases), (map) => {
+      const lease = map.get(device.id);
+      return isHeld(lease) && lease.token === heldToken;
+    });
     const file =
       action.body === "file" && input.bodyFile !== undefined
         ? yield* readBodyFile(shell, device, input.bodyFile)
@@ -1114,7 +1294,11 @@ export const make = Effect.gen(function* () {
         );
       }
       const lease = (yield* Ref.get(leases)).get(device.id);
-      if (lease === undefined || !lease.approvedActions.has(input.action)) {
+      const approved =
+        isHeld(lease) &&
+        lease.token === heldToken &&
+        lease.approvedActions.get(input.action) === shape;
+      if (!approved) {
         const decision = yield* requestApproval({
           threadId,
           device,
@@ -1126,6 +1310,7 @@ export const make = Effect.gen(function* () {
             query: input.query ?? {},
             ...(input.bodyFile === undefined ? {} : { bodyFile: input.bodyFile }),
           },
+          stillValid: sameLease,
         });
         if (decision === "timeout") {
           return yield* toolError(
@@ -1133,58 +1318,85 @@ export const make = Effect.gen(function* () {
             "Nobody answered the approval in 10 minutes.",
           );
         }
-        if (
-          decision !== "accept" &&
-          decision !== "acceptForSession" &&
-          decision !== "acceptAlways"
-        ) {
-          return yield* toolError("approval_declined", `The user declined "${input.action}".`);
+        if (decision !== "accept" && decision !== "acceptForSession") {
+          return yield* (yield* sameLease)
+            ? Effect.fail(toolError("approval_declined", `The user declined "${input.action}".`))
+            : Effect.fail(
+                toolError(
+                  "not_held",
+                  `The lease on ${device.id} ended while waiting for approval.`,
+                ),
+              );
         }
-        if (decision !== "accept") {
-          // The lease may have ended while the card waited; then there is nothing to remember.
+        if (decision === "acceptForSession") {
           yield* Ref.update(leases, (map) => {
             const current = map.get(device.id);
-            return current === undefined || current.threadId !== threadId
+            return !isHeld(current) || current.token !== heldToken
               ? map
               : new Map(map).set(device.id, {
                   ...current,
-                  approvedActions: new Set([...current.approvedActions, input.action]),
+                  approvedActions: new Map(current.approvedActions).set(input.action, shape),
                 });
           });
         }
-        const still = (yield* Ref.get(leases)).get(device.id);
-        if (still?.threadId !== threadId) {
-          return yield* toolError(
-            "not_held",
-            `The lease on ${device.id} ended while waiting for approval.`,
-          );
-        }
       }
     }
-    const started = yield* Clock.currentTimeMillis;
-    const result = yield* send(device, action, query, file?.bytes).pipe(
-      Effect.mapError(() =>
-        toolError("request_failed", `${device.id} did not answer ${action.method} ${action.path}.`),
-      ),
-    );
-    if (action.tier !== "read") yield* touch(device.id);
-    yield* store.audit({
-      deviceId: device.id,
-      actor: "thread",
-      threadId,
-      event: "call",
-      action: input.action,
-      detail: {
-        via,
-        status: result.status,
-        durationMs: (yield* Clock.currentTimeMillis) - started,
-        ...(query.length === 0 ? {} : { query: Object.fromEntries(query) }),
-        ...(file === undefined
-          ? {}
-          : { file: file.relative, bytes: file.bytes.byteLength, sha256: file.sha256 }),
-      },
+    /**
+     * Sends under the device lock, after checking that nothing it was approved
+     * or prepared under changed: the lease, pause, access, and the action's shape.
+     */
+    const execute = Effect.gen(function* () {
+      if (heldToken !== null && !(yield* sameLease)) {
+        return yield* toolError("not_held", `The lease on ${device.id} ended before the call ran.`);
+      }
+      if ((yield* runtimeFor(device.id)).paused) {
+        return yield* toolError("paused", `The user paused ${device.id}.`);
+      }
+      if (!(yield* accessAllowed(device.projectId))) {
+        return yield* toolError(
+          "forbidden",
+          "Agent hardware access is turned off for this project.",
+        );
+      }
+      const now = (yield* currentActions(device, shell))?.[input.action];
+      if (now === undefined || actionShape(now) !== shape || now.tier !== action.tier) {
+        return yield* toolError(
+          "unavailable",
+          `The definition of "${input.action}" changed while the call was prepared. Call it again.`,
+        );
+      }
+      const started = yield* Clock.currentTimeMillis;
+      const result = yield* send(device, action, query, file?.bytes).pipe(
+        Effect.mapError(() =>
+          toolError(
+            "request_failed",
+            `${device.id} did not answer ${action.method} ${action.path}.`,
+          ),
+        ),
+      );
+      // Any call by the holder, reads included, counts as activity on its lease.
+      const lease = (yield* Ref.get(leases)).get(device.id);
+      if (isHeld(lease) && lease.threadId === threadId) yield* touch(device.id);
+      yield* store.audit({
+        deviceId: device.id,
+        actor: "thread",
+        threadId,
+        event: "call",
+        action: input.action,
+        detail: {
+          via,
+          status: result.status,
+          durationMs: (yield* Clock.currentTimeMillis) - started,
+          ...(query.length === 0 ? {} : { query: Object.fromEntries(query) }),
+          ...(file === undefined
+            ? {}
+            : { file: file.relative, bytes: file.bytes.byteLength, sha256: file.sha256 }),
+        },
+      });
+      return result;
     });
-    return result;
+    // Reads do not wait behind another thread's upload; lease-bound calls serialize with teardown.
+    return yield* heldToken === null ? execute : lockFor(device.id).withPermits(1)(execute);
   });
 
   const call: HardwareService["Service"]["call"] = (threadId, input) =>
@@ -1203,7 +1415,7 @@ export const make = Effect.gen(function* () {
   const proxy: HardwareService["Service"]["proxy"] = (request) =>
     Effect.gen(function* () {
       const lease = [...(yield* Ref.get(leases)).values()].find(
-        (candidate) => candidate.token === request.token,
+        (candidate) => isHeld(candidate) && candidate.token === request.token,
       );
       if (lease === undefined) {
         return {
@@ -1213,14 +1425,10 @@ export const make = Effect.gen(function* () {
         };
       }
       const device = yield* findDevice(lease.deviceId);
-      const definition = device === undefined ? null : yield* loadDefinition(device);
-      const effective = device === undefined ? null : effectiveFor(device, definition);
       const shell = yield* getShell(lease.threadId);
       const actions =
-        device === undefined || effective === null || shell === null
-          ? {}
-          : yield* actionsForThread(device, shell, effective);
-      const match = actionForRequest(actions, request.method, request.path);
+        device === undefined || shell === null ? null : yield* currentActions(device, shell);
+      const match = actionForRequest(actions ?? {}, request.method, request.path);
       if (match === undefined) {
         return {
           status: 404,
@@ -1262,12 +1470,19 @@ export const make = Effect.gen(function* () {
 
   const release: HardwareService["Service"]["release"] = (threadId, deviceId) =>
     Effect.gen(function* () {
-      yield* resolve(threadId, deviceId);
+      // Releasing needs no access check: a thread can always hand a device back.
+      const device = yield* findDevice(deviceId);
+      const shell = yield* getShell(threadId);
+      if (device !== undefined && shell !== null && shell.projectId !== device.projectId) {
+        return yield* toolError("not_found", `No hardware device "${deviceId}" for this project.`);
+      }
       return yield* lockFor(deviceId).withPermits(1)(
         Effect.gen(function* () {
           const lease = (yield* Ref.get(leases)).get(deviceId);
-          if (lease?.threadId !== threadId) return { released: false };
-          yield* endLease(deviceId, "lease.released", "thread", "Released by the agent.");
+          if (!isHeld(lease) || lease.threadId !== threadId) return { released: false };
+          yield* endLease(deviceId, "lease.released", "thread", "Released by the agent.").pipe(
+            Effect.mapError(storeFailure),
+          );
           return { released: true };
         }),
       );
@@ -1288,14 +1503,20 @@ export const make = Effect.gen(function* () {
           const health =
             runtimeState.lastProbeAt === 0 ? yield* probe(device) : runtimeState.health;
           const effective = effectiveFor(device, definition);
-          const lease = (yield* Ref.get(leases)).get(device.id);
+          const entry = (yield* Ref.get(leases)).get(device.id);
+          const lease = isHeld(entry) ? entry : undefined;
           const leaseShell = lease === undefined ? null : yield* getShell(lease.threadId);
           return {
             id: device.id,
             name: definition.main?.name ?? device.id,
             health: health.status,
             summary: health.summary,
-            holder: lease === undefined ? null : yield* holderTitle(lease, threadId),
+            holder:
+              lease === undefined
+                ? entry === undefined
+                  ? null
+                  : "cleaning up after the last lease"
+                : yield* holderTitle(lease, threadId),
             leaseIdleExpiresAt:
               lease === undefined || lease.keepUntilReleased || threadBusy(leaseShell)
                 ? null
@@ -1321,12 +1542,18 @@ export const make = Effect.gen(function* () {
         : Effect.succeed(device),
     );
 
+  const userStoreFailure = () =>
+    new HardwareError({ reason: "Could not record the change to the lease. Try again." });
+
   const revoke = ({ deviceId }: { readonly deviceId: HardwareDeviceId }) =>
     requireDevice(deviceId).pipe(
       Effect.andThen(
         lockFor(deviceId).withPermits(1)(
           endLease(deviceId, "lease.revoked", "user", "Revoked by the user."),
         ),
+      ),
+      Effect.mapError((error) =>
+        error._tag === "HardwareStoreError" ? userStoreFailure() : error,
       ),
       Effect.asVoid,
     );
@@ -1357,23 +1584,25 @@ export const make = Effect.gen(function* () {
     readonly deviceId: HardwareDeviceId;
     readonly keepUntilReleased: boolean;
   }) =>
-    Effect.gen(function* () {
-      const lease = (yield* Ref.get(leases)).get(deviceId);
-      if (lease === undefined) {
-        return yield* new HardwareError({ reason: `Nobody holds ${deviceId}.` });
-      }
-      const now = yield* Clock.currentTimeMillis;
-      const next: Lease = {
-        ...lease,
-        keepUntilReleased,
-        lastActivityAt: now,
-        // Turning keep off restarts the cap rather than ending the lease at once.
-        hardExpiresAt: keepUntilReleased ? null : now + HARD_CAP_MS,
-      };
-      yield* Ref.update(leases, (map) => new Map(map).set(deviceId, next));
-      yield* store.saveLease(next);
-      yield* publish;
-    });
+    lockFor(deviceId).withPermits(1)(
+      Effect.gen(function* () {
+        const lease = (yield* Ref.get(leases)).get(deviceId);
+        if (!isHeld(lease)) {
+          return yield* new HardwareError({ reason: `Nobody holds ${deviceId}.` });
+        }
+        const now = yield* Clock.currentTimeMillis;
+        const next: Lease = {
+          ...lease,
+          keepUntilReleased,
+          lastActivityAt: now,
+          // Turning keep off restarts the cap rather than ending the lease at once.
+          hardExpiresAt: keepUntilReleased ? null : now + HARD_CAP_MS,
+        };
+        yield* store.saveLease(next).pipe(Effect.mapError(userStoreFailure));
+        yield* setLease(next);
+        yield* publish;
+      }),
+    );
 
   const acceptDefinition = ({ deviceId }: { readonly deviceId: HardwareDeviceId }) =>
     Effect.gen(function* () {
@@ -1444,107 +1673,153 @@ export const make = Effect.gen(function* () {
   const auditList: HardwareService["Service"]["auditList"] = ({ deviceId, limit }) =>
     Effect.map(store.listAudit(deviceId, limit ?? 100), (entries) => ({ entries }));
 
-  // Background: expiry, renew hooks, health, definition reloads.
+  // Background: expiry, cleanup retries, renew hooks, health, definition reloads.
+
+  /** Why a held lease should end now, if it should. */
+  const endReason = Effect.fn("HardwareService.endReason")(function* (
+    lease: Lease,
+    device: HardwareDeviceConfig | undefined,
+    shell: OrchestrationV2ThreadShell | null,
+    now: number,
+  ) {
+    if (device === undefined) return "The device was removed.";
+    if (threadGone(shell)) return "The thread was deleted or archived.";
+    if (!(yield* accessAllowed(device.projectId)))
+      return "Agent hardware access was turned off for this project.";
+    if (lease.keepUntilReleased) return null;
+    if (lease.hardExpiresAt !== null && now >= lease.hardExpiresAt)
+      return "The lease reached its time limit.";
+    if (!threadBusy(shell) && now >= lease.lastActivityAt + lease.idleMinutes * 60_000)
+      return "The thread was idle.";
+    return null;
+  });
+
+  const tickLease = Effect.fn("HardwareService.tickLease")(function* (
+    deviceId: HardwareDeviceId,
+    configured: ReadonlyArray<HardwareDeviceConfig>,
+    now: number,
+  ) {
+    const lease = (yield* Ref.get(leases)).get(deviceId);
+    if (lease === undefined) return;
+    if (lease.releasingUntil !== null) {
+      if (now - lease.lastCleanupAttemptAt >= Duration.toMillis(RELEASE_RETRY_INTERVAL)) {
+        yield* attemptCleanup(deviceId);
+      }
+      return;
+    }
+    const device = configured.find((candidate) => candidate.id === deviceId);
+    const shell = yield* getShell(lease.threadId);
+    const reason = yield* endReason(lease, device, shell, now);
+    if (reason !== null || device === undefined) {
+      yield* endLease(deviceId, "lease.expired", "system", reason ?? "The device was removed.");
+      return;
+    }
+    const busy = threadBusy(shell);
+    if (busy) yield* touch(deviceId);
+    if (lastBusy.get(deviceId) !== busy) {
+      lastBusy.set(deviceId, busy);
+      yield* publish;
+    }
+    // Each renew step runs on its own interval.
+    const steps =
+      effectiveFor(device, (yield* runtimeFor(device.id)).definition)?.hooks.renew ?? [];
+    const current = (yield* Ref.get(leases)).get(deviceId) ?? lease;
+    const due = new Set<number>();
+    steps.forEach((step, index) => {
+      const last = current.renewRunAt.get(index) ?? current.grantedAt;
+      if (now - last >= (step.everySeconds ?? DEFAULT_RENEW_EVERY_MS / 1000) * 1000) due.add(index);
+    });
+    if (due.size === 0) return;
+    const renewRunAt = new Map(current.renewRunAt);
+    for (const index of due) renewRunAt.set(index, now);
+    yield* setLease({ ...current, renewRunAt });
+    yield* runPlan(
+      deviceId,
+      yield* hookPlan(device, current.purpose, "renew", due),
+      lease.threadId,
+      "renew",
+    );
+  });
 
   const tick = Effect.gen(function* () {
     const configured = yield* devices;
-    const observed = (yield* Ref.get(subscribers)) > 0;
+    const observed = (yield* Ref.get(probeSubscribers)) > 0;
     const now = yield* Clock.currentTimeMillis;
+    const leasedIds = [...(yield* Ref.get(leases)).keys()];
+    for (const deviceId of leasedIds) {
+      yield* lockFor(deviceId)
+        .withPermits(1)(tickLease(deviceId, configured, now))
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Hardware lease tick failed", { deviceId, cause }),
+          ),
+        );
+    }
     for (const device of configured) {
-      yield* lockFor(device.id).withPermits(1)(
-        Effect.gen(function* () {
-          const lease = (yield* Ref.get(leases)).get(device.id);
-          if (lease === undefined) return;
-          const shell = yield* getShell(lease.threadId);
-          if (threadGone(shell)) {
-            yield* endLease(
-              device.id,
-              "lease.expired",
-              "system",
-              "The thread was deleted or archived.",
-            );
-            return;
-          }
-          if (threadBusy(shell)) yield* touch(device.id);
-          const current = (yield* Ref.get(leases)).get(device.id) ?? lease;
-          if (!current.keepUntilReleased) {
-            if (current.hardExpiresAt !== null && now >= current.hardExpiresAt) {
-              yield* endLease(
-                device.id,
-                "lease.expired",
-                "system",
-                "The lease reached its time limit.",
-              );
-              return;
-            }
-            if (
-              !threadBusy(shell) &&
-              now >= current.lastActivityAt + current.idleMinutes * 60_000
-            ) {
-              yield* endLease(device.id, "lease.expired", "system", "The thread was idle.");
-              return;
-            }
-          }
-          const effective = effectiveFor(device, (yield* runtimeFor(device.id)).definition);
-          const renewEvery =
-            Math.min(
-              ...(effective?.hooks.renew ?? []).map((step) => (step.everySeconds ?? 60) * 1000),
-            ) || DEFAULT_RENEW_EVERY_MS;
-          if (
-            (effective?.hooks.renew?.length ?? 0) > 0 &&
-            now - current.lastRenewHookAt >= renewEvery
-          ) {
-            yield* Ref.update(leases, (map) =>
-              map.has(device.id)
-                ? new Map(map).set(device.id, { ...current, lastRenewHookAt: now })
-                : map,
-            );
-            yield* runHooks(device, current, "renew");
-          }
-        }),
-      );
       const leased = (yield* Ref.get(leases)).has(device.id);
-      if (observed || leased) {
-        const runtimeState = yield* runtimeFor(device.id);
-        const effective = effectiveFor(device, runtimeState.definition);
-        const interval =
-          (effective?.health?.intervalSeconds ?? 0) * 1000 || DEFAULT_HEALTH_INTERVAL_MS;
-        if (now - runtimeState.lastProbeAt >= interval) yield* probe(device);
-        if (
-          runtimeState.definition === null ||
-          now - runtimeState.definition.loadedAt >= DEFINITION_RELOAD_MS
-        ) {
-          yield* loadDefinition(device);
-          yield* publish;
-        }
+      if (!observed && !leased) continue;
+      const runtimeState = yield* runtimeFor(device.id);
+      const effective = effectiveFor(device, runtimeState.definition);
+      const interval =
+        (effective?.health?.intervalSeconds ?? 0) * 1000 || DEFAULT_HEALTH_INTERVAL_MS;
+      if (now - runtimeState.lastProbeAt >= interval) yield* probe(device);
+      if (
+        runtimeState.definition === null ||
+        now - runtimeState.definition.loadedAt >= DEFINITION_RELOAD_MS
+      ) {
+        yield* loadDefinition(device);
+        yield* publish;
       }
     }
-    // Leases on devices that were removed from settings end too.
-    const known = new Set(configured.map((device) => device.id));
-    for (const deviceId of (yield* Ref.get(leases)).keys()) {
-      if (!known.has(deviceId)) {
-        yield* endLease(deviceId, "lease.expired", "system", "The device was removed.");
-      }
+    if (now - (yield* Ref.get(lastPruneAt)) >= AUDIT_PRUNE_INTERVAL_MS) {
+      yield* Ref.set(lastPruneAt, now);
+      yield* store.pruneAudit;
     }
   }).pipe(Effect.catchCause((cause) => Effect.logWarning("Hardware tick failed", { cause })));
 
-  // Restore leases. Those that ran out while the server was down end now,
-  // which runs their release hooks once the device answers.
-  const stored = yield* store.loadLeases;
+  // Restore leases. A lease that ran out while the server was down ends
+  // before anything treats its thread as busy, and one that was mid-cleanup
+  // resumes it. If the leases cannot be read, every device is paused so
+  // nothing is granted over a lease that may still exist.
+  const restored = yield* store.loadLeases.pipe(
+    Effect.catchCause((cause) =>
+      Effect.logError("Could not read hardware leases; pausing every device", { cause }).pipe(
+        Effect.andThen(devices),
+        Effect.flatMap((list) =>
+          Effect.forEach(list, (device) =>
+            updateRuntime(device.id, (current) => ({ ...current, paused: true })),
+          ),
+        ),
+        Effect.as([] as ReadonlyArray<HardwareStore.StoredLease>),
+      ),
+    ),
+  );
   yield* Ref.set(
     leases,
     new Map(
-      stored.map((lease) => [
+      restored.map((lease) => [
         lease.deviceId,
         {
           ...lease,
-          approvedActions: new Set<string>(),
+          approvedActions: new Map<string, string>(),
           lastPersistedActivityAt: lease.lastActivityAt,
-          lastRenewHookAt: 0,
+          renewRunAt: new Map<number, number>(),
+          // A cleanup interrupted by the restart resumes on the first tick.
+          lastCleanupAttemptAt: Number.NEGATIVE_INFINITY,
         },
       ]),
     ),
   );
+  const startedAt = yield* Clock.currentTimeMillis;
+  const expiredOnRestore = restored
+    .filter(
+      (lease) =>
+        lease.releasingUntil === null &&
+        !lease.keepUntilReleased &&
+        ((lease.hardExpiresAt !== null && startedAt >= lease.hardExpiresAt) ||
+          startedAt >= lease.lastActivityAt + lease.idleMinutes * 60_000),
+    )
+    .map((lease) => lease.deviceId);
   for (const device of yield* devices) {
     const present = yield* secrets.get(secretName(device.id)).pipe(
       Effect.map(Option.isSome),
@@ -1555,7 +1830,22 @@ export const make = Effect.gen(function* () {
 
   yield* forkParked(
     Effect.gen(function* () {
-      yield* store.pruneAudit;
+      for (const deviceId of expiredOnRestore) {
+        yield* lockFor(deviceId)
+          .withPermits(1)(
+            endLease(
+              deviceId,
+              "lease.expired",
+              "system",
+              "The lease ran out while the server was stopped.",
+            ),
+          )
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Could not end a hardware lease", { deviceId, cause }),
+            ),
+          );
+      }
       yield* tick.pipe(Effect.repeat(Schedule.spaced(TICK_INTERVAL)));
     }),
   );
@@ -1572,19 +1862,22 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  const stateStream: HardwareService["Service"]["stateStream"] = Stream.unwrap(
-    Effect.gen(function* () {
-      const subscription = yield* PubSub.subscribe(updates);
-      yield* Effect.acquireRelease(
-        Ref.update(subscribers, (count) => count + 1),
-        () => Ref.update(subscribers, (count) => count - 1),
-      );
-      // A new viewer should not wait a whole tick for fresh health.
-      yield* tick.pipe(Effect.forkIn(scope));
-      const initial = yield* state;
-      return Stream.concat(Stream.make(initial), Stream.fromSubscription(subscription));
-    }),
-  ).pipe(Stream.scoped);
+  const stateStream: HardwareService["Service"]["stateStream"] = ({ probeHealth }) =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const subscription = yield* PubSub.subscribe(updates);
+        if (probeHealth) {
+          yield* Effect.acquireRelease(
+            Ref.update(probeSubscribers, (count) => count + 1),
+            () => Ref.update(probeSubscribers, (count) => count - 1),
+          );
+          // A new viewer should not wait a whole tick for fresh health.
+          yield* tick.pipe(Effect.forkIn(scope));
+        }
+        const initial = yield* state;
+        return Stream.concat(Stream.make(initial), Stream.fromSubscription(subscription));
+      }),
+    ).pipe(Stream.scoped);
 
   return HardwareService.of({
     state,

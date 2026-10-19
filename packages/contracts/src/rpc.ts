@@ -1749,7 +1749,8 @@ const WsHardwareAuditListRpc = Rpc.make(WS_METHODS.hardwareAuditList, {
   error: HardwareRpcError,
 });
 const WsSubscribeHardwareStateRpc = Rpc.make(WS_METHODS.subscribeHardwareState, {
-  payload: Schema.Struct({}),
+  /** Only surfaces that show device health pass `probeHealth`; the server probes while any do. */
+  payload: Schema.Struct({ probeHealth: Schema.optional(Schema.Boolean) }),
   success: HardwareServiceState,
   error: EnvironmentAuthorizationError,
   stream: true,

@@ -144,3 +144,19 @@ describe("parseDefinition", () => {
     expect("definition" in result && result.definition.name).toBe("Tree");
   });
 });
+
+describe("action paths", () => {
+  it.each(["//other-host/steal", "/\\\\other-host/steal", "/led?n=1"])(
+    "rejects %s, which could leave the device",
+    (path) => {
+      const result = parseDefinition(
+        JSON.stringify({
+          type: "tree",
+          name: "Tree",
+          actions: { led: { method: "GET", path, tier: "operate" } },
+        }),
+      );
+      expect("error" in result).toBe(true);
+    },
+  );
+});

@@ -60,7 +60,8 @@ tier, a new action, or different hooks, wait for you to choose **Accept
 changes**; meanwhile the rules you last accepted stay in force.
 
 Turn on **Agent hardware access** on the same page, for every project or for
-one. Agents already running pick it up in their next session.
+one. Agents already running pick it up in their next session. Turning it off
+ends any lease the project's threads hold.
 
 ## Leases
 
@@ -69,7 +70,10 @@ An agent takes the lease with `hardware_acquire` and gives it back with
 the thread goes idle, the lease ends after 30 minutes without activity by
 default, and every lease ends after 8 hours. Ending a lease always runs the
 device's release hooks, for example to leave calibration mode, whether the agent
-released it, you revoked it, or it ran out, even while the server was stopped.
+released it, you revoked it, it ran out, or you removed the device. If the
+device does not answer, styal retries for a few minutes, including after a
+restart, and nobody can take the device until the hooks finish or the retries
+run out.
 
 While a thread holds a device, its header shows a chip with the device name. Use
 it to release the lease, or to keep it until you release it yourself, for

@@ -1,13 +1,14 @@
 /**
  * HardwareStore - leases and the audit trail, in SQLite.
  *
- * Leases outlive turns and restarts, so they are persisted. Activity times are
- * written at most every `ACTIVITY_WRITE_INTERVAL_MS`; a calibration run makes
- * hundreds of calls and only the latest one matters after a restart.
+ * Leases outlive turns and restarts, so they are persisted, and a failed lease
+ * write fails the operation rather than leaving memory and disk disagreeing
+ * about who holds a device. Only the audit trail is best-effort.
  *
  * @module HardwareStore
  */
 import {
+  HardwareActionDefinition,
   type HardwareAuditEntry,
   type HardwareAuditEvent,
   type HardwareDeviceId,
@@ -26,6 +27,42 @@ const COALESCED_EVENTS: ReadonlySet<HardwareAuditEvent> = new Set(["call", "hook
 const AUDIT_RETENTION_DAYS = 90;
 const AUDIT_MAX_ROWS = 10_000;
 
+/**
+ * What ending a lease runs: the accepted release hooks resolved against the
+ * device as it was configured, so cleanup still works after the device is
+ * edited or removed, or the server restarts mid-cleanup.
+ */
+export const ReleasePlan = Schema.Struct({
+  baseUrl: Schema.String,
+  auth: Schema.optional(
+    Schema.Struct({
+      header: Schema.optional(Schema.String),
+      scheme: Schema.optional(Schema.String),
+    }),
+  ),
+  steps: Schema.Array(
+    Schema.Struct({
+      action: Schema.String,
+      definition: HardwareActionDefinition,
+      query: Schema.Array(Schema.Tuple([Schema.String, Schema.String])),
+    }),
+  ),
+});
+export type ReleasePlan = typeof ReleasePlan.Type;
+const ReleasePlanJson = Schema.fromJsonString(ReleasePlan);
+const decodeReleasePlan = Schema.decodeUnknownOption(ReleasePlanJson);
+const encodeReleasePlan = Schema.encodeSync(ReleasePlanJson);
+const EMPTY_PLAN: ReleasePlan = { baseUrl: "", steps: [] };
+
+export class HardwareStoreError extends Schema.TaggedError<HardwareStoreError>()(
+  "HardwareStoreError",
+  { operation: Schema.String, cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Hardware lease ${this.operation} failed.`;
+  }
+}
+
 export interface StoredLease {
   readonly deviceId: HardwareDeviceId;
   readonly threadId: ThreadId;
@@ -36,6 +73,9 @@ export interface StoredLease {
   readonly idleMinutes: number;
   readonly hardExpiresAt: number | null;
   readonly keepUntilReleased: boolean;
+  readonly releasePlan: ReleasePlan;
+  /** Set once the lease ended: cleanup retries until then, after which it gives up. */
+  readonly releasingUntil: number | null;
 }
 
 export interface AuditRecord {
@@ -50,9 +90,9 @@ export interface AuditRecord {
 export class HardwareStore extends Context.Service<
   HardwareStore,
   {
-    readonly loadLeases: Effect.Effect<ReadonlyArray<StoredLease>>;
-    readonly saveLease: (lease: StoredLease) => Effect.Effect<void>;
-    readonly deleteLease: (deviceId: HardwareDeviceId) => Effect.Effect<void>;
+    readonly loadLeases: Effect.Effect<ReadonlyArray<StoredLease>, HardwareStoreError>;
+    readonly saveLease: (lease: StoredLease) => Effect.Effect<void, HardwareStoreError>;
+    readonly deleteLease: (deviceId: HardwareDeviceId) => Effect.Effect<void, HardwareStoreError>;
     readonly audit: (record: AuditRecord) => Effect.Effect<void>;
     readonly listAudit: (
       deviceId: HardwareDeviceId,
@@ -72,6 +112,8 @@ interface LeaseRow {
   readonly idleMinutes: number;
   readonly hardExpiresAt: string | null;
   readonly keepUntilReleased: number;
+  readonly releasePlanJson: string;
+  readonly releasingUntil: string | null;
 }
 
 interface AuditRow {
@@ -108,63 +150,66 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const loadLeases = logged(
-    "lease load",
-    sql<LeaseRow>`
-      SELECT device_id AS "deviceId", thread_id AS "threadId", purpose, token,
-        granted_at AS "grantedAt", last_activity_at AS "lastActivityAt",
-        idle_minutes AS "idleMinutes", hard_expires_at AS "hardExpiresAt",
-        keep_until_released AS "keepUntilReleased"
-      FROM hardware_leases
-    `.pipe(
-      Effect.map((rows) =>
-        rows.map((row): StoredLease => ({
-          deviceId: row.deviceId as HardwareDeviceId,
-          threadId: ThreadId.make(row.threadId),
-          purpose: row.purpose,
-          token: row.token,
-          grantedAt: ms(row.grantedAt),
-          lastActivityAt: ms(row.lastActivityAt),
-          idleMinutes: row.idleMinutes,
-          hardExpiresAt: row.hardExpiresAt === null ? null : ms(row.hardExpiresAt),
-          keepUntilReleased: row.keepUntilReleased === 1,
-        })),
-      ),
+  const failed =
+    (operation: string) =>
+    <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, HardwareStoreError> =>
+      effect.pipe(Effect.mapError((cause) => new HardwareStoreError({ operation, cause })));
+
+  const loadLeases = sql<LeaseRow>`
+    SELECT device_id AS "deviceId", thread_id AS "threadId", purpose, token,
+      granted_at AS "grantedAt", last_activity_at AS "lastActivityAt",
+      idle_minutes AS "idleMinutes", hard_expires_at AS "hardExpiresAt",
+      keep_until_released AS "keepUntilReleased", release_plan_json AS "releasePlanJson",
+      releasing_until AS "releasingUntil"
+    FROM hardware_leases
+  `.pipe(
+    Effect.map((rows) =>
+      rows.map((row): StoredLease => ({
+        deviceId: row.deviceId as HardwareDeviceId,
+        threadId: ThreadId.make(row.threadId),
+        purpose: row.purpose,
+        token: row.token,
+        grantedAt: ms(row.grantedAt),
+        lastActivityAt: ms(row.lastActivityAt),
+        idleMinutes: row.idleMinutes,
+        hardExpiresAt: row.hardExpiresAt === null ? null : ms(row.hardExpiresAt),
+        keepUntilReleased: row.keepUntilReleased === 1,
+        releasePlan: Option.getOrElse(decodeReleasePlan(row.releasePlanJson), () => EMPTY_PLAN),
+        releasingUntil: row.releasingUntil === null ? null : ms(row.releasingUntil),
+      })),
     ),
-    [] as ReadonlyArray<StoredLease>,
+    failed("load"),
   );
 
   const saveLease = (lease: StoredLease) =>
-    logged(
-      "lease save",
-      sql`
-        INSERT INTO hardware_leases (
-          device_id, thread_id, purpose, token, granted_at, last_activity_at,
-          idle_minutes, hard_expires_at, keep_until_released
-        ) VALUES (
-          ${lease.deviceId}, ${lease.threadId}, ${lease.purpose}, ${lease.token},
-          ${iso(lease.grantedAt)}, ${iso(lease.lastActivityAt)}, ${lease.idleMinutes},
-          ${lease.hardExpiresAt === null ? null : iso(lease.hardExpiresAt)},
-          ${lease.keepUntilReleased ? 1 : 0}
-        )
-        ON CONFLICT (device_id) DO UPDATE SET
-          thread_id = excluded.thread_id,
-          purpose = excluded.purpose,
-          token = excluded.token,
-          granted_at = excluded.granted_at,
-          last_activity_at = excluded.last_activity_at,
-          idle_minutes = excluded.idle_minutes,
-          hard_expires_at = excluded.hard_expires_at,
-          keep_until_released = excluded.keep_until_released
-      `.pipe(Effect.asVoid),
-      undefined,
-    );
+    sql`
+      INSERT INTO hardware_leases (
+        device_id, thread_id, purpose, token, granted_at, last_activity_at,
+        idle_minutes, hard_expires_at, keep_until_released, release_plan_json, releasing_until
+      ) VALUES (
+        ${lease.deviceId}, ${lease.threadId}, ${lease.purpose}, ${lease.token},
+        ${iso(lease.grantedAt)}, ${iso(lease.lastActivityAt)}, ${lease.idleMinutes},
+        ${lease.hardExpiresAt === null ? null : iso(lease.hardExpiresAt)},
+        ${lease.keepUntilReleased ? 1 : 0}, ${encodeReleasePlan(lease.releasePlan)},
+        ${lease.releasingUntil === null ? null : iso(lease.releasingUntil)}
+      )
+      ON CONFLICT (device_id) DO UPDATE SET
+        thread_id = excluded.thread_id,
+        purpose = excluded.purpose,
+        token = excluded.token,
+        granted_at = excluded.granted_at,
+        last_activity_at = excluded.last_activity_at,
+        idle_minutes = excluded.idle_minutes,
+        hard_expires_at = excluded.hard_expires_at,
+        keep_until_released = excluded.keep_until_released,
+        release_plan_json = excluded.release_plan_json,
+        releasing_until = excluded.releasing_until
+    `.pipe(Effect.asVoid, failed("save"));
 
   const deleteLease = (deviceId: HardwareDeviceId) =>
-    logged(
-      "lease delete",
-      sql`DELETE FROM hardware_leases WHERE device_id = ${deviceId}`.pipe(Effect.asVoid),
-      undefined,
+    sql`DELETE FROM hardware_leases WHERE device_id = ${deviceId}`.pipe(
+      Effect.asVoid,
+      failed("delete"),
     );
 
   const audit = (record: AuditRecord) =>

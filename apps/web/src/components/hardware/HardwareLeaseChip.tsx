@@ -1,9 +1,9 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   hardwareDevicesHeldBy,
   hardwareLeaseStateLabel,
 } from "@t3tools/client-runtime/state/hardware";
 import {
-  AuthOrchestrationOperateScope,
   type EnvironmentId,
   type HardwareDeviceState,
   type HardwareLeaseSummary,
@@ -16,7 +16,6 @@ import { useEffect, useState } from "react";
 
 import { useServerConfigs } from "~/state/entities";
 import { hardwareEnvironment, useHardwareState } from "~/state/hardware";
-import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
 import {
@@ -59,7 +58,7 @@ function HeldHardwareChips({
   environmentId: EnvironmentId;
   threadId: ThreadId;
 }) {
-  const { state } = useHardwareState(environmentId);
+  const { state } = useHardwareState(environmentId, { probeHealth: false });
   const held = hardwareDevicesHeldBy(state.devices, threadId);
   if (held.length === 0) return null;
   return (
@@ -103,7 +102,7 @@ function HardwareLeaseChip({
   lease: HardwareLeaseSummary;
 }) {
   const navigate = useNavigate();
-  const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const canOperate = useAtomValue(hardwareEnvironment.control.permissionAtom(environmentId));
   const control = useAtomCommand(hardwareEnvironment.control, { reportFailure: false });
   const [pending, setPending] = useState(false);
   const run = async (

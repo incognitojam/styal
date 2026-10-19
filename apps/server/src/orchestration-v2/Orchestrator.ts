@@ -7253,15 +7253,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const existing = projection.runtimeRequests.find(
         (request) => request.id === command.requestId,
       );
-      if (existing !== undefined && existing.responseCapability.type !== "server") {
+      const pending = command.approvalStatus === "pending";
+      if (pending && existing !== undefined && existing.responseCapability.type !== "server") {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
           cause: `Runtime request ${command.requestId} is not a server approval.`,
         });
       }
-      const pending = command.approvalStatus === "pending";
       const now = yield* DateTime.now;
+      const nodeId = idAllocator.derive.approvalNode({ requestId: command.requestId });
+      const turnItemId = idAllocator.derive.approvalTurnItem({ requestId: command.requestId });
+      const existingNode = projection.nodes.find((node) => node.id === nodeId);
+      const existingItem = projection.turnItems.find((item) => item.id === turnItemId);
       if (pending ? existing !== undefined : existing?.status !== "pending") {
         if (existing === undefined) {
           return yield* new OrchestratorDispatchError({
@@ -7270,27 +7274,43 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             cause: `Server approval ${command.requestId} was never opened.`,
           });
         }
-        // Already open, or already answered: the request stays as it is.
-        yield* emit(
-          events,
-          command,
-        )({
-          type: "runtime-request.updated",
+        const emitEvent = emit(events, command);
+        const scope = {
           threadId: command.threadId,
           runId: command.runId,
-          nodeId: existing.nodeId,
           providerInstanceId: run.providerInstanceId,
           occurredAt: now,
+        };
+        // Something else ended the request, such as a forced stop of the run;
+        // the card it left waiting closes with it.
+        if (!pending && existingItem?.status === "waiting") {
+          if (existingNode !== undefined) {
+            yield* emitEvent({
+              type: "node.updated",
+              ...scope,
+              nodeId,
+              payload: { ...existingNode, status: "cancelled", completedAt: now },
+            });
+          }
+          yield* emitEvent({
+            type: "turn-item.updated",
+            ...scope,
+            nodeId,
+            payload: { ...existingItem, status: "cancelled", completedAt: now, updatedAt: now },
+          });
+          return;
+        }
+        // Already open, or already answered: the request stays as it is.
+        yield* emitEvent({
+          type: "runtime-request.updated",
+          ...scope,
+          nodeId: existing.nodeId,
           payload: existing,
         });
         return;
       }
 
-      const nodeId = idAllocator.derive.approvalNode({ requestId: command.requestId });
-      const turnItemId = idAllocator.derive.approvalTurnItem({ requestId: command.requestId });
       const providerTurnId = providerTurnForRun(projection, run)?.id ?? null;
-      const existingNode = projection.nodes.find((node) => node.id === nodeId);
-      const existingItem = projection.turnItems.find((item) => item.id === turnItemId);
       const node: OrchestrationV2ExecutionNode = {
         id: nodeId,
         threadId: command.threadId,
@@ -7388,6 +7408,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandType: command.type,
           cause: runtimeRequest.responseCapability.reason,
         });
+      }
+      // A server service acts on the decision itself, so only the choices its
+      // card offered (cancel aside) are answers.
+      if (runtimeRequest.responseCapability.type === "server") {
+        const offered =
+          context.item?.type === "approval_request" ? (context.item.options ?? []) : [];
+        if (
+          command.decision === undefined ||
+          (command.decision !== "cancel" &&
+            !offered.some((option) => option.decision === command.decision))
+        ) {
+          return yield* new OrchestratorDispatchError({
+            commandId: command.commandId,
+            commandType: command.type,
+            cause: `Answer ${command.requestId} with one of the choices it offers.`,
+          });
+        }
       }
       const providerSessionId =
         runtimeRequest.responseCapability.type === "live"

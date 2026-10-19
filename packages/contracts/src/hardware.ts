@@ -50,7 +50,15 @@ export const isLooserHardwareTier = (candidate: HardwareTier, than: HardwareTier
 export const HardwareHttpMethod = Schema.Literals(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 export type HardwareHttpMethod = typeof HardwareHttpMethod.Type;
 
-const HardwarePath = Schema.String.check(Schema.isMaxLength(512), Schema.isPattern(/^\/[^?#\s]*$/));
+/**
+ * An absolute path on the device. No query, fragment, backslash, or leading
+ * `//`, any of which could resolve to another host and carry the device
+ * credential there.
+ */
+const HardwarePath = Schema.String.check(
+  Schema.isMaxLength(512),
+  Schema.isPattern(/^\/(?!\/)[^?#\s\\]*$/),
+);
 
 export const HardwareActionDefinition = Schema.Struct({
   method: HardwareHttpMethod,
@@ -224,6 +232,8 @@ export const HardwareDeviceState = Schema.Struct({
   lease: Schema.NullOr(HardwareLeaseSummary),
   queue: Schema.Array(Schema.Struct({ threadId: ThreadId, queuedAt: Schema.String })),
   paused: Schema.Boolean,
+  /** The last lease ended and its release hooks are still running; nobody can acquire yet. */
+  cleaningUp: Schema.Boolean,
   hasCredential: Schema.Boolean,
   definition: HardwareDefinitionStatus,
   /** The effective actions, after accepted-definition and tightening rules. */
@@ -247,6 +257,7 @@ export const HardwareAuditEvent = Schema.Literals([
   "hook",
   "approval.requested",
   "approval.decided",
+  "cleanup.failed",
   "definition.accepted",
   "paused",
   "resumed",

@@ -1726,6 +1726,45 @@ describe("orchestrator MCP toolkit", () => {
               (yield* orchestrator.getThreadShell(parentThreadId))?.pendingRuntimeRequest ?? null,
             ).toBeNull();
 
+            // The card offers no "always"; the server service could not honour it.
+            const unofferedId = RuntimeRequestId.make("runtime-request:hardware:unoffered");
+            yield* orchestrator.dispatch({
+              type: "server_approval.record",
+              commandId: CommandId.make("command:test:server-approval:unoffered"),
+              threadId: parentThreadId,
+              runId: card.runId!,
+              nodeId: card.nodeId!,
+              requestId: unofferedId,
+              approvalStatus: "pending",
+              toolName: "hardware_call",
+              prompt: 'Run "reboot" on tree: POST /reboot',
+              options: [
+                { decision: "accept", label: "Allow once" },
+                { decision: "decline", label: "Decline" },
+              ],
+            });
+            const refusedAnswer = yield* orchestrator
+              .dispatch({
+                type: "runtime-request.respond",
+                commandId: CommandId.make("command:test:server-approval:always"),
+                threadId: parentThreadId,
+                requestId: unofferedId,
+                decision: "acceptAlways",
+              })
+              .pipe(Effect.flip);
+            expect(String(refusedAnswer.cause ?? refusedAnswer)).toContain("choices it offers");
+            yield* orchestrator.dispatch({
+              type: "server_approval.record",
+              commandId: CommandId.make("command:test:server-approval:unoffered-cancel"),
+              threadId: parentThreadId,
+              runId: card.runId!,
+              nodeId: card.nodeId!,
+              requestId: unofferedId,
+              approvalStatus: "cancelled",
+              toolName: "hardware_call",
+              prompt: 'Run "reboot" on tree: POST /reboot',
+            });
+
             const delegatedCall = yield* invoke("delegate_task", {
               task: delegatedPrompt,
               target: {

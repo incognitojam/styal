@@ -14,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as DateTime from "effect/DateTime";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -106,6 +107,10 @@ const makeHarness = Effect.gen(function* () {
     ]),
   );
   const requests = yield* Ref.make<ReadonlyArray<OrchestrationV2RuntimeRequest>>([]);
+  /** The definition on the repository's default branch. */
+  const main = yield* Ref.make<HardwareDefinition>(definition);
+  /** Threads whose running turn has ended. */
+  const endedRuns = new Set<ThreadId>();
   const dispatched: OrchestrationV2InternalCommand[] = [];
   const secrets = new Map<string, Uint8Array>();
 
@@ -131,26 +136,26 @@ const makeHarness = Effect.gen(function* () {
 
   const vcs = VcsProcess.of({
     run: (input) =>
-      Effect.succeed({
+      Effect.map(Ref.get(main), (current) => ({
         exitCode: ChildProcessSpawner.ExitCode(0),
         stdout:
           input.args[0] === "show"
-            ? JSON.stringify(definition)
+            ? JSON.stringify(current)
             : input.args[0] === "symbolic-ref"
               ? "origin/main\n"
               : "",
         stderr: "",
         stdoutTruncated: false,
         stderrTruncated: false,
-      }),
+      })),
   });
 
   const threads = {
     getThreadShell: (threadId: ThreadId) =>
       Effect.map(Ref.get(shells), (map) => map.get(threadId) ?? null),
-    getThreadRecords: () =>
+    getThreadRecords: (threadId: ThreadId) =>
       Effect.map(Ref.get(requests), (runtimeRequests) => ({
-        runs: [activeRun],
+        runs: [endedRuns.has(threadId) ? { ...activeRun, status: "completed" } : activeRun],
         runtimeRequests,
       })),
     dispatch: (command: OrchestrationV2InternalCommand) =>
@@ -189,13 +194,21 @@ const makeHarness = Effect.gen(function* () {
     remove: (name) => Effect.sync(() => void secrets.delete(name)),
   });
 
+  // Shared by every service instance, so a restart keeps the settings, as on disk.
+  const settings = Context.get(
+    yield* Layer.build(
+      ServerSettings.layerTest({ hardwareDevices: [device], enableAgentHardwareAccess: true }),
+    ),
+    ServerSettings.ServerSettingsService,
+  );
+
   const dependencies = Layer.mergeAll(
     Layer.succeed(HttpClient.HttpClient, http),
     Layer.succeed(VcsProcess, vcs),
     Layer.succeed(ThreadManagementService.ThreadManagementService, threads),
     Layer.succeed(ProjectService.ProjectService, projects),
     Layer.succeed(ServerSecretStore.ServerSecretStore, secretStore),
-    ServerSettings.layerTest({ hardwareDevices: [device], enableAgentHardwareAccess: true }),
+    Layer.succeed(ServerSettings.ServerSettingsService, settings),
     ServerConfig.layerTest(process.cwd(), { prefix: "styal-hardware-test-" }),
   );
 
@@ -223,7 +236,29 @@ const makeHarness = Effect.gen(function* () {
       return new Map(map).set(threadId, shellFor(threadId, current.title, busy));
     });
 
-  return { sent, online, dispatched, start, answer, setBusy, secrets };
+  const endRun = (threadId: ThreadId) => Effect.sync(() => void endedRuns.add(threadId));
+  const count = (method: string, path: string) =>
+    sent.filter((request) => request.method === method && request.path === path).length;
+  const approvalsOpened = () =>
+    dispatched.filter(
+      (command) =>
+        command.type === "server_approval.record" && command.approvalStatus === "pending",
+    ).length;
+
+  return {
+    sent,
+    online,
+    dispatched,
+    start,
+    answer,
+    setBusy,
+    secrets,
+    main,
+    settings,
+    endRun,
+    count,
+    approvalsOpened,
+  };
 });
 
 /** Each test gets its own database, so leases never leak between tests. */
@@ -232,6 +267,7 @@ const withDatabase = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     yield* runAllMigrations();
     return yield* effect;
   }).pipe(
+    Effect.scoped,
     Effect.provide(
       HardwareStore.layer.pipe(
         Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
@@ -433,6 +469,175 @@ describe("HardwareService", () => {
         const lease = (yield* restarted.state).devices[0]?.lease;
         expect(lease?.threadId).toBe(CALIBRATOR);
         expect(lease?.purpose).toBe("front angle");
+      }),
+    ),
+  );
+
+  it.effect("asks again when an action approved for the lease changes shape", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        yield* hardware.acquire(FIRMWARE, { device: TREE, purpose: "flash" });
+        const first = yield* hardware
+          .call(FIRMWARE, { device: TREE, action: "reboot" })
+          .pipe(Effect.forkChild);
+        yield* TestClock.adjust("1 second");
+        yield* harness.answer("acceptForSession");
+        yield* TestClock.adjust("1 second");
+        yield* Fiber.join(first);
+
+        // The default branch points `reboot` somewhere else; the old approval must not cover it.
+        yield* Ref.set(harness.main, {
+          ...definition,
+          actions: {
+            ...definition.actions,
+            reboot: { method: "POST", path: "/reboot-now", tier: "approve" },
+          },
+        });
+        yield* TestClock.adjust("61 seconds");
+        const second = yield* hardware
+          .call(FIRMWARE, { device: TREE, action: "reboot" })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* TestClock.adjust("1 second");
+        expect(harness.approvalsOpened()).toBe(2);
+        yield* harness.answer("decline");
+        yield* TestClock.adjust("1 second");
+        expect((yield* Fiber.join(second)).code).toBe("approval_declined");
+        expect(harness.count("POST", "/reboot-now")).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect("drops a call whose lease ended while its approval waited", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        yield* hardware.acquire(FIRMWARE, { device: TREE, purpose: "flash" });
+        const call = yield* hardware
+          .call(FIRMWARE, { device: TREE, action: "reboot" })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* TestClock.adjust("1 second");
+        yield* hardware.control({ type: "revoke", deviceId: TREE });
+        yield* hardware.acquire(FIRMWARE, { device: TREE, purpose: "flash again" });
+        yield* harness.answer("accept");
+        yield* TestClock.adjust("1 second");
+        expect((yield* Fiber.join(call)).code).toBe("not_held");
+        expect(harness.count("POST", "/reboot")).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect("keeps the device until the last lease's cleanup succeeds", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        yield* hardware.acquire(CALIBRATOR, { device: TREE, purpose: "front angle" });
+        yield* Ref.set(harness.online, false);
+        yield* hardware.release(CALIBRATOR, TREE);
+        expect((yield* hardware.state).devices[0]).toMatchObject({ lease: null, cleaningUp: true });
+        const refused = yield* hardware
+          .acquire(FIRMWARE, { device: TREE, purpose: "flash" })
+          .pipe(Effect.flip);
+        expect(refused.reason).toContain("cleanup");
+
+        yield* Ref.set(harness.online, true);
+        yield* TestClock.adjust("31 seconds");
+        expect((yield* hardware.state).devices[0]?.cleaningUp).toBe(false);
+        const stops = harness.count("GET", "/calibrate/stop");
+        yield* hardware.acquire(FIRMWARE, { device: TREE, purpose: "flash" });
+        yield* TestClock.adjust("2 minutes");
+        // The old lease's cleanup never runs again under the new holder.
+        expect(harness.count("GET", "/calibrate/stop")).toBe(stops);
+      }),
+    ),
+  );
+
+  it.effect("finishes an interrupted cleanup after a restart", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const first = yield* harness.start;
+            yield* first.acquire(CALIBRATOR, { device: TREE, purpose: "front angle" });
+            yield* Ref.set(harness.online, false);
+            yield* first.release(CALIBRATOR, TREE);
+          }),
+        );
+        yield* Ref.set(harness.online, true);
+        const restarted = yield* harness.start;
+        yield* TestClock.adjust("1 second");
+        expect(harness.count("GET", "/calibrate/stop")).toBeGreaterThanOrEqual(2);
+        expect((yield* restarted.state).devices[0]?.cleaningUp).toBe(false);
+      }),
+    ),
+  );
+
+  it.effect("cleans up when the device is removed or agent access is turned off", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        const { proxyBaseUrl } = yield* hardware.acquire(CALIBRATOR, {
+          device: TREE,
+          purpose: "front angle",
+        });
+        yield* harness.settings.updateSettings({ enableAgentHardwareAccess: false });
+        yield* TestClock.adjust("16 seconds");
+        expect(harness.count("GET", "/calibrate/stop")).toBe(1);
+        const proxied = yield* hardware.proxy({
+          token: proxyBaseUrl.split("/").at(-1)!,
+          method: "GET",
+          path: "/calibrate/led",
+          query: [["n", "1"]],
+        });
+        expect(proxied.status).toBe(410);
+
+        yield* harness.settings.updateSettings({ enableAgentHardwareAccess: true });
+        yield* hardware.acquire(FIRMWARE, { device: TREE, purpose: "flash" });
+        yield* harness.settings.updateSettings({ hardwareDevices: [] });
+        yield* TestClock.adjust("16 seconds");
+        expect(harness.count("GET", "/calibrate/stop")).toBe(2);
+      }),
+    ),
+  );
+
+  it.effect("does not grant a queued lease to a turn that has ended", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        yield* hardware.acquire(CALIBRATOR, { device: TREE, purpose: "front angle" });
+        const waiting = yield* hardware
+          .acquire(FIRMWARE, { device: TREE, purpose: "flash", wait: true })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* TestClock.adjust("1 second");
+        yield* harness.endRun(FIRMWARE);
+        yield* hardware.release(CALIBRATOR, TREE);
+        expect((yield* Fiber.join(waiting)).code).toBe("unavailable");
+        expect((yield* hardware.state).devices[0]?.lease).toBeNull();
+      }),
+    ),
+  );
+
+  it.effect("counts the holder's reads as activity on its lease", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        yield* hardware.acquire(CALIBRATOR, {
+          device: TREE,
+          purpose: "front angle",
+          idleMinutes: 5,
+        });
+        yield* harness.setBusy(CALIBRATOR, false);
+        yield* TestClock.adjust("4 minutes");
+        yield* hardware.call(CALIBRATOR, { device: TREE, action: "status" });
+        yield* TestClock.adjust("3 minutes");
+        expect((yield* hardware.state).devices[0]?.lease?.threadId).toBe(CALIBRATOR);
       }),
     ),
   );
