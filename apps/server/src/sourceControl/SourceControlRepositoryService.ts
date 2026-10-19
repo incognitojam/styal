@@ -431,9 +431,11 @@ export const make = Effect.gen(function* () {
             detail: "Destination path already exists and is not empty.",
           });
         }
-      } else if (!(yield* fileSystem.exists(parentPath))) {
-        // Windows rejects mkdir on a drive root even with recursive: true.
-        yield* fileSystem.makeDirectory(parentPath, { recursive: true });
+      } else {
+        // Skip existing parents: recursive mkdir on a Windows drive root fails with EPERM.
+        if (!(yield* fileSystem.exists(parentPath))) {
+          yield* fileSystem.makeDirectory(parentPath, { recursive: true });
+        }
       }
 
       return {
