@@ -24,6 +24,7 @@ import {
   playNotificationSound,
   notificationSoundForEvent,
   setNotificationBadge,
+  threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
@@ -225,7 +226,7 @@ function EnvironmentNotifications({
       try {
         const notification = new Notification(title, {
           body: thread.title,
-          tag: `${environmentId}:${thread.id}`,
+          tag: threadNotificationTag(environmentId, thread.id),
           silent: true,
         });
         onNotification(environmentId, notification);
