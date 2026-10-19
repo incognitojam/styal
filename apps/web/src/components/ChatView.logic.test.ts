@@ -1058,7 +1058,8 @@ describe("resolveThreadSwitchTimeline", () => {
 
   const held = { threadKey: "env-1:thread-a", entries: ["a1", "a2"] };
 
-  it("keeps the previous thread's entries while the next thread is loading", () => {
+  it("leaves an uncached destination empty while its history loads", () => {
+    rememberReadyThreadTimeline(held);
     expect(
       resolveThreadSwitchTimeline({
         loading: true,
@@ -1066,7 +1067,7 @@ describe("resolveThreadSwitchTimeline", () => {
         nextEntries: [],
         lastReady: held,
       }),
-    ).toEqual({ entries: ["a1", "a2"], displayThreadKey: "env-1:thread-a" });
+    ).toEqual({ entries: [], displayThreadKey: "env-1:thread-b" });
   });
 
   it("shows the new thread once its detail is ready", () => {
@@ -1102,18 +1103,6 @@ describe("resolveThreadSwitchTimeline", () => {
       markdownCwd: "/repo/a",
       workspaceRoot: "/repo/a",
     });
-  });
-
-  it("survives a ChatView remount by remembering the last ready timeline", () => {
-    rememberReadyThreadTimeline(held);
-    expect(peekHeldThreadTimeline<string[]>()).toEqual(held);
-    expect(
-      resolveThreadSwitchTimeline({
-        loading: true,
-        activeThreadKey: "env-1:thread-b",
-        nextEntries: [],
-      }),
-    ).toEqual({ entries: ["a1", "a2"], displayThreadKey: "env-1:thread-a" });
   });
 
   it("paints a remembered destination instead of the last-viewed thread", () => {
