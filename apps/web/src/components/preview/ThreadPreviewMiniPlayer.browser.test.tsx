@@ -18,7 +18,12 @@ vi.mock(import("~/previewStateStore"), async (original) => ({
   ...(await original()),
   setActivePreviewTab: ((...args: unknown[]) => setActivePreviewTab(...args)) as never,
   useThreadPreviewState: (() => ({
-    sessions: { "tab-1": { viewport: { _tag: "freeform", width: 1600, height: 1000 } } },
+    sessions: {
+      "tab-1": {
+        navStatus: { _tag: "Idle" },
+        viewport: { _tag: "freeform", width: 1600, height: 1000 },
+      },
+    },
     serverEpoch: null,
     desktopByTabId: {},
   })) as never,
