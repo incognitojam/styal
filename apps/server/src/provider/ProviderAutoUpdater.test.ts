@@ -15,6 +15,7 @@ import * as ServerSettingsService from "../serverSettings.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { decideProviderAutoUpdate, make } from "./ProviderAutoUpdater.ts";
 import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenance";
+import { ProviderInstallGate, type ProviderInstallTarget } from "./ProviderInstallGate.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 
@@ -87,10 +88,27 @@ describe("decideProviderAutoUpdate", () => {
   });
 });
 
+// `codex_work` is a second instance of the same CLI; Claude shares the npm prefix only.
+const targets: Record<string, ProviderInstallTarget> = {
+  codex: { lockKey: "npm-global:/usr/local", packageName: "@openai/codex" },
+  codex_work: { lockKey: "npm-global:/usr/local", packageName: "@openai/codex" },
+  claude: { lockKey: "npm-global:/usr/local", packageName: "@anthropic-ai/claude-code" },
+};
+
+interface FixtureThread {
+  readonly providerInstanceId: string;
+  readonly status: string;
+  readonly pendingRuntimeRequest?: unknown;
+}
+
 interface Fixture {
   readonly settings?: Partial<ServerSettings>;
-  /** Thread status per shell snapshot read, in order; the last one repeats. */
+  /** Status of a Codex thread per shell snapshot read, in order; the last one repeats. */
   readonly threadStatuses?: ReadonlyArray<string | null>;
+  /** Threads present in every shell snapshot read. */
+  readonly otherThreads?: ReadonlyArray<FixtureThread>;
+  /** Options of each shell snapshot read. */
+  readonly snapshotReads?: Array<unknown>;
   readonly manifest?: ModelManifest.ModelManifestData;
   /** Age of the fetched manifest, or null for no fetched copy. */
   readonly manifestAgeMs?: number | null;
@@ -133,13 +151,19 @@ const testLayer = (input: Fixture) => {
       ),
     }),
     Layer.mock(ProjectionStoreV2)({
-      getShellSnapshot: () =>
+      getShellSnapshot: (options) =>
         Effect.sync(() => {
+          input.snapshotReads?.push(options);
           const status = statuses[Math.min(snapshotReads++, statuses.length - 1)];
-          return {
-            threads: status ? [{ id: "thread", status, pendingRuntimeRequest: null }] : [],
-          } as never;
+          const threads = [
+            ...(status ? [{ providerInstanceId: "codex", status }] : []),
+            ...(input.otherThreads ?? []),
+          ].map((thread) => ({ pendingRuntimeRequest: null, ...thread }));
+          return { threads } as never;
         }),
+    }),
+    Layer.mock(ProviderInstallGate)({
+      targetFor: (instanceId) => Effect.succeed(targets[instanceId] ?? null),
     }),
     // Mirrors the real runner: `shouldStart` decides whether the install runs.
     Layer.mock(ProviderMaintenanceRunner)({
@@ -192,6 +216,42 @@ describe("ProviderAutoUpdater.runPass", () => {
       yield* runPassWith({ threadStatuses: ["completed"], installs });
       assert.strictEqual(installs.length, 1);
     });
+  });
+
+  it.effect("is not held back by threads on other provider CLIs or archived threads", () => {
+    const installs: Array<unknown> = [];
+    const snapshotReads: Array<unknown> = [];
+    return runPassWith({
+      otherThreads: [
+        { providerInstanceId: "claude", status: "running" },
+        { providerInstanceId: "claude", status: "waiting" },
+        { providerInstanceId: "removed", status: "running" },
+      ],
+      snapshotReads,
+      installs,
+    }).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          assert.strictEqual(installs.length, 1);
+          // Before the pass and again under the install lock; archived threads have no session.
+          assert.deepStrictEqual(snapshotReads, [{ location: "active" }, { location: "active" }]);
+        }),
+      ),
+    );
+  });
+
+  it.effect("waits for another instance of the same CLI with a pending approval", () => {
+    const installs: Array<unknown> = [];
+    return runPassWith({
+      otherThreads: [
+        {
+          providerInstanceId: "codex_work",
+          status: "completed",
+          pendingRuntimeRequest: { id: "request", kind: "command" },
+        },
+      ],
+      installs,
+    }).pipe(Effect.tap(() => Effect.sync(() => assert.deepStrictEqual(installs, []))));
   });
 
   it.effect("drops an update when a turn starts before the install, and retries next pass", () => {

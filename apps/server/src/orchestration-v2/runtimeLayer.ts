@@ -49,6 +49,7 @@ import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadLifecycleService from "./ThreadLifecycleService.ts";
 import * as ThreadForkService from "./ThreadForkService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
+import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 
@@ -159,6 +160,8 @@ const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pip
       layerEventSinkProvided,
       IdAllocator.layer,
       ProjectionStore.layer,
+      // The same layer the server gives the maintenance runner, so both share one gate.
+      ProviderInstallGate.layer,
       layerProviderSessionManagerProvided,
       layerProviderAuthServiceProvided,
       layerRunExecutionServiceProvided,

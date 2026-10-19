@@ -14,6 +14,7 @@ import { requireEnvironmentScope, failEnvironmentInternal } from "../auth/http.t
 import { DeviceSharing } from "../device/DeviceSharing.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { ProjectStoreV2, type ProjectRow } from "../orchestration-v2/ProjectStore.ts";
+import { ProviderInstallGate } from "../provider/ProviderInstallGate.ts";
 import { listContinuableThreadIds } from "../orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts";
@@ -125,6 +126,8 @@ export const inspectHostActivity = Effect.gen(function* () {
   // Threads using a shared device run on the other environment, so their activity is
   // invisible here. A restart stops the hub and daemon they are driving.
   const environmentsUsingDevices = yield* (yield* DeviceSharing).environmentsUsingDevices;
+  // An install cut off mid-write can leave the provider CLI broken.
+  const providerInstalls = yield* (yield* ProviderInstallGate).installsInFlight;
   // Reads every thread, so run it off the event loop: a slow read on a large
   // database otherwise stalls the server past the client's timeout.
   const snapshot = yield* projections
@@ -151,6 +154,7 @@ export const inspectHostActivity = Effect.gen(function* () {
     threads: withProjects(affected, projects),
     ...terminalActivity,
     environmentsUsingDevices,
+    providerInstalls,
   } satisfies HostActivity;
 });
 

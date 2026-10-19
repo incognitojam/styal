@@ -803,6 +803,8 @@ export const HostActivity = Schema.Struct({
   environmentsUsingDevices: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(0)),
   ),
+  /** Provider CLI installs this server is running; a restart cuts them off. Omitted by older servers. */
+  providerInstalls: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 export type HostActivity = typeof HostActivity.Type;
 

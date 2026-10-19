@@ -10,7 +10,8 @@ notice.
 Server updates restart the connection and can interrupt active agents and
 terminal commands. Saved threads, settings, and project files remain. Before
 updating, styal checks the server for active agents, threads waiting for input,
-and running terminal commands, including work started from other devices. If
+running terminal commands, and provider updates being installed, including work
+started from other devices. If
 work is running or the check fails, styal lists it and asks you to confirm.
 
 **Settings → General → Continue threads after restarts** is off by default.
@@ -133,9 +134,11 @@ automatically.
 
 Each provider release is tested against the current stable and nightly styal
 builds, so an environment on an older styal build receives provider updates
-again once styal itself is updated. Automatic updates wait until no threads are running or
-waiting for you, and only cover providers installed with npm, Bun, pnpm, Yarn,
-or Volta. Providers installed with Homebrew or a native installer keep updating
+again once styal itself is updated. A provider updates once none of its own
+threads are running or waiting for you; threads on other providers do not hold
+it back. A turn that starts on a provider while it is installing waits for the
+install to finish. Updates only cover providers installed with npm, Bun, pnpm,
+Yarn, or Volta. Providers installed with Homebrew or a native installer keep updating
 the way they always have. Turn automatic updates off with **Update providers
 automatically** in **Settings → General**, or in **Settings → Maintenance** on
 mobile. They need provider update checks on.

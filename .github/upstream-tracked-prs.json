@@ -109,6 +109,10 @@
       "reason": "A thread snoozed during its own run, such as an agent snoozing its thread through `t3_thread_organize` before its final reply, wakes as soon as that run completes. The fix only wakes for runs requested after the snooze. Not imported early: it builds on #16782 (`isSnoozed`), which conflicts with a chain of pending MCP changes. Take it at chronological intake; #15135 (an agent archiving its own thread fails its turn) is a related open issue it does not cover."
     },
     {
+      "pr": 17585,
+      "reason": "The fork borrowed parts of this unmerged PR into its own canary-gated updater (ledger provider-auto-updates): ProviderInstallLock.ts nearly verbatim (credited with a Co-authored-by trailer) and the ProviderTurnStartService turn-start gate, narrowed to the CLI being installed through the fork's ProviderInstallGate. It did not take the 15-minute client-idle window, host-wide activity rule, silent background installs, settings, or detached installer. When it merges, intake must reconcile the lock file with the fork's copy, keep the fork's per-CLI gate and busy check instead of upstream's global `untilIdle`/`active-work` gate, and re-evaluate the detached installer."
+    },
+    {
       "pr": 17586,
       "reason": "Background-service installs check their channel hourly and install when nothing is running, reusing `cli/update.ts` release discovery. The fork's discovery reads npm dist-tags and confirms the release checksums are downloadable (fork #741), so keep the fork's `resolveNewestVersion` rather than upstream's GitHub API paging when this is taken in; hourly checks from many hosts would exhaust GitHub's anonymous API quota. Depends on #17585."
     },
