@@ -2152,6 +2152,69 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream retains delayed Grok reply output before fallback settlement, preserves prompt cancellation and real RPC results, and bounds failure to settle without reporting incomplete output as successful.
 
+  - id: hardware-leases
+    title: Lease network hardware to one thread at a time, with approvals and cleanup
+    status: maintained
+    prs: []
+    invariants:
+      - A hardware device's definition (actions, tiers, health probe, lifecycle hooks) is read from `.styal/hardware/<file>` on the project's remote default branch, never from a working tree. Anything looser than the definition the user accepted (a new or reshaped action, a lowered tier, changed hooks or health probe) runs at `approve` until the user accepts it; removals and raised tiers apply at once. Only accepted hooks and health probes run.
+      - A worktree's own definition applies to threads in that worktree, but an action it adds or reshapes runs at `approve` and a shared action can only get stricter.
+      - One thread holds a device at a time. `read` actions need no lease; `operate` needs the caller's lease; `approve` also needs the user's answer to a `permission` runtime request with server response capability, whatever the thread's runtime mode. "Allow for this lease" covers that action until the lease ends. Agents cannot answer it through `t3_pending_request_respond`.
+      - A lease survives turns. A working thread keeps it; an idle one loses it after its idle minutes (default 30) without activity, and every lease ends after 8 hours unless the user keeps it until they release it. Leases persist across restarts.
+      - Every way a lease ends (release, revoke, expiry, deleted or archived thread, removed device, agent access turned off) records the ended state with a snapshot of the release hooks before anything else, then runs them. Until they succeed or a 10-minute retry window closes, including across restarts, nobody can acquire the device. Acquire hooks run on grant and each renew step on its own interval while the lease lasts.
+      - An operate or approve call is bound to the lease held when it started. It sends only under the device lock, after re-checking that lease, pause, agent access and the action's request shape. "Allow for this lease" covers an action only while its request shape is unchanged, and a pending approval card closes when its lease ends.
+      - The per-lease loopback proxy forwards only `read` and `operate` actions and stops working when the lease ends; the stored device credential is added by the server and never returned to clients or agents.
+      - Device health is probed only while a client that shows health is subscribed (`probeHealth`) or a lease is active; the thread chip never triggers probes. Repeated identical calls and hooks coalesce into one audit row.
+    rationale: Agents working on physical devices need one-at-a-time access and a human in the loop for actions a git checkpoint cannot undo. Kept separate from simulator devices so upstream's device model and tools stay untouched; the shared surface is one runtime-request capability and one MCP capability.
+    implementation_paths:
+      - apps/server/src/hardware/HardwareDefinition.ts
+      - apps/server/src/hardware/HardwareHttp.ts
+      - apps/server/src/hardware/HardwareService.ts
+      - apps/server/src/hardware/HardwareStore.ts
+      - apps/server/src/mcp/toolkits/hardware/handlers.ts
+      - apps/server/src/mcp/toolkits/hardware/tools.ts
+      - apps/server/src/persistence/ForkMigrations/010_HardwareLeases.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/server/src/telemetry/HardwareFeatureUsage.ts
+      - apps/web/src/components/hardware/HardwareLeaseChip.tsx
+      - apps/web/src/components/settings/HardwareSettings.tsx
+      - apps/web/src/components/settings/hardwareSettings.logic.ts
+      - apps/web/src/routes/settings.hardware.tsx
+      - apps/web/src/state/hardware.ts
+      - docs/user/hardware.md
+      - packages/client-runtime/src/state/hardware.ts
+      - packages/contracts/src/hardware.ts
+    upstream_paths:
+      - apps/server/src/auth/RpcAuthorization.ts
+      - apps/server/src/mcp/McpHttpServer.ts
+      - apps/server/src/mcp/McpInvocationContext.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
+      - apps/server/src/server.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/chat/ChatHeader.tsx
+      - packages/client-runtime/src/state/threadRequests.ts
+      - packages/contracts/src/clientRpcPermissions.ts
+      - packages/contracts/src/orchestrationV2.ts
+      - packages/contracts/src/rpc.ts
+      - packages/contracts/src/settings.ts
+      - packages/shared/src/t3McpToolPresentation.ts
+    tests:
+      - apps/server/src/hardware/HardwareDefinition.test.ts
+      - apps/server/src/hardware/HardwareService.test.ts
+      - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
+      - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/web/src/components/settings/hardwareSettings.logic.test.ts
+      - packages/client-runtime/src/state/commandPermissions.test.ts
+      - packages/client-runtime/src/state/hardware.test.ts
+      - packages/client-runtime/src/state/threadRequests.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream offers leased, approval-gated access to network hardware with release cleanup.
+
   - id: historical-checkpoint-review
     title: Keep migrated checkpoint changes available for review
     status: maintained

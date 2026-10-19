@@ -29,6 +29,7 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
+import { HardwareLeaseChips } from "../hardware/HardwareLeaseChip";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   WorkspaceBreadcrumb,
@@ -436,6 +437,13 @@ export const ChatHeader = memo(function ChatHeader({
           )}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      {isServerThread ? (
+        <HardwareLeaseChips
+          environmentId={activeThreadEnvironmentId}
+          threadId={activeThreadId}
+          projectId={activeProject?.id ?? null}
+        />
+      ) : null}
     </div>
   );
 });

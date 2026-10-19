@@ -71,6 +71,8 @@ import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";
 import * as DeviceIdle from "./device/DeviceIdle.ts";
+import * as HardwareHttp from "./hardware/HardwareHttp.ts";
+import * as HardwareService from "./hardware/HardwareService.ts";
 import * as DeviceSharing from "./device/DeviceSharing.ts";
 import {
   deviceSharingRouteLayer,
@@ -599,6 +601,7 @@ const ProviderAutoUpdaterLive = Layer.effectDiscard(
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,
+  HardwareService.layer,
   // Asks T3 Connect to deliver webhooks it held while this environment was offline.
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
@@ -776,6 +779,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerAssetRoute,
     ServerHttp.layerAttachmentUploadRoute,
     DeviceHubProxy.layer,
+    HardwareHttp.proxyRouteLayer,
     deviceSharingRouteLayer,
     deviceSharingProxyRouteLayer,
     deviceSharingAgentRouteLayer,

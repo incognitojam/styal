@@ -8,6 +8,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
   AuthSourceControlWriteScope,
   ThreadId,
   EnvironmentId,
@@ -260,4 +261,22 @@ it.effect("rejects protected unary and streamed RPCs outside a guarded command",
     expect(streamed._tag).toBe("EnvironmentAuthorizationError");
     expect(writes).toBe(0);
   }),
+);
+
+it.effect(
+  "lets operators control hardware leases but only settings writers configure devices",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        const control = createCommandPermissions(runtime, WS_METHODS.hardwareControl);
+        const configure = createCommandPermissions(runtime, WS_METHODS.hardwareConfigure);
+        expect(registry.get(control.permissionAtom(env))).toBe(true);
+        expect(registry.get(configure.permissionAtom(env))).toBe(false);
+        expect(
+          (yield* configure.authorize(registry, env).pipe(Effect.flip)).requiredPermission,
+        ).toBe(AuthSettingsWriteScope);
+      }),
+    ),
 );

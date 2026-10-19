@@ -64,6 +64,7 @@ export type T3McpToolSummaryAction =
   | "unwatch-run"
   | "browser"
   | "device"
+  | "hardware"
   | "html-preview"
   | "html-render";
 
@@ -257,6 +258,18 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "device",
   ),
   device_close: tool(["Close", "Closing", "Closed", "a device"], "device", "device"),
+  hardware_list: tool(["List", "Listing", "Listed", "hardware devices"], "hardware", "device"),
+  hardware_acquire: tool(
+    ["Acquire", "Acquiring", "Acquired", "a hardware lease"],
+    "hardware",
+    "device",
+  ),
+  hardware_call: tool(["Call", "Calling", "Called", "a hardware device"], "hardware", "device"),
+  hardware_release: tool(
+    ["Release", "Releasing", "Released", "a hardware lease"],
+    "hardware",
+    "device",
+  ),
   run_scheduled_task_now: tool(
     ["Run", "Running", "Requested a run of", "a scheduled task"],
     "schedule-run",

@@ -21,6 +21,7 @@
 - [Import browser sessions](./user/browser-import.md)
 - [Import T3 Code data](./user/importing-t3-code-data.md)
 - [Devices](./user/devices.md)
+- [Hardware](./user/hardware.md)
 - [Usage and limits](./user/usage.md)
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)

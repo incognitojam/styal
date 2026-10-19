@@ -1,5 +1,11 @@
 import { expect, it } from "@effect/vitest";
-import { DeviceHeldError, DeviceHostId, DeviceId, ThreadId } from "@t3tools/contracts";
+import {
+  DeviceHeldError,
+  DeviceHostId,
+  DeviceId,
+  HardwareToolError,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -102,6 +108,45 @@ it.effect("reports a device another thread is using as in use, not as a failed o
         properties: {
           feature: "devices",
           action: "open",
+          source: "agent",
+          failureReason: "in_use",
+          outcome: "failure",
+          durationMs: 0,
+        },
+      },
+    ]);
+  }),
+);
+
+it.effect("records a hardware call's tier and a bounded refusal, never the device or action", () =>
+  Effect.gen(function* () {
+    const events: Array<unknown> = [];
+    const usage = {
+      feature: "hardware",
+      action: "call",
+      source: "agent",
+      hardwareTier: "approve",
+    } as const;
+    yield* FeatureUsage.observe(
+      usage,
+      Effect.fail(
+        new HardwareToolError({ code: "approval_declined", reason: 'The user declined "reboot".' }),
+      ),
+    ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, capture(events)), Effect.exit);
+    yield* FeatureUsage.observe(
+      { feature: "hardware", action: "acquire", source: "agent" },
+      Effect.fail(new HardwareToolError({ code: "busy", reason: '"Calibrate" holds tree' })),
+    ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, capture(events)), Effect.exit);
+    expect(events).toEqual([
+      {
+        event: "feature.used",
+        properties: { ...usage, failureReason: "declined", outcome: "failure", durationMs: 0 },
+      },
+      {
+        event: "feature.used",
+        properties: {
+          feature: "hardware",
+          action: "acquire",
           source: "agent",
           failureReason: "in_use",
           outcome: "failure",

@@ -4,6 +4,7 @@ import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation";
 import {
   CommandId,
+  RuntimeRequestId,
   EnvironmentId,
   EventId,
   IsoDateTime,
@@ -1674,6 +1675,95 @@ describe("orchestrator MCP toolkit", () => {
               .consume({ ref: secretResult.secretRef as never, projectId })
               .pipe(Effect.flip);
             expect(reused.message).toContain("already used");
+
+            // A server service (a hardware call) asks for approval in the same
+            // run. It shows like a provider approval and resolves in place.
+            const approvalId = RuntimeRequestId.make("runtime-request:hardware:test");
+            const openApproval = (approvalStatus: "pending" | "cancelled") =>
+              orchestrator.dispatch({
+                type: "server_approval.record",
+                commandId: CommandId.make(`command:test:server-approval:${approvalStatus}`),
+                threadId: parentThreadId,
+                runId: card.runId!,
+                nodeId: card.nodeId!,
+                requestId: approvalId,
+                approvalStatus,
+                toolName: "hardware_call",
+                prompt: 'Run "reboot" on tree: POST /reboot',
+                options: [
+                  { decision: "accept", label: "Allow once" },
+                  { decision: "acceptForSession", label: "Allow for this lease" },
+                  { decision: "decline", label: "Decline" },
+                ],
+              });
+            yield* openApproval("pending");
+            expect(
+              (yield* orchestrator.getThreadShell(parentThreadId))?.pendingRuntimeRequest,
+            ).toMatchObject({ kind: "permission" });
+            const pendingApproval = yield* orchestrator.getThreadProjection(parentThreadId);
+            expect(
+              pendingApproval.runtimeRequests.find((request) => request.id === approvalId),
+            ).toMatchObject({ status: "pending", responseCapability: { type: "server" } });
+            expect(
+              pendingApproval.turnItems.find(
+                (item) => item.type === "approval_request" && item.requestId === approvalId,
+              ),
+            ).toMatchObject({ toolName: "hardware_call", status: "waiting" });
+            yield* orchestrator.dispatch({
+              type: "runtime-request.respond",
+              commandId: CommandId.make("command:test:server-approval:respond"),
+              threadId: parentThreadId,
+              requestId: approvalId,
+              decision: "acceptForSession",
+            });
+            // The service closes its card when the call ends; after an answer that changes nothing.
+            yield* openApproval("cancelled");
+            const answered = yield* orchestrator.getThreadProjection(parentThreadId);
+            expect(
+              answered.runtimeRequests.find((request) => request.id === approvalId),
+            ).toMatchObject({ status: "resolved", decision: "acceptForSession" });
+            expect(
+              (yield* orchestrator.getThreadShell(parentThreadId))?.pendingRuntimeRequest ?? null,
+            ).toBeNull();
+
+            // The card offers no "always"; the server service could not honour it.
+            const unofferedId = RuntimeRequestId.make("runtime-request:hardware:unoffered");
+            yield* orchestrator.dispatch({
+              type: "server_approval.record",
+              commandId: CommandId.make("command:test:server-approval:unoffered"),
+              threadId: parentThreadId,
+              runId: card.runId!,
+              nodeId: card.nodeId!,
+              requestId: unofferedId,
+              approvalStatus: "pending",
+              toolName: "hardware_call",
+              prompt: 'Run "reboot" on tree: POST /reboot',
+              options: [
+                { decision: "accept", label: "Allow once" },
+                { decision: "decline", label: "Decline" },
+              ],
+            });
+            const refusedAnswer = yield* orchestrator
+              .dispatch({
+                type: "runtime-request.respond",
+                commandId: CommandId.make("command:test:server-approval:always"),
+                threadId: parentThreadId,
+                requestId: unofferedId,
+                decision: "acceptAlways",
+              })
+              .pipe(Effect.flip);
+            expect(String(refusedAnswer.cause ?? refusedAnswer)).toContain("choices it offers");
+            yield* orchestrator.dispatch({
+              type: "server_approval.record",
+              commandId: CommandId.make("command:test:server-approval:unoffered-cancel"),
+              threadId: parentThreadId,
+              runId: card.runId!,
+              nodeId: card.nodeId!,
+              requestId: unofferedId,
+              approvalStatus: "cancelled",
+              toolName: "hardware_call",
+              prompt: 'Run "reboot" on tree: POST /reboot',
+            });
 
             const delegatedCall = yield* invoke("delegate_task", {
               task: delegatedPrompt,
