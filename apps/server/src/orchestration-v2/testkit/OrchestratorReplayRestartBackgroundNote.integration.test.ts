@@ -1,10 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import { ProviderDriverKind, type ProviderReplayEntry } from "@t3tools/contracts";
+import { EventId, ProviderDriverKind, type ProviderReplayEntry } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   ClaudeOrchestratorReplayHarness,
@@ -19,6 +21,11 @@ import {
   materializeFixtureInput,
   projectionFor,
 } from "./fixtures/shared.ts";
+import * as EffectWorker from "../EffectWorker.ts";
+import * as EventSink from "../EventSink.ts";
+import * as Orchestrator from "../Orchestrator.ts";
+import * as ProviderReplayHarness from "./ProviderReplayHarness.ts";
+import { runOrchestratorV2Scenario } from "./OrchestratorScenario.ts";
 import { runOrchestratorV2ProviderReplayScenario } from "./ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import { readProviderReplayTranscript } from "@t3tools/provider-testing/replayTranscript";
@@ -110,8 +117,7 @@ const readRestartTranscript = Effect.fn("readRestartTranscript")(function* (
     ...recorded,
     entries: [
       ...recorded.entries.slice(0, rootResult + 1),
-
-      { type: "runtime_exit", status: "success" },
+      // Keep the query alive until the crash snapshot is captured.
       {
         type: "expect_outbound",
         label: "query.open:resume",
@@ -126,7 +132,9 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
   readonly resumedPrompts: ReadonlyArray<string>;
   readonly userMessagesAfterRestart: ReadonlyArray<string>;
   readonly continueThreadsAfterServerUpdate: boolean;
+  readonly sessionAtCrash?: "live" | "stopped";
 }) {
+  const stoppedAtCrash = input.sessionAtCrash === "stopped";
   const transcript = yield* readRestartTranscript(input.resumedPrompts);
   const workspace = yield* checkpointWorkspace(SCENARIO);
   const fs = yield* FileSystem.FileSystem;
@@ -152,7 +160,7 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
   const threadId = materialized.projectionThreadIds[0]!;
   const phase2Steps = [
     // Let recovery's continuation (run 2) finish before the next user message.
-    ...(input.continueThreadsAfterServerUpdate
+    ...(input.continueThreadsAfterServerUpdate && !stoppedAtCrash
       ? [
           {
             type: "await_run_status" as const,
@@ -168,6 +176,7 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
   const layerDatabase = SqlitePersistence.layerFromPath(path.join(tempDir, "state.sqlite")).pipe(
     Layer.provide(NodeServices.layer),
   );
+  const snapshotPath = path.join(tempDir, "restart-state.sqlite");
   const scenario = (name: string, steps: typeof materialized.steps) => ({
     name: `${SCENARIO}:${name}`,
     transcript,
@@ -177,21 +186,87 @@ const runRestart = Effect.fn("runRestart")(function* (input: {
     runtimePolicyOverride: { cwd: workspace },
   });
 
+  const beforeScenario = scenario("before-restart", phase1Steps);
   const before = yield* Effect.scoped(
-    runOrchestratorV2ProviderReplayScenario(scenario("before-restart", phase1Steps), harness, {
-      databaseLayer: layerDatabase,
-      continueThreadsAfterServerUpdate: input.continueThreadsAfterServerUpdate,
-      prepareForShutdownOnClose: true,
-    }),
+    Effect.gen(function* () {
+      const result = yield* runOrchestratorV2Scenario(beforeScenario);
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      yield* worker.drain();
+      if (stoppedAtCrash) {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const projection = yield* orchestrator.getThreadProjection(threadId);
+        const session = projection.providerSessions[0];
+        if (session === undefined) {
+          return yield* Effect.die("restart scenario has no provider session");
+        }
+        // Snapshot the legacy running task before exit cleanup settles it, then
+        // seed the stopped session that older runtimes could leave after a crash.
+        const now = yield* DateTime.now;
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make("event:restart-background-note:stopped-provider-session"),
+              type: "provider-session.updated",
+              threadId,
+              providerInstanceId: session.providerInstanceId,
+              occurredAt: now,
+              payload: { ...session, status: "stopped", updatedAt: now, lastError: null },
+            },
+          ],
+        });
+      }
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`VACUUM INTO ${snapshotPath}`;
+      return result;
+    }).pipe(
+      Effect.provide(
+        Layer.merge(
+          ProviderReplayHarness.layerProviderReplay(beforeScenario, harness, {
+            databaseLayer: layerDatabase,
+          }),
+          layerDatabase,
+        ),
+      ),
+    ),
+  );
+  const snapshotDatabase = SqlitePersistence.layerFromPath(snapshotPath).pipe(
+    Layer.provide(NodeServices.layer),
   );
   const settled = projectionFor(before, SCENARIO);
   assert.equal(settled.runs[0]?.status, "completed");
   assert.equal(settled.subagents[0]?.status, "running");
 
+  if (stoppedAtCrash) {
+    const restartScenario = scenario("restarted", []);
+    const restarted = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        yield* worker.drain();
+        return yield* runOrchestratorV2Scenario(restartScenario);
+      }).pipe(
+        Effect.provide(
+          ProviderReplayHarness.layerProviderReplay(restartScenario, harness, {
+            databaseLayer: snapshotDatabase,
+            recoverOnStartup: true,
+            continueThreadsAfterServerUpdate: input.continueThreadsAfterServerUpdate,
+          }),
+        ),
+      ),
+    );
+    const recovered = projectionFor(restarted, SCENARIO);
+    assert.deepEqual(
+      recovered.runs.map((run) => run.status),
+      ["completed"],
+    );
+    assert.equal(recovered.subagents[0]?.status, "cancelled");
+    assert.equal(recovered.runs[0]?.restartCancelledBackgroundWork?.[0]?.kind, "subagent");
+  }
+
   const after = yield* Effect.scoped(
     runOrchestratorV2ProviderReplayScenario(scenario("after-restart", phase2Steps), harness, {
-      databaseLayer: layerDatabase,
-      recoverOnStartup: true,
+      databaseLayer: snapshotDatabase,
+      recoverOnStartup: !stoppedAtCrash,
       continueThreadsAfterServerUpdate: input.continueThreadsAfterServerUpdate,
     }),
   );
@@ -206,6 +281,40 @@ const userTexts = (projection: ReturnType<typeof projectionFor>) =>
   projection.turnItems.flatMap((item) => (item.type === "user_message" ? [item.text] : []));
 
 describe("restart-cancelled background work", () => {
+  it.effect.each([false, true])(
+    "keeps the thread settled and tells the next user turn once when continuation is %s",
+    (continueThreadsAfterServerUpdate) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const projection = yield* runRestart({
+            resumedPrompts: [
+              `${NOTE}\n\nUser message:\n${FIRST_AFTER_RESTART}`,
+              SECOND_AFTER_RESTART,
+            ],
+            userMessagesAfterRestart: [FIRST_AFTER_RESTART, SECOND_AFTER_RESTART],
+            continueThreadsAfterServerUpdate,
+            sessionAtCrash: "stopped",
+          });
+          assert.deepEqual(
+            projection.runs.map((run) => run.status),
+            ["completed", "completed", "completed"],
+          );
+          assert.isFalse(
+            projection.runs.some((run) => run.restartContinuationOfRunId !== undefined),
+          );
+
+          assert.deepEqual(userTexts(projection), [
+            CLAUDE_BACKGROUND_SUBAGENT_AFTER_ROOT_PROMPT,
+            FIRST_AFTER_RESTART,
+            SECOND_AFTER_RESTART,
+          ]);
+        }).pipe(
+          provideDeterministicTestRuntime,
+          Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer)),
+        ),
+      ),
+  );
+
   it.effect("tells the next provider turn once that its background subagent died", () =>
     Effect.scoped(
       Effect.gen(function* () {
