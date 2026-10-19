@@ -78,6 +78,8 @@ export function hasQueuedTurnStart(
 export interface SettledShelfFocus {
   readonly threadKey: string | null;
   readonly settled: boolean;
+  /** The open thread, which can be a child of the `threadKey` row; it owns `latestUserMessageAt`. */
+  readonly messageThreadKey?: string | null;
   readonly latestUserMessageAt: string | null | undefined;
 }
 
@@ -96,6 +98,7 @@ export function advanceSettledShelfFocus(
   if (next.threadKey === null) return { focus: previous, collapse: false };
   if (next.threadKey !== previous.threadKey) return { focus: next, collapse: !next.settled };
   const messageSent =
+    previous.messageThreadKey === next.messageThreadKey &&
     previous.latestUserMessageAt !== undefined &&
     next.latestUserMessageAt != null &&
     next.latestUserMessageAt !== previous.latestUserMessageAt;

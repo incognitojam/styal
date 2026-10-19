@@ -54,6 +54,24 @@ describe("advanceSettledShelfFocus", () => {
     ]);
   });
 
+  it("follows messages in a subagent opened under a settled row", () => {
+    const row = (messageThreadKey: string, latestUserMessageAt: string) =>
+      ({
+        threadKey: "s1",
+        settled: true,
+        messageThreadKey,
+        latestUserMessageAt,
+      }) satisfies SettledShelfFocus;
+    expect(
+      collapses(row("s1", "2026-04-10T09:00:00.000Z"), [
+        // Opening the child highlights the same row and keeps the shelf open.
+        row("child", "2026-04-10T10:00:00.000Z"),
+        // A follow-up sent in the child is a new message in the open thread.
+        row("child", "2026-04-10T12:00:00.000Z"),
+      ]),
+    ).toEqual([false, true]);
+  });
+
   it("keeps the last thread across non-thread screens", () => {
     expect(collapses(active("a"), [noThread, active("a")])).toEqual([false, false]);
     expect(collapses(active("a"), [noThread, active("b")])).toEqual([false, true]);
