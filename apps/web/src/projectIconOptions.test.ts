@@ -1,14 +1,33 @@
+import emojiKeywords from "emojilib/dist/emoji-en-US.json";
 import { describe, expect, it } from "vite-plus/test";
 import {
   filterProjectIconNames,
   firstEmoji,
+  PROJECT_EMOJIS,
   projectIconColorClassName,
+  searchProjectEmojis,
 } from "./projectIconOptions";
+
+const emojiResults = (query: string) =>
+  searchProjectEmojis(emojiKeywords, query).map((option) => option.emoji);
 
 describe("projectIconOptions", () => {
   it("searches across the full Lucide set", () => {
     expect(filterProjectIconNames("alarm clock")).toContain("alarm-clock");
     expect(filterProjectIconNames("alarm  \tclock")).toContain("alarm-clock");
+  });
+
+  it("searches emoji by name and keyword", () => {
+    expect(emojiResults("alien")[0]).toBe("👽");
+    expect(emojiResults("ufo")).toEqual(expect.arrayContaining(["👽", "🛸"]));
+    expect(emojiResults("Flying saucer")[0]).toBe("🛸");
+    expect(emojiResults("flying_saucer")[0]).toBe("🛸");
+    expect(searchProjectEmojis(emojiKeywords, "flying saucer")[0]?.label).toBe("Flying saucer");
+    expect(emojiResults("zzzz-not-an-emoji")).toEqual([]);
+  });
+
+  it("shows the preset emoji for an empty search", () => {
+    expect(searchProjectEmojis(emojiKeywords, "  ")).toBe(PROJECT_EMOJIS);
   });
 
   it("extracts one complete emoji grapheme", () => {

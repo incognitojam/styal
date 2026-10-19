@@ -67,6 +67,59 @@ export function filterProjectIconNames(query: string): ReadonlyArray<IconName> {
   return iconNames.filter((name) => name.includes(normalized)).slice(0, 60);
 }
 
+export type EmojiKeywords = Readonly<Record<string, ReadonlyArray<string>>>;
+
+let emojiKeywords: Promise<EmojiKeywords> | null = null;
+
+/** Loads the emoji keyword table as its own chunk the first time emoji search is needed. */
+export function loadEmojiKeywords(): Promise<EmojiKeywords> {
+  emojiKeywords ??= import("emojilib/dist/emoji-en-US.json").then(
+    (module): EmojiKeywords => module.default,
+    (error: unknown) => {
+      emojiKeywords = null;
+      throw error;
+    },
+  );
+  return emojiKeywords;
+}
+
+function normalizeEmojiKeyword(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[\s_]+/g, " ");
+}
+
+function emojiKeywordRank(keywords: ReadonlyArray<string>, query: string): number | null {
+  const name = keywords[0] ?? "";
+  if (name === query) return 0;
+  if (name.startsWith(query)) return 1;
+  if (keywords.some((keyword) => keyword.startsWith(query))) return 2;
+  if (keywords.some((keyword) => keyword.includes(query))) return 3;
+  return null;
+}
+
+/** Ranks emoji by their name first, then by any keyword, keeping Unicode order within a rank. */
+export function searchProjectEmojis(
+  table: EmojiKeywords,
+  query: string,
+): ReadonlyArray<{ readonly emoji: string; readonly label: string }> {
+  const normalized = normalizeEmojiKeyword(query);
+  if (!normalized) return PROJECT_EMOJIS;
+  const matches: Array<{ emoji: string; label: string; rank: number }> = [];
+  for (const [emoji, rawKeywords] of Object.entries(table)) {
+    const keywords = rawKeywords.map(normalizeEmojiKeyword);
+    const rank = emojiKeywordRank(keywords, normalized);
+    if (rank === null) continue;
+    const name = keywords[0] ?? emoji;
+    matches.push({ emoji, label: name.charAt(0).toUpperCase() + name.slice(1), rank });
+  }
+  return matches
+    .toSorted((left, right) => left.rank - right.rank)
+    .slice(0, 80)
+    .map(({ emoji, label }) => ({ emoji, label }));
+}
+
 export function firstEmoji(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;

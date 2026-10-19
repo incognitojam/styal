@@ -11,9 +11,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   filterProjectIconNames,
   firstEmoji,
-  PROJECT_EMOJIS,
+  loadEmojiKeywords,
   PROJECT_ICON_COLORS,
   projectIconColorClassName,
+  searchProjectEmojis,
+  type EmojiKeywords,
 } from "../../projectIconOptions";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
@@ -66,7 +68,10 @@ export function ProjectIconPickerDialog({
   );
   const [emoji, setEmoji] = useState(current?.kind === "emoji" ? current.emoji : "💻");
   const [query, setQuery] = useState("");
-  const [customEmoji, setCustomEmoji] = useState("");
+  const [emojiQuery, setEmojiQuery] = useState("");
+  const [emojiKeywords, setEmojiKeywords] = useState<EmojiKeywords | "loading" | "failed">(
+    "loading",
+  );
   const previousOpenRef = useRef(false);
 
   useEffect(() => {
@@ -77,12 +82,38 @@ export function ProjectIconPickerDialog({
       setLetters(current?.kind === "monogram" ? current.text : automatic.monogram);
       setEmoji(current?.kind === "emoji" ? current.emoji : "💻");
       setQuery("");
-      setCustomEmoji("");
+      setEmojiQuery("");
     }
     previousOpenRef.current = open;
   }, [current, open, automatic.color, automatic.monogram]);
 
+  useEffect(() => {
+    if (!open || mode !== "emoji" || emojiKeywords !== "loading") return;
+    let cancelled = false;
+    loadEmojiKeywords().then(
+      (table) => {
+        if (!cancelled) setEmojiKeywords(table);
+      },
+      () => {
+        if (!cancelled) setEmojiKeywords("failed");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mode, emojiKeywords]);
+
   const icons = useMemo(() => filterProjectIconNames(query), [query]);
+  const pastedEmoji = firstEmoji(emojiQuery);
+  const emojiResults = useMemo(
+    () =>
+      pastedEmoji
+        ? [{ emoji: pastedEmoji, label: "Pasted emoji" }]
+        : searchProjectEmojis(typeof emojiKeywords === "string" ? {} : emojiKeywords, emojiQuery),
+    [pastedEmoji, emojiKeywords, emojiQuery],
+  );
+  const emojiSearchPending =
+    !pastedEmoji && emojiQuery.trim() !== "" && typeof emojiKeywords === "string";
   const selectedColorClassName = projectIconColorClassName(color);
   const monogram = letters.normalize("NFKC").trim().toUpperCase();
   const validMonogram = isMonogramText(monogram);
@@ -202,9 +233,21 @@ export function ProjectIconPickerDialog({
             </div>
           ) : (
             <>
+              <Input
+                type="search"
+                value={emojiQuery}
+                aria-label="Search emoji"
+                placeholder="Search emoji or paste one"
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setEmojiQuery(value);
+                  const nextEmoji = firstEmoji(value);
+                  if (nextEmoji) setEmoji(nextEmoji);
+                }}
+              />
               <ScrollArea scrollFade className="max-h-64">
                 <div className="grid grid-cols-8 gap-1 p-0.5 sm:grid-cols-10">
-                  {PROJECT_EMOJIS.map((option) => (
+                  {(emojiSearchPending ? [] : emojiResults).map((option) => (
                     <button
                       key={option.emoji}
                       type="button"
@@ -221,22 +264,13 @@ export function ProjectIconPickerDialog({
                   ))}
                 </div>
               </ScrollArea>
-              <div>
-                <div className="mb-2 text-xs font-medium text-muted-foreground">
-                  Or paste any emoji
-                </div>
-                <Input
-                  value={customEmoji}
-                  aria-label="Custom emoji"
-                  placeholder="Paste an emoji"
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    setCustomEmoji(value);
-                    const nextEmoji = firstEmoji(value);
-                    if (nextEmoji) setEmoji(nextEmoji);
-                  }}
-                />
-              </div>
+              {emojiSearchPending ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {emojiKeywords === "failed" ? "Emoji search is unavailable." : "Loading emoji…"}
+                </p>
+              ) : emojiResults.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">No emoji found.</p>
+              ) : null}
             </>
           )}
         </DialogPanel>

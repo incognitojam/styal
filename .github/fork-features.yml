@@ -2960,6 +2960,26 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream persists equivalent project instructions and applies them safely to fresh and recovered sessions for every supported provider without duplicating prompt content.
 
+  - id: project-emoji-search
+    title: Search emoji by name in the project icon picker
+    status: maintained
+    prs: []
+    invariants:
+      - The project icon picker's Emoji tab searches every emoji by name and keyword, and an emoji pasted into the same field is selected directly.
+      - The emoji keyword table loads as its own chunk the first time the Emoji tab opens, not with the app.
+    implementation_paths:
+      - apps/web/src/components/settings/ProjectIconPickerDialog.tsx
+      - apps/web/src/projectIconOptions.ts
+    upstream_paths:
+      - apps/web/src/components/settings/ProjectIconPickerDialog.tsx
+      - apps/web/src/projectIconOptions.ts
+    tests:
+      - apps/web/src/projectIconOptions.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream's project icon picker can search emoji by name.
+
   - id: project-file-partial-recovery
     title: Preserve valid project file values when siblings are invalid
     status: maintained
