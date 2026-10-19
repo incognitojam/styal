@@ -204,7 +204,7 @@ export function sortProviderInstanceEntries(
   return sorted;
 }
 
-export function getProviderInstanceEntry(
+function getProviderInstanceEntry(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId,
 ): ProviderInstanceEntry | undefined {
