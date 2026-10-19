@@ -66,6 +66,14 @@ const refusedBeforePrompt = (error: unknown): boolean =>
   Predicate.isTagged(error, "ClaudeBackgroundWorkBlocksQueryReplacementError") ||
   (Predicate.hasProperty(error, "cause") && refusedBeforePrompt(error.cause));
 
+/**
+ * Sent with a fork's first turn. The copied history can end mid-task, and the
+ * agent would otherwise take its source's background work, and the work that
+ * continued in the source, for its own interrupted work.
+ */
+export const FORK_NOTE =
+  "Note: this thread is a fork of another thread. The earlier conversation was copied from that thread up to the response the user forked from. Work may have continued in that thread since then. Background work started before the fork, such as commands, monitors and subagents, belongs to that thread and will not report back here.";
+
 export interface ProviderTurnStartServiceV2Shape {
   /**
    * Starts the run's provider turn. When `willRetry` is true, a session open
@@ -962,25 +970,38 @@ export const layer: Layer.Layer<
         projection.providerTurns,
         projection.attempts,
       );
+      const compactionMessageIds = new Set<string>(
+        projection.messages
+          .filter(
+            (candidate) =>
+              candidate.attachments.length === 0 &&
+              candidate.text.trim().toLowerCase() === "/compact",
+          )
+          .map((candidate) => candidate.id),
+      );
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
-        compactionMessageIds: new Set(
-          projection.messages
-            .filter(
-              (candidate) =>
-                candidate.attachments.length === 0 &&
-                candidate.text.trim().toLowerCase() === "/compact",
-            )
-            .map((candidate) => candidate.id),
-        ),
+        compactionMessageIds,
         run,
         attempts: projection.attempts,
       });
-      const restartNote =
+      const isForkFirstRun =
+        !compactionMessageIds.has(run.userMessageId) &&
+        projection.contextTransfers.some(
+          (transfer) =>
+            transfer.type === "fork" &&
+            transfer.targetThreadId === input.threadId &&
+            transfer.targetRunId === run.id,
+        );
+      const turnNote = [
+        isForkFirstRun ? FORK_NOTE : "",
         restartCancelledWork.length === 0
           ? ""
-          : restartCancelledBackgroundWorkNote(restartCancelledWork);
+          : restartCancelledBackgroundWorkNote(restartCancelledWork),
+      ]
+        .filter((part) => part !== "")
+        .join("\n\n");
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -1130,7 +1151,7 @@ export const layer: Layer.Layer<
                 tokenCap,
                 modelContextWindow,
                 // The note is sent with the user text, so it spends the same allowance.
-                userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
+                userText: turnNote === "" ? userText : `${turnNote}\n\n${userText}`,
                 attachments: message.attachments,
                 providerThread: budgetProviderThread,
                 nativeContextEstimate:
@@ -1171,9 +1192,7 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
-          const context = [delivery.context, restartNote]
-            .filter((part) => part !== "")
-            .join("\n\n");
+          const context = [delivery.context, turnNote].filter((part) => part !== "").join("\n\n");
           // A note continuation has no turn to resume; its text is the prompt.
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
           yield* start({
@@ -1223,7 +1242,7 @@ export const layer: Layer.Layer<
       const deliverySession =
         effectiveHandoffs.length === 0 &&
         missedItems.length === 0 &&
-        restartNote === "" &&
+        turnNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);

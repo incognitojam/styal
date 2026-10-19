@@ -1760,6 +1760,25 @@ features:
         - https://github.com/pingdotgg/t3code/pull/15921
       retire_when: Upstream provides equivalent anonymous feature-adoption events with outcome, opt-out, and rollout-aware coverage.
 
+  - id: fork-first-turn-note
+    title: Tell an agent on a forked thread that it is a fork
+    status: maintained
+    prs: []
+    invariants:
+      - The first turn of a forked thread, native or portable and on every provider, reaches the provider with a note saying the history was copied up to the forked response, work may have continued in the source thread, and background work started before the fork will not report back. Later turns and a first-turn /compact do not carry it.
+    rationale: A fork can be taken from a response that ended while background work was still running. Without the note, the agent sees that work missing and reports it as interrupted, though it finished in the source thread.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
+    tests:
+      - apps/server/src/orchestration-v2/testkit/ThreadFork.integration.test.ts
+      - apps/server/src/orchestration-v2/testkit/ThreadMergeBack.integration.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream tells the agent on a forked thread that later source work and earlier background work are not part of the fork.
+
   - id: fork-managed-link
     title: Operate styal Link independently
     status: maintained
