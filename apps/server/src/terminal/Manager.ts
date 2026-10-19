@@ -106,6 +106,17 @@ const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
 const DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS = 128;
 const DEFAULT_OPEN_COLS = 120;
 const DEFAULT_OPEN_ROWS = 30;
+// The tmux/screen/Zellij keys name the multiplexer pane that launched the server,
+// so inheriting them points multiplexer-aware tools at that unrelated pane.
+const TERMINAL_MULTIPLEXER_ENV_KEYS = new Set([
+  "TMUX",
+  "TMUX_PANE",
+  "STY",
+  "WINDOW",
+  "ZELLIJ",
+  "ZELLIJ_SESSION_NAME",
+  "ZELLIJ_PANE_ID",
+]);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const MAX_TERMINAL_LABEL_LENGTH = 128;
 const decodeClaudeSettings = Schema.decodeUnknownOption(ClaudeSettings);
@@ -1312,6 +1323,9 @@ function createTerminalSpawnEnv(
   home: string,
 ): NodeJS.ProcessEnv {
   const spawnEnv = stripServerOwnedEnvironment(baseEnv);
+  for (const key of Object.keys(spawnEnv)) {
+    if (TERMINAL_MULTIPLEXER_ENV_KEYS.has(key.toUpperCase())) delete spawnEnv[key];
+  }
   if (runtimeEnv) {
     for (const [key, value] of Object.entries(runtimeEnv)) {
       const existingKey =
