@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { DeviceToolListResult, ThreadId } from "@t3tools/contracts";
+import { DeviceToolListResult, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -13,11 +13,16 @@ import * as DeviceService from "./DeviceService.ts";
 it.effect("keeps hosts independent when serials collide and another host fails", () =>
   Effect.gen(function* () {
     const host = (id: string, failed = false): DeviceHost.DeviceHost["Service"] => {
-      const ready = {
+      const ready: DeviceHost.DeviceHostAgentReady = {
         nodePath: process.execPath,
         hub: { origin: `http://${id}` },
         agentDevice: { baseUrl: `http://${id}`, token: "test", entryPath: "/agent-device" },
-        run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
+        run: (command) =>
+          Effect.succeed({
+            stdout: command === "emulator" ? "" : " V....D libx264",
+            stderr: "",
+            code: 0,
+          }),
         helpers: { serveSimAxSettings: null, serveSimCli: null },
       };
       return {
@@ -132,6 +137,93 @@ it.effect("keeps hosts independent when serials collide and another host fails",
       }),
     ),
   ),
+);
+
+it.effect(
+  "opens environment emulators through their owning server without running local probes",
+  () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("peer-thread");
+      const device = {
+        id: "emulator-5554",
+        hostId: "peer",
+        name: "Pixel",
+        platform: "android" as const,
+        version: "36",
+        booted: true,
+        physical: false,
+      };
+      const opened: string[] = [];
+      const unsupported = () => Effect.die("Unexpected device operation");
+      const ready: DeviceHost.DeviceHostReady = {
+        nodePath: "",
+        hub: { origin: "http://peer" },
+        run: unsupported,
+        helpers: { serveSimAxSettings: null, serveSimCli: null },
+        remote: {
+          list: Effect.succeed({
+            environmentId: EnvironmentId.make("peer-environment"),
+            sourceEnvironmentId: EnvironmentId.make("local-environment"),
+            host: {
+              id: "peer",
+              label: "Peer",
+              kind: "local",
+              hubInstalled: true,
+              agentDeviceInstalled: true,
+              platforms: [{ platform: "android", available: true }],
+            },
+            devices: [device],
+            sessions: [],
+          }),
+          open: (input) =>
+            Effect.sync(() => {
+              opened.push(input.deviceId);
+              return {
+                threadId,
+                hostId: "peer",
+                deviceId: device.id,
+                platform: device.platform,
+                openedAt: "2026-01-01T00:00:00.000Z",
+              };
+            }),
+          close: unsupported,
+          shutdown: unsupported,
+          detail: unsupported,
+          action: unsupported,
+          screenshot: unsupported,
+        },
+      };
+      const host: DeviceHost.DeviceHost["Service"] = {
+        id: "peer",
+        summary: Effect.succeed({
+          id: "peer",
+          label: "Peer",
+          kind: "environment",
+          hubInstalled: true,
+          agentDeviceInstalled: true,
+          platforms: [{ platform: "android", available: true }],
+        }),
+        platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
+        ensureReady: () => Effect.succeed(ready),
+        ensureAgentReady: unsupported,
+        current: Effect.succeed(ready),
+        stopAgent: Effect.void,
+        stop: Effect.void,
+      };
+      const service = yield* DeviceService.makeWithHosts(new Map([["peer", host]])).pipe(
+        Effect.provide(NodeCrypto.layer),
+        Effect.provideService(HttpClient.HttpClient, HttpClient.make(unsupported)),
+      );
+      const session = yield* service.open({
+        threadId,
+        hostId: "peer",
+        deviceId: device.id,
+        platform: "android",
+      });
+      expect(session.deviceId).toBe(device.id);
+      expect(opened).toEqual([device.id]);
+      expect((yield* service.state).sessions).toEqual([session]);
+    }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true }))),
 );
 
 it.effect("does not hold local device work behind a connected environment that is waiting", () =>

@@ -75,7 +75,12 @@ const fixture = Effect.fn("fixture")(function* (
     nodePath: process.execPath,
     hub: { origin: "http://device.test" },
     helpers: { serveSimAxSettings: null, serveSimCli: null },
-    run: () => Effect.succeed({ code: 0, stdout: "Pixel_API_35\n", stderr: "" }),
+    run: (command) =>
+      Effect.succeed({
+        code: 0,
+        stdout: command === process.execPath ? " V....D libx264" : "Pixel_API_35\n",
+        stderr: "",
+      }),
   };
   const agentDevice = { baseUrl: "http://agent.test", token: "agent-token", entryPath: "" };
   const host: DeviceHost.DeviceHost["Service"] = {

@@ -288,7 +288,12 @@ const fixture = Effect.gen(function* () {
     nodePath: process.execPath,
     hub: { origin: "http://hub.test" },
     helpers: { serveSimCli: null, serveSimAxSettings: null },
-    run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
+    run: (command) =>
+      Effect.succeed({
+        stdout: command === "emulator" ? "" : " V....D libx264",
+        stderr: "",
+        code: 0,
+      }),
     agentDevice: {
       baseUrl: "http://daemon.test",
       token: "synthetic-daemon-token",
