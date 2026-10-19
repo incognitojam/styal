@@ -20,6 +20,10 @@ if (
   if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
     const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
     await runAcpMcpCliFastPath(command, process.argv.slice(3));
+  } else if (command === "__claude-history") {
+    const { runClaudeHistoryWorker } = await import("./claudeHistoryWorker.ts");
+    const [method, sessionId, rawOptions] = process.argv.slice(3);
+    await runClaudeHistoryWorker(method, sessionId, rawOptions);
   } else if (command === "pair") {
     const { runPairCli } = await import("./binPair.ts");
     await runPairCli();

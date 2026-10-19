@@ -43,7 +43,7 @@ export default mergeConfig(
       },
     },
     pack: {
-      entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claudeHistoryWorker.ts"],
+      entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claude-history-worker.ts"],
       outDir: packExecutable ? "dist-exe" : "dist",
       sourcemap: !packExecutable,
       plugins: posthogSourcemapPlugins({
