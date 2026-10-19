@@ -489,7 +489,7 @@ export interface TimelineDurationMessage {
 
 export type TimelineLatestRun = Pick<
   ThreadRunSummary,
-  "runId" | "status" | "startedAt" | "completedAt"
+  "runId" | "status" | "startedAt" | "completedAt" | "turnEnded"
 >;
 
 export type TurnFoldActivityKind =
@@ -2124,6 +2124,7 @@ export function deriveMessagesTimelineRows(input: {
   }
   if (
     input.isWorking &&
+    input.latestRun?.turnEnded !== true &&
     !setupOwnsWorkingSlot &&
     !hasActiveCompaction &&
     (!hasActivityRow || latestToolFailed)
