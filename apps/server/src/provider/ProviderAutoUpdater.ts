@@ -14,6 +14,7 @@
  * with the developer's real install.
  */
 import type { ServerProvider } from "@t3tools/contracts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -79,6 +80,7 @@ export const make = Effect.gen(function* () {
   );
 
   const isHostBusy = projections.getShellSnapshot().pipe(
+    NodeSqliteClient.readOnly,
     Effect.map(({ threads }) => {
       const activity = summarizeHostSessions(threads);
       return activity.activeSessions + activity.waitingSessions > 0;
