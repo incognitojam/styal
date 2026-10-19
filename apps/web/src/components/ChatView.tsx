@@ -147,6 +147,7 @@ import {
 import {
   isSetupScriptOutsideWorktree,
   projectScriptCwd,
+  projectScriptTerminalInput,
   resolveProjectActions,
   resolveProjectScripts,
   type ResolvedProjectAction,
@@ -3587,6 +3588,7 @@ export default function ChatView(props: ChatViewProps) {
       preferNewTerminal?: boolean;
       rememberAsLastInvoked?: boolean;
       pasteScript?: boolean;
+      shellHistory?: "preserve" | "suppress";
     },
   ) => {
     if (
@@ -3675,7 +3677,10 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
 
-    let data = `${script.command}\r`;
+    let data =
+      options?.shellHistory === "preserve"
+        ? `${script.command}\r`
+        : projectScriptTerminalInput(script.command);
     if (options?.pasteScript) {
       try {
         data = await encodeTerminalScriptPaste(
@@ -3765,7 +3770,11 @@ export default function ChatView(props: ChatViewProps) {
         icon: "play",
         runOnWorktreeCreate: false,
       },
-      { rememberAsLastInvoked: false, pasteScript: command.includes("\n") },
+      {
+        rememberAsLastInvoked: false,
+        shellHistory: "preserve",
+        pasteScript: command.includes("\n"),
+      },
     );
   };
   const runShellCommandStable = useStableCallback(runShellCommand);

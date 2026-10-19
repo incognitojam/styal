@@ -32,6 +32,7 @@ import {
 import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
+  projectScriptTerminalInput,
   resolveProjectActions,
 } from "@t3tools/shared/projectScripts";
 import { threadUsageView, usageFigureText } from "@t3tools/shared/turnUsage";
@@ -740,7 +741,7 @@ function ThreadRouteContent(
         cwd,
         worktreePath: preferredWorktreePath,
         env,
-        initialInput: `${script.command}\r`,
+        initialInput: projectScriptTerminalInput(script.command),
       },
     });
     terminalDebugLog("project-script:staged", {
