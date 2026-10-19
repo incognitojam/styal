@@ -99,14 +99,19 @@ project by its physical name (the declared region, Postgres version, and `produc
 branch match it) and applies the Drizzle migrations from `migrations/postgres` into the
 `relay_migrations` table. Every other stage references that project and provisions an isolated
 copy-on-write Neon branch off its default branch for local development, so deploy `prod` before
-creating developer stages:
+creating developer stages. Run the Alchemy CLI from `infra/relay`, and review the plan before
+deploying:
 
 ```sh
-vp run --filter t3code-relay deploy -- --stage prod
-vp run --filter t3code-relay deploy -- --env-file .env.local
+cd infra/relay
+./node_modules/.bin/alchemy plan --stage prod
+./node_modules/.bin/alchemy deploy --stage prod
+./node_modules/.bin/alchemy plan --stage "dev_$USER" --env-file .env.local
+./node_modules/.bin/alchemy deploy --stage "dev_$USER" --env-file .env.local
 ```
 
-Alchemy defaults personal deployments to the `dev_$USER` stage. Relay custom domains apply the same
+Name personal stages `dev_$USER` and always pass `--stage`; without it, `alchemy deploy` targets
+`live_$USER`. Relay custom domains apply the same
 DNS-safe sanitization as Alchemy physical resource names, so `prod` uses
 `relay.<RELAY_API_ZONE_NAME>` and `dev_julius` uses
 `relay-dev-julius.<RELAY_API_ZONE_NAME>`. Managed environment endpoints are provisioned below
