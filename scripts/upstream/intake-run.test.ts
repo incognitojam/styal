@@ -3,6 +3,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   autoStopReasons,
   batchLength,
+  describeNativeFingerprint,
   namesUpstreamProduct,
   draftAdaptationNote,
   intakeCommitMessage,
@@ -13,6 +14,7 @@ import {
   overrideSelector,
   rewriteServiceKeyText,
   summarizeSurvey,
+  touchesNativeFingerprint,
   verificationEnvironment,
 } from "./intake-run.ts";
 
@@ -349,6 +351,47 @@ describe("summarizeSurvey", () => {
         "    fork features: first",
         "",
       ].join("\n"),
+    );
+  });
+});
+
+describe("touchesNativeFingerprint", () => {
+  it("counts the mobile fingerprint check's inputs, including the root lockfile", () => {
+    assert.isTrue(touchesNativeFingerprint(["apps/web/src/a.ts", "pnpm-lock.yaml"]));
+    assert.isTrue(touchesNativeFingerprint(["packages/shared/src/path.ts"]));
+    assert.isTrue(touchesNativeFingerprint(["apps/mobile/app.config.ts"]));
+    assert.isFalse(touchesNativeFingerprint(["apps/web/package.json", "apps/server/src/ws.ts"]));
+    assert.isFalse(touchesNativeFingerprint(["docs/user/mobile.md"]));
+  });
+});
+
+describe("describeNativeFingerprint", () => {
+  it("says when a batch keeps OTA updates reaching installed builds", () => {
+    assert.match(describeNativeFingerprint("inputs unchanged"), /reach the same builds/u);
+    assert.match(
+      describeNativeFingerprint([
+        { platform: "ios", base: "a".repeat(40), head: "a".repeat(40) },
+        { platform: "android", base: "b".repeat(40), head: "b".repeat(40) },
+      ]),
+      /unchanged on iOS and Android/u,
+    );
+  });
+
+  it("names the platforms whose fingerprint moved and the build they need", () => {
+    const description = describeNativeFingerprint([
+      { platform: "ios", base: "a".repeat(40), head: "c".repeat(40) },
+      { platform: "android", base: "b".repeat(40), head: "b".repeat(40) },
+    ]);
+    assert.match(description, /moved on iOS \(aaaaaaaaaa → cccccccccc\)/u);
+    assert.match(description, /installed iOS apps/u);
+    assert.match(description, /mode=build/u);
+    assert.notInclude(description, "Android");
+  });
+
+  it("asks for a manual comparison when the fingerprint could not be computed", () => {
+    assert.match(
+      describeNativeFingerprint({ error: "base install failed" }),
+      /not compared \(base install failed\)/u,
     );
   });
 });

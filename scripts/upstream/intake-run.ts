@@ -1220,7 +1220,8 @@ function autoBatch(
     return false;
   }
   process.stdout.write("\n");
-  if (!verify(cwd, "origin/main")) return false;
+  const verified = verify(cwd, "origin/main");
+  if (!verified.ok) return false;
   if (!options.push) {
     process.stdout.write(`\nVerified. Push ${options.branch} and wait for Fork CI.\n`);
     return true;
@@ -1234,7 +1235,7 @@ function autoBatch(
     return false;
   }
   process.stdout.write(
-    `Fork CI passed. Promote with:\n\n  GH_REPO=${forkRepository()} gh workflow run promote-upstream-intake.yml -f candidate_branch=${options.branch} -f candidate_sha=${sha}\n`,
+    `Fork CI passed. Promote with:\n\n  GH_REPO=${forkRepository()} gh workflow run promote-upstream-intake.yml -f candidate_branch=${options.branch} -f candidate_sha=${sha}\n\n${verified.nativeFingerprint}\n`,
   );
   return true;
 }
@@ -1635,12 +1636,14 @@ export function verificationEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessE
  * the test suite of every package the batch touches (only its changed tests with
  * `changedTestsOnly`), checks formatting, and checks the ledger. Prints one line per step and the
  * failures in full. Whole suites catch fork tests an upstream change breaks without touching them.
+ * Last, it compares the mobile native fingerprint at `base` and `HEAD`, which decides whether an
+ * OTA update from the promoted batch can reach installed apps.
  */
 function verify(
   cwd: string,
   base: string,
   options: { readonly changedTestsOnly?: boolean } = {},
-): boolean {
+): { readonly ok: boolean; readonly nativeFingerprint: string } {
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
     (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
   );
@@ -1684,7 +1687,138 @@ function verify(
       .join("\n");
     process.stdout.write(`\n--- ${failed.name}\n${relevant || failed.output.slice(-4000)}\n`);
   }
-  return steps.every((entry) => entry.ok);
+  const nativeFingerprint = nativeFingerprintReport(cwd, base, changed, env);
+  process.stdout.write(`\n${nativeFingerprint}\n`);
+  return { ok: steps.every((entry) => entry.ok), nativeFingerprint };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Native fingerprint
+
+/**
+ * What `.github/workflows/mobile-fingerprint-check.yml` treats as fingerprint inputs. Intake
+ * batches land without a pull request, so that check never runs on them.
+ */
+const NATIVE_FINGERPRINT_INPUTS = [
+  "apps/mobile/",
+  "packages/client-runtime/",
+  "packages/contracts/",
+  "packages/shared/",
+  "assets/",
+  "scripts/",
+  "patches/",
+  "package.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  ".easignore",
+];
+
+const NATIVE_PLATFORMS = ["ios", "android"] as const;
+
+export type NativeFingerprintComparison =
+  | "inputs unchanged"
+  | { readonly error: string }
+  | ReadonlyArray<{
+      readonly platform: (typeof NATIVE_PLATFORMS)[number];
+      readonly base: string;
+      readonly head: string;
+    }>;
+
+export function touchesNativeFingerprint(paths: ReadonlyArray<string>): boolean {
+  return paths.some((path) =>
+    NATIVE_FINGERPRINT_INPUTS.some((input) =>
+      input.endsWith("/") ? path.startsWith(input) : path === input,
+    ),
+  );
+}
+
+function nativeFingerprints(root: string, env: NodeJS.ProcessEnv) {
+  return NATIVE_PLATFORMS.map((platform) => {
+    const result = run(
+      NodePath.join(root, "apps/mobile"),
+      "npx",
+      ["expo-updates", "fingerprint:generate", "--platform", platform],
+      undefined,
+      { ...env, APP_VARIANT: "production", NODE_OPTIONS: "--max-old-space-size=8192" },
+    );
+    const hash =
+      result.status === 0 ? (JSON.parse(result.stdout) as { hash?: unknown }).hash : null;
+    if (typeof hash !== "string") {
+      throw new Error(`${platform} fingerprint failed: ${result.stderr.trim().slice(-2000)}`);
+    }
+    return { platform, hash };
+  });
+}
+
+/**
+ * Fingerprints `HEAD` in place and `base` in a scratch worktree installed from its own lockfile,
+ * as the pull request check does, so a dependency change is not measured against the batch's
+ * installed packages.
+ */
+function compareNativeFingerprints(
+  cwd: string,
+  base: string,
+  env: NodeJS.ProcessEnv,
+): NativeFingerprintComparison {
+  const directory = NodePath.join(
+    git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim(),
+    "intake-fingerprint",
+  );
+  try {
+    const head = nativeFingerprints(cwd, env);
+    run(cwd, "git", ["worktree", "remove", "--force", directory]);
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+    git(cwd, ["worktree", "add", "-q", "--detach", directory, base]);
+    const install = run(
+      directory,
+      "pnpm",
+      ["install", "--frozen-lockfile", "--filter=@t3tools/mobile..."],
+      undefined,
+      env,
+    );
+    if (install.status !== 0) throw new Error(`base install failed: ${install.stderr.trim()}`);
+    const baseHashes = nativeFingerprints(directory, env);
+    return head.map(({ platform, hash }) => ({
+      platform,
+      head: hash,
+      base: baseHashes.find((entry) => entry.platform === platform)!.hash,
+    }));
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    run(cwd, "git", ["worktree", "remove", "--force", directory]);
+  }
+}
+
+/** Whether OTA updates from `HEAD` reach the builds that `base`'s updates reached. */
+function nativeFingerprintReport(
+  cwd: string,
+  base: string,
+  changed: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv,
+): string {
+  return describeNativeFingerprint(
+    touchesNativeFingerprint(changed)
+      ? compareNativeFingerprints(cwd, base, env)
+      : "inputs unchanged",
+  );
+}
+
+const PLATFORM_NAMES = { ios: "iOS", android: "Android" } as const;
+
+export function describeNativeFingerprint(comparison: NativeFingerprintComparison): string {
+  if (comparison === "inputs unchanged") {
+    return "Native fingerprint: the batch changes none of its inputs, so OTA updates reach the same builds as before.";
+  }
+  if ("error" in comparison) {
+    return `Native fingerprint: not compared (${comparison.error}). Compare it by hand before relying on an OTA update.`;
+  }
+  const moved = comparison.filter((entry) => entry.base !== entry.head);
+  if (moved.length === 0) {
+    return "Native fingerprint: unchanged on iOS and Android, so OTA updates reach the same builds as before.";
+  }
+  const platforms = moved.map((entry) => PLATFORM_NAMES[entry.platform]).join(" and ");
+  return `Native fingerprint: moved on ${platforms} (${moved.map((entry) => `${entry.base.slice(0, 10)} → ${entry.head.slice(0, 10)}`).join(", ")}). After promotion, OTA updates no longer reach installed ${platforms} apps; they need a production build (Mobile EAS Production, mode=build).`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2079,9 +2213,17 @@ function main() {
     case "verify": {
       process.exitCode = verify(cwd, flag("--base") ?? "origin/main", {
         changedTestsOnly: process.argv.includes("--changed-tests"),
-      })
+      }).ok
         ? 0
         : 1;
+      return;
+    }
+    case "fingerprint": {
+      const base = flag("--base") ?? "origin/main";
+      const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`]));
+      process.stdout.write(
+        `${nativeFingerprintReport(cwd, base, changed, verificationEnvironment(process.env))}\n`,
+      );
       return;
     }
     case "fix-references": {
@@ -2107,7 +2249,7 @@ function main() {
     }
     default:
       process.stdout.write(
-        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--changed-tests] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
+        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--changed-tests] | fingerprint [--base <ref>] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
       );
       process.exitCode = command === undefined ? 0 : 1;
   }
