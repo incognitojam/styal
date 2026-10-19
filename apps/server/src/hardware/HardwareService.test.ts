@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- a real server proves fetch does not follow redirects.
 import * as NodeHttp from "node:http";
-import type { AddressInfo } from "node:net";
+import * as NodeNet from "node:net";
 import { describe, expect, it } from "@effect/vitest";
 import {
   type HardwareDefinition,
@@ -850,7 +850,7 @@ describe("HardwareService", () => {
           }),
           () => Effect.sync(() => server.close()),
         );
-        const address = server.address() as AddressInfo;
+        const address = server.address() as NodeNet.AddressInfo;
         const harness = yield* makeHarnessWith({
           baseUrl: `http://127.0.0.1:${address.port}`,
           http: FetchHttpClient.layer,
