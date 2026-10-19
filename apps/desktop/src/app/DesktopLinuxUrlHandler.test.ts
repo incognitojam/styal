@@ -180,6 +180,25 @@ describe("DesktopLinuxUrlHandler", () => {
     assert.include(entry, "Icon=/home/al ice/icons/T3\\\\x.png");
   });
 
+  it.each([
+    {
+      execTarget: "/opt/T3(beta)/t3code.AppImage",
+      execLine: 'Exec="/opt/T3(beta)/t3code.AppImage" %U',
+    },
+    {
+      execTarget: "/opt/t3%20code/t3code.AppImage",
+      execLine: "Exec=/opt/t3%%20code/t3code.AppImage %U",
+    },
+  ])("renders the handler Exec line for $execTarget", ({ execTarget, execLine }) => {
+    const entry = DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
+      displayName: "styal",
+      execTarget,
+      scheme: "styal",
+    });
+
+    assert.include(entry.split("\n"), execLine);
+  });
+
   it("carries structured context on registration errors", () => {
     const writeError = new DesktopLinuxUrlHandler.DesktopLinuxUrlHandlerRegistrationError({
       step: "write-desktop-entry",
@@ -223,7 +242,7 @@ describe("DesktopLinuxUrlHandler", () => {
         );
         assert.include(
           recorded.files[0]?.content,
-          'Exec="/home/alice/Applications/T3-Code.AppImage" %U',
+          "Exec=/home/alice/Applications/T3-Code.AppImage %U",
         );
         assert.include(recorded.files[0]?.content, "MimeType=x-scheme-handler/styal;");
         assert.deepEqual(recorded.commands, [
@@ -248,7 +267,12 @@ describe("DesktopLinuxUrlHandler", () => {
 
       assert.include(
         recorded.files[0]?.content,
-        `Exec=${DesktopLinuxUrlHandler.escapeDesktopEntryExecArgument(process.execPath)} %U`,
+        DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
+          displayName: "styal",
+          execTarget: process.execPath,
+          scheme: "styal",
+          iconPath: "/home/alice/.local/share/icons/build.styal.Styal.desktop.png",
+        }),
       );
     });
   });

@@ -174,7 +174,7 @@ describe("DesktopPreReadyPlatform", () => {
         );
         const identity = yield* Effect.promise(() => portalIdentity);
         assert.equal(identity.desktopName, "build.styal.Styal.desktop");
-        assert.include(identity.desktopEntry ?? "", 'Exec="/Applications/current.AppImage" %U');
+        assert.include(identity.desktopEntry ?? "", "Exec=/Applications/current.AppImage %U");
         assert.include(identity.desktopEntry ?? "", "Name=styal\n");
         assert.include(identity.desktopEntry ?? "", "MimeType=x-scheme-handler/styal;");
         assert.include(
