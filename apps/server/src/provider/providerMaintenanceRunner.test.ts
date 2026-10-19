@@ -1218,6 +1218,59 @@ it.effect("background updates run only a pinned install that shouldStart allows"
 });
 
 it.effect(
+  "native installs pin the tested version in the background and update to latest manually",
+  () => {
+    const calls: string[] = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({ ...baseProvider, version: "2.0.0" });
+      const executable = "/home/developer/.local/bin/native-cli";
+      const native = makeProviderMaintenanceCapabilities({
+        provider: CODEX_DRIVER,
+        packageName: "@openai/codex",
+        updateExecutable: executable,
+        updateArgs: ["update"],
+        updateLockKey: "codex-native",
+      });
+      const runner = yield* makeTestRunner({
+        ...registry,
+        getProviderMaintenanceCapabilitiesForInstance: () =>
+          Effect.succeed({
+            ...native,
+            pinnedUpdate: (version) => ({
+              command: `${executable} install ${version}`,
+              executable,
+              args: ["install", version],
+              lockKey: "codex-native",
+            }),
+          }),
+      });
+
+      const background = yield* runner.updateProvider({
+        provider: CODEX_DRIVER,
+        targetVersion: "2.0.0",
+        autoUpdate: { shouldStart: Effect.succeed(true) },
+      });
+      assert.strictEqual(background.providers[0]?.updateState?.status, "succeeded");
+
+      const manual = yield* runner.updateProvider(CODEX_DRIVER);
+      assert.strictEqual(manual.providers[0]?.updateState?.status, "succeeded");
+      assert.deepStrictEqual(calls, [`${executable} install 2.0.0`, `${executable} update`]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner((command, args) => {
+            calls.push([command, ...args].join(" "));
+            return { stdout: "installed" };
+          }),
+        ),
+      ),
+    );
+  },
+);
+
+it.effect(
   "checks a background update under the install lock and skips it while another server holds it",
   () => {
     const calls: string[] = [];

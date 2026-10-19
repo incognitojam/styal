@@ -124,7 +124,7 @@ export function getProviderVersionLabel(version: string | null | undefined) {
 
 /**
  * Says so when the latest release is newer than the version the provider
- * canary verified with this styal release. Automatic updates stop at the
+ * canary verified with this styal release. Managed updates stop at the
  * verified version.
  */
 function getUntestedLatestVersionNote(

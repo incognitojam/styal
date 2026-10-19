@@ -508,9 +508,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "provider-auto-updates",
-    title: "Automatic provider updates",
+    title: "styal managed updates",
     to: "/settings/general",
-    searchTerms: ["install cli updates background tested version codex claude opencode"],
+    searchTerms: [
+      "automatic auto provider install cli updates background tested version idle native self updater codex claude opencode",
+    ],
     scope: "environment-defaults",
   },
   {

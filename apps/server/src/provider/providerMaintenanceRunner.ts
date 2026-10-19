@@ -258,6 +258,8 @@ export function toProgressLine(line: string): string | null {
 /** `claude update` reads better in a status line than the full executable path. */
 function describeCommand(command: ProviderMaintenanceCommandAction): string {
   const executable = command.executable.split(/[\\/]/).pop() || command.executable;
+  // An installer run through a shell script reads as the command it stands for.
+  if (executable === "sh" && command.args[0] === "-c") return command.command;
   return [executable, ...command.args].join(" ");
 }
 

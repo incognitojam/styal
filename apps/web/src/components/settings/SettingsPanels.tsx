@@ -658,7 +658,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Provider update checks"]
         : []),
       ...(settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders
-        ? ["Automatic provider updates"]
+        ? ["styal managed updates"]
         : []),
       ...(settings.continueThreadsAfterServerUpdate !==
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
@@ -3137,18 +3137,18 @@ export function GeneralSettingsPanel() {
           settingKeys={["autoUpdateProviders"]}
           {...searchableSetting("provider-auto-updates")}
           forkFeature="provider-auto-updates"
-          description="Install provider CLI updates while no threads are running, once styal has tested the new version."
+          description="styal manages provider CLI updates for you, installing only versions it has tested."
           status={
             !supportsProviderAutoUpdates
-              ? "All selected connected environments must support automatic provider updates."
+              ? "All selected connected environments must support styal managed updates."
               : settings.enableProviderUpdateChecks
                 ? undefined
-                : "Turn on provider update checks to install updates automatically."
+                : "Turn on provider update checks to use managed updates."
           }
           resetAction={
             settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders ? (
               <SettingResetButton
-                label="automatic provider updates"
+                label="styal managed updates"
                 onClick={() =>
                   updateSettings({
                     autoUpdateProviders: DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders,
@@ -3165,7 +3165,7 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ autoUpdateProviders: Boolean(checked) })
               }
-              aria-label="Update providers automatically"
+              aria-label="styal managed updates"
             />
           }
         />

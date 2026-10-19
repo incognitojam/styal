@@ -73,6 +73,7 @@ import {
   materializeCodexShadowHome,
   resolveCodexHomeLayout,
 } from "./CodexHomeLayout.ts";
+import { makeCodexPinnedInstall } from "./codexPinnedInstall.ts";
 import { makeManagedCodexProvider } from "./CodexManagedProvider.ts";
 import * as CodexInstallation from "../CodexInstallation.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
@@ -100,6 +101,7 @@ function makeCodexMaintenanceResolver(sharedHomePath: string) {
       args: ["update"],
       isCommandPath: isCodexStandaloneCommandPath,
       env: { CODEX_HOME: sharedHomePath },
+      pinned: makeCodexPinnedInstall(sharedHomePath),
     },
   });
 }

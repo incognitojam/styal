@@ -1,6 +1,6 @@
 # Provider canary
 
-Automatic provider updates install only a version listed in `autoUpdates` in
+styal managed updates install only a version listed in `autoUpdates` in
 the matching compatibility policy of
 [`model-manifest.json`](../../apps/server/src/provider/model-manifest.json).
 Each entry names the provider version, the npm package that was installed, and

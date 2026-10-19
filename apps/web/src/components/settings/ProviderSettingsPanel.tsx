@@ -1220,7 +1220,7 @@ export function EnvironmentProviderSettings({
           </div>
         </SettingsGroup>
         <p className="mt-3 px-3 text-xs text-muted-foreground sm:px-4">
-          Provider update checks and automatic updates are in{" "}
+          Provider update checks and styal managed updates are in{" "}
           <Link
             to="/settings/general"
             hash={searchableSetting("provider-update-checks").id}

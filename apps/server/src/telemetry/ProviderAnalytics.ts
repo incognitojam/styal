@@ -82,6 +82,9 @@ function providerInventoryProperties(input: {
     // Background updates install an exact verified version, so only installers that can pin one take part.
     canAutoUpdate: makeTargetedProviderUpdateAction(input.capabilities, "0.0.0") !== null,
     autoUpdatesEnabled: input.autoUpdatesEnabled,
+    // The newest version tested for this install whenever one is known, so a
+    // provider its own updater moved ahead of it is visible too.
+    testedVersion: verifiedVersion,
     autoUpdateTargetVersion:
       verifiedVersion !== null &&
       version !== null &&
