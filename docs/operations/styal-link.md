@@ -101,8 +101,9 @@ that stage after production, reusing the production environment's
 deployment and push credentials with the development instance's `CLERK_DEV_SECRET_KEY`. One APNs
 key and one Firebase service account serve both relays, because each device registers its own
 bundle ID and APNs environment. To try relay changes
-before they merge, deploy a personal stage (`vp run --filter t3code-relay deploy` with any stage
-name other than `prod` or `dev`). Personal stages, including `dev`, cap their Neon compute at 1 CU.
+before they merge, deploy a personal stage with any stage name other than `prod` or `dev`, as
+described in [infra/relay/README.md](../../infra/relay/README.md). Personal stages, including
+`dev`, cap their Neon compute at 1 CU.
 
 Relay deployment (`deploy-relay.yml`) has its own set of variables and secrets — Cloudflare, Neon,
 Axiom, optional APNs, `CLERK_SECRET_KEY`, `CLERK_JWT_AUDIENCE=t3-code-relay` — listed in
@@ -119,7 +120,7 @@ secrets hold only Apple-signing and release plumbing. Three of them have non-obv
 requirements:
 
 - `CLOUDFLARE_API_TOKEN` must be the superuser token minted by
-  `./infra/relay/node_modules/.bin/alchemy cloudflare create-token --all-permissions`. The relay
+  `./infra/relay/node_modules/.bin/alchemy provider cloudflare token --all-permissions`. The relay
   deploy mints scoped account API tokens for the Worker's tunnel and DNS bindings, and any
   credential allowed to mint account tokens is root-equivalent on the account regardless of its
   other permissions — hence environment-only storage rather than a narrower token.

@@ -144,7 +144,9 @@ one changed. Check **force** only to redeploy resources with no detected change.
 Developers deploy personal stages locally rather than through pull-request automation:
 
 ```sh
-vp run --filter t3code-relay deploy -- --stage "$USER" --env-file .env.local
+cd infra/relay
+./node_modules/.bin/alchemy plan --stage "dev_$USER" --env-file .env.local
+./node_modules/.bin/alchemy deploy --stage "dev_$USER" --env-file .env.local
 ```
 
 ### Managed tunnel cleanup rollout
