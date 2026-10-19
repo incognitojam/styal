@@ -49,7 +49,6 @@ import type { Thread, TurnDiffSummary } from "../types";
 import { makeThreadFixture, makeThreadProjectionFixture } from "../test-fixtures";
 import {
   composerAttachmentTypeForMime,
-  resolveProjectScriptBaseTerminalId,
   resolveReconciledTerminalIds,
   hasInteractiveTerminal,
   agentControlledBrowserCloseConfirmation,
@@ -1343,38 +1342,6 @@ describe("composer attachment classification", () => {
     expect(composerAttachmentTypeForMime("image/svg+xml")).toBe("file");
     expect(composerAttachmentTypeForMime("image/bmp")).toBe("file");
     expect(composerAttachmentTypeForMime("image/tiff")).toBe("file");
-  });
-});
-
-describe("project script terminal selection", () => {
-  it("does not reuse the finite setup-script terminal", () => {
-    expect(
-      resolveProjectScriptBaseTerminalId({
-        activeTerminalId: "setup-setup-worktree",
-        knownTerminalIds: ["setup-setup-worktree"],
-        defaultTerminalId: "term-1",
-      }),
-    ).toBe("term-1");
-  });
-
-  it("does not reuse the finite settle-script terminal", () => {
-    expect(
-      resolveProjectScriptBaseTerminalId({
-        activeTerminalId: "settle-clean",
-        knownTerminalIds: ["setup-setup-worktree", "settle-clean"],
-        defaultTerminalId: "term-1",
-      }),
-    ).toBe("term-1");
-  });
-
-  it("continues to reuse an active interactive terminal", () => {
-    expect(
-      resolveProjectScriptBaseTerminalId({
-        activeTerminalId: "term-2",
-        knownTerminalIds: ["setup-setup-worktree", "term-2"],
-        defaultTerminalId: "term-1",
-      }),
-    ).toBe("term-2");
   });
 });
 
