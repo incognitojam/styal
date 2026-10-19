@@ -10,6 +10,7 @@
  *     --styal <build> [...] [--pending <manifest> --pending-base <manifest>]
  *   node scripts/provider-canary.ts report --run-url <url> [--plan <json>] [--outcomes <dir>]
  *     [--plan-result <result>] [--record-result <result>] [--dry-run]
+ *   node scripts/provider-canary.ts merge-guard --base <manifest> --head <manifest>
  *
  * It verifies published styal builds, not main: each verification checks out
  * a release tag, so a recorded entry names the exact build it passed on.
@@ -199,15 +200,40 @@ export interface VerifyEntry {
   readonly styal: string;
 }
 
+/**
+ * A verification that failed twice, kept in the status issue so the next runs
+ * do not spend model usage on the same release and build again right away.
+ */
+export interface CanaryFailure {
+  readonly provider: string;
+  readonly packageName: string;
+  readonly version: string;
+  readonly styal: string;
+  readonly detail: string;
+  /** When it failed, as an ISO timestamp. */
+  readonly at: string;
+}
+
+/** How long a failed release and build is held back before it is verified again. */
+export const FAILURE_RETRY_HOURS = 6;
+
 export type ProviderPlan =
   | { readonly kind: "verify"; readonly provider: string; readonly entry: VerifyEntry }
+  | {
+      readonly kind: "held";
+      readonly provider: string;
+      readonly entry: VerifyEntry;
+      readonly failure: CanaryFailure;
+    }
   | { readonly kind: "current"; readonly provider: string; readonly reason: string }
   | { readonly kind: "blocked"; readonly provider: string; readonly reason: string };
 
 /**
  * Plans one provider on one styal build from the npm `latest` version of each
  * of its packages. The newest version in a supported range is verified when
- * the build may not install it yet, or always with `force`.
+ * the build may not install it yet, or always with `force`. A release that
+ * failed on this build within `FAILURE_RETRY_HOURS` is held instead, unless
+ * forced.
  */
 export function planProvider(
   canary: CanaryProvider,
@@ -215,6 +241,8 @@ export function planProvider(
   build: string,
   latest: Readonly<Record<string, string>>,
   force = false,
+  failures: ReadonlyArray<CanaryFailure> = [],
+  now = new Date(),
 ): ProviderPlan {
   const index = findPolicyIndex(manifest, canary.provider, build);
   const policy = manifest.compatibility?.[index];
@@ -255,19 +283,27 @@ export function planProvider(
       reason: `${supported.packageName}@${supported.version} is already verified for styal ${build} (${recorded}).`,
     };
   }
-  return {
-    kind: "verify",
+  const entry: VerifyEntry = {
     provider: canary.provider,
-    entry: {
-      provider: canary.provider,
-      packageName: supported.packageName,
-      binary: canary.binary,
-      version: supported.version,
-      model: canary.model,
-      secret: canary.secret,
-      styal: build,
-    },
+    packageName: supported.packageName,
+    binary: canary.binary,
+    version: supported.version,
+    model: canary.model,
+    secret: canary.secret,
+    styal: build,
   };
+  const failure = force
+    ? undefined
+    : failures.find(
+        (candidate) =>
+          candidate.provider === entry.provider &&
+          candidate.packageName === entry.packageName &&
+          candidate.version === entry.version &&
+          candidate.styal === build &&
+          now.getTime() - Date.parse(candidate.at) < FAILURE_RETRY_HOURS * 3_600_000,
+      );
+  if (failure) return { kind: "held", provider: canary.provider, entry, failure };
+  return { kind: "verify", provider: canary.provider, entry };
 }
 
 /** Byte spans of the top-level objects in the manifest's `compatibility` array. */
@@ -394,6 +430,75 @@ function withAutoUpdates(policy: Policy, autoUpdates: ReadonlyArray<AutoUpdateEn
   return result as unknown as Policy;
 }
 
+const withoutAutoUpdates = (manifest: Manifest) => ({
+  ...manifest,
+  updatedAt: undefined,
+  compatibility: (manifest.compatibility ?? []).map((policy) => ({
+    ...policy,
+    autoUpdates: undefined,
+  })),
+});
+
+/**
+ * Why a canary pull request turning `base` into `head` must not merge on its
+ * own, or undefined when it may. It may only when the two differ in nothing
+ * but `updatedAt`, which moves forward, and `autoUpdates` arrays that adding
+ * the new entries to the base with `addAutoUpdate` reproduces exactly, for
+ * packages the canary verifies.
+ */
+export function autoMergeBlocker(baseText: string, headText: string): string | undefined {
+  const base: Manifest = JSON.parse(baseText);
+  const head: Manifest = JSON.parse(headText);
+  if (!NodeUtil.isDeepStrictEqual(withoutAutoUpdates(base), withoutAutoUpdates(head))) {
+    return "it changes the model manifest outside `autoUpdates` and `updatedAt`";
+  }
+  if (head.updatedAt === undefined || (base.updatedAt ?? "") >= head.updatedAt) {
+    return "`updatedAt` does not move forward";
+  }
+  for (const [index, policy] of (base.compatibility ?? []).entries()) {
+    const target = head.compatibility![index]!;
+    const before = policy.autoUpdates ?? [];
+    const after = target.autoUpdates ?? [];
+    const added = after.filter(
+      (entry) => !before.some((other) => NodeUtil.isDeepStrictEqual(other, entry)),
+    );
+    const packages =
+      CANARY_PROVIDERS.find((canary) => canary.provider === policy.driver)?.packageNames ?? [];
+    let replayed = before;
+    for (const entry of added) {
+      if (
+        !packages.includes(entry.package) ||
+        !/^\d+\.\d+\.\d+$/.test(entry.version) ||
+        !/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(entry.styal)
+      ) {
+        return `${policy.driver} entry ${JSON.stringify(entry)} is not one the canary records`;
+      }
+      try {
+        replayed = addAutoUpdate({ ...policy, autoUpdates: replayed }, entry);
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (!NodeUtil.isDeepStrictEqual(replayed, after)) {
+      return `${policy.driver} \`autoUpdates\` for styal ${policy.t3CodeRange} changes more than recording its new entries would`;
+    }
+  }
+  return undefined;
+}
+
+function mergeGuard(args: ReadonlyArray<string>) {
+  const { values } = NodeUtil.parseArgs({
+    args: [...args],
+    options: { base: { type: "string" }, head: { type: "string" } },
+  });
+  if (!values.base || !values.head) throw new Error("merge-guard needs --base and --head.");
+  const blocker = autoMergeBlocker(
+    NodeFS.readFileSync(values.base, "utf8"),
+    NodeFS.readFileSync(values.head, "utf8"),
+  );
+  if (blocker) console.log(blocker);
+}
+
 const STATUS_ISSUE_TITLE = "Provider canary status";
 
 /** One verify job's result, written by the workflow. */
@@ -432,8 +537,10 @@ export function collectRun(input: {
   readonly outcomes: ReadonlyArray<CanaryOutcome>;
   readonly planResult: JobResult;
   readonly recordResult: JobResult;
-}): { problems: Array<CanaryProblem>; evaluated: Set<string> } {
+  readonly now?: Date;
+}): { problems: Array<CanaryProblem>; evaluated: Set<string>; failures: Array<CanaryFailure> } {
   const evaluated = new Set<string>();
+  const failures: Array<CanaryFailure> = [];
   const found = new Map<string, CanaryProblem>();
   const add = (key: string, scope: string, summary: string) => {
     const existing = found.get(key);
@@ -461,6 +568,16 @@ export function collectRun(input: {
       );
       continue;
     }
+    if (plan.kind === "held") {
+      const { entry, failure } = plan;
+      failures.push(failure);
+      add(
+        `failed:${entry.provider}`,
+        entry.provider,
+        `**${entry.packageName}@${entry.version}** on styal ${entry.styal} failed verification twice: ${failure.detail} It is verified again ${FAILURE_RETRY_HOURS} hours after it failed, or sooner on a new styal build or release.`,
+      );
+      continue;
+    }
     if (plan.kind !== "verify") continue;
     const { entry } = plan;
     const outcome = input.outcomes.find(
@@ -473,20 +590,28 @@ export function collectRun(input: {
         entry.provider,
         `${release}: no verification result was saved.`,
       );
-    else if (outcome.outcome === "failed")
+    else if (outcome.outcome === "failed") {
+      failures.push({
+        provider: entry.provider,
+        packageName: entry.packageName,
+        version: entry.version,
+        styal: entry.styal,
+        detail: outcome.detail,
+        at: (input.now ?? new Date()).toISOString(),
+      });
       add(
         `failed:${entry.provider}`,
         entry.provider,
         `${release} failed verification twice: ${outcome.detail}`,
       );
-    else if (outcome.outcome === "skipped")
+    } else if (outcome.outcome === "skipped")
       add(
         `skipped:${entry.provider}`,
         entry.provider,
         `${release} was not verified: ${outcome.detail}`,
       );
   }
-  return { problems: [...found.values()], evaluated };
+  return { problems: [...found.values()], evaluated, failures };
 }
 
 export interface StatusIssue {
@@ -504,6 +629,18 @@ export interface StatusIssueUpdate {
 
 const STATE_MARKER = /<!-- provider-canary-state (.*) -->/;
 
+interface StatusState {
+  readonly problems?: ReadonlyArray<CanaryProblem>;
+  readonly failures?: ReadonlyArray<CanaryFailure>;
+}
+
+const readStatusState = (issue: StatusIssue | null): StatusState =>
+  issue?.open ? JSON.parse(STATE_MARKER.exec(issue.body)?.[1] ?? "{}") : {};
+
+/** Failed verifications the open status issue still holds back. */
+export const statusFailures = (issue: StatusIssue | null): ReadonlyArray<CanaryFailure> =>
+  readStatusState(issue).failures ?? [];
+
 /**
  * How the status issue changes after a run. Problems this run did not
  * evaluate carry over from the open issue. A comment is posted only when a
@@ -512,16 +649,23 @@ const STATE_MARKER = /<!-- provider-canary-state (.*) -->/;
  */
 export function reconcileStatusIssue(
   issue: StatusIssue | null,
-  run: { readonly problems: ReadonlyArray<CanaryProblem>; readonly evaluated: ReadonlySet<string> },
+  run: {
+    readonly problems: ReadonlyArray<CanaryProblem>;
+    readonly evaluated: ReadonlySet<string>;
+    readonly failures?: ReadonlyArray<CanaryFailure>;
+  },
   notes: ReadonlyArray<string>,
   runUrl: string,
 ): StatusIssueUpdate | null {
-  const previous: ReadonlyArray<CanaryProblem> = issue?.open
-    ? (JSON.parse(STATE_MARKER.exec(issue.body)?.[1] ?? "{}").problems ?? [])
-    : [];
+  const state = readStatusState(issue);
+  const previous = state.problems ?? [];
   const problems = [
     ...previous.filter((problem) => !run.evaluated.has(problem.scope)),
     ...run.problems,
+  ];
+  const failures = [
+    ...(state.failures ?? []).filter((failure) => !run.evaluated.has(failure.provider)),
+    ...(run.failures ?? []),
   ];
   const body = [
     problems.length > 0
@@ -530,7 +674,7 @@ export function reconcileStatusIssue(
     problems.map((problem) => `- ${problem.summary}`).join("\n"),
     notes.length > 0 ? `Passed on retry:\n\n${notes.map((note) => `- ${note}`).join("\n")}` : "",
     `Last run: ${runUrl}`,
-    `<!-- provider-canary-state ${JSON.stringify({ problems })} -->`,
+    `<!-- provider-canary-state ${JSON.stringify(failures.length > 0 ? { problems, failures } : { problems })} -->`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -646,6 +790,11 @@ async function plan(args: ReadonlyArray<string>) {
   const manifest: Manifest = JSON.parse(
     pending ? recordVersions(text, [], new Date(), pending) : text,
   );
+  // Without GitHub access, as when run locally, no failure is held back.
+  const repo = process.env.GITHUB_REPOSITORY;
+  const failures =
+    repo && process.env.GITHUB_TOKEN ? statusFailures(await findStatusIssue(repo)) : [];
+  const now = new Date();
   const plans: Array<ProviderPlan & { styal: string }> = [];
   const include: Array<VerifyEntry & { ref: string }> = [];
   for (const canary of selected) {
@@ -655,12 +804,16 @@ async function plan(args: ReadonlyArray<string>) {
       if (found) latest[packageName] = found;
     }
     for (const { styal, ref } of builds) {
-      const planned = planProvider(canary, manifest, styal, latest, values.force);
+      const planned = planProvider(canary, manifest, styal, latest, values.force, failures, now);
       plans.push({ ...planned, styal });
       if (planned.kind === "verify") include.push({ ...planned.entry, ref });
       if (planned.kind === "blocked")
         console.log(`::warning title=${canary.provider} canary blocked::${planned.reason}`);
       else if (planned.kind === "current") console.log(`${canary.provider}: ${planned.reason}`);
+      else if (planned.kind === "held")
+        console.log(
+          `${canary.provider}: ${planned.entry.packageName}@${planned.entry.version} failed on styal ${styal} at ${planned.failure.at}; not verifying it again yet.`,
+        );
       else
         console.log(
           `${canary.provider}: verify ${planned.entry.packageName}@${planned.entry.version} on styal ${styal}`,
@@ -733,6 +886,22 @@ async function github(path: string, init?: { method: string; body: unknown }) {
   return response.json() as Promise<unknown>;
 }
 
+async function findStatusIssue(repo: string): Promise<StatusIssue | null> {
+  const issues = (await github(
+    `/repos/${repo}/issues?state=all&creator=${encodeURIComponent("github-actions[bot]")}&per_page=100`,
+  )) as Array<{
+    number: number;
+    state: string;
+    title: string;
+    body: string | null;
+    pull_request?: unknown;
+  }>;
+  const found = issues.find((issue) => issue.title === STATUS_ISSUE_TITLE && !issue.pull_request);
+  return found
+    ? { number: found.number, open: found.state === "open", body: found.body ?? "" }
+    : null;
+}
+
 async function report(args: ReadonlyArray<string>) {
   const { values } = NodeUtil.parseArgs({
     args: [...args],
@@ -767,19 +936,7 @@ async function report(args: ReadonlyArray<string>) {
         `${outcome.packageName}@${outcome.version} on styal ${outcome.styal}: ${outcome.detail}`,
     );
 
-  const issues = (await github(
-    `/repos/${repo}/issues?state=all&creator=${encodeURIComponent("github-actions[bot]")}&per_page=100`,
-  )) as Array<{
-    number: number;
-    state: string;
-    title: string;
-    body: string | null;
-    pull_request?: unknown;
-  }>;
-  const found = issues.find((issue) => issue.title === STATUS_ISSUE_TITLE && !issue.pull_request);
-  const issue = found
-    ? { number: found.number, open: found.state === "open", body: found.body ?? "" }
-    : null;
+  const issue = await findStatusIssue(repo);
   const update = reconcileStatusIssue(issue, run, notes, values["run-url"]);
   if (update === null) {
     console.log("No canary problems and no open status issue.");
@@ -828,6 +985,7 @@ if (import.meta.main) {
   if (command === "plan") await plan(rest);
   else if (command === "record") record(rest);
   else if (command === "report") await report(rest);
+  else if (command === "merge-guard") mergeGuard(rest);
   else {
     console.error("Usage: see the comment at the top of scripts/provider-canary.ts.");
     process.exit(2);
