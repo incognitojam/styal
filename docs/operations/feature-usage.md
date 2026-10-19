@@ -6,6 +6,8 @@ The dashboard reports adoption as unavailable until it sees an instrumented acti
 
 `feature.used` events use the existing PostHog identity, delivery queue, and telemetry opt-out. The existing browser dashboard filters `feature = browser-tools` and `source = agent`, so adding other feature events does not change its meaning.
 
+Upstream's request counts share the `feature.used` name. They have a dotted `feature` such as `thread.fork`, `editor.open` or `pull_request.action`, an optional `variant` from a contract enum, `surface` when the client reports one, and no `source`, `outcome` or `durationMs`. Filter on `feature` or `source` so the two vocabularies do not mix. Requests the fork already reports are left out of upstream's counts: Device panel opens (`devices`), workflow approvals (`workflow-approvals`), and thread settles and archives (`client.thread.settled`, `client.thread.archived`).
+
 Additional measured operations are:
 
 - `pull-request-deployments`, `source = user`: `open_environment`, `open_logs`, and `show_all` record explicit deployment panel actions with `outcome = success | failure`. Link success means the browser accepted the handoff, not that the destination loaded. Display, polling, rerenders and Show less do not emit events. Reports require client vocabulary version 2 and go to the PR's environment without names, URLs, repositories, PR numbers or commit hashes.
