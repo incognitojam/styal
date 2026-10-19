@@ -52,7 +52,10 @@ function showPermissionNotice(input: {
     description:
       "This connection still uses the old permissions, so some actions may no longer be available. Pair again using a new link with the permissions you need.",
     timeout: 0,
-    onClose: persistDismissal,
+    // Closing it after the pairing was dropped is not the user's dismissal.
+    onClose: () => {
+      if (openNotices.has(environmentId)) persistDismissal();
+    },
     actionProps: {
       children: "Open Connections",
       onClick: () => {
@@ -98,6 +101,7 @@ function EnvironmentPermissionNotice({
     void retireLegacyPairing({ environmentId, checked: current }).then((result) => {
       if (result._tag === "Success" && result.value) {
         const notice = openNotices.get(environmentId);
+        openNotices.delete(environmentId);
         if (notice !== undefined) toastManager.close(notice);
         return;
       }

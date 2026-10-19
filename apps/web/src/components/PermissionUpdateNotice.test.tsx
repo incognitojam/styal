@@ -156,6 +156,8 @@ it("closes the notice when a later connection drops the pairing", async () => {
   state.prepared = { target: {} };
   await act(async () => renderer.update(<PermissionUpdateNotice />));
   expect(state.close).toHaveBeenCalledWith("notice");
+  (state.add.mock.calls[0]![0] as { onClose: () => void }).onClose();
+  expect(state.save).not.toHaveBeenCalled();
 });
 
 it("ignores a result for a connection that is no longer in use", async () => {
