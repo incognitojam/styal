@@ -72,7 +72,7 @@ import {
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
   rememberUnconfirmedDraftSend,
-  restoreFailedBackgroundDraftThread,
+  restoreFailedDraftThread,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   composerFileNeedsReattach,
@@ -1243,6 +1243,15 @@ describe("composerDraftStore issue contexts", () => {
     );
   });
 
+  it("treats issue records as draft content while prompt text is empty", () => {
+    const store = useComposerDraftStore.getState();
+    store.addIssueContexts(threadRef, [record]);
+    store.setPrompt(threadRef, "");
+    expect(composerDraftHasUserContent(store.getComposerDraft(threadRef))).toBe(true);
+    store.setIssueContexts(threadRef, []);
+    expect(composerDraftHasUserContent(store.getComposerDraft(threadRef))).toBe(false);
+  });
+
   it("removes the inline reference of an issue that is no longer attached", () => {
     const store = useComposerDraftStore.getState();
     store.addIssueContexts(threadRef, [record, otherRecord]);
@@ -1881,7 +1890,7 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(useComposerDraftStore.getState().getDraftSession(draftId)).toBeNull();
   });
 
-  it("restores a failed background draft without changing the fresh draft", () => {
+  it("restores a failed draft without changing the fresh draft", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
     const sentDraft = useComposerDraftStore.getState().getDraftSession(draftId)!;
@@ -1889,12 +1898,14 @@ describe("composerDraftStore project draft thread mapping", () => {
     const freshId = DraftId.make("fresh-background-draft");
     store.setProjectDraftThreadId(projectRef, freshId, { threadId: ThreadId.make("fresh-thread") });
     store.setPrompt(freshId, "new work");
-    restoreFailedBackgroundDraftThread(draftId, sentDraft, ThreadId.make("retry-thread"));
+    store.setDraftThreadContext(draftId, { branch: "retry-base" });
+    restoreFailedDraftThread(draftId, sentDraft, ThreadId.make("retry-thread"));
     store.setPrompt(draftId, "retry work");
     expect(useComposerDraftStore.getState().getDraftSession(draftId)?.promotedTo).toBeNull();
     expect(useComposerDraftStore.getState().getDraftSession(draftId)?.threadId).toBe(
       "retry-thread",
     );
+    expect(useComposerDraftStore.getState().getDraftSession(draftId)?.branch).toBe("retry-base");
     expect(draftByKey(freshId)?.prompt).toBe("new work");
     expect(draftByKey(draftId)?.prompt).toBe("retry work");
   });
