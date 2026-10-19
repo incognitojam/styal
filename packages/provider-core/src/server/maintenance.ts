@@ -11,6 +11,10 @@ export interface ProviderMaintenanceCapabilities {
    * installer was asked and did not know.
    */
   readonly latestVersion?: string | null;
+  /**
+   * Deferred until update checks are enabled; `null` falls back to npm.
+   */
+  readonly lookupLatestVersion?: Effect.Effect<string | null>;
   readonly compareVersions?: (current: string, latest: string) => number;
   /**
    * The provider's own installer set to install exactly `version`, for a
