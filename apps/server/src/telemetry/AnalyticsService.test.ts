@@ -37,6 +37,7 @@ interface RecordedBatchRequest {
         readonly featureUsageVersion?: number;
         readonly deviceUsageVersion?: number;
         readonly workflowRunWatchUsageVersion?: number;
+        readonly providerAnalyticsUsageVersion?: number;
         readonly buildKind?: string;
         readonly releaseChannel?: string;
       };
@@ -60,6 +61,7 @@ interface RecordedBatchBody {
       readonly featureUsageVersion?: number;
       readonly deviceUsageVersion?: number;
       readonly workflowRunWatchUsageVersion?: number;
+      readonly providerAnalyticsUsageVersion?: number;
       readonly buildKind?: string;
       readonly releaseChannel?: string;
     };
@@ -249,6 +251,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
               event.properties.featureUsageVersion === 1 &&
               event.properties.deviceUsageVersion === 1 &&
               event.properties.workflowRunWatchUsageVersion === 1 &&
+              event.properties.providerAnalyticsUsageVersion === 1 &&
               event.properties.buildKind === "test" &&
               event.properties.releaseChannel === "unknown",
           ),

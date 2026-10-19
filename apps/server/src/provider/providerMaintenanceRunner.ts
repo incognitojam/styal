@@ -38,6 +38,13 @@ import {
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import { AnalyticsService } from "../telemetry/AnalyticsService.ts";
+import {
+  startProviderUpdateRecording,
+  updateCommandFailureReason,
+  type ProviderUpdateFailureReason,
+  type ProviderUpdateRecorder,
+} from "../telemetry/ProviderAnalytics.ts";
 const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
 
 const UPDATE_TIMEOUT_MS = 5 * 60_000;
@@ -313,6 +320,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
   const installGate = yield* ProviderInstallGate.ProviderInstallGate;
+  const analytics = yield* AnalyticsService;
   const runMaintenanceCommand = (
     update: ProviderMaintenanceCommandAction,
     onProgress: (line: string) => Effect.Effect<void>,
@@ -444,8 +452,32 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
 
     const runProviderUpdate = Effect.fn("ProviderMaintenanceRunner.runProviderUpdate")(
       function* () {
-        const finish = (state: ServerProviderUpdateState) =>
-          setUpdateState(state).pipe(Effect.map((providers) => ({ providers })));
+        // Set once an update starts: past `shouldStart`, or a manual update
+        // refused by the install lock. Dropped background attempts record nothing.
+        let recordFinished: ProviderUpdateRecorder | undefined;
+        const startRecording = Effect.gen(function* () {
+          if (recordFinished) return;
+          recordFinished = yield* startProviderUpdateRecording(analytics, {
+            source: autoUpdate ? "background" : "manual",
+            provider,
+            instanceId,
+            capabilities,
+            targetVersion,
+            fromVersion: (yield* providerRegistry.getProviders).find(
+              (candidate) => candidate.instanceId === instanceId,
+            )?.version,
+          });
+        });
+        const finish = (
+          state: ServerProviderUpdateState,
+          failureReason: ProviderUpdateFailureReason | null,
+        ) =>
+          setUpdateState(state).pipe(
+            Effect.tap((providers) =>
+              recordFinished ? recordFinished(state.status, failureReason, providers) : Effect.void,
+            ),
+            Effect.map((providers) => ({ providers })),
+          );
         const startedAtRef = yield* Ref.make<string | null>(null);
         const dropped = setUpdateState(null).pipe(Effect.map((providers) => ({ providers })));
 
@@ -480,6 +512,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                   finishedAt: yield* nowIso,
                   message: "Provider installation changed. Refresh and try again.",
                 }),
+                "installation_changed",
               );
             }
 
@@ -525,6 +558,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                       ? "This version is no longer recommended or this installer cannot install a specific version. Refresh provider settings."
                       : "The latest provider version is incompatible with this styal release. Review provider settings.",
                 }),
+                "version_rejected",
               );
             }
             yield* setRunningMessage(`Running ${describeCommand(command)}`);
@@ -541,6 +575,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                   message: failureMessage(result),
                   output: commandOutput(result),
                 }),
+                updateCommandFailureReason(result),
               );
             }
 
@@ -593,6 +628,16 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                       : "Provider updated.",
                 output: commandOutput(result),
               }),
+              verifiedProviders.length === 0 ||
+                verifiedProviders.some((verifiedProvider) => !isStillInstalled(verifiedProvider))
+                ? "not_installed_after_install"
+                : couldNotVerify
+                  ? "unchanged_after_install"
+                  : brokenProvider
+                    ? "provider_error_after_install"
+                    : stillOutdated
+                      ? "unchanged_after_install"
+                      : null,
             );
           },
         );
@@ -601,6 +646,8 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
           function* (cause: Cause.Cause<unknown>) {
             const failure = Cause.squash(cause);
             const startedAt = yield* Ref.get(startedAtRef);
+            // A manual update the user started always reports its failure.
+            if (!autoUpdate) yield* startRecording;
             return yield* finish(
               makeUpdateState({
                 status: "failed",
@@ -609,6 +656,11 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                 message: failure instanceof Error ? failure.message : "Update command failed.",
                 output: null,
               }),
+              Cause.hasInterruptsOnly(cause)
+                ? "interrupted"
+                : failure instanceof ProviderMaintenanceCommandError
+                  ? "spawn_failed"
+                  : "internal_error",
             );
           },
         );
@@ -624,6 +676,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                 // was queued, another server's install, or a turn that started
                 // meanwhile is seen.
                 if (autoUpdate && !(yield* autoUpdate.shouldStart)) return yield* dropped;
+                yield* startRecording;
                 return yield* runCommandAndVerify(recordChildPid);
               }),
           )
@@ -637,7 +690,8 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                         instanceId,
                         reason: "another server on this machine is running this installer",
                       }).pipe(Effect.andThen(dropped))
-                    : nowIso.pipe(
+                    : startRecording.pipe(
+                        Effect.andThen(nowIso),
                         Effect.flatMap((finishedAt) =>
                           finish(
                             makeUpdateState({
@@ -647,12 +701,16 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                               message:
                                 "Another update is running for this provider on this machine. Try again when it finishes.",
                             }),
+                            "install_in_progress",
                           ),
                         ),
                       ),
               }),
             ),
             Effect.catchCause(recordFailedUpdate),
+            Effect.onInterrupt(() =>
+              recordFinished ? recordFinished("failed", "interrupted", []) : Effect.void,
+            ),
           );
       },
     );

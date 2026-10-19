@@ -44,6 +44,7 @@ import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
+import * as ProviderAnalytics from "./telemetry/ProviderAnalytics.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ProviderInstallGate from "./provider/ProviderInstallGate.ts";
 import * as ResetCreditCoordinator from "./provider/resetCreditCoordinator.ts";
@@ -597,7 +598,11 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 );
 
 const ProviderAutoUpdaterLive = Layer.effectDiscard(
-  ProviderAutoUpdater.make.pipe(Effect.flatMap((service) => service.start)),
+  Effect.gen(function* () {
+    const updater = yield* ProviderAutoUpdater.make;
+    yield* updater.start;
+    yield* ProviderAnalytics.startProviderInventory(updater.takeBusySkips);
+  }),
 ).pipe(Layer.provide(ProjectionStoreV2.layer));
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(

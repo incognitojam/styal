@@ -15,7 +15,11 @@
  * replaced under a turn. Dev servers never run it: they share the host's
  * provider CLIs with the developer's real install.
  */
-import type { OrchestrationV2ThreadShell, ServerProvider } from "@t3tools/contracts";
+import type {
+  OrchestrationV2ThreadShell,
+  ProviderInstanceId,
+  ServerProvider,
+} from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
@@ -79,6 +83,8 @@ export interface ProviderAutoUpdater {
   readonly runPass: Effect.Effect<void>;
   /** Forks the periodic passes into the caller's scope. */
   readonly start: Effect.Effect<void, never, Scope.Scope>;
+  /** Returns and resets, per instance, the updates skipped because a thread was using its CLI. */
+  readonly takeBusySkips: Effect.Effect<ReadonlyMap<ProviderInstanceId, number>>;
 }
 
 export const make = Effect.gen(function* () {
@@ -90,6 +96,11 @@ export const make = Effect.gen(function* () {
   const projections = yield* ProjectionStoreV2;
   const installGate = yield* ProviderInstallGate;
   const attemptedAt = new Map<string, number>();
+  let busySkips = new Map<ProviderInstanceId, number>();
+  const countBusySkip = (instanceId: ProviderInstanceId) =>
+    Effect.sync(() => {
+      busySkips.set(instanceId, (busySkips.get(instanceId) ?? 0) + 1);
+    });
 
   const isEnabled = settingsService.getSettings.pipe(
     Effect.map((settings) => settings.enableProviderUpdateChecks && settings.autoUpdateProviders),
@@ -170,7 +181,10 @@ export const make = Effect.gen(function* () {
       // Last, so a turn started during the checks above is still seen.
       if (!(yield* isEnabled)) return yield* skip("automatic updates were turned off");
       const busy = yield* busyReason(target);
-      if (busy !== null) return yield* skip(busy);
+      if (busy !== null) {
+        yield* countBusySkip(provider.instanceId);
+        return yield* skip(busy);
+      }
       return true;
     }).pipe(
       Effect.catchCause((cause) =>
@@ -195,6 +209,7 @@ export const make = Effect.gen(function* () {
       if (target === null) continue;
       const busy = yield* busyReason(target);
       if (busy !== null) {
+        yield* countBusySkip(provider.instanceId);
         yield* Effect.logInfo("Background provider update skipped", {
           instanceId: provider.instanceId,
           toVersion: targetVersion,
@@ -251,5 +266,11 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  return { runPass, start } satisfies ProviderAutoUpdater;
+  const takeBusySkips = Effect.sync(() => {
+    const taken = busySkips;
+    busySkips = new Map();
+    return taken;
+  });
+
+  return { runPass, start, takeBusySkips } satisfies ProviderAutoUpdater;
 });

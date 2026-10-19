@@ -254,6 +254,19 @@ describe("ProviderAutoUpdater.runPass", () => {
     }).pipe(Effect.tap(() => Effect.sync(() => assert.deepStrictEqual(installs, []))));
   });
 
+  it.effect("counts updates skipped for a busy CLI until the count is taken", () => {
+    const installs: Array<unknown> = [];
+    return Effect.gen(function* () {
+      const updater = yield* make;
+      // Busy when the pass looks, then idle when it looks, busy inside the lock.
+      yield* updater.runPass;
+      yield* updater.runPass;
+      assert.deepStrictEqual(installs, []);
+      assert.deepStrictEqual([...(yield* updater.takeBusySkips)], [["codex", 2]]);
+      assert.deepStrictEqual([...(yield* updater.takeBusySkips)], []);
+    }).pipe(Effect.provide(testLayer({ threadStatuses: ["running", null, "running"], installs })));
+  });
+
   it.effect("drops an update when a turn starts before the install, and retries next pass", () => {
     const installs: Array<unknown> = [];
     return Effect.gen(function* () {

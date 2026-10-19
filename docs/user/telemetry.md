@@ -18,6 +18,14 @@ found a run already finished, and how each watch ended: the run's conclusion, a 
 it, or being stopped, with how many minutes it was watched. Repositories, run links, and workflow
 or job names are not collected.
 
+Once after startup and then daily, the server reports each configured provider: its type, whether
+it is the default or an added instance, whether it is installed, enabled and healthy, its version,
+how it was installed (such as npm or Homebrew), and whether automatic updates are on, could update
+it, or were held back by threads using that provider. Each provider update you start, or that styal installs in
+the background, records the provider type, its versions before and after, whether it succeeded, a
+fixed failure category, and how long it took. Instance names, installation paths, update commands,
+installer output, and error messages are not collected.
+
 Web and desktop clients also record explicit diff-order selections and when you open a
 mentioned time's explanation. The web app records when a new-build notice is visible and
 when you choose Refresh. These events use the relevant paired environment's telemetry setting.
