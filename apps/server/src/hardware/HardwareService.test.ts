@@ -207,8 +207,15 @@ const makeHarnessWith = (
       getById: () => Effect.succeed(Option.some({ workspaceRoot: "/repo/tree" })),
     } as unknown as ProjectService.ProjectService["Service"];
 
+    /** When true, every secret read fails. */
+    const failSecretReads = { value: false };
     const secretStore = ServerSecretStore.ServerSecretStore.of({
-      get: (name) => Effect.succeed(Option.fromNullishOr(secrets.get(name))),
+      get: (name) =>
+        failSecretReads.value
+          ? Effect.fail(
+              new ServerSecretStore.SecretStoreReadError({ resource: name, cause: "unreadable" }),
+            )
+          : Effect.succeed(Option.fromNullishOr(secrets.get(name))),
       set: (name, value) => Effect.sync(() => void secrets.set(name, value)),
       create: () => Effect.void,
       getOrCreateRandom: () => Effect.succeed(new Uint8Array()),
@@ -285,6 +292,15 @@ const makeHarnessWith = (
       count,
       approvalsOpened,
       shellGate,
+      failSecretReads,
+      archive: (threadId: ThreadId) =>
+        Ref.update(shells, (map) => {
+          const current = map.get(threadId)!;
+          return new Map(map).set(threadId, {
+            ...current,
+            archivedAt: "2026-01-01T00:00:00.000Z",
+          } as unknown as OrchestrationV2ThreadShell);
+        }),
     };
   });
 
@@ -840,9 +856,10 @@ describe("HardwareService", () => {
           http: FetchHttpClient.layer,
         });
         const hardware = yield* harness.start;
-        yield* hardware
+        const refused = yield* hardware
           .call(CALIBRATOR, { device: TREE, action: "status.moved" })
           .pipe(Effect.flip);
+        expect(refused.code).toBe("forbidden");
         expect(hits).toContain("GET /moved");
         expect(hits.some((hit) => hit.includes("/reboot"))).toBe(false);
       }),
@@ -860,6 +877,45 @@ describe("HardwareService", () => {
         yield* hardware.release(CALIBRATOR, TREE);
         const stop = harness.sent.find((request) => request.path === "/calibrate/stop");
         expect(stop?.authorization).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("stops an archived thread's proxy at once and cleans up", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        const { proxyBaseUrl } = yield* hardware.acquire(CALIBRATOR, {
+          device: TREE,
+          purpose: "front angle",
+        });
+        yield* harness.archive(CALIBRATOR);
+        const proxied = yield* hardware.proxy({
+          token: proxyBaseUrl.split("/").at(-1)!,
+          method: "GET",
+          path: "/calibrate/led",
+          query: [["n", "2"]],
+        });
+        expect(proxied.status).toBe(410);
+        expect(paths(harness.sent)).not.toContain("GET /calibrate/led?n=2");
+        expect(harness.count("GET", "/calibrate/stop")).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("refuses a lease when the device credential cannot be read", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        harness.failSecretReads.value = true;
+        const refused = yield* hardware
+          .acquire(CALIBRATOR, { device: TREE, purpose: "front angle" })
+          .pipe(Effect.flip);
+        expect(refused.code).toBe("unavailable");
+        harness.failSecretReads.value = false;
+        expect((yield* hardware.state).devices[0]?.lease).toBeNull();
       }),
     ),
   );

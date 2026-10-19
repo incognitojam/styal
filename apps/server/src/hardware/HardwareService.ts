@@ -607,7 +607,7 @@ export const make = Effect.gen(function* () {
     // was not authorised for, or carry the credential to another host.
     const response = yield* http
       .execute(request)
-      .pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }));
+      .pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }));
     if (response.status >= 300 && response.status < 400) {
       return yield* toolError(
         "forbidden",
@@ -926,9 +926,14 @@ export const make = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const token = NodeCrypto.randomBytes(24).toString("hex");
     // Cleanup keeps the credential the lease was granted with, whatever replaces it later.
+    // An unreadable credential refuses the grant: cleanup must not be left without one.
     const credential = yield* secrets
       .get(secretName(device.id))
-      .pipe(Effect.orElseSucceed(() => Option.none<Uint8Array>()));
+      .pipe(
+        Effect.mapError(() =>
+          toolError("unavailable", `Could not read ${device.id}'s credential. Try again.`),
+        ),
+      );
     const credentialSecret = Option.isSome(credential) ? `hardware-lease-${token}` : undefined;
     if (credentialSecret !== undefined && Option.isSome(credential)) {
       yield* secrets.set(credentialSecret, credential.value).pipe(Effect.mapError(storeFailure));
@@ -1461,28 +1466,14 @@ export const make = Effect.gen(function* () {
             `The lease on ${device.id} ended before the call ran.`,
           );
         }
-        // A call queued behind the lock must not outlive its lease's deadline.
-        if (leaseExpired(lease, threadBusy(fresh.shell), yield* Clock.currentTimeMillis)) {
-          yield* endLease(device.id, "lease.expired", "system", "The lease ran out.").pipe(
+        // Anything that would end the lease at the next tick ends it now instead:
+        // a call queued behind the lock must not outlive its lease.
+        const reason = yield* endReason(lease, latest, fresh.shell, yield* Clock.currentTimeMillis);
+        if (reason !== null) {
+          yield* endLease(device.id, "lease.expired", "system", reason).pipe(
             Effect.mapError(storeFailure),
           );
-          return yield* toolError(
-            "not_held",
-            `The lease on ${device.id} ran out. Acquire it again.`,
-          );
-        }
-        // A lease belongs to the device it was granted on; one re-pointed since ends here.
-        if (!sameTarget(latest, lease.releasePlan)) {
-          yield* endLease(
-            device.id,
-            "lease.expired",
-            "system",
-            "The device's settings changed.",
-          ).pipe(Effect.mapError(storeFailure));
-          return yield* toolError(
-            "not_held",
-            `${device.id}'s settings changed, which ended the lease. Acquire it again.`,
-          );
+          return yield* toolError("not_held", `The lease on ${device.id} ended: ${reason}`);
         }
       }
       if ((yield* runtimeFor(device.id)).paused) {
