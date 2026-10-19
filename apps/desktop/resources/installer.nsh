@@ -21,4 +21,13 @@ Var IsPowerShellAvailable
   DeleteRegKey HKCU "Software\0122c0ea-801f-5352-a48e-ce98c31bc2d9"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\48e3dbfe-4d90-524c-acdc-304cac9a97b1"
   DeleteRegKey HKCU "Software\48e3dbfe-4d90-524c-acdc-304cac9a97b1"
+
+  !ifndef DO_NOT_CREATE_START_MENU_SHORTCUT
+    ${IfNot} ${FileExists} "$newStartMenuLink"
+      !insertmacro createMenuDirectory
+      CreateShortCut "$newStartMenuLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
+      ClearErrors
+      WinShell::SetLnkAUMI "$newStartMenuLink" "${APP_ID}"
+    ${EndIf}
+  !endif
 !macroend
