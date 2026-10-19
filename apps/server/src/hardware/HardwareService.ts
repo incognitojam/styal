@@ -65,7 +65,7 @@ import * as Schema from "effect/Schema";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -133,8 +133,8 @@ interface Target {
   readonly auth?:
     | { readonly header?: string | undefined; readonly scheme?: string | undefined }
     | undefined;
-  /** Where the credential is stored; defaults to the device's own entry. */
-  readonly credentialSecret?: string | undefined;
+  /** Where the credential is stored; defaults to the device's own entry, and null sends none. */
+  readonly credentialSecret?: string | null | undefined;
 }
 
 interface Waiter {
@@ -218,6 +218,21 @@ const threadBusy = (shell: OrchestrationV2ThreadShell | null) =>
 
 const threadGone = (shell: OrchestrationV2ThreadShell | null) =>
   shell === null || shell.deletedAt != null || shell.archivedAt != null;
+
+/** Whether a held lease has run out: its hard cap, or its idle time while the thread is idle. */
+const leaseExpired = (
+  lease: {
+    readonly keepUntilReleased: boolean;
+    readonly hardExpiresAt: number | null;
+    readonly lastActivityAt: number;
+    readonly idleMinutes: number;
+  },
+  busy: boolean,
+  now: number,
+) =>
+  !lease.keepUntilReleased &&
+  ((lease.hardExpiresAt !== null && now >= lease.hardExpiresAt) ||
+    (!busy && now >= lease.lastActivityAt + lease.idleMinutes * 60_000));
 
 /** Whether two configurations send to the same device with the same credential header. */
 const sameTarget = (
@@ -556,6 +571,7 @@ export const make = Effect.gen(function* () {
   const credentialHeaders = Effect.fn("HardwareService.credentialHeaders")(function* (
     device: Target,
   ) {
+    if (device.credentialSecret === null) return {};
     const value = yield* secrets
       .get(device.credentialSecret ?? secretName(device.id))
       .pipe(Effect.orElseSucceed(() => Option.none()));
@@ -587,7 +603,17 @@ export const make = Effect.gen(function* () {
           ? built
           : HttpClientRequest.bodyUint8Array(built, body, "application/octet-stream"),
     );
-    const response = yield* http.execute(request);
+    // A redirect is refused, not followed: it could reach an action the call
+    // was not authorised for, or carry the credential to another host.
+    const response = yield* http
+      .execute(request)
+      .pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }));
+    if (response.status >= 300 && response.status < 400) {
+      return yield* toolError(
+        "forbidden",
+        `${device.id} answered with a redirect, which is not followed.`,
+      );
+    }
     const bytes = new Uint8Array(yield* response.arrayBuffer);
     return {
       status: response.status,
@@ -702,9 +728,7 @@ export const make = Effect.gen(function* () {
       ...(plan.auth === undefined ? {} : { auth: plan.auth }),
       // Cleanup sends only the credential copied at grant, none if there was none then.
       // Acquire and renew hooks run against the device as configured now.
-      ...(kind === "release"
-        ? { credentialSecret: plan.credentialSecret ?? `${secretName(deviceId)}-none` }
-        : {}),
+      ...(kind === "release" ? { credentialSecret: plan.credentialSecret ?? null } : {}),
     };
     let failed = false;
     for (const step of plan.steps) {
@@ -983,6 +1007,20 @@ export const make = Effect.gen(function* () {
         const runtimeState = yield* runtimeFor(latest.id);
         if (runtimeState.paused) {
           return yield* toolError("paused", `The user paused ${latest.id}. Try again later.`);
+        }
+        const existing = (yield* Ref.get(leases)).get(latest.id);
+        if (
+          isHeld(existing) &&
+          leaseExpired(
+            existing,
+            threadBusy(yield* getShell(existing.threadId)),
+            yield* Clock.currentTimeMillis,
+          )
+        ) {
+          // Renewing must not revive a lease that already ran out; it ends and cleans up first.
+          yield* endLease(latest.id, "lease.expired", "system", "The lease ran out.").pipe(
+            Effect.mapError(storeFailure),
+          );
         }
         const current = (yield* Ref.get(leases)).get(latest.id);
         if (isHeld(current) && current.threadId === threadId) {
@@ -1423,6 +1461,16 @@ export const make = Effect.gen(function* () {
             `The lease on ${device.id} ended before the call ran.`,
           );
         }
+        // A call queued behind the lock must not outlive its lease's deadline.
+        if (leaseExpired(lease, threadBusy(fresh.shell), yield* Clock.currentTimeMillis)) {
+          yield* endLease(device.id, "lease.expired", "system", "The lease ran out.").pipe(
+            Effect.mapError(storeFailure),
+          );
+          return yield* toolError(
+            "not_held",
+            `The lease on ${device.id} ran out. Acquire it again.`,
+          );
+        }
         // A lease belongs to the device it was granted on; one re-pointed since ends here.
         if (!sameTarget(latest, lease.releasePlan)) {
           yield* endLease(
@@ -1448,11 +1496,13 @@ export const make = Effect.gen(function* () {
       }
       const started = yield* Clock.currentTimeMillis;
       const result = yield* send(latest, action, query, file?.bytes).pipe(
-        Effect.mapError(() =>
-          toolError(
-            "request_failed",
-            `${device.id} did not answer ${action.method} ${action.path}.`,
-          ),
+        Effect.mapError((error) =>
+          error._tag === "HardwareToolError"
+            ? error
+            : toolError(
+                "request_failed",
+                `${device.id} did not answer ${action.method} ${action.path}.`,
+              ),
         ),
       );
       // Any call by the holder, reads included, counts as activity on its lease.
@@ -1782,12 +1832,10 @@ export const make = Effect.gen(function* () {
     if (threadGone(shell)) return "The thread was deleted or archived.";
     if (!(yield* accessAllowed(device.projectId)))
       return "Agent hardware access was turned off for this project.";
-    if (lease.keepUntilReleased) return null;
-    if (lease.hardExpiresAt !== null && now >= lease.hardExpiresAt)
-      return "The lease reached its time limit.";
-    if (!threadBusy(shell) && now >= lease.lastActivityAt + lease.idleMinutes * 60_000)
-      return "The thread was idle.";
-    return null;
+    if (!leaseExpired(lease, threadBusy(shell), now)) return null;
+    return lease.hardExpiresAt !== null && now >= lease.hardExpiresAt
+      ? "The lease reached its time limit."
+      : "The thread was idle.";
   });
 
   const tickLease = Effect.fn("HardwareService.tickLease")(function* (

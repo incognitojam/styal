@@ -1,4 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- a real server proves fetch does not follow redirects.
+import * as NodeHttp from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "@effect/vitest";
 import {
   type HardwareDefinition,
@@ -22,7 +25,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -58,6 +61,7 @@ const definition: HardwareDefinition = {
     },
     "calibrate.led": { method: "GET", path: "/calibrate/led", tier: "operate", query: ["n"] },
     "calibrate.stop": { method: "GET", path: "/calibrate/stop", tier: "operate" },
+    "status.moved": { method: "GET", path: "/moved", tier: "read" },
     reboot: { method: "POST", path: "/reboot", tier: "approve" },
   },
 };
@@ -99,176 +103,192 @@ const activeRun = {
 } as unknown as OrchestrationV2Run;
 
 /** A fake world: the device, git, threads and their approval cards. */
-const makeHarness = Effect.gen(function* () {
-  const sent: Sent[] = [];
-  const online = yield* Ref.make(true);
-  const shells = yield* Ref.make(
-    new Map<ThreadId, OrchestrationV2ThreadShell>([
-      [CALIBRATOR, shellFor(CALIBRATOR, "Calibrate front angle", true)],
-      [FIRMWARE, shellFor(FIRMWARE, "Firmware rewrite", true)],
-    ]),
-  );
-  const requests = yield* Ref.make<ReadonlyArray<OrchestrationV2RuntimeRequest>>([]);
-  /** The definition on the repository's default branch. */
-  const main = yield* Ref.make<HardwareDefinition>(definition);
-  /** Threads whose running turn has ended. */
-  const endedRuns = new Set<ThreadId>();
-  /** When set, the next thread shell read waits for it. */
-  const shellGate = yield* Ref.make<Deferred.Deferred<void> | null>(null);
-  const dispatched: OrchestrationV2InternalCommand[] = [];
-  const secrets = new Map<string, Uint8Array>();
+/** `baseUrl` and `http` replace the fake device, e.g. with a real HTTP server. */
+const makeHarnessWith = (
+  options: {
+    readonly baseUrl?: string;
+    readonly http?: Layer.Layer<HttpClient.HttpClient>;
+  } = {},
+) =>
+  Effect.gen(function* () {
+    const sent: Sent[] = [];
+    const online = yield* Ref.make(true);
+    const shells = yield* Ref.make(
+      new Map<ThreadId, OrchestrationV2ThreadShell>([
+        [CALIBRATOR, shellFor(CALIBRATOR, "Calibrate front angle", true)],
+        [FIRMWARE, shellFor(FIRMWARE, "Firmware rewrite", true)],
+      ]),
+    );
+    const requests = yield* Ref.make<ReadonlyArray<OrchestrationV2RuntimeRequest>>([]);
+    /** The definition on the repository's default branch. */
+    const main = yield* Ref.make<HardwareDefinition>(definition);
+    /** Threads whose running turn has ended. */
+    const endedRuns = new Set<ThreadId>();
+    /** When set, the next thread shell read waits for it. */
+    const shellGate = yield* Ref.make<Deferred.Deferred<void> | null>(null);
+    const dispatched: OrchestrationV2InternalCommand[] = [];
+    const secrets = new Map<string, Uint8Array>();
 
-  const http = HttpClient.make((request, url) =>
-    Effect.gen(function* () {
-      sent.push({
-        host: url.host,
-        method: request.method,
-        path: url.pathname,
-        query: url.search,
-        authorization: request.headers["authorization"],
-      });
-      if (!(yield* Ref.get(online))) {
-        return HttpClientResponse.fromWeb(request, new Response("down", { status: 503 }));
-      }
-      return HttpClientResponse.fromWeb(
-        request,
-        url.pathname === "/"
-          ? Response.json({ version: "3f2a1c" })
-          : new Response("ok", { status: 200 }),
-      );
-    }),
-  );
-
-  const vcs = VcsProcess.of({
-    run: (input) =>
-      Effect.map(Ref.get(main), (current) => ({
-        exitCode: ChildProcessSpawner.ExitCode(0),
-        stdout:
-          input.args[0] === "show"
-            ? JSON.stringify(current)
-            : input.args[0] === "symbolic-ref"
-              ? "origin/main\n"
-              : "",
-        stderr: "",
-        stdoutTruncated: false,
-        stderrTruncated: false,
-      })),
-  });
-
-  const threads = {
-    getThreadShell: (threadId: ThreadId) =>
-      Ref.getAndSet(shellGate, null).pipe(
-        Effect.flatMap((gate) => (gate === null ? Effect.void : Deferred.await(gate))),
-        Effect.andThen(Effect.map(Ref.get(shells), (map) => map.get(threadId) ?? null)),
-      ),
-    getThreadRecords: (threadId: ThreadId) =>
-      Effect.map(Ref.get(requests), (runtimeRequests) => ({
-        runs: [endedRuns.has(threadId) ? { ...activeRun, status: "completed" } : activeRun],
-        runtimeRequests,
-      })),
-    dispatch: (command: OrchestrationV2InternalCommand) =>
+    const http = HttpClient.make((request, url) =>
       Effect.gen(function* () {
-        dispatched.push(command);
-        if (command.type === "server_approval.record" && command.approvalStatus === "pending") {
-          yield* Ref.update(requests, (current) => [
-            ...current,
-            {
-              id: command.requestId,
-              nodeId: command.nodeId,
-              providerTurnId: null,
-              nativeRequestRef: null,
-              kind: "permission",
-              status: "pending",
-              responseCapability: { type: "server" },
-              createdAt: DateTime.makeUnsafe(0),
-              resolvedAt: null,
-            } satisfies OrchestrationV2RuntimeRequest,
-          ]);
+        sent.push({
+          host: url.host,
+          method: request.method,
+          path: url.pathname,
+          query: url.search,
+          authorization: request.headers["authorization"],
+        });
+        if (!(yield* Ref.get(online))) {
+          return HttpClientResponse.fromWeb(request, new Response("down", { status: 503 }));
         }
-        return {} as never;
+        return HttpClientResponse.fromWeb(
+          request,
+          url.pathname === "/moved"
+            ? new Response(null, { status: 302, headers: { location: "/reboot" } })
+            : url.pathname === "/"
+              ? Response.json({ version: "3f2a1c" })
+              : new Response("ok", { status: 200 }),
+        );
       }),
-    // The service uses only the three methods above.
-  } as unknown as ThreadManagementService.ThreadManagementService["Service"];
-
-  const projects = {
-    getById: () => Effect.succeed(Option.some({ workspaceRoot: "/repo/tree" })),
-  } as unknown as ProjectService.ProjectService["Service"];
-
-  const secretStore = ServerSecretStore.ServerSecretStore.of({
-    get: (name) => Effect.succeed(Option.fromNullishOr(secrets.get(name))),
-    set: (name, value) => Effect.sync(() => void secrets.set(name, value)),
-    create: () => Effect.void,
-    getOrCreateRandom: () => Effect.succeed(new Uint8Array()),
-    remove: (name) => Effect.sync(() => void secrets.delete(name)),
-  });
-
-  // Shared by every service instance, so a restart keeps the settings, as on disk.
-  const settings = Context.get(
-    yield* Layer.build(
-      ServerSettings.layerTest({ hardwareDevices: [device], enableAgentHardwareAccess: true }),
-    ),
-    ServerSettings.ServerSettingsService,
-  );
-
-  const dependencies = Layer.mergeAll(
-    Layer.succeed(HttpClient.HttpClient, http),
-    Layer.succeed(VcsProcess, vcs),
-    Layer.succeed(ThreadManagementService.ThreadManagementService, threads),
-    Layer.succeed(ProjectService.ProjectService, projects),
-    Layer.succeed(ServerSecretStore.ServerSecretStore, secretStore),
-    Layer.succeed(ServerSettings.ServerSettingsService, settings),
-    ServerConfig.layerTest(process.cwd(), { prefix: "styal-hardware-test-" }),
-  );
-
-  /** A service instance; building another on the same database is a server restart. */
-  const start = HardwareService.make.pipe(Effect.provide(dependencies));
-
-  /** The user answering the newest approval card. */
-  const answer = (decision: ProviderApprovalDecision) =>
-    Ref.update(requests, (current) =>
-      current.map((request, index) =>
-        index === current.length - 1
-          ? {
-              ...request,
-              status: "resolved" as const,
-              decision,
-              resolvedAt: DateTime.makeUnsafe(1),
-            }
-          : request,
-      ),
     );
 
-  const setBusy = (threadId: ThreadId, busy: boolean) =>
-    Ref.update(shells, (map) => {
-      const current = map.get(threadId)!;
-      return new Map(map).set(threadId, shellFor(threadId, current.title, busy));
+    const vcs = VcsProcess.of({
+      run: (input) =>
+        Effect.map(Ref.get(main), (current) => ({
+          exitCode: ChildProcessSpawner.ExitCode(0),
+          stdout:
+            input.args[0] === "show"
+              ? JSON.stringify(current)
+              : input.args[0] === "symbolic-ref"
+                ? "origin/main\n"
+                : "",
+          stderr: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        })),
     });
 
-  const endRun = (threadId: ThreadId) => Effect.sync(() => void endedRuns.add(threadId));
-  const count = (method: string, path: string) =>
-    sent.filter((request) => request.method === method && request.path === path).length;
-  const approvalsOpened = () =>
-    dispatched.filter(
-      (command) =>
-        command.type === "server_approval.record" && command.approvalStatus === "pending",
-    ).length;
+    const threads = {
+      getThreadShell: (threadId: ThreadId) =>
+        Ref.getAndSet(shellGate, null).pipe(
+          Effect.flatMap((gate) => (gate === null ? Effect.void : Deferred.await(gate))),
+          Effect.andThen(Effect.map(Ref.get(shells), (map) => map.get(threadId) ?? null)),
+        ),
+      getThreadRecords: (threadId: ThreadId) =>
+        Effect.map(Ref.get(requests), (runtimeRequests) => ({
+          runs: [endedRuns.has(threadId) ? { ...activeRun, status: "completed" } : activeRun],
+          runtimeRequests,
+        })),
+      dispatch: (command: OrchestrationV2InternalCommand) =>
+        Effect.gen(function* () {
+          dispatched.push(command);
+          if (command.type === "server_approval.record" && command.approvalStatus === "pending") {
+            yield* Ref.update(requests, (current) => [
+              ...current,
+              {
+                id: command.requestId,
+                nodeId: command.nodeId,
+                providerTurnId: null,
+                nativeRequestRef: null,
+                kind: "permission",
+                status: "pending",
+                responseCapability: { type: "server" },
+                createdAt: DateTime.makeUnsafe(0),
+                resolvedAt: null,
+              } satisfies OrchestrationV2RuntimeRequest,
+            ]);
+          }
+          return {} as never;
+        }),
+      // The service uses only the three methods above.
+    } as unknown as ThreadManagementService.ThreadManagementService["Service"];
 
-  return {
-    sent,
-    online,
-    dispatched,
-    start,
-    answer,
-    setBusy,
-    secrets,
-    main,
-    settings,
-    endRun,
-    count,
-    approvalsOpened,
-    shellGate,
-  };
-});
+    const projects = {
+      getById: () => Effect.succeed(Option.some({ workspaceRoot: "/repo/tree" })),
+    } as unknown as ProjectService.ProjectService["Service"];
+
+    const secretStore = ServerSecretStore.ServerSecretStore.of({
+      get: (name) => Effect.succeed(Option.fromNullishOr(secrets.get(name))),
+      set: (name, value) => Effect.sync(() => void secrets.set(name, value)),
+      create: () => Effect.void,
+      getOrCreateRandom: () => Effect.succeed(new Uint8Array()),
+      remove: (name) => Effect.sync(() => void secrets.delete(name)),
+    });
+
+    // Shared by every service instance, so a restart keeps the settings, as on disk.
+    const settings = Context.get(
+      yield* Layer.build(
+        ServerSettings.layerTest({
+          hardwareDevices: [
+            options.baseUrl === undefined ? device : { ...device, baseUrl: options.baseUrl },
+          ],
+          enableAgentHardwareAccess: true,
+        }),
+      ),
+      ServerSettings.ServerSettingsService,
+    );
+
+    const dependencies = Layer.mergeAll(
+      options.http ?? Layer.succeed(HttpClient.HttpClient, http),
+      Layer.succeed(VcsProcess, vcs),
+      Layer.succeed(ThreadManagementService.ThreadManagementService, threads),
+      Layer.succeed(ProjectService.ProjectService, projects),
+      Layer.succeed(ServerSecretStore.ServerSecretStore, secretStore),
+      Layer.succeed(ServerSettings.ServerSettingsService, settings),
+      ServerConfig.layerTest(process.cwd(), { prefix: "styal-hardware-test-" }),
+    );
+
+    /** A service instance; building another on the same database is a server restart. */
+    const start = HardwareService.make.pipe(Effect.provide(dependencies));
+
+    /** The user answering the newest approval card. */
+    const answer = (decision: ProviderApprovalDecision) =>
+      Ref.update(requests, (current) =>
+        current.map((request, index) =>
+          index === current.length - 1
+            ? {
+                ...request,
+                status: "resolved" as const,
+                decision,
+                resolvedAt: DateTime.makeUnsafe(1),
+              }
+            : request,
+        ),
+      );
+
+    const setBusy = (threadId: ThreadId, busy: boolean) =>
+      Ref.update(shells, (map) => {
+        const current = map.get(threadId)!;
+        return new Map(map).set(threadId, shellFor(threadId, current.title, busy));
+      });
+
+    const endRun = (threadId: ThreadId) => Effect.sync(() => void endedRuns.add(threadId));
+    const count = (method: string, path: string) =>
+      sent.filter((request) => request.method === method && request.path === path).length;
+    const approvalsOpened = () =>
+      dispatched.filter(
+        (command) =>
+          command.type === "server_approval.record" && command.approvalStatus === "pending",
+      ).length;
+
+    return {
+      sent,
+      online,
+      dispatched,
+      start,
+      answer,
+      setBusy,
+      secrets,
+      main,
+      settings,
+      endRun,
+      count,
+      approvalsOpened,
+      shellGate,
+    };
+  });
+
+const makeHarness = makeHarnessWith();
 
 /** Each test gets its own database, so leases never leak between tests. */
 const withDatabase = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -780,5 +800,67 @@ describe("HardwareService", () => {
           ]);
         }),
       ),
+  );
+
+  it.effect("refuses a device redirect instead of following it to another action", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        const refused = yield* hardware
+          .call(CALIBRATOR, { device: TREE, action: "status.moved" })
+          .pipe(Effect.flip);
+        expect(refused.code).toBe("forbidden");
+        expect(harness.count("POST", "/reboot")).toBe(0);
+      }),
+    ),
+  );
+
+  it.live("does not follow a real HTTP redirect from the device", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const hits: string[] = [];
+        const server = NodeHttp.createServer((request, response) => {
+          hits.push(`${request.method} ${request.url}`);
+          if (request.url === "/moved") {
+            response.writeHead(302, { location: "/reboot" }).end();
+          } else {
+            response.writeHead(200, { "content-type": "application/json" }).end("{}");
+          }
+        });
+        yield* Effect.acquireRelease(
+          Effect.callback<void>((resume) => {
+            server.listen(0, "127.0.0.1", () => resume(Effect.void));
+          }),
+          () => Effect.sync(() => server.close()),
+        );
+        const address = server.address() as AddressInfo;
+        const harness = yield* makeHarnessWith({
+          baseUrl: `http://127.0.0.1:${address.port}`,
+          http: FetchHttpClient.layer,
+        });
+        const hardware = yield* harness.start;
+        yield* hardware
+          .call(CALIBRATOR, { device: TREE, action: "status.moved" })
+          .pipe(Effect.flip);
+        expect(hits).toContain("GET /moved");
+        expect(hits.some((hit) => hit.includes("/reboot"))).toBe(false);
+      }),
+    ),
+  );
+
+  it.effect("cleanup of a lease granted without a credential sends none", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        // Another device's credential whose name could collide with a "none" placeholder.
+        harness.secrets.set("hardware-device-tree-none", new TextEncoder().encode("other-device"));
+        yield* hardware.acquire(CALIBRATOR, { device: TREE, purpose: "front angle" });
+        yield* hardware.release(CALIBRATOR, TREE);
+        const stop = harness.sent.find((request) => request.path === "/calibrate/stop");
+        expect(stop?.authorization).toBeUndefined();
+      }),
+    ),
   );
 });
