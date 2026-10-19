@@ -376,6 +376,32 @@ export function routesAfterRemoving(
 }
 
 /**
+ * The paired route to drop when the route in use signs in with a pairing that
+ * predates granular permissions and the environment can also be reached
+ * through T3 Connect. T3 Connect grants the current permissions, and the
+ * addresses it reports are learned again with its credential, so the pairing
+ * adds nothing. Returns null when the route in use does not sign in with a
+ * pairing the user saved, or there is no T3 Connect route to fall back to.
+ */
+export function legacyPairingRouteId(
+  entry: ConnectionCatalogEntry,
+  activeRouteId: string,
+): string | null {
+  const routes = connectionRoutes(entry);
+  if (!routes.some((route) => route.target._tag === "RelayConnectionTarget")) return null;
+  // A learned route that borrows a paired token signs in with that pairing.
+  const ownerId = credentialConnectionId(activeRouteId);
+  const owner = routes.find((route) => connectionRouteId(route.target) === ownerId);
+  if (owner === undefined || owner.target._tag !== "BearerConnectionTarget") return null;
+  const profile = Option.getOrNull(owner.profile);
+  return profile?._tag === "BearerConnectionProfile" &&
+    profile.learned !== true &&
+    profile.authorization === undefined
+    ? ownerId
+    : null;
+}
+
+/**
  * Whether removing T3 Connect leaves the environment no route, so signing out
  * removes it entirely. Routes learned through T3 Connect go with it.
  */

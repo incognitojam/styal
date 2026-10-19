@@ -3,11 +3,14 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import type * as Socket from "effect/socket/Socket";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import { retireLegacyPairing as retireLegacyPairingEffect } from "../connection/legacyPairing.ts";
+import { AVAILABLE_CONNECTION_STATE, type PreparedConnection } from "../connection/model.ts";
+import type * as ConnectionResolver from "../connection/resolver.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import {
   GitHubRoutingPermissions,
@@ -46,7 +49,13 @@ const EMPTY_ENVIRONMENT_CATALOG_STATE: EnvironmentCatalogState = Object.freeze({
 });
 
 export function createEnvironmentCatalogAtoms<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
+  runtime: Atom.AtomRuntime<
+    | EnvironmentRegistry.EnvironmentRegistry
+    | ConnectionResolver.ConnectionResolver
+    | Socket.WebSocketConstructor
+    | R,
+    E
+  >,
 ) {
   const commandScheduler = createAtomCommandScheduler();
   const serial = { mode: "serial" as const, key: () => "environment-catalog" };
@@ -170,6 +179,22 @@ export function createEnvironmentCatalogAtoms<R, E>(
         Effect.flatMap((registry) => registry.removeRoute(input.environmentId, input.routeId)),
       ),
   });
+  const retireLegacyPairing = createRuntimeCommand(runtime, {
+    label: "environment-catalog:retire-legacy-pairing",
+    scheduler: commandScheduler,
+    // Connecting through T3 Connect first can take seconds, so this does not
+    // hold up the other catalog commands; the registry lock covers the change.
+    // Checks queued behind a running one collapse to the newest connection.
+    concurrency: {
+      mode: "latest",
+      key: (input: { readonly environmentId: EnvironmentIdType }) =>
+        `retire-legacy-pairing:${input.environmentId}`,
+    },
+    execute: (input: {
+      readonly environmentId: EnvironmentIdType;
+      readonly checked: PreparedConnection;
+    }) => retireLegacyPairingEffect(input.environmentId, input.checked),
+  });
   const reorderRoutes = createRuntimeCommand(runtime, {
     label: "environment-catalog:reorder-routes",
     scheduler: commandScheduler,
@@ -203,6 +228,7 @@ export function createEnvironmentCatalogAtoms<R, E>(
     register,
     remove,
     removeRoute,
+    retireLegacyPairing,
     reorderRoutes,
     removeRelayEnvironments,
     retryNow,

@@ -16,6 +16,7 @@ import {
   credentialConnectionId,
   insertRoute,
   entryWithRoutes,
+  legacyPairingRouteId,
   mergeLearnedRoutes,
   removedWithRelay,
   routesAfterRemoving,
@@ -312,5 +313,43 @@ describe("learned routes", () => {
     });
     expect(moved).not.toBeNull();
     expect(profileOf(moved![0]!)).toMatchObject({ httpBaseUrl: "https://desk.local:3773/" });
+  });
+});
+
+describe("legacy pairings", () => {
+  const base: ConnectionCatalogEntry = { target: LAN.target, profile: LAN.profile, enabled: true };
+  const withRelay = entryWithRoutes(base, [LAN, RELAY]);
+
+  it("drops a paired route when T3 Connect also reaches the environment", () => {
+    expect(legacyPairingRouteId(withRelay, "lan")).toBe("lan");
+  });
+
+  it("drops the pairing a learned route borrows", () => {
+    const routes = mergeLearnedRoutes({
+      entry: withRelay,
+      activeRoute: LAN,
+      reported: [{ httpBaseUrl: "https://desk.tail1234.ts.net/" }],
+      allowInsecure: true,
+    })!;
+    const learned = routes.find((route) => connectionRouteKind(route) === "tailnet")!;
+    expect(
+      legacyPairingRouteId(entryWithRoutes(base, routes), connectionRouteId(learned.target)),
+    ).toBe("lan");
+  });
+
+  it("keeps a pairing that is the only way in", () => {
+    expect(legacyPairingRouteId(entryWithRoutes(base, [LAN, TAILNET]), "lan")).toBeNull();
+  });
+
+  it("ignores routes that already sign in with T3 Connect", () => {
+    const routes = mergeLearnedRoutes({
+      entry: entryWithRoutes(base, [RELAY]),
+      activeRoute: RELAY,
+      reported: [{ httpBaseUrl: "http://192.168.1.10:3773/" }],
+      allowInsecure: true,
+    })!;
+    const entry = entryWithRoutes(base, routes);
+    expect(legacyPairingRouteId(entry, "relay")).toBeNull();
+    expect(legacyPairingRouteId(entry, connectionRouteId(routes[0]!.target))).toBeNull();
   });
 });
