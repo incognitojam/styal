@@ -7488,6 +7488,203 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
+  it.effect("counts a subagent's usage toward the parent turn while the parent turn is live", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const childModel = "gpt-5.6-sol";
+        const breakdown = (input: number, cached: number, output: number, reasoning: number) => ({
+          totalTokens: input + output,
+          inputTokens: input,
+          cachedInputTokens: cached,
+          outputTokens: output,
+          reasoningOutputTokens: reasoning,
+        });
+        const usageUpdate = (
+          label: string,
+          threadId: string,
+          turnId: string,
+          total: ReturnType<typeof breakdown>,
+          last: ReturnType<typeof breakdown>,
+        ): CodexReplay.CodexAppServerReplayEntry => ({
+          type: "emit_inbound",
+          label,
+          frame: {
+            method: "thread/tokenUsage/updated",
+            params: {
+              threadId,
+              turnId,
+              tokenUsage: { total, last, modelContextWindow: 200_000 },
+            },
+          },
+        });
+        const childSettings: CodexReplay.CodexAppServerReplayEntry = {
+          type: "emit_inbound",
+          label: "thread/settings/updated/child",
+          frame: {
+            method: "thread/settings/updated",
+            params: {
+              threadId: RESUME_CHILD_THREAD,
+              threadSettings: {
+                model: childModel,
+                effort: "low",
+                serviceTier: null,
+                modelProvider: "openai",
+                cwd: "/workspace",
+                approvalPolicy: "never",
+                approvalsReviewer: "auto_review",
+                collaborationMode: { mode: "default", settings: { model: childModel } },
+                sandboxPolicy: { type: "dangerFullAccess" },
+              },
+            },
+          },
+        };
+        const harness = yield* makeCodexReplayHarness({
+          ...resumeSubagentTranscript,
+          entries: resumeSubagentTranscript.entries.flatMap((entry) => {
+            if (entry.type !== "emit_inbound") return [entry];
+            switch (entry.label) {
+              case `turn/started/${RESUME_CHILD_TURN_1}`:
+                return [entry, childSettings];
+              case `turn/completed/${RESUME_CHILD_TURN_1}`:
+                return [
+                  usageUpdate(
+                    "usage/child-1",
+                    RESUME_CHILD_THREAD,
+                    RESUME_CHILD_TURN_1,
+                    breakdown(30, 10, 6, 2),
+                    breakdown(30, 10, 6, 2),
+                  ),
+                  usageUpdate(
+                    "usage/child-2",
+                    RESUME_CHILD_THREAD,
+                    RESUME_CHILD_TURN_1,
+                    breakdown(50, 20, 10, 3),
+                    breakdown(20, 10, 4, 1),
+                  ),
+                  entry,
+                ];
+              case "turn/completed/root":
+                return [
+                  usageUpdate(
+                    "usage/root",
+                    RESUME_NATIVE_THREAD,
+                    RESUME_NATIVE_TURN,
+                    breakdown(100, 40, 20, 5),
+                    breakdown(100, 40, 20, 5),
+                  ),
+                  entry,
+                ];
+              case `turn/completed/${RESUME_CHILD_TURN_2}`:
+                return [
+                  usageUpdate(
+                    "usage/child-late",
+                    RESUME_CHILD_THREAD,
+                    RESUME_CHILD_TURN_2,
+                    breakdown(80, 30, 16, 4),
+                    breakdown(30, 10, 6, 1),
+                  ),
+                  entry,
+                ];
+              default:
+                return [entry];
+            }
+          }),
+        });
+        const completedProviderTurns = (nativeTurnId: string) =>
+          harness.events.flatMap((event) =>
+            event.type === "provider_turn.updated" &&
+            event.providerTurn.nativeTurnRef?.nativeId === nativeTurnId &&
+            event.providerTurn.status === "completed"
+              ? [event.providerTurn]
+              : [],
+          );
+        const parentUpdates = () =>
+          harness.events.filter(
+            (event) =>
+              event.type === "provider_turn.updated" &&
+              event.providerTurn.nativeTurnRef?.nativeId === RESUME_NATIVE_TURN,
+          ).length;
+
+        yield* harness.runtime.startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-codex-subagent-usage"),
+            text: RESUME_PROMPT,
+          }),
+        );
+        yield* TestClock.adjust("100 millis");
+        yield* awaitUntil(() => harness.terminalEvents().length === 1, "root turn terminal");
+
+        const parent = completedProviderTurns(RESUME_NATIVE_TURN);
+        assert.lengthOf(parent, 1);
+        assert.equal(parent[0]?.providerThreadId, harness.providerThread.id);
+        assert.deepEqual(parent[0]?.turnTokenUsage, {
+          usageStatus: "complete",
+          usageScope: "main_agent",
+          hasSubagents: true,
+          inputTokens: 100,
+          cachedInputTokens: 40,
+          outputTokens: 20,
+          reasoningTokens: 5,
+          subagents: {
+            inputTokens: 50,
+            cachedInputTokens: 20,
+            outputTokens: 10,
+            reasoningTokens: 3,
+          },
+          byModel: [
+            { inputTokens: 100, cachedInputTokens: 40, cacheCreationTokens: 0, outputTokens: 20 },
+            {
+              model: childModel,
+              inputTokens: 50,
+              cachedInputTokens: 20,
+              cacheCreationTokens: 0,
+              outputTokens: 10,
+            },
+          ],
+        });
+
+        const child = completedProviderTurns(RESUME_CHILD_TURN_1);
+        assert.lengthOf(child, 1);
+        assert.notEqual(child[0]?.providerThreadId, harness.providerThread.id);
+        assert.deepEqual(child[0]?.turnTokenUsage, {
+          usageStatus: "complete",
+          usageScope: "main_agent",
+          hasSubagents: false,
+          inputTokens: 50,
+          cachedInputTokens: 20,
+          outputTokens: 10,
+          reasoningTokens: 3,
+        });
+
+        // Usage from the subagent after the parent turn completed stays on the
+        // subagent's own turn.
+        const parentUpdateCount = parentUpdates();
+        yield* TestClock.adjust("60 seconds");
+        yield* awaitUntil(
+          () => completedProviderTurns(RESUME_CHILD_TURN_2).length === 1,
+          "resumed subagent turn completion",
+        );
+        assert.deepEqual(completedProviderTurns(RESUME_CHILD_TURN_2)[0]?.turnTokenUsage, {
+          usageStatus: "complete",
+          usageScope: "main_agent",
+          hasSubagents: false,
+          inputTokens: 30,
+          cachedInputTokens: 10,
+          outputTokens: 6,
+          reasoningTokens: 1,
+        });
+        assert.equal(parentUpdates(), parentUpdateCount);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
   it.effect("preserves a subagent result across a trailing empty final and resume", () =>
     Effect.scoped(
       Effect.gen(function* () {

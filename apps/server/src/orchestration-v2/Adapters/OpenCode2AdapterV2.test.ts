@@ -3616,6 +3616,98 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("adds a subagent's tokens and cost to its parent turn's usage", () =>
+    Effect.gen(function* () {
+      const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant", id: "call-sub" };
+      const { runtime, thread } = yield* resumed([
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+        event("session.execution.started", { sessionID: SESSION }),
+        event("session.step.ended", {
+          sessionID: SESSION,
+          assistantMessageID: "msg_assistant",
+          finish: "tool-calls",
+          cost: 0.01,
+          tokens: { input: 1000, output: 50, reasoning: 10, cache: { read: 200, write: 100 } },
+        }),
+        event("session.tool.input.started", { ...tool, name: "subagent" }),
+        event("session.tool.called", {
+          ...tool,
+          name: "subagent",
+          input: { description: "Sleep", prompt: "sleep" },
+          executed: false,
+        }),
+        event("session.created", childCreated(CHILD)),
+        event("session.tool.progress", {
+          ...tool,
+          metadata: { sessionID: CHILD, status: "running" },
+        }),
+        event("session.execution.started", { sessionID: CHILD }),
+        event("session.step.ended", {
+          sessionID: CHILD,
+          assistantMessageID: "msg_assistant_sub",
+          finish: "tool-calls",
+          cost: 0.002,
+          tokens: { input: 400, output: 30, reasoning: 5, cache: { read: 60, write: 40 } },
+        }),
+        event("session.step.ended", {
+          sessionID: CHILD,
+          assistantMessageID: "msg_assistant_sub_2",
+          finish: "stop",
+          cost: 0.003,
+          tokens: { input: 100, output: 20, reasoning: 0, cache: { read: 500, write: 0 } },
+        }),
+        event("session.execution.succeeded", { sessionID: CHILD }),
+        event("session.tool.success", {
+          ...tool,
+          content: [{ type: "text", text: "done" }],
+          metadata: { sessionID: CHILD, status: "completed" },
+        }),
+        event("session.step.ended", {
+          sessionID: SESSION,
+          assistantMessageID: "msg_assistant_after",
+          finish: "stop",
+          cost: 0.02,
+          tokens: { input: 300, output: 70, reasoning: 0, cache: { read: 1100, write: 0 } },
+        }),
+        event("session.execution.succeeded", { sessionID: SESSION }),
+      ]);
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.forkScoped,
+      );
+      yield* runtime.startTurn(withLineage(thread));
+      const settled = (yield* Fiber.join(events)).findLast(
+        (event) =>
+          event.type === "provider_turn.updated" &&
+          event.providerTurn.completedAt !== null &&
+          event.providerTurn.nativeTurnRef?.nativeId?.startsWith(CHILD) !== true,
+      );
+      const usage =
+        settled?.type === "provider_turn.updated" ? settled.providerTurn.turnTokenUsage : undefined;
+      // The parent's own counts are its two steps only.
+      assert.deepInclude(usage, {
+        inputTokens: 1000 + 200 + 100 + 300 + 1100,
+        cachedInputTokens: 200 + 1100,
+        cacheCreationTokens: 100,
+        outputTokens: 50 + 10 + 70,
+        reasoningTokens: 10,
+        hasSubagents: true,
+      });
+      assert.deepEqual(usage && "subagents" in usage ? usage.subagents : undefined, {
+        inputTokens: 400 + 60 + 40 + 100 + 500,
+        cachedInputTokens: 60 + 500,
+        cacheCreationTokens: 40,
+        outputTokens: 30 + 5 + 20,
+        reasoningTokens: 5,
+      });
+      const byModel = usage && "byModel" in usage ? usage.byModel : undefined;
+      assert.lengthOf(byModel ?? [], 1);
+      assert.closeTo(byModel?.[0]?.reportedCostUsd ?? 0, 0.01 + 0.02 + 0.002 + 0.003, 1e-12);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("reports a model's input limit as its context window", () =>
     Effect.gen(function* () {
       const runtime = yield* openCode2ReplayRuntime([...opening]);

@@ -1,7 +1,7 @@
-import type { TurnTokenUsage } from "@t3tools/contracts";
+import type { ModelTokenUsage, SubagentTokenUsage, TurnTokenUsage } from "@t3tools/contracts";
 import type * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-type CodexCumulativeTokenUsage = {
+export type CodexCumulativeTokenUsage = {
   readonly inputTokens: number;
   readonly cachedInputTokens: number;
   readonly cacheCreationTokens?: number;
@@ -17,6 +17,10 @@ interface CodexTurnTokenUsageAccumulator {
   reasoningTokens: number;
   observed: boolean;
   hasSubagents: boolean;
+  /** Growth of subagent threads while this turn was live. */
+  subagents: CodexCumulativeTokenUsage | undefined;
+  /** The same growth by subagent model, keyed "" when Codex has not named it. */
+  readonly subagentsByModel: Map<string, CodexCumulativeTokenUsage>;
 }
 
 export interface CodexTurnTokenUsageState {
@@ -61,6 +65,8 @@ export function getCodexTurnAccumulator(
     reasoningTokens: 0,
     observed: false,
     hasSubagents: false,
+    subagents: undefined,
+    subagentsByModel: new Map(),
   };
   state.byTurnId.set(turnId, created);
   return created;
@@ -100,17 +106,18 @@ function codexTurnTokenUsageDelta(
   };
 }
 
+/** Adds one notification's usage to the live turn, and returns what it added. */
 export function accumulateCodexTurnTokenUsage(
   state: CodexTurnTokenUsageState,
   turnId: string,
   usage: EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification["tokenUsage"],
-): void {
+): CodexCumulativeTokenUsage | undefined {
   const current = codexTokenUsageBreakdown(usage.total);
   if (state.activeTurnId !== turnId) {
     // The total is thread-wide, so every update moves the baseline. A late
     // update for a finished turn is not counted toward the live turn.
     state.baseline = current;
-    return;
+    return undefined;
   }
 
   const accumulator = getCodexTurnAccumulator(state, turnId);
@@ -138,6 +145,76 @@ export function accumulateCodexTurnTokenUsage(
   } else if (accumulator.cacheCreationTokens !== undefined) {
     accumulator.cacheCreationTokens += delta.cacheCreationTokens;
   }
+  return delta;
+}
+
+/**
+ * Adds a subagent thread's usage to the turn that spawned it, while that turn
+ * is live. Usage from a subagent that outlives the turn stays on its own
+ * thread only.
+ */
+export function addCodexSubagentTokenUsage(
+  state: CodexTurnTokenUsageState,
+  turnId: string,
+  delta: CodexCumulativeTokenUsage,
+  model: string | undefined,
+): void {
+  if (state.activeTurnId !== turnId) return;
+  const accumulator = getCodexTurnAccumulator(state, turnId);
+  const add = (previous: CodexCumulativeTokenUsage | undefined) => ({
+    inputTokens: (previous?.inputTokens ?? 0) + delta.inputTokens,
+    cachedInputTokens: (previous?.cachedInputTokens ?? 0) + delta.cachedInputTokens,
+    cacheCreationTokens: (previous?.cacheCreationTokens ?? 0) + (delta.cacheCreationTokens ?? 0),
+    outputTokens: (previous?.outputTokens ?? 0) + delta.outputTokens,
+    reasoningTokens: (previous?.reasoningTokens ?? 0) + delta.reasoningTokens,
+  });
+  accumulator.subagents = add(accumulator.subagents);
+  const key = model?.trim() ?? "";
+  accumulator.subagentsByModel.set(key, add(accumulator.subagentsByModel.get(key)));
+}
+
+function codexSubagentTokenUsage(
+  usage: CodexCumulativeTokenUsage | undefined,
+): SubagentTokenUsage | undefined {
+  if (!usage || usage.inputTokens + usage.outputTokens === 0) return undefined;
+  return {
+    inputTokens: usage.inputTokens,
+    cachedInputTokens: Math.min(usage.inputTokens, usage.cachedInputTokens),
+    ...(usage.cacheCreationTokens
+      ? { cacheCreationTokens: Math.min(usage.inputTokens, usage.cacheCreationTokens) }
+      : {}),
+    outputTokens: usage.outputTokens,
+    reasoningTokens: Math.min(usage.outputTokens, usage.reasoningTokens),
+  };
+}
+
+/**
+ * Splits a turn's tokens by model for pricing when its subagents named their
+ * own. Without that, every token is priced at the turn's model.
+ */
+function codexTokensByModel(
+  usage: CodexTurnTokenUsageAccumulator,
+): ReadonlyArray<ModelTokenUsage> | undefined {
+  const named = [...usage.subagentsByModel].filter(([model]) => model.length > 0);
+  if (named.length === 0) return undefined;
+  const tokens = (counts: CodexCumulativeTokenUsage) => ({
+    inputTokens: counts.inputTokens,
+    cachedInputTokens: Math.min(counts.inputTokens, counts.cachedInputTokens),
+    cacheCreationTokens: Math.min(counts.inputTokens, counts.cacheCreationTokens ?? 0),
+    outputTokens: counts.outputTokens,
+  });
+  const unnamed = usage.subagentsByModel.get("");
+  return [
+    // The main agent and any subagent on the turn's own model.
+    tokens({
+      inputTokens: usage.inputTokens + (unnamed?.inputTokens ?? 0),
+      cachedInputTokens: usage.cachedInputTokens + (unnamed?.cachedInputTokens ?? 0),
+      cacheCreationTokens: (usage.cacheCreationTokens ?? 0) + (unnamed?.cacheCreationTokens ?? 0),
+      outputTokens: usage.outputTokens + (unnamed?.outputTokens ?? 0),
+      reasoningTokens: 0,
+    }),
+    ...named.map(([model, counts]) => ({ model, ...tokens(counts) })),
+  ];
 }
 
 export function currentCodexTurnTokenUsage(
@@ -162,6 +239,8 @@ export function currentCodexTurnTokenUsage(
     };
   }
 
+  const subagents = codexSubagentTokenUsage(usage.subagents);
+  const byModel = codexTokensByModel(usage);
   // Codex counts cache reads and writes inside inputTokens. Clamp the
   // subsets so the record keeps the documented relationships even if a
   // counter drifts.
@@ -176,6 +255,8 @@ export function currentCodexTurnTokenUsage(
     outputTokens: usage.outputTokens,
     reasoningTokens: Math.min(usage.outputTokens, usage.reasoningTokens),
     hasSubagents: usage.hasSubagents,
+    ...(subagents ? { subagents } : {}),
+    ...(byModel ? { byModel } : {}),
   };
 }
 
