@@ -189,3 +189,32 @@ it("omits an empty reset plate but keeps countdowns and banked credits visible",
   await expect.element(plate()).toBeVisible();
   expect(plate()?.textContent).toBe("1");
 });
+
+it.each([false, true])(
+  "shows even pace without clipping the mark in pooled=%s layout",
+  async (pooled) => {
+    await page.viewport(1440, 900);
+    const now = Date.parse("2026-09-03T11:00:00Z");
+    await act(() =>
+      root.render(
+        <UsageLimitsPooled
+          presentations={(pooled ? pooledPresentations : presentations)("2026-09-03T14:00:00Z", 1)}
+          now={now}
+        />,
+      ),
+    );
+    const segment = page.getByRole("button", { name: /^Alpha:.*60% of the window left/ });
+    await expect.element(segment).toBeVisible();
+    const mark = segment.element().querySelector<HTMLSpanElement>('span[style="left: 60%;"]');
+    expect(mark).not.toBeNull();
+    const bar = mark!.parentElement!;
+    expect(mark!.getBoundingClientRect().height).toBeGreaterThan(
+      bar.getBoundingClientRect().height,
+    );
+    expect(getComputedStyle(bar).overflow).toBe("visible");
+    expect(getComputedStyle(segment.element()).overflow).toBe("visible");
+    if (!pooled) expect(segment.element().textContent).toContain("Resets in 3h 0m");
+    await segment.click();
+    await expect.element(page.getByText("60% left by now", { exact: true })).toBeVisible();
+  },
+);
