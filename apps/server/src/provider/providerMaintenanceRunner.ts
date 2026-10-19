@@ -26,6 +26,7 @@ import * as NodeUtil from "node:util";
 
 import * as ModelManifest from "./ModelManifest.ts";
 import { resolveProviderCompatibility } from "./providerCompatibility.ts";
+import * as ProviderInstallGate from "./ProviderInstallGate.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import { makeProviderMaintenanceCommandCoordinator } from "./providerMaintenanceCommandCoordinator.ts";
 import {
@@ -68,8 +69,9 @@ export interface ProviderMaintenanceRunnerShape {
           /**
            * Background update of `targetVersion`, which must be set and which
            * the installer must be able to pin. `shouldStart` runs inside the
-           * installation lock just before the install; when it yields false
-           * the update is dropped without publishing a state.
+           * machine-wide install lock, with turn starts on this CLI held, just
+           * before the install; when it yields false, or another process holds
+           * the lock, the update is dropped without publishing a state.
            */
           readonly autoUpdate?: { readonly shouldStart: Effect.Effect<boolean> } | undefined;
         },
@@ -100,6 +102,8 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
     readonly args: ReadonlyArray<string>;
     readonly env?: NodeJS.ProcessEnv;
     readonly onProgress?: (line: string) => Effect.Effect<void>;
+    /** Records the installer in the install lock, so it stays held if this server dies first. */
+    readonly recordChildPid?: (pid: number) => Effect.Effect<void, Error>;
   }) {
     const collectCommandResult = Effect.fn("ProviderMaintenanceRunner.collectCommandResult")(
       function* () {
@@ -126,6 +130,15 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
             ),
           );
         yield* Effect.addFinalizer(() => child.kill().pipe(Effect.ignore));
+        if (input.recordChildPid) {
+          yield* input
+            .recordChildPid(child.pid)
+            .pipe(
+              Effect.mapError(
+                (cause) => new ProviderMaintenanceCommandError({ message: cause.message, cause }),
+              ),
+            );
+        }
 
         // Holds the newest output line not yet reported; the sampler takes it.
         const pendingProgress = yield* Ref.make<string | null>(null);
@@ -299,15 +312,18 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
   const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
+  const installGate = yield* ProviderInstallGate.ProviderInstallGate;
   const runMaintenanceCommand = (
     update: ProviderMaintenanceCommandAction,
     onProgress: (line: string) => Effect.Effect<void>,
+    recordChildPid: (pid: number) => Effect.Effect<void, Error>,
   ) =>
     runProviderMaintenanceCommandWithSpawner({
       spawner,
       command: update.executable,
       args: update.args,
       onProgress,
+      recordChildPid,
       ...(update.env ? { env: update.env } : {}),
     });
   const commandCoordinator = yield* makeProviderMaintenanceCommandCoordinator({
@@ -431,14 +447,10 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         const finish = (state: ServerProviderUpdateState) =>
           setUpdateState(state).pipe(Effect.map((providers) => ({ providers })));
         const startedAtRef = yield* Ref.make<string | null>(null);
-        // Checked under the lock, so a manual update that finished while this
-        // one was queued, or a turn that started meanwhile, is seen.
-        if (autoUpdate && !(yield* autoUpdate.shouldStart)) {
-          return yield* setUpdateState(null).pipe(Effect.map((providers) => ({ providers })));
-        }
+        const dropped = setUpdateState(null).pipe(Effect.map((providers) => ({ providers })));
 
         const runCommandAndVerify = Effect.fn("ProviderMaintenanceRunner.runCommandAndVerify")(
-          function* () {
+          function* (recordChildPid: (pid: number) => Effect.Effect<void, Error>) {
             const startedAt = yield* nowIso;
             yield* Ref.set(startedAtRef, startedAt);
             const setRunningMessage = (message: string) =>
@@ -516,7 +528,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               );
             }
             yield* setRunningMessage(`Running ${describeCommand(command)}`);
-            const result = yield* runMaintenanceCommand(command, setRunningMessage);
+            const result = yield* runMaintenanceCommand(command, setRunningMessage, recordChildPid);
             const finishedAt = yield* nowIso;
             if (result.timedOut || result.exitCode !== 0) {
               // A failed install can leave the provider broken; show its health now.
@@ -601,7 +613,47 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
           },
         );
 
-        return yield* runCommandAndVerify().pipe(Effect.catchCause(recordFailedUpdate));
+        // Held until the installer exits: no other styal server runs this
+        // installer meanwhile, and turn starts on this CLI wait for it.
+        return yield* installGate
+          .tryInstall(
+            { lockKey: update.lockKey, packageName: capabilities.packageName },
+            (recordChildPid) =>
+              Effect.gen(function* () {
+                // Checked here, so a manual update that finished while this one
+                // was queued, another server's install, or a turn that started
+                // meanwhile is seen.
+                if (autoUpdate && !(yield* autoUpdate.shouldStart)) return yield* dropped;
+                return yield* runCommandAndVerify(recordChildPid);
+              }),
+          )
+          .pipe(
+            Effect.flatMap(
+              Option.match({
+                onSome: Effect.succeed,
+                onNone: () =>
+                  autoUpdate
+                    ? Effect.logInfo("Background provider update skipped", {
+                        instanceId,
+                        reason: "another server on this machine is running this installer",
+                      }).pipe(Effect.andThen(dropped))
+                    : nowIso.pipe(
+                        Effect.flatMap((finishedAt) =>
+                          finish(
+                            makeUpdateState({
+                              status: "failed",
+                              startedAt: null,
+                              finishedAt,
+                              message:
+                                "Another update is running for this provider on this machine. Try again when it finishes.",
+                            }),
+                          ),
+                        ),
+                      ),
+              }),
+            ),
+            Effect.catchCause(recordFailedUpdate),
+          );
       },
     );
 

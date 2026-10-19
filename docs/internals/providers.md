@@ -115,6 +115,15 @@ Ownership is cached per instance and re-read immediately before an update runs. 
 changed since the advisory, and reports success only when the refreshed provider is still installed
 with a readable, current version.
 
+Every install, manual or background, holds a lock file per `lockKey` under
+`~/.cache/t3/provider-install` ([lock](../../apps/server/src/provider/ProviderInstallLock.ts)). The
+directory and record format are upstream's, so styal and T3 Code servers on one host exclude each
+other; do not rename it. While an install runs, turn starts for instances whose CLI shares its
+`lockKey` and package wait in the [gate](../../apps/server/src/provider/ProviderInstallGate.ts);
+another server's install is visible only by `lockKey`, so its waits are wider. The gate's
+in-process state must be one instance per server, so the runtime layer and the server layer both
+provide the same `ProviderInstallGate.layer` value and rely on layer memoization.
+
 ## Protocol traps
 
 Codex async questions arrive as notifications and are answered with a new user message. There is

@@ -25,6 +25,7 @@ import * as Schema from "effect/Schema";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
+import * as ProviderInstallGate from "../provider/ProviderInstallGate.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import {
@@ -93,6 +94,7 @@ export const layer: Layer.Layer<
   | GitWorkflowService.GitWorkflowService
   | ProjectService.ProjectService
   | ProviderAuthService.ProviderAuthService
+  | ProviderInstallGate.ProviderInstallGate
   | ProjectionStore.ProjectionStoreV2
   | ProviderSessionManager.ProviderSessionManagerV2
   | RunExecutionService.RunExecutionServiceV2
@@ -107,6 +109,7 @@ export const layer: Layer.Layer<
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
+    const installGate = yield* ProviderInstallGate.ProviderInstallGate;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
@@ -1275,9 +1278,25 @@ export const layer: Layer.Layer<
       });
     });
 
+    // The run is already persisted as starting, so the updater's last check
+    // before an install sees it. This holds back starts that arrive once an
+    // install of the run's CLI began, here or in another server, so a CLI is
+    // never replaced as it launches. The full start context is read after.
+    const awaitProviderInstall = Effect.fn("orchestrationV2.providerTurnStart.awaitInstall")(
+      function* (input: { readonly threadId: ThreadId; readonly runId: RunId }) {
+        if (!(yield* installGate.installing)) return;
+        const { runs } = yield* projectionStore.getThreadRecords(input.threadId, ["runs"], {
+          runIds: [input.runId],
+        });
+        const run = runs.find((candidate) => candidate.id === input.runId);
+        if (run !== undefined) yield* installGate.awaitInstance(run.providerInstanceId);
+      },
+    );
+
     return ProviderTurnStartServiceV2.of({
       start: (input) =>
-        start(input).pipe(
+        awaitProviderInstall(input).pipe(
+          Effect.andThen(start(input)),
           Effect.mapError((cause) =>
             isProviderTurnStartError(cause)
               ? cause

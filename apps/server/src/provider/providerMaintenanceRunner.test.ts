@@ -23,6 +23,9 @@ import { ChildProcessSpawner } from "effect/process";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
+import * as ProviderInstallGate from "./ProviderInstallGate.ts";
+import * as ProviderInstallLock from "./ProviderInstallLock.ts";
+import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
@@ -212,6 +215,20 @@ function makeRegistry(
   });
 }
 
+// The real gate over a lock no other process holds, unless a test says otherwise.
+const layerInstallGate = (lock: Partial<ProviderInstallLock.ProviderInstallLock["Service"]> = {}) =>
+  Layer.effect(ProviderInstallGate.ProviderInstallGate, ProviderInstallGate.make).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(ProviderInstallLock.ProviderInstallLock)({
+          tryRun: (_lockKey, run) => run(() => Effect.void).pipe(Effect.asSome),
+          ...lock,
+        }),
+        Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
+      ),
+    ),
+  );
+
 const makeTestRunner = (
   registry: ProviderRegistry.ProviderRegistry["Service"],
   // Generic updater fixtures use synthetic versions. Keep their compatibility
@@ -225,6 +242,7 @@ const makeTestRunner = (
       ranges: [],
     })),
   },
+  lock: Partial<ProviderInstallLock.ProviderInstallLock["Service"]> = {},
 ) =>
   Effect.service(ProviderMaintenanceRunner.ProviderMaintenanceRunner).pipe(
     Effect.provide(
@@ -241,6 +259,7 @@ const makeTestRunner = (
             }),
             // Fresh per runner so a version cached by one test cannot leak into another.
             ProviderLatestVersions.layer,
+            layerInstallGate(lock),
           ),
         ),
       ),
@@ -1185,3 +1204,79 @@ it.effect("background updates run only a pinned install that shouldStart allows"
     ),
   );
 });
+
+it.effect(
+  "checks a background update under the install lock and skips it while another server holds it",
+  () => {
+    const calls: string[] = [];
+    const held: string[] = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const pinnedRegistry: ProviderRegistry.ProviderRegistry["Service"] = {
+        ...registry,
+        getProviderMaintenanceCapabilitiesForInstance: () =>
+          Effect.succeed(
+            makeProviderMaintenanceCapabilities({
+              provider: CODEX_DRIVER,
+              packageName: "@openai/codex",
+              updateExecutable: "npm",
+              updateArgs: ["install", "-g", "@openai/codex@latest"],
+              updateLockKey: "npm-global:/fixture",
+            }),
+          ),
+      };
+      const free = yield* makeTestRunner(pinnedRegistry, undefined, {
+        tryRun: (lockKey, run) =>
+          Effect.sync(() => held.push(lockKey)).pipe(
+            Effect.andThen(run(() => Effect.void)),
+            Effect.asSome,
+            Effect.ensuring(Effect.sync(() => held.pop())),
+          ),
+      });
+      let checkedUnderLock: ReadonlyArray<string> = [];
+      yield* free.updateProvider({
+        provider: CODEX_DRIVER,
+        targetVersion: "2.0.0",
+        autoUpdate: {
+          shouldStart: Effect.sync(() => {
+            checkedUnderLock = [...held];
+            return false;
+          }),
+        },
+      });
+      assert.deepStrictEqual(checkedUnderLock, ["npm-global:/fixture"]);
+      assert.deepStrictEqual(calls, []);
+
+      const elsewhere = yield* makeTestRunner(pinnedRegistry, undefined, {
+        tryRun: () => Effect.succeedNone,
+      });
+      let checked = false;
+      const background = yield* elsewhere.updateProvider({
+        provider: CODEX_DRIVER,
+        targetVersion: "2.0.0",
+        autoUpdate: { shouldStart: Effect.sync(() => (checked = true)) },
+      });
+      assert.strictEqual(background.providers[0]?.updateState, undefined);
+      assert.isFalse(checked);
+
+      const manual = yield* elsewhere.updateProvider(CODEX_DRIVER);
+      assert.strictEqual(manual.providers[0]?.updateState?.status, "failed");
+      assert.strictEqual(
+        manual.providers[0]?.updateState?.message,
+        "Another update is running for this provider on this machine. Try again when it finishes.",
+      );
+      assert.deepStrictEqual(calls, []);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("3.0.0"),
+          layerMockSpawner((_command, args) => {
+            calls.push(args.join(" "));
+            return { stdout: "installed" };
+          }),
+        ),
+      ),
+    );
+  },
+);

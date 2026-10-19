@@ -69,6 +69,7 @@ export function describeHostActivity(
   let terminals = 0;
   let uncheckedTerminals = 0;
   let deviceUsers = 0;
+  let providerInstalls = 0;
   let uncheckedHosts = checks.length === 0;
   const threadWarnings: string[] = [];
   const threadActivity: ConfirmDialogThreadActivity[] = [];
@@ -97,6 +98,7 @@ export function describeHostActivity(
     terminals += check.terminalsRequiringConfirmation - check.terminalsWithUnknownActivity;
     uncheckedTerminals += check.terminalsWithUnknownActivity;
     deviceUsers += check.environmentsUsingDevices;
+    providerInstalls += check.providerInstalls ?? 0;
   }
   const lines: string[] = [];
   const interrupted = [
@@ -106,6 +108,10 @@ export function describeHostActivity(
   if (interrupted.length) lines.push(`${interrupted.join(" and ")} will be interrupted.`);
   if (continuing) lines.push(`${plural(continuing, "thread")} will continue after the restart.`);
   if (deviceUsers) lines.push("Devices in use by other environments will be disconnected.");
+  if (providerInstalls)
+    lines.push(
+      `${providerInstalls === 1 ? "A provider update is" : `${providerInstalls} provider updates are`} installing and will be interrupted.`,
+    );
   if (uncheckedTerminals)
     lines.push(
       `Could not check ${plural(uncheckedTerminals, "terminal session")} for running commands.`,
@@ -114,7 +120,7 @@ export function describeHostActivity(
   if (threadWarnings.length) lines.push("", ...threadWarnings);
   return {
     concern:
-      active || terminals || deviceUsers
+      active || terminals || deviceUsers || providerInstalls
         ? "running"
         : waiting
           ? "waiting"

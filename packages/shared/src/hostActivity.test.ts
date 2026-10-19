@@ -86,6 +86,24 @@ describe("describeHostActivity", () => {
     });
   });
 
+  it("treats a provider update being installed as running work", () => {
+    expect(describeHostActivity([{ ...idle, providerInstalls: 1 }], options)).toEqual({
+      concern: "running",
+      lines: ["A provider update is installing and will be interrupted."],
+      incomplete: false,
+      threadActivity: [],
+    });
+    expect(
+      describeHostActivity(
+        [
+          { ...idle, providerInstalls: 1 },
+          { ...idle, providerInstalls: 1 },
+        ],
+        options,
+      ).lines,
+    ).toEqual(["2 provider updates are installing and will be interrupted."]);
+  });
+
   it("does not count uninspected terminals as running work", () => {
     expect(
       describeHostActivity(

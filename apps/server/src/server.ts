@@ -45,6 +45,7 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
+import * as ProviderInstallGate from "./provider/ProviderInstallGate.ts";
 import * as ResetCreditCoordinator from "./provider/resetCreditCoordinator.ts";
 import * as EventNdjsonLogger from "./provider/EventNdjsonLogger.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
@@ -668,6 +669,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   // One runner per server, so manual and background updates share its locks.
   Layer.provideMerge(ProviderMaintenanceRunner.layer),
+  // Shared with turn starts (runtime layer) and host activity, so installs hold
+  // back turns on the same CLI and count as running work.
+  Layer.provideMerge(ProviderInstallGate.layer),
   Layer.provideMerge(ProviderRegistry.layer.pipe(traceShutdown("provider-registry"))),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`

@@ -8,12 +8,14 @@
  * installers that can pin an exact version take part; native self-updaters
  * and Homebrew cannot be held to the verified version.
  *
- * Passes skip while any thread is running or waiting, and the runner checks
- * again inside the installation lock, so a CLI is not replaced under an
- * active turn. Dev servers never run it: they share the host's provider CLIs
- * with the developer's real install.
+ * A CLI is skipped while a thread whose provider instance runs it is
+ * preparing, starting, running or waiting on the user; threads on other CLIs
+ * never hold it back. The runner checks again under the machine-wide install
+ * lock, where new turns on that CLI wait for the install, so a CLI is not
+ * replaced under a turn. Dev servers never run it: they share the host's
+ * provider CLIs with the developer's real install.
  */
-import type { ServerProvider } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadShell, ServerProvider } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
@@ -23,7 +25,6 @@ import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 
 import { ServerConfig } from "../config.ts";
-import { summarizeHostSessions } from "../environment/HostActivity.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ModelManifest from "./ModelManifest.ts";
@@ -31,6 +32,7 @@ import {
   resolveRecentProviderAutoUpdateVersion,
   stableProviderVersion,
 } from "./providerCompatibility.ts";
+import { ProviderInstallGate, type ProviderInstallTarget } from "./ProviderInstallGate.ts";
 import { ProviderMaintenanceRunner } from "./providerMaintenanceRunner.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 
@@ -59,6 +61,19 @@ export function decideProviderAutoUpdate(
   return compareSemverVersions(current, testedVersion) < 0 ? testedVersion : null;
 }
 
+/** A thread whose provider process would have its CLI replaced under it. */
+function isThreadUsingProvider(
+  thread: Pick<OrchestrationV2ThreadShell, "status" | "pendingRuntimeRequest">,
+): boolean {
+  return (
+    thread.pendingRuntimeRequest !== null ||
+    thread.status === "preparing" ||
+    thread.status === "starting" ||
+    thread.status === "running" ||
+    thread.status === "waiting"
+  );
+}
+
 export interface ProviderAutoUpdater {
   /** One pass over every provider instance; exposed for tests. */
   readonly runPass: Effect.Effect<void>;
@@ -73,21 +88,39 @@ export const make = Effect.gen(function* () {
   const runner = yield* ProviderMaintenanceRunner;
   const manifestService = yield* ModelManifest.ModelManifest;
   const projections = yield* ProjectionStoreV2;
+  const installGate = yield* ProviderInstallGate;
   const attemptedAt = new Map<string, number>();
 
   const isEnabled = settingsService.getSettings.pipe(
     Effect.map((settings) => settings.enableProviderUpdateChecks && settings.autoUpdateProviders),
   );
 
-  const isHostBusy = projections.getShellSnapshot().pipe(
-    NodeSqliteClient.readOnly,
-    Effect.map(({ threads }) => {
-      const activity = summarizeHostSessions(threads);
-      return activity.activeSessions + activity.waitingSessions > 0;
-    }),
-    // Unknown activity counts as busy; the next pass tries again.
-    Effect.catchCause(() => Effect.succeed(true)),
-  );
+  /**
+   * Why `target` cannot be replaced now, or null when no thread uses it.
+   * Archived threads have no provider session, so only active ones count.
+   */
+  const busyReason = (target: ProviderInstallTarget) =>
+    projections.getShellSnapshot({ location: "active" }).pipe(
+      NodeSqliteClient.readOnly,
+      Effect.flatMap(({ threads }) =>
+        Effect.forEach(
+          new Set(threads.filter(isThreadUsingProvider).map((thread) => thread.providerInstanceId)),
+          installGate.targetFor,
+        ),
+      ),
+      Effect.map((targets) =>
+        targets.some(
+          (candidate) =>
+            candidate !== null &&
+            candidate.lockKey === target.lockKey &&
+            candidate.packageName === target.packageName,
+        )
+          ? "a thread using this provider CLI is running or waiting"
+          : null,
+      ),
+      // Unknown activity counts as busy; the next pass tries again.
+      Effect.catchCause(() => Effect.succeed("thread activity could not be read")),
+    );
 
   const testedVersionFor = Effect.fn("ProviderAutoUpdater.testedVersionFor")(function* (
     provider: ServerProvider,
@@ -106,10 +139,15 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  // Runs inside the installation lock. A fresh health check sees a manual
-  // update that finished while this one waited, or another instance that
-  // shares the same CLI and was already updated.
-  const shouldStart = (provider: ServerProvider, targetVersion: string) =>
+  // Runs under the machine-wide install lock, with new turns on this CLI held.
+  // A fresh health check sees a manual update or another server's install
+  // that finished while this one waited, or another instance that shares the
+  // same CLI and was already updated.
+  const shouldStart = (
+    provider: ServerProvider,
+    targetVersion: string,
+    target: ProviderInstallTarget,
+  ) =>
     Effect.gen(function* () {
       const skip = (reason: string) =>
         Effect.logInfo("Background provider update skipped", {
@@ -131,7 +169,8 @@ export const make = Effect.gen(function* () {
         return yield* skip("the verified version changed");
       // Last, so a turn started during the checks above is still seen.
       if (!(yield* isEnabled)) return yield* skip("automatic updates were turned off");
-      if (yield* isHostBusy) return yield* skip("a thread is running or waiting");
+      const busy = yield* busyReason(target);
+      if (busy !== null) return yield* skip(busy);
       return true;
     }).pipe(
       Effect.catchCause((cause) =>
@@ -152,7 +191,17 @@ export const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       const previous = attemptedAt.get(attemptKey);
       if (previous !== undefined && now >= previous && now - previous < RETRY_AFTER_MS) continue;
-      if (yield* isHostBusy) return;
+      const target = yield* installGate.targetFor(provider.instanceId);
+      if (target === null) continue;
+      const busy = yield* busyReason(target);
+      if (busy !== null) {
+        yield* Effect.logInfo("Background provider update skipped", {
+          instanceId: provider.instanceId,
+          toVersion: targetVersion,
+          reason: busy,
+        });
+        continue;
+      }
       yield* Effect.logInfo("Updating provider in the background", {
         instanceId: provider.instanceId,
         fromVersion: provider.version,
@@ -165,7 +214,7 @@ export const make = Effect.gen(function* () {
           provider: provider.driver,
           instanceId: provider.instanceId,
           targetVersion,
-          autoUpdate: { shouldStart: shouldStart(provider, targetVersion) },
+          autoUpdate: { shouldStart: shouldStart(provider, targetVersion, target) },
         })
         .pipe(
           Effect.flatMap((result) => {
