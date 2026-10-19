@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import type { Toolkit } from "effect/ai";
 
 import * as HardwareService from "../hardware/HardwareService.ts";
+import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import type { HardwareToolkit } from "../mcp/toolkits/hardware/tools.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as FeatureUsage from "./FeatureUsage.ts";
@@ -30,19 +31,22 @@ export const observeHandlers = Effect.fnUntraced(function* (handlers: Handlers) 
     hardware_acquire: (input, context) =>
       observe({ action: "acquire" }, handlers.hardware_acquire(input, context)),
     hardware_call: (input, context) =>
-      // The tier comes from the service at call time; tool calls are few, unlike proxied ones.
-      Effect.flatMap(
-        Effect.flatMap(HardwareService.HardwareService, (hardware) => hardware.state),
-        (state) =>
-          observe(
-            {
-              action: "call",
-              hardwareTier: state.devices
-                .find((device) => device.id === input.device)
-                ?.actions.find((action) => action.name === input.action)?.tier,
-            },
-            handlers.hardware_call(input, context),
-          ),
+      // The tier the calling thread sees, worktree overrides included. Tool calls
+      // are few, unlike proxied ones, so the extra lookup is cheap.
+      Effect.gen(function* () {
+        const invocation = yield* McpInvocationContext.McpInvocationContext;
+        const hardware = yield* HardwareService.HardwareService;
+        const devices =
+          invocation.thread === undefined
+            ? []
+            : yield* hardware
+                .listForThread(invocation.thread.threadId, input.device)
+                .pipe(Effect.orElseSucceed(() => []));
+        return devices[0]?.actions.find((action) => action.name === input.action)?.tier;
+      }).pipe(
+        Effect.flatMap((hardwareTier) =>
+          observe({ action: "call", hardwareTier }, handlers.hardware_call(input, context)),
+        ),
       ),
     hardware_release: (input, context) =>
       observe({ action: "release" }, handlers.hardware_release(input, context)),

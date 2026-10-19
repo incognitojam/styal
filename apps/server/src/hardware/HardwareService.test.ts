@@ -15,6 +15,7 @@ import {
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -70,6 +71,7 @@ const device: HardwareDeviceConfig = {
 };
 
 interface Sent {
+  readonly host: string;
   readonly method: string;
   readonly path: string;
   readonly query: string;
@@ -111,12 +113,15 @@ const makeHarness = Effect.gen(function* () {
   const main = yield* Ref.make<HardwareDefinition>(definition);
   /** Threads whose running turn has ended. */
   const endedRuns = new Set<ThreadId>();
+  /** When set, the next thread shell read waits for it. */
+  const shellGate = yield* Ref.make<Deferred.Deferred<void> | null>(null);
   const dispatched: OrchestrationV2InternalCommand[] = [];
   const secrets = new Map<string, Uint8Array>();
 
   const http = HttpClient.make((request, url) =>
     Effect.gen(function* () {
       sent.push({
+        host: url.host,
         method: request.method,
         path: url.pathname,
         query: url.search,
@@ -152,7 +157,10 @@ const makeHarness = Effect.gen(function* () {
 
   const threads = {
     getThreadShell: (threadId: ThreadId) =>
-      Effect.map(Ref.get(shells), (map) => map.get(threadId) ?? null),
+      Ref.getAndSet(shellGate, null).pipe(
+        Effect.flatMap((gate) => (gate === null ? Effect.void : Deferred.await(gate))),
+        Effect.andThen(Effect.map(Ref.get(shells), (map) => map.get(threadId) ?? null)),
+      ),
     getThreadRecords: (threadId: ThreadId) =>
       Effect.map(Ref.get(requests), (runtimeRequests) => ({
         runs: [endedRuns.has(threadId) ? { ...activeRun, status: "completed" } : activeRun],
@@ -258,6 +266,7 @@ const makeHarness = Effect.gen(function* () {
     endRun,
     count,
     approvalsOpened,
+    shellGate,
   };
 });
 
@@ -638,6 +647,102 @@ describe("HardwareService", () => {
         yield* hardware.call(CALIBRATOR, { device: TREE, action: "status" });
         yield* TestClock.adjust("3 minutes");
         expect((yield* hardware.state).devices[0]?.lease?.threadId).toBe(CALIBRATOR);
+      }),
+    ),
+  );
+
+  it.effect("ends a lease whose device is re-pointed, cleaning up at the old address", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        yield* hardware.acquire(CALIBRATOR, { device: TREE, purpose: "front angle" });
+        yield* harness.settings.updateSettings({
+          hardwareDevices: [{ ...device, baseUrl: "http://tree-moved.test:8080" }],
+        });
+        yield* TestClock.adjust("16 seconds");
+        expect((yield* hardware.state).devices[0]?.lease).toBeNull();
+        const stops = harness.sent.filter((request) => request.path === "/calibrate/stop");
+        expect(stops.map((request) => request.host)).toEqual(["tree.test:8080"]);
+      }),
+    ),
+  );
+
+  it.effect("refuses a proxied call whose lease was replaced while it was in flight", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        const { proxyBaseUrl } = yield* hardware.acquire(CALIBRATOR, {
+          device: TREE,
+          purpose: "front angle",
+        });
+        const gate = yield* Deferred.make<void>();
+        yield* Ref.set(harness.shellGate, gate);
+        const inFlight = yield* hardware
+          .proxy({
+            token: proxyBaseUrl.split("/").at(-1)!,
+            method: "GET",
+            path: "/calibrate/led",
+            query: [["n", "9"]],
+          })
+          .pipe(Effect.forkChild);
+        yield* TestClock.adjust("10 millis");
+        yield* hardware.release(CALIBRATOR, TREE);
+        yield* hardware.acquire(CALIBRATOR, { device: TREE, purpose: "front angle again" });
+        yield* Deferred.succeed(gate, undefined);
+        expect((yield* Fiber.join(inFlight)).status).toBe(410);
+        expect(paths(harness.sent)).not.toContain("GET /calibrate/led?n=9");
+      }),
+    ),
+  );
+
+  it.effect("ends a lease that expired while the server was stopped before it can be used", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const token = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const first = yield* harness.start;
+            const granted = yield* first.acquire(CALIBRATOR, {
+              device: TREE,
+              purpose: "front angle",
+              idleMinutes: 5,
+            });
+            return granted.proxyBaseUrl.split("/").at(-1)!;
+          }),
+        );
+        yield* harness.setBusy(CALIBRATOR, false);
+        yield* Ref.set(harness.online, false);
+        yield* TestClock.adjust("6 minutes");
+        const restarted = yield* harness.start;
+        expect((yield* restarted.state).devices[0]?.lease).toBeNull();
+        const proxied = yield* restarted.proxy({
+          token,
+          method: "GET",
+          path: "/calibrate/led",
+          query: [["n", "1"]],
+        });
+        expect(proxied.status).toBe(410);
+      }),
+    ),
+  );
+
+  it.effect("does not send an approved call to a device removed while it waited", () =>
+    withDatabase(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness;
+        const hardware = yield* harness.start;
+        yield* hardware.acquire(FIRMWARE, { device: TREE, purpose: "flash" });
+        const call = yield* hardware
+          .call(FIRMWARE, { device: TREE, action: "reboot" })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* TestClock.adjust("1 second");
+        yield* harness.settings.updateSettings({ hardwareDevices: [] });
+        yield* harness.answer("accept");
+        yield* TestClock.adjust("1 second");
+        yield* Fiber.join(call);
+        expect(harness.count("POST", "/reboot")).toBe(0);
       }),
     ),
   );

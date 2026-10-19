@@ -762,14 +762,11 @@ export const make = Effect.gen(function* () {
   ) {
     const lease = (yield* Ref.get(leases)).get(deviceId);
     if (!isHeld(lease)) return false;
-    const device = yield* findDevice(deviceId);
-    // A removed device keeps the plan it had when the lease was granted.
-    const releasePlan =
-      device === undefined ? lease.releasePlan : yield* hookPlan(device, lease.purpose, "release");
+    // Cleanup uses the plan taken at grant: the hooks accepted then, sent to the
+    // address the lease used, whatever has been edited or removed since.
     const now = yield* Clock.currentTimeMillis;
     const ended: Lease = {
       ...lease,
-      releasePlan,
       releasingUntil: now + RELEASE_RETRY_WINDOW_MS,
       approvedActions: new Map(),
     };
@@ -995,7 +992,16 @@ export const make = Effect.gen(function* () {
           }
           return Option.none<Lease>();
         }
-        return Option.some(yield* grant(latest, threadId, input));
+        // The probe waited on the network; whatever it waited past is checked again.
+        const { device: confirmed } = yield* resolve(threadId, input.device);
+        if (confirmed.baseUrl !== latest.baseUrl) return Option.none<Lease>();
+        if (run !== undefined && (yield* activeRun(threadId))?.id !== run.id) {
+          return yield* toolError("unavailable", "The turn waiting for the device ended.");
+        }
+        if ((yield* runtimeFor(latest.id)).paused) {
+          return yield* toolError("paused", `The user paused ${latest.id}. Try again later.`);
+        }
+        return Option.some(yield* grant(confirmed, threadId, input));
       });
       while (true) {
         const signal = yield* Ref.get(leaseChanged);
@@ -1224,10 +1230,15 @@ export const make = Effect.gen(function* () {
     return effective === null ? null : yield* actionsForThread(device, shell, effective);
   });
 
+  /**
+   * Runs one action for a thread. A proxied call carries the token it was
+   * authorised with and runs only under that same lease, reads included.
+   */
   const performCall = Effect.fn("HardwareService.performCall")(function* (
     threadId: ThreadId,
     input: HardwareToolCallInput,
     via: CallVia,
+    proxyToken: string | null = null,
   ) {
     const { device, shell } = yield* resolve(threadId, input.device);
     if ((yield* runtimeFor(device.id)).paused) {
@@ -1264,8 +1275,9 @@ export const make = Effect.gen(function* () {
     if (action.body === "file" && input.bodyFile === undefined) {
       return yield* toolError("invalid_request", `"${input.action}" sends a file; pass bodyFile.`);
     }
-    // Operate and approve calls are bound to the lease held now; everything below re-checks it.
-    let heldToken: string | null = null;
+    // Operate and approve calls, and every proxied call, are bound to one lease;
+    // everything below re-checks it.
+    let heldToken: string | null = proxyToken;
     if (action.tier !== "read") {
       const lease = (yield* Ref.get(leases)).get(device.id);
       if (lease === undefined) {
@@ -1276,6 +1288,9 @@ export const make = Effect.gen(function* () {
       }
       if (!isHeld(lease) || lease.threadId !== threadId)
         return yield* Effect.flatMap(busyError(device.id, lease, threadId), Effect.fail);
+      if (proxyToken !== null && lease.token !== proxyToken) {
+        return yield* toolError("not_held", `The lease this proxy URL belonged to has ended.`);
+      }
       heldToken = lease.token;
     }
     const sameLease = Effect.map(Ref.get(leases), (map) => {
@@ -1349,6 +1364,19 @@ export const make = Effect.gen(function* () {
       if (heldToken !== null && !(yield* sameLease)) {
         return yield* toolError("not_held", `The lease on ${device.id} ended before the call ran.`);
       }
+      // The device as configured now: removed, moved or re-pointed since the call
+      // was prepared, it must not be sent with the old target or credential.
+      const fresh = yield* resolve(threadId, device.id);
+      if (
+        fresh.device.baseUrl !== device.baseUrl ||
+        fresh.device.projectId !== device.projectId ||
+        encodeJson(fresh.device.auth ?? null) !== encodeJson(device.auth ?? null)
+      ) {
+        return yield* toolError(
+          "unavailable",
+          `${device.id}'s settings changed while the call was prepared. Call it again.`,
+        );
+      }
       if ((yield* runtimeFor(device.id)).paused) {
         return yield* toolError("paused", `The user paused ${device.id}.`);
       }
@@ -1358,7 +1386,7 @@ export const make = Effect.gen(function* () {
           "Agent hardware access is turned off for this project.",
         );
       }
-      const now = (yield* currentActions(device, shell))?.[input.action];
+      const now = (yield* currentActions(fresh.device, fresh.shell))?.[input.action];
       if (now === undefined || actionShape(now) !== shape || now.tier !== action.tier) {
         return yield* toolError(
           "unavailable",
@@ -1445,16 +1473,19 @@ export const make = Effect.gen(function* () {
         lease.threadId,
         { device: lease.deviceId, action: match.name, query },
         "proxy",
+        request.token,
       ).pipe(Effect.result);
       if (result._tag === "Failure") {
         const status =
           result.failure.code === "forbidden" || result.failure.code === "paused"
             ? 403
-            : result.failure.code === "invalid_request"
-              ? 400
-              : result.failure.code === "request_failed"
-                ? 502
-                : 409;
+            : result.failure.code === "not_held"
+              ? 410
+              : result.failure.code === "invalid_request"
+                ? 400
+                : result.failure.code === "request_failed"
+                  ? 502
+                  : 409;
         return {
           status,
           contentType: "application/json",
@@ -1683,6 +1714,13 @@ export const make = Effect.gen(function* () {
     now: number,
   ) {
     if (device === undefined) return "The device was removed.";
+    // Its cleanup must reach the device the lease used, so a re-pointed device ends the lease.
+    if (
+      device.baseUrl !== lease.releasePlan.baseUrl ||
+      encodeJson(device.auth ?? null) !== encodeJson(lease.releasePlan.auth ?? null) ||
+      (shell !== null && shell.projectId !== device.projectId)
+    )
+      return "The device's settings changed.";
     if (threadGone(shell)) return "The thread was deleted or archived.";
     if (!(yield* accessAllowed(device.projectId)))
       return "Agent hardware access was turned off for this project.";
@@ -1746,13 +1784,17 @@ export const make = Effect.gen(function* () {
     const observed = (yield* Ref.get(probeSubscribers)) > 0;
     const now = yield* Clock.currentTimeMillis;
     const leasedIds = [...(yield* Ref.get(leases)).keys()];
+    // Each device on its own fiber: one device's slow cleanup or hooks must not
+    // delay another's renewals. A device still busy from the last round, or
+    // mid-call, is skipped until the next tick.
     for (const deviceId of leasedIds) {
       yield* lockFor(deviceId)
-        .withPermits(1)(tickLease(deviceId, configured, now))
+        .withPermitsIfAvailable(1)(tickLease(deviceId, configured, now))
         .pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("Hardware lease tick failed", { deviceId, cause }),
           ),
+          Effect.forkIn(scope),
         );
     }
     for (const device of configured) {
@@ -1810,16 +1852,45 @@ export const make = Effect.gen(function* () {
       ]),
     ),
   );
+  // A lease that ran out while the server was stopped is ended before the
+  // service is reachable, so its old token never works again; its cleanup runs
+  // on the first tick. If that cannot be recorded, its device stays paused.
   const startedAt = yield* Clock.currentTimeMillis;
-  const expiredOnRestore = restored
-    .filter(
-      (lease) =>
-        lease.releasingUntil === null &&
-        !lease.keepUntilReleased &&
-        ((lease.hardExpiresAt !== null && startedAt >= lease.hardExpiresAt) ||
-          startedAt >= lease.lastActivityAt + lease.idleMinutes * 60_000),
-    )
-    .map((lease) => lease.deviceId);
+  for (const lease of restored) {
+    if (
+      lease.releasingUntil !== null ||
+      lease.keepUntilReleased ||
+      !(
+        (lease.hardExpiresAt !== null && startedAt >= lease.hardExpiresAt) ||
+        startedAt >= lease.lastActivityAt + lease.idleMinutes * 60_000
+      )
+    ) {
+      continue;
+    }
+    const current = (yield* Ref.get(leases)).get(lease.deviceId);
+    if (current === undefined) continue;
+    const ended: Lease = { ...current, releasingUntil: startedAt + RELEASE_RETRY_WINDOW_MS };
+    yield* store.saveLease(ended).pipe(
+      Effect.andThen(setLease(ended)),
+      Effect.andThen(
+        store.audit({
+          deviceId: lease.deviceId,
+          actor: "system",
+          threadId: lease.threadId,
+          event: "lease.expired",
+          detail: { reason: "The lease ran out while the server was stopped." },
+        }),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.logError("Could not end an expired hardware lease; pausing its device", {
+          deviceId: lease.deviceId,
+          cause,
+        }).pipe(
+          Effect.andThen(updateRuntime(lease.deviceId, (state) => ({ ...state, paused: true }))),
+        ),
+      ),
+    );
+  }
   for (const device of yield* devices) {
     const present = yield* secrets.get(secretName(device.id)).pipe(
       Effect.map(Option.isSome),
@@ -1830,22 +1901,6 @@ export const make = Effect.gen(function* () {
 
   yield* forkParked(
     Effect.gen(function* () {
-      for (const deviceId of expiredOnRestore) {
-        yield* lockFor(deviceId)
-          .withPermits(1)(
-            endLease(
-              deviceId,
-              "lease.expired",
-              "system",
-              "The lease ran out while the server was stopped.",
-            ),
-          )
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Could not end a hardware lease", { deviceId, cause }),
-            ),
-          );
-      }
       yield* tick.pipe(Effect.repeat(Schedule.spaced(TICK_INTERVAL)));
     }),
   );
