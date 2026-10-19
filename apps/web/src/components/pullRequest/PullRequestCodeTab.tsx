@@ -308,7 +308,7 @@ function PullRequestCodeTab({
 
   const referenceKey = pullRequestReviewKey(reference);
   const commit = selectedCommitOid;
-  const scopeKey = commit === null ? referenceKey : `${referenceKey}@${commit}`;
+  const scopeKey = JSON.stringify([environmentId, referenceKey, commit]);
   // The panel keeps this mounted across pull requests, so an open composer would otherwise
   // survive the switch and attach its comment to whichever one is on screen when it is sent.
   const [stateScopeKey, setStateScopeKey] = useState(scopeKey);
