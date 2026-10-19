@@ -162,11 +162,12 @@ function codexAccountEmail(account: CodexSchema.V2GetAccountResponse["account"])
   return account.email;
 }
 
-/**
- * styal's default Codex effort for models that offer it. Also the collaboration
- * mode's fallback for a turn that names no effort.
- */
+/** styal's default Codex effort for models that offer it. */
 const CODEX_DEFAULT_REASONING_EFFORT = "medium";
+
+export function codexDefaultReasoningEffortOverride(model: string): "medium" | undefined {
+  return codexModelFamily(model) === "gpt-6-astra" ? "medium" : undefined;
+}
 
 export function mapCodexModelCapabilities(
   model: CodexSchema.V2ModelListResponse__Model,
