@@ -8,7 +8,11 @@ import { useEffect } from "react";
 import { environmentCatalog } from "../connection/catalog";
 import { getLocalStorageItem, setLocalStorageItem } from "../hooks/useLocalStorage";
 import { useEnvironments } from "../state/environments";
-import { environmentSession, usePreparedConnection } from "../state/session";
+import {
+  environmentSession,
+  readPreparedConnection,
+  usePreparedConnection,
+} from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
 import { toastManager } from "./ui/toast";
 
@@ -18,6 +22,7 @@ import { toastManager } from "./ui/toast";
 // Strict Mode effect replay.
 const checked = new WeakSet<PreparedConnection>();
 const shown = new Set<EnvironmentId>();
+const openNotices = new Map<EnvironmentId, string>();
 
 function showPermissionNotice(input: {
   environmentId: EnvironmentId;
@@ -27,7 +32,7 @@ function showPermissionNotice(input: {
   const { environmentId, label, navigate } = input;
   const key = `t3code:permission-update:v1:${environmentId}`;
   try {
-    if (getLocalStorageItem(key, Schema.Boolean)) return;
+    if (getLocalStorageItem(key, Schema.Boolean)) return undefined;
   } catch {
     // An unavailable store must not prevent the notice.
   }
@@ -61,6 +66,7 @@ function showPermissionNotice(input: {
       secondaryActionVariant: "ghost",
     },
   });
+  return id;
 }
 
 function EnvironmentPermissionNotice({
@@ -88,10 +94,19 @@ function EnvironmentPermissionNotice({
     checked.add(prepared.value);
     // An old pairing is redundant when T3 Connect also reaches the environment,
     // so it is dropped instead of asking the user to pair again.
-    void retireLegacyPairing({ environmentId, checked: prepared.value }).then((result) => {
-      if ((result._tag === "Success" && result.value) || shown.has(environmentId)) return;
+    const current = prepared.value;
+    void retireLegacyPairing({ environmentId, checked: current }).then((result) => {
+      if (result._tag === "Success" && result.value) {
+        const notice = openNotices.get(environmentId);
+        if (notice !== undefined) toastManager.close(notice);
+        return;
+      }
+      // Checks queued together share the newest one's result, which says
+      // nothing about an older connection.
+      if (readPreparedConnection(environmentId) !== current || shown.has(environmentId)) return;
       shown.add(environmentId);
-      showPermissionNotice({ environmentId, label, navigate });
+      const notice = showPermissionNotice({ environmentId, label, navigate });
+      if (notice !== undefined) openNotices.set(environmentId, notice);
     });
   }, [environmentId, label, navigate, prepared, retireLegacyPairing, session]);
 

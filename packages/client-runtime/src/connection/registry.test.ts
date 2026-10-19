@@ -19,6 +19,7 @@ import * as Scheduler from "effect/Scheduler";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as Socket from "effect/socket/Socket";
 
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as TokenStore from "../authorization/tokenStore.ts";
@@ -2001,12 +2002,53 @@ describe("EnvironmentRegistry routes", () => {
     httpAuthorization: token === null ? null : { _tag: "Bearer", token },
     target,
   });
-  const linkResolver = (prepare: ConnectionResolver.ConnectionResolver["Service"]["prepare"]) =>
-    Layer.succeed(
-      ConnectionResolver.ConnectionResolver,
-      ConnectionResolver.ConnectionResolver.of({
-        prepare,
-        prepareForUpdate: () => Effect.die("Unexpected update authorization"),
+  // Opens, or fails to open, the way a browser WebSocket reports it.
+  class LinkSocket {
+    readyState = 0;
+    private readonly listeners = new Map<string, Set<(event: { type: string }) => void>>();
+
+    constructor(opens: boolean) {
+      queueMicrotask(() => {
+        this.readyState = opens ? 1 : 3;
+        this.emit({ type: opens ? "open" : "error" });
+        if (!opens) this.emit({ type: "close" });
+      });
+    }
+
+    addEventListener(type: string, listener: (event: { type: string }) => void) {
+      const listeners = this.listeners.get(type) ?? new Set();
+      listeners.add(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    removeEventListener(type: string, listener: (event: { type: string }) => void) {
+      this.listeners.get(type)?.delete(listener);
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+
+    private emit(event: { type: string }) {
+      for (const listener of this.listeners.get(event.type) ?? []) listener(event);
+    }
+  }
+  const linkLayer = (input: {
+    readonly prepare: ConnectionResolver.ConnectionResolver["Service"]["prepare"];
+    readonly socketOpens: boolean;
+    readonly socketUrls: Array<string>;
+  }) =>
+    Layer.mergeAll(
+      Layer.succeed(
+        ConnectionResolver.ConnectionResolver,
+        ConnectionResolver.ConnectionResolver.of({
+          prepare: input.prepare,
+          prepareForUpdate: () => Effect.die("Unexpected update authorization"),
+        }),
+      ),
+      Layer.succeed(Socket.WebSocketConstructor, (url) => {
+        input.socketUrls.push(url);
+        return new LinkSocket(input.socketOpens) as unknown as globalThis.WebSocket;
       }),
     );
 
@@ -2089,7 +2131,8 @@ describe("EnvironmentRegistry routes", () => {
         [LAN_PROFILE],
         [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
       );
-      const attempted = yield* Ref.make<ReadonlyArray<string>>([]);
+      const attempted: Array<string> = [];
+      const socketUrls: Array<string> = [];
       yield* Effect.gen(function* () {
         expect(
           yield* retireLegacyPairing(
@@ -2097,7 +2140,8 @@ describe("EnvironmentRegistry routes", () => {
             checkedOver(LAN_TARGET, BEARER_CREDENTIAL.token),
           ),
         ).toBe(false);
-        expect(yield* Ref.get(attempted)).toEqual(["relay"]);
+        expect(attempted).toEqual(["relay"]);
+        expect(socketUrls).toEqual([]);
         expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
           LAN_TARGET,
           RELAY_TARGET,
@@ -2106,18 +2150,19 @@ describe("EnvironmentRegistry routes", () => {
         Effect.provide(
           Layer.merge(
             harness.layer,
-            linkResolver((entry) =>
-              Ref.update(attempted, (ids) => [...ids, connectionRouteId(entry.target)]).pipe(
-                Effect.andThen(
-                  Effect.fail(
-                    new ConnectionBlockedError({
-                      reason: "authentication",
-                      detail: "Sign in to T3 Connect again.",
-                    }),
-                  ),
-                ),
-              ),
-            ),
+            linkLayer({
+              prepare: (entry) => {
+                attempted.push(connectionRouteId(entry.target));
+                return Effect.fail(
+                  new ConnectionBlockedError({
+                    reason: "authentication",
+                    detail: "Sign in to T3 Connect again.",
+                  }),
+                );
+              },
+              socketOpens: true,
+              socketUrls,
+            }),
           ),
         ),
         Effect.scoped,
@@ -2125,13 +2170,54 @@ describe("EnvironmentRegistry routes", () => {
     }),
   );
 
-  it.effect("drops an old pairing once T3 Connect signs in", () =>
+  it.effect("keeps an old pairing when the T3 Connect socket does not open", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness(
         [LAN_TARGET, RELAY_TARGET],
         [LAN_PROFILE],
         [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
       );
+      const socketUrls: Array<string> = [];
+      yield* Effect.gen(function* () {
+        expect(
+          yield* retireLegacyPairing(
+            LAN_TARGET.environmentId,
+            checkedOver(LAN_TARGET, BEARER_CREDENTIAL.token),
+          ),
+        ).toBe(false);
+        expect(socketUrls).toEqual(["wss://relay.example.test/ws"]);
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          LAN_TARGET,
+          RELAY_TARGET,
+        ]);
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            harness.layer,
+            linkLayer({
+              prepare: (entry) =>
+                Effect.succeed({
+                  ...checkedOver(entry.target, null),
+                  socketUrl: "wss://relay.example.test/ws",
+                }),
+              socketOpens: false,
+              socketUrls,
+            }),
+          ),
+        ),
+        Effect.scoped,
+      );
+    }),
+  );
+
+  it.effect("drops an old pairing once a T3 Connect socket opens", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [LAN_TARGET, RELAY_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      const socketUrls: Array<string> = [];
       yield* Effect.gen(function* () {
         expect(
           yield* retireLegacyPairing(
@@ -2139,6 +2225,7 @@ describe("EnvironmentRegistry routes", () => {
             checkedOver(LAN_TARGET, BEARER_CREDENTIAL.token),
           ),
         ).toBe(true);
+        expect(socketUrls).toEqual(["wss://relay.example.test/ws"]);
         expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
           RELAY_TARGET,
         ]);
@@ -2146,7 +2233,15 @@ describe("EnvironmentRegistry routes", () => {
         Effect.provide(
           Layer.merge(
             harness.layer,
-            linkResolver((entry) => Effect.succeed(checkedOver(entry.target, null))),
+            linkLayer({
+              prepare: (entry) =>
+                Effect.succeed({
+                  ...checkedOver(entry.target, null),
+                  socketUrl: "wss://relay.example.test/ws",
+                }),
+              socketOpens: true,
+              socketUrls,
+            }),
           ),
         ),
         Effect.scoped,

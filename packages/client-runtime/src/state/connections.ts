@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import type * as Socket from "effect/socket/Socket";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
@@ -49,7 +50,10 @@ const EMPTY_ENVIRONMENT_CATALOG_STATE: EnvironmentCatalogState = Object.freeze({
 
 export function createEnvironmentCatalogAtoms<R, E>(
   runtime: Atom.AtomRuntime<
-    EnvironmentRegistry.EnvironmentRegistry | ConnectionResolver.ConnectionResolver | R,
+    | EnvironmentRegistry.EnvironmentRegistry
+    | ConnectionResolver.ConnectionResolver
+    | Socket.WebSocketConstructor
+    | R,
     E
   >,
 ) {
@@ -178,10 +182,11 @@ export function createEnvironmentCatalogAtoms<R, E>(
   const retireLegacyPairing = createRuntimeCommand(runtime, {
     label: "environment-catalog:retire-legacy-pairing",
     scheduler: commandScheduler,
-    // Signing in through T3 Connect first can take seconds, so this does not
+    // Connecting through T3 Connect first can take seconds, so this does not
     // hold up the other catalog commands; the registry lock covers the change.
+    // Checks queued behind a running one collapse to the newest connection.
     concurrency: {
-      mode: "serial",
+      mode: "latest",
       key: (input: { readonly environmentId: EnvironmentIdType }) =>
         `retire-legacy-pairing:${input.environmentId}`,
     },

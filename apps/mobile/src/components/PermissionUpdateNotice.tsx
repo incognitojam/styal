@@ -22,7 +22,11 @@ const checkedConnections = new WeakSet<PreparedConnection>();
 export function PermissionUpdateNotice() {
   const { environments } = useEnvironments();
   const [dismissed, setDismissed] = useState<ReadonlySet<string> | null>(null);
-  const [needsNotice, setNeedsNotice] = useState<ReadonlySet<string>>(new Set());
+  // The connection each environment's notice is for, so a result shared with a
+  // newer check cannot raise the notice for a connection it was not about.
+  const [needsNotice, setNeedsNotice] = useState<ReadonlyMap<string, PreparedConnection>>(
+    new Map(),
+  );
   const showing = useRef(false);
   const retireLegacyPairing = useAtomCommand(environmentCatalog.retireLegacyPairing, {
     reportFailure: false,
@@ -60,10 +64,12 @@ export function PermissionUpdateNotice() {
       void retireLegacyPairing({ environmentId, checked: prepared }).then((result) => {
         const retired = result._tag === "Success" && result.value;
         setNeedsNotice((current) => {
-          if (retired ? !current.has(environmentId) : current.has(environmentId)) return current;
-          const next = new Set(current);
+          if (retired ? !current.has(environmentId) : current.get(environmentId) === prepared) {
+            return current;
+          }
+          const next = new Map(current);
           if (retired) next.delete(environmentId);
-          else next.add(environmentId);
+          else next.set(environmentId, prepared);
           return next;
         });
       });
@@ -95,8 +101,8 @@ export function PermissionUpdateNotice() {
   useEffect(() => {
     if (dismissed === null || showing.current) return;
     const environment = affected.find(
-      ({ environment: { environmentId } }) =>
-        needsNotice.has(environmentId) &&
+      ({ environment: { environmentId }, prepared }) =>
+        needsNotice.get(environmentId) === prepared &&
         !dismissed.has(environmentId) &&
         !shownThisLaunch.has(environmentId),
     )?.environment;

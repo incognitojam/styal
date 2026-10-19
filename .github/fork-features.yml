@@ -3738,10 +3738,10 @@ features:
     prs: [907]
     invariants:
       - When a client's session over a saved pairing has only pre-split permissions and the environment also has a styal Link route, the client removes that pairing route (and learned routes borrowing its token) instead of telling the user to pair again.
-      - The pairing is removed only after styal Link signs in to the environment, and only while it still holds the token whose session was checked; otherwise it is kept and the permission notice shows.
+      - The pairing is removed only after styal Link signs in to the environment and opens a socket to it, and only while the pairing still holds the token whose session was checked; otherwise it is kept and the permission notice shows.
       - A pairing that is the only way to reach an environment is kept, and the existing permission notice still shows for it.
       - Routes that already sign in with styal Link are never removed by this check.
-      - Each new connection is checked again, so a second old pairing or a Link route added later is handled in the same launch; the notice shows at most once per environment per launch.
+      - Each new connection is checked again, so a second old pairing or a Link route added later is handled in the same launch; checks queued behind a running one collapse to the newest connection, a result about an older connection never raises the notice, and the notice shows at most once per environment per launch and closes on web once a later check drops the pairing.
     rationale: Upstream keeps recorded grants unchanged across the permission split (pingdotgg/t3code#10298). A pairing next to a Link route only shadows Link's current grant on the LAN, and Link learns the same LAN address with its own credential.
     implementation_paths:
       - apps/mobile/src/components/PermissionUpdateNotice.tsx
