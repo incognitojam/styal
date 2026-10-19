@@ -1,4 +1,4 @@
-import { RequestActionButton } from "./RequestActionButton";
+import { Button } from "../../components/ui/Button";
 import { QuestionAttachments } from "./QuestionAttachments";
 import { PendingQuestionText } from "./PendingQuestionText";
 import type { RuntimeRequestId, ScopedThreadRef } from "@t3tools/contracts";
@@ -306,9 +306,9 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           );
         })}
       </ScrollView>
-      <RequestActionButton
+      <Button
         label="Submit answers"
-        size="large"
+        fullWidth
         tone={props.answers ? "primary" : "secondary"}
         disabled={!props.canOperateThread || responseDisabled || props.answers === null}
         onPress={() => void props.onSubmit()}

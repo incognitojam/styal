@@ -9,12 +9,12 @@ import { useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { Button } from "../../components/ui/Button";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { composerPullRequests } from "../../state/pull-requests";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { RequestActionButton } from "./RequestActionButton";
 
 type ReviewState = "approved" | "rejected";
 
@@ -99,7 +99,7 @@ export function WorkflowRunReviewCard(props: {
           </Text>
         </View>
         {props.stopWatching ? (
-          <RequestActionButton label="Stop" tone="secondary" {...props.stopWatching} />
+          <Button label="Stop" tone="secondary" {...props.stopWatching} />
         ) : null}
       </View>
       <Text className="font-sans text-sm leading-5 text-foreground-secondary">
@@ -166,18 +166,19 @@ export function WorkflowRunReviewCard(props: {
       ) : null}
       <View className="flex-row gap-2.5">
         <View className="flex-1">
-          <RequestActionButton
+          <Button
             label="Reject"
-            size="large"
             tone="danger"
+            fullWidth
             disabled={locked || selected.size === 0}
             onPress={() => void submit("rejected")}
           />
         </View>
         <View className="flex-1">
-          <RequestActionButton
+          <Button
             label={submitting ? "Submitting…" : "Approve and deploy"}
-            size="large"
+            tone="primary"
+            fullWidth
             disabled={locked || selected.size === 0}
             onPress={() => void submit("approved")}
           />
