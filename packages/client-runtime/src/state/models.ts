@@ -226,6 +226,12 @@ export function presentThreadShell(
               : nullableIso(thread.latestRunCompletedAt),
           assistantMessageId: null,
         } satisfies ThreadRunSummary);
+  const runtime = shellRuntime(thread);
+  // Waiting runs have ended their provider turn and are only draining effects.
+  const runtimeIsWorking =
+    runtime?.status === "preparing" ||
+    runtime?.status === "starting" ||
+    runtime?.status === "running";
   return {
     environmentId,
     id: thread.id,
@@ -249,7 +255,7 @@ export function presentThreadShell(
     activeProviderThreadId: thread.activeProviderThreadId,
     ...(thread.tokenUsage === undefined ? {} : { tokenUsage: thread.tokenUsage }),
     latestRun,
-    runtime: shellRuntime(thread),
+    runtime,
     latestUserMessageAt: nullableIso(thread.latestUserMessageAt),
     latestMessageAt: nullableIso(thread.latestMessageAt ?? null),
     ...(thread.latestUserAuthoredMessageAt === undefined
@@ -260,7 +266,9 @@ export function presentThreadShell(
         thread.pendingRuntimeRequest.kind !== "user_input" &&
         thread.pendingRuntimeRequest.kind !== "auth_refresh") ||
       (thread.workflowRuns ?? []).some((run) => run.review !== undefined),
-    hasPendingUserInput: thread.pendingRuntimeRequest?.kind === "user_input",
+    hasPendingUserInput:
+      thread.pendingRuntimeRequest?.kind === "user_input" &&
+      (thread.pendingRuntimeRequest.blocking !== false || !runtimeIsWorking),
     pendingSubagentRequest,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
     pendingBackgroundTasks: thread.pendingBackgroundTasks ?? [],
