@@ -113,6 +113,7 @@ describe.each(["chat", "preview"])("Markdown file links in %s", (surface) => {
       <FileMarkdownPreview
         cwd="/workspace/project"
         relativePath="README.md"
+        workspaceMutationId={null}
         text={text}
         threadRef={threadRef}
       />
