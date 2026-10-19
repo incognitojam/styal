@@ -390,6 +390,7 @@ it.effect(
         turnUsageFigure: "tokens",
         chatWidth: "comfortable",
         wordWrap: true,
+        mathRenderingEnabled: false,
         timestampFormat: "locale",
         loadBalancingEnabled: false,
         legacySidebarEnabled: false,

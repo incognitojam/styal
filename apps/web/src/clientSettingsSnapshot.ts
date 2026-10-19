@@ -44,6 +44,7 @@ export function clientSettingsSnapshot(
     turnUsageFigure: settings.turnUsageFigure,
     chatWidth: settings.chatWidth,
     wordWrap: settings.wordWrap,
+    mathRenderingEnabled: settings.mathRenderingEnabled,
     timestampFormat: settings.timestampFormat,
     loadBalancingEnabled: settings.loadBalancingEnabled,
     legacySidebarEnabled: settings.legacySidebarEnabled,

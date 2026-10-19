@@ -31,7 +31,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 12;
+export const FORK_CLIENT_USAGE_VERSION = 13;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -55,6 +55,7 @@ export const ClientSettingsSnapshot = Schema.Struct({
   turnUsageFigure: Schema.Literals(["tokens", "cost"]),
   chatWidth: ChatWidth,
   wordWrap: Schema.Boolean,
+  mathRenderingEnabled: Schema.Boolean,
   timestampFormat: TimestampFormat,
   loadBalancingEnabled: Schema.Boolean,
   legacySidebarEnabled: Schema.Boolean,
