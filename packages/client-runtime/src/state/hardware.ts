@@ -82,7 +82,7 @@ export type HardwareLeaseState =
  * The lease's current state. A kept lease never times out; a lease with no
  * idle deadline belongs to a busy thread; otherwise the idle clock runs.
  */
-export function hardwareLeaseState(lease: HardwareLeaseSummary, nowMs: number): HardwareLeaseState {
+function hardwareLeaseState(lease: HardwareLeaseSummary, nowMs: number): HardwareLeaseState {
   if (lease.keepUntilReleased) return { kind: "kept" };
   if (lease.idleExpiresAt === null) return { kind: "working" };
   return { kind: "idle", remainingMs: Date.parse(lease.idleExpiresAt) - nowMs };

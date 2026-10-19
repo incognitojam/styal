@@ -863,7 +863,7 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
-export const layerHardwareToolkit = toolkitRegistration(HardwareToolkit, HardwareHandlers.layer);
+const layerHardwareToolkit = toolkitRegistration(HardwareToolkit, HardwareHandlers.layer);
 
 export const layerMcpTransport = McpServer.layerHttp({
   name: "styal",

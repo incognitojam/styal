@@ -140,7 +140,7 @@ const encodeDetail = Schema.encodeSync(DetailJson);
 const parseDetail = (json: string): Record<string, unknown> =>
   Option.getOrElse(decodeDetail(json), () => ({}));
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   // The audit trail is best-effort: a failed write is logged, never fatal to a call.
   const logged = <A, E>(operation: string, effect: Effect.Effect<A, E>, fallback: A) =>
