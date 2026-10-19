@@ -30,6 +30,7 @@ import * as ProviderRegistry from "./ProviderRegistry.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import {
   makeProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilities,
@@ -243,6 +244,7 @@ const makeTestRunner = (
     })),
   },
   lock: Partial<ProviderInstallLock.ProviderInstallLock["Service"]> = {},
+  events: Array<{ readonly event: string; readonly properties: unknown }> = [],
 ) =>
   Effect.service(ProviderMaintenanceRunner.ProviderMaintenanceRunner).pipe(
     Effect.provide(
@@ -260,6 +262,16 @@ const makeTestRunner = (
             // Fresh per runner so a version cached by one test cannot leak into another.
             ProviderLatestVersions.layer,
             layerInstallGate(lock),
+            Layer.succeed(
+              AnalyticsService.AnalyticsService,
+              AnalyticsService.AnalyticsService.of({
+                record: (event, properties) =>
+                  Effect.sync(() => {
+                    events.push({ event, properties });
+                  }),
+                flush: Effect.void,
+              }),
+            ),
           ),
         ),
       ),
@@ -1280,3 +1292,289 @@ it.effect(
     );
   },
 );
+
+describe("provider.update.finished", () => {
+  type RecordedEvent = { readonly event: string; readonly properties: unknown };
+  const finished = (properties: Record<string, unknown>) => ({
+    event: "provider.update.finished",
+    properties: {
+      source: "manual",
+      driver: "codex",
+      // The shared fixture's bare `npm-global` lock key is not one npm installs produce.
+      installerKind: "native",
+      fromVersion: "1.0.0",
+      targetVersion: null,
+      resultVersion: "1.0.0",
+      outcome: "failed",
+      failureReason: null,
+      durationMs: 0,
+      ...properties,
+    },
+  });
+
+  it.effect("records one success with versions, installer and duration", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry, providersRef } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const updater = yield* makeTestRunner(
+        {
+          ...registry,
+          refreshInstance: () =>
+            TestClock.adjust(1_500).pipe(
+              Effect.andThen(
+                Ref.updateAndGet(providersRef, (providers) =>
+                  providers.map((provider) => ({ ...provider, version: "2.0.0" })),
+                ),
+              ),
+            ),
+        },
+        undefined,
+        {},
+        events,
+      );
+      yield* updater.updateProvider(CODEX_DRIVER);
+      assert.deepStrictEqual(events, [
+        finished({ resultVersion: "2.0.0", outcome: "success", durationMs: 1_500 }),
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner(() => ({ stdout: "updated /synthetic/private/path" })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("classifies a refused install without sending its output", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const updater = yield* makeTestRunner(registry, undefined, {}, events);
+      yield* updater.updateProvider(CODEX_DRIVER);
+      assert.deepStrictEqual(events, [finished({ failureReason: "permission_denied" })]);
+      assert.notInclude(JSON.stringify(events), "synthetic");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner(() => ({
+            stderr: "npm ERR! code EACCES /synthetic/private/lib/node_modules",
+            code: 243,
+          })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("records a timed-out install", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const updater = yield* makeTestRunner(registry, undefined, {}, events);
+      const fiber = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.forkChild);
+      yield* TestClock.adjust(Duration.minutes(5));
+      yield* Fiber.join(fiber);
+      assert.deepStrictEqual(events, [
+        finished({ failureReason: "timeout", durationMs: Duration.toMillis(Duration.minutes(5)) }),
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner(() => ({ exitCode: Effect.never })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("records an install that leaves the provider failing its health check", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry, providersRef } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const updater = yield* makeTestRunner(
+        {
+          ...registry,
+          refreshInstance: () =>
+            Ref.updateAndGet(providersRef, (providers) =>
+              providers.map((provider) => ({
+                ...provider,
+                version: "2.0.0",
+                status: "error" as const,
+                message: "synthetic probe failure",
+              })),
+            ),
+        },
+        undefined,
+        {},
+        events,
+      );
+      yield* updater.updateProvider(CODEX_DRIVER);
+      assert.deepStrictEqual(events, [
+        finished({
+          resultVersion: "2.0.0",
+          outcome: "unchanged",
+          failureReason: "provider_error_after_install",
+        }),
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner(() => ({ stdout: "updated" })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("records a background update once and a declined one not at all", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry, providersRef } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const updater = yield* makeTestRunner(
+        {
+          ...registry,
+          refreshInstance: () =>
+            Ref.updateAndGet(providersRef, (providers) =>
+              providers.map((provider) => ({ ...provider, version: "2.0.0" })),
+            ),
+          getProviderMaintenanceCapabilitiesForInstance: () =>
+            Effect.succeed(
+              makeProviderMaintenanceCapabilities({
+                provider: CODEX_DRIVER,
+                packageName: "@openai/codex",
+                updateExecutable: "npm",
+                updateArgs: ["install", "-g", "@openai/codex@latest"],
+                updateLockKey: "npm-global:/synthetic/prefix",
+              }),
+            ),
+        },
+        undefined,
+        {},
+        events,
+      );
+      yield* updater.updateProvider({
+        provider: CODEX_DRIVER,
+        targetVersion: "2.0.0",
+        autoUpdate: { shouldStart: Effect.succeed(false) },
+      });
+      assert.deepStrictEqual(events, []);
+      yield* updater.updateProvider({
+        provider: CODEX_DRIVER,
+        targetVersion: "2.0.0",
+        autoUpdate: { shouldStart: Effect.succeed(true) },
+      });
+      assert.deepStrictEqual(events, [
+        finished({
+          source: "background",
+          installerKind: "npm",
+          targetVersion: "2.0.0",
+          resultVersion: "2.0.0",
+          outcome: "success",
+        }),
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("3.0.0"),
+          layerMockSpawner(() => ({ stdout: "installed" })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("records an interrupted install once", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const running = yield* Deferred.make<void>();
+      const updater = yield* makeTestRunner(
+        {
+          ...registry,
+          setProviderMaintenanceActionState: (input) =>
+            registry
+              .setProviderMaintenanceActionState(input)
+              .pipe(
+                Effect.tap(() =>
+                  input.state?.message?.startsWith("Running ")
+                    ? Deferred.succeed(running, undefined)
+                    : Effect.void,
+                ),
+              ),
+        },
+        undefined,
+        {},
+        events,
+      );
+      const fiber = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.forkChild);
+      yield* Deferred.await(running);
+      yield* Fiber.interrupt(fiber);
+      assert.deepStrictEqual(events, [
+        finished({ resultVersion: null, failureReason: "interrupted" }),
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner(() => ({ exitCode: Effect.never })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("records a manual update refused while another install holds the lock", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const updater = yield* makeTestRunner(
+        registry,
+        undefined,
+        { tryRun: () => Effect.succeedNone },
+        events,
+      );
+      yield* updater.updateProvider(CODEX_DRIVER);
+      assert.deepStrictEqual(events, [finished({ failureReason: "install_in_progress" })]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner(() => ({ stdout: "updated" })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("records nothing for a background update dropped because the lock is held", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const updater = yield* makeTestRunner(
+        registry,
+        undefined,
+        { tryRun: () => Effect.succeedNone },
+        events,
+      );
+      yield* updater.updateProvider({
+        provider: CODEX_DRIVER,
+        targetVersion: "2.0.0",
+        autoUpdate: { shouldStart: Effect.succeed(true) },
+      });
+      assert.deepStrictEqual(events, []);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner(() => ({ stdout: "updated" })),
+        ),
+      ),
+    );
+  });
+});
