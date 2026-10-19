@@ -286,7 +286,7 @@ export const buildWslRuntimeInstallScript = (
     // use: the file is executable and `styal --version` exits 0. That covers the
     // truncated-binary and wrong-arch cases without a separate native probe.
     "runtime_entry_runs() {",
-    '  [ -x "$1/styal" ] && "$1/styal" --version >/dev/null 2>&1',
+    '  [ -x "$1/styal" ] && "$1/styal" --version >/dev/null',
     "}",
     // Hashing the entry is what tells a working cache from one whose `styal` was
     // swapped or half-written after install: the file is still there and may
@@ -297,7 +297,7 @@ export const buildWslRuntimeInstallScript = (
     "}",
     "runtime_is_ready() {",
     '  [ -f "$ready_marker" ] &&',
-    '    runtime_entry_runs "$runtime_root" &&',
+    '    runtime_entry_runs "$runtime_root" 2>/dev/null &&',
     `    recorded_entry_digest=$(tr -d '[:space:]' < "$ready_marker" 2>/dev/null) &&`,
     '    [ -n "$recorded_entry_digest" ] &&',
     '    [ "$recorded_entry_digest" = "$(runtime_server_entry_digest "$runtime_root")" ]',

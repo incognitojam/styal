@@ -288,7 +288,7 @@ describe("WSL runtime cache", () => {
 
     expect(script).toContain('runtime_parent="$HOME/.styal/wsl-runtime"');
     expect(script).toContain('  [ -f "$ready_marker" ] &&');
-    expect(script).toContain('    runtime_entry_runs "$runtime_root" &&');
+    expect(script).toContain('    runtime_entry_runs "$runtime_root" 2>/dev/null &&');
     expect(script).toContain("if runtime_is_ready; then");
     expect(script).not.toContain("bin.mjs");
     expect(script).not.toContain("node-pty");
@@ -368,7 +368,7 @@ describe("WSL runtime cache", () => {
       "b".repeat(64),
     );
 
-    expect(script).toContain('  [ -x "$1/styal" ] && "$1/styal" --version >/dev/null 2>&1');
+    expect(script).toContain('  [ -x "$1/styal" ] && "$1/styal" --version >/dev/null');
 
     const entryCheckDefined = script.indexOf("runtime_entry_runs() {");
     const readinessDefined = script.indexOf("runtime_is_ready() {");
@@ -487,14 +487,14 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
     fixtures.length = 0;
   });
 
-  const createFixture = () => {
+  const createFixture = (serverEntry = SERVER_ENTRY_SOURCE) => {
     const result = runShell(
       [
         "set -eu",
         "work=$(mktemp -d)",
         'stage="$work/stage/styal-0.0.0-linux-x64"',
         'mkdir -p "$stage/node_modules/node-pty/build/Release" "$work/home"',
-        `printf '%s' ${sh(SERVER_ENTRY_SOURCE)} > "$stage/styal"`,
+        `printf '%s' ${sh(serverEntry)} > "$stage/styal"`,
         'chmod +x "$stage/styal"',
         `printf '%s' 'pty-native-payload' > "$stage/node_modules/node-pty/build/Release/pty.node"`,
         `tar -czf "$work/wsl-runtime.tar.gz" -C "$work/stage" styal-0.0.0-linux-x64`,
@@ -606,6 +606,18 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
 
     expect(warm.status, warm.stderr).toBe(0);
     expect(parseWslRuntimeRoot(warm.stdout)).toBe(fixture.runtimeRoot);
+  });
+
+  it("retains the loader error when a bundled executable needs a missing system library", () => {
+    const fixture = createFixture(
+      '#!/bin/sh\nprintf "error while loading shared libraries: libatomic.so.1: cannot open shared object file\\n" >&2\nexit 127\n',
+    );
+
+    const result = fixture.install();
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("libatomic.so.1");
+    expect(parseWslRuntimeRoot(result.stdout)).toBeNull();
   });
 
   it("reinstalls a cache whose executable was truncated", () => {
