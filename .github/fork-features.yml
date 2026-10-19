@@ -2963,7 +2963,7 @@ features:
   - id: project-emoji-search
     title: Search emoji by name in the project icon picker
     status: maintained
-    prs: []
+    prs: [911]
     invariants:
       - The project icon picker's Emoji tab searches every emoji by name and keyword, and an emoji pasted into the same field is selected directly.
       - The emoji keyword table loads as its own chunk the first time the Emoji tab opens, not with the app.
