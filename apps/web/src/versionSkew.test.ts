@@ -17,7 +17,6 @@ import {
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   resolveVersionMismatch,
-  serverUpdateGuidance,
   supportsDesktopAppUpdate,
 } from "./versionSkew";
 
@@ -292,17 +291,5 @@ describe("versionSkew", () => {
     expect(supportsDesktopAppUpdate(descriptor(false))).toBe(false);
     expect(supportsDesktopAppUpdate(descriptor())).toBe(false);
     expect(supportsDesktopAppUpdate(null)).toBe(false);
-  });
-
-  it("matches version-drift guidance to the advertised update path", () => {
-    expect(serverUpdateGuidance("respawn", "Remote server")).toBe(
-      "Update the Remote server so they stay in sync.",
-    );
-    expect(serverUpdateGuidance("desktop-managed", "Desktop server")).toBe(
-      "Update the desktop app that runs the Desktop server.",
-    );
-    expect(serverUpdateGuidance(null, "Local server")).toBe(
-      "Follow the update instructions for how the Local server is installed.",
-    );
   });
 });

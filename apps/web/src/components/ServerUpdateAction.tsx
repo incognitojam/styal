@@ -14,7 +14,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { CircleArrowUpIcon } from "lucide-react";
-import { type ComponentProps, useRef, useState } from "react";
+import { type ComponentProps, type ReactNode, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -65,6 +65,16 @@ export interface ServerUpdateTarget {
       which threads will continue, applying each project's setting. */
   readonly threadContinuation?: boolean;
   readonly targetVersion: string;
+}
+
+export type PendingServerUpdate = ServerUpdateTarget & {
+  readonly serverVersion: string;
+};
+
+export interface ServerUpdateControl {
+  readonly label: string;
+  readonly disabled: boolean;
+  readonly onClick: () => void;
 }
 
 type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
@@ -329,7 +339,13 @@ export function ServerUpdateAction({
   size = "xs",
   className,
   appearance = "button",
-}: ServerUpdateTarget & UpdateButtonProps) {
+  render,
+}: ServerUpdateTarget &
+  UpdateButtonProps & {
+    readonly render?: (control: ServerUpdateControl) => ReactNode;
+  }) {
+  const unsupportedDesktopUpdate = selfUpdate === "desktop-managed" && !desktopAppUpdate;
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
   const update = useServerUpdates();
@@ -363,7 +379,10 @@ export function ServerUpdateAction({
       },
     ]);
 
-  if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
+  if (unsupportedDesktopUpdate) {
+    if (render) {
+      return render({ label: "Update the desktop app on", disabled: true, onClick: () => {} });
+    }
     return (
       <span className="text-muted-foreground text-xs">
         Update the desktop app on that machine to update this server.
@@ -452,6 +471,20 @@ export function ServerUpdateAction({
         </DialogPanel>
       </DialogPopup>
     );
+    if (render) {
+      return (
+        <>
+          {render({
+            label: "Update instructions for",
+            disabled: false,
+            onClick: () => setInstructionsOpen(true),
+          })}
+          <Dialog open={instructionsOpen} onOpenChange={setInstructionsOpen}>
+            {instructions}
+          </Dialog>
+        </>
+      );
+    }
     if (appearance === "icon") {
       return (
         <Dialog>
@@ -490,6 +523,8 @@ export function ServerUpdateAction({
 
   const actionLabel = label;
   const onClick = () => void handleUpdate();
+
+  if (render) return render({ label: actionLabel, disabled: !canUpdate, onClick });
 
   if (appearance === "icon") {
     return (
