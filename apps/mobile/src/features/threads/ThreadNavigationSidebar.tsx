@@ -14,7 +14,7 @@ import {
 import { LegendList } from "@legendapp/list/react-native";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent, TextInputInstance } from "react-native";
 import { Platform, StyleSheet, TextInput, View } from "react-native";
 import { GestureDetector, useNativeGesture } from "react-native-gesture-handler";
@@ -192,7 +192,9 @@ function ThreadNavigationSidebarPane(
         ? [options.selectedEnvironmentId]
         : [];
   const threadSearch = useThreadSearch(searchEnvironmentIds, props.searchQuery);
-  const threadSearchMatchByKey = (() => {
+  // These maps reach LegendList's extraData, which re-renders every row whenever it changes
+  // identity. The compiler leaves them unmemoized because they stay live across later hook calls.
+  const threadSearchMatchByKey = useMemo(() => {
     const matches = new Map<string, EnvironmentThreadSearchMatch>();
     for (const match of threadSearch.matches) {
       if (match.source === "user" || match.source === "assistant") {
@@ -200,7 +202,7 @@ function ThreadNavigationSidebarPane(
       }
     }
     return matches;
-  })();
+  }, [threadSearch.matches]);
   const matchedThreadKeys = new Set(threadSearch.matches.map(threadSearchMatchKey));
   const projectScopeKey = options.selectedProjectKey;
   const resolvedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
@@ -212,20 +214,31 @@ function ThreadNavigationSidebarPane(
       setSelectedProjectKey(resolvedProjectKey);
     }
   }, [projectScopeKey, resolvedProjectKey, setSelectedProjectKey]);
-  const projectScopes = buildHomeProjectScopes({
-    projects,
-    environmentId: options.selectedEnvironmentId,
-    projectGroupingMode: options.projectGroupingMode,
-  });
+  const projectScopes = useMemo(
+    () =>
+      buildHomeProjectScopes({
+        projects,
+        environmentId: options.selectedEnvironmentId,
+        projectGroupingMode: options.projectGroupingMode,
+      }),
+    [projects, options.selectedEnvironmentId, options.projectGroupingMode],
+  );
   const projectFilterOptions = homeProjectFilterOptions(projectScopes);
   const archivedProjectKeys = archivedProjectRefKeys(projectScopes);
-  const projectTitleByProjectKey = new Map(
-    projectScopes.flatMap((scope) =>
-      scope.projectRefs.map(
-        (projectRef) =>
-          [scopedProjectKey(projectRef.environmentId, projectRef.projectId), scope.title] as const,
+  const projectTitleByProjectKey = useMemo(
+    () =>
+      new Map(
+        projectScopes.flatMap((scope) =>
+          scope.projectRefs.map(
+            (projectRef) =>
+              [
+                scopedProjectKey(projectRef.environmentId, projectRef.projectId),
+                scope.title,
+              ] as const,
+          ),
+        ),
       ),
-    ),
+    [projectScopes],
   );
   const selectedProjectScope =
     projectScopes.find((scope) => scope.key === resolvedProjectKey) ?? null;
@@ -238,13 +251,13 @@ function ThreadNavigationSidebarPane(
             scopedProjectKey(projectRef.environmentId, projectRef.projectId),
           ),
         );
-  const projectByKey = (() => {
+  const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
     for (const project of projects) {
       map.set(scopedProjectKey(project.environmentId, project.id), project);
     }
     return map;
-  })();
+  }, [projects]);
 
   const [settledVisibleCount, setSettledVisibleCount] = useState(
     THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
