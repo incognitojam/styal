@@ -166,8 +166,8 @@ export const layer = Api.make(
     // pool: sql-pg < 4.0.0-rc.117 names them `effect1..N` per connection, and
     // inside a transaction a Bind can reach another request's statement
     // (#14070, Effect-TS/effect#8320). Unnamed statements cannot collide.
-    const db = yield* Drizzle.Postgres(hyperdrive.connectionString, undefined, {
-      prepare: false,
+    const db = yield* Drizzle.Postgres(hyperdrive.connectionString, {
+      client: { prepare: false },
     });
 
     const managedEndpointTunnelBinding = yield* Cloudflare.Tunnel.ReadWriteTunnel();

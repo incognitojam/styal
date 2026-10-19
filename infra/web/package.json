@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "alchemy": "2.0.0-beta.80",
+    "alchemy": "2.0.0-beta.83",
     "effect": "catalog:"
   },
   "devDependencies": {
