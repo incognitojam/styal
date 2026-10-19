@@ -1432,6 +1432,16 @@ function renderFeedEntry(
                 </Text>
               </Pressable>
             ) : null}
+            {intent ? (
+              <Text
+                accessible={false}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+                className="font-t3-medium text-xs text-foreground-secondary"
+              >
+                ·
+              </Text>
+            ) : null}
             <Text className="font-t3-medium text-xs tabular-nums text-foreground-secondary">
               {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
             </Text>
