@@ -225,6 +225,10 @@ function serverEnvironment(): NodeJS.ProcessEnv {
     if (/^(STYAL_|T3CODE_|T3_|VITE_)/i.test(key) || key === "PORT") continue;
     env[key] = value;
   }
+  // The verifier never opens a browser tab. Without this, a host that blocks
+  // the browser sandbox (Ubuntu 23.10+ runners) logs a warning on every start,
+  // which the clean projection check reports.
+  env.T3CODE_SERVER_BROWSER_SANDBOX = "0";
   return env;
 }
 
