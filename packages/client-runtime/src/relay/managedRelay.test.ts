@@ -7,6 +7,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import * as Tracer from "effect/Tracer";
 import * as Schema from "effect/Schema";
@@ -537,6 +538,24 @@ describe("ManagedRelayClient", () => {
         message: `Relay environment listing timed out. ${NETWORK_BLOCKING_HINT}`,
       });
     }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layerManagedRelayTest(fetchFn))));
+  });
+
+  it.effect("omits cookies on relay requests even when the caller includes them", () => {
+    const sentCredentials: Array<RequestCredentials | undefined> = [];
+    const fetchFn = ((_input, init) => {
+      sentCredentials.push(init?.credentials);
+      return Promise.resolve(new Response("Unavailable", { status: 503 }));
+    }) satisfies typeof globalThis.fetch;
+    return Effect.gen(function* () {
+      const relayClient = yield* ManagedRelay.ManagedRelayClient;
+      yield* relayClient
+        .listEnvironments({ clerkToken: "clerk-token" })
+        .pipe(
+          Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }),
+          Effect.flip,
+        );
+      expect(sentCredentials).toEqual(["omit"]);
+    }).pipe(Effect.provide(layerManagedRelayTest(fetchFn)));
   });
 
   it.effect("suggests checking network filtering when fetch fails without a response", () => {
