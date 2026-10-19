@@ -29,6 +29,7 @@ import * as ResetCreditCoordinator from "../resetCreditCoordinator.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import { makeTargetedProviderUpdateAction } from "@t3tools/provider-core/server/maintenanceResolver";
 import * as ModelManifest from "../ModelManifest.ts";
 import {
   createProviderVersionAdvisory,
@@ -307,6 +308,15 @@ it.layer(layerTest)("CodexDriver", (it) => {
           lockKey: "codex-native",
           env: { CODEX_HOME: sharedHome },
         });
+        // Background updates install the tested release with the same installer.
+        const pinned = makeTargetedProviderUpdateAction(capabilities, "0.163.0");
+        expect(pinned).toMatchObject({
+          executable: "/bin/sh",
+          lockKey: "codex-native",
+          env: { CODEX_HOME: sharedHome, CODEX_NON_INTERACTIVE: "1" },
+        });
+        expect(pinned?.args.at(-1)).toBe("0.163.0");
+        expect(pinned?.env).not.toHaveProperty("CODEX_INSTALL_IF_CURRENT");
       }).pipe(
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
         Effect.scoped,

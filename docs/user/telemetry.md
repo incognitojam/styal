@@ -19,8 +19,8 @@ it, or being stopped, with how many minutes it was watched. Repositories, run li
 or job names are not collected.
 
 Once after startup and then daily, the server reports each configured provider: its type, whether
-it is the default or an added instance, whether it is installed, enabled and healthy, its version,
-how it was installed (such as npm or Homebrew), and whether automatic updates are on, could update
+it is the default or an added instance, whether it is installed, enabled and healthy, its version
+and the newest version styal has tested, how it was installed (such as npm or Homebrew), and whether automatic updates are on, could update
 it, or were held back by threads using that provider. Each provider update you start, or that styal installs in
 the background, records the provider type, its versions before and after, whether it succeeded, a
 fixed failure category, and how long it took. Instance names, installation paths, update commands,

@@ -100,6 +100,21 @@ export interface PackageManagedProviderMaintenanceDefinition {
     readonly isCommandPath?: (commandPath: string) => boolean;
     /** Environment the native updater needs to target this instance's install. */
     readonly env?: NodeJS.ProcessEnv;
+    /**
+     * The installer command that installs exactly `version` into the install
+     * at `context`, when the provider's installer can pin one. Used only for
+     * paths `isCommandPath` proves, and never on Windows.
+     */
+    readonly pinned?: (
+      version: string,
+      context: ProviderMaintenanceResolutionContext,
+    ) => {
+      readonly executable: string;
+      readonly args: ReadonlyArray<string>;
+      readonly env?: NodeJS.ProcessEnv;
+      /** Shown instead of `<executable> <args>`, for a command run through a shell script. */
+      readonly command?: string;
+    };
   } | null;
 }
 
@@ -165,7 +180,10 @@ export function makeProviderMaintenanceCapabilities(input: {
   };
 }
 
-/** Pin only package-manager actions we own, preserving prefix, scripts, env and lock. */
+/**
+ * Pin only package-manager actions we own, preserving prefix, scripts, env and
+ * lock, or a proven native install whose own installer can pin.
+ */
 export function makeTargetedProviderUpdateAction(
   capabilities: ProviderMaintenanceCapabilities,
   version: string,
@@ -174,6 +192,7 @@ export function makeTargetedProviderUpdateAction(
   const update = capabilities.update;
   const packageName = capabilities.packageName;
   if (!update || !packageName) return null;
+  if (capabilities.pinnedUpdate) return capabilities.pinnedUpdate(version);
   if (
     !/^(?:npm-global:|bun-global$|pnpm-global$|vite-plus-global$|yarn-global$|volta$)/.test(
       update.lockKey,
@@ -399,7 +418,24 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
       })
     : manual;
   if (nativeUpdate?.isCommandPath && commandPaths.some(nativeUpdate.isCommandPath)) {
-    return native;
+    const pinned = nativeUpdate.pinned;
+    if (!pinned || context.platform === "win32" || native.update === null) return native;
+    const lockKey = native.update.lockKey;
+    return {
+      ...native,
+      pinnedUpdate: (version) => {
+        const action = pinned(version, context);
+        return {
+          ...action,
+          command:
+            action.command ??
+            [action.executable, ...action.args]
+              .map((word) => quoteShellWord(word, context.platform))
+              .join(" "),
+          lockKey,
+        };
+      },
+    };
   }
   // A `node_modules` path not proven below belongs to another package or a
   // project, so the provider's own updater could act on the wrong install.

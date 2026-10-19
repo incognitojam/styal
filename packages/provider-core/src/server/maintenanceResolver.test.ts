@@ -984,3 +984,60 @@ it("pins only owned package-manager installs and preserves their execution conte
   }
   expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0; rm -rf /")).toBeNull();
 });
+
+it("pins a proven native install through its own installer on POSIX only", () =>
+  Effect.gen(function* () {
+    const definition = {
+      provider: driver("nativePackageTool"),
+      npmPackageName: "@example/native-package-tool",
+      nativeUpdate: {
+        args: ["update"],
+        isCommandPath: isNativeTestCommandPath("/.local/bin/native-package-tool"),
+        env: { TOOL_HOME: "/home/developer/.tool" },
+        pinned: (version: string, context: { readonly resolvedCommandPath: string }) => ({
+          executable: context.resolvedCommandPath,
+          args: ["install", version],
+          env: { TOOL_HOME: "/home/developer/.tool" },
+        }),
+      },
+    };
+    const visible = "/home/developer/.local/bin/native-package-tool";
+    const resolve = (platform: NodeJS.Platform, commandPath = visible) =>
+      resolvePackageManagedProviderMaintenance(definition, {
+        binaryPath: "native-package-tool",
+        resolvedCommandPath: commandPath,
+        realCommandPath: commandPath,
+        env: {},
+        platform,
+      });
+
+    const native = yield* resolve("darwin");
+    // A manual update still moves to the latest release.
+    expect(native.update).toMatchObject({ executable: visible, args: ["update"] });
+    expect(makeTargetedProviderUpdateAction(native, "2.0.0")).toEqual({
+      executable: visible,
+      args: ["install", "2.0.0"],
+      env: { TOOL_HOME: "/home/developer/.tool" },
+      command: `${visible} install 2.0.0`,
+      lockKey: "nativePackageTool-native",
+    });
+    expect(makeTargetedProviderUpdateAction(native, "2.0.0; rm -rf /")).toBeNull();
+    expect(
+      createProviderVersionAdvisory({
+        driver: driver("nativePackageTool"),
+        currentVersion: "1.0.0",
+        maintenanceCapabilities: native,
+      }).canInstallVersion,
+    ).toBe(true);
+
+    // Windows native installs cannot be held to a version.
+    const windows = yield* resolve("win32", "C:/Users/Developer/.local/bin/native-package-tool");
+    expect(windows.update?.args).toEqual(["update"]);
+    expect(makeTargetedProviderUpdateAction(windows, "2.0.0")).toBeNull();
+
+    // An unproven path falls back to the native updater, which detects its own
+    // installer; pinning it would install a second, native copy.
+    const unproven = yield* resolve("linux", "/opt/tools/native-package-tool");
+    expect(unproven.update?.args).toEqual(["update"]);
+    expect(makeTargetedProviderUpdateAction(unproven, "2.0.0")).toBeNull();
+  }).pipe(Effect.provide(NodeServices.layer), Effect.runPromise));

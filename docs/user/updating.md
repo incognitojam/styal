@@ -137,8 +137,13 @@ builds, so an environment on an older styal build receives provider updates
 again once styal itself is updated. A provider updates once none of its own
 threads are running or waiting for you; threads on other providers do not hold
 it back. A turn that starts on a provider while it is installing waits for the
-install to finish. Updates only cover providers installed with npm, Bun, pnpm,
-Yarn, or Volta. Providers installed with Homebrew or a native installer keep updating
+install to finish. Updates cover providers installed with npm, Bun, pnpm, Yarn,
+Vite+ or Volta, and on macOS and Linux also Claude Code and Codex installed with
+their own native installers. Their built-in updaters can still move them past the
+tested version; styal never moves a provider back. Installing a tested Codex
+version stops Codex's own automatic updates until you next update it from
+**Settings → Providers** or with `codex update`. Providers installed with
+Homebrew, other native installers, or a native installer on Windows keep updating
 the way they always have. Turn automatic updates off with **Update providers
 automatically** in **Settings → General**, or in **Settings → Maintenance** on
 mobile. They need provider update checks on.

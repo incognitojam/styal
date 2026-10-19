@@ -13,6 +13,13 @@ export interface ProviderMaintenanceCapabilities {
   readonly latestVersion?: string | null;
   /** Compare native release revisions when the provider does not use plain semver. */
   readonly compareVersions?: (current: string, latest: string) => number;
+  /**
+   * The provider's own installer set to install exactly `version`, for a
+   * proven native install whose updater can only move to the latest release.
+   * Background updates use it to install a tested version; a manual update
+   * still runs `update`.
+   */
+  readonly pinnedUpdate?: (version: string) => ProviderMaintenanceCommandAction;
 }
 
 export interface ProviderMaintenanceCommandAction {

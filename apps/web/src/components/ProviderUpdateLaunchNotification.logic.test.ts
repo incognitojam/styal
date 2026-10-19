@@ -137,6 +137,19 @@ describe("provider update launch notification logic", () => {
         collectPromptedProviderUpdateCandidates(providers, true).map((entry) => entry.driver),
       ).toEqual(["cursor", "opencode", "claudeAgent", "grok"]);
     });
+
+    it("leaves native installs the server can pin to the background updater", () => {
+      const native = provider({
+        driver: driver("claudeAgent"),
+        canInstallVersion: true,
+        verifiedVersion: "1.0.5",
+        updateCommand: "/home/developer/.local/bin/claude update",
+      });
+      expect(collectPromptedProviderUpdateCandidates([native], true)).toEqual([]);
+      expect(
+        collectPromptedProviderUpdateCandidates([native], false).map((entry) => entry.driver),
+      ).toEqual(["claudeAgent"]);
+    });
   });
 
   it("detects enabled providers with a latest-version advisory", () => {
