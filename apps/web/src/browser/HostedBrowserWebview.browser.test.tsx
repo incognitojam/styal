@@ -5,8 +5,11 @@ import {
   ThreadId,
   type ClientSettings,
   type DesktopPreviewBridge,
+  type PreviewViewportSetting,
 } from "@t3tools/contracts";
 import { act } from "react";
+
+import "~/index.css";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -17,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   closeTab: vi.fn<DesktopPreviewBridge["closeTab"]>(),
   registerWebview: vi.fn<DesktopPreviewBridge["registerWebview"]>(),
   getPreviewConfig: vi.fn<DesktopPreviewBridge["getPreviewConfig"]>(),
+  setViewportPresentation: vi.fn<DesktopPreviewBridge["setViewportPresentation"]>(),
   activeRecordings: new Set<string>(),
 }));
 
@@ -38,6 +42,7 @@ vi.mock(import("~/components/preview/previewBridge"), async (original) => ({
     closeTab: mocks.closeTab,
     registerWebview: mocks.registerWebview,
     getPreviewConfig: mocks.getPreviewConfig,
+    setViewportPresentation: mocks.setViewportPresentation,
   } as unknown as DesktopPreviewBridge,
 }));
 
@@ -201,5 +206,107 @@ describe("HostedBrowserWebview settings hydration", () => {
     expect(mocks.registerWebview).toHaveBeenCalledExactlyOnceWith(runtimeTabId, 41);
     expect(mocks.closeTab).not.toHaveBeenCalled();
     expect(mocks.setClientSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe("HostedBrowserWebview viewport layout", () => {
+  const runtimeTabId = "zoom-layout-tab";
+  const owner = Symbol("panel");
+  const panel = { x: 0, y: 0, width: 2000, height: 1600 };
+
+  async function renderViewport(viewport: PreviewViewportSetting) {
+    mocks.getClientSettings.mockResolvedValue({
+      ...DEFAULT_CLIENT_SETTINGS,
+      browserDefaultZoomFactor: 1.5,
+    });
+    root ??= createRoot(container);
+    await act(async () => {
+      await ensureClientSettingsHydrated();
+      root!.render(
+        <HostedBrowserWebview
+          threadRef={{
+            environmentId: EnvironmentId.make("zoom-layout"),
+            threadId: ThreadId.make("zoom-layout"),
+          }}
+          tabId="zoom-layout"
+          runtimeTabId={runtimeTabId}
+          initialUrl="about:blank"
+          viewport={viewport}
+          viewportFallback={false}
+          pictureInPicture={false}
+          profileId={undefined}
+          zoomFactor={1.5}
+        />,
+      );
+    });
+    const guest = container.querySelector("webview");
+    expect(guest).not.toBeNull();
+    return guest!;
+  }
+
+  it("keeps fixed viewports sized in guest pixels across host zoom and fitted surfaces", async () => {
+    let windowZoom = 1.25;
+    vi.stubGlobal("desktopBridge", { getWindowZoomFactor: () => windowZoom });
+    useBrowserSurfaceStore.getState().claim(runtimeTabId, owner, false);
+    useBrowserSurfaceStore.getState().present(runtimeTabId, owner, panel, true, 0, 30);
+    const guest = await renderViewport({ _tag: "freeform", width: 800, height: 600 });
+    expect(guest.getBoundingClientRect()).toMatchObject({ width: 960, height: 720 });
+
+    windowZoom = 0.75;
+    await act(() => window.dispatchEvent(new Event("resize")));
+    expect(guest.getBoundingClientRect()).toMatchObject({ width: 1600, height: 1200 });
+
+    windowZoom = 1;
+    await act(() => window.dispatchEvent(new Event("resize")));
+    expect(guest.getBoundingClientRect()).toMatchObject({ width: 1200, height: 900 });
+
+    windowZoom = 1.25;
+    await act(() => window.dispatchEvent(new Event("resize")));
+    await renderViewport({ _tag: "preset", presetId: "iphone-se", width: 375, height: 667 });
+    expect(guest.getBoundingClientRect().width).toBe(450);
+    expect(guest.getBoundingClientRect().height).toBeCloseTo(800.4, 1);
+
+    const miniPlayer = Symbol("mini-player");
+    await act(() => {
+      useBrowserSurfaceStore.getState().claim(runtimeTabId, miniPlayer, true);
+      useBrowserSurfaceStore
+        .getState()
+        .present(runtimeTabId, miniPlayer, { x: 0, y: 0, width: 225, height: 401 }, true, 0, 48);
+    });
+    expect(guest.offsetWidth).toBe(225);
+    expect(guest.offsetHeight).toBe(400);
+    expect(guest.getAttribute("data-preview-css-width")).toBe("375");
+    expect(guest.getAttribute("data-preview-css-height")).toBe("667");
+    expect(guest.getBoundingClientRect().width).toBe(225);
+    expect(guest.getBoundingClientRect().height).toBeCloseTo(400.2, 1);
+    // The desktop multiplies the scale by the 1.25 window zoom to fit 225 host pixels.
+    await vi.waitFor(() =>
+      expect(mocks.setViewportPresentation).toHaveBeenLastCalledWith(runtimeTabId, {
+        width: 375,
+        height: 667,
+        scale: expect.closeTo(0.4, 5),
+      }),
+    );
+
+    await act(() => {
+      useBrowserSurfaceStore.getState().claim(runtimeTabId, owner, false);
+      useBrowserSurfaceStore.getState().present(runtimeTabId, owner, panel, true, 0, 30);
+    });
+    await renderViewport(FILL_PREVIEW_VIEWPORT);
+    expect(guest.getBoundingClientRect()).toMatchObject({ width: 2000, height: 1600 });
+    expect(mocks.createTab).toHaveBeenCalledExactlyOnceWith(runtimeTabId, {
+      zoomFactor: 1.5,
+      colorScheme: DEFAULT_CLIENT_SETTINGS.browserDefaultAppearance,
+    });
+  });
+
+  it("preserves preview scaling with an older bridge or no desktop bridge", async () => {
+    vi.stubGlobal("desktopBridge", {});
+    const guest = await renderViewport({ _tag: "freeform", width: 800, height: 600 });
+    expect(guest.getBoundingClientRect()).toMatchObject({ width: 1200, height: 900 });
+
+    vi.stubGlobal("desktopBridge", undefined);
+    await act(() => window.dispatchEvent(new Event("resize")));
+    expect(guest.getBoundingClientRect()).toMatchObject({ width: 1200, height: 900 });
   });
 });
