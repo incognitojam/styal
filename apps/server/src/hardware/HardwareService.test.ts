@@ -746,4 +746,39 @@ describe("HardwareService", () => {
       }),
     ),
   );
+
+  it.effect(
+    "never lets a lease reach a re-pointed device, nor cleanup carry its new credential",
+    () =>
+      withDatabase(
+        Effect.gen(function* () {
+          const harness = yield* makeHarness;
+          const hardware = yield* harness.start;
+          yield* hardware.configure({ type: "set-credential", deviceId: TREE, value: "old-token" });
+          const { proxyBaseUrl } = yield* hardware.acquire(CALIBRATOR, {
+            device: TREE,
+            purpose: "front angle",
+          });
+          yield* harness.settings.updateSettings({
+            hardwareDevices: [{ ...device, baseUrl: "http://tree-moved.test:8080" }],
+          });
+          // Before any tick notices, the old lease's proxy URL is refused, not sent to the new host.
+          const proxied = yield* hardware.proxy({
+            token: proxyBaseUrl.split("/").at(-1)!,
+            method: "GET",
+            path: "/calibrate/led",
+            query: [["n", "3"]],
+          });
+          expect(proxied.status).toBe(410);
+          expect(harness.sent.some((request) => request.host === "tree-moved.test:8080")).toBe(
+            false,
+          );
+          yield* hardware.configure({ type: "set-credential", deviceId: TREE, value: "new-token" });
+          const stops = harness.sent.filter((request) => request.path === "/calibrate/stop");
+          expect(stops.map((request) => [request.host, request.authorization])).toEqual([
+            ["tree.test:8080", "Bearer old-token"],
+          ]);
+        }),
+      ),
+  );
 });

@@ -34,6 +34,8 @@ const AUDIT_MAX_ROWS = 10_000;
  */
 export const ReleasePlan = Schema.Struct({
   baseUrl: Schema.String,
+  /** Secret-store name of the credential copied at grant, so cleanup never sends a newer one. */
+  credentialSecret: Schema.optional(Schema.String),
   auth: Schema.optional(
     Schema.Struct({
       header: Schema.optional(Schema.String),

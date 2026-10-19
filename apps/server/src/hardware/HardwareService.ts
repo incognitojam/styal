@@ -133,6 +133,8 @@ interface Target {
   readonly auth?:
     | { readonly header?: string | undefined; readonly scheme?: string | undefined }
     | undefined;
+  /** Where the credential is stored; defaults to the device's own entry. */
+  readonly credentialSecret?: string | undefined;
 }
 
 interface Waiter {
@@ -217,6 +219,15 @@ const threadBusy = (shell: OrchestrationV2ThreadShell | null) =>
 const threadGone = (shell: OrchestrationV2ThreadShell | null) =>
   shell === null || shell.deletedAt != null || shell.archivedAt != null;
 
+/** Whether two configurations send to the same device with the same credential header. */
+const sameTarget = (
+  a: { readonly baseUrl: string; readonly auth?: Target["auth"] },
+  b: { readonly baseUrl: string; readonly auth?: Target["auth"] },
+) =>
+  a.baseUrl === b.baseUrl &&
+  (a.auth?.header ?? null) === (b.auth?.header ?? null) &&
+  (a.auth?.scheme ?? null) === (b.auth?.scheme ?? null);
+
 /** The request an action makes. Approvals and in-flight calls are bound to it. */
 const actionShape = (action: HardwareActionDefinition) =>
   encodeJson([
@@ -279,6 +290,8 @@ export const make = Effect.gen(function* () {
   /** Whether each held lease's thread was busy at the last tick, to publish when that flips. */
   const lastBusy = new Map<HardwareDeviceId, boolean>();
   const lastPruneAt = yield* Ref.make(0);
+  /** Devices with a lease tick queued or running. */
+  const pendingTicks = new Set<HardwareDeviceId>();
   const updates = yield* PubSub.sliding<HardwareServiceState>(16);
   /** Swapped on every lease change; waiters re-check when it completes. */
   const leaseChanged = yield* Ref.make(yield* Deferred.make<void>());
@@ -544,7 +557,7 @@ export const make = Effect.gen(function* () {
     device: Target,
   ) {
     const value = yield* secrets
-      .get(secretName(device.id))
+      .get(device.credentialSecret ?? secretName(device.id))
       .pipe(Effect.orElseSucceed(() => Option.none()));
     if (Option.isNone(value)) return {};
     const token = new TextDecoder().decode(value.value);
@@ -687,6 +700,11 @@ export const make = Effect.gen(function* () {
       id: deviceId,
       baseUrl: plan.baseUrl,
       ...(plan.auth === undefined ? {} : { auth: plan.auth }),
+      // Cleanup sends only the credential copied at grant, none if there was none then.
+      // Acquire and renew hooks run against the device as configured now.
+      ...(kind === "release"
+        ? { credentialSecret: plan.credentialSecret ?? `${secretName(deviceId)}-none` }
+        : {}),
     };
     let failed = false;
     for (const step of plan.steps) {
@@ -746,6 +764,9 @@ export const make = Effect.gen(function* () {
     }
     yield* store.deleteLease(deviceId);
     yield* dropLease(deviceId);
+    if (lease.releasePlan.credentialSecret !== undefined) {
+      yield* secrets.remove(lease.releasePlan.credentialSecret).pipe(Effect.ignore);
+    }
     yield* notifyLeaseChanged;
   });
 
@@ -879,17 +900,28 @@ export const make = Effect.gen(function* () {
     input: HardwareToolAcquireInput,
   ) {
     const now = yield* Clock.currentTimeMillis;
+    const token = NodeCrypto.randomBytes(24).toString("hex");
+    // Cleanup keeps the credential the lease was granted with, whatever replaces it later.
+    const credential = yield* secrets
+      .get(secretName(device.id))
+      .pipe(Effect.orElseSucceed(() => Option.none<Uint8Array>()));
+    const credentialSecret = Option.isSome(credential) ? `hardware-lease-${token}` : undefined;
+    if (credentialSecret !== undefined && Option.isSome(credential)) {
+      yield* secrets.set(credentialSecret, credential.value).pipe(Effect.mapError(storeFailure));
+    }
+    const releasePlan = yield* hookPlan(device, input.purpose, "release");
     const lease: Lease = {
       deviceId: device.id,
       threadId,
       purpose: input.purpose,
-      token: NodeCrypto.randomBytes(24).toString("hex"),
+      token,
       grantedAt: now,
       lastActivityAt: now,
       idleMinutes: input.idleMinutes ?? DEFAULT_IDLE_MINUTES,
       hardExpiresAt: now + HARD_CAP_MS,
       keepUntilReleased: false,
-      releasePlan: yield* hookPlan(device, input.purpose, "release"),
+      releasePlan:
+        credentialSecret === undefined ? releasePlan : { ...releasePlan, credentialSecret },
       releasingUntil: null,
       approvedActions: new Map(),
       lastPersistedActivityAt: now,
@@ -955,9 +987,9 @@ export const make = Effect.gen(function* () {
         const current = (yield* Ref.get(leases)).get(latest.id);
         if (isHeld(current) && current.threadId === threadId) {
           const now = yield* Clock.currentTimeMillis;
+          // The purpose stays as granted: the lease's hooks were rendered with it.
           const renewed: Lease = {
             ...current,
-            purpose: input.purpose,
             idleMinutes: input.idleMinutes ?? current.idleMinutes,
             lastActivityAt: now,
             lastPersistedActivityAt: now,
@@ -1361,21 +1393,49 @@ export const make = Effect.gen(function* () {
      * or prepared under changed: the lease, pause, access, and the action's shape.
      */
     const execute = Effect.gen(function* () {
-      if (heldToken !== null && !(yield* sameLease)) {
-        return yield* toolError("not_held", `The lease on ${device.id} ended before the call ran.`);
+      // Slow preparation first, so the checks below sit right before the send.
+      const fresh = yield* resolve(threadId, device.id);
+      const now = (yield* currentActions(fresh.device, fresh.shell))?.[input.action];
+      if (now === undefined || actionShape(now) !== shape || now.tier !== action.tier) {
+        return yield* toolError(
+          "unavailable",
+          `The definition of "${input.action}" changed while the call was prepared. Call it again.`,
+        );
       }
       // The device as configured now: removed, moved or re-pointed since the call
       // was prepared, it must not be sent with the old target or credential.
-      const fresh = yield* resolve(threadId, device.id);
+      const latest = yield* findDevice(device.id);
       if (
-        fresh.device.baseUrl !== device.baseUrl ||
-        fresh.device.projectId !== device.projectId ||
-        encodeJson(fresh.device.auth ?? null) !== encodeJson(device.auth ?? null)
+        latest === undefined ||
+        latest.projectId !== device.projectId ||
+        !sameTarget(latest, device)
       ) {
         return yield* toolError(
           "unavailable",
           `${device.id}'s settings changed while the call was prepared. Call it again.`,
         );
+      }
+      if (heldToken !== null) {
+        const lease = (yield* Ref.get(leases)).get(device.id);
+        if (!isHeld(lease) || lease.token !== heldToken) {
+          return yield* toolError(
+            "not_held",
+            `The lease on ${device.id} ended before the call ran.`,
+          );
+        }
+        // A lease belongs to the device it was granted on; one re-pointed since ends here.
+        if (!sameTarget(latest, lease.releasePlan)) {
+          yield* endLease(
+            device.id,
+            "lease.expired",
+            "system",
+            "The device's settings changed.",
+          ).pipe(Effect.mapError(storeFailure));
+          return yield* toolError(
+            "not_held",
+            `${device.id}'s settings changed, which ended the lease. Acquire it again.`,
+          );
+        }
       }
       if ((yield* runtimeFor(device.id)).paused) {
         return yield* toolError("paused", `The user paused ${device.id}.`);
@@ -1386,15 +1446,8 @@ export const make = Effect.gen(function* () {
           "Agent hardware access is turned off for this project.",
         );
       }
-      const now = (yield* currentActions(fresh.device, fresh.shell))?.[input.action];
-      if (now === undefined || actionShape(now) !== shape || now.tier !== action.tier) {
-        return yield* toolError(
-          "unavailable",
-          `The definition of "${input.action}" changed while the call was prepared. Call it again.`,
-        );
-      }
       const started = yield* Clock.currentTimeMillis;
-      const result = yield* send(device, action, query, file?.bytes).pipe(
+      const result = yield* send(latest, action, query, file?.bytes).pipe(
         Effect.mapError(() =>
           toolError(
             "request_failed",
@@ -1674,18 +1727,24 @@ export const make = Effect.gen(function* () {
     readonly deviceId: HardwareDeviceId;
     readonly value: string | null;
   }) =>
-    Effect.gen(function* () {
-      yield* requireDevice(deviceId);
-      yield* (
-        value === null
-          ? secrets.remove(secretName(deviceId))
-          : secrets.set(secretName(deviceId), new TextEncoder().encode(value))
-      ).pipe(
-        Effect.mapError(() => new HardwareError({ reason: "Could not store the credential." })),
-      );
-      yield* Ref.update(credentialPresent, (map) => new Map(map).set(deviceId, value !== null));
-      yield* publish;
-    });
+    lockFor(deviceId).withPermits(1)(
+      Effect.gen(function* () {
+        yield* requireDevice(deviceId);
+        // A new credential is a different device as far as a lease is concerned.
+        yield* endLease(deviceId, "lease.revoked", "user", "The device's credential changed.").pipe(
+          Effect.mapError(userStoreFailure),
+        );
+        yield* (
+          value === null
+            ? secrets.remove(secretName(deviceId))
+            : secrets.set(secretName(deviceId), new TextEncoder().encode(value))
+        ).pipe(
+          Effect.mapError(() => new HardwareError({ reason: "Could not store the credential." })),
+        );
+        yield* Ref.update(credentialPresent, (map) => new Map(map).set(deviceId, value !== null));
+        yield* publish;
+      }),
+    );
 
   const control: HardwareService["Service"]["control"] = (input) => {
     switch (input.type) {
@@ -1716,8 +1775,7 @@ export const make = Effect.gen(function* () {
     if (device === undefined) return "The device was removed.";
     // Its cleanup must reach the device the lease used, so a re-pointed device ends the lease.
     if (
-      device.baseUrl !== lease.releasePlan.baseUrl ||
-      encodeJson(device.auth ?? null) !== encodeJson(lease.releasePlan.auth ?? null) ||
+      !sameTarget(device, lease.releasePlan) ||
       (shell !== null && shell.projectId !== device.projectId)
     )
       return "The device's settings changed.";
@@ -1785,15 +1843,23 @@ export const make = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const leasedIds = [...(yield* Ref.get(leases)).keys()];
     // Each device on its own fiber: one device's slow cleanup or hooks must not
-    // delay another's renewals. A device still busy from the last round, or
-    // mid-call, is skipped until the next tick.
+    // delay another's renewals.
     for (const deviceId of leasedIds) {
+      if (pendingTicks.has(deviceId)) continue;
+      pendingTicks.add(deviceId);
+      // Queues behind a call in progress instead of skipping, so steady calls
+      // cannot starve renewals; at most one waits per device.
       yield* lockFor(deviceId)
-        .withPermitsIfAvailable(1)(tickLease(deviceId, configured, now))
+        .withPermits(1)(
+          Effect.gen(function* () {
+            yield* tickLease(deviceId, configured, yield* Clock.currentTimeMillis);
+          }),
+        )
         .pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("Hardware lease tick failed", { deviceId, cause }),
           ),
+          Effect.ensuring(Effect.sync(() => pendingTicks.delete(deviceId))),
           Effect.forkIn(scope),
         );
     }
@@ -1854,7 +1920,7 @@ export const make = Effect.gen(function* () {
   );
   // A lease that ran out while the server was stopped is ended before the
   // service is reachable, so its old token never works again; its cleanup runs
-  // on the first tick. If that cannot be recorded, its device stays paused.
+  // on the first tick.
   const startedAt = yield* Clock.currentTimeMillis;
   for (const lease of restored) {
     if (
@@ -1870,26 +1936,24 @@ export const make = Effect.gen(function* () {
     const current = (yield* Ref.get(leases)).get(lease.deviceId);
     if (current === undefined) continue;
     const ended: Lease = { ...current, releasingUntil: startedAt + RELEASE_RETRY_WINDOW_MS };
+    // Ended in memory whatever the write does, so nothing revives it; cleanup
+    // rewrites the row, and a restart before then ends it again the same way.
+    yield* setLease(ended);
     yield* store.saveLease(ended).pipe(
-      Effect.andThen(setLease(ended)),
-      Effect.andThen(
-        store.audit({
-          deviceId: lease.deviceId,
-          actor: "system",
-          threadId: lease.threadId,
-          event: "lease.expired",
-          detail: { reason: "The lease ran out while the server was stopped." },
-        }),
-      ),
       Effect.catchCause((cause) =>
-        Effect.logError("Could not end an expired hardware lease; pausing its device", {
+        Effect.logWarning("Could not record an expired hardware lease as ended", {
           deviceId: lease.deviceId,
           cause,
-        }).pipe(
-          Effect.andThen(updateRuntime(lease.deviceId, (state) => ({ ...state, paused: true }))),
-        ),
+        }),
       ),
     );
+    yield* store.audit({
+      deviceId: lease.deviceId,
+      actor: "system",
+      threadId: lease.threadId,
+      event: "lease.expired",
+      detail: { reason: "The lease ran out while the server was stopped." },
+    });
   }
   for (const device of yield* devices) {
     const present = yield* secrets.get(secretName(device.id)).pipe(
