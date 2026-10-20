@@ -15,7 +15,7 @@ export function DiscordPresencePreview() {
   const activity = useDiscordPresenceActivity();
   const details = formatDiscordPresenceDetails(activity ?? EXAMPLE_ACTIVITY);
   return (
-    <div className="flex flex-col gap-2 pt-1 pb-2">
+    <div className="mt-3 flex flex-col gap-2 pb-3.5">
       <div
         aria-label={`Discord activity preview: Playing styal, ${details}`}
         className="flex max-w-80 flex-col gap-3 rounded-lg bg-discord-card p-3 text-discord-foreground"
