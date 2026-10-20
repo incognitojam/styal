@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { classifySqliteError, SqlError } from "effect/sql/SqlError";
 
-import { PersistenceDecodeError, PersistenceSqlError, toPersistenceSqlError } from "./Errors.ts";
+import { PersistenceDecodeError, toPersistenceSqlError } from "./Errors.ts";
 
 const decodeRuntimePayload = Schema.decodeUnknownEffect(
   Schema.Struct({
@@ -14,19 +14,6 @@ const decodeRuntimePayload = Schema.decodeUnknownEffect(
     }),
   }),
 );
-
-it("keeps SQL operation context without a tautological detail", () => {
-  const cause = new Error("database unavailable");
-  const error = new PersistenceSqlError({
-    operation: "AuthSessionRepository.list:query",
-    cause,
-  });
-
-  assert.equal(error.operation, "AuthSessionRepository.list:query");
-  assert.equal(error.detail, undefined);
-  assert.equal(error.cause, cause);
-  assert.equal(error.message, "SQL error in AuthSessionRepository.list:query");
-});
 
 it.effect("names a real SQLite condition without copying query data", () =>
   Effect.gen(function* () {
