@@ -105,20 +105,6 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-export function formatUpstreamIntakePromotionCommand(input: {
-  readonly repository: string;
-  readonly candidateBranch: string;
-  readonly candidateSha: string;
-}): string {
-  return [
-    "gh workflow run promote-upstream-intake.yml \\",
-    `  --repo ${shellQuote(input.repository)} \\`,
-    "  --ref main \\",
-    `  -f candidate_branch=${shellQuote(input.candidateBranch)} \\`,
-    `  -f candidate_sha=${shellQuote(input.candidateSha)}`,
-  ].join("\n");
-}
-
 export function formatUpstreamIntakePushCommand(input: {
   readonly candidateBranch: string;
   readonly remoteSha?: string;

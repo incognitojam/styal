@@ -10,7 +10,6 @@ import type { CommitReview } from "./commit-review.ts";
 import {
   auditUpstreamIntakeCandidate,
   formatForkCiWatchCommand,
-  formatUpstreamIntakePromotionCommand,
   formatUpstreamIntakePushCommand,
 } from "./intake.ts";
 
@@ -330,21 +329,7 @@ describe("upstream intake audit", () => {
     assert.notInclude(result.summary, directCommit);
   });
 
-  it("formats a copyable promotion command", () => {
-    assert.equal(
-      formatUpstreamIntakePromotionCommand({
-        repository: "example/fork",
-        candidateBranch: "intake/catchup",
-        candidateSha: "d".repeat(40),
-      }),
-      [
-        "gh workflow run promote-upstream-intake.yml \\",
-        "  --repo 'example/fork' \\",
-        "  --ref main \\",
-        "  -f candidate_branch='intake/catchup' \\",
-        `  -f candidate_sha='${"d".repeat(40)}'`,
-      ].join("\n"),
-    );
+  it("formats copyable push and watch commands", () => {
     assert.equal(
       formatUpstreamIntakePushCommand({ candidateBranch: "intake/catchup" }),
       "git push -u origin 'intake/catchup'",
@@ -444,9 +429,7 @@ describe("upstream intake audit", () => {
           readonly types: ReadonlyArray<string>;
           readonly branches: ReadonlyArray<string>;
         };
-        readonly workflow_dispatch: {
-          readonly inputs: Record<string, { readonly required: boolean }>;
-        };
+        readonly workflow_dispatch?: unknown;
       };
       readonly permissions: Record<string, string>;
       readonly concurrency: { readonly group: string; readonly "cancel-in-progress": boolean };
@@ -481,10 +464,7 @@ describe("upstream intake audit", () => {
     assert.deepEqual(workflow.on.workflow_run.workflows, ["Fork CI"]);
     assert.deepEqual(workflow.on.workflow_run.types, ["completed"]);
     assert.deepEqual(workflow.on.workflow_run.branches, ["intake/**"]);
-    assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_branch?.required);
-    assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_sha?.required);
-    assert.isUndefined(workflow.on.workflow_dispatch.inputs.source_prs);
-    assert.isUndefined(workflow.on.workflow_dispatch.inputs.source_commits);
+    assert.isUndefined(workflow.on.workflow_dispatch);
     assert.equal(workflow.permissions.actions, "read");
     assert.equal(workflow.permissions.contents, "read");
     assert.include(workflow.concurrency.group, "github.event.workflow_run.head_branch");
@@ -501,8 +481,10 @@ describe("upstream intake audit", () => {
     const resolveCandidate = workflow.jobs.validate.steps.find(
       (step) => step.name === "Resolve candidate",
     );
-    assert.include(resolveCandidate?.run ?? "", '"$GITHUB_REF" != "refs/heads/main"');
-    assert.include(resolveCandidate?.run ?? "", "git check-ref-format");
+    assert.equal(
+      resolveCandidate?.env?.EXPECTED_CANDIDATE_SHA,
+      "${{ github.event.workflow_run.head_sha }}",
+    );
     assert.include(resolveCandidate?.run ?? "", '"$candidate_sha" != "$EXPECTED_CANDIDATE_SHA"');
     assert.include(resolveCandidate?.run ?? "", '"$trusted_sha" != "$base_sha"');
     assert.include(
@@ -517,20 +499,10 @@ describe("upstream intake audit", () => {
     assert.include(auditCandidate?.run ?? "", "refs/remotes/upstream/main");
     assert.notInclude(auditCandidate?.run ?? "", "expected-source");
 
-    assert.isUndefined(
-      workflow.jobs.validate.steps.find((step) => step.name === "Verify prerequisite review"),
+    const download = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Download the native fingerprint verdict",
     );
-
-    const verifyCi = workflow.jobs.validate.steps.find(
-      (step) => step.name === "Verify Fork CI for the candidate SHA",
-    );
-    assert.include(verifyCi?.run ?? "", '--commit "$CANDIDATE_SHA"');
-    assert.include(verifyCi?.run ?? "", '"Fork Intake Audit"');
-    assert.include(verifyCi?.run ?? "", '"Fork Test (Workspace)"');
-    assert.include(
-      verifyCi?.run ?? "",
-      "$GITHUB_REPOSITORY/compare/main...${GITHUB_REPOSITORY/\\//:}:$CANDIDATE_BRANCH",
-    );
+    assert.equal(download?.with?.["run-id"], "${{ github.event.workflow_run.id }}");
 
     const fingerprint = workflow.jobs.validate.steps.find(
       (step) => step.name === "Read the native fingerprint verdict",
@@ -541,7 +513,6 @@ describe("upstream intake audit", () => {
     const lane = workflow.jobs.validate.steps.find(
       (step) => step.name === "Choose the promotion lane",
     );
-    assert.include(lane?.run ?? "", '"$EVENT_NAME" == "workflow_run"');
     assert.include(lane?.run ?? "", '"$AUTOMATIC_ELIGIBLE" == "true"');
     assert.include(lane?.run ?? "", '"$NATIVE_FINGERPRINT" == "unchanged"');
     assert.include(lane?.run ?? "", "lane=manual");

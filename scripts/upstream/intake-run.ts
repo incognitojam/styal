@@ -1220,8 +1220,7 @@ function autoBatch(
     return false;
   }
   process.stdout.write("\n");
-  const verified = verify(cwd, "origin/main");
-  if (!verified.ok) return false;
+  if (!verify(cwd, "origin/main")) return false;
   if (!options.push) {
     process.stdout.write(`\nVerified. Push ${options.branch} and wait for Fork CI.\n`);
     return true;
@@ -1235,7 +1234,7 @@ function autoBatch(
     return false;
   }
   process.stdout.write(
-    `Fork CI passed. Promotion starts by itself; approve it if it waits: https://github.com/${forkRepository()}/actions/workflows/promote-upstream-intake.yml\n\nTo dispatch it by hand:\n\n  GH_REPO=${forkRepository()} gh workflow run promote-upstream-intake.yml -f candidate_branch=${options.branch} -f candidate_sha=${sha}\n\n${verified.nativeFingerprint}\n`,
+    `Fork CI passed. Promotion started by itself; approve it if it waits: https://github.com/${forkRepository()}/actions/workflows/promote-upstream-intake.yml\n`,
   );
   return true;
 }
@@ -1636,14 +1635,12 @@ export function verificationEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessE
  * the test suite of every package the batch touches (only its changed tests with
  * `changedTestsOnly`), checks formatting, and checks the ledger. Prints one line per step and the
  * failures in full. Whole suites catch fork tests an upstream change breaks without touching them.
- * Last, it compares the mobile native fingerprint at `base` and `HEAD`, which decides whether an
- * OTA update from the promoted batch can reach installed apps.
  */
 function verify(
   cwd: string,
   base: string,
   options: { readonly changedTestsOnly?: boolean } = {},
-): { readonly ok: boolean; readonly nativeFingerprint: string } {
+): boolean {
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
     (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
   );
@@ -1687,9 +1684,7 @@ function verify(
       .join("\n");
     process.stdout.write(`\n--- ${failed.name}\n${relevant || failed.output.slice(-4000)}\n`);
   }
-  const nativeFingerprint = nativeFingerprintReport(cwd, base, changed, env);
-  process.stdout.write(`\n${nativeFingerprint}\n`);
-  return { ok: steps.every((entry) => entry.ok), nativeFingerprint };
+  return steps.every((entry) => entry.ok);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1799,16 +1794,6 @@ function nativeFingerprintComparison(
   return touchesNativeFingerprint(changed)
     ? compareNativeFingerprints(cwd, base, env)
     : "inputs unchanged";
-}
-
-/** Whether OTA updates from `HEAD` reach the builds that `base`'s updates reached. */
-function nativeFingerprintReport(
-  cwd: string,
-  base: string,
-  changed: ReadonlyArray<string>,
-  env: NodeJS.ProcessEnv,
-): string {
-  return describeNativeFingerprint(nativeFingerprintComparison(cwd, base, changed, env));
 }
 
 /** `unknown` when the comparison failed; promotion treats it like `moved`. */
@@ -2229,7 +2214,7 @@ function main() {
     case "verify": {
       process.exitCode = verify(cwd, flag("--base") ?? "origin/main", {
         changedTestsOnly: process.argv.includes("--changed-tests"),
-      }).ok
+      })
         ? 0
         : 1;
       return;

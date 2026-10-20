@@ -24,7 +24,6 @@ import {
 import {
   auditUpstreamIntakeCandidate,
   formatForkCiWatchCommand,
-  formatUpstreamIntakePromotionCommand,
   formatUpstreamIntakePushCommand,
 } from "./lib/intake.ts";
 import {
@@ -430,9 +429,7 @@ function printPromotionReadiness(input: {
   const successful = runs.find((run) => run.status === "completed" && run.conclusion === "success");
   if (successful !== undefined) {
     process.stdout.write(
-      `\nFork CI passed: ${successful.url}\n\nPromotion starts by itself; approve it if it waits: https://github.com/${input.repository}/actions/workflows/promote-upstream-intake.yml\n\nTo dispatch it by hand:\n\n${formatUpstreamIntakePromotionCommand(
-        input,
-      )}\n`,
+      `\nFork CI passed: ${successful.url}\n\nPromotion started by itself; approve it if it waits: https://github.com/${input.repository}/actions/workflows/promote-upstream-intake.yml\n`,
     );
     return;
   }
