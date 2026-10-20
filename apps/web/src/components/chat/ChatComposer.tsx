@@ -20,6 +20,7 @@ import { migrateLegacyStashFiles } from "../../lib/legacyStashFiles";
 import {
   questionAttachmentDraftId,
   countQuestionAttachments,
+  trackOpenQuestionAttachmentDraft,
   useQuestionAttachmentPreparation,
   changeQuestionAttachmentPreparation,
 } from "../../questionAttachments";
@@ -2071,6 +2072,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       : null;
   const attachmentDraftTarget = questionAttachmentTarget ?? composerDraftTarget;
   const attachmentDraft = useComposerThreadDraft(attachmentDraftTarget);
+  const questionTakesSnapShots =
+    supportsQuestionAttachments &&
+    activePendingProgress?.activeQuestion?.allowCustomAnswer !== false &&
+    !activePendingIsResponding;
+  const questionRequest = pendingUserInputs[0];
+  // Publish eligibility before async captures can observe a question the UI has already closed.
+  useLayoutEffect(() => {
+    if (!questionAttachmentTarget || !questionRequest || !questionTakesSnapShots) return;
+    return trackOpenQuestionAttachmentDraft(routeThreadRef, {
+      draftId: questionAttachmentTarget,
+      requestKeys: questionRequest.questions.map((question) =>
+        questionAttachmentDraftId(
+          environmentId,
+          activeThreadId!,
+          questionRequest.requestId,
+          question.id,
+        ),
+      ),
+    });
+  }, [
+    activeThreadId,
+    environmentId,
+    questionAttachmentTarget,
+    questionRequest,
+    questionTakesSnapShots,
+    routeThreadRef,
+  ]);
   const attachmentTargetKey = composerTargetKey(attachmentDraftTarget);
   // An import that finishes after a draft change must compare against the draft open *now*, not
   // the one captured in the closure that started it.
@@ -2110,7 +2138,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pendingSnapShotIdSet,
     uncommittedSnapShotIds,
     standaloneComposerImages,
-  } = useComposerImageGroups(composerDraftTarget, composerImages, composerPreviewAnnotations);
+  } = useComposerImageGroups(attachmentDraftTarget, composerImages, composerPreviewAnnotations);
   const nonPersistedComposerImageIds = attachmentDraft.nonPersistedImageIds;
   const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
   const openPrLink = useOpenPrLink(routeThreadRef);
