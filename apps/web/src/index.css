@@ -169,6 +169,16 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
+/* Discord's own dark palette for the Rich Presence preview in Settings. It
+   depicts Discord, so it does not follow the styal theme. */
+@theme {
+  --color-discord-card: #232428;
+  --color-discord-foreground: #f2f3f5;
+  --color-discord-muted-foreground: #dbdee1;
+  --color-discord-elapsed: #9cd59c;
+  --color-discord-button: #4e5058;
+}
+
 @theme inline {
   /* Two steps below Tailwind's text-xs (12px) for dense UI: metadata rows,
      badges, counters, keyboard hints and diagnostics tables. 2xs is 11px,

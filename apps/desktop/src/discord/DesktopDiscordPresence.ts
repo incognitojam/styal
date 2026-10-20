@@ -1,6 +1,10 @@
 // @effect-diagnostics globalTimers:off -- Bounds and reconnects an imperative Discord RPC client.
 import { Client } from "@xhayper/discord-rpc";
-import type { DesktopDiscordPresenceActivity } from "@t3tools/contracts";
+import {
+  DISCORD_PRESENCE_BUTTON,
+  formatDiscordPresenceDetails,
+  type DesktopDiscordPresenceActivity,
+} from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -41,9 +45,9 @@ export function formatDiscordPresence(
   startTimestamp: number,
 ) {
   return {
-    details: `${activity.activeThreads} active ${activity.activeThreads === 1 ? "thread" : "threads"} across ${activity.activeProjects} ${activity.activeProjects === 1 ? "project" : "projects"}`,
+    details: formatDiscordPresenceDetails(activity),
     startTimestamp,
-    buttons: [{ label: "View on GitHub", url: "https://github.com/incognitojam/styal" }],
+    buttons: [{ ...DISCORD_PRESENCE_BUTTON }],
   };
 }
 
