@@ -1,5 +1,5 @@
 import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
-import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
+import { T3_MCP_TOOL_NAMES, resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
 import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
 
 // Search results stay on the timeline wire, so keep their text a preview.
@@ -13,6 +13,7 @@ type ToolItemBase = Omit<
 export function openCodeToolProjectionKind(
   toolName: string,
 ): "command_execution" | "file_change" | "file_search" | "web_search" | "dynamic_tool" {
+  if (resolveT3McpToolId(toolName) !== null) return "dynamic_tool";
   const normalized = toolName.toLowerCase();
   if (normalized === "todowrite") {
     return "dynamic_tool";
