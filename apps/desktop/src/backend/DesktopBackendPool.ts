@@ -180,7 +180,7 @@ export const layer = Layer.effect(
         electronDialog
           .showErrorBox(
             "This styal home is unavailable",
-            "Another styal server, such as the background service, is using this data directory. Stop that server and reopen styal, or set a separate STYAL_HOME and pair with the running server.",
+            "Another styal server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `styal update`. If the older launcher cannot update, run `styal service uninstall` and optionally reinstall with `styal service install` from a current CLI. Use `npx @styal/cli@nightly` if `styal` is missing or outdated, and pass `--base-dir` with the service's styal home to each command. Then reopen styal. You can also set a separate STYAL_HOME and pair with the running server.",
           )
           .pipe(Effect.andThen(electronApp.quit)),
     });

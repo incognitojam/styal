@@ -136,7 +136,7 @@ export const layer = Layer.effect(
                 Ref.set(
                   preflightErrorRef,
                   Option.some(
-                    "Another styal server is using this distro's styal home. Stop it, or pair with it instead.",
+                    "Another styal server is using this distro's styal home, or an older background service is set up for it. Stop that server or pair with it, or try `styal update` in the distro. If the older launcher cannot update, run `styal service uninstall` and optionally reinstall with `styal service install` from a current CLI in the distro. Use `npx @styal/cli@nightly` if `styal` is missing or outdated, and pass `--base-dir` with the service's styal home to each command.",
                   ),
                 ),
               ),

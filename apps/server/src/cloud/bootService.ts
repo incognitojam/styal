@@ -34,11 +34,11 @@ import {
 } from "./serviceProtocol.ts";
 
 const BOOT_SERVICE_NAME = "styal";
-const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
+export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // `.service` suffix keeps the label distinct from the desktop app's bundle id
 // (build.styal.app), so launchd and TCC records never collide.
-const BOOT_SERVICE_LAUNCHD_LABEL = "build.styal.app.service";
-const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
+export const BOOT_SERVICE_LAUNCHD_LABEL = "build.styal.app.service";
+export const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
 export const BOOT_SERVICE_LOG_FILE = "boot-service.log";
 
 /** systemd expands `%` specifiers, including in unquoted append-log paths. */
