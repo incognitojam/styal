@@ -1,7 +1,8 @@
 import type {
-  OrchestrationV2Actor,
   OrchestrationV2ContextTransfer,
+  OrchestrationV2CreationSource,
   OrchestrationV2ProviderTurn,
+  OrchestrationV2Run,
 } from "@t3tools/contracts";
 
 /**
@@ -17,22 +18,32 @@ export const FORK_NOTE =
  * of its provider turns completes. Delivery is best effort, so a turn that is
  * refused or restarted sends the note again with the next one.
  *
- * Only messages the user wrote carry it, since continuations and wakes may
- * resume natively without sending their text. A provider command such as
- * /compact or /goal must stay at the start of its text, so it is sent without
- * the note; if that command's turn completes, the fork gets no note.
+ * A restart continuation resumes natively and a message the provider created
+ * is never sent back to it, so neither carries the note; every other message,
+ * including one an agent sends into the fork, does.
+ *
+ * A provider command such as /compact or /goal must stay at the start of its
+ * text, so it is sent without the note; if that command's turn completes, the
+ * fork gets no note.
  */
 export function shouldSendForkNote(input: {
   readonly threadId: string;
-  readonly message: { readonly text: string; readonly createdBy: OrchestrationV2Actor };
+  readonly run: Pick<OrchestrationV2Run, "restartContinuationOfRunId">;
+  readonly message: {
+    readonly text: string;
+    readonly creationSource: OrchestrationV2CreationSource;
+    readonly attachments: ReadonlyArray<unknown>;
+  };
   readonly contextTransfers: ReadonlyArray<
     Pick<OrchestrationV2ContextTransfer, "type" | "targetThreadId">
   >;
   readonly providerTurns: ReadonlyArray<Pick<OrchestrationV2ProviderTurn, "status">>;
 }): boolean {
   return (
-    input.message.createdBy === "user" &&
-    !input.message.text.trimStart().startsWith("/") &&
+    input.run.restartContinuationOfRunId === undefined &&
+    input.message.creationSource !== "provider" &&
+    // Matches how turn start recognizes a provider command.
+    !(input.message.attachments.length === 0 && input.message.text.trimStart().startsWith("/")) &&
     input.contextTransfers.some(
       (transfer) => transfer.type === "fork" && transfer.targetThreadId === input.threadId,
     ) &&

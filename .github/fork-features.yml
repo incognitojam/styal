@@ -1766,7 +1766,7 @@ features:
     prs: [913]
     invariants:
       - A forked thread's turns carry a note saying the history was copied up to the forked response, work may have continued in the source thread, and background work started before the fork will not report back, until one of the fork's provider turns completes. Delivery is best effort; a refused or restarted turn sends it again.
-      - Only messages the user wrote carry it; continuations and wakes do not, and provider commands such as /compact and /goal are sent unprefixed.
+      - Restart continuations, which resume natively, and provider-created messages do not carry it; user messages and agent messages sent into the fork do. Provider commands such as /compact and /goal are sent unprefixed.
     rationale: A fork can be taken from a response that ended while background work was still running. Without the note, the agent sees that work missing and reports it as interrupted, though it finished in the source thread.
     implementation_paths:
       - apps/server/src/orchestration-v2/ForkNote.ts

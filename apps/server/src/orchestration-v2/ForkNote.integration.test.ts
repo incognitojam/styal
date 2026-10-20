@@ -151,6 +151,7 @@ it.effect("sends the fork note until a fork turn completes, skipping provider co
           threadId: ThreadId,
           text: string,
           outcome: "completed" | "failed" | "refused" = "completed",
+          sender: "user" | "agent" = "user",
         ) =>
           Effect.gen(function* () {
             const before = started.length;
@@ -174,8 +175,8 @@ it.effect("sends the fork note until a fork turn completes, skipping provider co
               text,
               attachments: [],
               dispatchMode: { type: "start_immediately" },
-              createdBy: "user",
-              creationSource: "web",
+              createdBy: sender,
+              creationSource: sender === "agent" ? "mcp" : "web",
             });
             const drained = yield* Effect.forkScoped(worker.drain());
             yield* Fiber.join(recorded);
@@ -280,7 +281,8 @@ it.effect("sends the fork note until a fork turn completes, skipping provider co
         const command = yield* send(forkThreadId, "/goal ship the fix", "failed");
         assert.equal(command.text, "/goal ship the fix", "a provider command is sent unprefixed");
 
-        const accepted = yield* send(forkThreadId, "One more time");
+        // An agent sending into a fork it created, as t3_thread_send does.
+        const accepted = yield* send(forkThreadId, "One more time", "completed", "agent");
         assert.include(accepted.text, FORK_NOTE);
 
         const later = yield* send(forkThreadId, "And then?");

@@ -980,6 +980,7 @@ export const layer: Layer.Layer<
       });
       const sendForkNote = shouldSendForkNote({
         threadId: input.threadId,
+        run,
         message,
         contextTransfers: projection.contextTransfers,
         providerTurns: projection.providerTurns,
