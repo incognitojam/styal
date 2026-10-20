@@ -8780,17 +8780,23 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           };
           yield* Ref.set(queryContext, context);
           let lastModelUsage: SDKResultMessage["modelUsage"] | undefined;
+          // A resumed session's modelUsage starts from the totals Claude Code restored
+          // for it, so the first result has no baseline and reports main usage only.
+          let hasModelUsageBaseline = !shouldResume;
           yield* querySession.messages.pipe(
             Stream.runForEach((message) =>
               sdkMessageLock.withPermits(1)(
                 Effect.suspend(() => {
                   // Every result moves the baseline, including ones that complete no turn.
                   if (message.type === "result" && message.modelUsage) {
-                    resultModelUsage.set(
-                      message,
-                      claudeModelUsageDelta(lastModelUsage, message.modelUsage),
-                    );
+                    if (hasModelUsageBaseline) {
+                      resultModelUsage.set(
+                        message,
+                        claudeModelUsageDelta(lastModelUsage, message.modelUsage),
+                      );
+                    }
                     lastModelUsage = message.modelUsage;
+                    hasModelUsageBaseline = true;
                   }
                   if (
                     message.type === "system" &&

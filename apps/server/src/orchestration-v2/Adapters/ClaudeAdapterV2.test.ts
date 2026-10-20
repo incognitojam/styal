@@ -7736,6 +7736,92 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  it.effect("does not report a resumed session's restored modelUsage totals as turn usage", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const now = yield* DateTime.now;
+        const startTurn = (attempt: string, providerTurnOrdinal: number) =>
+          harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now,
+              attemptId: RunAttemptId.make(attempt),
+              text: "Go on.",
+              attachments: [],
+              providerTurnOrdinal,
+            }),
+          );
+        const result = (uuid: string, input: number, totalInput: number, costUSD: number) =>
+          claudeSdkFrame({
+            ...makeResultFrame({ uuid, result: "Done." }),
+            usage: {
+              input_tokens: input,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+              output_tokens: 10,
+            },
+            modelUsage: {
+              "claude-opus-5-5": {
+                inputTokens: totalInput,
+                cacheReadInputTokens: 0,
+                cacheCreationInputTokens: 0,
+                outputTokens: 10 + totalInput / 10,
+                webSearchRequests: 0,
+                costUSD,
+                contextWindow: 200_000,
+                maxOutputTokens: 32_000,
+              },
+            },
+          });
+        const completedUsage = () =>
+          harness.events
+            .flatMap((event) =>
+              event.type === "provider_turn.updated" &&
+              event.providerTurn.turnTokenUsage?.usageStatus === "complete"
+                ? [event.providerTurn.turnTokenUsage]
+                : [],
+            )
+            .at(-1);
+
+        // A later provider turn resumes the session; Claude Code restored 5000 input
+        // tokens and $1 from before the restart into the running total.
+        yield* startTurn("attempt-resumed-usage-1", 2);
+        yield* Queue.offer(
+          harness.sdkMessages,
+          result("00000000-0000-4000-8000-000000000b01", 100, 5100, 1.25),
+        );
+        yield* awaitUntil(() => harness.terminalEvents().length === 1, "resumed turn terminal");
+        const resumed = completedUsage();
+        assert.equal(resumed?.inputTokens, 100);
+        assert.isUndefined(resumed?.byModel);
+
+        // The next result in the same process has a baseline again.
+        yield* startTurn("attempt-resumed-usage-2", 3);
+        yield* Queue.offer(
+          harness.sdkMessages,
+          result("00000000-0000-4000-8000-000000000b02", 200, 5300, 1.5),
+        );
+        yield* awaitUntil(() => harness.terminalEvents().length === 2, "next turn terminal");
+        assert.deepEqual(completedUsage()?.byModel, [
+          {
+            model: "claude-opus-5-5",
+            inputTokens: 200,
+            cachedInputTokens: 0,
+            cacheCreationTokens: 0,
+            outputTokens: 20,
+            reportedCostUsd: 0.25,
+          },
+        ]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
   it.effect("a subagent re-run in the foreground does not join a later wake", () =>
     Effect.scoped(
       Effect.gen(function* () {
