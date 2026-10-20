@@ -26,6 +26,8 @@ const TEST_DIRECTORIES = new Set([
   "testdata",
   "testkit",
 ]);
+// drizzle-kit's migration bookkeeping. The SQL migrations beside it stay source: they are what runs.
+const DRIZZLE_META_FILE = /^(?:_journal|\d+_snapshot)\.json$/;
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 
 /**
@@ -43,7 +45,8 @@ export function diffFileTier(path: string, generatedPaths?: ReadonlySet<string>)
     name.endsWith(".snap") ||
     name.endsWith(".min.js") ||
     name.endsWith(".min.css") ||
-    /\.generated\./.test(name) ||
+    /\.(?:generated|gen)\./.test(name) ||
+    (segments.at(-2) === "meta" && DRIZZLE_META_FILE.test(name)) ||
     segments.slice(0, -1).some((segment) => GENERATED_DIRECTORIES.has(segment))
   ) {
     return "generated";
