@@ -102,7 +102,8 @@ one group. Directories that are not git repositories sit under "Other folders".
 
 The default selection includes git repositories active within the last 30 days
 with at least three conversations. Use the checkboxes, including **Select all**,
-to change the selection. Linked git worktrees, Codex scratch directories under
+to change the selection. Linked worktrees of bare repositories can be offered as
+separate projects. Other linked git worktrees, Codex scratch directories under
 `Documents/Codex`, and anything under `Downloads` are not offered.
 
 A large or malformed history can reach the scan limit. styal keeps the
