@@ -89,10 +89,12 @@ import {
   ProviderDriverKind,
   type ProviderInstanceId,
   type ProviderRequestKind,
+  type ProviderRuntimeTurnStatus,
   type ProviderUserInputAnswers,
   type ProviderThreadId,
   type RunId,
   type ThreadId,
+  type TurnTokenUsage,
 } from "@t3tools/contracts";
 
 import * as Cause from "effect/Cause";
@@ -237,6 +239,60 @@ export function claudeProviderTurnTokenUsage(
     updatedAt,
   };
 }
+function claudeTurnHasSubagents(context: ActiveClaudeTurnContext) {
+  return context.subagentsByTaskId.size > 0 || context.subagentsByToolUseId.size > 0;
+}
+
+/** Usage summed from this turn's streamed messages, or undefined when none was billed yet. */
+function claudeStreamedTurnTokenUsage(
+  context: ActiveClaudeTurnContext,
+): TurnTokenUsage | undefined {
+  const totals = {
+    input_tokens: 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+    output_tokens: 0,
+  };
+  for (const usage of context.streamedUsageByMessageId.values()) {
+    for (const key of Object.keys(totals) as Array<keyof typeof totals>) {
+      const value = usage[key];
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0)
+        totals[key] += Math.round(value);
+    }
+  }
+  if (!Object.values(totals).some((value) => value > 0)) return undefined;
+  return {
+    usageScope: "main_agent",
+    usageStatus: "partial",
+    inputTokens:
+      totals.input_tokens + totals.cache_read_input_tokens + totals.cache_creation_input_tokens,
+    cachedInputTokens: totals.cache_read_input_tokens,
+    cacheCreationTokens: totals.cache_creation_input_tokens,
+    outputTokens: totals.output_tokens,
+    hasSubagents: claudeTurnHasSubagents(context),
+  };
+}
+
+// An interrupted query exits without a result message, and an aborted result
+// can report zero usage. Fall back to the streamed usage in both cases so the
+// turn keeps the tokens it was already billed for.
+function claudeTerminalTurnTokenUsage(
+  context: ActiveClaudeTurnContext,
+  result: SDKResultMessage | undefined,
+  status: ProviderRuntimeTurnStatus,
+  turnModelUsage: ClaudeModelUsageCounts | undefined,
+): TurnTokenUsage {
+  const usage = normalizeClaudeTurnTokenUsage(
+    result,
+    claudeTurnHasSubagents(context),
+    status,
+    turnModelUsage,
+  );
+  return usage.usageStatus === "unavailable"
+    ? (claudeStreamedTurnTokenUsage(context) ?? usage)
+    : usage;
+}
+
 export const CLAUDE_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(CLAUDE_PROVIDER);
 const DEFAULT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({});
 // Entry extensions the Claude SDK runs through node instead of executing.
@@ -6111,10 +6167,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     status: input.status,
                     completedAt: input.completedAt,
                   }),
-                  turnTokenUsage: normalizeClaudeTurnTokenUsage(
+                  turnTokenUsage: claudeTerminalTurnTokenUsage(
+                    input.context,
                     input.result,
-                    input.context.subagentsByTaskId.size > 0 ||
-                      input.context.subagentsByToolUseId.size > 0,
                     input.status,
                     input.result === undefined ? undefined : resultModelUsage.get(input.result),
                   ),
@@ -7092,39 +7147,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     null,
                   output_tokens: event.usage.output_tokens ?? started?.output_tokens ?? null,
                 });
-                const totals = {
-                  input_tokens: 0,
-                  cache_read_input_tokens: 0,
-                  cache_creation_input_tokens: 0,
-                  output_tokens: 0,
-                };
-                for (const usage of context.streamedUsageByMessageId.values()) {
-                  for (const key of Object.keys(totals) as Array<keyof typeof totals>) {
-                    const value = usage[key];
-                    if (typeof value === "number" && Number.isFinite(value) && value >= 0)
-                      totals[key] += Math.round(value);
-                  }
-                }
-                if (Object.values(totals).some((value) => value > 0)) {
+                const usage = claudeStreamedTurnTokenUsage(context);
+                if (usage !== undefined) {
                   yield* emitProviderEvent({
                     type: "provider_turn.updated",
                     driver: CLAUDE_PROVIDER,
                     providerTurn: {
                       ...providerTurnPayload({ context, status: "running", completedAt: null }),
-                      turnTokenUsage: {
-                        usageScope: "main_agent",
-                        usageStatus: "partial",
-                        inputTokens:
-                          totals.input_tokens +
-                          totals.cache_read_input_tokens +
-                          totals.cache_creation_input_tokens,
-                        cachedInputTokens: totals.cache_read_input_tokens,
-                        cacheCreationTokens: totals.cache_creation_input_tokens,
-                        outputTokens: totals.output_tokens,
-                        hasSubagents:
-                          context.subagentsByTaskId.size > 0 ||
-                          context.subagentsByToolUseId.size > 0,
-                      },
+                      turnTokenUsage: usage,
                     },
                   });
                 }

@@ -377,7 +377,8 @@ export const layer: Layer.Layer<
           records.providerTurns.find((record) => record.id === turn.id)?.turnTokenUsage;
         const split =
           reported?.byModel ??
-          (reported === undefined
+          // Unavailable usage has no tokens to price; $0 would read as a free turn.
+          (reported === undefined || reported.usageStatus === "unavailable"
             ? []
             : [
                 {

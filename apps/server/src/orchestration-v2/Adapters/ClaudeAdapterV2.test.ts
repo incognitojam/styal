@@ -4167,6 +4167,117 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("keeps streamed usage when an interrupt ends the turn without a result", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({
+          close: (sdkMessages) => Queue.shutdown(sdkMessages),
+        });
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const now = yield* DateTime.now;
+        const attemptId = RunAttemptId.make("attempt-claude-interrupt-usage");
+        const providerTurnId = idAllocator.derive.providerTurn({
+          driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+          nativeTurnId: `turn:${attemptId}`,
+        });
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId,
+            text: "Start some long work",
+            attachments: [],
+          }),
+        );
+        const stream = (event: unknown) =>
+          claudeSdkFrame({
+            type: "stream_event",
+            user_message_uuid: harness.promptUuid(0),
+            event,
+            parent_tool_use_id: null,
+            uuid: "stream-frame",
+            session_id: WAKE_NATIVE_SESSION,
+          });
+        yield* harness.offerAndWait(
+          stream({
+            type: "message_start",
+            message: {
+              id: "one",
+              type: "message",
+              role: "assistant",
+              model: "claude-opus-5-5",
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: {
+                input_tokens: 10,
+                cache_read_input_tokens: 20,
+                cache_creation_input_tokens: 5,
+                output_tokens: 1,
+              },
+            },
+          }),
+        );
+        // The second message is cut off mid-stream: only its start was billed.
+        yield* harness.offerAndWait(
+          stream({
+            type: "message_delta",
+            delta: { stop_reason: null, stop_sequence: null },
+            usage: { output_tokens: 40 },
+          }),
+        );
+        yield* harness.offerAndWait(
+          stream({
+            type: "message_start",
+            message: {
+              id: "two",
+              type: "message",
+              role: "assistant",
+              model: "claude-opus-5-5",
+              content: [],
+              stop_reason: null,
+              stop_sequence: null,
+              usage: {
+                input_tokens: 2,
+                cache_read_input_tokens: 70,
+                cache_creation_input_tokens: 0,
+                output_tokens: 1,
+              },
+            },
+          }),
+        );
+
+        yield* harness.runtime.interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId,
+        });
+        yield* awaitUntil(() => harness.terminalEvents().length === 1, "interrupted terminal");
+        assert.equal(harness.terminalEvents()[0]?.status, "interrupted");
+        const final = harness.events.findLast(
+          (event) =>
+            event.type === "provider_turn.updated" && event.providerTurn.status === "interrupted",
+        );
+        assert.equal(final?.type, "provider_turn.updated");
+        if (final?.type === "provider_turn.updated") {
+          assert.deepEqual(final.providerTurn.turnTokenUsage, {
+            usageScope: "main_agent",
+            usageStatus: "partial",
+            inputTokens: 107,
+            cachedInputTokens: 90,
+            cacheCreationTokens: 5,
+            outputTokens: 41,
+            hasSubagents: false,
+          });
+        }
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
   it.effect(
     "runs native compaction and keeps its context watermark separate from billed usage",
     () =>
