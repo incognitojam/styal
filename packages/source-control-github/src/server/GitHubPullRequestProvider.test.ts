@@ -23,6 +23,7 @@ const coreFields = {
     canUpdate: true,
     didAuthor: false,
     mergeCapabilities: { merge: true, squash: true, rebase: true },
+    autoMergeAllowed: true,
   },
 };
 
@@ -93,6 +94,7 @@ it.effect("advertises standalone branch deletion for source repository writers",
       canUpdate: false,
       didAuthor: false,
       canDeleteBranch: true,
+      autoMergeAllowed: true,
     };
     expect(gitHubViewerPermissions(access).actions).toContain("delete-branch");
     expect(
@@ -264,6 +266,7 @@ describe("gitHubViewerPermissions", () => {
         canTriage: true,
         canUpdate: true,
         didAuthor: false,
+        autoMergeAllowed: true,
       }),
     ).toEqual({
       actions: [
@@ -294,6 +297,7 @@ describe("gitHubViewerPermissions", () => {
         canTriage: false,
         canUpdate: false,
         didAuthor: false,
+        autoMergeAllowed: true,
       }),
     ).toEqual({
       actions: [],
@@ -311,6 +315,7 @@ describe("gitHubViewerPermissions", () => {
       canTriage: true,
       canUpdate: false,
       didAuthor: false,
+      autoMergeAllowed: true,
     });
     expect(permissions.labels).toBe(true);
     expect(permissions.requestReviewers).toBe(false);
@@ -324,6 +329,7 @@ describe("gitHubViewerPermissions", () => {
         canTriage: false,
         canUpdate: true,
         didAuthor: true,
+        autoMergeAllowed: true,
       }),
     ).toEqual({
       actions: ["ready", "draft", "close", "reopen"],
@@ -336,7 +342,13 @@ describe("gitHubViewerPermissions", () => {
   });
 
   it("lets only a writer GitHub allows to merge as an administrator bypass requirements", () => {
-    const access = { canTriage: true, canUpdate: true, didAuthor: false, canMergeAsAdmin: true };
+    const access = {
+      autoMergeAllowed: true,
+      canTriage: true,
+      canUpdate: true,
+      didAuthor: false,
+      canMergeAsAdmin: true,
+    };
     expect(gitHubViewerPermissions({ ...access, canWrite: true }).bypassMergeRequirements).toBe(
       true,
     );
@@ -349,6 +361,26 @@ describe("gitHubViewerPermissions", () => {
     ).toBe(undefined);
   });
 
+  it("offers the older-host auto-merge fallback only while the repository can wait", () => {
+    const access = {
+      canWrite: true,
+      canTriage: true,
+      canUpdate: true,
+      didAuthor: false,
+      autoMergeAllowed: true,
+    };
+    expect(gitHubViewerPermissions(access).actions).toContain("enable-auto-merge");
+    expect(gitHubViewerPermissions({ ...access, canMergeNow: true }).actions).not.toContain(
+      "enable-auto-merge",
+    );
+    expect(gitHubViewerPermissions({ ...access, autoMergeAllowed: false }).actions).not.toContain(
+      "enable-auto-merge",
+    );
+    expect(gitHubViewerPermissions({ ...access, autoMergeAllowed: false }).actions).toContain(
+      "disable-auto-merge",
+    );
+  });
+
   it("uses GitHub's per-pull-request auto-merge permissions instead of repository write access", () => {
     expect(
       gitHubViewerPermissions({
@@ -356,6 +388,7 @@ describe("gitHubViewerPermissions", () => {
         canTriage: true,
         canUpdate: true,
         didAuthor: false,
+        autoMergeAllowed: true,
         canEnableAutoMerge: false,
         canDisableAutoMerge: true,
       }).actions,
@@ -606,6 +639,7 @@ describe("gitHubViewerPermissions", () => {
               canUpdate: true,
               didAuthor: false,
               mergeCapabilities: { merge: true, squash: true, rebase: true },
+              autoMergeAllowed: true,
             }),
         }),
       ),
@@ -855,6 +889,7 @@ it.effect("keeps an unsafe workflow approval scope visible as unknown", () =>
             canUpdate: true,
             didAuthor: false,
             mergeCapabilities: { merge: true, squash: true, rebase: true },
+            autoMergeAllowed: true,
           }),
       }),
     ),
@@ -901,6 +936,7 @@ it.effect("propagates workflow discovery rate limits", () =>
             canUpdate: true,
             didAuthor: false,
             mergeCapabilities: { merge: true, squash: true, rebase: true },
+            autoMergeAllowed: true,
           }),
       }),
     ),
@@ -914,6 +950,7 @@ describe("getViewerPermissions", () => {
     canUpdate: true,
     didAuthor: false,
     mergeCapabilities: { merge: true, squash: true, rebase: true },
+    autoMergeAllowed: true,
   };
 
   it.effect("checks fresh access without reading branch details for unrelated operations", () => {

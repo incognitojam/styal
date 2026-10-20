@@ -57,6 +57,7 @@ query PullRequestCore(
     mergeCommitAllowed
     squashMergeAllowed
     rebaseMergeAllowed
+    autoMergeAllowed
     viewerPermission
     pullRequest(number: $number) {
       isInMergeQueue @include(if: $required)
@@ -195,6 +196,7 @@ query PullRequestCoreWithoutDeployments(
     mergeCommitAllowed
     squashMergeAllowed
     rebaseMergeAllowed
+    autoMergeAllowed
     viewerPermission
     pullRequest(number: $number) {
       isInMergeQueue @include(if: $required)
@@ -313,6 +315,7 @@ query PullRequestCoreEnterprise(
     mergeCommitAllowed
     squashMergeAllowed
     rebaseMergeAllowed
+    autoMergeAllowed
     viewerPermission
     pullRequest(number: $number) {
       mergeStateStatus
@@ -445,6 +448,7 @@ query PullRequestCoreEnterpriseWithoutDeployments(
     mergeCommitAllowed
     squashMergeAllowed
     rebaseMergeAllowed
+    autoMergeAllowed
     viewerPermission
     pullRequest(number: $number) {
       mergeStateStatus
@@ -750,6 +754,7 @@ query ViewerPermissions($owner: String!, $name: String!, $number: Int!) {
     mergeCommitAllowed
     squashMergeAllowed
     rebaseMergeAllowed
+    autoMergeAllowed
     viewerPermission
     pullRequest(number: $number) {
       viewerCanUpdate

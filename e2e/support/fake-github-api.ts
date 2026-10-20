@@ -202,6 +202,7 @@ export async function startFakeGitHubApi(
           mergeCommitAllowed: true,
           squashMergeAllowed: true,
           rebaseMergeAllowed: true,
+          autoMergeAllowed: true,
           viewerPermission: "WRITE",
           pullRequest: pr ? detail(pr) : null,
         });

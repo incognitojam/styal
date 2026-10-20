@@ -502,6 +502,8 @@ export const PullRequestCoreRepositoryRepository = Schema.Struct({
   squashMergeAllowed: Schema.Boolean,
   /** Whether or not rebase-merging is enabled on this repository. */
   rebaseMergeAllowed: Schema.Boolean,
+  /** Whether or not Auto-merge can be enabled on pull requests in this repository. */
+  autoMergeAllowed: Schema.Boolean,
   /** The users permission level on the repository. Will return null if authenticated as an GitHub App. */
   viewerPermission: Schema.NullOr(GraphQL.enumLiterals(Shared.RepositoryPermission.literals)),
   /** Returns a single pull request from the current repository by number. */
@@ -521,7 +523,7 @@ export const PullRequestCore = GraphQL.query("PullRequestCore", {
       { name: "deployments", body: "Boolean!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")viewerCanMergeAsAdmin@include(if:$", "required", ")isMergeQueueEnabled@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}timelineItems(last:100 itemTypes:[DEPLOYED_EVENT])@include(if:$", "deployments", "){nodes{__typename...on DeployedEvent{deployment{...Deployment}}}pageInfo{hasPreviousPage}}commits(last:1){nodes{commit{deployments(first:100 orderBy:{field:CREATED_AT direction:DESC})@include(if:$", "deployments", "){nodes{...Deployment}pageInfo{hasNextPage}}statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")viewerCanMergeAsAdmin@include(if:$", "required", ")isMergeQueueEnabled@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}timelineItems(last:100 itemTypes:[DEPLOYED_EVENT])@include(if:$", "deployments", "){nodes{__typename...on DeployedEvent{deployment{...Deployment}}}pageInfo{hasPreviousPage}}commits(last:1){nodes{commit{deployments(first:100 orderBy:{field:CREATED_AT direction:DESC})@include(if:$", "deployments", "){nodes{...Deployment}pageInfo{hasNextPage}}statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
     ],
     fragments: [
       { name: "Deployment", body: ["on Deployment{id environment state commitOid createdAt updatedAt latestStatus{state updatedAt description environmentUrl logUrl}}"] },
@@ -660,6 +662,8 @@ export const PullRequestCoreWithoutDeploymentsRepositoryRepository = Schema.Stru
   squashMergeAllowed: Schema.Boolean,
   /** Whether or not rebase-merging is enabled on this repository. */
   rebaseMergeAllowed: Schema.Boolean,
+  /** Whether or not Auto-merge can be enabled on pull requests in this repository. */
+  autoMergeAllowed: Schema.Boolean,
   /** The users permission level on the repository. Will return null if authenticated as an GitHub App. */
   viewerPermission: Schema.NullOr(GraphQL.enumLiterals(Shared.RepositoryPermission.literals)),
   /** Returns a single pull request from the current repository by number. */
@@ -678,7 +682,7 @@ export const PullRequestCoreWithoutDeployments = GraphQL.query("PullRequestCoreW
       { name: "required", body: "Boolean!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")viewerCanMergeAsAdmin@include(if:$", "required", ")isMergeQueueEnabled@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")viewerCanMergeAsAdmin@include(if:$", "required", ")isMergeQueueEnabled@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
     ],
     fragments: [
       { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
@@ -786,6 +790,8 @@ export const PullRequestCoreEnterpriseRepositoryRepository = Schema.Struct({
   squashMergeAllowed: Schema.Boolean,
   /** Whether or not rebase-merging is enabled on this repository. */
   rebaseMergeAllowed: Schema.Boolean,
+  /** Whether or not Auto-merge can be enabled on pull requests in this repository. */
+  autoMergeAllowed: Schema.Boolean,
   /** The users permission level on the repository. Will return null if authenticated as an GitHub App. */
   viewerPermission: Schema.NullOr(GraphQL.enumLiterals(Shared.RepositoryPermission.literals)),
   /** Returns a single pull request from the current repository by number. */
@@ -805,7 +811,7 @@ export const PullRequestCoreEnterprise = GraphQL.query("PullRequestCoreEnterpris
       { name: "deployments", body: "Boolean!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}timelineItems(last:100 itemTypes:[DEPLOYED_EVENT])@include(if:$", "deployments", "){nodes{__typename...on DeployedEvent{deployment{...Deployment}}}pageInfo{hasPreviousPage}}commits(last:1){nodes{commit{deployments(first:100 orderBy:{field:CREATED_AT direction:DESC})@include(if:$", "deployments", "){nodes{...Deployment}pageInfo{hasNextPage}}statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}timelineItems(last:100 itemTypes:[DEPLOYED_EVENT])@include(if:$", "deployments", "){nodes{__typename...on DeployedEvent{deployment{...Deployment}}}pageInfo{hasPreviousPage}}commits(last:1){nodes{commit{deployments(first:100 orderBy:{field:CREATED_AT direction:DESC})@include(if:$", "deployments", "){nodes{...Deployment}pageInfo{hasNextPage}}statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
     ],
     fragments: [
       { name: "Deployment", body: ["on Deployment{id environment state commitOid createdAt updatedAt latestStatus{state updatedAt description environmentUrl logUrl}}"] },
@@ -913,6 +919,8 @@ export const PullRequestCoreEnterpriseWithoutDeploymentsRepositoryRepository = S
   squashMergeAllowed: Schema.Boolean,
   /** Whether or not rebase-merging is enabled on this repository. */
   rebaseMergeAllowed: Schema.Boolean,
+  /** Whether or not Auto-merge can be enabled on pull requests in this repository. */
+  autoMergeAllowed: Schema.Boolean,
   /** The users permission level on the repository. Will return null if authenticated as an GitHub App. */
   viewerPermission: Schema.NullOr(GraphQL.enumLiterals(Shared.RepositoryPermission.literals)),
   /** Returns a single pull request from the current repository by number. */
@@ -931,7 +939,7 @@ export const PullRequestCoreEnterpriseWithoutDeployments = GraphQL.query("PullRe
       { name: "required", body: "Boolean!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
     ],
     fragments: [
       { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
@@ -1501,6 +1509,8 @@ export const ViewerPermissionsRepositoryRepository = Schema.Struct({
   squashMergeAllowed: Schema.Boolean,
   /** Whether or not rebase-merging is enabled on this repository. */
   rebaseMergeAllowed: Schema.Boolean,
+  /** Whether or not Auto-merge can be enabled on pull requests in this repository. */
+  autoMergeAllowed: Schema.Boolean,
   /** The users permission level on the repository. Will return null if authenticated as an GitHub App. */
   viewerPermission: Schema.NullOr(GraphQL.enumLiterals(Shared.RepositoryPermission.literals)),
   /** Returns a single pull request from the current repository by number. */
@@ -1517,7 +1527,7 @@ export const ViewerPermissions = GraphQL.query("ViewerPermissions", {
       { name: "number", body: "Int!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission pullRequest(number:$", "number", "){viewerCanUpdate viewerDidAuthor headRepository{viewerPermission}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){viewerCanUpdate viewerDidAuthor headRepository{viewerPermission}}}"] }
     ],
     fragments: []
   },

@@ -24,6 +24,7 @@ import {
   markRequiredChecks,
   narrowMergeCapabilities,
   type GitHubPullRequestDetail,
+  type GitHubRepositoryAccess,
   type GitHubViewerAccess,
   type GitHubWorkflowRunApproval,
 } from "./gitHubPullRequestJson.ts";
@@ -57,7 +58,9 @@ const CAPABILITIES: PullRequestCapabilities = {
  * cannot do on their own pull request: GitHub shows an outside contributor the reviewer control
  * and refuses the request behind it.
  */
-export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequestViewerPermissions {
+export function gitHubViewerPermissions(
+  access: GitHubViewerAccess & Pick<GitHubRepositoryAccess, "autoMergeAllowed">,
+): PullRequestViewerPermissions {
   return {
     ...(access.canWrite ? { stackRebase: true } : {}),
     actions: [
@@ -66,7 +69,10 @@ export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequest
       // GitHub answers these per pull request: enabling also depends on the repository setting
       // and on there being an unmet requirement, while an author may disable an armed merge even
       // without repository write access. Older hosts fall back to the write-based approximation.
-      ...((access.canEnableAutoMerge ?? access.canWrite) ? (["enable-auto-merge"] as const) : []),
+      ...((access.canEnableAutoMerge ??
+      (access.canWrite && access.autoMergeAllowed && access.canMergeNow !== true))
+        ? (["enable-auto-merge"] as const)
+        : []),
       ...((access.canDisableAutoMerge ?? access.canWrite) ? (["disable-auto-merge"] as const) : []),
       ...(access.canWrite ? (["revert", "approve-workflows"] as const) : []),
       ...(access.canUpdate ? (["ready", "draft", "close", "reopen"] as const) : []),
