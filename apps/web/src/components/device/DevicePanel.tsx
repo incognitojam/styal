@@ -22,7 +22,7 @@ import { formatEnvironmentQueryError } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { DeviceLoadingView } from "./DeviceLoadingView";
-import { DeviceSetup, deviceHubReadiness } from "./DeviceSetup";
+import { DeviceSetup, deviceHubReadiness, isAndroidDiscoveryUncertain } from "./DeviceSetup";
 import { DeviceWorkspace } from "./DeviceWorkspace";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { toastManager } from "../ui/toast";
@@ -331,6 +331,7 @@ export function DevicePanel(props: {
                   </div>
                 ) : null}
                 {hostReady &&
+                !isAndroidDiscoveryUncertain(state) &&
                 !state.devices.some((device) => device.platform === "android") &&
                 !unavailablePlatforms.some((platform) => platform.platform === "android") ? (
                   <p className="max-w-sm text-xs">

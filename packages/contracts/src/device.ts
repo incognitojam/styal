@@ -212,6 +212,7 @@ export const DeviceServiceState = Schema.Struct({
     Schema.Struct({
       status: DeviceHostStatus,
       detail: Schema.optional(Schema.String),
+      androidDiscoveryIncomplete: Schema.optional(Schema.Boolean),
     }),
   ),
   devices: Schema.Array(DeviceSummary),

@@ -277,7 +277,12 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         ? SynchronizedRef.get(stateRef).pipe(Effect.map(({ state }) => state))
         : publish((state) => {
             // MCP structured content rejects keys set to undefined, so a missing detail is omitted.
-            const entry = status.detail === undefined ? { status: status.status } : status;
+            const entry = {
+              ...(state.hostStatuses[hostId]?.androidDiscoveryIncomplete
+                ? { androidDiscoveryIncomplete: true }
+                : {}),
+              ...(status.detail === undefined ? { status: status.status } : status),
+            };
             const hostStatuses = { ...state.hostStatuses, [hostId]: entry };
             if (hostId !== LOCAL_DEVICE_HOST_ID) return { ...state, hostStatuses };
             const { hostStatusDetail: _previous, ...rest } = state;
@@ -461,7 +466,12 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
   const fetchDevices = Effect.fn("DeviceService.fetchDevices")(function* (ready: DeviceReadiness) {
     if (ready.remote) {
       const info = yield* ready.remote.list;
-      return { devices: info.devices, externalSessions: info.sessions, detail: undefined };
+      return {
+        devices: info.devices,
+        externalSessions: info.sessions,
+        detail: undefined,
+        androidDiscoveryIncomplete: undefined,
+      };
     }
     const list = yield* hubJson(
       HttpClientRequest.get(`${ready.hub.origin}/api/devices`),
@@ -478,18 +488,27 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       physical: device.physical,
     });
     const devices = [...list.simulators, ...list.emulators].map(toSummary);
+    const warnings = list.errors?.filter(
+      (error) =>
+        // CoreSimulator can retain deleted devices; their optional usage timestamps are absent.
+        !(
+          error.message.startsWith("[apple-utils] Failed to read CoreSimulator plist at ") &&
+          /\/CoreSimulator\/Devices\/[^/]+\/device\.plist:$/.test(error.message) &&
+          /(?:^Error:\s*ENOENT:|\bcode:\s*['"]ENOENT['"])/.test(error.error ?? "")
+        ),
+    );
+    const details = warnings?.map((error) => error.message) ?? [];
+    let androidDiscoveryIncomplete = false;
     const host = yield* resolveHost(ready.hostId);
     if ((yield* host.platformAvailability("android")).available) {
       const avds = yield* ready.run("emulator", ["-list-avds"]);
       if (avds.code !== 0) {
-        return yield* new DeviceOperationError({
-          operation: "list",
-          reason: "command_failed",
-          exitCode: avds.code,
-          cause: avds,
-        });
+        androidDiscoveryIncomplete = true;
+        details.push(
+          `Could not list Android virtual devices (emulator -list-avds, exit code ${avds.code}). Discovered devices remain available.`,
+        );
       }
-      for (const name of avds.stdout
+      for (const name of (avds.code === 0 ? avds.stdout : "")
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter(Boolean)) {
@@ -506,25 +525,19 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         }
       }
     }
-    const warnings = list.errors?.filter(
-      (error) =>
-        // CoreSimulator can retain deleted devices; their optional usage timestamps are absent.
-        !(
-          error.message.startsWith("[apple-utils] Failed to read CoreSimulator plist at ") &&
-          /\/CoreSimulator\/Devices\/[^/]+\/device\.plist:$/.test(error.message) &&
-          /(?:^Error:\s*ENOENT:|\bcode:\s*['"]ENOENT['"])/.test(error.error ?? "")
-        ),
-    );
     return {
       devices,
       externalSessions: [],
-      detail: warnings?.map((error) => error.message).join("\n") || undefined,
+      detail: details.join("\n") || undefined,
+      androidDiscoveryIncomplete,
     };
   });
 
   const refresh = Effect.fn("DeviceService.refresh")(function* (ready: DeviceReadiness) {
     const host = hosts.get(ready.hostId);
-    const { devices, detail, externalSessions } = yield* fetchDevices(ready);
+    const { devices, detail, externalSessions, androidDiscoveryIncomplete } =
+      yield* fetchDevices(ready);
+
     const hostSummaries = yield* Effect.forEach(hosts.values(), (host) => host.summary);
     return yield* lifecycleLock.withPermit(
       Effect.gen(function* () {
@@ -544,7 +557,11 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           ],
           hostStatuses: {
             ...state.hostStatuses,
-            [ready.hostId]: { status: "ready", ...(detail ? { detail } : {}) },
+            [ready.hostId]: {
+              status: "ready",
+              ...(detail ? { detail } : {}),
+              ...(androidDiscoveryIncomplete ? { androidDiscoveryIncomplete } : {}),
+            },
           },
         }));
       }),

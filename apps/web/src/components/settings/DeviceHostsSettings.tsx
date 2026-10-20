@@ -177,6 +177,12 @@ function DeviceHostList({
               ))}
           </div>
           <p className="truncate text-xs text-muted-foreground">{host.target}</p>
+          {status?.status === "ready" && status.androidDiscoveryIncomplete ? (
+            <p role="status" className="mt-1 text-xs text-warning">
+              {status.detail ??
+                "The Android device list may be incomplete. Refresh devices to try again."}
+            </p>
+          ) : null}
           <DeviceToolVersions
             error={summary?.toolInspectionError}
             tools={summary?.tools ?? (check?.status === "connected" ? check.tools : undefined)}
