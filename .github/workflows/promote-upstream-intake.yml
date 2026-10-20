@@ -1,27 +1,18 @@
 name: Promote upstream intake
 
-run-name: Promote ${{ inputs.candidate_branch || github.event.workflow_run.head_branch }} at ${{ inputs.candidate_sha || github.event.workflow_run.head_sha }}
+run-name: Promote ${{ github.event.workflow_run.head_branch }} at ${{ github.event.workflow_run.head_sha }}
 
-# Starts by itself when Fork CI passes on an intake branch, and runs from main
-# either way, so a candidate cannot change the checks that promote it. A
-# candidate the audit marks eligible, whose native fingerprint is unchanged,
-# promotes through upstream-intake-automatic; every other candidate waits for
-# approval on upstream-intake-manual. Dispatch is the manual fallback.
+# Starts when Fork CI passes on an intake branch. A workflow_run always runs
+# main's copy of this file, so a candidate cannot change the checks that
+# promote it. A candidate the audit marks eligible, whose native fingerprint is
+# unchanged, promotes through upstream-intake-automatic; every other candidate
+# waits for approval on upstream-intake-manual. To retry, re-run Fork CI.
 on:
   workflow_run:
     workflows: ["Fork CI"]
     types: [completed]
     branches: ["intake/**"]
-  workflow_dispatch:
-    inputs:
-      candidate_branch:
-        description: "Intake branch to promote, without refs/heads/"
-        required: true
-        type: string
-      candidate_sha:
-        description: "Exact 40-character candidate SHA to promote"
-        required: true
-        type: string
+
 permissions:
   actions: read
   contents: read
@@ -30,20 +21,20 @@ permissions:
 # approval. Promotions of different branches can run together: the push to
 # main is a fast-forward, so only one of them can land.
 concurrency:
-  group: upstream-intake-promotion-${{ inputs.candidate_branch || github.event.workflow_run.head_branch }}
+  group: upstream-intake-promotion-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
   validate:
     name: Validate promotion candidate
-    if: github.repository == 'incognitojam/styal' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'))
+    if: github.repository == 'incognitojam/styal' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       base_sha: ${{ steps.candidate.outputs.base_sha }}
       candidate_branch: ${{ steps.candidate.outputs.candidate_branch }}
       candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
-      ci_run_url: ${{ steps.ci.outputs.ci_run_url }}
+      ci_run_url: ${{ github.event.workflow_run.html_url }}
       source_prs: ${{ steps.audit.outputs.source_prs }}
       source_commits: ${{ steps.audit.outputs.source_commits }}
       native_fingerprint: ${{ steps.fingerprint.outputs.verdict }}
@@ -59,32 +50,16 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # The Fork CI run that started this workflow tested the candidate SHA. A
+      # candidate cannot change fork-ci.yml, so that run used main's jobs.
       - id: candidate
         name: Resolve candidate
         shell: bash
         env:
-          CANDIDATE_BRANCH: ${{ inputs.candidate_branch || github.event.workflow_run.head_branch }}
-          EXPECTED_CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.workflow_run.head_sha }}
+          CANDIDATE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EXPECTED_CANDIDATE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-
-          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
-            echo "::error::Promotion must be dispatched from main."
-            exit 1
-          fi
-          case "$CANDIDATE_BRANCH" in
-            intake/*) ;;
-            *)
-              echo "::error::Candidate branch must be below intake/."
-              exit 1
-              ;;
-          esac
-          git check-ref-format --branch "$CANDIDATE_BRANCH" >/dev/null
-
-          if [[ ! "$EXPECTED_CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::Candidate SHA must be a full lowercase commit SHA."
-            exit 1
-          fi
 
           git fetch --no-tags origin \
             '+refs/heads/main:refs/remotes/origin/main' \
@@ -95,11 +70,11 @@ jobs:
           candidate_sha="$(git rev-parse --verify 'refs/remotes/origin/intake-candidate^{commit}')"
 
           if [[ "$trusted_sha" != "$base_sha" ]]; then
-            echo "::error::main moved after this workflow was dispatched. Run it again from the latest main."
+            echo "::error::main moved after Fork CI finished. Rebase the intake branch and push it."
             exit 1
           fi
           if [[ "$candidate_sha" != "$EXPECTED_CANDIDATE_SHA" ]]; then
-            echo "::error::The intake branch no longer points at the supplied candidate SHA."
+            echo "::error::The intake branch moved after Fork CI tested it; its new push starts its own promotion."
             exit 1
           fi
           if ! git diff --quiet "$base_sha" "$candidate_sha" -- .github/workflows/fork-ci.yml; then
@@ -126,89 +101,22 @@ jobs:
         name: Audit candidate with trusted main code
         env:
           GH_TOKEN: ${{ github.token }}
+          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
+          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           git fetch --no-tags https://github.com/pingdotgg/t3code.git '+refs/heads/main:refs/remotes/upstream/main'
           vp run --filter @t3tools/scripts intake:check -- \
             --base "${{ steps.candidate.outputs.base_sha }}" \
-            --head "${{ steps.candidate.outputs.candidate_sha }}"
-
-      - id: ci
-        name: Verify Fork CI for the candidate SHA
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CANDIDATE_BRANCH: ${{ steps.candidate.outputs.candidate_branch }}
-          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
-          SOURCE_PRS: ${{ steps.audit.outputs.source_prs }}
-          SOURCE_COMMITS: ${{ steps.audit.outputs.source_commits }}
-        run: |
-          set -euo pipefail
-
-          run_json="$(gh run list \
-            --repo "$GITHUB_REPOSITORY" \
-            --workflow fork-ci.yml \
-            --branch "$CANDIDATE_BRANCH" \
-            --commit "$CANDIDATE_SHA" \
-            --event push \
-            --status success \
-            --limit 1 \
-            --json databaseId,conclusion,event,headBranch,headSha,status,url)"
-          run_id="$(jq -r '.[0].databaseId // empty' <<< "$run_json")"
-
-          if [[ -z "$run_id" ]]; then
-            echo "::error::No successful Fork CI push run exists for the candidate SHA."
-            exit 1
-          fi
-
-          if [[ "$(jq -r '.[0].headSha' <<< "$run_json")" != "$CANDIDATE_SHA" ]] ||
-            [[ "$(jq -r '.[0].headBranch' <<< "$run_json")" != "$CANDIDATE_BRANCH" ]] ||
-            [[ "$(jq -r '.[0].event' <<< "$run_json")" != "push" ]] ||
-            [[ "$(jq -r '.[0].conclusion' <<< "$run_json")" != "success" ]]
-          then
-            echo "::error::The selected Fork CI run does not match the candidate."
-            exit 1
-          fi
-
-          jobs_json="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json jobs)"
-          required_jobs=(
-            "Fork Changes"
-            "Fork Intake Audit"
-            "Fork Check"
-            "Fork Release Smoke"
-            "Fork Test (Server)"
-            "Fork Test (Workspace)"
-          )
-
-          for job_name in "${required_jobs[@]}"; do
-            match_count="$(jq --arg name "$job_name" '[.jobs[] | select(.name == $name)] | length' <<< "$jobs_json")"
-            conclusion="$(jq -r --arg name "$job_name" '.jobs[] | select(.name == $name) | .conclusion' <<< "$jobs_json")"
-            if [[ "$match_count" != "1" ]]; then
-              echo "::error::Fork CI must contain exactly one $job_name job."
-              exit 1
-            fi
-            if [[ "$job_name" == "Fork Changes" || "$job_name" == "Fork Intake Audit" ]]; then
-              if [[ "$conclusion" != "success" ]]; then
-                echo "::error::$job_name must complete successfully."
-                exit 1
-              fi
-            elif [[ "$conclusion" != "success" && "$conclusion" != "skipped" ]]; then
-              echo "::error::$job_name did not pass or skip successfully."
-              exit 1
-            fi
-          done
-
-          ci_run_url="$(jq -r '.[0].url' <<< "$run_json")"
-          echo "ci_run_id=$run_id" >> "$GITHUB_OUTPUT"
+            --head "$CANDIDATE_SHA"
           compare_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...${GITHUB_REPOSITORY/\//:}:$CANDIDATE_BRANCH"
-          echo "ci_run_url=$ci_run_url" >> "$GITHUB_OUTPUT"
           {
+            echo
             echo "## Promotion validation"
             echo
             echo "- Candidate: \`$CANDIDATE_BRANCH\` at \`$CANDIDATE_SHA\`"
             echo "- Compare: [\`main...$CANDIDATE_BRANCH\`]($compare_url)"
-            echo "- Source PRs: \`$SOURCE_PRS\`"
-            echo "- Source commits: \`$SOURCE_COMMITS\`"
-            echo "- Fork CI: $ci_run_url"
+            echo "- Fork CI: $CI_RUN_URL"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Download the native fingerprint verdict
@@ -216,7 +124,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: intake-native-fingerprint
-          run-id: ${{ steps.ci.outputs.ci_run_id }}
+          run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/fingerprint
 
@@ -250,23 +158,19 @@ jobs:
         name: Choose the promotion lane
         shell: bash
         env:
-          EVENT_NAME: ${{ github.event_name }}
           AUTOMATIC_ELIGIBLE: ${{ steps.audit.outputs.automatic_eligible }}
           NATIVE_FINGERPRINT: ${{ steps.fingerprint.outputs.verdict }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "workflow_run" && "$AUTOMATIC_ELIGIBLE" == "true" && "$NATIVE_FINGERPRINT" == "unchanged" ]]; then
+          if [[ "$AUTOMATIC_ELIGIBLE" == "true" && "$NATIVE_FINGERPRINT" == "unchanged" ]]; then
             lane=automatic
             reason="The audit found nothing that needs a person and the native fingerprint is unchanged."
+          elif [[ "$AUTOMATIC_ELIGIBLE" != "true" ]]; then
+            lane=manual
+            reason="The audit requires manual approval; see its reasons above."
           else
             lane=manual
-            if [[ "$EVENT_NAME" != "workflow_run" ]]; then
-              reason="Dispatched by hand."
-            elif [[ "$AUTOMATIC_ELIGIBLE" != "true" ]]; then
-              reason="The audit requires manual approval; see its reasons above."
-            else
-              reason="The native fingerprint is $NATIVE_FINGERPRINT."
-            fi
+            reason="The native fingerprint is $NATIVE_FINGERPRINT."
           fi
           echo "lane=$lane" >> "$GITHUB_OUTPUT"
           {
