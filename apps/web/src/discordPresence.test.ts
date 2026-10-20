@@ -43,7 +43,7 @@ describe("Discord presence counts", () => {
     expect(Object.keys(result.activity!)).toEqual(["activeThreads", "activeProjects"]);
   });
 
-  it("excludes archived, server-settled, snoozed, and disconnected threads", () => {
+  it("excludes archived, server-settled, snoozed, subagent, and disconnected threads", () => {
     const result = deriveDiscordPresence({
       ...options,
       shellStatuses: new Map([
@@ -59,6 +59,13 @@ describe("Discord presence counts", () => {
         }),
         thread("snoozed", { snoozedAt: now, snoozedUntil: "2026-09-18T13:00:00.000Z" }),
         thread("offline", { environmentId: remote }),
+        thread("subagent", {
+          lineage: {
+            parentThreadId: ThreadId.make("parent"),
+            relationshipToParent: "subagent",
+            rootThreadId: ThreadId.make("parent"),
+          },
+        }),
       ],
     });
     expect(result).toEqual({ activity: null, nextWakeAt: Date.parse("2026-09-18T13:00:00.000Z") });
