@@ -4283,6 +4283,33 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream exposes equivalent cross-client setup action lifecycle detail, retained output, worktree-only setup safety, and isolation from later interactive terminal actions.
 
+  - id: setup-thread-settlement
+    title: Choose automatic settlement during setup
+    status: maintained
+    prs: []
+    invariants:
+      - Web and desktop setup ends with a Workflow step that offers automatic settlement when a selected computer supports it; computers without the capability are left out, and when none support it the import steps finish setup as before.
+      - The step starts from the first selected computer's current settings, and Finish writes merge and inactivity settlement only to computers whose values differ, keeping each computer's own inactivity threshold when turning it on.
+      - A failed save keeps the user on the step; the import steps' actions read as continuing while the step follows them, and setup still lands on the project the import chose.
+      - Finishing records one setup-thread-settlement usage event with only the two chosen booleans.
+    rationale: Users who do not work the way automatic settlement assumes found threads disappearing without knowing why. Setup is the one place every new user passes through, so the choice and its explanation live there, with Settings still owning later changes.
+    implementation_paths:
+      - apps/web/src/components/import/DataImportPanel.tsx
+      - apps/web/src/components/onboarding/OnboardingImportStep.tsx
+      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/onboarding/settlement.logic.ts
+      - packages/contracts/src/forkClientUsage.ts
+    upstream_paths:
+      - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - apps/web/src/onboarding/settlement.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream setup explains settling and offers the automatic settlement rules before the first sidebar view.
+
   - id: sidebar-attention-prominence
     title: Keep threads awaiting approval visually prominent
     status: maintained

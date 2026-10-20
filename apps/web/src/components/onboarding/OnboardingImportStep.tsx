@@ -9,6 +9,7 @@ export function OnboardingImportStep({
   environmentIds,
   stage,
   setIsImporting,
+  continues,
   onDone,
   onContinue,
   onBack,
@@ -18,6 +19,8 @@ export function OnboardingImportStep({
   readonly environmentIds: readonly EnvironmentId[];
   readonly stage: LegacyImportStage;
   readonly setIsImporting: (value: boolean) => void;
+  /** Setup has another step after the import steps, so their actions continue rather than finish. */
+  readonly continues: boolean;
   readonly onDone: (projectRef?: ScopedProjectRef) => Promise<boolean>;
   readonly onContinue: () => void;
   readonly onBack: () => void;
@@ -35,6 +38,7 @@ export function OnboardingImportStep({
       onPreferencesAvailable={onPreferencesAvailable}
       environmentIds={environmentIds}
       onBusyChange={setIsImporting}
+      setupContinues={continues}
       onDone={onDone}
     />
   );

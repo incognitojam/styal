@@ -105,12 +105,21 @@ it.effect("records allowlisted client interactions with socket attribution and n
         event: "feature.used",
         source: "user",
       },
+      {
+        feature: "setup-thread-settlement",
+        action: "continued",
+        settleOnMerge: false,
+        settleWhenInactive: true,
+        event: "feature.used",
+        source: "user",
+      },
     ]) {
       yield* report(yield* decode({ ...input, content: "Synthetic content", path: "/private" }));
       expect(events.at(-1)).toEqual({ event, properties: { ...input, ...properties, source } });
     }
     expect(isUsage({ feature: "arbitrary", action: "anything" })).toBe(false);
     expect(isUsage({ feature: "mentioned-time-chips", action: "notice_shown" })).toBe(false);
+    expect(isUsage({ feature: "setup-thread-settlement", action: "continued" })).toBe(false);
     for (const surface of ["desktop", "mobile", undefined] as const) {
       const otherReport = yield* ClientFeatureUsage.reporter({ surface }).pipe(
         Effect.provideService(AnalyticsService.AnalyticsService, analytics),
@@ -118,8 +127,8 @@ it.effect("records allowlisted client interactions with socket attribution and n
       yield* otherReport({ feature: "web-build-update-notice", action: "refresh_requested" });
       yield* otherReport({ feature: "mentioned-time-chips", action: "details_opened" });
     }
-    expect(events).toHaveLength(6);
-    expect(events[5]).toEqual({
+    expect(events).toHaveLength(7);
+    expect(events[6]).toEqual({
       event: "feature.used",
       properties: {
         feature: "mentioned-time-chips",
