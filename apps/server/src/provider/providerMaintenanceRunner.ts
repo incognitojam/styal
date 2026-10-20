@@ -349,28 +349,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
     maintenanceCapabilities: ProviderMaintenanceCapabilities,
     instanceId: ProviderInstanceId,
   ): Effect.Effect<VerifiedProviderRefresh> =>
-    providerRegistry.getProviders.pipe(
-      Effect.map((providers) => {
-        const instanceIds: Array<ProviderInstanceId> = [];
-        for (const candidate of providers) {
-          if (candidate.driver === provider && candidate.instanceId === instanceId) {
-            instanceIds.push(candidate.instanceId);
-          }
-        }
-        return instanceIds;
-      }),
-      Effect.flatMap((instanceIds) =>
-        instanceIds.length === 0
-          ? providerRegistry.refreshInstance(instanceId)
-          : Effect.forEach(
-              instanceIds,
-              (instanceId) => providerRegistry.refreshInstance(instanceId),
-              {
-                concurrency: "unbounded",
-                discard: true,
-              },
-            ).pipe(Effect.andThen(providerRegistry.getProviders)),
-      ),
+    providerRegistry.refreshAfterUpdate(provider, instanceId).pipe(
       Effect.flatMap((providers) => {
         const refreshedProviders = providers.filter(
           (candidate) => candidate.driver === provider && candidate.instanceId === instanceId,
@@ -616,6 +595,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                     : verifiedProvider.version;
                 return (
                   !isStillInstalled(verifiedProvider) ||
+                  (verifiedProvider.status === "error" &&
+                    (verifiedProvider.auth.status !== "unauthenticated" ||
+                      !verifiedProvider.version)) ||
                   (targetVersion !== undefined &&
                     installedVersion?.replace(/^v/, "") !== targetVersion)
                 );
@@ -623,7 +605,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             // npm exits 0 when an optional platform package fails to download,
             // leaving a launcher that cannot start. The probe error says why.
             const brokenProvider = verifiedProviders.find(
-              (verifiedProvider) => verifiedProvider.status === "error",
+              (verifiedProvider) =>
+                verifiedProvider.status === "error" &&
+                (verifiedProvider.auth.status !== "unauthenticated" || !verifiedProvider.version),
             );
             const stillOutdated =
               targetVersion === undefined &&
@@ -634,24 +618,25 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                   couldNotVerify || brokenProvider || stillOutdated ? "unchanged" : "succeeded",
                 startedAt,
                 finishedAt,
-                message: couldNotVerify
-                  ? "Update command completed, but styal could not verify the provider version."
-                  : brokenProvider
-                    ? `Update command completed, but the provider reports an error: ${
-                        brokenProvider.message ?? "unknown error"
-                      }`
+                message: brokenProvider
+                  ? `Update command completed, but the provider reports an error: ${
+                      brokenProvider.message ?? "unknown error"
+                    }`
+                  : couldNotVerify
+                    ? "Update command completed, but styal could not verify the provider version."
                     : stillOutdated
                       ? "Update command completed, but styal still detects an outdated provider version."
                       : "Provider updated.",
                 output: commandOutput(result),
               }),
-              verifiedProviders.length === 0 ||
-                verifiedProviders.some((verifiedProvider) => !isStillInstalled(verifiedProvider))
+              // No snapshot to check, such as when the post-update refresh
+              // failed, counts as could-not-verify rather than not installed.
+              verifiedProviders.some((verifiedProvider) => !isStillInstalled(verifiedProvider))
                 ? "not_installed_after_install"
-                : couldNotVerify
-                  ? "unchanged_after_install"
-                  : brokenProvider
-                    ? "provider_error_after_install"
+                : brokenProvider
+                  ? "provider_error_after_install"
+                  : couldNotVerify
+                    ? "unchanged_after_install"
                     : stillOutdated
                       ? "unchanged_after_install"
                       : null,

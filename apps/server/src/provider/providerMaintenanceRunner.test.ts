@@ -214,6 +214,7 @@ function makeRegistry(
       getProviders: Ref.get(providersRef),
       refresh: () => Ref.get(providersRef),
       refreshInstance: () => Ref.get(providersRef),
+      refreshAfterUpdate: () => Ref.get(providersRef),
       refreshWorkspaceSnapshot: () => Ref.get(providersRef),
       getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
         Effect.succeed(lifecycleFor(provider)),
@@ -334,7 +335,7 @@ describe("providerMaintenanceRunner", () => {
       const { registry, providersRef } = yield* makeRegistry(baseProvider);
       const updater = yield* makeTestRunner({
         ...registry,
-        refreshInstance: () =>
+        refreshAfterUpdate: () =>
           Ref.updateAndGet(providersRef, (providers) =>
             providers.map((provider) => ({ ...provider, installed: false, version: null })),
           ),
@@ -361,7 +362,7 @@ describe("providerMaintenanceRunner", () => {
         "Codex app-server provider probe failed: Codex App Server process exited with code 1: Error: Missing optional dependency @openai/codex-linux-x64.";
       const updater = yield* makeTestRunner({
         ...registry,
-        refreshInstance: () =>
+        refreshAfterUpdate: () =>
           Ref.updateAndGet(providersRef, (providers) =>
             providers.map((provider) => ({
               ...provider,
@@ -397,7 +398,7 @@ describe("providerMaintenanceRunner", () => {
         const { registry, providersRef } = yield* makeRegistry(baseNativeCliProvider);
         const updater = yield* makeTestRunner({
           ...registry,
-          refreshInstance: () =>
+          refreshAfterUpdate: () =>
             Ref.updateAndGet(providersRef, (providers) =>
               providers.map((provider) => ({ ...provider, installed: true, version: null })),
             ),
@@ -708,77 +709,36 @@ describe("providerMaintenanceRunner", () => {
     },
   );
 
-  it.effect("updates a single provider instance without touching sibling instances", () => {
-    const calls: Array<{ command: string; args: ReadonlyArray<string> }> = [];
-    return Effect.gen(function* () {
-      const personalInstanceId = ProviderInstanceId.make("codex_personal");
-      const workInstanceId = ProviderInstanceId.make("codex_work");
-      const refreshedInstanceIds: Array<ProviderInstanceId> = [];
-      const { registry } = yield* makeRegistry([
-        {
-          ...baseProvider,
-          instanceId: personalInstanceId,
-          version: "0.124.0-alpha.3",
-        },
-        {
-          ...baseProvider,
-          instanceId: workInstanceId,
-          version: "0.124.0-alpha.3",
-        },
-      ]);
+  it.effect("does not report verified success when selected-instance discovery fails", () =>
+    Effect.gen(function* () {
+      const { registry, providersRef } = yield* makeRegistry(baseNativeCliProvider);
       const updater = yield* makeTestRunner({
         ...registry,
-        getProviderMaintenanceCapabilitiesForInstance: (instanceId, provider) =>
-          Effect.succeed(
-            makeProviderMaintenanceCapabilities({
-              provider,
-              packageName: "@openai/codex-instance-test",
-              updateExecutable: "vp",
-              updateArgs: ["i", "-g", "@openai/codex"],
-              updateLockKey: "vite-plus-global",
-            }),
-          ).pipe(
-            Effect.tap(() => Effect.sync(() => assert.strictEqual(instanceId, personalInstanceId))),
-          ),
-        refreshInstance: (instanceId) =>
-          registry.refreshInstance(instanceId).pipe(
-            Effect.tap(() =>
-              Effect.sync(() => {
-                refreshedInstanceIds.push(instanceId);
-              }),
-            ),
-          ),
+        // The registry marks an instance whose refresh failed and leaves it
+        // out of the refreshed snapshots.
+        refreshAfterUpdate: () =>
+          Ref.update(providersRef, (providers) =>
+            providers.map((provider) => ({
+              ...provider,
+              status: "error",
+              message: "Provider refresh failed after update.",
+            })),
+          ).pipe(Effect.as([])),
       });
-
-      const result = yield* updater.updateProvider({
-        provider: CODEX_DRIVER,
-        instanceId: personalInstanceId,
-      });
-
-      assert.deepStrictEqual(calls, [
-        {
-          command: "vp",
-          args: ["i", "-g", "@openai/codex"],
-        },
-      ]);
-      assert.deepStrictEqual(refreshedInstanceIds, [personalInstanceId]);
-      assert.strictEqual(result.providers[0]?.instanceId, personalInstanceId);
-      assert.strictEqual(result.providers[0]?.updateState?.status, "succeeded");
-      assert.strictEqual(result.providers[1]?.instanceId, workInstanceId);
-      assert.strictEqual(result.providers[1]?.updateState, undefined);
+      const result = yield* updater.updateProvider(NATIVE_CLI_DRIVER);
+      assert.strictEqual(result.providers[0]?.status, "error");
+      assert.strictEqual(result.providers[0]?.updateState?.status, "unchanged");
+      assert.match(result.providers[0]?.updateState?.message ?? "", /could not verify/);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
           layerNonWindowsPlatform,
-          layerLatestVersionHttpClient("0.124.0-alpha.3"),
-          layerMockSpawner((command, args) => {
-            calls.push({ command, args });
-            return { stdout: "updated" };
-          }),
+          layerLatestVersionHttpClient("0.0.0"),
+          layerMockSpawner(() => ({ stdout: "updated" })),
         ),
       ),
-    );
-  });
+    ),
+  );
 
   it.effect("records command failure output in provider update state", () =>
     Effect.gen(function* () {
@@ -1148,7 +1108,7 @@ it.effect.each([
         {
           ...registry,
           getProviderMaintenanceCapabilitiesForInstance: () => Effect.succeed(pinnedCapabilities),
-          refreshInstance: () =>
+          refreshAfterUpdate: () =>
             Effect.gen(function* () {
               assert.strictEqual(calls.length, 1);
               const refreshed = yield* enrichProviderSnapshotWithVersionAdvisory(
@@ -1518,7 +1478,7 @@ describe("provider.update.finished", () => {
       const updater = yield* makeTestRunner(
         {
           ...registry,
-          refreshInstance: () =>
+          refreshAfterUpdate: () =>
             TestClock.adjust(1_500).pipe(
               Effect.andThen(
                 Ref.updateAndGet(providersRef, (providers) =>
@@ -1597,7 +1557,7 @@ describe("provider.update.finished", () => {
       const updater = yield* makeTestRunner(
         {
           ...registry,
-          refreshInstance: () =>
+          refreshAfterUpdate: () =>
             Ref.updateAndGet(providersRef, (providers) =>
               providers.map((provider) => ({
                 ...provider,
@@ -1630,6 +1590,42 @@ describe("provider.update.finished", () => {
     );
   });
 
+  it.effect("records a failed post-update refresh as could not verify", () => {
+    const events: Array<RecordedEvent> = [];
+    return Effect.gen(function* () {
+      const { registry, providersRef } = yield* makeRegistry({ ...baseProvider, version: "1.0.0" });
+      const updater = yield* makeTestRunner(
+        {
+          ...registry,
+          refreshAfterUpdate: () =>
+            Ref.update(providersRef, (providers) =>
+              providers.map((provider) => ({
+                ...provider,
+                status: "error" as const,
+                message: "Provider refresh failed after update.",
+              })),
+            ).pipe(Effect.as([])),
+        },
+        undefined,
+        {},
+        events,
+      );
+      const result = yield* updater.updateProvider(CODEX_DRIVER);
+      assert.notInclude(result.providers[0]?.updateState?.message ?? "", "reports an error");
+      assert.deepStrictEqual(events, [
+        finished({ outcome: "unchanged", failureReason: "unchanged_after_install" }),
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("2.0.0"),
+          layerMockSpawner(() => ({ stdout: "updated" })),
+        ),
+      ),
+    );
+  });
+
   it.effect("records a background update once and a declined one not at all", () => {
     const events: Array<RecordedEvent> = [];
     return Effect.gen(function* () {
@@ -1637,7 +1633,7 @@ describe("provider.update.finished", () => {
       const updater = yield* makeTestRunner(
         {
           ...registry,
-          refreshInstance: () =>
+          refreshAfterUpdate: () =>
             Ref.updateAndGet(providersRef, (providers) =>
               providers.map((provider) => ({ ...provider, version: "2.0.0" })),
             ),
@@ -1872,7 +1868,7 @@ describe("provider.update.finished", () => {
           {
             ...registry,
             getProviderMaintenanceCapabilitiesForInstance: () => resolve,
-            refreshInstance: () =>
+            refreshAfterUpdate: () =>
               Ref.updateAndGet(providersRef, (providers) =>
                 providers.map((provider) => ({ ...provider, version: installedVersion })),
               ),

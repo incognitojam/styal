@@ -12,6 +12,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ServerConfig from "../config.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
+import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
@@ -450,6 +451,7 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
       ),
     );
     const layerDependencies = Layer.mergeAll(
+      ProviderLatestVersions.layer,
       Layer.succeed(ModelManifest.ModelManifest, {
         current: Ref.get(manifest),
         refresh,
@@ -527,6 +529,7 @@ it.effect("publishes the verified version from a recent remote manifest", () =>
       textGeneration: {} as ProviderInstance["textGeneration"],
     };
     const dependencies = Layer.mergeAll(
+      ProviderLatestVersions.layer,
       Layer.succeed(ModelManifest.ModelManifest, {
         current: Effect.succeed(manifest),
         refresh: Effect.succeed(manifest),

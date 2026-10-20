@@ -165,6 +165,15 @@ directory and pair with the running server.
 at once. Hover it to see which providers it will update. Providers that only
 offer a manual update command are not included.
 
+After a successful provider CLI update, styal refreshes model discovery for
+every enabled instance of that provider using its own configuration. Connected
+clients receive the refreshed catalogs automatically. Provider update checks
+must be enabled to download the latest styal model catalog.
+
+Provider updates do not restart running chats. An existing session can keep
+using the previous CLI until it ends. If discovery fails, check the provider
+status and refresh it again.
+
 ### styal managed updates
 
 With **styal managed updates** on, styal manages your provider CLI versions. It
