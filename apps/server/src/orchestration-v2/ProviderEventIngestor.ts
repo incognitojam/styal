@@ -113,6 +113,7 @@ function providerTurnAnalyticsProperties(input: {
   readonly providerTurn: OrchestrationV2ProviderTurn;
   readonly context?: ProviderTurnAnalyticsContext;
   readonly approvalRequests?: number;
+  readonly autoReviews?: ProviderAdapter.ProviderAdapterV2AutoReviews;
 }): Readonly<Record<string, unknown>> {
   const usage = input.providerTurn.turnTokenUsage;
   const modelSelection = input.context?.modelSelection;
@@ -140,6 +141,14 @@ function providerTurnAnalyticsProperties(input: {
     ...(input.context?.runtimeMode ? { runtimeMode: input.context.runtimeMode } : {}),
     ...(input.context?.interactionMode ? { interactionMode: input.context.interactionMode } : {}),
     ...(input.approvalRequests === undefined ? {} : { approvalRequests: input.approvalRequests }),
+    ...(input.autoReviews
+      ? {
+          autoReviewsApproved: input.autoReviews.approved,
+          autoReviewsDenied: input.autoReviews.denied,
+          autoReviewsTimedOut: input.autoReviews.timedOut,
+          autoReviewsAborted: input.autoReviews.aborted,
+        }
+      : {}),
     ...(input.providerTurn.startedAt && input.providerTurn.completedAt
       ? {
           durationMs: Math.max(
@@ -967,6 +976,9 @@ export const layer: Layer.Layer<
                     ? {}
                     : { context: input.analyticsContext }),
                   ...(approvalRequests === undefined ? {} : { approvalRequests }),
+                  ...(input.event.autoReviews === undefined
+                    ? {}
+                    : { autoReviews: input.event.autoReviews }),
                 }),
               );
             }),

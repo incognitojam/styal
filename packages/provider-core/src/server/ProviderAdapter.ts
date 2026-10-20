@@ -5,6 +5,7 @@ import {
   MessageId,
   ModelSelection,
   NodeId,
+  NonNegativeInt,
   OrchestrationV2AppThread,
   OrchestrationV2ConversationMessage,
   OrchestrationV2ExecutionNode,
@@ -77,6 +78,19 @@ export const ProviderAdapterV2SessionStatus = Schema.Literals([
 ]);
 export type ProviderAdapterV2SessionStatus = typeof ProviderAdapterV2SessionStatus.Type;
 
+/**
+ * Verdicts from the provider's own Auto reviewer during one turn. Set only on
+ * turns that ran in Auto with a provider that reports them; turn analytics
+ * reads it and it is not stored.
+ */
+export const ProviderAdapterV2AutoReviews = Schema.Struct({
+  approved: NonNegativeInt,
+  denied: NonNegativeInt,
+  timedOut: NonNegativeInt,
+  aborted: NonNegativeInt,
+});
+export type ProviderAdapterV2AutoReviews = typeof ProviderAdapterV2AutoReviews.Type;
+
 export const ProviderAdapterV2Event = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("app_thread.created"),
@@ -105,6 +119,7 @@ export const ProviderAdapterV2Event = Schema.Union([
     driver: ProviderDriverKind,
     threadId: Schema.optional(ThreadId),
     providerTurn: OrchestrationV2ProviderTurn,
+    autoReviews: Schema.optional(ProviderAdapterV2AutoReviews),
   }),
   Schema.Struct({
     type: Schema.Literal("node.updated"),

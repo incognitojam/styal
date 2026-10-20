@@ -22,7 +22,9 @@ Additional measured operations are:
 
 ## Auto mode health
 
-`provider.turn.completed` carries `runtimeMode` and, from servers that count them, `approvalRequests`: the command, file and permission approvals the turn raised (questions are not counted). New threads default to Auto on providers with their own reviewer, so watch the share of `runtimeMode = auto` turns with `approvalRequests > 0`, broken down by `provider` and provider version. A jump after a provider release means its reviewer is asking about routine work. Filter on `approvalRequests` being set, since older servers do not send it. The provider canary's `auto` scenario checks the same thing before managed updates install a release.
+`provider.turn.completed` carries `runtimeMode` and, from servers that count them, `approvalRequests`: the command, file and permission approvals the turn raised (questions are not counted). Auto is opt-in, so these turns come from users who chose it. Watch the share of `runtimeMode = auto` turns with `approvalRequests > 0`, broken down by `provider` and provider version. A jump after a provider release means its reviewer is asking about routine work. Filter on `approvalRequests` being set, since older servers do not send it. The provider canary's `auto` scenario checks the same thing before managed updates install a release.
+
+Codex Auto turns also carry the reviewer's own verdicts: `autoReviewsApproved`, `autoReviewsDenied`, `autoReviewsTimedOut` and `autoReviewsAborted`. Denials are actions the reviewer stopped without asking anyone; denials divided by all verdicts is its block rate. Other providers and modes leave these fields out.
 
 ## Provider inventory and updates
 
