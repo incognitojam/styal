@@ -7,9 +7,9 @@ import {
 import {
   markdownWithHtml,
   markdownWithLiteralHtml,
+  markdownWithInlineFileLinks,
   markdownWithTableBreaks,
 } from "../lib/markdownDocument";
-
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { Platform, Share, StyleSheet, View } from "react-native";
 import {
@@ -159,7 +159,10 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   const markdown = useMemo(
     () =>
       markdownWithTableBreaks(
-        (parseRawHtml ? markdownWithHtml : markdownWithLiteralHtml)(props.markdown),
+        markdownWithInlineFileLinks(
+          (parseRawHtml ? markdownWithHtml : markdownWithLiteralHtml)(props.markdown),
+          ENRICHED_INLINE_FILE_LINK_REGEX,
+        ),
       ),
     [parseRawHtml, props.markdown],
   );
@@ -188,7 +191,6 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
   const linkRecognition = useMemo(
     () => ({
       text: enrichedSkillLinkRegex(props.skills) ?? undefined,
-      inlineCode: ENRICHED_INLINE_FILE_LINK_REGEX,
     }),
     [props.skills],
   );
