@@ -121,9 +121,9 @@ const relayMonitors: ReadonlyArray<RelayMonitor> = [
     severity: "page",
     name: "styal Link relay: Cloudflare API rate limited",
     description:
-      "Cloudflare API 429s per 10 min from tunnel and DNS provisioning. Sustained at this level, links and recoveries stall. Peak before #16810: 1,286; during it: ~11k.",
+      "Cloudflare API 429s, plus calls the relay refused while paused after one, per 10 min. Sustained at this level, links and recoveries stall. Peak 429s before #16810: 1,286; during it: ~11k.",
     query: (dataset) =>
-      `['${dataset}']\n| where ${CLOUDFLARE_API} and ${STATUS} == 429\n| summarize rate_limited = count()`,
+      `['${dataset}']\n| where (${CLOUDFLARE_API} and ${STATUS} == 429) or name == "relay.cloudflare_api_pause.rejected"\n| summarize rate_limited = count()`,
     operator: "AboveOrEqual",
     threshold: 500,
     rangeMinutes: 10,
@@ -147,9 +147,9 @@ const relayMonitors: ReadonlyArray<RelayMonitor> = [
     severity: "warn",
     name: "styal Link relay: Cloudflare API near its limit",
     description:
-      "Any sustained Cloudflare API 429s. These bursts ran for days before #16810; raise the account limit or cut call volume before they grow.",
+      "Any sustained Cloudflare API 429s or paused calls. 429 bursts ran for days before #16810; raise the account limit or cut call volume before they grow.",
     query: (dataset) =>
-      `['${dataset}']\n| where ${CLOUDFLARE_API} and ${STATUS} == 429\n| summarize rate_limited = count()`,
+      `['${dataset}']\n| where (${CLOUDFLARE_API} and ${STATUS} == 429) or name == "relay.cloudflare_api_pause.rejected"\n| summarize rate_limited = count()`,
     operator: "AboveOrEqual",
     threshold: 20,
     rangeMinutes: 10,
@@ -252,7 +252,14 @@ const relayDashboardCharts = (dataset: string, relayOrigin: string): ReadonlyArr
     timeSeries(
       "cloudflare-api",
       "Cloudflare API calls by status",
-      `${source}\n| where ${CLOUDFLARE_API}\n| summarize count() by bin_auto(_time), status = ${STATUS}`,
+      // Calls refused during a rate-limit pause never reach Cloudflare, so
+      // they are their own series or a storm would look like a quiet period.
+      `${source}\n| where ${CLOUDFLARE_API} or name == "relay.cloudflare_api_pause.rejected"\n| summarize count() by bin_auto(_time), status = case(name == "relay.cloudflare_api_pause.rejected", "paused", isnull(${STATUS}), "no response", tostring(${STATUS}))`,
+    ),
+    timeSeries(
+      "provision-paths",
+      "Tunnel provisions by path",
+      `${source}\n| where name == "relay.managed_endpoint_provider.provision"\n| summarize reused_ready_tunnel = countif(error != true and tobool(['attributes.custom']['relay.managed_endpoint.reused_ready_tunnel']) == true), full_provision = countif(error != true and isnull(['attributes.custom']['relay.managed_endpoint.reused_ready_tunnel'])), failed = countif(error == true) by bin_auto(_time)`,
     ),
     timeSeries(
       "postgres",
