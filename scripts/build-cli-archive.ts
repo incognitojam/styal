@@ -45,6 +45,8 @@ import {
   resolveWebIconOverrides,
 } from "./lib/brand-assets.ts";
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
+import { signWithJsign } from "./lib/windows-jsign.ts";
+import { windowsSystemTar } from "./lib/windows-tar.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -108,11 +110,6 @@ export function cliArchiveFileName(version: string, platform: BuildPlatform, arc
   // gzip rather than xz: GNU tar needs an external xz binary for -J, which
   // minimal hosts lack, while every tar (and Node's zlib) handles gzip alone.
   return `${cliArchiveStem(version, platform, arch)}.${platform === "win" ? "zip" : "tar.gz"}`;
-}
-
-export function windowsSystemTar(): string {
-  const systemRoot = process.env.SystemRoot ?? process.env.windir ?? "C:\\Windows";
-  return `${systemRoot}\\System32\\tar.exe`;
 }
 
 const runCommand = Effect.fn("runCommand")(function* (
@@ -440,6 +437,11 @@ const signWindowsExecutable = Effect.fn("signWindowsExecutable")(function* (
     return;
   }
   yield* stripStaleAuthenticodeEntry(executablePath);
+  if ((yield* HostProcess.Platform) !== "win32") {
+    yield* signWithJsign(executablePath);
+    yield* Effect.log("[cli-archive] Signed styal.exe (Azure Trusted Signing via jsign).");
+    return;
+  }
   const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
   const script = [
     "$ErrorActionPreference = 'Stop';",
@@ -556,7 +558,14 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
     cliArchiveFileName(input.version, input.platform, input.arch),
   );
   yield* fs.remove(archivePath, { force: true });
-  if (input.platform === "win") {
+  if (input.platform === "win" && hostPlatform !== "win32") {
+    yield* runCommand(
+      ChildProcess.make("zip", ["-q", "-r", "-X", path.resolve(archivePath), stem], {
+        cwd: stageRoot,
+      }),
+      "zip",
+    );
+  } else if (input.platform === "win") {
     // Windows ships bsdtar, which writes zip natively. Name it by path: under
     // the Git Bash shell CI uses, a bare `tar` is GNU tar, which neither
     // writes zip nor accepts a drive-letter path.
