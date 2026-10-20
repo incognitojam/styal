@@ -71,6 +71,7 @@ describe("holdingCandidates", () => {
   it("holds between Fork CI passing and its promotion run appearing", () => {
     const holding = holdingCandidates([forkCi({ updated_at: "2026-10-20T11:55:00Z" })], [], NOW);
     assert.strictEqual(holding.length, 1);
+    assert.strictEqual(holding[0]?.until, Date.parse("2026-10-20T12:10:00Z"));
   });
 
   it("releases once the promotion finishes, however it ends", () => {
@@ -84,10 +85,46 @@ describe("holdingCandidates", () => {
     }
   });
 
-  it("releases when Fork CI fails or passed long ago without a promotion", () => {
+  it("keeps holding for a fixed push after the branch's newest Fork CI run fails", () => {
+    const holding = holdingCandidates(
+      [forkCi({ conclusion: "failure", updated_at: "2026-10-20T11:58:00Z" })],
+      [],
+      NOW,
+    );
+    assert.deepStrictEqual(holding, [
+      {
+        branch: "intake/batch",
+        sha: SHA_A,
+        url: "https://example.test/ci",
+        until: Date.parse("2026-10-20T12:08:00Z"),
+      },
+    ]);
+  });
+
+  it("releases after a failure once the grace period ends or a newer run supersedes it", () => {
+    const expired = holdingCandidates(
+      [forkCi({ conclusion: "failure", updated_at: "2026-10-20T11:45:00Z" })],
+      [],
+      NOW,
+    );
+    assert.deepStrictEqual(expired, []);
+
+    // The newer run passed and promoted, so the older failure no longer holds.
+    const superseded = holdingCandidates(
+      [
+        forkCi({ head_sha: SHA_B, updated_at: "2026-10-20T11:50:00Z" }),
+        forkCi({ conclusion: "failure", updated_at: "2026-10-20T11:58:00Z" }),
+      ],
+      [promotion(SHA_B, { updated_at: "2026-10-20T11:55:00Z" })],
+      NOW,
+    );
+    assert.deepStrictEqual(superseded, []);
+  });
+
+  it("releases when Fork CI passed long ago without a promotion or was cancelled", () => {
     const holding = holdingCandidates(
       [
-        forkCi({ conclusion: "failure", updated_at: "2026-10-20T11:58:00Z" }),
+        forkCi({ conclusion: "cancelled", updated_at: "2026-10-20T11:58:00Z" }),
         forkCi({ head_sha: SHA_B, head_branch: "intake/old", updated_at: "2026-10-19T08:00:00Z" }),
       ],
       [],

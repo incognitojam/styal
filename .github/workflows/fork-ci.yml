@@ -31,6 +31,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Promotion fast-forwards main to this exact SHA. When main has moved, stop
+      # before the rest of Fork CI runs: every job but the intake audit waits on this one.
+      - name: Require the intake candidate to fast-forward main
+        if: startsWith(github.ref, 'refs/heads/intake/')
+        run: |
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor refs/remotes/origin/main "$GITHUB_SHA"; then
+            gained="$(git log --format='%h %s' -20 "$GITHUB_SHA..refs/remotes/origin/main" | paste -sd ';' - | sed 's/;/; /g')"
+            echo "::error::The candidate is not a fast-forward of main. Rebase onto main, which gained: $gained"
+            exit 1
+          fi
+
       - name: Detect application or tooling changes
         id: filter
         env:
@@ -143,6 +155,7 @@ jobs:
   # that moves the fingerprint without approval.
   intake_fingerprint:
     name: Fork Intake Native Fingerprint
+    needs: changes
     if: (github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal') && startsWith(github.ref, 'refs/heads/intake/')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -655,6 +668,7 @@ jobs:
   # the diff cannot be resolved, the lint runs.
   mobile_native_changes:
     name: Fork Mobile Native Changes
+    needs: changes
     if: github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal'
     runs-on: ubuntu-24.04
     timeout-minutes: 5

@@ -12,6 +12,7 @@
  *   landing-hold.ts [--dry-run]
  */
 import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
@@ -20,6 +21,12 @@ export const HOLD_CONTEXT = "Intake landing hold";
 
 /** How long after Fork CI passes the hold waits for the promotion run it starts to appear. */
 const PROMOTION_START_GRACE_MS = 15 * 60_000;
+
+/**
+ * How long after an intake branch's newest Fork CI run fails the hold waits for a fixed push.
+ * Releasing at once would let queued auto-merges move main before the rebased candidate starts.
+ */
+const REPUSH_GRACE_MS = 10 * 60_000;
 
 export interface WorkflowRun {
   readonly event: string;
@@ -36,14 +43,17 @@ export interface HoldingCandidate {
   readonly branch: string;
   readonly sha: string;
   readonly url: string;
+  /** When a hold that waits on a grace period ends; no event marks it, so the caller rechecks. */
+  readonly until?: number;
 }
 
 const PROMOTION_TITLE = /^Promote (\S+) at ([0-9a-f]{40})$/;
 
 /**
  * The intake candidates holding main: those whose Fork CI push run is still going, whose
- * promotion run has not finished, or whose Fork CI passed so recently that its promotion run may
- * not exist yet.
+ * promotion run has not finished, whose Fork CI passed so recently that its promotion run may
+ * not exist yet, or whose branch's newest Fork CI run failed so recently that a fixed push may
+ * not have started yet. `forkCiRuns` is newest first, as GitHub lists them.
  */
 export function holdingCandidates(
   forkCiRuns: ReadonlyArray<WorkflowRun>,
@@ -58,19 +68,25 @@ export function holdingCandidates(
   for (const { run, branch, sha } of promotions) {
     if (run.status !== "completed") holding.set(sha, { branch, sha, url: run.html_url });
   }
+  const seenBranches = new Set<string>();
   for (const run of forkCiRuns) {
     const branch = run.head_branch;
     if (run.event !== "push" || !branch?.startsWith("intake/")) continue;
+    const newest = !seenBranches.has(branch);
+    seenBranches.add(branch);
     if (holding.has(run.head_sha)) continue;
     const candidate = { branch, sha: run.head_sha, url: run.html_url };
+    const finished = Date.parse(run.updated_at);
     if (run.status !== "completed") {
       holding.set(run.head_sha, candidate);
     } else if (
       run.conclusion === "success" &&
-      now - Date.parse(run.updated_at) < PROMOTION_START_GRACE_MS &&
+      now - finished < PROMOTION_START_GRACE_MS &&
       !promotions.some((promotion) => promotion.sha === run.head_sha)
     ) {
-      holding.set(run.head_sha, candidate);
+      holding.set(run.head_sha, { ...candidate, until: finished + PROMOTION_START_GRACE_MS });
+    } else if (newest && run.conclusion === "failure" && now - finished < REPUSH_GRACE_MS) {
+      holding.set(run.head_sha, { ...candidate, until: finished + REPUSH_GRACE_MS });
     }
   }
   return [...holding.values()];
@@ -271,11 +287,19 @@ function main() {
         gh(["api", `repos/${repository}/actions/workflows/${workflow}/runs?per_page=100`]),
       ) as { workflow_runs: Array<WorkflowRun> }
     ).workflow_runs;
-  updateLandingHold(
+  const holding = updateLandingHold(
     repository,
     () => holdingCandidates(runs("fork-ci.yml"), runs("promote-upstream-intake.yml"), Date.now()),
     { dryRun: values["dry-run"] === true },
   );
+  // The workflow dispatches itself again then, since no event marks a grace period ending.
+  const until = holding.flatMap((candidate) =>
+    candidate.until === undefined ? [] : [candidate.until],
+  );
+  if (until.length > 0 && process.env.GITHUB_OUTPUT && !values["dry-run"]) {
+    const seconds = Math.max(1, Math.ceil((Math.min(...until) - Date.now()) / 1000));
+    NodeFS.appendFileSync(process.env.GITHUB_OUTPUT, `recheck_in_seconds=${seconds}\n`);
+  }
 }
 
 if (
