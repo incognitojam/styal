@@ -39,6 +39,7 @@ import {
   type EffortLevel,
   type ForkSessionOptions,
   type ForkSessionResult,
+  getSessionMessages,
   getSubagentMessages,
   query,
   type Options as ClaudeQueryOptions,
@@ -579,7 +580,10 @@ export interface ClaudeAgentSdkQueryRunnerShape {
   ) => Effect.Effect<ReadonlyArray<ClaudeSessionHistoryMessage>, ClaudeAgentSdkQueryRunnerError>;
   readonly forkSession: (
     input: ClaudeAgentSdkSessionForkInput,
-  ) => Effect.Effect<ForkSessionResult, ClaudeAgentSdkQueryRunnerError>;
+  ) => Effect.Effect<
+    ForkSessionResult & { readonly headMessageId?: string },
+    ClaudeAgentSdkQueryRunnerError
+  >;
   readonly subagentLaunchToolUseId: (
     input: ClaudeAgentSdkSubagentLookupInput,
   ) => Effect.Effect<string | null, ClaudeAgentSdkQueryRunnerError>;
@@ -877,7 +881,9 @@ export function runScopedClaudeHistory(
 
 const encodeClaudeHistoryOptions = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeClaudeHistoryFork = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(Schema.Struct({ sessionId: Schema.String })),
+  Schema.fromJsonString(
+    Schema.Struct({ sessionId: Schema.String, headMessageId: Schema.optionalKey(Schema.String) }),
+  ),
 );
 
 const claudeConfigDirOf = (
@@ -1304,14 +1310,18 @@ export const layerQueryRunner: Layer.Layer<
         });
         const hostEnvironment = yield* HostProcess.Environment;
         const homeDirectory = yield* HostProcess.HomeDirectory;
-        const fork: Effect.Effect<ForkSessionResult, unknown> =
+        const usesHostConfig =
           claudeConfigDirOf(path, input.environment, homeDirectory) ===
-          claudeConfigDirOf(path, hostEnvironment, homeDirectory)
-            ? Effect.tryPromise(() => forkClaudeSession(input.sessionId, input.options))
-            : forkClaudeSessionInWorker(input).pipe(
-                Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-                Effect.provideService(Path.Path, path),
-              );
+          claudeConfigDirOf(path, hostEnvironment, homeDirectory);
+        const fork: Effect.Effect<
+          ForkSessionResult & { readonly headMessageId?: string },
+          unknown
+        > = usesHostConfig
+          ? Effect.tryPromise(() => forkClaudeSession(input.sessionId, input.options))
+          : forkClaudeSessionInWorker(input).pipe(
+              Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+              Effect.provideService(Path.Path, path),
+            );
         const result = yield* fork.pipe(
           Effect.mapError((cause) => queryRunnerError(cause, "forkSession")),
         );
@@ -1324,7 +1334,22 @@ export const layerQueryRunner: Layer.Layer<
             sessionId: result.sessionId,
           },
         });
-        return result;
+        // The SDK remaps copied UUIDs. Capture the inherited head before the
+        // fork's first run appends messages.
+        const headMessageId = usesHostConfig
+          ? yield* Effect.tryPromise({
+              try: () =>
+                getSessionMessages(
+                  result.sessionId,
+                  input.options.dir === undefined ? {} : { dir: input.options.dir },
+                ),
+              catch: (cause) => queryRunnerError(cause, "getSessionMessages"),
+            }).pipe(
+              Effect.map((messages) => messages.at(-1)?.uuid),
+              Effect.orElseSucceed(() => undefined),
+            )
+          : result.headMessageId;
+        return headMessageId === undefined ? result : { ...result, headMessageId };
       }),
       subagentLaunchToolUseId: Effect.fn("ClaudeAgentSdkQueryRunner.subagentLaunchToolUseId")(
         function* (input: ClaudeAgentSdkSubagentLookupInput) {
@@ -1719,6 +1744,7 @@ function makeProviderThread(input: {
   readonly providerSessionId: OrchestrationV2ProviderThread["providerSessionId"];
   readonly nativeThreadId: string;
   readonly forkedFrom?: NonNullable<OrchestrationV2ProviderThread["forkedFrom"]>;
+  readonly nativeMetadata?: NonNullable<OrchestrationV2ProviderThread["nativeMetadata"]>;
   readonly now: DateTime.Utc;
 }): OrchestrationV2ProviderThread {
   return {
@@ -1742,6 +1768,7 @@ function makeProviderThread(input: {
     lastRunOrdinal: null,
     handoffIds: [],
     forkedFrom: input.forkedFrom ?? null,
+    ...(input.nativeMetadata === undefined ? {} : { nativeMetadata: input.nativeMetadata }),
     createdAt: input.now,
     updatedAt: input.now,
   };
@@ -10423,6 +10450,50 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
               const nativeThreadId = yield* getNativeThreadId(rollbackInput.providerThread);
               const now = yield* DateTime.now;
+              const historyOptions =
+                input.runtimePolicy.cwd === null ? {} : { dir: input.runtimePolicy.cwd };
+              const forkHeadMessageId =
+                rollbackInput.providerThread.nativeMetadata?.forkHeadMessageId;
+
+              if (rollbackInput.target.type === "thread_start" && forkHeadMessageId !== undefined) {
+                // Resuming at the inherited head would leave the discarded runs in the
+                // session file, where the complete-history rewind reads them as retained.
+                const fork = yield* queryRunner.forkSession({
+                  sessionId: nativeThreadId,
+                  options: { ...historyOptions, upToMessageId: forkHeadMessageId },
+                  threadId: input.threadId,
+                  providerSessionId: input.providerSessionId,
+                  environment: adapterOptions.environment,
+                });
+                yield* closeLiveQueryForNativeThread(nativeThreadId);
+                yield* Ref.update(openedNativeThreads, (current) => {
+                  const updated = new Set(current);
+                  updated.add(fork.sessionId);
+                  return updated;
+                });
+                return {
+                  providerThread: {
+                    ...rollbackInput.providerThread,
+                    providerSessionId: input.providerSessionId,
+                    nativeThreadRef: {
+                      driver: CLAUDE_PROVIDER,
+                      nativeId: fork.sessionId,
+                      strength: "strong" as const,
+                    },
+                    nativeConversationHeadRef: null,
+                    nativeMetadata: {
+                      ...rollbackInput.providerThread.nativeMetadata,
+                      forkHeadMessageId: fork.headMessageId,
+                    },
+                    status: "idle" as const,
+                    lastRunOrdinal: rollbackInput.target.appRunOrdinal,
+                    updatedAt: now,
+                  },
+                  providerTurns: [],
+                  messages: [],
+                  runtimeRequests: [],
+                };
+              }
 
               if (rollbackInput.target.type === "thread_start") {
                 yield* closeLiveQueryForNativeThread(nativeThreadId);
@@ -10460,7 +10531,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 });
               const historyInput = {
                 sessionId: nativeThreadId,
-                options: input.runtimePolicy.cwd === null ? {} : { dir: input.runtimePolicy.cwd },
+                options: historyOptions,
                 threadId: input.threadId,
                 providerSessionId: input.providerSessionId,
                 environment: adapterOptions.environment,
@@ -10527,6 +10598,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   providerThreadId: rollbackInput.providerThread.id,
                   cause: "Claude fork history did not preserve the retained turn boundaries.",
                 });
+              // The inherited head moves to the new session too, so a later rollback
+              // to the thread start still keeps the history this thread was forked with.
+              const remappedForkHead =
+                forkHeadMessageId === undefined
+                  ? undefined
+                  : (remapClaudeForkTurnBoundaries(messages, forkMessages, firstRemoved, [
+                      forkHeadMessageId,
+                    ])?.[0] ?? undefined);
               yield* closeLiveQueryForNativeThread(nativeThreadId);
               // The retained attempts still name the source session, so the next turn
               // would otherwise create the fork's id and Claude rejects it as in use.
@@ -10545,6 +10624,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     strength: "strong" as const,
                   },
                   nativeConversationHeadRef: null,
+                  ...(forkHeadMessageId === undefined
+                    ? {}
+                    : {
+                        nativeMetadata: {
+                          ...rollbackInput.providerThread.nativeMetadata,
+                          forkHeadMessageId: remappedForkHead,
+                        },
+                      }),
                   status: "idle" as const,
                   lastRunOrdinal: rollbackInput.target.appRunOrdinal,
                   updatedAt: now,
@@ -10629,6 +10716,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     ? {}
                     : { providerTurnId: forkInput.providerTurnId }),
                 },
+                ...(forked.headMessageId === undefined
+                  ? {}
+                  : { nativeMetadata: { forkHeadMessageId: forked.headMessageId } }),
                 now,
               });
             },

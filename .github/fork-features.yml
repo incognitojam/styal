@@ -402,6 +402,7 @@ features:
       - Repeated rewind uses the fork's rewritten native turn IDs; repeated prompts, steering, and tool results do not shift turn boundaries.
       - Unknown older turn IDs do not block rewind at a known recent boundary; the complete retained conversation is still validated and unknown IDs remain unknown across forks.
       - Missing, changed, or reordered retained conversation fails validation before replacing the current provider session.
+      - Rolling a forked thread back to its start keeps its inherited history in a new native fork rather than resuming the old session at the inherited head, and turn rewinds carry that head over to the new session.
       - Native history operations stay within the selected provider instance's Claude configuration directory.
     implementation_paths:
       - apps/server/src/claudeHistoryWorker.ts

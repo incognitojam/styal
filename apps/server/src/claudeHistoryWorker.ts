@@ -1,4 +1,4 @@
-import { forkSession } from "@anthropic-ai/claude-agent-sdk";
+import { forkSession, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import * as Schema from "effect/Schema";
 
 import { readClaudeSessionHistory } from "./provider/claudeSessionHistory.ts";
@@ -24,7 +24,12 @@ export async function runClaudeHistoryWorker(
     method === "readSessionHistory"
       ? await readClaudeSessionHistory(sessionId, options)
       : method === "forkSession"
-        ? await forkSession(sessionId, options)
+        ? await forkSession(sessionId, options).then(async (forked) => {
+            const headMessageId = await getSessionMessages(forked.sessionId, options)
+              .then((messages) => messages.at(-1)?.uuid)
+              .catch(() => undefined);
+            return headMessageId === undefined ? forked : { ...forked, headMessageId };
+          })
         : (() => {
             throw new Error("Unknown Claude history operation.");
           })();

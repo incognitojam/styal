@@ -2636,6 +2636,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly freshQueueOnReopen?: boolean;
     readonly readSessionHistory?: ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape["readSessionHistory"];
     readonly forkSession?: ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape["forkSession"];
+    readonly allocateSessionId?: Effect.Effect<string>;
   }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -2709,7 +2710,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             }).pipe(Effect.andThen(Queue.offer(continuationReceipts, request))),
         },
         queryRunner: {
-          allocateSessionId: Effect.succeed(options?.nativeSessionId ?? WAKE_NATIVE_SESSION),
+          allocateSessionId:
+            options?.allocateSessionId ??
+            Effect.succeed(options?.nativeSessionId ?? WAKE_NATIVE_SESSION),
           open: (input) =>
             Effect.gen(function* () {
               openCount++;
@@ -4428,20 +4431,22 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     }
     return event.providerTurn;
   };
-  const makeRollbackHistory = (assistantUuid?: string) => {
+  const makeRollbackHistory = (assistantUuid?: string, inheritedUuid?: string) => {
     const row = (type: "user" | "assistant", uuid: string) => ({
       type,
       uuid,
       message: { content: uuid },
       parent_tool_use_id: null,
     });
+    const prompt = row("user", "prompt-retained");
     const retained = [
-      row("user", "prompt-retained"),
+      ...(inheritedUuid === undefined ? [] : [row("assistant", inheritedUuid)]),
+      prompt,
       ...(assistantUuid === undefined ? [] : [row("assistant", assistantUuid)]),
     ];
     return {
       setPromptUuid: (uuid: string) => {
-        retained[0]!.uuid = uuid;
+        prompt.uuid = uuid;
       },
       readSessionHistory: (input) =>
         Effect.succeed(
@@ -4459,6 +4464,118 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       "readSessionHistory" | "forkSession"
     > & { setPromptUuid: (uuid: string) => void };
   };
+
+  it.effect.each([
+    { kind: "fork with inherited head", fork: true, headMessageId: "remapped-inherited-head" },
+    { kind: "fork without recorded head", fork: true, headMessageId: undefined },
+    { kind: "ordinary thread", fork: false, headMessageId: undefined },
+  ])("rolls back the first run of a $kind", ({ fork, headMessageId }) =>
+    Effect.gen(function* () {
+      let allocations = 0;
+      const forkedUpTo: Array<string | undefined> = [];
+      const harness = yield* makeWakeHarnessWithOptions({
+        close: (sdkMessages) => Queue.shutdown(sdkMessages),
+        freshQueueOnReopen: true,
+        allocateSessionId: Effect.sync(() =>
+          allocations++ === 0 ? WAKE_NATIVE_SESSION : "fresh-native-session",
+        ),
+        forkSession: (input) =>
+          Effect.sync(() => {
+            forkedUpTo.push(input.options.upToMessageId);
+            return input.options.upToMessageId === undefined
+              ? {
+                  sessionId: WAKE_NATIVE_SESSION,
+                  ...(headMessageId === undefined ? {} : { headMessageId }),
+                }
+              : { sessionId: "rollback-native-session", headMessageId: "rollback-inherited-head" };
+          }),
+      });
+      const providerThread = fork
+        ? yield* harness.runtime.forkThread({
+            sourceProviderThread: {
+              ...harness.providerThread,
+              nativeThreadRef: {
+                driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+                nativeId: "source-native-session",
+                strength: "strong",
+              },
+            },
+            targetThreadId: harness.threadId,
+          })
+        : harness.providerThread;
+      const turnInput = makeClaudeTestTurnInput({
+        threadId: harness.threadId,
+        providerThread,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make("first-run"),
+        text: "This run will be rolled back.",
+        attachments: [],
+        nativeThreadHasTurns: false,
+      });
+      yield* harness.runtime.startTurn(turnInput);
+      yield* harness.offerAndWait(
+        makeAssistantTextFrame({ uuid: "own-run-message", text: "Discard this answer." }),
+      );
+      yield* harness.offerAndWait(
+        makeResultFrame({ uuid: "own-run-result", result: "Discard this answer." }),
+      );
+      assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+      const completed = harness.events.findLast(
+        (event) => event.type === "provider_thread.updated",
+      );
+      assert.equal(completed?.type, "provider_thread.updated");
+      if (completed?.type !== "provider_thread.updated") return;
+      assert.equal(completed.providerThread.firstRunOrdinal, 1);
+
+      const rolledBack = yield* harness.runtime.rollbackThread({
+        providerThread: completed.providerThread,
+        target: {
+          type: "thread_start",
+          checkpointId: CheckpointId.make("checkpoint-before-first-run"),
+          appRunOrdinal: 0,
+        },
+        providerThreadTurns: [lastProviderTurn(harness.events)],
+      });
+      assert.equal(
+        rolledBack.providerThread.forkedFrom?.providerThreadId,
+        providerThread.forkedFrom?.providerThreadId,
+      );
+      yield* harness.runtime.startTurn({
+        ...turnInput,
+        attemptId: RunAttemptId.make("after-rollback"),
+        providerThread: rolledBack.providerThread,
+        providerTurnOrdinal: 2,
+        nativeThreadHasTurns: false,
+      });
+      const options = harness.getOpenedOptions();
+      assert.equal(harness.processQueues.length, 2);
+      if (headMessageId !== undefined) {
+        assert.deepEqual(forkedUpTo, [undefined, headMessageId]);
+        assert.equal(
+          rolledBack.providerThread.nativeThreadRef?.nativeId,
+          "rollback-native-session",
+        );
+        assert.isNull(rolledBack.providerThread.nativeConversationHeadRef);
+        assert.equal(
+          rolledBack.providerThread.nativeMetadata?.forkHeadMessageId,
+          "rollback-inherited-head",
+        );
+        assert.equal(options?.resume, "rollback-native-session");
+        assert.isUndefined(options?.resumeSessionAt);
+        assert.isUndefined(options?.sessionId);
+      } else {
+        assert.equal(rolledBack.providerThread.nativeThreadRef?.nativeId, "fresh-native-session");
+        assert.isNull(rolledBack.providerThread.nativeConversationHeadRef);
+        assert.equal(options?.sessionId, "fresh-native-session");
+        assert.isUndefined(options?.resume);
+        assert.isUndefined(options?.resumeSessionAt);
+      }
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
 
   it.effect(
     "rolls back to the main-thread assistant message when a subagent frame comes last",
@@ -4524,6 +4641,71 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
         ),
       ),
+  );
+
+  it.effect("moves a fork's inherited head to the session a turn rollback creates", () =>
+    Effect.gen(function* () {
+      const assistantUuid = "00000000-0000-4000-8000-000000000661";
+      const inheritedUuid = "00000000-0000-4000-8000-000000000660";
+      const history = makeRollbackHistory(assistantUuid, inheritedUuid);
+      const harness = yield* makeWakeHarnessWithOptions({
+        close: (sdkMessages) => Queue.shutdown(sdkMessages),
+        ...history,
+      });
+      const providerThread = {
+        ...harness.providerThread,
+        nativeMetadata: { forkHeadMessageId: inheritedUuid },
+      };
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-claude-fork-head"),
+          text: "Continue the fork.",
+          attachments: [],
+        }),
+      );
+      yield* Queue.offerAll(harness.sdkMessages, [
+        makeAssistantTextFrame({ uuid: assistantUuid, text: "Continued." }),
+        makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000662", result: "Continued." }),
+      ]);
+      yield* Queue.take(harness.terminalReceipts);
+
+      const providerTurn = lastProviderTurn(harness.events);
+      history.setPromptUuid(harness.promptUuid(0));
+      const rolledBack = yield* harness.runtime.rollbackThread({
+        providerThread,
+        target: {
+          type: "provider_turn",
+          checkpointId: CheckpointId.make("checkpoint-claude-fork-head"),
+          appRunOrdinal: 1,
+          providerTurn,
+        },
+        providerThreadTurns: [
+          providerTurn,
+          {
+            ...providerTurn,
+            id: ProviderTurnId.make("provider-turn-claude-fork-head-next"),
+            nativePromptRef: {
+              driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+              nativeId: "prompt-removed",
+              strength: "strong",
+            },
+            ordinal: 2,
+          },
+        ],
+      });
+      assert.equal(rolledBack.providerThread.nativeThreadRef?.nativeId, "forked");
+      assert.equal(
+        rolledBack.providerThread.nativeMetadata?.forkHeadMessageId,
+        `forked:${inheritedUuid}`,
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
   );
 
   it.effect("resumes the forked session on the turn after a rollback", () =>
