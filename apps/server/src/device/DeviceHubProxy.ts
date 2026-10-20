@@ -29,6 +29,7 @@ const ALLOWED_PATHS: ReadonlyArray<RegExp> = [
   /^\/vendor\/serve-sim\/api\/event-log(\/events)?$/,
   /^\/vendor\/serve-sim\/helper\/[^/]+\/(stream\.mjpeg|stream\.avcc|config|health|ax|foreground)$/,
   /^\/vendor\/serve-sim\/helper\/[^/]+\/panel\/(1|3)\/stream\.avcc$/,
+  /^\/vendor\/serve-sim\/helper\/[^/]+\/webrtc\/(offer|close)$/,
   /^\/vendor\/serve-sim\/appstate$/,
   /^\/vendor\/serve-emu\/api\/(devices|screenshot|stream-mode|stream-settings|accessibility|fold)$/,
   /^\/vendor\/serve-emu\/health$/,
@@ -36,6 +37,8 @@ const ALLOWED_PATHS: ReadonlyArray<RegExp> = [
 
 const MUTABLE_PATHS: ReadonlyArray<RegExp> = [
   /^\/vendor\/serve-sim\/api\/screenshot$/,
+  // WebRTC signalling: opening and closing a view of the stream, so read scope.
+  /^\/vendor\/serve-sim\/helper\/[^/]+\/webrtc\/(offer|close)$/,
   /^\/vendor\/serve-emu\/api\/(screenshot|stream-mode|stream-settings)$/,
   /^\/vendor\/serve-emu\/api\/fold$/,
 ];
@@ -135,7 +138,7 @@ export const proxyDeviceHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
     jsonBody === undefined
       ? method === "GET" || method === "HEAD"
         ? upstreamRequest
-        : upstreamRequest.pipe(HttpClientRequest.bodyStream(request.stream))
+        : upstreamRequest.pipe(HttpClientRequest.bodyStream(request.stream, { contentType: request.headers["content-type"] }))
       : yield* HttpClientRequest.bodyJson(upstreamRequest, jsonBody);
   const response = yield* httpClient.execute(bodyRequest);
   const headers: Record<string, string> = {};
