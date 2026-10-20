@@ -48,6 +48,7 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
 import * as ProviderAnalytics from "./telemetry/ProviderAnalytics.ts";
+import * as SettingsSnapshot from "./telemetry/SettingsSnapshot.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ProviderInstallGate from "./provider/ProviderInstallGate.ts";
 import * as ResetCreditCoordinator from "./provider/resetCreditCoordinator.ts";
@@ -640,6 +641,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
   ProviderAutoUpdaterLive,
+  SettingsSnapshot.layer,
   ReplayMarkers.layer,
   // Catches overrides left behind by a project deleted before this cleanup
   // existed, or by a cleanup write that failed. See ProjectService.delete

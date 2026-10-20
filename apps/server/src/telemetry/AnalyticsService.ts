@@ -219,6 +219,7 @@ export const make = Effect.gen(function* () {
           hardwareUsageVersion: 1,
           workflowRunWatchUsageVersion: 1,
           providerAnalyticsUsageVersion: 1,
+          settingsSnapshotUsageVersion: 1,
           ...buildContext,
           clientType,
           serverOs: serverOsFromNodePlatform(hostPlatform),
