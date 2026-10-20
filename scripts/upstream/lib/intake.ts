@@ -1,6 +1,11 @@
 import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
 import { findForkFeatureOverlaps } from "../../fork-feature-ledger.ts";
-import { adaptationErrors, type CommitReview, renderCommitReviews } from "./commit-review.ts";
+import {
+  adaptationErrors,
+  type CommitReview,
+  forkAdaptationNote,
+  renderCommitReviews,
+} from "./commit-review.ts";
 import { parseUpstreamProvenance } from "./provenance.ts";
 
 export interface UpstreamIntakeAuditInput {
@@ -206,6 +211,15 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
       `${uncitedAdaptations} ${uncitedAdaptations === 1 ? "commit differs" : "commits differ"} from upstream without a Fork-Feature trailer; confirm each difference keeps an intentional fork change or an early upstream import`,
     );
   }
+  // A note means the commit changes upstream's code or records a fork decision; a person reads it.
+  const notedCommits = input.commitMessages.filter(
+    (message) => forkAdaptationNote(message) !== null,
+  ).length;
+  if (notedCommits > 0) {
+    manualReviewReasons.push(
+      `${notedCommits} ${notedCommits === 1 ? "commit carries" : "commits carry"} a \`Fork adaptation:\` note`,
+    );
+  }
   if (overlapFeatureIds.length > 0) {
     manualReviewReasons.push(
       `tracked fork feature paths overlap (${overlapPaths.size} ${overlapPaths.size === 1 ? "path" : "paths"}, ${overlapFeatureIds.length} features); see Commits and Fork feature overlap below`,
@@ -215,7 +229,7 @@ export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): U
   const valid = errors.length === 0;
   const automaticEligible = valid && manualReviewReasons.length === 0;
   const promotion = automaticEligible
-    ? "Eligible for automatic promotion once the promotion lane is enabled"
+    ? "Eligible for automatic promotion"
     : valid
       ? "Manual approval required"
       : "Blocked";

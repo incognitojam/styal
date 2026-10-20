@@ -126,6 +126,71 @@ jobs:
             --base refs/remotes/origin/main \
             --head "$GITHUB_SHA"
 
+      # Resolving a rebase conflict in pnpm-lock.yaml by taking one side can drop
+      # an entry main added. Typecheck and tests still pass on cached packages.
+      - name: Check the lockfile matches the manifests
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          "$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin/pnpm" install --lockfile-only --ignore-scripts
+          if ! git diff --exit-code -- pnpm-lock.yaml; then
+            echo "::error::pnpm-lock.yaml does not match the manifests. Run pnpm install --lockfile-only and fold the change into the commit that broke it."
+            exit 1
+          fi
+
+  # Whether an OTA update from the promoted batch reaches installed apps. The
+  # promotion workflow reads the uploaded verdict and never promotes a batch
+  # that moves the fingerprint without approval.
+  intake_fingerprint:
+    name: Fork Intake Native Fingerprint
+    if: (github.repository == 'incognitojam/t3code' || github.repository == 'incognitojam/styal') && startsWith(github.ref, 'refs/heads/intake/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      APP_VARIANT: production
+      EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Fetch main
+        run: git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+              - --filter=@t3tools/scripts...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          echo "$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin" >> "$GITHUB_PATH"
+
+      - name: Compare the native fingerprint with main
+        run: |
+          node scripts/upstream/intake-run.ts fingerprint --base refs/remotes/origin/main --json > "$RUNNER_TEMP/intake-native-fingerprint.json"
+          jq -r '"## Native fingerprint\n\n\(.report)"' "$RUNNER_TEMP/intake-native-fingerprint.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the fingerprint verdict
+        uses: actions/upload-artifact@v7
+        with:
+          name: intake-native-fingerprint
+          path: ${{ runner.temp }}/intake-native-fingerprint.json
+          retention-days: 7
+
   # Lint, typecheck, and the desktop build each get a runner so they run side by
   # side instead of one after another. `Fork Check` also requires browser calibration.
   lint:

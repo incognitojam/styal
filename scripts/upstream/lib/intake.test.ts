@@ -91,6 +91,18 @@ describe("upstream intake audit", () => {
     assert.isTrue(result.automaticEligible);
   });
 
+  it("requires manual review for a commit with a fork adaptation note", () => {
+    const result = audit({
+      commitMessages: [
+        "fix(server): synthetic change\n\nFork adaptation: Keeps the fork's styal session key.\n\nUpstream-PR: 1234",
+      ],
+    });
+
+    assert.isTrue(result.valid);
+    assert.isFalse(result.automaticEligible);
+    assert.include(result.manualReviewReasons, "1 commit carries a `Fork adaptation:` note");
+  });
+
   it("blocks missing or malformed upstream provenance", () => {
     const missing = audit({ commitMessages: ["fix(server): no source"] });
     const malformed = audit({ commitMessages: ["Upstream-PR: nope"] });
@@ -362,6 +374,15 @@ describe("upstream intake audit", () => {
           readonly if: string;
           readonly steps: ReadonlyArray<{ readonly name?: string; readonly run?: string }>;
         };
+        readonly intake_fingerprint: {
+          readonly name: string;
+          readonly if: string;
+          readonly steps: ReadonlyArray<{
+            readonly name?: string;
+            readonly run?: string;
+            readonly with?: Record<string, string>;
+          }>;
+        };
       };
     };
 
@@ -381,6 +402,23 @@ describe("upstream intake audit", () => {
     assert.include(auditStep?.run ?? "", "intake:check");
     assert.include(auditStep?.run ?? "", "refs/remotes/origin/main");
     assert.include(auditStep?.run ?? "", '"$GITHUB_SHA"');
+    const lockfileStep = workflow.jobs.intake.steps.find(
+      (step) => step.name === "Check the lockfile matches the manifests",
+    );
+    assert.include(lockfileStep?.run ?? "", "install --lockfile-only");
+    assert.include(lockfileStep?.run ?? "", "git diff --exit-code -- pnpm-lock.yaml");
+
+    assert.equal(workflow.jobs.intake_fingerprint.name, "Fork Intake Native Fingerprint");
+    assert.include(workflow.jobs.intake_fingerprint.if, "refs/heads/intake/");
+    const fingerprintStep = workflow.jobs.intake_fingerprint.steps.find(
+      (step) => step.name === "Compare the native fingerprint with main",
+    );
+    assert.include(fingerprintStep?.run ?? "", "intake-run.ts fingerprint");
+    assert.include(fingerprintStep?.run ?? "", "--json");
+    const uploadStep = workflow.jobs.intake_fingerprint.steps.find(
+      (step) => step.name === "Upload the fingerprint verdict",
+    );
+    assert.equal(uploadStep?.with?.name, "intake-native-fingerprint");
   });
 
   it("checks the upstream migration history in Fork CI", () => {
@@ -398,15 +436,20 @@ describe("upstream intake audit", () => {
     assert.include(step?.run ?? "", "migrations:check");
   });
 
-  it("gates manual promotion on trusted validation and environment approval", () => {
+  it("promotes from trusted main code, automatically only for eligible candidates", () => {
     const workflow = parse(NodeFS.readFileSync(promotionWorkflowPath, "utf8")) as {
       readonly on: {
+        readonly workflow_run: {
+          readonly workflows: ReadonlyArray<string>;
+          readonly types: ReadonlyArray<string>;
+          readonly branches: ReadonlyArray<string>;
+        };
         readonly workflow_dispatch: {
           readonly inputs: Record<string, { readonly required: boolean }>;
         };
       };
       readonly permissions: Record<string, string>;
-      readonly concurrency: { readonly "cancel-in-progress": boolean };
+      readonly concurrency: { readonly group: string; readonly "cancel-in-progress": boolean };
       readonly jobs: {
         readonly validate: {
           readonly if: string;
@@ -421,6 +464,7 @@ describe("upstream intake audit", () => {
           }>;
         };
         readonly promote: {
+          readonly name: string;
           readonly needs: string;
           readonly environment: string;
           readonly permissions: Record<string, string>;
@@ -434,14 +478,20 @@ describe("upstream intake audit", () => {
       };
     };
 
+    assert.deepEqual(workflow.on.workflow_run.workflows, ["Fork CI"]);
+    assert.deepEqual(workflow.on.workflow_run.types, ["completed"]);
+    assert.deepEqual(workflow.on.workflow_run.branches, ["intake/**"]);
     assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_branch?.required);
     assert.isTrue(workflow.on.workflow_dispatch.inputs.candidate_sha?.required);
     assert.isUndefined(workflow.on.workflow_dispatch.inputs.source_prs);
     assert.isUndefined(workflow.on.workflow_dispatch.inputs.source_commits);
     assert.equal(workflow.permissions.actions, "read");
     assert.equal(workflow.permissions.contents, "read");
-    assert.isFalse(workflow.concurrency["cancel-in-progress"]);
-    assert.equal(workflow.jobs.validate.if, "github.repository == 'incognitojam/styal'");
+    assert.include(workflow.concurrency.group, "github.event.workflow_run.head_branch");
+    assert.isTrue(workflow.concurrency["cancel-in-progress"]);
+    assert.include(workflow.jobs.validate.if, "github.repository == 'incognitojam/styal'");
+    assert.include(workflow.jobs.validate.if, "github.event.workflow_run.conclusion == 'success'");
+    assert.include(workflow.jobs.validate.if, "github.event.workflow_run.event == 'push'");
 
     const trustedCheckout = workflow.jobs.validate.steps.find(
       (step) => step.name === "Checkout trusted promotion code",
@@ -482,6 +532,20 @@ describe("upstream intake audit", () => {
       "$GITHUB_REPOSITORY/compare/main...${GITHUB_REPOSITORY/\\//:}:$CANDIDATE_BRANCH",
     );
 
+    const fingerprint = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Read the native fingerprint verdict",
+    );
+    assert.include(fingerprint?.run ?? "", '"$CANDIDATE_SHA"');
+    assert.include(fingerprint?.run ?? "", "verdict=unknown");
+
+    const lane = workflow.jobs.validate.steps.find(
+      (step) => step.name === "Choose the promotion lane",
+    );
+    assert.include(lane?.run ?? "", '"$EVENT_NAME" == "workflow_run"');
+    assert.include(lane?.run ?? "", '"$AUTOMATIC_ELIGIBLE" == "true"');
+    assert.include(lane?.run ?? "", '"$NATIVE_FINGERPRINT" == "unchanged"');
+    assert.include(lane?.run ?? "", "lane=manual");
+
     const projectedReport = workflow.jobs.validate.steps.find(
       (step) => step.name === "Report projected upstream lag",
     );
@@ -500,7 +564,11 @@ describe("upstream intake audit", () => {
     );
 
     assert.equal(workflow.jobs.promote.needs, "validate");
-    assert.equal(workflow.jobs.promote.environment, "upstream-intake-manual");
+    assert.equal(
+      workflow.jobs.promote.environment,
+      "${{ needs.validate.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}",
+    );
+    assert.include(workflow.jobs.promote.name, "native fingerprint");
     assert.equal(workflow.jobs.promote.permissions.actions, "read");
     const tokenStep = workflow.jobs.promote.steps.find(
       (step) => step.name === "Mint Styal Porter token",

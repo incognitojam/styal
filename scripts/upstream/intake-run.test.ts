@@ -4,6 +4,7 @@ import {
   autoStopReasons,
   batchLength,
   describeNativeFingerprint,
+  nativeFingerprintVerdict,
   namesUpstreamProduct,
   draftAdaptationNote,
   intakeCommitMessage,
@@ -393,5 +394,23 @@ describe("describeNativeFingerprint", () => {
       describeNativeFingerprint({ error: "base install failed" }),
       /not compared \(base install failed\)/u,
     );
+  });
+});
+
+describe("nativeFingerprintVerdict", () => {
+  it("is unchanged only when no input changed or every platform kept its hash", () => {
+    assert.equal(nativeFingerprintVerdict("inputs unchanged"), "unchanged");
+    assert.equal(
+      nativeFingerprintVerdict([{ platform: "ios", base: "a".repeat(40), head: "a".repeat(40) }]),
+      "unchanged",
+    );
+    assert.equal(
+      nativeFingerprintVerdict([
+        { platform: "ios", base: "a".repeat(40), head: "a".repeat(40) },
+        { platform: "android", base: "b".repeat(40), head: "c".repeat(40) },
+      ]),
+      "moved",
+    );
+    assert.equal(nativeFingerprintVerdict({ error: "base install failed" }), "unknown");
   });
 });

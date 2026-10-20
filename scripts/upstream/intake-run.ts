@@ -1235,7 +1235,7 @@ function autoBatch(
     return false;
   }
   process.stdout.write(
-    `Fork CI passed. Promote with:\n\n  GH_REPO=${forkRepository()} gh workflow run promote-upstream-intake.yml -f candidate_branch=${options.branch} -f candidate_sha=${sha}\n\n${verified.nativeFingerprint}\n`,
+    `Fork CI passed. Promotion starts by itself; approve it if it waits: https://github.com/${forkRepository()}/actions/workflows/promote-upstream-intake.yml\n\nTo dispatch it by hand:\n\n  GH_REPO=${forkRepository()} gh workflow run promote-upstream-intake.yml -f candidate_branch=${options.branch} -f candidate_sha=${sha}\n\n${verified.nativeFingerprint}\n`,
   );
   return true;
 }
@@ -1790,6 +1790,17 @@ function compareNativeFingerprints(
   }
 }
 
+function nativeFingerprintComparison(
+  cwd: string,
+  base: string,
+  changed: ReadonlyArray<string>,
+  env: NodeJS.ProcessEnv,
+): NativeFingerprintComparison {
+  return touchesNativeFingerprint(changed)
+    ? compareNativeFingerprints(cwd, base, env)
+    : "inputs unchanged";
+}
+
 /** Whether OTA updates from `HEAD` reach the builds that `base`'s updates reached. */
 function nativeFingerprintReport(
   cwd: string,
@@ -1797,11 +1808,16 @@ function nativeFingerprintReport(
   changed: ReadonlyArray<string>,
   env: NodeJS.ProcessEnv,
 ): string {
-  return describeNativeFingerprint(
-    touchesNativeFingerprint(changed)
-      ? compareNativeFingerprints(cwd, base, env)
-      : "inputs unchanged",
-  );
+  return describeNativeFingerprint(nativeFingerprintComparison(cwd, base, changed, env));
+}
+
+/** `unknown` when the comparison failed; promotion treats it like `moved`. */
+export function nativeFingerprintVerdict(
+  comparison: NativeFingerprintComparison,
+): "unchanged" | "moved" | "unknown" {
+  if (comparison === "inputs unchanged") return "unchanged";
+  if ("error" in comparison) return "unknown";
+  return comparison.some((entry) => entry.base !== entry.head) ? "moved" : "unchanged";
 }
 
 const PLATFORM_NAMES = { ios: "iOS", android: "Android" } as const;
@@ -2221,8 +2237,18 @@ function main() {
     case "fingerprint": {
       const base = flag("--base") ?? "origin/main";
       const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`]));
+      const comparison = nativeFingerprintComparison(
+        cwd,
+        base,
+        changed,
+        verificationEnvironment(process.env),
+      );
+      const report = describeNativeFingerprint(comparison);
+      // Fork CI uploads this for the promotion workflow, which reads the verdict.
       process.stdout.write(
-        `${nativeFingerprintReport(cwd, base, changed, verificationEnvironment(process.env))}\n`,
+        process.argv.includes("--json")
+          ? `${JSON.stringify({ sha: git(cwd, ["rev-parse", "HEAD"]).trim(), verdict: nativeFingerprintVerdict(comparison), report })}\n`
+          : `${report}\n`,
       );
       return;
     }
@@ -2249,7 +2275,7 @@ function main() {
     }
     default:
       process.stdout.write(
-        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--changed-tests] | fingerprint [--base <ref>] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
+        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--changed-tests] | fingerprint [--base <ref>] [--json] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
       );
       process.exitCode = command === undefined ? 0 : 1;
   }

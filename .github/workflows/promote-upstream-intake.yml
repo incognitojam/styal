@@ -1,8 +1,17 @@
 name: Promote upstream intake
 
-run-name: Promote ${{ inputs.candidate_branch }} at ${{ inputs.candidate_sha }}
+run-name: Promote ${{ inputs.candidate_branch || github.event.workflow_run.head_branch }} at ${{ inputs.candidate_sha || github.event.workflow_run.head_sha }}
 
+# Starts by itself when Fork CI passes on an intake branch, and runs from main
+# either way, so a candidate cannot change the checks that promote it. A
+# candidate the audit marks eligible, whose native fingerprint is unchanged,
+# promotes through upstream-intake-automatic; every other candidate waits for
+# approval on upstream-intake-manual. Dispatch is the manual fallback.
 on:
+  workflow_run:
+    workflows: ["Fork CI"]
+    types: [completed]
+    branches: ["intake/**"]
   workflow_dispatch:
     inputs:
       candidate_branch:
@@ -17,14 +26,17 @@ permissions:
   actions: read
   contents: read
 
+# A new push to the same intake branch replaces a promotion still waiting for
+# approval. Promotions of different branches can run together: the push to
+# main is a fast-forward, so only one of them can land.
 concurrency:
-  group: upstream-intake-promotion
-  cancel-in-progress: false
+  group: upstream-intake-promotion-${{ inputs.candidate_branch || github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
 
 jobs:
   validate:
     name: Validate promotion candidate
-    if: github.repository == 'incognitojam/styal'
+    if: github.repository == 'incognitojam/styal' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -34,6 +46,8 @@ jobs:
       ci_run_url: ${{ steps.ci.outputs.ci_run_url }}
       source_prs: ${{ steps.audit.outputs.source_prs }}
       source_commits: ${{ steps.audit.outputs.source_commits }}
+      native_fingerprint: ${{ steps.fingerprint.outputs.verdict }}
+      lane: ${{ steps.lane.outputs.lane }}
     steps:
       - name: Checkout trusted promotion code
         uses: actions/checkout@v7
@@ -49,8 +63,8 @@ jobs:
         name: Resolve candidate
         shell: bash
         env:
-          CANDIDATE_BRANCH: ${{ inputs.candidate_branch }}
-          EXPECTED_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_BRANCH: ${{ inputs.candidate_branch || github.event.workflow_run.head_branch }}
+          EXPECTED_CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
 
@@ -184,6 +198,7 @@ jobs:
           done
 
           ci_run_url="$(jq -r '.[0].url' <<< "$run_json")"
+          echo "ci_run_id=$run_id" >> "$GITHUB_OUTPUT"
           compare_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...${GITHUB_REPOSITORY/\//:}:$CANDIDATE_BRANCH"
           echo "ci_run_url=$ci_run_url" >> "$GITHUB_OUTPUT"
           {
@@ -194,8 +209,71 @@ jobs:
             echo "- Source PRs: \`$SOURCE_PRS\`"
             echo "- Source commits: \`$SOURCE_COMMITS\`"
             echo "- Fork CI: $ci_run_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download the native fingerprint verdict
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: intake-native-fingerprint
+          run-id: ${{ steps.ci.outputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/fingerprint
+
+      - id: fingerprint
+        name: Read the native fingerprint verdict
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          file="$RUNNER_TEMP/fingerprint/intake-native-fingerprint.json"
+          verdict=unknown
+          report="Native fingerprint: Fork CI did not report it. Compare it by hand before relying on an OTA update."
+          if [[ -f "$file" ]] && [[ "$(jq -r .sha "$file")" == "$CANDIDATE_SHA" ]]; then
+            verdict="$(jq -r .verdict "$file")"
+            report="$(jq -r .report "$file")"
+          fi
+          case "$verdict" in
+            unchanged | moved | unknown) ;;
+            *) verdict=unknown ;;
+          esac
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          {
             echo
-            echo "Styal Porter will request approval before receiving its write token."
+            echo "## Native fingerprint"
+            echo
+            echo "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - id: lane
+        name: Choose the promotion lane
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          AUTOMATIC_ELIGIBLE: ${{ steps.audit.outputs.automatic_eligible }}
+          NATIVE_FINGERPRINT: ${{ steps.fingerprint.outputs.verdict }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_run" && "$AUTOMATIC_ELIGIBLE" == "true" && "$NATIVE_FINGERPRINT" == "unchanged" ]]; then
+            lane=automatic
+            reason="The audit found nothing that needs a person and the native fingerprint is unchanged."
+          else
+            lane=manual
+            if [[ "$EVENT_NAME" != "workflow_run" ]]; then
+              reason="Dispatched by hand."
+            elif [[ "$AUTOMATIC_ELIGIBLE" != "true" ]]; then
+              reason="The audit requires manual approval; see its reasons above."
+            else
+              reason="The native fingerprint is $NATIVE_FINGERPRINT."
+            fi
+          fi
+          echo "lane=$lane" >> "$GITHUB_OUTPUT"
+          {
+            echo
+            echo "## Promotion lane"
+            echo
+            echo "**${lane}**: $reason"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report projected upstream lag
@@ -210,12 +288,12 @@ jobs:
           node scripts/upstream/divergence-report.ts --base origin/main --head "$CANDIDATE_SHA" --heading "Projected upstream divergence" >> "$GITHUB_STEP_SUMMARY"
 
   promote:
-    name: Approve and promote candidate
+    name: ${{ needs.validate.outputs.lane == 'automatic' && 'Promote eligible candidate' || 'Approve and promote candidate' }}${{ needs.validate.outputs.native_fingerprint != 'unchanged' && format(' (native fingerprint {0})', needs.validate.outputs.native_fingerprint) || '' }}
     needs: validate
     if: needs.validate.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: upstream-intake-manual
+    environment: ${{ needs.validate.outputs.lane == 'automatic' && 'upstream-intake-automatic' || 'upstream-intake-manual' }}
     permissions:
       actions: read
       contents: read
