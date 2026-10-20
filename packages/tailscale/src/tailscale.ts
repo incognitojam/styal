@@ -139,6 +139,7 @@ export type TailscaleServeError =
 const TailscaleStatusSelf = Schema.Struct({
   DNSName: Schema.optional(Schema.Unknown),
   TailscaleIPs: Schema.optional(Schema.Unknown),
+  CapMap: Schema.optional(Schema.Unknown),
 });
 
 const TailscaleStatusJson = Schema.Struct({
@@ -177,6 +178,12 @@ export type TailscaleStatusJson = typeof TailscaleStatusJson.Type;
 export interface TailscaleStatus {
   readonly magicDnsName: string | null;
   readonly tailnetIpv4Addresses: readonly string[];
+  /**
+   * `tailscale serve --https` needs the `https` capability, which the control
+   * plane grants once the tailnet enables HTTPS certificates. `null` when the
+   * CLI reports no capability map (older CLI), so callers still attempt serve.
+   */
+  readonly httpsServeEnabled: boolean | null;
 }
 
 const collectStdout = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
@@ -247,9 +254,14 @@ export const parseTailscaleStatus = (
         }
       }
 
+      const capMap = parsed.Self?.CapMap;
       return {
         magicDnsName: normalizeMagicDnsName(parsed),
         tailnetIpv4Addresses,
+        httpsServeEnabled:
+          typeof capMap === "object" && capMap !== null && !Array.isArray(capMap)
+            ? Object.hasOwn(capMap, "https")
+            : null,
       };
     }),
   );

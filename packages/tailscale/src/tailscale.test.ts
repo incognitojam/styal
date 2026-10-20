@@ -153,7 +153,20 @@ describe("tailscale", () => {
       assert.deepEqual(status, {
         magicDnsName: "desktop.tail.ts.net",
         tailnetIpv4Addresses: ["100.100.100.100"],
+        httpsServeEnabled: null,
       });
+    }),
+  );
+
+  it.effect("reads the HTTPS serve capability from the status capability map", () =>
+    Effect.gen(function* () {
+      const enabled = yield* parseTailscaleStatus(
+        `{"Self":{"CapMap":{"https":null,"funnel":null}}}`,
+      );
+      assert.equal(enabled.httpsServeEnabled, true);
+
+      const disabled = yield* parseTailscaleStatus(`{"Self":{"CapMap":{"funnel":null}}}`);
+      assert.equal(disabled.httpsServeEnabled, false);
     }),
   );
 
@@ -214,6 +227,7 @@ describe("tailscale", () => {
       assert.deepEqual(status, {
         magicDnsName: "desktop.tail.ts.net",
         tailnetIpv4Addresses: ["100.90.1.2"],
+        httpsServeEnabled: null,
       });
     });
   });
