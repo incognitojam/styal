@@ -246,145 +246,150 @@ function quitFromSignal(
 }
 
 /** @public Service construction is part of the canonical Effect module API. */
-export const make = DesktopLifecycle.of({
-  relaunch: Effect.fn("desktop.lifecycle.relaunch")(function* (reason, options) {
-    const electronApp = yield* ElectronApp.ElectronApp;
-    const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    const state = yield* DesktopState.DesktopState;
-    if (yield* Ref.get(state.quitting)) return false;
-    const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
-    if (!(yield* guard.confirm("restart", options))) return false;
-    yield* logLifecycleInfo("desktop relaunch requested", { reason });
-    yield* Ref.set(state.quitting, true);
-    return yield* Effect.gen(function* () {
-      yield* Effect.yieldNow;
-      yield* requestDesktopShutdownAndWait();
-      yield* DesktopObservability.flushTrace;
-      if (environment.isDevelopment) {
-        yield* electronApp.exit(75);
-        return;
-      }
-      yield* electronApp.relaunch({
-        execPath: process.execPath,
-        args: process.argv.slice(1),
-      });
-      yield* electronApp.exit(0);
-    }).pipe(
-      Effect.catchCause((cause) => {
-        const error = new DesktopLifecycleRelaunchError({ reason, cause });
-        return logLifecycleError(error.message, { error });
-      }),
-      Effect.forkDetach,
-      Effect.as(true),
-    );
-  }),
-  register: Effect.gen(function* () {
-    const desktopWindow = yield* DesktopWindow.DesktopWindow;
-    const electronWindow = yield* ElectronWindow.ElectronWindow;
-    const electronApp = yield* ElectronApp.ElectronApp;
-    const electronTheme = yield* ElectronTheme.ElectronTheme;
-    const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    const context = yield* Effect.context<DesktopLifecycleRegistrationServices>();
-    const runEffect = Effect.runPromiseWith(context);
-    let quitAllowed = false;
-    let quitCheckPending = false;
-    let updaterQuitAllowed = false;
-    yield* electronTheme.onUpdated(() => {
-      void runEffect(
-        desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
+export const make = Effect.gen(function* () {
+  const signalScope = yield* Scope.Scope;
+  return DesktopLifecycle.of({
+    relaunch: Effect.fn("desktop.lifecycle.relaunch")(function* (reason, options) {
+      const electronApp = yield* ElectronApp.ElectronApp;
+      const environment = yield* DesktopEnvironment.DesktopEnvironment;
+      const state = yield* DesktopState.DesktopState;
+      if (yield* Ref.get(state.quitting)) return false;
+      const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
+      if (!(yield* guard.confirm("restart", options))) return false;
+      yield* logLifecycleInfo("desktop relaunch requested", { reason });
+      yield* Ref.set(state.quitting, true);
+      return yield* Effect.gen(function* () {
+        yield* Effect.yieldNow;
+        yield* requestDesktopShutdownAndWait();
+        yield* DesktopObservability.flushTrace;
+        if (environment.isDevelopment) {
+          yield* electronApp.exit(75);
+          return;
+        }
+        yield* electronApp.relaunch({
+          execPath: process.execPath,
+          args: process.argv.slice(1),
+        });
+        yield* electronApp.exit(0);
+      }).pipe(
+        Effect.catchCause((cause) => {
+          const error = new DesktopLifecycleRelaunchError({ reason, cause });
+          return logLifecycleError(error.message, { error });
+        }),
+        Effect.forkDetach,
+        Effect.as(true),
       );
-    });
-    yield* electronApp.onBeforeQuitForUpdate(() => {
-      // Electron's updater owns the remaining quit/install/relaunch sequence.
-      // Cancelling the following app "before-quit" event breaks that sequence,
-      // most visibly on macOS where the native updater performs the relaunch.
-      updaterQuitAllowed = true;
-      // This event is synchronous and the updater's quit proceeds as soon as
-      // the listener returns, so a forked destroyAll would race the quit
-      // and windows could still be open when the process exits (visible on
-      // macOS). Destroy them inline.
-      Effect.runSyncWith(context)(
-        electronWindow.destroyAll.pipe(
-          Effect.andThen(logLifecycleInfo("allowing updater-controlled quit")),
-          Effect.catchCause((cause) =>
-            logLifecycleError("failed to destroy windows before updater quit", { cause }),
-          ),
-          Effect.withSpan("desktop.lifecycle.beforeQuitForUpdate"),
-        ),
-      );
-    });
-    yield* electronApp.on("before-quit", (event: Electron.Event) => {
-      if (quitAllowed || updaterQuitAllowed) {
-        handleBeforeQuit(
-          event,
-          runEffect,
-          () => true,
-          () => {},
+    }),
+    register: Effect.gen(function* () {
+      const desktopWindow = yield* DesktopWindow.DesktopWindow;
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      const electronApp = yield* ElectronApp.ElectronApp;
+      const electronTheme = yield* ElectronTheme.ElectronTheme;
+      const environment = yield* DesktopEnvironment.DesktopEnvironment;
+      const context = yield* Effect.context<DesktopLifecycleRegistrationServices>();
+      const runEffect = Effect.runPromiseWith(context);
+      let quitAllowed = false;
+      let quitCheckPending = false;
+      let updaterQuitAllowed = false;
+      yield* electronTheme.onUpdated(() => {
+        void runEffect(
+          desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
         );
-        return;
-      }
-      event.preventDefault();
-      if (quitCheckPending) return;
-      quitCheckPending = true;
-      void runEffect(
-        Effect.gen(function* () {
-          const state = yield* DesktopState.DesktopState;
-          if (yield* Ref.get(state.quitting)) {
-            quitCheckPending = false;
-            return;
-          }
-          const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
-          if (!(yield* guard.confirm("quit"))) {
-            quitCheckPending = false;
-            return;
-          }
+      });
+      yield* electronApp.onBeforeQuitForUpdate(() => {
+        // Electron's updater owns the remaining quit/install/relaunch sequence.
+        // Cancelling the following app "before-quit" event breaks that sequence,
+        // most visibly on macOS where the native updater performs the relaunch.
+        updaterQuitAllowed = true;
+        // This event is synchronous and the updater's quit proceeds as soon as
+        // the listener returns, so a forked destroyAll would race the quit
+        // and windows could still be open when the process exits (visible on
+        // macOS). Destroy them inline.
+        Effect.runSyncWith(context)(
+          electronWindow.destroyAll.pipe(
+            Effect.andThen(logLifecycleInfo("allowing updater-controlled quit")),
+            Effect.catchCause((cause) =>
+              logLifecycleError("failed to destroy windows before updater quit", { cause }),
+            ),
+            Effect.withSpan("desktop.lifecycle.beforeQuitForUpdate"),
+          ),
+        );
+      });
+      yield* electronApp.on("before-quit", (event: Electron.Event) => {
+        if (quitAllowed || updaterQuitAllowed) {
           handleBeforeQuit(
             event,
             runEffect,
-            () => false,
-            () => {
-              quitAllowed = true;
-            },
+            () => true,
+            () => {},
           );
-        }),
-      ).catch(() => {
-        quitCheckPending = false;
+          return;
+        }
+        event.preventDefault();
+        if (quitCheckPending) return;
+        quitCheckPending = true;
+        void runEffect(
+          Effect.gen(function* () {
+            const state = yield* DesktopState.DesktopState;
+            if (yield* Ref.get(state.quitting)) {
+              quitCheckPending = false;
+              return;
+            }
+            const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
+            if (!(yield* guard.confirm("quit"))) {
+              quitCheckPending = false;
+              return;
+            }
+            handleBeforeQuit(
+              event,
+              runEffect,
+              () => false,
+              () => {
+                quitAllowed = true;
+              },
+            );
+          }),
+        ).catch(() => {
+          quitCheckPending = false;
+        });
       });
-    });
-    yield* electronApp.on("activate", () => {
-      void runEffect(
-        Effect.gen(function* () {
-          const state = yield* DesktopState.DesktopState;
-          if (yield* Ref.get(state.quitting)) return;
-          yield* desktopWindow.activate;
-        }).pipe(Effect.withSpan("desktop.lifecycle.activate")),
-      );
-    });
-    yield* electronApp.on("window-all-closed", () => {
-      void runEffect(
-        Effect.gen(function* () {
-          const app = yield* ElectronApp.ElectronApp;
-          const state = yield* DesktopState.DesktopState;
-          if (environment.platform !== "darwin" && !(yield* Ref.get(state.quitting))) {
-            yield* app.quit;
-          }
-        }).pipe(Effect.withSpan("desktop.lifecycle.windowAllClosed")),
-      );
-    });
+      yield* electronApp.on("activate", () => {
+        void runEffect(
+          Effect.gen(function* () {
+            const state = yield* DesktopState.DesktopState;
+            if (yield* Ref.get(state.quitting)) return;
+            yield* desktopWindow.activate;
+          }).pipe(Effect.withSpan("desktop.lifecycle.activate")),
+        );
+      });
+      yield* electronApp.on("window-all-closed", () => {
+        void runEffect(
+          Effect.gen(function* () {
+            const app = yield* ElectronApp.ElectronApp;
+            const state = yield* DesktopState.DesktopState;
+            if (environment.platform !== "darwin" && !(yield* Ref.get(state.quitting))) {
+              yield* app.quit;
+            }
+          }).pipe(Effect.withSpan("desktop.lifecycle.windowAllClosed")),
+        );
+      });
 
-    if (environment.platform !== "win32") {
-      yield* addScopedListener(process, "SIGINT", () => {
-        quitFromSignal("SIGINT", runEffect, () => {
-          quitAllowed = true;
-        });
-      });
-      yield* addScopedListener(process, "SIGTERM", () => {
-        quitFromSignal("SIGTERM", runEffect, () => {
-          quitAllowed = true;
-        });
-      });
-    }
-  }).pipe(Effect.withSpan("desktop.lifecycle.register")),
+      if (environment.platform !== "win32") {
+        // The layer outlives program finalizers, so repeated signals stay owned
+        // while backends stop. Electron listeners still follow the program scope.
+        yield* addScopedListener(process, "SIGINT", () => {
+          quitFromSignal("SIGINT", runEffect, () => {
+            quitAllowed = true;
+          });
+        }).pipe(Scope.provide(signalScope));
+        yield* addScopedListener(process, "SIGTERM", () => {
+          quitFromSignal("SIGTERM", runEffect, () => {
+            quitAllowed = true;
+          });
+        }).pipe(Scope.provide(signalScope));
+      }
+    }).pipe(Effect.withSpan("desktop.lifecycle.register")),
+  });
 });
 
-export const layer = Layer.succeed(DesktopLifecycle, make);
+export const layer = Layer.effect(DesktopLifecycle, make);

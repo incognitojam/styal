@@ -163,7 +163,8 @@ export const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances"
         Effect.gen(function* () {
           const stopStartedAt = yield* Clock.currentTimeMillis;
           yield* logShutdownInfo("stopping desktop backend", { instanceId: instance.id });
-          yield* instance.stop({ timeout: Duration.seconds(5) });
+          // Exceeds the backend's 30s graceful termination and output drain budget.
+          yield* instance.stop({ timeout: Duration.seconds(45) });
           yield* logShutdownInfo("desktop backend stopped", {
             instanceId: instance.id,
             elapsedMs: (yield* Clock.currentTimeMillis) - stopStartedAt,
