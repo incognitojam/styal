@@ -3142,7 +3142,7 @@ features:
   - id: provider-auto-default
     title: Apply an Auto default only where the provider reviews actions
     status: maintained
-    prs: [928, 930]
+    prs: [928, 930, 943]
     invariants:
       - The built-in default permission mode for new threads stays Full access, as upstream; Auto as the default is the user's choice.
       - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, and Grok report one. An unloaded snapshot or an older server counts as no reviewer.
