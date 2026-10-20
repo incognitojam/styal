@@ -4297,6 +4297,7 @@ features:
       - apps/web/src/components/import/DataImportPanel.tsx
       - apps/web/src/components/onboarding/OnboardingImportStep.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
+      - apps/web/src/components/onboarding/WorkflowStep.tsx
       - apps/web/src/onboarding/settlement.logic.ts
       - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
