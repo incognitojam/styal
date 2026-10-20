@@ -50,7 +50,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
-import { FORK_NOTE, forkNoteTransfer } from "./ForkNote.ts";
+import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -963,30 +963,29 @@ export const layer: Layer.Layer<
         projection.providerTurns,
         projection.attempts,
       );
-      const compactionMessageIds = new Set<string>(
-        projection.messages
-          .filter(
-            (candidate) =>
-              candidate.attachments.length === 0 &&
-              candidate.text.trim().toLowerCase() === "/compact",
-          )
-          .map((candidate) => candidate.id),
-      );
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
-        compactionMessageIds,
+        compactionMessageIds: new Set(
+          projection.messages
+            .filter(
+              (candidate) =>
+                candidate.attachments.length === 0 &&
+                candidate.text.trim().toLowerCase() === "/compact",
+            )
+            .map((candidate) => candidate.id),
+        ),
         run,
         attempts: projection.attempts,
       });
-      const pendingForkNote = forkNoteTransfer({
+      const sendForkNote = shouldSendForkNote({
         threadId: input.threadId,
         message,
         contextTransfers: projection.contextTransfers,
         providerTurns: projection.providerTurns,
       });
       const turnNote = [
-        pendingForkNote === undefined ? "" : FORK_NOTE,
+        sendForkNote ? FORK_NOTE : "",
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),
@@ -1104,31 +1103,6 @@ export const layer: Layer.Layer<
                 !coveredItemIds.has(item.id) &&
                 historicalMessage(item) !== null,
             );
-      // Reads the transfer again: this turn's start may have consumed it since.
-      const recordForkNoteAttempt = (attemptId: typeof attempt.id) =>
-        Effect.gen(function* () {
-          const { contextTransfers } = yield* projectionStore.getThreadRecords(input.threadId, [
-            "contextTransfers",
-          ]);
-          const transfer = contextTransfers.find(
-            (candidate) => candidate.id === pendingForkNote?.id,
-          );
-          if (transfer === undefined || transfer.forkNoteAttemptId === attemptId) return;
-          const now = yield* DateTime.now;
-          yield* eventSink.write({
-            events: [
-              {
-                id: yield* idAllocator.allocate.event({ threadId: projection.thread.id }),
-                type: "context-transfer.updated",
-                threadId: projection.thread.id,
-                runId: run.id,
-                providerInstanceId: run.providerInstanceId,
-                occurredAt: now,
-                payload: { ...transfer, forkNoteAttemptId: attemptId, updatedAt: now },
-              },
-            ],
-          });
-        });
       const startWithHandoffs = (
         turnInput: Parameters<typeof session.startTurn>[0],
         compact = false,
@@ -1211,13 +1185,6 @@ export const layer: Layer.Layer<
           const context = [delivery.context, turnNote].filter((part) => part !== "").join("\n\n");
           // A note continuation has no turn to resume; its text is the prompt.
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
-          if (pendingForkNote !== undefined) {
-            yield* recordForkNoteAttempt(turnInput.attemptId).pipe(
-              Effect.catchCause(() =>
-                Effect.logWarning("Failed to record the fork note attempt", { runId: run.id }),
-              ),
-            );
-          }
           yield* start({
             ...(noteContinuation ? promptedInput : turnInput),
             message: {

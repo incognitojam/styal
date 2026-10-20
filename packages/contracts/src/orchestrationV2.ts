@@ -194,8 +194,6 @@ export const OrchestrationV2ContextTransfer = Schema.Struct({
   createdAt: Schema.DateTimeUtc,
   updatedAt: Schema.DateTimeUtc,
   consumedAt: Schema.NullOr(Schema.DateTimeUtc),
-  /** The latest attempt that carried the fork note; its completed provider turn delivered it. */
-  forkNoteAttemptId: Schema.optional(RunAttemptId),
 });
 export type OrchestrationV2ContextTransfer = typeof OrchestrationV2ContextTransfer.Type;
 
