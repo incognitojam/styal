@@ -5,6 +5,7 @@ import { SERVICE_LAUNCHER_CONTEXT_ENV } from "@t3tools/shared/serverOwnedEnviron
 export const SERVICE_LAUNCHER_PROTOCOL = 4 as const;
 export { SERVICE_LAUNCHER_CONTEXT_ENV };
 export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
+export const SERVICE_ENV_FILE = "service.env";
 export const SERVICE_STATE_FILE = "service-state.json";
 /** Written by the launcher just before an explicit stop kills its child, so
     the child can tell "the service is going away" from "the launcher is about

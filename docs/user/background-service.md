@@ -30,6 +30,31 @@ styal. To match a remote client's version, follow [Updating styal](./updating.md
 Containers without systemd or launchd should run `styal serve` under the
 container's process supervisor. The CLI does not install a service manager.
 
+## Configure the service environment
+
+Put custom environment variables in `service.env` under the service's styal
+home directory, normally `~/.styal/service.env`. This file survives service
+installation, updates, and uninstalling the service. For example:
+
+```dotenv
+T3CODE_PORT=3773
+T3CODE_HOST=127.0.0.1
+```
+
+Use `KEY=VALUE` entries, quoting values that contain spaces or `#`. Values are
+literal: shell commands and variable expansion are not evaluated. Entries
+override the inherited service environment, except for `PATH`, `STYAL_HOME`,
+`T3CODE_HOME`, `T3_BOOT_SERVICE_UNIT`, and `T3_SERVICE_LAUNCHER_CONTEXT`
+(including case variants).
+
+Run `styal service restart` after changing the file. Changes apply when the
+service starts again; switching the server version alone keeps the current
+values. For a service installed before env-file support, run
+`styal service install` once with an up-to-date CLI.
+A missing file is ignored; other read failures stop service startup.
+If the file contains credentials, restrict access to that file with `chmod 600`
+(for the default styal home, `chmod 600 ~/.styal/service.env`).
+
 ## Platform support
 
 Linux needs systemd user services. Setup enables lingering so styal starts at
