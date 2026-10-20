@@ -1128,8 +1128,6 @@ export interface DesktopBridge {
    */
   getSystemActive?: () => Promise<boolean>;
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
-  /** Refresh the preload snapshot without blocking the renderer on synchronous IPC. */
-  readLocalEnvironmentBootstraps?: () => Promise<readonly DesktopEnvironmentBootstrap[]>;
   getLocalEnvironmentEnabled?: () => boolean;
   setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;

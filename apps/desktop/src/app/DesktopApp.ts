@@ -163,8 +163,7 @@ export const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances"
         Effect.gen(function* () {
           const stopStartedAt = yield* Clock.currentTimeMillis;
           yield* logShutdownInfo("stopping desktop backend", { instanceId: instance.id });
-          // Exceeds the backend's 30s graceful termination and output drain budget.
-          yield* instance.stop({ timeout: Duration.seconds(45) });
+          yield* instance.stop({ timeout: Duration.seconds(5) });
           yield* logShutdownInfo("desktop backend stopped", {
             instanceId: instance.id,
             elapsedMs: (yield* Clock.currentTimeMillis) - stopStartedAt,
@@ -258,7 +257,9 @@ const bootstrap = Effect.gen(function* () {
   }
 
   if (!(yield* Ref.get(state.quitting))) {
-    yield* desktopWindow.showConnectingSplash;
+    if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
+      yield* desktopWindow.showConnectingSplash;
+    }
     yield* primaryBackend.start;
     yield* logBootstrapInfo("bootstrap backend start requested");
     yield* appActivation.start.pipe(

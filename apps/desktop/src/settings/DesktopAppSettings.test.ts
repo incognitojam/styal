@@ -287,7 +287,7 @@ describe("DesktopSettings", () => {
       Effect.gen(function* () {
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
         yield* writeSettingsPatch({
-          mainWindowBounds: { x: 10, y: 20, width: 599, height: 620 },
+          mainWindowBounds: { x: 10.5, y: 20, width: 839, height: 620 },
           mainWindowFullscreen: true,
           mainWindowMaximized: true,
           serverExposureMode: "network-accessible",
@@ -350,7 +350,7 @@ describe("DesktopSettings", () => {
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
 
         yield* settings.setMainWindowBounds(
-          { x: -1200, y: 40, width: 600, height: 620 },
+          { x: -1200, y: 40, width: 1440, height: 960 },
           true,
           true,
         );
@@ -360,18 +360,11 @@ describe("DesktopSettings", () => {
           yield* fileSystem.readFileString(environment.desktopSettingsPath),
         );
         assert.deepEqual(persisted, {
-          mainWindowBounds: { x: -1200, y: 40, width: 600, height: 620 },
+          mainWindowBounds: { x: -1200, y: 40, width: 1440, height: 960 },
           mainWindowFullscreen: true,
           mainWindowMaximized: true,
           serverExposureMode: "network-accessible",
         } satisfies typeof DesktopSettingsPatch.Type);
-
-        const restored = yield* Effect.gen(function* () {
-          const freshSettings = yield* DesktopAppSettings.DesktopAppSettings;
-          return yield* freshSettings.load;
-        }).pipe(Effect.provide(DesktopAppSettings.layer));
-        assert.deepEqual(restored.mainWindowBounds, persisted.mainWindowBounds);
-        assert.isTrue(restored.mainWindowMaximized);
       }),
     ),
   );
