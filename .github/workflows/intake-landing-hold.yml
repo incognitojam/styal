@@ -18,10 +18,29 @@ permissions:
   contents: read
 
 jobs:
+  # A pull request event only dispatches the hold run. Jobs from pull_request_target
+  # show as checks on the pull request, and the queue below cancels runs a newer one
+  # replaces, which agents watching the pull request would report as a failed check.
+  # Until the dispatched run sets its status, the pull request cannot merge.
+  request:
+    name: Request intake landing hold
+    if: github.repository == 'incognitojam/styal' && github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the hold run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: gh workflow run intake-landing-hold.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"
+
   hold:
     name: Set intake landing hold
     if: >-
       github.repository == 'incognitojam/styal' &&
+      github.event_name != 'pull_request_target' &&
       (github.event_name != 'workflow_run' ||
         github.event.workflow_run.path == '.github/workflows/promote-upstream-intake.yml' ||
         startsWith(github.event.workflow_run.head_branch, 'intake/'))
@@ -40,7 +59,6 @@ jobs:
     outputs:
       recheck_in_seconds: ${{ steps.statuses.outputs.recheck_in_seconds }}
     steps:
-      # pull_request_target runs main's script and never checks out pull request code.
       - name: Checkout main
         uses: actions/checkout@v7
         with:
