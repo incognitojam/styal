@@ -11,6 +11,12 @@ import {
 vi.mock("expo-updates", () => ({ isEnabled: true, runtimeVersion: "installed" }));
 vi.mock("expo-constants", () => ({ default: { platform: { android: {} }, expoConfig: {} } }));
 vi.mock("expo-device", () => ({ supportedCpuArchitectures: ["arm64-v8a"] }));
+vi.mock("react-native", () => ({
+  AppState: {
+    currentState: "active",
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+  },
+}));
 
 const INSTALLED_RUNTIME = "1852261bf06298ba91a15a6f681d1f0af8f33b51";
 const NEWER_RUNTIME = "2e6594da84728ff5232cd75099aeff24beb27d26";
