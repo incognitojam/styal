@@ -178,7 +178,7 @@ jobs:
           echo "$prefix/bin" >> "$GITHUB_PATH"
           "$prefix/bin/$BINARY" --version
 
-      # The styal server passes OPENAI_API_KEY and ANTHROPIC_API_KEY through to
+      # The styal server passes each provider's API key secret through to
       # provider processes. Codex keeps its login in CODEX_HOME instead.
       # A failed run is retried once: a model can skip a requested tool, and a
       # rate limit can stop a turn. A pass on the retry is reported in the
