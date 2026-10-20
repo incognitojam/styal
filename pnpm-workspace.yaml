@@ -92,12 +92,12 @@ minimumReleaseAgeExclude:
   - "@clerk/expo@4.6.8"
   - "@clerk/react@6.16.1"
   - "@clerk/shared@4.33.0"
-  - "@distilled.cloud/aws@1.0.0-rc.13"
-  - "@distilled.cloud/axiom@1.0.0-rc.13"
-  - "@distilled.cloud/cloudflare@1.0.0-rc.13"
-  - "@distilled.cloud/core@1.0.0-rc.13"
-  - "@distilled.cloud/neon@1.0.0-rc.13"
-  - "@distilled.cloud/planetscale@1.0.0-rc.13"
+  - "@distilled.cloud/aws@1.0.0-rc.15"
+  - "@distilled.cloud/axiom@1.0.0-rc.15"
+  - "@distilled.cloud/cloudflare@1.0.0-rc.15"
+  - "@distilled.cloud/core@1.0.0-rc.15"
+  - "@distilled.cloud/neon@1.0.0-rc.15"
+  - "@distilled.cloud/planetscale@1.0.0-rc.15"
   - "@effect/atom-react@4.0.2"
   - "@effect/openapi-generator@4.0.2"
   - "@effect/platform-node-shared@4.0.2"
@@ -105,7 +105,7 @@ minimumReleaseAgeExclude:
   - "@effect/sql-pg@4.0.2"
   - "@effect/sql-sqlite-do@4.0.2"
   - "@effect/vitest@4.0.2"
-  - alchemy@2.0.0-beta.80
+  - alchemy@2.0.0-beta.83
   - effect@4.0.2
   - "@legendapp/list@3.3.5"
   - "@expo/cli@58.1.1"
@@ -144,14 +144,14 @@ minimumReleaseAgeExclude:
   - expo-symbols@58.0.3
   - electron@44.4.5
   - "@anthropic-ai/claude-agent-sdk@0.3.276"
-  - "@alchemy.run/cloudflare-runtime@2.0.0-beta.80"
-  - "@alchemy.run/floci@2.0.0-beta.80"
-  - "@alchemy.run/node-utils@2.0.0-beta.80"
-  - "@distilled.cloud/fly-io@1.0.0-rc.13"
-  - "@distilled.cloud/hetzner@1.0.0-rc.13"
-  - "@distilled.cloud/prisma@1.0.0-rc.13"
-  - "@distilled.cloud/railway@1.0.0-rc.13"
-  - "@distilled.cloud/stripe@1.0.0-rc.13"
+  - "@alchemy.run/cloudflare-runtime@2.0.0-beta.83"
+  - "@alchemy.run/floci@2.0.0-beta.83"
+  - "@alchemy.run/node-utils@2.0.0-beta.83"
+  - "@distilled.cloud/fly-io@1.0.0-rc.15"
+  - "@distilled.cloud/hetzner@1.0.0-rc.15"
+  - "@distilled.cloud/prisma@1.0.0-rc.15"
+  - "@distilled.cloud/railway@1.0.0-rc.15"
+  - "@distilled.cloud/stripe@1.0.0-rc.15"
   - "@shadcn/lint@0.1.5"
   - cn@0.3.2
   - uniwind@1.12.1
@@ -181,11 +181,11 @@ minimumReleaseAgeExclude:
   - expo-application@58.0.3
   - expo-eas-client@58.0.2
   - expo-image-loader@58.0.3
-  - "@distilled.cloud/acme@1.0.0-rc.13"
-  - "@distilled.cloud/doppler@1.0.0-rc.13"
-  - "@distilled.cloud/gcp@1.0.0-rc.13"
-  - "@distilled.cloud/infisical@1.0.0-rc.13"
-  - "@distilled.cloud/zerossl@1.0.0-rc.13"
+  - "@distilled.cloud/acme@1.0.0-rc.15"
+  - "@distilled.cloud/doppler@1.0.0-rc.15"
+  - "@distilled.cloud/gcp@1.0.0-rc.15"
+  - "@distilled.cloud/infisical@1.0.0-rc.15"
+  - "@distilled.cloud/zerossl@1.0.0-rc.15"
   - "@opencode/client@2.0.23"
   - "@opencode/protocol@2.0.23"
   - "@opencode/schema@2.0.23"
@@ -292,7 +292,7 @@ packageExtensions:
       vite-plus: "catalog:"
 
 patchedDependencies:
-  alchemy@2.0.0-beta.80: patches/alchemy@2.0.0-beta.80.patch
+  alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
   expo-glass-effect@58.0.3: patches/expo-glass-effect@58.0.3.patch
   expo-blur@58.0.3: patches/expo-blur@58.0.3.patch
   expo-audio@58.0.4: patches/expo-audio@58.0.4.patch
