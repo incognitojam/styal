@@ -390,8 +390,7 @@ describe("upstream intake audit", () => {
     const lockfileStep = workflow.jobs.intake.steps.find(
       (step) => step.name === "Check the lockfile matches the manifests",
     );
-    assert.include(lockfileStep?.run ?? "", "install --lockfile-only");
-    assert.include(lockfileStep?.run ?? "", "git diff --exit-code -- pnpm-lock.yaml");
+    assert.include(lockfileStep?.run ?? "", "install --frozen-lockfile --lockfile-only");
 
     assert.equal(workflow.jobs.intake_fingerprint.name, "Fork Intake Native Fingerprint");
     assert.include(workflow.jobs.intake_fingerprint.if, "refs/heads/intake/");

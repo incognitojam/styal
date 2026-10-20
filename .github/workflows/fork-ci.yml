@@ -128,11 +128,12 @@ jobs:
 
       # Resolving a rebase conflict in pnpm-lock.yaml by taking one side can drop
       # an entry main added. Typecheck and tests still pass on cached packages.
+      # --frozen-lockfile compares specifiers only; regenerating would also pick
+      # up registry metadata changes, such as a newly deprecated package.
       - name: Check the lockfile matches the manifests
         run: |
           pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
-          "$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin/pnpm" install --lockfile-only --ignore-scripts
-          if ! git diff --exit-code -- pnpm-lock.yaml; then
+          if ! "$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin/pnpm" install --frozen-lockfile --lockfile-only --ignore-scripts; then
             echo "::error::pnpm-lock.yaml does not match the manifests. Run pnpm install --lockfile-only and fold the change into the commit that broke it."
             exit 1
           fi
