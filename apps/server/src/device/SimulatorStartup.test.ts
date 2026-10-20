@@ -1,3 +1,4 @@
+import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
 import { DeviceId, LOCAL_DEVICE_HOST_ID, ThreadId } from "@t3tools/contracts";
@@ -46,6 +47,9 @@ const fixture = Effect.fn("simulatorStartupFixture")(function* (
   };
   const calls: string[] = [];
   const ready: DeviceHost.DeviceHostReady = {
+get devices() {
+      return makeDeviceHubOperations({ hostId: LOCAL_DEVICE_HOST_ID, origin: ready.hub.origin, http: http, run: ready.run, androidAvailable: Effect.succeed(true) });
+    },
     nodePath: "/node",
     hub: { origin: "http://simulator.test" },
     helpers: { serveSimAxSettings: null, serveSimCli: null },

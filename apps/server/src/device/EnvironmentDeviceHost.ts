@@ -296,6 +296,13 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   };
   const ready: DeviceHost.DeviceHostReady = {
     remote,
+    devices: {
+      list: Effect.die("Typed environment operations are required"),
+      boot: () => Effect.die("Typed environment operations are required"),
+      attach: () => Effect.die("Typed environment operations are required"),
+      shutdown: () => Effect.die("Typed environment operations are required"),
+      screenshot: () => Effect.die("Typed environment operations are required"),
+    },
     agentSessionNamespace: sourceId,
     nodePath: "",
     hub: {

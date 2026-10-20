@@ -1,3 +1,4 @@
+import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { it, expect } from "@effect/vitest";
 import {
@@ -319,6 +320,9 @@ const fixture = Effect.gen(function* () {
     entryPath: "/driver",
   };
   const ready: DeviceHost.DeviceHostAgentReady = {
+get devices() {
+      return makeDeviceHubOperations({ hostId: LOCAL_DEVICE_HOST_ID, origin: ready.hub.origin, http: http, run: ready.run, androidAvailable: Effect.succeed(true) });
+    },
     nodePath: process.execPath,
     hub: { origin: "http://hub.test" },
     helpers: { serveSimCli: null, serveSimAxSettings: null },

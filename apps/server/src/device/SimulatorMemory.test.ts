@@ -26,6 +26,13 @@ const fixture = (installed = true, supported = true) => {
     installFails: false,
   };
   const ready: DeviceHostReady = {
+devices: {
+      list: Effect.die("Typed environment operations are required"),
+      boot: () => Effect.die("Typed environment operations are required"),
+      attach: () => Effect.die("Typed environment operations are required"),
+      shutdown: () => Effect.die("Typed environment operations are required"),
+      screenshot: () => Effect.die("Typed environment operations are required"),
+    },
     nodePath: "/node",
     hub: { origin: "http://simulator.test" },
     helpers: { serveSimCli: null, serveSimAxSettings: null },
