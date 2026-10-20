@@ -165,6 +165,92 @@ function openPullRequests(repository: string): ReadonlyArray<OpenPullRequest> {
   );
 }
 
+/**
+ * Writes the hold status for `holding` on open pull requests whose status differs, and success on
+ * each holding candidate. Statuses are read before `decide` reads workflow runs: a status written
+ * after this read was written after its candidate's Fork CI run existed, so `decide` sees that
+ * run and keeps the hold instead of overwriting it.
+ */
+export function updateLandingHold(
+  repository: string,
+  decide: () => ReadonlyArray<HoldingCandidate>,
+  options: { readonly dryRun?: boolean } = {},
+): ReadonlyArray<HoldingCandidate> {
+  const pulls = openPullRequests(repository);
+  const holding = decide();
+  const status = pullRequestStatus(holding);
+  const writes: Array<{ sha: string; label: string; status: CommitStatus }> = [
+    ...holding.map((candidate) => ({
+      sha: candidate.sha,
+      label: candidate.branch,
+      status: {
+        state: "success",
+        description: "Intake candidate",
+        target_url: candidate.url,
+      } as const,
+    })),
+    ...pulls
+      .filter(
+        (pull) =>
+          pull.current?.state !== status.state.toUpperCase() ||
+          pull.current.description !== status.description,
+      )
+      .map((pull) => ({ sha: pull.headRefOid, label: `#${pull.number}`, status })),
+  ];
+  console.log(
+    holding.length === 0
+      ? "No intake candidate is landing."
+      : `Holding for ${holding.map((candidate) => `${candidate.branch} at ${candidate.sha.slice(0, 10)}`).join(", ")}.`,
+  );
+  for (const write of writes) {
+    console.log(
+      `- ${write.label} ${write.sha.slice(0, 10)}: ${write.status.state}, ${write.status.description}`,
+    );
+    if (options.dryRun) continue;
+    gh([
+      "api",
+      "-X",
+      "POST",
+      `repos/${repository}/statuses/${write.sha}`,
+      "-f",
+      `context=${HOLD_CONTEXT}`,
+      "-f",
+      `state=${write.status.state}`,
+      "-f",
+      `description=${write.status.description}`,
+      ...(write.status.target_url ? ["-f", `target_url=${write.status.target_url}`] : []),
+    ]);
+  }
+  return holding;
+}
+
+/**
+ * Holds open pull requests for an intake candidate just pushed, without waiting for this
+ * workflow's next run to get a runner. Waits up to two minutes for the candidate's Fork CI run to
+ * exist first, so a workflow run cannot read the new status and decide from runs without it.
+ */
+export function holdForPushedCandidate(
+  repository: string,
+  branch: string,
+  sha: string,
+  options: { readonly dryRun?: boolean } = {},
+): boolean {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const url = gh([
+      "api",
+      `repos/${repository}/actions/workflows/fork-ci.yml/runs?head_sha=${sha}&event=push`,
+      "--jq",
+      ".workflow_runs[0].html_url // empty",
+    ]).trim();
+    if (url) {
+      updateLandingHold(repository, () => [{ branch, sha, url }], options);
+      return true;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5_000);
+  }
+  return false;
+}
+
 function main() {
   const { values } = NodeUtil.parseArgs({
     options: {
@@ -185,54 +271,11 @@ function main() {
         gh(["api", `repos/${repository}/actions/workflows/${workflow}/runs?per_page=100`]),
       ) as { workflow_runs: Array<WorkflowRun> }
     ).workflow_runs;
-  const holding = holdingCandidates(
-    runs("fork-ci.yml"),
-    runs("promote-upstream-intake.yml"),
-    Date.now(),
+  updateLandingHold(
+    repository,
+    () => holdingCandidates(runs("fork-ci.yml"), runs("promote-upstream-intake.yml"), Date.now()),
+    { dryRun: values["dry-run"] === true },
   );
-  const status = pullRequestStatus(holding);
-  const writes: Array<{ sha: string; label: string; status: CommitStatus }> = [
-    ...holding.map((candidate) => ({
-      sha: candidate.sha,
-      label: candidate.branch,
-      status: {
-        state: "success",
-        description: "Intake candidate",
-        target_url: candidate.url,
-      } as const,
-    })),
-    ...openPullRequests(repository)
-      .filter(
-        (pull) =>
-          pull.current?.state !== status.state.toUpperCase() ||
-          pull.current.description !== status.description,
-      )
-      .map((pull) => ({ sha: pull.headRefOid, label: `#${pull.number}`, status })),
-  ];
-  console.log(
-    holding.length === 0
-      ? "No intake candidate is landing."
-      : `Holding for ${holding.map((candidate) => `${candidate.branch} at ${candidate.sha.slice(0, 10)}`).join(", ")}.`,
-  );
-  for (const write of writes) {
-    console.log(
-      `- ${write.label} ${write.sha.slice(0, 10)}: ${write.status.state}, ${write.status.description}`,
-    );
-    if (values["dry-run"]) continue;
-    gh([
-      "api",
-      "-X",
-      "POST",
-      `repos/${repository}/statuses/${write.sha}`,
-      "-f",
-      `context=${HOLD_CONTEXT}`,
-      "-f",
-      `state=${write.status.state}`,
-      "-f",
-      `description=${write.status.description}`,
-      ...(write.status.target_url ? ["-f", `target_url=${write.status.target_url}`] : []),
-    ]);
-  }
 }
 
 if (
