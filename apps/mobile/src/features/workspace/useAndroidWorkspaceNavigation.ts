@@ -4,6 +4,7 @@ import { BackHandler, Keyboard, Platform } from "react-native";
 import {
   androidWorkspaceBackReturnsToPage,
   resetAndroidWorkspace,
+  returnToAndroidWorkspaceList,
 } from "../../lib/android-workspace-navigation";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import type { WorkspaceTab } from "./workspace-tabs-state";
@@ -25,20 +26,31 @@ export function useWorkspaceListNavigation(tab: WorkspaceTab) {
   }, [navigation, dispatch, tab]);
 }
 
-export function useAndroidWorkspaceBack(tab: WorkspaceTab) {
+export function useWorkspaceBackNavigation(tab: WorkspaceTab) {
+  const navigation = useNavigation();
   const dispatch = useWorkspaceTabs()?.dispatch;
   const returnToList = useWorkspaceListNavigation(tab);
+  return useCallback(() => {
+    if (Platform.OS === "android") {
+      returnToAndroidWorkspaceList(navigation, () => dispatch?.({ type: "select", tab }));
+    } else returnToList();
+  }, [navigation, dispatch, tab, returnToList]);
+}
+
+export function useAndroidWorkspaceBack(tab: WorkspaceTab) {
+  const dispatch = useWorkspaceTabs()?.dispatch;
+  const goBack = useWorkspaceBackNavigation(tab);
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "android") return;
       dispatch?.({ type: "select", tab });
       const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
         if (Keyboard.isVisible()) Keyboard.dismiss();
-        else returnToList();
+        else goBack();
         return true;
       });
       return () => subscription.remove();
-    }, [returnToList, dispatch, tab]),
+    }, [goBack, dispatch, tab]),
   );
-  return returnToList;
+  return goBack;
 }

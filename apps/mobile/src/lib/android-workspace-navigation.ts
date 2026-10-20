@@ -16,6 +16,15 @@ interface WorkspaceNavigation {
   readonly getRootState?: () => NavigationState | undefined;
 }
 
+function androidWorkspaceBackReturnsToPreviousPage(state: NavigationState) {
+  const current = state.routes[state.index];
+  const params = current?.params as ReactNavigation.RootParamList["Thread"] | undefined;
+  return (
+    androidWorkspaceBackReturnsToPage(state) &&
+    !(current?.name === "Thread" && params !== undefined && parentThreadIsBelow(state, params))
+  );
+}
+
 export function androidWorkspaceNavigationState(
   state: NavigationState,
   destination?: AndroidWorkspaceDestination,
@@ -76,6 +85,29 @@ export function resetAndroidWorkspace(
     payload: androidWorkspaceNavigationState(state, destination, reviewers),
     target: state.key,
   });
+}
+
+export function parentThreadIsBelow(
+  state: NavigationState,
+  parent: ReactNavigation.RootParamList["Thread"],
+) {
+  const previous = state.routes[state.index - 1];
+  const params = previous?.params as ReactNavigation.RootParamList["Thread"] | undefined;
+  return (
+    previous?.name === "Thread" &&
+    params?.environmentId === parent.environmentId &&
+    params.threadId === parent.threadId
+  );
+}
+
+export function returnToAndroidWorkspaceList(
+  navigation: WorkspaceNavigation & { readonly goBack: () => void },
+  selectTab: () => void,
+) {
+  const state = navigation.getState();
+  if (state && androidWorkspaceBackReturnsToPreviousPage(state)) return navigation.goBack();
+  selectTab();
+  resetAndroidWorkspace(navigation);
 }
 
 // In the split view these destinations swap the detail pane beside the sidebar instead of
