@@ -3140,16 +3140,16 @@ features:
       retire_when: Upstream preserves project scope across sidebar state and every new-thread entry point.
 
   - id: provider-auto-default
-    title: Start new threads in Auto where the provider reviews actions
+    title: Apply an Auto default only where the provider reviews actions
     status: maintained
     prs: [928, 930]
     invariants:
-      - The built-in default permission mode for new threads is Auto. Configs that never chose a mode, including those that kept the old Full access default, use it.
+      - The built-in default permission mode for new threads stays Full access, as upstream; Auto as the default is the user's choice.
       - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, and Grok report one. An unloaded snapshot or an older server counts as no reviewer.
       - Web and mobile drafts follow their selected provider until the user picks a mode; the server's bootstrap thread uses the same resolution. Picking Auto for one thread keeps Auto on every provider.
       - The provider canary's auto scenario fails a release whose Auto turn asks for approval of a routine workspace write, or whose provider does not report applying Auto; providers without reviewsAutoMode skip it.
       - provider.turn.completed reports approvalRequests, the command, file, and permission approvals the turn raised, alongside its runtimeMode.
-    rationale: Auto is the safer default where a reviewer approves routine actions, but on a provider without one Auto asks about every action, which would stall threads nobody is watching.
+    rationale: Auto is the safer default where a reviewer approves routine actions, but on a provider without one Auto asks about every action, which would stall threads nobody is watching. Making Auto the built-in default for everyone was withdrawn before release; approval counts from opted-in users are meant to inform that decision.
     implementation_paths:
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
       - apps/server/scripts/verify-provider-live.ts
@@ -3160,7 +3160,6 @@ features:
       - apps/web/src/components/ChatView.tsx
       - packages/contracts/src/providerPolicy.ts
       - packages/contracts/src/server.ts
-      - packages/contracts/src/settings.ts
       - packages/provider-core/src/server/snapshotProbe.ts
       - packages/provider-grok/src/server/status.ts
     upstream_paths:
@@ -3168,14 +3167,13 @@ features:
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/web/src/components/ChatView.tsx
       - packages/contracts/src/providerPolicy.ts
-      - packages/contracts/src/settings.ts
     tests:
       - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream defaults new threads to Auto on providers with their own reviewer, or styal returns to a Full access default.
+      retire_when: Upstream starts new threads in Full access on providers without their own reviewer when Auto is the default.
 
   - id: provider-auto-updates
     title: styal managed updates install canary-verified provider versions

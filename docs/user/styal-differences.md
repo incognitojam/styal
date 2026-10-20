@@ -65,10 +65,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision adb0420](https://github.com/pingdotgg/t3code/tree/adb04202b25c1c45255e76be9f03f0b346b9c5c4).
   [Send while the agent is working](./composer.md#send-while-the-agent-is-working).
 
-- **New threads default to Auto.** Claude, Codex, and Grok threads start in **Auto**, where the
-  provider's own reviewer approves routine actions and asks about the rest. Providers without
-  automatic review start in **Full access**. A default you chose yourself still applies. T3 Code
-  starts new threads in **Full access** as of
+- **An Auto default fits each provider.** With **Auto** as the default for new threads, Claude,
+  Codex, and Grok threads start in **Auto**, where the provider's own reviewer approves routine
+  actions, and providers without automatic review start in **Full access** instead of asking about
+  every action. In T3 Code an Auto default makes those providers ask, as of
   [revision 30afc56](https://github.com/pingdotgg/t3code/tree/30afc56076c86580d5d913897280bea660d44c79).
   [Permission modes](./permission-modes.md).
 

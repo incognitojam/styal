@@ -133,9 +133,9 @@ describe("ClientSettings rich text composer", () => {
 });
 
 describe("ServerSettings default permissions", () => {
-  it("defaults settings that never chose a mode to Auto", () => {
-    expect(decodeServerSettings({}).defaultRuntimeMode).toBe("auto");
-    expect(DEFAULT_SERVER_SETTINGS.defaultRuntimeMode).toBe("auto");
+  it("keeps full access for settings saved before a default was configured", () => {
+    expect(decodeServerSettings({}).defaultRuntimeMode).toBe("full-access");
+    expect(DEFAULT_SERVER_SETTINGS.defaultRuntimeMode).toBe("full-access");
   });
 
   it("starts a default of Auto in Full access when the provider has no Auto reviewer", () => {
