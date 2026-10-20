@@ -29,7 +29,7 @@ async function readProjectFileContents(
     relativePath,
     result._tag === "Success" ? result.value : null,
   );
-  return data === null || data.truncated ? null : data.contents;
+  return data === null || data.exists === false || data.truncated ? null : data.contents;
 }
 
 /**

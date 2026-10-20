@@ -24,7 +24,7 @@ export function projectConfigRoot(project: { readonly workspaceRoot: string }): 
 }
 
 const contentsOf = (data: ProjectReadFileResult | null) =>
-  data === null || data.truncated ? null : data.contents;
+  data === null || data.exists === false || data.truncated ? null : data.contents;
 
 /**
  * The project's configuration (styal.json, or a legacy t3.json without one),
@@ -52,7 +52,7 @@ export function useProjectRootConfig(
     canRead
       ? projectEnvironment.readFile({
           environmentId: project.environmentId,
-          input: { cwd: projectConfigRoot(project), relativePath },
+          input: { cwd: projectConfigRoot(project), relativePath, allowMissing: true },
         })
       : null;
   const styalQuery = useEnvironmentQuery(readFile(STYAL_PROJECT_FILE_NAME));

@@ -45,7 +45,7 @@ const memberProjectFilesAtom = Atom.family((membersKey: string) => {
       const data =
         get(optimisticFileAtom(environmentId, workspaceRoot, relativePath))?.data ??
         Option.getOrNull(AsyncResult.value(result));
-      return data === null || data.truncated ? null : data.contents;
+      return data === null || data.exists === false || data.truncated ? null : data.contents;
     };
     const files = new Map<string, ProjectConfig | null>();
     for (const [environmentId, workspaceRoot, physicalProjectKey] of members) {
