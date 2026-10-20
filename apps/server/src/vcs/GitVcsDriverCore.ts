@@ -2947,6 +2947,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       cwd,
       [
         ...tempIndexConfig,
+        // Avoid redundant tracked-entry pathspec matching in this disposable index.
+        "-c",
+        "core.preloadIndex=false",
         "--literal-pathspecs",
         "add",
         "--intent-to-add",
