@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DeviceHeldError,
+  DeviceBootError,
   DeviceHostUnavailableError,
   DeviceId,
   EnvironmentId,
@@ -127,6 +128,46 @@ const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-device-toolkit-test-" })),
   Layer.provide(NodeServices.layer),
 );
+
+it.effect("returns the complete bounded launch diagnostics to the agent", () => {
+  const diagnostics =
+    "Emulator exited with code 1.\nTry manually: emulator -avd TestPhone\n" + "x".repeat(1_930);
+  const failure = new DeviceBootError({
+    hostId: "local",
+    deviceId: "UDID-1",
+    reason: "launch_failed",
+    diagnostics: diagnostics.slice(0, 2_000),
+    cause: { ok: false, error: diagnostics },
+  });
+  const failedDevices = Layer.mock(DeviceService.DeviceService)({
+    list: Effect.succeed(state),
+    agentTarget: () => Effect.succeed([]),
+    open: () => Effect.fail(failure),
+  });
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({ name: "device_open", arguments: { platform: "ios" } })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(["device"])),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([{ type: "text", text: failure.message }]);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      McpHttpServer.layerDeviceToolkit.pipe(
+        Layer.provide(AnalyticsService.AnalyticsService.layerTest),
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(failedDevices),
+        Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-boot-error-test-" })),
+        Layer.provide(NodeServices.layer),
+      ),
+    ),
+  );
+});
 
 it.effect("registers the device tools and returns the screenshot as image content", () =>
   Effect.scoped(

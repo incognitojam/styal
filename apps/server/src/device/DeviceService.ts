@@ -105,13 +105,18 @@ const HubDevice = Schema.Struct({
 const HubDeviceList = Schema.Struct({
   simulators: Schema.Array(HubDevice),
   emulators: Schema.Array(HubDevice),
-  errors: Schema.optional(Schema.Array(Schema.Struct({ message: Schema.String }))),
+  errors: Schema.optional(
+    Schema.Array(Schema.Struct({ message: Schema.String, error: Schema.optional(Schema.String) })),
+  ),
 });
 const HubActionResult = Schema.Struct({
   ok: Schema.Boolean,
   id: Schema.optional(Schema.String),
   serial: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String),
+  errors: Schema.optional(
+    Schema.Array(Schema.Struct({ message: Schema.String, error: Schema.optional(Schema.String) })),
+  ),
 });
 
 export interface DeviceScreenshot {
@@ -499,10 +504,19 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         }
       }
     }
+    const warnings = list.errors?.filter(
+      (error) =>
+        // CoreSimulator can retain deleted devices; their optional usage timestamps are absent.
+        !(
+          error.message.startsWith("[apple-utils] Failed to read CoreSimulator plist at ") &&
+          /\/CoreSimulator\/Devices\/[^/]+\/device\.plist:$/.test(error.message) &&
+          /(?:^Error:\s*ENOENT:|\bcode:\s*['"]ENOENT['"])/.test(error.error ?? "")
+        ),
+    );
     return {
       devices,
       externalSessions: [],
-      detail: list.errors?.map((error) => error.message).join("\n") || undefined,
+      detail: warnings?.map((error) => error.message).join("\n") || undefined,
     };
   });
 
@@ -704,16 +718,29 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       Effect.flatMap((request) => hubJson(request, HubActionResult, "boot", BOOT_TIMEOUT)),
     );
     if (!result.ok) {
+      // Keep the hub's launch command and nested failure available to agents for recovery.
+      const diagnostics = [
+        result.error,
+        ...(result.errors ?? []).flatMap((error) => [error.message, error.error]),
+      ]
+        .filter((text) => text?.trim())
+        .join("\n\n");
       return yield* new DeviceBootError({
         hostId: ready.hostId,
         deviceId: device.id,
         reason: /insufficient.*(?:disk|space)|not enough.*(?:disk|space)|no space left/i.test(
-          result.error ?? "",
+          diagnostics,
         )
           ? "disk_space"
-          : /timed? out|timeout/i.test(result.error ?? "")
+          : /timed? out|timeout/i.test(diagnostics)
             ? "timeout"
             : "launch_failed",
+        ...(diagnostics
+          ? {
+              diagnostics:
+                diagnostics.length > 2_000 ? `${diagnostics.slice(0, 1_999)}…` : diagnostics,
+            }
+          : {}),
         cause: result,
       });
     }
