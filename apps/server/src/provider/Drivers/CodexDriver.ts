@@ -73,7 +73,7 @@ import {
   materializeCodexShadowHome,
   resolveCodexHomeLayout,
 } from "./CodexHomeLayout.ts";
-import { makeCodexPinnedInstall } from "./codexPinnedInstall.ts";
+import { codexSelfUpdaterActive, makeCodexPinnedInstall } from "./codexPinnedInstall.ts";
 import { makeManagedCodexProvider } from "./CodexManagedProvider.ts";
 import { codexUsageReader } from "./codexUsage.ts";
 import * as CodexInstallation from "../CodexInstallation.ts";
@@ -104,6 +104,7 @@ function makeCodexMaintenanceResolver(sharedHomePath: string) {
       isCommandPath: isCodexStandaloneCommandPath,
       env: { CODEX_HOME: sharedHomePath },
       pinned: makeCodexPinnedInstall(sharedHomePath),
+      selfUpdaterActive: () => codexSelfUpdaterActive(sharedHomePath),
     },
   });
 }

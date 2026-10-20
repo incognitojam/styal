@@ -92,6 +92,8 @@ function providerInventoryProperties(input: {
         ? verifiedVersion
         : null,
     autoUpdateBusySkips: input.busySkips,
+    // Whether the provider's own updater still owns the install; null when unknown or undetectable.
+    selfUpdaterActive: input.capabilities.selfUpdaterActive ?? null,
   };
 }
 
@@ -176,6 +178,8 @@ export function updateCommandFailureReason(result: {
 
 export interface ProviderUpdateStart {
   readonly source: "background" | "manual";
+  /** A background reinstall of the installed version that hands updates to styal. */
+  readonly takeover: boolean;
   readonly provider: ServerProvider["driver"];
   readonly instanceId: ProviderInstanceId;
   readonly capabilities: Pick<ProviderMaintenanceCapabilities, "update">;
@@ -199,6 +203,7 @@ function providerUpdateFinishedProperties(
         : "failed";
   return {
     source: input.source,
+    takeover: input.takeover,
     driver: input.provider,
     installerKind: providerInstallerKind(input.capabilities),
     fromVersion: stableProviderVersion(input.provider, input.fromVersion),

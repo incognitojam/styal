@@ -68,7 +68,36 @@ const verified = manifestWith([{ version: "2.0.0", package: "@openai/codex", sty
 
 describe("decideProviderAutoUpdate", () => {
   it("installs the verified version when the installer can pin it", () => {
-    assert.strictEqual(decideProviderAutoUpdate(codex, "2.0.0"), "2.0.0");
+    const upgrade = { version: "2.0.0", takeover: false };
+    assert.deepStrictEqual(decideProviderAutoUpdate(codex, "2.0.0"), upgrade);
+    // Behind is an upgrade whether or not the provider's own updater is on.
+    assert.deepStrictEqual(decideProviderAutoUpdate(codex, "2.0.0", true), upgrade);
+  });
+
+  it("takes over an install on the verified version while its own updater is active", () => {
+    const current = { ...codex, version: "2.0.0" };
+    assert.deepStrictEqual(decideProviderAutoUpdate(current, "2.0.0", true), {
+      version: "2.0.0",
+      takeover: true,
+    });
+    // Updater off, unknown, or not detectable for this installer.
+    for (const active of [false, null, undefined]) {
+      assert.strictEqual(decideProviderAutoUpdate(current, "2.0.0", active), null);
+    }
+    // Never moved back, even to take over.
+    assert.strictEqual(
+      decideProviderAutoUpdate({ ...codex, version: "2.1.0" }, "2.0.0", true),
+      null,
+    );
+    // Only an installer that can pin the version takes over.
+    assert.strictEqual(
+      decideProviderAutoUpdate(
+        { ...current, versionAdvisory: { ...codex.versionAdvisory!, canInstallVersion: false } },
+        "2.0.0",
+        true,
+      ),
+      null,
+    );
   });
 
   it("leaves current, newer, unknown, disabled, unpinnable and manual installs alone", () => {
@@ -127,6 +156,11 @@ interface Fixture {
   readonly manifestAgeMs?: number | null;
   /** The provider as a fresh health check inside the lock sees it. */
   readonly refreshed?: ServerProvider;
+  /** The provider every pass sees. */
+  readonly provider?: ServerProvider;
+  /** Whether the provider's own updater is active, per cached and per fresh capability read. */
+  readonly selfUpdaterActive?: boolean | null;
+  readonly freshSelfUpdaterActive?: boolean | null;
   readonly installs: Array<unknown>;
 }
 
@@ -139,19 +173,25 @@ const testLayer = (input: Fixture) => {
     Layer.succeed(ServerConfig, { devUrl: undefined } as never),
     ServerSettingsService.layerTest(input.settings ?? {}),
     Layer.mock(ProviderRegistry)({
-      getProviders: Effect.succeed([codex]),
+      getProviders: Effect.succeed([input.provider ?? codex]),
       // The check inside the lock must not depend on the update advisory,
       // which a live health refresh did not carry.
       refreshInstance: () => {
-        const { versionAdvisory: _advisory, ...refreshed } = input.refreshed ?? codex;
+        const { versionAdvisory: _advisory, ...refreshed } =
+          input.refreshed ?? input.provider ?? codex;
         return Effect.succeed([refreshed]);
       },
-      getProviderMaintenanceCapabilitiesForInstance: () =>
-        Effect.succeed({
+      getProviderMaintenanceCapabilitiesForInstance: (_instanceId, _driver, options) => {
+        const selfUpdaterActive = options?.fresh
+          ? input.freshSelfUpdaterActive
+          : input.selfUpdaterActive;
+        return Effect.succeed({
           provider: codex.driver,
           packageName: "@openai/codex",
           update: null,
-        } satisfies ProviderMaintenanceCapabilities),
+          ...(selfUpdaterActive === undefined ? {} : { selfUpdaterActive }),
+        } satisfies ProviderMaintenanceCapabilities);
+      },
     }),
     Layer.mock(ModelManifest.ModelManifest)({
       refresh: Effect.succeed(input.manifest ?? verified),
@@ -191,7 +231,11 @@ const testLayer = (input: Fixture) => {
           if (target.autoUpdate && !(yield* target.autoUpdate.shouldStart)) {
             return { providers: [codex] };
           }
-          input.installs.push({ instanceId: target.instanceId, version: target.targetVersion });
+          input.installs.push({
+            instanceId: target.instanceId,
+            version: target.targetVersion,
+            ...(target.autoUpdate?.takeover ? { takeover: true } : {}),
+          });
           return {
             providers: [
               {
@@ -340,6 +384,50 @@ describe("ProviderAutoUpdater.runPass", () => {
     return runPassWith({ refreshed: { ...codex, version: "2.0.0" }, installs }).pipe(
       Effect.tap(() => Effect.sync(() => assert.deepStrictEqual(installs, []))),
     );
+  });
+
+  it.effect("takes over an install already on the verified version once per window", () => {
+    const installs: Array<unknown> = [];
+    return Effect.gen(function* () {
+      const updater = yield* make;
+      yield* updater.runPass;
+      yield* updater.runPass;
+      assert.deepStrictEqual(installs, [{ instanceId: "codex", version: "2.0.0", takeover: true }]);
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          provider: { ...codex, version: "2.0.0" },
+          selfUpdaterActive: true,
+          freshSelfUpdaterActive: true,
+          installs,
+        }),
+      ),
+    );
+  });
+
+  it.effect("drops a takeover once the provider's own updater is off or the version moved", () => {
+    const installs: Array<unknown> = [];
+    const current = { ...codex, version: "2.0.0" };
+    return Effect.gen(function* () {
+      // Already handed over: nothing to do.
+      yield* runPassWith({ provider: current, selfUpdaterActive: false, installs });
+      // A cached read still saw the updater; the fresh one under the lock does not.
+      yield* runPassWith({
+        provider: current,
+        selfUpdaterActive: true,
+        freshSelfUpdaterActive: false,
+        installs,
+      });
+      // Codex's own updater moved past the verified version meanwhile.
+      yield* runPassWith({
+        provider: current,
+        refreshed: { ...codex, version: "2.1.0" },
+        selfUpdaterActive: true,
+        freshSelfUpdaterActive: true,
+        installs,
+      });
+      assert.deepStrictEqual(installs, []);
+    });
   });
 
   it.effect("does nothing without a recently fetched manifest", () => {

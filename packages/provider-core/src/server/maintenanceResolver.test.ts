@@ -1030,6 +1030,23 @@ it("pins a proven native install through its own installer on POSIX only", () =>
       }).canInstallVersion,
     ).toBe(true);
 
+    // A pinnable install reports whether its own updater is on when it can tell.
+    expect(native.selfUpdaterActive).toBeUndefined();
+    const detected = yield* resolvePackageManagedProviderMaintenance(
+      {
+        ...definition,
+        nativeUpdate: { ...definition.nativeUpdate, selfUpdaterActive: () => Effect.succeed(true) },
+      },
+      {
+        binaryPath: "native-package-tool",
+        resolvedCommandPath: visible,
+        realCommandPath: visible,
+        env: {},
+        platform: "darwin",
+      },
+    );
+    expect(detected.selfUpdaterActive).toBe(true);
+
     // Windows native installs cannot be held to a version.
     const windows = yield* resolve("win32", "C:/Users/Developer/.local/bin/native-package-tool");
     expect(windows.update?.args).toEqual(["update"]);

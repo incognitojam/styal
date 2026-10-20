@@ -6,7 +6,9 @@
  * release (`autoUpdates` in the manifest's compatibility policy), read from a
  * copy of the manifest fetched from `main` in the last two days. Only
  * installers that can pin an exact version take part; native self-updaters
- * and Homebrew cannot be held to the verified version.
+ * and Homebrew cannot be held to the verified version. A pinnable native
+ * install whose own updater is still on is reinstalled at the verified
+ * version even when it already has it, which turns that updater off.
  *
  * A CLI is skipped while a thread whose provider instance runs it is
  * preparing, starting, running or waiting on the user; threads on other CLIs
@@ -47,11 +49,26 @@ const PASS_INTERVAL = Duration.minutes(30);
 /** One attempt per instance and version in this window, so a failing install is not retried every pass. */
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1_000;
 
-/** The version to install on `provider`, or null to leave it alone. */
+export interface ProviderAutoUpdateDecision {
+  readonly version: string;
+  /**
+   * Reinstalls the version already installed, so the provider's own updater
+   * stops and styal takes over its updates.
+   */
+  readonly takeover: boolean;
+}
+
+/**
+ * What to install on `provider`, or null to leave it alone. A provider behind
+ * the tested version moves to it. One already on it whose own updater is
+ * still active (`selfUpdaterActive`) gets it again as a pinned install, which
+ * turns that updater off. Nothing is ever moved back.
+ */
 export function decideProviderAutoUpdate(
   provider: ServerProvider,
   testedVersion: string | null,
-): string | null {
+  selfUpdaterActive?: boolean | null,
+): ProviderAutoUpdateDecision | null {
   // A provider that already fails its health check (often signed out) is left
   // alone: the update could not be verified and would be reported as failing.
   if (
@@ -64,7 +81,10 @@ export function decideProviderAutoUpdate(
   const current = stableProviderVersion(provider.driver, provider.version);
   const advisory = provider.versionAdvisory;
   if (current === null || !advisory?.canUpdate || !advisory.canInstallVersion) return null;
-  return compareSemverVersions(current, testedVersion) < 0 ? testedVersion : null;
+  const order = compareSemverVersions(current, testedVersion);
+  if (order < 0) return { version: testedVersion, takeover: false };
+  if (order === 0 && selfUpdaterActive === true) return { version: testedVersion, takeover: true };
+  return null;
 }
 
 /**
@@ -171,30 +191,29 @@ export const make = Effect.gen(function* () {
       Effect.catchCause(() => Effect.succeed("thread activity could not be read")),
     );
 
+  const maintenanceFor = (provider: ServerProvider, options?: { readonly fresh?: boolean }) =>
+    providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
+      provider.instanceId,
+      provider.driver,
+      options,
+    );
+
   const testedVersionFor = Effect.fn("ProviderAutoUpdater.testedVersionFor")(function* (
     provider: ServerProvider,
+    packageName: string | null,
   ) {
     const remote = yield* manifestService.remote;
     const now = yield* Clock.currentTimeMillis;
-    const capabilities = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
-      provider.instanceId,
-      provider.driver,
-    );
-    return resolveRecentProviderAutoUpdateVersion(
-      remote,
-      now,
-      provider.driver,
-      capabilities.packageName,
-    );
+    return resolveRecentProviderAutoUpdateVersion(remote, now, provider.driver, packageName);
   });
 
   // Runs under the machine-wide install lock, with new turns on this CLI held.
   // A fresh health check sees a manual update or another server's install
   // that finished while this one waited, or another instance that shares the
-  // same CLI and was already updated.
+  // same CLI and was already updated or taken over.
   const shouldStart = (
     provider: ServerProvider,
-    targetVersion: string,
+    decision: ProviderAutoUpdateDecision,
     target: ProviderInstallTarget,
   ) =>
     Effect.gen(function* () {
@@ -206,15 +225,19 @@ export const make = Effect.gen(function* () {
       const providers = yield* providerRegistry.refreshInstance(provider.instanceId);
       const current = providers.find((candidate) => candidate.instanceId === provider.instanceId);
       const version = stableProviderVersion(provider.driver, current?.version);
+      const order = version === null ? null : compareSemverVersions(version, decision.version);
       if (
         !current?.enabled ||
         !current.installed ||
         current.status === "error" ||
-        version === null ||
-        compareSemverVersions(version, targetVersion) >= 0
+        order === null ||
+        (decision.takeover ? order !== 0 : order >= 0)
       )
         return yield* skip("the provider is already updated or no longer healthy");
-      if ((yield* testedVersionFor(current)) !== targetVersion)
+      const capabilities = yield* maintenanceFor(current, { fresh: decision.takeover });
+      if (decision.takeover && capabilities.selfUpdaterActive !== true)
+        return yield* skip("the provider's own updater is no longer active");
+      if ((yield* testedVersionFor(current, capabilities.packageName)) !== decision.version)
         return yield* skip("the verified version changed");
       // Last, so a turn started during the checks above is still seen.
       if (!(yield* isEnabled)) return yield* skip("automatic updates were turned off");
@@ -237,8 +260,15 @@ export const make = Effect.gen(function* () {
     yield* manifestService.refresh;
     const providers = yield* providerRegistry.getProviders;
     for (const provider of providers) {
-      const targetVersion = decideProviderAutoUpdate(provider, yield* testedVersionFor(provider));
-      if (targetVersion === null) continue;
+      const capabilities = yield* maintenanceFor(provider);
+      const decision = decideProviderAutoUpdate(
+        provider,
+        yield* testedVersionFor(provider, capabilities.packageName),
+        capabilities.selfUpdaterActive,
+      );
+      if (decision === null) continue;
+      const { version: targetVersion, takeover } = decision;
+      // A takeover counts as an attempt at its version like any update.
       const attemptKey = `${provider.instanceId}@${targetVersion}`;
       const now = yield* Clock.currentTimeMillis;
       const previous = attemptedAt.get(attemptKey);
@@ -259,6 +289,7 @@ export const make = Effect.gen(function* () {
         instanceId: provider.instanceId,
         fromVersion: provider.version,
         toVersion: targetVersion,
+        takeover,
       });
       // The runner publishes the update state, so clients show a background
       // update the same way as one they started.
@@ -267,7 +298,7 @@ export const make = Effect.gen(function* () {
           provider: provider.driver,
           instanceId: provider.instanceId,
           targetVersion,
-          autoUpdate: { shouldStart: shouldStart(provider, targetVersion, target) },
+          autoUpdate: { shouldStart: shouldStart(provider, decision, target), takeover },
         })
         .pipe(
           Effect.flatMap((result) => {

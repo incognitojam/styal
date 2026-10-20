@@ -49,6 +49,13 @@ const customClaude: ServerProvider = {
   compatibilityAdvisory: { ...codex.compatibilityAdvisory!, verifiedVersion: "2.0.0" },
 };
 
+// A standalone Codex install whose own updater is still on.
+const nativeCodex: ServerProvider = {
+  ...codex,
+  instanceId: ProviderInstanceId.make("codex_synthetic_native"),
+  version: "2.0.0",
+};
+
 const unavailable: ServerProvider = {
   ...codex,
   instanceId: ProviderInstanceId.make("synthetic_missing_driver"),
@@ -63,6 +70,23 @@ const npmCapabilities = makeProviderMaintenanceCapabilities({
   updateArgs: ["install", "-g", "--prefix", "/synthetic/prefix", "@openai/codex@latest"],
   updateLockKey: "npm-global:/synthetic/prefix",
 });
+
+const nativeCapabilities = {
+  ...makeProviderMaintenanceCapabilities({
+    provider: codexDriver,
+    packageName: "@openai/codex",
+    updateExecutable: "/synthetic/.local/bin/codex",
+    updateArgs: ["update"],
+    updateLockKey: "codex-native",
+  }),
+  pinnedUpdate: (version: string) => ({
+    command: `install ${version}`,
+    executable: "/bin/sh",
+    args: ["install", version],
+    lockKey: "codex-native",
+  }),
+  selfUpdaterActive: true,
+};
 
 it("names the installer that owns the executable", () => {
   const withLock = (updateLockKey: string) =>
@@ -121,6 +145,26 @@ it.effect("reports each available instance after startup settles, then daily", (
         testedVersion: "2.0.0",
         autoUpdateTargetVersion: "2.0.0",
         autoUpdateBusySkips: busy,
+        selfUpdaterActive: null,
+      },
+    },
+    {
+      event: "provider.inventory",
+      properties: {
+        driver: "codex",
+        instance: "custom",
+        installed: true,
+        enabled: true,
+        status: "ready",
+        version: "2.0.0",
+        installerKind: "native",
+        canAutoUpdate: true,
+        autoUpdatesEnabled: false,
+        testedVersion: "2.0.0",
+        autoUpdateTargetVersion: null,
+        autoUpdateBusySkips: 0,
+        // Managed updates would take this install over by reinstalling 2.0.0.
+        selfUpdaterActive: true,
       },
     },
     {
@@ -138,6 +182,7 @@ it.effect("reports each available instance after startup settles, then daily", (
         testedVersion: "2.0.0",
         autoUpdateTargetVersion: null,
         autoUpdateBusySkips: 0,
+        selfUpdaterActive: null,
       },
     },
   ];
@@ -168,15 +213,17 @@ it.effect("reports each available instance after startup settles, then daily", (
           }),
         ),
         Layer.mock(ProviderRegistry)({
-          getProviders: Effect.succeed([codex, customClaude, unavailable]),
-          getProviderMaintenanceCapabilitiesForInstance: (_instanceId, driver) =>
+          getProviders: Effect.succeed([codex, nativeCodex, customClaude, unavailable]),
+          getProviderMaintenanceCapabilitiesForInstance: (instanceId, driver) =>
             Effect.succeed(
-              driver === codexDriver
-                ? npmCapabilities
-                : makeManualOnlyProviderMaintenanceCapabilities({
-                    provider: driver,
-                    packageName: null,
-                  }),
+              instanceId === nativeCodex.instanceId
+                ? nativeCapabilities
+                : driver === codexDriver
+                  ? npmCapabilities
+                  : makeManualOnlyProviderMaintenanceCapabilities({
+                      provider: driver,
+                      packageName: null,
+                    }),
             ),
         }),
         // Update checks on with automatic updates off: not updating automatically.

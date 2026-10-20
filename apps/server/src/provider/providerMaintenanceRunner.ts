@@ -79,8 +79,12 @@ export interface ProviderMaintenanceRunnerShape {
            * machine-wide install lock, with turn starts on this CLI held, just
            * before the install; when it yields false, or another process holds
            * the lock, the update is dropped without publishing a state.
+           * `takeover` reinstalls the installed version to turn off the
+           * provider's own updater; it verifies only once that updater is off.
            */
-          readonly autoUpdate?: { readonly shouldStart: Effect.Effect<boolean> } | undefined;
+          readonly autoUpdate?:
+            | { readonly shouldStart: Effect.Effect<boolean>; readonly takeover?: boolean }
+            | undefined;
         },
   ) => Effect.Effect<ServerProviderUpdatedPayload, ServerProviderUpdateError>;
 }
@@ -461,6 +465,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
           if (recordFinished) return;
           recordFinished = yield* startProviderUpdateRecording(analytics, {
             source: autoUpdate ? "background" : "manual",
+            takeover: autoUpdate?.takeover === true,
             provider,
             instanceId,
             capabilities,
@@ -597,8 +602,10 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             // installer that exits 0 and leaves the binary missing is not a
             // success. A missing version alone is not held against it, since
             // Cursor's `about` probe can fail transiently on a healthy binary.
+            // A takeover only took effect once the provider's own updater is off.
             const couldNotVerify =
               verifiedProviders.length === 0 ||
+              (autoUpdate?.takeover === true && verified.selfUpdaterActive !== false) ||
               verifiedProviders.some(
                 (verifiedProvider) =>
                   !isStillInstalled(verifiedProvider) ||

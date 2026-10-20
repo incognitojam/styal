@@ -20,6 +20,13 @@ export interface ProviderMaintenanceCapabilities {
    * still runs `update`.
    */
   readonly pinnedUpdate?: (version: string) => ProviderMaintenanceCommandAction;
+  /**
+   * Whether the provider's own scheduled updater still owns a pinnable native
+   * install: null when it could not be read, absent when the installer has no
+   * updater styal can detect. Background updates reinstall the tested version
+   * over an active one, which hands updates to styal.
+   */
+  readonly selfUpdaterActive?: boolean | null;
 }
 
 export interface ProviderMaintenanceCommandAction {

@@ -1352,6 +1352,7 @@ describe("provider.update.finished", () => {
     event: "provider.update.finished",
     properties: {
       source: "manual",
+      takeover: false,
       driver: "codex",
       // The shared fixture's bare `npm-global` lock key is not one npm installs produce.
       installerKind: "native",
@@ -1536,6 +1537,86 @@ describe("provider.update.finished", () => {
           layerNonWindowsPlatform,
           layerLatestVersionHttpClient("3.0.0"),
           layerMockSpawner(() => ({ stdout: "installed" })),
+        ),
+      ),
+    );
+  });
+
+  it.effect("records a takeover, verified only once the provider's own updater is off", () => {
+    const events: Array<RecordedEvent> = [];
+    const calls: string[] = [];
+    // The marker is there until a pinned install that removes it runs.
+    let selfUpdaterActive = true;
+    let installRemovesMarker = true;
+    return Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({ ...baseProvider, version: "2.0.0" });
+      const executable = "/home/developer/.local/bin/codex";
+      const updater = yield* makeTestRunner(
+        {
+          ...registry,
+          getProviderMaintenanceCapabilitiesForInstance: () =>
+            Effect.succeed({
+              ...makeProviderMaintenanceCapabilities({
+                provider: CODEX_DRIVER,
+                packageName: "@openai/codex",
+                updateExecutable: executable,
+                updateArgs: ["update"],
+                updateLockKey: "codex-native",
+              }),
+              selfUpdaterActive,
+              pinnedUpdate: (version) => ({
+                command: `install ${version}`,
+                executable: "/bin/sh",
+                args: ["install", version],
+                lockKey: "codex-native",
+              }),
+            }),
+        },
+        undefined,
+        {},
+        events,
+      );
+      const takeover = () =>
+        updater.updateProvider({
+          provider: CODEX_DRIVER,
+          targetVersion: "2.0.0",
+          autoUpdate: { shouldStart: Effect.succeed(true), takeover: true },
+        });
+
+      const handedOver = yield* takeover();
+      assert.strictEqual(handedOver.providers[0]?.updateState?.status, "succeeded");
+      // An install that leaves the provider's own updater on did not take over.
+      selfUpdaterActive = true;
+      installRemovesMarker = false;
+      const stillOwned = yield* takeover();
+      assert.strictEqual(stillOwned.providers[0]?.updateState?.status, "unchanged");
+      assert.deepStrictEqual(calls, ["install 2.0.0", "install 2.0.0"]);
+      const takeoverEvent = {
+        source: "background",
+        takeover: true,
+        installerKind: "native",
+        fromVersion: "2.0.0",
+        targetVersion: "2.0.0",
+        resultVersion: "2.0.0",
+      };
+      assert.deepStrictEqual(events, [
+        finished({ ...takeoverEvent, outcome: "success" }),
+        finished({
+          ...takeoverEvent,
+          failureReason: "unchanged_after_install",
+          outcome: "unchanged",
+        }),
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          layerNonWindowsPlatform,
+          layerLatestVersionHttpClient("3.0.0"),
+          layerMockSpawner((_command, args) => {
+            calls.push(args.join(" "));
+            if (installRemovesMarker) selfUpdaterActive = false;
+            return { stdout: "installed" };
+          }),
         ),
       ),
     );

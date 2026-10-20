@@ -1,4 +1,7 @@
 import type { ProviderMaintenanceResolutionContext } from "@t3tools/provider-core/server/maintenanceResolver";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 
 export const CODEX_INSTALL_SCRIPT_URL = "https://chatgpt.com/codex/install.sh";
 
@@ -21,8 +24,8 @@ const CODEX_PINNED_INSTALL_SCRIPT = [
  * updater's fresh version check under the install lock stands in for it.
  * The script is pointed at the directory of the `codex` on PATH, with that
  * directory on its PATH, so it does not add a PATH block to a shell profile.
- * A pinned install leaves Codex's own latest-channel auto-update until the
- * next `codex update`.
+ * A pinned install removes Codex's self-update marker, so Codex's own
+ * latest-channel updater stays off until the next `codex update`.
  */
 export function makeCodexPinnedInstall(sharedHomePath: string) {
   return (
@@ -50,3 +53,29 @@ export function makeCodexPinnedInstall(sharedHomePath: string) {
     };
   };
 }
+
+/**
+ * Whether Codex's own scheduled updater owns the standalone install under
+ * `sharedHomePath`. The install script writes the release directory name to
+ * `auto-update-version` for a latest-channel install and removes it for a
+ * pinned one; Codex self-updates only while it names the release `current`
+ * points at. Null when the files cannot be read.
+ */
+export const codexSelfUpdaterActive = Effect.fn("codexSelfUpdaterActive")(function* (
+  sharedHomePath: string,
+) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const standaloneRoot = path.join(sharedHomePath, "packages", "standalone");
+  const markerPath = path.join(standaloneRoot, "auto-update-version");
+  const markerExists = yield* fileSystem.exists(markerPath).pipe(Effect.orElseSucceed(() => null));
+  if (markerExists !== true) return markerExists;
+  const marker = yield* fileSystem
+    .readFileString(markerPath)
+    .pipe(Effect.orElseSucceed(() => null));
+  const current = yield* fileSystem
+    .realPath(path.join(standaloneRoot, "current"))
+    .pipe(Effect.orElseSucceed(() => null));
+  if (marker === null || current === null) return null;
+  return path.basename(current) === marker.trim();
+});
