@@ -5,6 +5,13 @@ computer to the hosted app for the first time. Existing workspaces skip this flo
 **Connect**, **Agents**, **Projects**, and **Workflow** steps, plus **Preferences** when a
 selected computer has T3 Code preferences that differ from styal.
 
+Close setup while no import is running to go straight to the app. You can connect
+computers and agents later from Settings, or open `/welcome` to run setup again.
+Direct links, such as Settings, open normally before setup is done. If you close setup
+on app.styal.build before adding a computer, the home page asks you to sign in to
+styal Link and run `npx @styal/cli link` on your computer, then lists the computers
+linked to your account. Select one to connect it.
+
 ## Connect your computers
 
 Select one or more computers to set up. If you opened styal directly from a
@@ -21,6 +28,9 @@ You can add more computers before continuing:
   Start the server with `npx @styal/cli serve`, then run `npx @styal/cli pair --tailscale` and
   paste the pairing link. You can also run `npx @styal/cli serve --host <address>` and
   use `npx @styal/cli pair` when the server is already reachable on your network.
+
+A computer marked **Client not supported** runs a styal version that cannot
+talk to this app. The message under its name says which side to update.
 
 Select the saved or linked computers you want to set up. Signing in to styal Link
 shows your computers without adding connections; selecting a new computer connects it.

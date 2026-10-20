@@ -27,3 +27,4 @@ export const APP_DISPLAY_NAME =
 export const APP_REPOSITORY = "incognitojam/styal";
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
 export const APP_COMMIT_HASH = import.meta.env.APP_COMMIT_HASH || "unknown";
+export const DESKTOP_DOWNLOAD_URL = "https://github.com/incognitojam/styal/releases/latest";

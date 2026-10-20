@@ -21,7 +21,9 @@ server with `npx @styal/cli serve`. Saving your sign-in alone does not make the
 machine reachable.
 
 On your other device, sign in to the same styal Link account and choose the
-environment. Over SSH, the CLI prints a browser link and a short code. Open the
+environment. If you close setup on app.styal.build before adding a computer,
+signing in on the home page lists the computers linked to your account for you
+to select. Over SSH, the CLI prints a browser link and a short code. Open the
 link on any device, confirm the code matches, and approve. The CLI continues on
 its own, so you do not need to forward an OAuth callback port.
 

@@ -150,7 +150,7 @@ export function FirstRunGate({
         threadCount,
       });
 
-  if (decision !== "wizard" && hydrated) {
+  if (hydrated) {
     const transitioned = transitionFirstRunGateState(gateState, {
       type: "evidence",
       decision: nextDecision,
@@ -174,14 +174,20 @@ export function FirstRunGate({
     return () => window.clearTimeout(timer);
   }, [decision, enabled, hydrated]);
 
+  // Setup opens by itself only from the home route. A direct link, such as
+  // Settings, opens as asked so setup can never lock a user out of the app.
+  const wizardOwnsRoute = pathname === "/";
   useEffect(() => {
-    if (decision === "wizard" && pathname !== "/welcome") {
+    if (decision === "wizard" && wizardOwnsRoute) {
       void navigate({ to: "/welcome", search: { automatic: true }, replace: true });
     }
-  }, [decision, navigate, pathname]);
+  }, [decision, navigate, wizardOwnsRoute]);
 
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
+  }
+  if (decision === "wizard" && !wizardOwnsRoute) {
+    return children;
   }
   if (decision !== "app") {
     return stalled ? <FirstRunRecovery reason="connection" /> : null;

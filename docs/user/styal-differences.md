@@ -307,9 +307,10 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Bringing your work from T3 Code
 
-- **Setup stays focused on new computers.** On the hosted app, first-time connection setup waits
-  for live workspace data and skips Agents and Import for computers that already contain projects
-  or threads. An explicit visit to `/welcome` still reopens the complete setup flow.[^setup-comparison]
+- **Setup stays focused on new computers.** The hosted app opens setup on first use, waits for
+  live workspace data, and skips Agents and Import for computers that already contain projects or
+  threads. An explicit visit to `/welcome` still reopens the complete setup flow. The T3 Code
+  hosted app does not open setup; its home page asks you to sign in instead.[^setup-comparison]
 - **Choose how threads settle during setup.** A Workflow step explains settling and lets
   you keep or turn off settling on merge and after inactivity before you reach the sidebar. T3 Code
   setup does not mention settling as of
@@ -386,4 +387,4 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 [^import-comparison]: Setup compared with [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c), checked September 17, 2026.
 
-[^setup-comparison]: Hosted setup compared with [T3 Code revision dfbb11b](https://github.com/pingdotgg/t3code/tree/dfbb11bdd7c3f1a5575cb55d3e3abb12be025727), checked September 19, 2026.
+[^setup-comparison]: Hosted setup compared with [T3 Code revision e37a7a4](https://github.com/pingdotgg/t3code/tree/e37a7a4f71cb20c483e101e13d57ccf3598ab832), checked October 28, 2026.
