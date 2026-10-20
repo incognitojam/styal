@@ -4751,7 +4751,7 @@ features:
   - id: thread-settle-reasons
     title: Show why a thread settled
     status: maintained
-    prs: []
+    prs: [942]
     invariants:
       - Each automatic settlement records exactly one reason on the thread, a merged or closed pull request with its number and link or inactivity with the threshold in days; an explicit settle records `user`, re-settling keeps the first reason, and un-settling, pinning, or new work clears it.
       - The reason survives projection rebuilds, reaches clients on the thread shell, and appears in the agent thread read; older clients and servers interoperate because the field is optional.
