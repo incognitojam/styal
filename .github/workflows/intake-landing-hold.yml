@@ -23,7 +23,7 @@ jobs:
     if: >-
       github.repository == 'incognitojam/styal' &&
       (github.event_name != 'workflow_run' ||
-        github.event.workflow_run.name == 'Promote upstream intake' ||
+        github.event.workflow_run.path == '.github/workflows/promote-upstream-intake.yml' ||
         startsWith(github.event.workflow_run.head_branch, 'intake/'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
