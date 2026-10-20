@@ -184,7 +184,9 @@ describe("provider canary plan", () => {
       expect(bundled.currentModels[entry.provider]).toContain(entry.model);
     }
     const opencode: CanaryProvider = canary("opencode");
-    expect(bundled.currentModels.claudeAgent).toContain(opencode.model.replace(/^anthropic\//, ""));
+    // OpenRouter names Claude versions with dots: claude-haiku-5.5 is claude-haiku-5-5.
+    const claudeModel = opencode.model.replace(/^openrouter\/anthropic\//, "").replaceAll(".", "-");
+    expect(bundled.currentModels.claudeAgent).toContain(claudeModel);
   });
 });
 

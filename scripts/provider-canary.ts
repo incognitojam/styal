@@ -62,8 +62,9 @@ export const CANARY_PROVIDERS: ReadonlyArray<CanaryProvider> = [
     provider: "opencode",
     packageNames: ["opencode-ai", "@opencode/cli"],
     binary: "opencode",
-    model: "anthropic/claude-haiku-5-5",
-    secret: "ANTHROPIC_API_KEY",
+    // A separate OpenRouter workspace key with its own spending limit.
+    model: "openrouter/anthropic/claude-haiku-5.5",
+    secret: "OPENROUTER_API_KEY",
   },
 ];
 

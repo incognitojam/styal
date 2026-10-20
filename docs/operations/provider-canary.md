@@ -79,7 +79,8 @@ version keep it.
 The workflow needs:
 
 - `OPENAI_API_KEY` secret for Codex.
-- `ANTHROPIC_API_KEY` secret for Claude Code and OpenCode.
+- `ANTHROPIC_API_KEY` secret for Claude Code.
+- `OPENROUTER_API_KEY` secret for OpenCode, which runs an OpenRouter model.
 - `NIGHTLY_APP_CLIENT_ID` variable and `NIGHTLY_APP_PRIVATE_KEY` secret, with
   contents and pull-request write access, to open the pull request.
 
