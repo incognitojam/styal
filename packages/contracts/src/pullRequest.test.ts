@@ -6,6 +6,7 @@ import {
   PullRequestActionInput,
   PullRequestCapabilities,
   PullRequestInvalidateInput,
+  PullRequestChangeBreakdown,
   PullRequestDetail,
   PullRequestFilesViewedResult,
   PullRequestListInput,
@@ -19,6 +20,9 @@ import {
 
 const decodeListResult = Schema.decodeUnknownSync(Schema.toCodecJson(PullRequestListResult));
 const decodeDetail = Schema.decodeUnknownSync(Schema.toCodecJson(PullRequestDetail));
+const decodeChangeBreakdown = Schema.decodeUnknownSync(
+  Schema.toCodecJson(PullRequestChangeBreakdown),
+);
 const decodeListInput = Schema.decodeUnknownSync(PullRequestListInput);
 const decodeInvalidateInput = Schema.decodeUnknownSync(PullRequestInvalidateInput);
 const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerRequestInput);
@@ -436,5 +440,25 @@ describe("naming the file a tick belongs to", () => {
         files: [{ path: `src/${"a".repeat(4096)}.ts`, viewed: true }],
       }),
     ).toThrow();
+  });
+});
+
+describe("PullRequestChangeBreakdown", () => {
+  it("reads a breakdown from a server that predates the docs kind", () => {
+    const line = { additions: 1, deletions: 0 };
+    expect(
+      decodeChangeBreakdown({
+        code: line,
+        tests: line,
+        mocks: line,
+        generated: line,
+      }),
+    ).toEqual({
+      code: line,
+      tests: line,
+      mocks: line,
+      generated: line,
+      docs: { additions: 0, deletions: 0 },
+    });
   });
 });
