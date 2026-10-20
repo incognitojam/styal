@@ -57,6 +57,7 @@ features:
       - apps/mobile/src/features/projects/AddProjectScreen.tsx
       - apps/server/src/project/AddProjectDefaultDirectory.ts
       - apps/server/src/ws.ts
+      - apps/web/src/components/AddProjectToMachineDialog.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - packages/client-runtime/src/operations/projects.ts
@@ -64,6 +65,7 @@ features:
     upstream_paths:
       - apps/mobile/src/features/projects/AddProjectScreen.tsx
       - apps/server/src/ws.ts
+      - apps/web/src/components/AddProjectToMachineDialog.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - packages/client-runtime/src/operations/projects.ts

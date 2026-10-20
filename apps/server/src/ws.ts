@@ -1320,6 +1320,7 @@ export const layerWsRpc = (
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
       const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
@@ -2599,6 +2600,10 @@ export const layerWsRpc = (
                   }),
                 ),
                 Effect.andThen(refreshGitStatus(project.workspaceRoot)),
+                // The folder was empty when the project was created, so the cached
+                // enrichment says "no repository" and clients cannot group it yet.
+                Effect.andThen(projectEnrichment.invalidate([project.workspaceRoot])),
+                Effect.andThen(projectEnrichment.request(project.workspaceRoot)),
                 Effect.ignoreCause({ log: true }),
               ),
           }),
@@ -2665,6 +2670,17 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.projectsListEntries]: (input) =>
           workspaceEntries.list(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectListEntriesError({
+                  ...input,
+                  ...projectEntriesFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [WS_METHODS.projectsListIgnoredFiles]: (input) =>
+          workspaceEntries.listIgnoredFiles(input).pipe(
             Effect.mapError(
               (cause) =>
                 new ProjectListEntriesError({
