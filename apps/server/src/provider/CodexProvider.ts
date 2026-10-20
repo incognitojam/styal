@@ -71,6 +71,8 @@ const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
   reportsContextWindow: true,
+  // Auto turns use Codex's `auto_review` approver.
+  reviewsAutoMode: true,
 } as const;
 
 export interface CodexAppServerProviderSnapshot {

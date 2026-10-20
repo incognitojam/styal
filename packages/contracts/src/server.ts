@@ -278,6 +278,9 @@ export const ServerProvider = Schema.Struct({
   // meter once its activities load. Clients reserve the meter's space on it.
   reportsContextWindow: Schema.optional(Schema.Boolean),
   supportedRuntimeModes: Schema.optional(ForwardCompatibleArray(RuntimeMode)),
+  // Auto mode has the provider's own reviewer approve actions. Without it,
+  // Auto asks about every action, so a default of Auto starts in Full access.
+  reviewsAutoMode: Schema.optional(Schema.Boolean),
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
   supportsConversationRollback: Schema.optional(Schema.Boolean),
   supportsTextGeneration: Schema.optional(Schema.Boolean),

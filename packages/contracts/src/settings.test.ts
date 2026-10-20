@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import type { CommandId, ProjectId } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { resolveNewThreadRuntimeMode } from "./providerPolicy.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
@@ -132,9 +133,20 @@ describe("ClientSettings rich text composer", () => {
 });
 
 describe("ServerSettings default permissions", () => {
-  it("keeps full access for settings saved before a default was configured", () => {
-    expect(decodeServerSettings({}).defaultRuntimeMode).toBe("full-access");
-    expect(DEFAULT_SERVER_SETTINGS.defaultRuntimeMode).toBe("full-access");
+  it("defaults settings that never chose a mode to Auto", () => {
+    expect(decodeServerSettings({}).defaultRuntimeMode).toBe("auto");
+    expect(DEFAULT_SERVER_SETTINGS.defaultRuntimeMode).toBe("auto");
+  });
+
+  it("starts a default of Auto in Full access when the provider has no Auto reviewer", () => {
+    const reviewer = { reviewsAutoMode: true };
+    expect(resolveNewThreadRuntimeMode("auto", reviewer)).toBe("auto");
+    expect(resolveNewThreadRuntimeMode("auto", {})).toBe("full-access");
+    // An unloaded snapshot or an older server reports no reviewer.
+    expect(resolveNewThreadRuntimeMode("auto", null)).toBe("full-access");
+    // Other defaults never change, with or without a reviewer.
+    expect(resolveNewThreadRuntimeMode("approval-required", {})).toBe("approval-required");
+    expect(resolveNewThreadRuntimeMode("auto-accept-edits", reviewer)).toBe("auto-accept-edits");
   });
 
   it.each(["approval-required", "auto-accept-edits", "auto", "full-access"])(

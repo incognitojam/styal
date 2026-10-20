@@ -60,6 +60,8 @@ const CLAUDE_PRESENTATION = {
   displayName: "Claude",
   showInteractionModeToggle: true,
   reportsContextWindow: true,
+  // Claude Code's Auto mode runs a classifier on each action.
+  reviewsAutoMode: true,
 } as const;
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
