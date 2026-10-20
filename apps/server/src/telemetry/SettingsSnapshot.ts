@@ -56,6 +56,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     sidebarAutoSettleKeepPullRequests: settings.sidebarAutoSettleKeepPullRequests,
     snoozeLimitedThreads: settings.snoozeLimitedThreads,
     autoResumeLimitedThreads: settings.autoResumeLimitedThreads,
+    compactIdleThreads: settings.compactIdleThreads,
     // Source control writing
     branchNamingMode: settings.branchNamingMode,
     branchNamePrefixCustomized:

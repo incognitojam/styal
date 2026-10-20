@@ -24,3 +24,10 @@ const CLAUDE_RESUME_COMPACTION_QUESTION_PATTERN =
 export function isClaudeResumeCompactionQuestion(question: string): boolean {
   return CLAUDE_RESUME_COMPACTION_QUESTION_PATTERN.test(question);
 }
+
+/**
+ * Context size below which idle compaction does not run. Matches Claude
+ * Code's idleCompaction default of 200K. The stale-thread Compact chip keeps
+ * its own lower threshold.
+ */
+export const COMPACTION_SUGGESTION_MIN_TOKENS = 200_000;
