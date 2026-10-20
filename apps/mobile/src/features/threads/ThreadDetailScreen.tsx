@@ -1403,18 +1403,7 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                   ) : null}
                 </View>
 
-                {/*
-                 * Hidden (not unmounted) while a user-input request owns the composer slot, so
-                 * composer drafts and editor state survive. A rejected creation has no thread to
-                 * send to; the failure card owns the slot instead.
-                 */}
-                <View
-                  style={
-                    activeUserInputRequestId !== null || props.creationState?.kind === "failed"
-                      ? { display: "none" }
-                      : undefined
-                  }
-                >
+                <View style={composerSlotHidden ? { display: "none" } : undefined}>
                   {isProviderSubagent ? (
                     <View
                       className="self-center px-3 pt-1.5"
@@ -1479,6 +1468,7 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                         draftKey={props.composerDraftKey ?? undefined}
                         followUpBehavior={props.followUpBehavior}
                         canSteerActiveTurn={props.canSteerActiveTurn}
+                        hidden={composerSlotHidden}
                         queuedEdit={
                           props.queuedRunEdit === null
                             ? null
