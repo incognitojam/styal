@@ -8,6 +8,7 @@ import {
   clipboardWriteEpoch,
   ensureClipboardEpochTracking,
   writeTextToClipboard,
+  writeResolvedTextToClipboard,
 } from "./useCopyToClipboard";
 
 // Tests run in a node environment; stub the browser globals the module reads.
@@ -29,6 +30,39 @@ describe("clipboardWriteEpoch", () => {
 
     stubClipboardWriteText(() => Promise.reject(new Error("denied")));
     await expect(writeTextToClipboard("blocked")).rejects.toThrow();
+    expect(clipboardWriteEpoch()).toBe(before + 1);
+  });
+
+  it("starts an asynchronous clipboard write before path resolution and advances only on success", async () => {
+    let resolvePath!: (path: string) => void;
+    const path = new Promise<string>((resolve) => {
+      resolvePath = resolve;
+    });
+    let contents: Record<string, Promise<Blob>> = {};
+    vi.stubGlobal(
+      "ClipboardItem",
+      class {
+        constructor(value: Record<string, Promise<Blob>>) {
+          contents = value;
+        }
+      },
+    );
+    const write = vi.fn(async () => {
+      await contents["text/plain"];
+    });
+    vi.stubGlobal("navigator", { clipboard: { write } });
+    const before = clipboardWriteEpoch();
+    const pending = writeResolvedTextToClipboard(path);
+    expect(write).toHaveBeenCalledOnce();
+    expect(clipboardWriteEpoch()).toBe(before);
+    resolvePath("/workspace/example.ts");
+    await pending;
+    expect(await (await contents["text/plain"]!).text()).toBe("/workspace/example.ts");
+    expect(clipboardWriteEpoch()).toBe(before + 1);
+    write.mockRejectedValueOnce(new Error("denied"));
+    await expect(writeResolvedTextToClipboard(Promise.resolve("blocked"))).rejects.toThrow(
+      "denied",
+    );
     expect(clipboardWriteEpoch()).toBe(before + 1);
   });
 

@@ -193,6 +193,11 @@ import {
   shouldOpenMarkdownFileLinkInEditor,
   type MarkdownFileLinkMeta,
 } from "../markdown-links";
+import {
+  markdownFileCopyPaths,
+  markdownFileEditorTarget,
+  resolveMarkdownFileHostPath,
+} from "../markdownFileHostPath";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
 import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
@@ -233,7 +238,7 @@ import {
 } from "~/lib/openPullRequestLink";
 import { observeResize } from "~/lib/observeResize";
 import { useOpenLink } from "../browser/useOpenLink";
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { writeResolvedTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import {
   isBrowserPreviewFile,
@@ -1278,8 +1283,9 @@ interface MarkdownFileLinkProps {
   copyMarkdown: string;
   theme: "light" | "dark";
   threadRef?: ScopedThreadRef | undefined;
-  onOpen?: ((targetPath: string) => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
+  onOpen?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   onOpenInPanel: (panelPath: string, line: number | undefined) => void;
+  resolveCopyPaths: () => Promise<ReturnType<typeof markdownFileCopyPaths>>;
   openInEditorMenuLabel: string;
   onOpenInBrowser?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   onOpenMedia?: (() => void) | undefined;
@@ -2024,6 +2030,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   onOpenMedia,
   onReveal,
   revealLabel,
+  resolveCopyPaths,
 }: MarkdownFileLinkProps) {
   const handleOpenInEditor = () => {
     if (!onOpen) {
@@ -2031,7 +2038,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     }
     void (async () => {
       try {
-        const result = await onOpen(targetPath);
+        const result = await onOpen();
         if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
           return;
         }
@@ -2151,7 +2158,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
     })();
   };
 
-  const handleCopy = (value: string, title: string) => {
+  const handleCopy = (resolveValue: () => Promise<string>, title: string) => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
       toastManager.add(
         stackedThreadToast({
@@ -2163,12 +2170,13 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
       return;
     }
 
-    void writeTextToClipboard(value).then(
-      () => {
+    const value = resolveValue();
+    void Promise.all([writeResolvedTextToClipboard(value), value]).then(
+      ([, text]) => {
         toastManager.add({
           type: "success",
           title: `${title} copied`,
-          description: value,
+          description: text,
         });
       },
       (error) => {
@@ -2222,9 +2230,14 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         handleRevealInFileManager();
         return;
       }
-      const copyItem = copyItems.find(({ id }) => id === clicked);
-      if (copyItem) {
-        handleCopy(copyItem.value, copyItem.title);
+      if (clicked === "copy-relative" || clicked === "copy-full") {
+        handleCopy(
+          () =>
+            resolveCopyPaths().then((paths) =>
+              clicked === "copy-relative" ? paths.relativePath : paths.fullPath,
+            ),
+          clicked === "copy-relative" ? "Relative path" : "Full path",
+        );
       }
     } catch (cause) {
       reportMarkdownActionFailure(
@@ -2346,6 +2359,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.onOpenInBrowser === next.onOpenInBrowser &&
     previous.onOpenMedia === next.onOpenMedia &&
     previous.onReveal === next.onReveal &&
+    previous.resolveCopyPaths === next.resolveCopyPaths &&
     previous.revealLabel === next.revealLabel
   );
 }
@@ -2740,17 +2754,18 @@ function useChatMarkdownState({
       openAt(match ?? panelPath);
     })();
   };
-  const revealMarkdownFileInFileManager = async (fileLinkMeta: MarkdownFileLinkMeta) => {
-    const match = await findWorkspaceFileMatch(fileLinkMeta);
-    const filePath = match && cwd ? resolvePathLinkTarget(match, cwd) : fileLinkMeta.filePath;
-    return revealFileInFileManager(filePath);
-  };
   const fileLinkChip = (
     fileLinkMeta: MarkdownFileLinkMeta,
     copyMarkdown: string,
     children?: ReactNode,
     mediaSource?: string,
   ) => {
+    const resolveHostPath = () =>
+      resolveMarkdownFileHostPath({
+        meta: fileLinkMeta,
+        cwd,
+        findWorkspaceMatch: () => findWorkspaceFileMatch(fileLinkMeta),
+      });
     const mediaPath = mediaSource ?? fileLinkMeta.filePath;
     const canPreviewMedia =
       mediaMimeTypeFromExtension(
@@ -2780,7 +2795,17 @@ function useChatMarkdownState({
         copyMarkdown={copyMarkdown}
         theme={resolvedTheme}
         threadRef={threadRef}
-        {...(canUseShellActions ? { onOpen: openInPreferredEditor } : {})}
+        onOpen={
+          canUseShellActions
+            ? async () =>
+                openInPreferredEditor(
+                  markdownFileEditorTarget(fileLinkMeta, await resolveHostPath()),
+                )
+            : undefined
+        }
+        resolveCopyPaths={async () =>
+          markdownFileCopyPaths(fileLinkMeta, await resolveHostPath(), cwd)
+        }
         onOpenInPanel={(path) => openFileInPanel(fileLinkMeta, path)}
         onOpenMedia={
           threadRef && canPreviewMedia
@@ -2790,7 +2815,7 @@ function useChatMarkdownState({
         openInEditorMenuLabel={preferredEditorMenuLabel}
         onReveal={
           canUseShellActions && revealInFileManagerLabel !== undefined
-            ? () => revealMarkdownFileInFileManager(fileLinkMeta)
+            ? async () => revealFileInFileManager((await resolveHostPath()).absolutePath)
             : undefined
         }
         revealLabel={revealInFileManagerLabel}

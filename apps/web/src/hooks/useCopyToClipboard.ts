@@ -207,6 +207,20 @@ export async function writeTextToClipboard(
   }
 }
 
+// Start the write while the user gesture is active, before resolving workspace paths.
+export async function writeResolvedTextToClipboard(value: Promise<string>) {
+  if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "text/plain": value.then((text) => new Blob([text], { type: "text/plain" })),
+      }),
+    ]);
+    clipboardWriteCount += 1;
+    return;
+  }
+  await writeTextToClipboard(await value);
+}
+
 export async function readTextFromClipboard(target = "text"): Promise<string> {
   if (
     typeof window === "undefined" ||
