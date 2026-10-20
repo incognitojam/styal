@@ -522,6 +522,7 @@ try {
       git(["rev-list", "--min-parents=2", "--reverse", `${baseSha}..${headSha}`]),
     ),
     mainIsAncestor: isAncestor(baseSha, headSha),
+    mainCommitsMissing: lines(git(["log", "--format=%h %s", "-20", `${headSha}..${baseSha}`])),
     changedPaths: lines(git(["diff", "--name-only", "--no-renames", `${baseSha}...${headSha}`])),
     ledger,
     commitPullRequests: upstreamCommitPullRequests(ledger.upstream_repository, commitMessages),

@@ -23,7 +23,7 @@ jobs:
     if: >-
       github.repository == 'incognitojam/styal' &&
       (github.event_name != 'workflow_run' ||
-        github.event.workflow_run.name == 'Promote upstream intake' ||
+        github.event.workflow_run.path == '.github/workflows/promote-upstream-intake.yml' ||
         startsWith(github.event.workflow_run.head_branch, 'intake/'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -37,6 +37,8 @@ jobs:
       contents: read
       pull-requests: read
       statuses: write
+    outputs:
+      recheck_in_seconds: ${{ steps.statuses.outputs.recheck_in_seconds }}
     steps:
       # pull_request_target runs main's script and never checks out pull request code.
       - name: Checkout main
@@ -52,8 +54,32 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Set statuses
+      - id: statuses
+        name: Set statuses
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: node scripts/upstream/landing-hold.ts | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # A hold that waits out a grace period ends with no event to recompute it, so
+  # dispatch this workflow when it ends. A newer hold run replaces a waiting recheck.
+  recheck:
+    name: Recheck when the grace period ends
+    needs: hold
+    if: needs.hold.outputs.recheck_in_seconds != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: intake-landing-hold-recheck
+      cancel-in-progress: true
+    permissions:
+      actions: write
+    steps:
+      - name: Wait, then recompute the hold
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECHECK_IN_SECONDS: ${{ needs.hold.outputs.recheck_in_seconds }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          sleep "$((RECHECK_IN_SECONDS + 5))"
+          gh workflow run intake-landing-hold.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"

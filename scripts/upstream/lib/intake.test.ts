@@ -102,6 +102,18 @@ describe("upstream intake audit", () => {
     assert.include(result.manualReviewReasons, "1 commit carries a `Fork adaptation:` note");
   });
 
+  it("names the main commits a candidate that is not a fast-forward lacks", () => {
+    const result = audit({
+      mainIsAncestor: false,
+      mainCommitsMissing: ["dc03d7bd85 feat(web): preview the Discord activity card (#925)"],
+    });
+
+    assert.include(
+      result.errors,
+      "The candidate is not a fast-forward of main. Rebase onto main, which gained: dc03d7bd85 feat(web): preview the Discord activity card (#925).",
+    );
+  });
+
   it("blocks missing or malformed upstream provenance", () => {
     const missing = audit({ commitMessages: ["fix(server): no source"] });
     const malformed = audit({ commitMessages: ["Upstream-PR: nope"] });

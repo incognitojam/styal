@@ -15,6 +15,8 @@ export interface UpstreamIntakeAuditInput {
   readonly commitMessages: ReadonlyArray<string>;
   readonly mergeCommits: ReadonlyArray<string>;
   readonly mainIsAncestor: boolean;
+  /** `<short sha> <subject>` of the main commits the candidate lacks, newest first. */
+  readonly mainCommitsMissing?: ReadonlyArray<string>;
   readonly changedPaths: ReadonlyArray<string>;
   readonly ledger: ForkFeatureLedger;
   /** Upstream PRs associated with each Upstream-Commit SHA that shares a commit with Upstream-PR. */
@@ -125,7 +127,14 @@ export function formatForkCiWatchCommand(input: {
 export function auditUpstreamIntakeCandidate(input: UpstreamIntakeAuditInput): UpstreamIntakeAudit {
   const errors: Array<string> = [];
   const commitsWithoutPR = new Set<string>();
-  if (!input.mainIsAncestor) errors.push("The candidate is not a fast-forward of main.");
+  if (!input.mainIsAncestor) {
+    const missing = input.mainCommitsMissing ?? [];
+    errors.push(
+      missing.length === 0
+        ? "The candidate is not a fast-forward of main."
+        : `The candidate is not a fast-forward of main. Rebase onto main, which gained: ${missing.join("; ")}.`,
+    );
+  }
   if (input.commits.length === 0) errors.push("The candidate contains no commits beyond main.");
   if (input.mergeCommits.length > 0) {
     errors.push(`The candidate contains merge commits: ${input.mergeCommits.join(", ")}.`);
