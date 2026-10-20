@@ -6,18 +6,12 @@ import {
 import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
 import * as Option from "effect/Option";
 import type { EnvironmentPresentation } from "../../state/environments";
-import {
-  createMemoryHistory,
-  createRootRoute,
-  createRouter,
-  RouterProvider,
-} from "@tanstack/react-router";
-import { act, StrictMode } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { StrictMode } from "react";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import "../../index.css";
+import { act, render } from "../../../test/render";
 
 const { listBrowserImportSources } = vi.hoisted(() => ({
   listBrowserImportSources: vi.fn().mockResolvedValue([]),
@@ -62,66 +56,54 @@ vi.mock(import("./SettingsScopeContext"), async (original) => ({
 
 import { IntegrationsSettingsPanel } from "./IntegrationsSettings";
 
-let root: Root;
-let container: HTMLDivElement;
 let environments: EnvironmentPresentation[];
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+function setup() {
   listBrowserImportSources.mockClear();
   environments = [];
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
+}
 
 async function openSettings() {
-  const router = createRouter({
-    routeTree: createRootRoute({ component: IntegrationsSettingsPanel }),
-    history: createMemoryHistory(),
-  });
-  await router.load();
-  await act(async () =>
-    root.render(
+  await using stack = new AsyncDisposableStack();
+  const screen = stack.use(
+    await render(
       <StrictMode>
-        <RouterProvider router={router} />
+        <IntegrationsSettingsPanel />
       </StrictMode>,
     ),
   );
-  await vi.waitFor(() => expect(container.querySelector("section#browser")).not.toBeNull());
+  await vi.waitFor(() => expect(screen.container.querySelector("section#browser")).not.toBeNull());
+  stack.move();
+  return screen;
 }
 
 describe("Integrations browser discovery", () => {
   it("keeps client browser preferences, including search engine, in one folded section", async () => {
-    await openSettings();
+    setup();
+    await using screen = await openSettings();
 
-    expect(container.querySelectorAll("section#browser")).toHaveLength(1);
+    expect(screen.container.querySelectorAll("section#browser")).toHaveLength(1);
     await act(async () => page.getByRole("button", { name: /Browser preferences/ }).click());
     const searchEngine = page.getByRole("combobox", { name: "Search engine", exact: true });
     await expect.element(searchEngine).toBeVisible();
     expect(searchEngine.element().closest("section")).toBe(
-      container.querySelector("section#browser"),
+      screen.container.querySelector("section#browser"),
     );
   });
 
   it("does not scan browser files when entering or revisiting settings", async () => {
-    await openSettings();
+    setup();
+    await using first = await openSettings();
     expect(listBrowserImportSources).not.toHaveBeenCalled();
 
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await openSettings();
+    await first.unmount();
+    await using _second = await openSettings();
     expect(listBrowserImportSources).not.toHaveBeenCalled();
   });
 });
 
 it("distinguishes a saved connection from an offline environment and links to connection management", async () => {
+  setup();
   environments = (["available", "offline", "reconnecting"] as const).map((phase) => {
     const environmentId = EnvironmentId.make(phase);
     return {
@@ -143,7 +125,8 @@ it("distinguishes a saved connection from an offline environment and links to co
       serverConfig: null,
     } satisfies EnvironmentPresentation;
   });
-  await openSettings();
+  await using screen = await openSettings();
+  const { container } = screen;
 
   const saved = container.querySelector("#integration-environment-available")!;
   expect(saved.textContent).toContain("Not connected");

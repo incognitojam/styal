@@ -1,7 +1,6 @@
+import { act, render, stubGlobal, type Screen } from "../../../test/render";
 import { EnvironmentId } from "@t3tools/contracts";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 const { refresh } = vi.hoisted(() => ({ refresh: vi.fn<() => Promise<string | null>>() }));
 
@@ -26,162 +25,153 @@ import { AttachmentFilePreview } from "./AttachmentFilePreview";
 describe("attachment HTML preview recovery", () => {
   const originalUrl = "data:text/html,original";
   const renewedUrl = "data:text/html,renewed";
-  let now = 0;
-  let root: Root;
-  let container: HTMLDivElement;
 
-  beforeEach(() => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    now = 0;
-    vi.spyOn(Date, "now").mockImplementation(() => now);
+  function setup() {
     refresh.mockReset().mockResolvedValueOnce(originalUrl).mockResolvedValue(renewedUrl);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("<p>Captured HTML</p>")),
-    );
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-  });
-
-  afterEach(async () => {
-    await act(async () => root.unmount());
-    container.remove();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-  });
+  }
 
   const openRemote = () =>
-    act(async () =>
-      root.render(
-        <AttachmentFilePreview
-          name="document.html"
-          mimeType="text/html"
-          sizeBytes={100}
-          asset={{ environmentId: EnvironmentId.make("test-environment"), attachmentId: "html" }}
-        />,
-      ),
+    render(
+      <AttachmentFilePreview
+        name="document.html"
+        mimeType="text/html"
+        sizeBytes={100}
+        asset={{ environmentId: EnvironmentId.make("test-environment"), attachmentId: "html" }}
+      />,
     );
 
-  const toggleMode = async (label: string) => {
-    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  const toggleMode = async (screen: Screen, label: string) => {
+    const button = screen.container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${label}"]`,
+    );
     expect(button, label).not.toBeNull();
     await act(async () => button!.click());
   };
-  const alert = () => container.querySelector('[role="alert"]');
+  const alert = (screen: Screen) => screen.container.querySelector('[role="alert"]');
 
   it("keeps a renewed URL for subsequent rendered and source views", async () => {
-    await openRemote();
-    expect(container.querySelector("iframe")?.getAttribute("src")).toBe(originalUrl);
+    setup();
+    let now = 0;
+    using _now = vi.spyOn(Date, "now").mockImplementation(() => now);
+    using _fetch = stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<p>Captured HTML</p>")),
+    );
+    await using screen = await openRemote();
+    expect(screen.container.querySelector("iframe")?.getAttribute("src")).toBe(originalUrl);
     now = 61 * 60_000;
-    await toggleMode("Show HTML source");
+    await toggleMode(screen, "Show HTML source");
     await act(async () => {
       await import("./ReadOnlySourcePreview");
     });
     expect(fetch).toHaveBeenCalledExactlyOnceWith(renewedUrl, expect.any(Object));
     await vi.waitFor(() =>
-      expect(container.querySelector("pre")?.textContent).toBe("<p>Captured HTML</p>"),
+      expect(screen.container.querySelector("pre")?.textContent).toBe("<p>Captured HTML</p>"),
     );
 
-    await toggleMode("Show rendered page");
-    expect(container.querySelector("iframe")?.getAttribute("src")).toBe(renewedUrl);
-    await toggleMode("Show HTML source");
+    await toggleMode(screen, "Show rendered page");
+    expect(screen.container.querySelector("iframe")?.getAttribute("src")).toBe(renewedUrl);
+    await toggleMode(screen, "Show HTML source");
     expect(refresh).toHaveBeenCalledTimes(2);
     expect(vi.mocked(fetch).mock.calls.map(([url]) => url)).toEqual([renewedUrl, renewedUrl]);
   });
 
   it("does not fetch or mark an expired URL fresh when reauthorization is unavailable", async () => {
-    await openRemote();
+    setup();
+    let now = 0;
+    using _now = vi.spyOn(Date, "now").mockImplementation(() => now);
+    using _fetch = stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<p>Captured HTML</p>")),
+    );
+    await using screen = await openRemote();
     now = 61 * 60_000;
     refresh.mockResolvedValue(null);
-    await toggleMode("Show HTML source");
+    await toggleMode(screen, "Show HTML source");
     expect(fetch).not.toHaveBeenCalled();
-    expect(alert()?.textContent).toContain("Reconnect to the environment and try again.");
+    expect(alert(screen)?.textContent).toContain("Reconnect to the environment and try again.");
 
-    await toggleMode("Show rendered page");
-    await toggleMode("Show HTML source");
+    await toggleMode(screen, "Show rendered page");
+    await toggleMode(screen, "Show HTML source");
     expect(refresh).toHaveBeenCalledTimes(3);
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it("can return to rendered HTML after local source decoding fails", async () => {
-    const file = new Blob([new Uint8Array([0x3c, 0x70, 0x3e, 0xe9])], { type: "text/html" });
-    await act(async () =>
-      root.render(
-        <AttachmentFilePreview
-          name="document.html"
-          mimeType="text/html"
-          sizeBytes={file.size}
-          file={file}
-        />,
-      ),
+    setup();
+    let now = 0;
+    using _now = vi.spyOn(Date, "now").mockImplementation(() => now);
+    using _fetch = stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("<p>Captured HTML</p>")),
     );
-    await toggleMode("Show HTML source");
-    await vi.waitFor(() => expect(alert()?.textContent).toContain("not UTF-8"));
+    const file = new Blob([new Uint8Array([0x3c, 0x70, 0x3e, 0xe9])], { type: "text/html" });
+    await using screen = await render(
+      <AttachmentFilePreview
+        name="document.html"
+        mimeType="text/html"
+        sizeBytes={file.size}
+        file={file}
+      />,
+    );
+    await toggleMode(screen, "Show HTML source");
+    await vi.waitFor(() => expect(alert(screen)?.textContent).toContain("not UTF-8"));
 
-    await toggleMode("Show rendered page");
-    expect(alert()).toBeNull();
-    expect(container.querySelector("iframe")?.title).toBe("document.html");
+    await toggleMode(screen, "Show rendered page");
+    expect(alert(screen)).toBeNull();
+    expect(screen.container.querySelector("iframe")?.title).toBe("document.html");
   });
 });
 
 describe("attachment image preview fallback", () => {
-  let root: Root;
-  let container: HTMLDivElement;
   const sourceUrl = "data:application/octet-stream,heic";
   const jpeg = new File(["jpeg"], "photo.jpg", { type: "image/jpeg" });
+  // A decodable image, so the converted preview is not itself reported as a decode failure.
+  const convertedUrl =
+    "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
-  beforeEach(() => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  function setup() {
+    using stack = new DisposableStack();
     refresh.mockReset().mockResolvedValue(sourceUrl);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(new Blob(["heic"]))),
+    stack.use(
+      stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(new Blob(["heic"]))),
+      ),
     );
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:jpeg");
-    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    stack.use(vi.spyOn(URL, "createObjectURL").mockReturnValue(convertedUrl));
+    stack.use(vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {}));
     vi.mocked(prepareImageForAttachment).mockReset().mockResolvedValue({
       ok: true,
       file: jpeg,
       recompressed: true,
     });
-    container = document.body.appendChild(document.createElement("div"));
-    root = createRoot(container);
-  });
-
-  afterEach(async () => {
-    await act(() => root.unmount());
-    container.remove();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-  });
+    return stack.move();
+  }
 
   const openImage = (name: string, mimeType: string) =>
-    act(() =>
-      root.render(
-        <AttachmentFilePreview
-          name={name}
-          mimeType={mimeType}
-          sizeBytes={100}
-          asset={{ environmentId: EnvironmentId.make("test-environment"), attachmentId: "photo" }}
-        />,
-      ),
+    render(
+      <AttachmentFilePreview
+        name={name}
+        mimeType={mimeType}
+        sizeBytes={100}
+        asset={{ environmentId: EnvironmentId.make("test-environment"), attachmentId: "photo" }}
+      />,
     );
 
-  const failDecode = () =>
-    act(() => {
-      const image = container.querySelector("img");
-      expect(image).not.toBeNull();
-      image!.dispatchEvent(new Event("error"));
-    });
+  const failure = (screen: Screen) =>
+    vi.waitFor(() => expect(screen.container.textContent).toContain("Unable to load image."));
 
   it.each([
     { name: "photo.HEIC", mimeType: "image/heic" },
     { name: "photo", mimeType: "image/heif" },
   ])("converts stored $name after native decoding fails", async ({ name, mimeType }) => {
-    await openImage(name, mimeType);
-    await failDecode();
-
+    using _setup = setup();
+    // The stored source is not an image the browser can decode, so its own error starts the fallback.
+    await using screen = await openImage(name, mimeType);
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("img")?.getAttribute("src")).toBe(convertedUrl),
+    );
     expect(fetch).toHaveBeenCalledWith(
       sourceUrl,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
@@ -190,21 +180,21 @@ describe("attachment image preview fallback", () => {
       expect.objectContaining({ name, type: "image/heic" }),
       50 * 1024 * 1024,
     );
-    expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:jpeg");
-    expect(container.textContent).not.toContain("Unable to load image.");
+    expect(screen.container.textContent).not.toContain("Unable to load image.");
   });
 
   it("shows the existing failure when HEIC conversion fails", async () => {
+    using _setup = setup();
     vi.mocked(prepareImageForAttachment).mockResolvedValue({ ok: false, reason: "unreadable" });
-    await openImage("photo.heic", "image/heic");
-    await failDecode();
-    expect(container.textContent).toContain("Unable to load image.");
+    await using screen = await openImage("photo.heic", "image/heic");
+    await failure(screen);
+    expect(prepareImageForAttachment).toHaveBeenCalledOnce();
   });
 
   it("shows PNG decoding failures without attempting HEIC conversion", async () => {
-    await openImage("photo.png", "image/png");
-    await failDecode();
-    expect(container.textContent).toContain("Unable to load image.");
+    using _setup = setup();
+    await using screen = await openImage("photo.png", "image/png");
+    await failure(screen);
     expect(prepareImageForAttachment).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });

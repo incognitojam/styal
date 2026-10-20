@@ -6,9 +6,10 @@ import {
   type DeviceServiceState,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { act, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import type { ReactNode } from "react";
+import { expect, it, vi } from "vite-plus/test";
+
+import { act, render } from "../../../test/render";
 
 const { list } = vi.hoisted(() => ({ list: vi.fn() }));
 
@@ -89,20 +90,10 @@ const initialDeviceState = {
 } satisfies DeviceServiceState;
 let deviceState: DeviceServiceState;
 
-let root: Root | undefined;
-let container: HTMLDivElement | undefined;
-
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+function setup() {
   list.mockReset();
   deviceState = structuredClone(initialDeviceState);
-});
-
-afterEach(async () => {
-  await act(() => root?.unmount());
-  container?.remove();
-  vi.unstubAllGlobals();
-});
+}
 
 it.each([
   {
@@ -126,33 +117,31 @@ it.each([
 ])(
   "reports $name as the server describes it, not as a network problem",
   async ({ error, message }) => {
-    list.mockResolvedValue({ _tag: "Failure", cause: Cause.fail(error) });
-    container = document.body.appendChild(document.createElement("div"));
-    root = createRoot(container);
-    await act(() => {
-      root!.render(
-        <DeviceIntegrationControls
-          environmentId={environmentId}
-          enabled
-          agentAccessEnabled={false}
-        />,
-      );
-    });
+    setup();
+    list.mockReset().mockResolvedValue({ _tag: "Failure", cause: Cause.fail(error) });
+    await using screen = await render(
+      <DeviceIntegrationControls
+        environmentId={environmentId}
+        enabled
+        agentAccessEnabled={false}
+      />,
+    );
 
-    const update = [...container.querySelectorAll("button")].find(
+    const update = [...screen.container.querySelectorAll("button")].find(
       (button) => button.textContent === "Update to v0.12.0",
     );
     expect(update).toBeDefined();
     await act(async () => update!.click());
 
     expect(list).toHaveBeenCalledWith({ environmentId, input: { updateTool: "hub" } });
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe(message);
+    expect(screen.container.querySelector('[role="alert"]')?.textContent).toBe(message);
   },
 );
 
 it.each(["installing", "starting", "failed"] as const)(
   "keeps %s feedback visible with maintenance collapsed",
   async (status) => {
+    setup();
     const detail =
       status === "failed" ? "Device tools could not install." : "Preparing device tools…";
     deviceState = {
@@ -161,17 +150,14 @@ it.each(["installing", "starting", "failed"] as const)(
       hostStatuses: { [LOCAL_DEVICE_HOST_ID]: { status, detail } },
     };
     list.mockResolvedValue({ _tag: "Success", value: deviceState });
-    container = document.body.appendChild(document.createElement("div"));
-    root = createRoot(container);
-    await act(() =>
-      root!.render(
-        <DeviceIntegrationControls
-          environmentId={environmentId}
-          enabled
-          agentAccessEnabled={false}
-        />,
-      ),
+    await using screen = await render(
+      <DeviceIntegrationControls
+        environmentId={environmentId}
+        enabled
+        agentAccessEnabled={false}
+      />,
     );
+    const { container } = screen;
 
     const maintenance = [...container.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Device maintenance"),
