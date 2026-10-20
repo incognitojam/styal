@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { settleReasonSentence } from "@t3tools/client-runtime/state/thread-settled";
+import { settleReasonSentence } from "@t3tools/client-runtime/state/thread-settle-reason";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";

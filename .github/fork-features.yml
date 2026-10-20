@@ -4772,7 +4772,7 @@ features:
       - apps/web/src/components/Sidebar.tsx
       - packages/client-runtime/src/state/models.ts
       - packages/client-runtime/src/state/threadCommands.ts
-      - packages/client-runtime/src/state/threadSettled.ts
+      - packages/client-runtime/src/state/threadSettleReason.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/orchestratorMcp.ts
     upstream_paths:
@@ -4783,9 +4783,9 @@ features:
       - apps/server/src/orchestration-v2/ThreadSettlementService.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/Sidebar.tsx
+      - packages/client-runtime/package.json
       - packages/client-runtime/src/state/models.ts
       - packages/client-runtime/src/state/threadCommands.ts
-      - packages/client-runtime/src/state/threadSettled.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/orchestratorMcp.ts
     tests:
@@ -4794,7 +4794,7 @@ features:
       - apps/server/src/orchestration-v2/runtimeLayer.test.ts
       - apps/server/src/telemetry/ThreadSettleUsage.test.ts
       - apps/web/src/components/AutoSettleNotice.logic.test.ts
-      - packages/client-runtime/src/state/threadSettled.test.ts
+      - packages/client-runtime/src/state/threadSettleReason.test.ts
     upstream:
       status: tracking
       tracking:

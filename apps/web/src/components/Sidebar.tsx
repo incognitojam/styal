@@ -36,10 +36,10 @@ import {
   advanceSettledShelfFocus,
   canSnooze,
   effectiveSnoozed,
-  settleReasonLabel,
   threadWokeAt,
   type SettledShelfFocus,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { settleReasonLabel } from "@t3tools/client-runtime/state/thread-settle-reason";
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
