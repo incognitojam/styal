@@ -240,8 +240,97 @@ it.effect("records accepted billed turn usage once without billing the context w
       mixedModels: false,
       runtimeMode: "full-access",
       interactionMode: "default",
+      approvalRequests: 0,
       durationMs: 120,
     });
+  }).pipe(Effect.provide(layerTest.pipe(Layer.provide(layerAnalytics))));
+});
+
+it.effect("counts the approval requests a completed turn raised", () => {
+  const recorded: Array<Readonly<Record<string, unknown>>> = [];
+  const layerAnalytics = Layer.succeed(ProviderEventIngestor.ProviderTurnAnalytics, {
+    record: (properties: Readonly<Record<string, unknown>>) =>
+      Effect.sync(() => {
+        recorded.push(properties);
+      }),
+  });
+  return Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+    const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const threadEvent = yield* threadCreatedEvent(now);
+    yield* eventSink.write({ events: [threadEvent] });
+    const threadId = threadEvent.threadId;
+    const providerSessionId = yield* idAllocator.allocate.providerSession({
+      providerInstanceId: modelSelection.instanceId,
+      threadId,
+    });
+    const providerThreadId = idAllocator.derive.providerThread({
+      driver: CODEX_DRIVER,
+      nativeThreadId: "approval-thread",
+    });
+    const turnId = idAllocator.derive.providerTurn({
+      driver: CODEX_DRIVER,
+      nativeTurnId: "approval-turn",
+    });
+    const otherTurnId = idAllocator.derive.providerTurn({
+      driver: CODEX_DRIVER,
+      nativeTurnId: "earlier-turn",
+    });
+    const nodeId = NodeId.make("node:approval-turn");
+    const base = { providerSessionId, providerInstanceId: modelSelection.instanceId, threadId };
+    const request = (
+      id: string,
+      kind: "command" | "permission" | "user_input",
+      providerTurnId: typeof turnId,
+    ) =>
+      ingestor.ingestNormalized({
+        ...base,
+        event: {
+          type: "runtime_request.updated" as const,
+          driver: CODEX_DRIVER,
+          threadId,
+          runtimeRequest: {
+            id: RuntimeRequestId.make(id),
+            nodeId,
+            providerTurnId,
+            nativeRequestRef: null,
+            kind,
+            status: "resolved" as const,
+            responseCapability: { type: "message" as const },
+            createdAt: now,
+            resolvedAt: now,
+          },
+        },
+      });
+    yield* request("request:command", "command", turnId);
+    yield* request("request:permission", "permission", turnId);
+    // A question is not an approval, and another turn's request is not this turn's.
+    yield* request("request:question", "user_input", turnId);
+    yield* request("request:earlier", "command", otherTurnId);
+    yield* ingestor.ingestNormalized({
+      ...base,
+      analyticsContext: { modelSelection, runtimeMode: "auto" as const },
+      event: {
+        type: "provider_turn.updated" as const,
+        driver: CODEX_DRIVER,
+        providerTurn: {
+          id: turnId,
+          providerThreadId,
+          nodeId,
+          runAttemptId: null,
+          nativeTurnRef: null,
+          ordinal: 1,
+          status: "completed" as const,
+          startedAt: now,
+          completedAt: now,
+        },
+      },
+    });
+    assert.lengthOf(recorded, 1);
+    assert.strictEqual(recorded[0]?.runtimeMode, "auto");
+    assert.strictEqual(recorded[0]?.approvalRequests, 2);
   }).pipe(Effect.provide(layerTest.pipe(Layer.provide(layerAnalytics))));
 });
 

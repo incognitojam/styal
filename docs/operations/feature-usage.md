@@ -20,6 +20,10 @@ Additional measured operations are:
 - `workflow-run-watch`, `source = agent`: `watch` and `unwatch` record each `watch_workflow_run` and `unwatch_workflow_run` call with `watchResult` (`started`, `already_watching`, `already_completed`, `stopped`, `not_watching`). Failures carry `failureReason` (`read_failed`, `invalid_target`, `refused`, `unavailable`, `operation_failed`). `already_completed` is a call that needed no watch, not adoption.
 - `workflow-run-watch`, `source = system`, `action = end`: the server records how each watch it saw ended: `endReason = completed` with `conclusion` (`success`, `failure`, `cancelled`, `timed_out`, `skipped`, `other`), `unreadable` after eight failed reads, or `stopped` for unwatch, settle, archive and Stop, plus `watchedMinutes`. A watch that starts and ends between two passes, or ends while the server is down, has no end event. Use `completed` ends to see whether watches deliver a wake; `stopped` includes agent unwatches already counted above. Run IDs, repositories, URLs and workflow or job names are never reported.
 
+## Auto mode health
+
+`provider.turn.completed` carries `runtimeMode` and, from servers that count them, `approvalRequests`: the command, file and permission approvals the turn raised (questions are not counted). New threads default to Auto on providers with their own reviewer, so watch the share of `runtimeMode = auto` turns with `approvalRequests > 0`, broken down by `provider` and provider version. A jump after a provider release means its reviewer is asking about routine work. Filter on `approvalRequests` being set, since older servers do not send it. The provider canary's `auto` scenario checks the same thing before managed updates install a release.
+
 ## Provider inventory and updates
 
 Servers with `providerAnalyticsUsageVersion = 1` send two provider events. They are not `feature.used` events and are not on the feature dashboard.

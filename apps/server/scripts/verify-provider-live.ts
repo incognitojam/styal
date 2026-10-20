@@ -15,7 +15,8 @@
  * The scenarios target breakages past provider releases caused: resume decode
  * failures that only show after a server restart, native subagent items the
  * adapter could not read, extra or missing turn results that left threads
- * working, unhandled approval requests, and removed rollback methods.
+ * working, unhandled approval requests, removed rollback methods, and an Auto
+ * mode that asks about routine work or is no longer accepted.
  */
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
@@ -56,6 +57,7 @@ const SCENARIOS = [
   "resume",
   "interrupt",
   "approval",
+  "auto",
   "rewind",
   "native-subagent",
   "cold-resume",
@@ -551,6 +553,47 @@ function makeHelpers(client: Client, projectId: ProjectId, instanceId: ProviderI
 }
 
 /**
+ * The Auto setting the provider itself reported back in its native event logs:
+ * Claude Code's init message and Codex's thread settings. A provider that
+ * silently falls back from Auto reports something else. Undefined when the
+ * provider reports nothing this check knows how to read.
+ */
+function reportedAutoSettings(): ReadonlyArray<string> | undefined {
+  const directory = NodePath.join(home, "userdata/logs/provider");
+  if (!NodeFS.existsSync(directory)) return undefined;
+  const reported: Array<string> = [];
+  for (const file of NodeFS.readdirSync(directory)) {
+    for (const line of NodeFS.readFileSync(NodePath.join(directory, file), "utf8").split("\n")) {
+      const json = line.indexOf("{");
+      if (json < 0 || !line.includes("incoming")) continue;
+      let event: unknown;
+      try {
+        event = (JSON.parse(line.slice(json)) as { event?: unknown }).event;
+      } catch {
+        continue;
+      }
+      if (typeof event !== "object" || event === null) continue;
+      const { direction, payload } = event as { direction?: unknown; payload?: unknown };
+      if (direction !== "incoming" || typeof payload !== "object" || payload === null) continue;
+      const message = payload as {
+        type?: unknown;
+        subtype?: unknown;
+        permissionMode?: unknown;
+        method?: unknown;
+        params?: { threadSettings?: { approvalsReviewer?: unknown } };
+      };
+      if (message.type === "system" && message.subtype === "init")
+        reported.push(`permissionMode ${String(message.permissionMode)}`);
+      if (message.method === "thread/settings/updated")
+        reported.push(
+          `approvalsReviewer ${String(message.params?.threadSettings?.approvalsReviewer)}`,
+        );
+    }
+  }
+  return reported.length === 0 ? undefined : reported;
+}
+
+/**
  * Runs one scenario, recording a failure instead of propagating it. Time spent
  * accumulates, since some scenarios continue after the restart.
  */
@@ -880,6 +923,68 @@ try {
             `approved ${kinds.join(", ")}; file written and run completed`;
         }),
       );
+    }
+
+    // Auto: new threads default to it on providers with their own reviewer, so a
+    // routine workspace write must run without asking the user.
+    if (selected("auto")) {
+      if (snapshot.reviewsAutoMode !== true) {
+        skip("auto", "skipped: the provider has no Auto reviewer");
+      } else {
+        yield* attempt(
+          "auto",
+          Effect.gen(function* () {
+            const logOffset = logSize();
+            const autoFile = `auto-${NodeCrypto.randomBytes(4).toString("hex")}.txt`;
+            const autoToken = randomToken("AUTO");
+            const { threadId, messageId } = yield* launch(
+              "Provider Auto verification",
+              `This is an automated provider check. Using your file-writing or shell tool, create a file named ${autoFile} in the current working directory whose entire content is the single line: auto\nDo not create or change any other file. After the file exists, reply with exactly ${autoToken} and nothing else.`,
+              "auto",
+            );
+            const next = yield* waitFor(threadId, "the Auto turn to end", (projection) => {
+              const pending = projection.runtimeRequests.find(
+                (request) => request.status === "pending",
+              );
+              if (pending) return { kind: "request" as const, pending };
+              const run = runFor(projection, messageId);
+              return run && TERMINAL_RUN_STATUSES.has(run.status)
+                ? { kind: "end" as const, run, projection }
+                : undefined;
+            });
+            if (next.kind === "request") {
+              // Decline so the thread does not wait on a client that is not there.
+              yield* client["orchestration.dispatchCommand"]({
+                type: "runtime-request.respond",
+                commandId: CommandId.make(NodeCrypto.randomUUID()),
+                threadId,
+                requestId: next.pending.id,
+                decision: "decline",
+              });
+              fail(`Auto asked for ${next.pending.kind} approval for a routine workspace write`);
+            }
+            inspect("auto", next.projection, logOffset);
+            if (next.run.status !== "completed") fail(`Run ended ${next.run.status}`);
+            if (!NodeFS.existsSync(NodePath.join(project, autoFile)))
+              fail(`${autoFile} was not created`);
+            if (!assistantText(next.projection, next.run).includes(autoToken))
+              fail("Assistant reply did not contain the token");
+            // A routine write can run without a prompt outside Auto too, so also
+            // require the provider to report that it applied Auto.
+            const reported = reportedAutoSettings();
+            if (
+              reported !== undefined &&
+              !reported.some(
+                (setting) =>
+                  setting === "permissionMode auto" || setting === "approvalsReviewer auto_review",
+              )
+            )
+              fail(`The provider did not report Auto: ${[...new Set(reported)].join(", ")}`);
+            scenario("auto").detail =
+              `file written without an approval request; provider reported ${reported ? [...new Set(reported)].join(", ") : "no mode"}`;
+          }),
+        );
+      }
     }
 
     // Rewind: restore the checkpoint from before a turn, as the UI's rewind does.

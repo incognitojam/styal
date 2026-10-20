@@ -6,6 +6,7 @@ import {
   type OrchestrationV2PlanArtifact,
   type OrchestrationV2Run,
   type OrchestrationV2ProviderTurn,
+  type OrchestrationV2RuntimeRequest,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
   type ModelSelection,
@@ -99,10 +100,19 @@ export const layerAnalytics = Layer.effect(
   }),
 );
 
+/** Runtime request kinds that ask the user to approve an action. */
+const APPROVAL_REQUEST_KINDS: ReadonlySet<OrchestrationV2RuntimeRequest["kind"]> = new Set([
+  "command",
+  "file-read",
+  "file-change",
+  "permission",
+]);
+
 function providerTurnAnalyticsProperties(input: {
   readonly driver: ProviderAdapter.ProviderAdapterV2Event["driver"];
   readonly providerTurn: OrchestrationV2ProviderTurn;
   readonly context?: ProviderTurnAnalyticsContext;
+  readonly approvalRequests?: number;
 }): Readonly<Record<string, unknown>> {
   const usage = input.providerTurn.turnTokenUsage;
   const modelSelection = input.context?.modelSelection;
@@ -129,6 +139,7 @@ function providerTurnAnalyticsProperties(input: {
     ...(effort ? { effort } : {}),
     ...(input.context?.runtimeMode ? { runtimeMode: input.context.runtimeMode } : {}),
     ...(input.context?.interactionMode ? { interactionMode: input.context.interactionMode } : {}),
+    ...(input.approvalRequests === undefined ? {} : { approvalRequests: input.approvalRequests }),
     ...(input.providerTurn.startedAt && input.providerTurn.completedAt
       ? {
           durationMs: Math.max(
@@ -910,6 +921,21 @@ export const layer: Layer.Layer<
                 const oldest = completedTurnAnalytics.values().next().value;
                 if (oldest !== undefined) completedTurnAnalytics.delete(oldest);
               }
+              // How often a mode needs a person shows whether Auto still reviews
+              // on its own. A failed read leaves the count out.
+              const approvalRequests = yield* projections
+                .getThreadRecords(input.event.threadId ?? input.threadId, ["runtimeRequests"])
+                .pipe(
+                  Effect.map(
+                    ({ runtimeRequests }) =>
+                      runtimeRequests.filter(
+                        (request) =>
+                          request.providerTurnId === providerTurn.id &&
+                          APPROVAL_REQUEST_KINDS.has(request.kind),
+                      ).length,
+                  ),
+                  Effect.orElseSucceed(() => undefined),
+                );
               yield* analytics.record(
                 providerTurnAnalyticsProperties({
                   driver: input.event.driver,
@@ -917,6 +943,7 @@ export const layer: Layer.Layer<
                   ...(input.analyticsContext === undefined
                     ? {}
                     : { context: input.analyticsContext }),
+                  ...(approvalRequests === undefined ? {} : { approvalRequests }),
                 }),
               );
             }),
