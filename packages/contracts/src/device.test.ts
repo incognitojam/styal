@@ -2,10 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { Schema } from "effect";
 import {
   DeviceServiceState,
+  EasDeviceHostConfig,
   EasDeviceHostConfigs,
   SshDeviceHostConfigs,
   deviceToolInstallMessage,
 } from "./device.ts";
+import { secretSettingsFields } from "./settings.ts";
 
 import { DeviceConnectEnvironmentInput, EnvironmentDeviceHostConfig } from "./device.ts";
 import * as Schema from "effect/Schema";
@@ -96,6 +98,7 @@ describe("configured device hosts", () => {
         kind: "eas",
         id: "eas",
         label: "EAS Simulator",
+        accessToken: "",
         maxSessionMinutes: 30,
         idleMinutes: 10,
         maxConcurrentSessions: 2,
@@ -108,6 +111,10 @@ describe("configured device hosts", () => {
     expect(() =>
       decodeEas([{ kind: "eas", id: "eas", label: "EAS", maxSessionMinutes: 10 }]),
     ).toThrow();
+  });
+
+  it("marks the EAS access token as a secret setting", () => {
+    expect(secretSettingsFields(EasDeviceHostConfig)).toEqual(["accessToken"]);
   });
 });
 

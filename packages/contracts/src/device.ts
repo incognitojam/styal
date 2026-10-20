@@ -20,6 +20,7 @@ import {
   ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
+  TrimmedString,
 } from "./baseSchemas.ts";
 import { EnvironmentMachineKind } from "./environment.ts";
 
@@ -63,6 +64,15 @@ export const EasDeviceHostConfig = Schema.Struct({
   label: TrimmedNonEmptyString,
   /** EAS project that sessions run under, when the project's app config does not name one. */
   appId: Schema.optional(TrimmedNonEmptyString),
+  /**
+   * Expo access token, kept in the secret store. When empty the server uses
+   * EXPO_TOKEN, then the `eas login` session. This is `secretSetting` from
+   * settings.ts, which imports this module.
+   */
+  accessToken: TrimmedString.pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed("")),
+    Schema.annotateKey({ settingsSecret: true }),
+  ),
   /** EAS allows at most 40 minutes on free accounts and 115 on paid ones. */
   maxSessionMinutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 115 })).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(30)),
