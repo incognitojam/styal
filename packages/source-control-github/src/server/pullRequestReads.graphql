@@ -52,6 +52,7 @@ query PullRequestCore(
   $headRef: String!
   $required: Boolean!
   $deployments: Boolean!
+  $requestedReviewers: Int!
 ) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed
@@ -116,7 +117,7 @@ query PullRequestCore(
           behindBy
         }
       }
-      reviewRequests(first: 100) {
+      reviewRequests(first: $requestedReviewers) {
         nodes {
           requestedReviewer {
             ... on User {
@@ -191,6 +192,7 @@ query PullRequestCoreWithoutDeployments(
   $number: Int!
   $headRef: String!
   $required: Boolean!
+  $requestedReviewers: Int!
 ) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed
@@ -255,7 +257,7 @@ query PullRequestCoreWithoutDeployments(
           behindBy
         }
       }
-      reviewRequests(first: 100) {
+      reviewRequests(first: $requestedReviewers) {
         nodes {
           requestedReviewer {
             ... on User {
@@ -310,6 +312,7 @@ query PullRequestCoreEnterprise(
   $headRef: String!
   $required: Boolean!
   $deployments: Boolean!
+  $requestedReviewers: Int!
 ) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed
@@ -369,7 +372,7 @@ query PullRequestCoreEnterprise(
           behindBy
         }
       }
-      reviewRequests(first: 100) {
+      reviewRequests(first: $requestedReviewers) {
         nodes {
           requestedReviewer {
             ... on User {
@@ -443,6 +446,7 @@ query PullRequestCoreEnterpriseWithoutDeployments(
   $number: Int!
   $headRef: String!
   $required: Boolean!
+  $requestedReviewers: Int!
 ) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed
@@ -502,7 +506,7 @@ query PullRequestCoreEnterpriseWithoutDeployments(
           behindBy
         }
       }
-      reviewRequests(first: 100) {
+      reviewRequests(first: $requestedReviewers) {
         nodes {
           requestedReviewer {
             ... on User {
