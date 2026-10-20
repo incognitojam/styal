@@ -41,6 +41,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SynchronizedRef from "effect/SynchronizedRef";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
 import type * as HttpMethod from "effect/http/HttpMethod";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
@@ -438,7 +440,15 @@ export const make = Effect.fn("ManagedRelayClient.make")(function* (
     return disabledManagedRelayClient(options.relayUrl);
   }
   const signer = yield* ManagedRelayDpopSigner;
-  const client = yield* HttpApiClient.make(RelayApi, { baseUrl: relayUrl });
+  const client = yield* HttpApiClient.make(RelayApi, {
+    baseUrl: relayUrl,
+    // Relay requests authenticate with headers, never cookies. A caller's
+    // `credentials: "include"` (the same-origin primary environment layer)
+    // would make browsers reject the relay's wildcard CORS responses.
+    transformClient: HttpClient.transform((request) =>
+      Effect.provideService(request, FetchHttpClient.RequestInit, { credentials: "omit" }),
+    ),
+  });
   const initialTokens = options.accessTokenStore ? yield* options.accessTokenStore.load : [];
   const cachedTokens = yield* SynchronizedRef.make<
     ReadonlyArray<ManagedRelayAccessTokenCacheEntry>
