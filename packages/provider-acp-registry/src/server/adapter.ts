@@ -1,4 +1,9 @@
 import {
+  extractClaudeSubagentUpdate,
+  extractClaudeSubagentSessionEvent,
+  isClaudeProvisionalSubagentTool,
+} from "./claudeAcp.ts";
+import {
   normalizeDevinSessionUpdate,
   normalizeDevinToolCall,
   extractDevinSubagentUpdate,
@@ -24,6 +29,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import {
   normalizeAcpRegistryCommands,
@@ -70,6 +76,7 @@ export interface AcpRegistryAdapterV2Options {
     EffectAcpErrors.AcpError,
     ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | Scope.Scope
   >;
+  readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
   readonly assertComplete?: Effect.Effect<void, EffectAcpErrors.AcpError>;
 }
 
@@ -182,6 +189,22 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     registryAgentId === "github-copilot-cli" ||
     (options.settings.source === "local" &&
       /^copilot(\.exe|\.cmd)?$/i.test(options.settings.commandPath.split(/[\\/]/).pop() ?? ""));
+  const isClaude =
+    registryAgentId === "claude-acp" ||
+    (options.settings.source === "local" &&
+      /^claude-agent-acp(\.exe|\.cmd)?$/i.test(
+        options.settings.commandPath.split(/[\\/]/).pop() ?? "",
+      ));
+  const runtimeOptions = isClaude
+    ? {
+        ...options,
+        environment: {
+          ...options.environment,
+          CLAUDE_AGENT_ACP_EXPERIMENTAL_V2:
+            options.environment.CLAUDE_AGENT_ACP_EXPERIMENTAL_V2 ?? "1",
+        },
+      }
+    : options;
   const copilotRouting = isCopilot ? makeCopilotSubagentRouting() : undefined;
   const flavor: AcpAdapterV2Flavor = {
     driver: ACP_REGISTRY_PROVIDER,
@@ -190,6 +213,14 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     promptFailure: (cause) => acpRegistryPromptFailure(registryAgentId, cause),
     ...(registryAgentId === "mistral-vibe"
       ? { registerExtensions: registerMistralVibeAcpExtensions }
+      : {}),
+    ...(isClaude
+      ? {
+          followAgentWorkState: true,
+          extractSubagentUpdate: extractClaudeSubagentUpdate,
+          isProvisionalSubagentTool: isClaudeProvisionalSubagentTool,
+          extractSubagentSessionEvent: extractClaudeSubagentSessionEvent,
+        }
       : {}),
     ...(isDevin
       ? {
@@ -210,7 +241,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           normalizeSessionUpdate: copilotRouting.normalizeSessionUpdate,
           extractSubagentUpdate: extractCopilotSubagentUpdate,
         }),
-    makeRuntime: options.makeRuntime ?? makeAcpRegistryRuntime(options, catalog),
+    makeRuntime: options.makeRuntime ?? makeAcpRegistryRuntime(runtimeOptions, catalog),
     ...(runtimeCoordinator === undefined
       ? {}
       : {
@@ -244,6 +275,9 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     instanceId: options.instanceId,
     flavor,
     selfInvocation: options.selfInvocation,
+    ...(options.continuationRequests === undefined
+      ? {}
+      : { continuationRequests: options.continuationRequests }),
     // Devin runs commands through client terminals and has no ask mode over ACP to fall back on.
     ...(isDevin
       ? {
@@ -285,6 +319,7 @@ export const AcpRegistryAdapterV2Driver: ProviderAdapterDriver<
         settings: { ...input.config, enabled: input.enabled },
         environment: yield* mergeProviderInstanceEnvironment(input.environment),
         selfInvocation,
+        continuationRequests: yield* ProviderContinuationRequests.ProviderContinuationRequests,
         nativeLogging: (threadId) =>
           makeNativeLogger({
             nativeEventLogger: providerEventLoggers.native,
