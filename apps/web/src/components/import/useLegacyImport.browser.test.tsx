@@ -1,8 +1,9 @@
 import { EnvironmentId, type LegacyImportPreview } from "@t3tools/contracts";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts/settings";
-import { act, useEffect } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { useEffect } from "react";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import { act, render, type Screen } from "../../../test/render";
 import { selectLegacyImportPreferences } from "../settings/DataImportSettings.logic";
 import type { ImportOutcome } from "./types";
 
@@ -30,19 +31,6 @@ vi.mock(import("../../hooks/useSettings"), async (original) => ({
 }));
 import { useLegacyImport } from "./useLegacyImport";
 const environmentId = EnvironmentId.make("demo-laptop");
-let root: Root;
-let current: ReturnType<typeof useLegacyImport>;
-function Probe({ busy }: { busy: boolean }) {
-  const importer = useLegacyImport(environmentId, busy);
-  useEffect(() => {
-    current = importer;
-  });
-  return null;
-}
-const render = async (busy = false) => {
-  await act(() => root.render(<Probe busy={busy} />));
-  return current;
-};
 const project = (projectId: string) => ({
   projectId,
   title: projectId,
@@ -72,54 +60,69 @@ const result = (failed: string[] = []) => ({
     skippedAttachmentCount: 0,
   },
 });
-describe("shared T3 importer", () => {
-  beforeEach(() => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    mocks.command.mockReset();
-    mocks.query.refresh.mockClear();
-    mocks.query.data = {
+function setup() {
+  mocks.command.mockReset();
+  mocks.query.refresh.mockClear();
+  mocks.query.data = {
+    status: "available",
+    sourceKind: "t3-code",
+    schemaVersion: 1,
+    projects: [project("one"), project("two")],
+    preferences: {
       status: "available",
-      sourceKind: "t3-code",
-      schemaVersion: 1,
-      projects: [project("one"), project("two")],
-      preferences: {
-        status: "available",
-        values: {
-          ...selectLegacyImportPreferences(DEFAULT_SERVER_SETTINGS),
-          enableAgentBrowserAccess: !DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess,
-        },
+      values: {
+        ...selectLegacyImportPreferences(DEFAULT_SERVER_SETTINGS),
+        enableAgentBrowserAccess: !DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess,
       },
-    };
-    mocks.command.mockImplementation(async ({ input }) =>
-      input.includeSettings
-        ? {
-            _tag: "Success",
-            value: { ...result().value, projects: [], settings: { status: "imported" } },
-          }
-        : result(),
-    );
-    root = createRoot(document.createElement("div"));
-  });
-  afterEach(async () => {
-    await act(() => root.unmount());
-    vi.unstubAllGlobals();
-  });
+    },
+  };
+  mocks.command.mockImplementation(async ({ input }) =>
+    input.includeSettings
+      ? {
+          _tag: "Success",
+          value: { ...result().value, projects: [], settings: { status: "imported" } },
+        }
+      : result(),
+  );
+  let current!: ReturnType<typeof useLegacyImport>;
+  function Probe({ busy }: { busy: boolean }) {
+    const importer = useLegacyImport(environmentId, busy);
+    useEffect(() => {
+      current = importer;
+    });
+    return null;
+  }
+  let screen: Screen | undefined;
+  return {
+    render: async (busy = false) => {
+      if (screen) await screen.rerender(<Probe busy={busy} />);
+      else screen = await render(<Probe busy={busy} />);
+      return current;
+    },
+    [Symbol.asyncDispose]: async () => {
+      await screen?.[Symbol.asyncDispose]();
+    },
+  };
+}
+describe("shared T3 importer", () => {
   it("imports differing preferences by default with a separate request", async () => {
-    const importer = await render();
+    await using app = setup();
+    const importer = await app.render();
     expect(importer.selectedPreferences).toBe(true);
     await act(() => importer.run());
     expect(mocks.command.mock.calls.map(([request]) => request.input)).toEqual([
       { projectIds: ["one", "two"], includeSettings: false },
       { projectIds: [], includeSettings: true },
     ]);
-    expect((await render()).selected).toHaveLength(0);
-    expect((await render()).selectedPreferences).toBe(false);
+    expect((await app.render()).selected).toHaveLength(0);
+    expect((await app.render()).selectedPreferences).toBe(false);
   });
   it("preserves an opt-out when preview data refreshes", async () => {
-    const initial = await render();
+    await using app = setup();
+    const initial = await app.render();
     await act(() => initial.setIncludeSettings(false));
     mocks.query.data = structuredClone(mocks.query.data);
-    const importer = await render();
+    const importer = await app.render();
     expect(importer.selectedPreferences).toBe(false);
     await act(() => importer.run());
     expect(mocks.command).toHaveBeenCalledExactlyOnceWith({
@@ -128,11 +131,12 @@ describe("shared T3 importer", () => {
     });
   });
   it("selects preferences when discovery finishes, but not when values already match", async () => {
+    await using app = setup();
     const available = mocks.query.data;
     mocks.query.data = null;
-    expect((await render()).selectedPreferences).toBe(false);
+    expect((await app.render()).selectedPreferences).toBe(false);
     mocks.query.data = available;
-    expect((await render()).selectedPreferences).toBe(true);
+    expect((await app.render()).selectedPreferences).toBe(true);
     mocks.query.data = {
       status: "available",
       sourceKind: "t3-code",
@@ -143,13 +147,14 @@ describe("shared T3 importer", () => {
         values: selectLegacyImportPreferences(DEFAULT_SERVER_SETTINGS),
       },
     };
-    expect((await render()).selectedPreferences).toBe(false);
+    expect((await app.render()).selectedPreferences).toBe(false);
   });
   it("keeps only failed projects selected and retries those", async () => {
+    await using app = setup();
     mocks.command.mockResolvedValueOnce(result(["two"]));
-    const importer = await render();
+    const importer = await app.render();
     expect((await act(() => importer.run())).success).toBe(false);
-    const retry = await render();
+    const retry = await app.render();
     expect(retry.selected.map((p) => p.projectId)).toEqual(["two"]);
     await act(() => retry.run());
     expect(mocks.command).toHaveBeenLastCalledWith({
@@ -158,22 +163,24 @@ describe("shared T3 importer", () => {
     });
   });
   it("runs selected preferences independently after a partial project import", async () => {
-    const initial = await render();
+    await using app = setup();
+    const initial = await app.render();
     await act(() => initial.setIncludeSettings(true));
     mocks.command.mockResolvedValueOnce(result(["two"])).mockResolvedValueOnce({
       _tag: "Success",
       value: { ...result().value, projects: [], settings: { status: "imported" } },
     });
-    const importer = await render();
+    const importer = await app.render();
     expect((await act(() => importer.run())).success).toBe(false);
     expect(mocks.command).toHaveBeenLastCalledWith({
       environmentId,
       input: { projectIds: [], includeSettings: true },
     });
-    expect((await render()).selectedPreferences).toBe(false);
+    expect((await app.render()).selectedPreferences).toBe(false);
   });
   it("retains selected preferences when their import fails", async () => {
-    const importer = await render();
+    await using app = setup();
+    const importer = await app.render();
     await act(() => {
       importer.setSelection(new Set());
       importer.setIncludeSettings(true);
@@ -186,19 +193,21 @@ describe("shared T3 importer", () => {
         settings: { status: "failed", detail: "Disk is full" },
       },
     });
-    const retry = await render();
+    const retry = await app.render();
     expect((await act(() => retry.run())).success).toBe(false);
-    expect((await render()).preferencesError).toBe("Disk is full");
-    expect((await render()).selectedPreferences).toBe(true);
+    expect((await app.render()).preferencesError).toBe("Disk is full");
+    expect((await app.render()).selectedPreferences).toBe(true);
   });
   it("keeps the reviewed preview stable while a poll changes during import", async () => {
-    const original = (await render()).preview;
+    await using app = setup();
+    const original = (await app.render()).preview;
     mocks.query.data = { status: "not-found" };
-    expect((await render(true)).preview).toBe(original);
-    expect((await render(false)).preview).toEqual({ status: "not-found" });
+    expect((await app.render(true)).preview).toBe(original);
+    expect((await app.render(false)).preview).toEqual({ status: "not-found" });
   });
   it("keeps the batch visible through project, preference, and completion receipts", async () => {
-    const initial = await render();
+    await using app = setup();
+    const initial = await app.render();
     await act(() => initial.setIncludeSettings(true));
     let completeProjects!: (value: ReturnType<typeof result>) => void;
     let completePreferences!: (value: unknown) => void;
@@ -215,12 +224,12 @@ describe("shared T3 importer", () => {
             completePreferences = resolve;
           }),
       );
-    const importer = await render();
+    const importer = await app.render();
     let running!: Promise<ImportOutcome>;
     await act(async () => {
       running = importer.run();
     });
-    expect((await render(true)).progress).toMatchObject({
+    expect((await app.render(true)).progress).toMatchObject({
       phase: "projects",
       preferences: "queued",
     });
@@ -230,12 +239,15 @@ describe("shared T3 importer", () => {
       schemaVersion: 1,
       projects: [project("two")],
     };
-    expect((await render(true)).progress?.projects.map((p) => p.projectId)).toEqual(["one", "two"]);
-    expect((await render(true)).query.data).toBe(mocks.query.data);
+    expect((await app.render(true)).progress?.projects.map((p) => p.projectId)).toEqual([
+      "one",
+      "two",
+    ]);
+    expect((await app.render(true)).query.data).toBe(mocks.query.data);
     await act(async () => {
       completeProjects(result());
     });
-    expect((await render(true)).progress).toMatchObject({
+    expect((await app.render(true)).progress).toMatchObject({
       phase: "preferences",
       preferences: "importing",
       result: result().value,
@@ -247,11 +259,15 @@ describe("shared T3 importer", () => {
       });
       await running;
     });
-    expect((await render(true)).progress).toMatchObject({ phase: "done", preferences: "complete" });
+    expect((await app.render(true)).progress).toMatchObject({
+      phase: "done",
+      preferences: "complete",
+    });
   });
   it("does not mark a failed import complete when its preview becomes empty", async () => {
+    await using app = setup();
     mocks.command.mockResolvedValueOnce(result(["two"]));
-    const importer = await render();
+    const importer = await app.render();
     await act(() => importer.run());
     mocks.query.data = {
       status: "available",
@@ -260,48 +276,51 @@ describe("shared T3 importer", () => {
       projects: [],
     };
     expect(
-      (await render(true)).progress?.result?.projects.find((p) => p.sourceProjectId === "two")
+      (await app.render(true)).progress?.result?.projects.find((p) => p.sourceProjectId === "two")
         ?.status,
     ).toBe("failed");
   });
   it("imports preferences without importing the default T3 project selection", async () => {
-    const initial = await render();
+    await using app = setup();
+    const initial = await app.render();
     await act(() => initial.setIncludeSettings(true));
     mocks.command.mockResolvedValueOnce({
       _tag: "Success",
       value: { ...result().value, projects: [], settings: { status: "imported" } },
     });
-    const importer = await render();
+    const importer = await app.render();
     const outcome = await act(() => importer.run({ includeProjects: false }));
     expect(outcome).toEqual({ success: true, projectRef: undefined });
     expect(mocks.command).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: { projectIds: [], includeSettings: true },
     });
-    expect((await render()).selected).toHaveLength(2);
-    expect((await render()).selectedPreferences).toBe(false);
-    expect((await render(true)).progress?.projects).toHaveLength(0);
+    expect((await app.render()).selected).toHaveLength(2);
+    expect((await app.render()).selectedPreferences).toBe(false);
+    expect((await app.render(true)).progress?.projects).toHaveLength(0);
   });
   it("imports projects without the selected preferences when preferences are left for later", async () => {
-    const importer = await render();
+    await using app = setup();
+    const importer = await app.render();
     const outcome = await act(() => importer.run({ includePreferences: false }));
     expect(outcome.success).toBe(true);
     expect(mocks.command).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: { projectIds: ["one", "two"], includeSettings: false },
     });
-    expect((await render()).selectedPreferences).toBe(true);
-    expect((await render(true)).progress?.preferences).toBeNull();
+    expect((await app.render()).selectedPreferences).toBe(true);
+    expect((await app.render(true)).progress?.preferences).toBeNull();
   });
   it("does not import anything when projects are skipped and preferences are not selected", async () => {
-    const initial = await render();
+    await using app = setup();
+    const initial = await app.render();
     await act(() => initial.setIncludeSettings(false));
-    const importer = await render();
+    const importer = await app.render();
     expect(await act(() => importer.run({ includeProjects: false }))).toEqual({
       success: true,
       projectRef: undefined,
     });
     expect(mocks.command).not.toHaveBeenCalled();
-    expect((await render()).selected).toHaveLength(2);
+    expect((await app.render()).selected).toHaveLength(2);
   });
 });

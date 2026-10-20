@@ -4,9 +4,9 @@ import {
   type PullRequestDeployment,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
+
+import { act, fakeTimers, render } from "../../../test/render";
 
 const { openLink, toast, readConfig, run } = vi.hoisted(() => ({
   openLink: vi.fn(),
@@ -37,71 +37,59 @@ const deployment: PullRequestDeployment = {
   updatedAt: "2026-07-02T00:00:00Z",
 };
 
-let root: Root;
-let container: HTMLDivElement;
-
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.clearAllMocks();
-  openLink.mockResolvedValue(undefined);
-  readConfig.mockReturnValue({
+function setup() {
+  openLink.mockReset().mockResolvedValue(undefined);
+  toast.mockReset();
+  readConfig.mockReset().mockReturnValue({
     environment: { capabilities: { forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION } },
   });
-  run.mockResolvedValue(AsyncResult.success(undefined));
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
+  run.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+}
 
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
-async function render(
+function deployments(
   value: PullRequestDeployment | PullRequestDeployment[] = deployment,
   props: { headSha?: string; truncated?: boolean } = {},
 ) {
-  await act(async () =>
-    root.render(
-      <PullRequestDeployments
-        environmentId={environmentId}
-        deployments={Array.isArray(value) ? value : [value]}
-        threadRef={null}
-        {...props}
-        truncated={props.truncated ?? false}
-      />,
-    ),
+  return (
+    <PullRequestDeployments
+      environmentId={environmentId}
+      deployments={Array.isArray(value) ? value : [value]}
+      threadRef={null}
+      {...props}
+      truncated={props.truncated ?? false}
+    />
   );
 }
 
-function button(label: string) {
+function button(container: HTMLElement, label: string) {
   const result = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
   if (!result) throw new Error(`Missing button: ${label}`);
   return result;
 }
 
 it("explains failure without hover and updates when the current commit deploys", async () => {
-  await render(deployment, { headSha, truncated: true });
+  setup();
+  await using screen = await render(deployments(deployment, { headSha, truncated: true }));
+  const { container } = screen;
   expect(run).not.toHaveBeenCalled();
   expect(container.querySelector("p")?.textContent).toBe(deployment.description);
   expect(container.textContent).toContain(deployment.commitSha.slice(0, 7));
   expect(container.textContent).toContain("Environments not deployed recently may be missing.");
 
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  using _consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   openLink.mockRejectedValueOnce(new Error("Browser unavailable"));
-  await act(async () => button("View deployment logs for web-preview").click());
+  await act(async () => button(container, "View deployment logs for web-preview").click());
   expect(toast).toHaveBeenCalledWith({ type: "error", title: "Unable to open deployment" });
   expect(run).toHaveBeenLastCalledWith(expect.anything(), {
     environmentId,
     input: { feature: "pull-request-deployments", action: "open_logs", outcome: "failure" },
   });
 
-  await render(
-    { ...deployment, status: "pending", description: null, commitSha: headSha },
-    { headSha },
+  await screen.rerender(
+    deployments(
+      { ...deployment, status: "pending", description: null, commitSha: headSha },
+      { headSha },
+    ),
   );
   expect(container.textContent).toContain("Pending");
   expect(container.textContent).not.toContain(headSha.slice(0, 7));
@@ -109,18 +97,20 @@ it("explains failure without hover and updates when the current commit deploys",
   expect(container.textContent).not.toContain("may be missing");
   expect(container.querySelector('button[aria-label="Open web-preview"]')).toBeNull();
 
-  await render(
-    {
-      ...deployment,
-      status: "success",
-      description: null,
-      commitSha: headSha,
-      environmentUrl: "https://preview.example.com",
-    },
-    { headSha },
+  await screen.rerender(
+    deployments(
+      {
+        ...deployment,
+        status: "success",
+        description: null,
+        commitSha: headSha,
+        environmentUrl: "https://preview.example.com",
+      },
+      { headSha },
+    ),
   );
   expect(container.textContent).toContain("Deployed");
-  await act(async () => button("Open web-preview").click());
+  await act(async () => button(container, "Open web-preview").click());
   expect(openLink).toHaveBeenLastCalledWith("https://preview.example.com");
   expect(run).toHaveBeenLastCalledWith(expect.anything(), {
     environmentId,
@@ -130,19 +120,24 @@ it("explains failure without hover and updates when the current commit deploys",
 });
 
 it("keeps inactive previews closed while logs remain available, and does not guess an unknown head", async () => {
-  await render({
-    ...deployment,
-    status: "inactive",
-    environmentUrl: "https://preview.example.com",
-  });
+  setup();
+  await using screen = await render(
+    deployments({
+      ...deployment,
+      status: "inactive",
+      environmentUrl: "https://preview.example.com",
+    }),
+  );
+  const { container } = screen;
   expect(container.textContent).toContain("Inactive");
   expect(container.querySelector('button[aria-label="Open web-preview"]')).toBeNull();
   expect(container.textContent).toContain(deployment.commitSha.slice(0, 7));
-  await act(async () => button("View deployment logs for web-preview").click());
+  await act(async () => button(container, "View deployment logs for web-preview").click());
   expect(openLink).toHaveBeenCalledWith(deployment.logUrl);
 });
 
 it("lists failures first and keeps the rest behind Show all", async () => {
+  setup();
   const environments = ["a", "b", "c", "d", "e", "f"].map((environment): PullRequestDeployment => ({
     ...deployment,
     id: environment,
@@ -151,7 +146,8 @@ it("lists failures first and keeps the rest behind Show all", async () => {
     commitSha: headSha,
   }));
   environments[5] = { ...environments[5]!, status: "failure" };
-  await render(environments, { headSha });
+  await using screen = await render(deployments(environments, { headSha }));
+  const { container } = screen;
   const names = () =>
     [...container.querySelectorAll('button[aria-label^="View deployment logs for "]')].map((node) =>
       node.getAttribute("aria-label")!.slice("View deployment logs for ".length),
@@ -178,32 +174,31 @@ it("lists failures first and keeps the rest behind Show all", async () => {
 });
 
 it("keeps links working on older servers and when analytics delivery fails", async () => {
-  await render();
+  setup();
+  await using screen = await render(deployments());
+  const { container } = screen;
   for (const capabilities of [{}, { forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION - 1 }]) {
     readConfig.mockReturnValue({ environment: { capabilities } });
-    await act(async () => button("View deployment logs for web-preview").click());
+    await act(async () => button(container, "View deployment logs for web-preview").click());
     expect(run).not.toHaveBeenCalled();
   }
   readConfig.mockReturnValue({
     environment: { capabilities: { forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION } },
   });
   run.mockRejectedValueOnce(new Error("Synthetic analytics transport failure"));
-  await act(async () => button("View deployment logs for web-preview").click());
+  await act(async () => button(container, "View deployment logs for web-preview").click());
   expect(run).toHaveBeenCalledOnce();
   expect(openLink).toHaveBeenCalledTimes(3);
   expect(toast).not.toHaveBeenCalled();
 });
 
 it("keeps a deployment's age counting without new deployment data", async () => {
-  vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
-  try {
-    vi.setSystemTime(new Date("2026-07-02T00:03:00Z"));
-    await render();
-    expect(container.textContent).toContain("3m ago");
+  setup();
+  using _timers = fakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+  vi.setSystemTime(new Date("2026-07-02T00:03:00Z"));
+  await using screen = await render(deployments());
+  expect(screen.container.textContent).toContain("3m ago");
 
-    await act(async () => vi.advanceTimersByTime(60_000));
-    expect(container.textContent).toContain("4m ago");
-  } finally {
-    vi.useRealTimers();
-  }
+  await act(async () => vi.advanceTimersByTime(60_000));
+  expect(screen.container.textContent).toContain("4m ago");
 });

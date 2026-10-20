@@ -1,7 +1,8 @@
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
-import { act, useLayoutEffect } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { useLayoutEffect } from "react";
+import { expect, it, vi } from "vite-plus/test";
+
+import { act, render } from "../../test/render";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useRightPanelSurfaceClose } from "./useRightPanelSurfaceClose";
@@ -44,7 +45,6 @@ const other: ScopedThreadRef = {
   environmentId: EnvironmentId.make("environment-b"),
   threadId: ThreadId.make("thread-b"),
 };
-let root: Root | null = null;
 let actions: ReturnType<typeof useRightPanelSurfaceClose>;
 function Probe({ target }: { target: ScopedThreadRef }) {
   const currentActions = useRightPanelSurfaceClose({
@@ -56,29 +56,19 @@ function Probe({ target }: { target: ScopedThreadRef }) {
   });
   return null;
 }
-async function render(target: ScopedThreadRef) {
-  root ??= createRoot(document.createElement("div"));
-  await act(() => root!.render(<Probe target={target} />));
-  return actions;
-}
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+function setup() {
   state.allowed = new Set([original.environmentId, other.environmentId]);
-  state.close.mockResolvedValue({ _tag: "Success" });
+  state.close.mockReset().mockResolvedValue({ _tag: "Success" });
+  state.confirm.mockReset();
   useRightPanelStore.setState({ byThreadKey: {} });
   useTerminalUiStateStore.setState({ terminalUiStateByThreadKey: {} });
-});
-afterEach(async () => {
-  await act(() => root?.unmount());
-  root = null;
-  vi.resetAllMocks();
-  vi.unstubAllGlobals();
-});
+}
 
 it.each(["confirmed", "cancelled", "revoked"])(
   "keeps a delayed %s close on its original thread",
   async (outcome) => {
+    setup();
     let confirm!: (confirmed: boolean) => void;
     state.confirm.mockReturnValue(
       new Promise<boolean>((resolve) => {
@@ -93,9 +83,10 @@ it.each(["confirmed", "cancelled", "revoked"])(
       useRightPanelStore.getState().byThreadKey,
       original,
     ).surfaces[0]!;
-    const retained = await render(original);
+    await using screen = await render(<Probe target={original} />);
+    const retained = actions;
     retained.closeSurface(originalSurface);
-    await render(other);
+    await screen.rerender(<Probe target={other} />);
     if (outcome === "revoked") state.allowed.delete(original.environmentId);
     await act(async () => {
       confirm(outcome !== "cancelled");

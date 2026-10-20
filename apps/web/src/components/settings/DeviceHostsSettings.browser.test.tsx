@@ -3,11 +3,12 @@ import {
   EnvironmentId,
   type SshDeviceHostConfig,
 } from "@t3tools/contracts";
-import { act, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { ReactNode } from "react";
 import { page, userEvent } from "vite-plus/test/browser";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import "~/index.css";
+
+import { render } from "../../../test/render";
 
 const { update } = vi.hoisted(() => ({ update: vi.fn() }));
 
@@ -51,32 +52,19 @@ import { DeviceHostsSettings } from "./DeviceHostsSettings";
 
 const environmentId = EnvironmentId.make("build-server");
 let hosts: SshDeviceHostConfig[];
-let root: Root;
-let container: HTMLDivElement;
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+function setup() {
   hosts = [];
   update.mockReset().mockImplementation(async (command) => {
     hosts = command.input.patch.deviceHosts;
     return { _tag: "Success", value: undefined };
   });
-  container = document.body.appendChild(document.createElement("div"));
-  root = createRoot(container);
-});
-
-afterEach(async () => {
-  await act(() => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
-
-async function render() {
-  await act(() => root.render(<DeviceHostsSettings environmentId={environmentId} />));
 }
 
 it("hides empty SSH setup and edits then removes a saved host on its owning environment", async () => {
-  await render();
+  setup();
+  await using screen = await render(<DeviceHostsSettings environmentId={environmentId} />);
+  const { container } = screen;
   expect(container.textContent).toBe("");
   hosts = [
     {
@@ -86,25 +74,23 @@ it("hides empty SSH setup and edits then removes a saved host on its owning envi
       target: "builder@device.example.test",
     },
   ];
-  await render();
+  await screen.rerender(<DeviceHostsSettings environmentId={environmentId} />);
   const section = container.querySelector("button")!;
   expect(section.textContent).toContain("Existing SSH device hosts");
-  await act(async () => userEvent.click(section));
+  await userEvent.click(section);
   const options = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Simulator host options"]',
   )!;
-  await act(async () => userEvent.click(options));
+  await userEvent.click(options);
   const edit = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
     (item) => item.textContent === "Edit",
   )!;
-  await act(async () => userEvent.click(edit));
-  await act(async () =>
-    userEvent.fill(
-      document.querySelector<HTMLInputElement>('input[placeholder="Mac mini"]')!,
-      "Renamed simulator",
-    ),
+  await userEvent.click(edit);
+  await userEvent.fill(
+    document.querySelector<HTMLInputElement>('input[placeholder="Mac mini"]')!,
+    "Renamed simulator",
   );
-  await act(async () => page.getByRole("button", { name: "Save host", exact: true }).click());
+  await page.getByRole("button", { name: "Save host", exact: true }).click();
   expect(hosts).toEqual([
     {
       kind: "ssh",
@@ -115,17 +101,15 @@ it("hides empty SSH setup and edits then removes a saved host on its owning envi
   ]);
   expect(update).toHaveBeenCalledWith({ environmentId, input: { patch: { deviceHosts: hosts } } });
 
-  await render();
-  await act(async () =>
-    userEvent.click(
-      container.querySelector<HTMLButtonElement>('button[aria-label="Renamed simulator options"]')!,
-    ),
+  await screen.rerender(<DeviceHostsSettings environmentId={environmentId} />);
+  await userEvent.click(
+    container.querySelector<HTMLButtonElement>('button[aria-label="Renamed simulator options"]')!,
   );
   const remove = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
     (item) => item.textContent === "Remove",
   )!;
-  await act(async () => userEvent.click(remove));
-  await render();
+  await userEvent.click(remove);
+  await screen.rerender(<DeviceHostsSettings environmentId={environmentId} />);
   expect(hosts).toEqual([]);
   expect(container.textContent).toBe("");
   expect(update).toHaveBeenLastCalledWith({ environmentId, input: { patch: { deviceHosts: [] } } });

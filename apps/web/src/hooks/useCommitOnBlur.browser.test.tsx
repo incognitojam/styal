@@ -1,10 +1,9 @@
-import { act, type ChangeEvent, useLayoutEffect } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { type ChangeEvent, useLayoutEffect } from "react";
+import { describe, expect, it, vi } from "vite-plus/test";
 
+import { act, render } from "../../test/render";
 import { useCommitOnBlur } from "./useCommitOnBlur";
 
-let root: Root;
 let input: ReturnType<typeof useCommitOnBlur>;
 
 function InputProbe(props: { value: string; onCommit: (next: string) => void | Promise<boolean> }) {
@@ -15,8 +14,9 @@ function InputProbe(props: { value: string; onCommit: (next: string) => void | P
   return null;
 }
 
-const render = (value: string, onCommit: (next: string) => void | Promise<boolean>) =>
-  act(() => root.render(<InputProbe value={value} onCommit={onCommit} />));
+const probe = (value: string, onCommit: (next: string) => void | Promise<boolean>) => (
+  <InputProbe value={value} onCommit={onCommit} />
+);
 
 async function edit(text: string) {
   await act(() => input.onFocus());
@@ -32,35 +32,25 @@ function deferredSave() {
   return { promise, settle };
 }
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  root = createRoot(document.createElement("div"));
-});
-
-afterEach(async () => {
-  await act(() => root.unmount());
-  vi.unstubAllGlobals();
-});
-
 describe("useCommitOnBlur", () => {
   it("keeps the committed text while the save is in flight", async () => {
     const save = deferredSave();
     const onCommit = vi.fn(() => save.promise);
-    await render("", onCommit);
+    await using screen = await render(probe("", onCommit));
 
     await edit("~/work");
     expect(onCommit).toHaveBeenCalledWith("~/work");
     expect(input.value).toBe("~/work");
 
     // The saved value arrives from the server.
-    await render("~/work", onCommit);
+    await screen.rerender(probe("~/work", onCommit));
     await act(() => save.settle(true));
     expect(input.value).toBe("~/work");
   });
 
   it("returns to the saved value when the save fails", async () => {
     const save = deferredSave();
-    await render("~/old", () => save.promise);
+    await using _screen = await render(probe("~/old", () => save.promise));
 
     await edit("~/new");
     expect(input.value).toBe("~/new");
@@ -72,7 +62,7 @@ describe("useCommitOnBlur", () => {
   it("does not save again when refocused and left unchanged while saving", async () => {
     const save = deferredSave();
     const onCommit = vi.fn(() => save.promise);
-    await render("", onCommit);
+    await using _screen = await render(probe("", onCommit));
 
     await edit("~/work");
     await act(() => input.onFocus());
@@ -84,7 +74,7 @@ describe("useCommitOnBlur", () => {
   });
 
   it("shows the current value right away when the commit does not report a save", async () => {
-    await render("~/old", () => {});
+    await using _screen = await render(probe("~/old", () => {}));
 
     await edit("~/new");
     expect(input.value).toBe("~/old");

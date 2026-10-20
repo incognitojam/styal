@@ -1,9 +1,10 @@
 import { EnvironmentId, FORK_CLIENT_USAGE_VERSION } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { act, StrictMode } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { StrictMode } from "react";
+import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
+
+import { act, render } from "../test/render";
 
 import { UpdateEverythingDialog } from "./components/sidebar/UpdateEverythingDialog";
 
@@ -34,8 +35,6 @@ const firstId = EnvironmentId.make("synthetic-first-environment");
 const secondId = EnvironmentId.make("synthetic-second-environment");
 const onConfirm = vi.fn();
 const onOpenChange = vi.fn();
-let root: Root;
-let container: HTMLDivElement;
 
 function support(id: EnvironmentId, version = FORK_CLIENT_USAGE_VERSION) {
   state.configs = new Map(state.configs).set(id, {
@@ -43,46 +42,35 @@ function support(id: EnvironmentId, version = FORK_CLIENT_USAGE_VERSION) {
   });
 }
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.clearAllMocks();
+function setup() {
+  onConfirm.mockReset();
+  onOpenChange.mockReset();
+  state.run.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.configs = new Map();
   state.primaryId = firstId;
   support(firstId);
-  state.run.mockResolvedValue(AsyncResult.success(undefined));
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
+}
 
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
-
-async function render(open: boolean, summary = "Update synthetic computers") {
-  await act(async () => {
-    root.render(
-      <StrictMode>
-        <UpdateEverythingDialog
-          open={open}
-          onOpenChange={onOpenChange}
-          summary={summary}
-          lines={["Synthetic machine update"]}
-          skipped={[]}
-          activity={{
-            lines: [],
-            threadActivity: [],
-            localVersion: "1.2.0",
-            interrupts: true,
-            servers: "",
-          }}
-          onConfirm={onConfirm}
-        />
-      </StrictMode>,
-    );
-  });
+function dialog(open: boolean, summary = "Update synthetic computers") {
+  return (
+    <StrictMode>
+      <UpdateEverythingDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        summary={summary}
+        lines={["Synthetic machine update"]}
+        skipped={[]}
+        activity={{
+          lines: [],
+          threadActivity: [],
+          localVersion: "1.2.0",
+          interrupts: true,
+          servers: "",
+        }}
+        onConfirm={onConfirm}
+      />
+    </StrictMode>
+  );
 }
 
 async function click(label: string) {
@@ -102,31 +90,33 @@ function report(action: "shown" | "confirmed" | "cancelled", environmentId = fir
 }
 
 it("counts one opening through StrictMode and rerenders, and one confirmation intent", async () => {
-  await render(false);
+  setup();
+  await using screen = await render(dialog(false));
   expect(reports()).toEqual([]);
-  await render(true, "Updated synthetic summary");
-  await render(true);
+  await screen.rerender(dialog(true, "Updated synthetic summary"));
+  await screen.rerender(dialog(true));
   expect(reports()).toEqual([report("shown")]);
   await click("Update");
   expect(onConfirm).toHaveBeenCalledOnce();
   // A repeated click or subsequent close notification must not add a second decision.
   await click("Update");
   await click("Cancel");
-  await render(false);
+  await screen.rerender(dialog(false));
   expect(reports()).toEqual([report("shown"), report("confirmed")]);
 });
 
 it("counts Cancel and Escape per opening, but no decision for a programmatic close", async () => {
-  await render(true);
+  setup();
+  await using screen = await render(dialog(true));
   await click("Cancel");
   expect(onOpenChange).toHaveBeenLastCalledWith(false);
-  await render(false);
-  await render(true);
-  await act(async () => userEvent.keyboard("{Escape}"));
+  await screen.rerender(dialog(false));
+  await screen.rerender(dialog(true));
+  await userEvent.keyboard("{Escape}");
   expect(onOpenChange).toHaveBeenCalledTimes(2);
-  await render(false);
-  await render(true);
-  await render(false);
+  await screen.rerender(dialog(false));
+  await screen.rerender(dialog(true));
+  await screen.rerender(dialog(false));
   expect(reports()).toEqual([
     report("shown"),
     report("cancelled"),
@@ -138,13 +128,14 @@ it("counts Cancel and Escape per opening, but no decision for a programmatic clo
 });
 
 it("keeps the decision on the exposure's environment, then reselects on reopening", async () => {
+  setup();
   support(secondId);
-  await render(true);
+  await using screen = await render(dialog(true));
   state.primaryId = secondId;
-  await render(true);
+  await screen.rerender(dialog(true));
   await click("Update");
-  await render(false);
-  await render(true);
+  await screen.rerender(dialog(false));
+  await screen.rerender(dialog(true));
   await click("Cancel");
   expect(reports()).toEqual([
     report("shown"),
@@ -155,38 +146,41 @@ it("keeps the decision on the exposure's environment, then reselects on reopenin
 });
 
 it("uses one supported paired environment on hosted web without a primary", async () => {
+  setup();
   state.primaryId = null;
   support(firstId, FORK_CLIENT_USAGE_VERSION - 1);
   support(secondId);
-  await render(true);
+  await using _screen = await render(dialog(true));
   await click("Update");
   expect(reports()).toEqual([report("shown", secondId), report("confirmed", secondId)]);
   expect(onConfirm).toHaveBeenCalledOnce();
 });
 
 it("keeps older and disconnected servers usable, and reports when support arrives while open", async () => {
+  setup();
   state.configs.clear();
-  await render(true);
+  await using screen = await render(dialog(true));
   await click("Cancel");
-  await render(false);
+  await screen.rerender(dialog(false));
   support(firstId, FORK_CLIENT_USAGE_VERSION - 1);
-  await render(true);
+  await screen.rerender(dialog(true));
   await click("Update");
   expect(onConfirm).toHaveBeenCalledOnce();
   expect(reports()).toEqual([]);
-  await render(false);
-  await render(true);
+  await screen.rerender(dialog(false));
+  await screen.rerender(dialog(true));
   support(firstId);
-  await render(true);
+  await screen.rerender(dialog(true));
   await click("Update");
   expect(reports()).toEqual([report("shown"), report("confirmed")]);
 });
 
 it("does not delay or retry decisions when reporting fails or remains pending", async () => {
+  setup();
   state.run.mockRejectedValueOnce(new Error("Synthetic reporting failure"));
   state.run.mockImplementation(() => new Promise(() => {}));
-  await render(true);
-  await render(true);
+  await using screen = await render(dialog(true));
+  await screen.rerender(dialog(true));
   await click("Update");
   expect(onConfirm).toHaveBeenCalledOnce();
   await click("Update");

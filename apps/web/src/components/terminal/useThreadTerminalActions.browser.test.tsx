@@ -1,9 +1,10 @@
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { act, useLayoutEffect } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { useLayoutEffect } from "react";
+import { expect, it, vi } from "vite-plus/test";
+
+import { act, render } from "../../../test/render";
 import { useThreadTerminalActions } from "./useThreadTerminalActions";
 
 const state = vi.hoisted(() => ({
@@ -53,7 +54,6 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-let root: Root | null = null;
 let actions: ReturnType<typeof useThreadTerminalActions>;
 function Probe({ target }: { target: ScopedThreadRef }) {
   const currentActions = useThreadTerminalActions(target);
@@ -62,40 +62,30 @@ function Probe({ target }: { target: ScopedThreadRef }) {
   });
   return null;
 }
-async function render(target: ScopedThreadRef) {
-  root ??= createRoot(document.createElement("div"));
-  await act(() => root!.render(<Probe target={target} />));
-  return actions;
-}
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+function setup() {
   state.allowed = new Set([original.environmentId, other.environmentId]);
-  state.open.mockResolvedValue(AsyncResult.success(undefined));
-  state.write.mockResolvedValue(AsyncResult.success(undefined));
-  state.close.mockResolvedValue(AsyncResult.success(undefined));
-});
-afterEach(async () => {
-  await act(() => root?.unmount());
-  root = null;
-  vi.resetAllMocks();
-  vi.unstubAllGlobals();
-});
+  state.open.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+  state.write.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+  state.close.mockReset().mockResolvedValue(AsyncResult.success(undefined));
+}
 
 it.each(["open", "paste"])(
   "writes to the initiating thread after delayed %s and navigation",
   async (delay) => {
+    setup();
     const ready = deferred<ReturnType<typeof AsyncResult.success<void>>>();
     const paste = deferred<string>();
     if (delay === "open") state.open.mockReturnValue(ready.promise);
-    const retained = await render(original);
+    await using screen = await render(<Probe target={original} />);
+    const retained = actions;
     const launched = retained.launchTerminal({ place: () => {}, terminalId: "term-1" })!;
     const runScript = (async () => {
       await launched.result;
       const data = delay === "paste" ? await paste.promise : "echo synthetic\r";
       return retained.writeToTerminal(original, launched.terminalId, data);
     })();
-    await render(other);
+    await screen.rerender(<Probe target={other} />);
     await act(async () => {
       ready.resolve(AsyncResult.success(undefined));
       paste.resolve("echo synthetic\r");
@@ -115,8 +105,10 @@ it.each(["open", "paste"])(
 );
 
 it("rechecks the captured environment's permission before a delayed write", async () => {
-  const retained = await render(original);
-  await render(other);
+  setup();
+  await using screen = await render(<Probe target={original} />);
+  const retained = actions;
+  await screen.rerender(<Probe target={other} />);
   state.allowed.delete(original.environmentId);
   expect(retained.writeToTerminal(original, "term-1", "echo synthetic\r")).toBeNull();
   expect(state.write).not.toHaveBeenCalled();
@@ -125,11 +117,13 @@ it("rechecks the captured environment's permission before a delayed write", asyn
 it.each([true, false])(
   "keeps a failed close's exit fallback on the initiating thread, allowed=%s",
   async (allowed) => {
+    setup();
     const closed = deferred<ReturnType<typeof AsyncResult.failure>>();
     state.close.mockReturnValue(closed.promise);
-    const retained = await render(original);
+    await using screen = await render(<Probe target={original} />);
+    const retained = actions;
     retained.closeTerminalSession(original, "term-1");
-    await render(other);
+    await screen.rerender(<Probe target={other} />);
     if (!allowed) state.allowed.delete(original.environmentId);
     await act(async () => {
       closed.resolve(AsyncResult.failure(Cause.fail(new Error("synthetic close failure"))));

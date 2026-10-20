@@ -1,7 +1,7 @@
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import { act, fakeTimers, render } from "../../../test/render";
 
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 
@@ -45,31 +45,6 @@ function setup(providers: ServerProvider[]) {
   state.providers = providers;
 }
 
-let root: Root | null = null;
-let container: HTMLElement | null = null;
-
-async function render() {
-  container = document.createElement("div");
-  document.body.append(container);
-  const mounted = createRoot(container);
-  root = mounted;
-  await act(async () => mounted.render(<SidebarProviderUpdatePill />));
-  const screen = container;
-  return {
-    container: screen,
-    rerender: () => act(async () => mounted.render(<SidebarProviderUpdatePill />)),
-  };
-}
-
-afterEach(async () => {
-  vi.useRealTimers();
-  const mounted = root;
-  if (mounted) await act(async () => mounted.unmount());
-  container?.remove();
-  root = null;
-  container = null;
-});
-
 const advance = (ms: number) => act(async () => vi.advanceTimersByTime(ms));
 
 // Fake timers move past the exit before any real transitionend can fire, like a skipped or
@@ -77,12 +52,12 @@ const advance = (ms: number) => act(async () => vi.advanceTimersByTime(ms));
 describe("SidebarProviderUpdatePill exit", () => {
   it("replaces a finished update's spinner with success, then dismisses it", async () => {
     setup([provider("running")]);
-    const screen = await render();
-    vi.useFakeTimers();
+    await using screen = await render(<SidebarProviderUpdatePill />);
+    using _timers = fakeTimers();
     expect(screen.container.querySelector('[role="status"]')).not.toBeNull();
 
     setup([provider("succeeded")]);
-    await screen.rerender();
+    await screen.rerender(<SidebarProviderUpdatePill />);
     await advance(180);
     expect(screen.container.textContent).toContain("Claude updated: v2.1.303");
     expect(screen.container.querySelector('[role="status"]')).toBeNull();
@@ -94,8 +69,8 @@ describe("SidebarProviderUpdatePill exit", () => {
 
   it("removes a dismissed failure", async () => {
     setup([provider("failed")]);
-    const screen = await render();
-    vi.useFakeTimers();
+    await using screen = await render(<SidebarProviderUpdatePill />);
+    using _timers = fakeTimers();
     expect(screen.container.textContent).toContain("Claude update failed");
 
     await act(() =>

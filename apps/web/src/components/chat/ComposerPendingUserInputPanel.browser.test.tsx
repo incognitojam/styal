@@ -1,8 +1,7 @@
 import { EnvironmentId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it } from "vite-plus/test";
 
+import { render } from "../../../test/render";
 import type { PendingUserInput } from "../../session-logic";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 
@@ -24,39 +23,23 @@ const prompt: PendingUserInput = {
   dismissible: true,
 };
 
-let root: Root;
-let container: HTMLDivElement;
-
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-
-afterEach(async () => {
-  await act(() => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
-
 it("links URLs in the question text", async () => {
-  await act(() =>
-    root.render(
-      <ComposerPendingUserInputPanel
-        pendingUserInputs={[prompt]}
-        cwd="/repo"
-        threadRef={threadRef}
-        respondingRequestIds={[]}
-        answers={{}}
-        questionIndex={0}
-        onToggleOption={() => {}}
-        onAdvance={() => {}}
-        onDismiss={() => {}}
-      />,
-    ),
+  await using screen = await render(
+    <ComposerPendingUserInputPanel
+      pendingUserInputs={[prompt]}
+      cwd="/repo"
+      threadRef={threadRef}
+      respondingRequestIds={[]}
+      answers={{}}
+      questionIndex={0}
+      onToggleOption={() => {}}
+      onAdvance={() => {}}
+      onDismiss={() => {}}
+    />,
   );
 
-  const links = [...container.querySelectorAll("a")].map((anchor) => anchor.getAttribute("href"));
+  const links = [...screen.container.querySelectorAll("a")].map((anchor) =>
+    anchor.getAttribute("href"),
+  );
   expect(links).toContain(url);
 });

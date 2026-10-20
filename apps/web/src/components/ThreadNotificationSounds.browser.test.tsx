@@ -9,10 +9,10 @@ import {
 import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
 import { makeThreadProjectionFixture } from "../test-fixtures";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import type { EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
+
+import { render, stubGlobal, type Screen } from "../../test/render";
 
 const state = vi.hoisted(() => ({
   shell: {} as EnvironmentShellState,
@@ -48,7 +48,6 @@ vi.mock(import("../threadNotifications"), async (original) => ({
 
 import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
 
-let root: Root;
 const notifications: {
   title: string;
   options: NotificationOptions;
@@ -95,10 +94,7 @@ function snapshot(
     }),
   };
 }
-async function render() {
-  await act(() => root.render(<ThreadNotificationCoordinator />));
-}
-beforeEach(() => {
+function setup() {
   state.settings = {
     ...DEFAULT_CLIENT_SETTINGS,
     notificationMode: "notifications-and-sound",
@@ -110,42 +106,47 @@ beforeEach(() => {
   state.play.mockReset();
   state.navigate.mockReset();
   notifications.length = 0;
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const stack = new AsyncDisposableStack();
   // System notifications are only shown while the app is in the background.
-  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-  vi.spyOn(document, "hasFocus").mockReturnValue(false);
-  vi.stubGlobal(
-    "Notification",
-    class {
-      static permission = "granted";
-      close = vi.fn();
-      click?: () => void;
-      constructor(
-        readonly title: string,
-        readonly options: NotificationOptions,
-      ) {
-        notifications.push(this);
-      }
-      addEventListener(_event: string, listener: () => void) {
-        this.click = listener;
-      }
-    },
+  stack.use(vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden"));
+  stack.use(vi.spyOn(document, "hasFocus").mockReturnValue(false));
+  stack.use(
+    stubGlobal(
+      "Notification",
+      class {
+        static permission = "granted";
+        close = vi.fn();
+        click?: () => void;
+        constructor(
+          readonly title: string,
+          readonly options: NotificationOptions,
+        ) {
+          notifications.push(this);
+        }
+        addEventListener(_event: string, listener: () => void) {
+          this.click = listener;
+        }
+      },
+    ),
   );
-  root = createRoot(document.createElement("div"));
-});
-afterEach(async () => {
-  await act(() => root.unmount());
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+  let screen: Screen | undefined;
+  return {
+    render: async () => {
+      if (screen) await screen.rerender(<ThreadNotificationCoordinator />);
+      else screen = stack.use(await render(<ThreadNotificationCoordinator />));
+    },
+    [Symbol.asyncDispose]: () => stack.disposeAsync(),
+  };
+}
 
 it("alerts once for a live completion using the persisted sample and opens its environment/thread", async () => {
-  await render();
+  await using app = setup();
+  await app.render();
   expect(notifications).toHaveLength(0);
   state.shell = snapshot(true);
-  await render();
+  await app.render();
   state.shell = snapshot(true);
-  await render();
+  await app.render();
   expect(state.play).toHaveBeenCalledExactlyOnceWith("completion", expect.any(Function), "avanti");
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.title).toBe("Thread completed");
@@ -159,8 +160,9 @@ it("alerts once for a live completion using the persisted sample and opens its e
 it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
   "honors %s for input and approval transitions",
   async (mode) => {
+    await using app = setup();
     state.settings = { ...state.settings, notificationMode: mode };
-    await render();
+    await app.render();
     state.shell = snapshot(false, {
       pendingRuntimeRequest: {
         id: RuntimeRequestId.make("question"),
@@ -168,7 +170,7 @@ it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
         createdAt: completedAt,
       },
     });
-    await render();
+    await app.render();
     state.shell = snapshot(false, {
       pendingRuntimeRequest: {
         id: RuntimeRequestId.make("approval"),
@@ -176,7 +178,7 @@ it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
         createdAt: completedAt,
       },
     });
-    await render();
+    await app.render();
     expect(state.play).toHaveBeenCalledTimes(
       mode === "sound" || mode === "notifications-and-sound" ? 2 : 0,
     );
@@ -195,19 +197,20 @@ it.each(["off", "notifications", "sound", "notifications-and-sound"] as const)(
 );
 
 it("does not replay initial, reconnect, or archived completions", async () => {
+  await using app = setup();
   state.shell = snapshot(true);
-  await render();
+  await app.render();
   state.shell = { ...state.shell, status: "synchronizing", snapshot: Option.none() };
-  await render();
+  await app.render();
   state.shell = snapshot(true);
-  await render();
+  await app.render();
   state.shell = snapshot(false);
-  await render();
+  await app.render();
   state.shell = snapshot(true, {
     archivedAt: DateTime.makeUnsafe("2026-09-30T12:01:00Z"),
     latestRunCompletedAt: DateTime.makeUnsafe("2026-09-30T12:01:00Z"),
   });
-  await render();
+  await app.render();
   expect(state.play).not.toHaveBeenCalled();
   expect(notifications).toHaveLength(0);
 });

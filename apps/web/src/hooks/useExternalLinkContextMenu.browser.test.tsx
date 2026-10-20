@@ -1,7 +1,8 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { act, useLayoutEffect } from "react";
-import { createRoot } from "react-dom/client";
+import { useLayoutEffect } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
+
+import { act, render } from "../../test/render";
 
 import { useExternalLinkContextMenu } from "./useExternalLinkContextMenu";
 
@@ -83,13 +84,8 @@ async function withMenu(
     }, [onContextMenu]);
     return null;
   }
-  const root = createRoot(document.createElement("div"));
-  await act(() => root.render(<Consumer />));
-  try {
-    await run(() => open());
-  } finally {
-    await act(() => root.unmount());
-  }
+  await using _screen = await render(<Consumer />);
+  await run(() => open());
 }
 
 describe("shared link menu thread state", () => {

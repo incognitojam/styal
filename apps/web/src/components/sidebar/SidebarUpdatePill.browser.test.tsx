@@ -16,9 +16,9 @@ import {
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import { act, fakeTimers, render, stubGlobal, type Screen } from "../../../test/render";
 
 const testState = vi.hoisted(() => ({
   hostActivity: vi.fn(),
@@ -248,8 +248,6 @@ function deferred<A>() {
 }
 
 const updated = () => AsyncResult.success({ method: "boot-service", targetVersion: localVersion });
-let root: Root;
-let container: HTMLDivElement;
 const desktopListeners = new Set<(state: DesktopUpdateState) => void>();
 
 const dialog = () => document.querySelector<HTMLElement>('[role="alertdialog"][data-open]');
@@ -260,27 +258,25 @@ function button(name: string, within: ParentNode = document) {
   expect(match, `button ${name}`).toBeDefined();
   return match!;
 }
-const click = (element: HTMLElement) => act(async () => element.click());
+const click = (element: HTMLElement) => act(() => element.click());
 
-async function render() {
-  await act(async () =>
-    root.render(
-      <RegistryContext.Provider value={appAtomRegistry}>
-        <ul>
-          <SidebarUpdatePill />
-        </ul>
-      </RegistryContext.Provider>,
-    ),
+function renderPill() {
+  return render(
+    <RegistryContext.Provider value={appAtomRegistry}>
+      <ul>
+        <SidebarUpdatePill />
+      </ul>
+    </RegistryContext.Provider>,
   );
 }
 
-async function openConfirmation() {
-  await click(container.querySelector<HTMLButtonElement>("button")!);
+async function openConfirmation(screen: Screen) {
+  await click(screen.container.querySelector<HTMLButtonElement>("button")!);
   expect(dialog()).not.toBeNull();
 }
 
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+function setup() {
+  using stack = new DisposableStack();
   vi.clearAllMocks();
   testState.hostActivity.mockReset().mockResolvedValue(AsyncResult.success(idle));
   testState.desktopActivity.mockReset().mockResolvedValue(AsyncResult.success([idle]));
@@ -310,37 +306,33 @@ beforeEach(() => {
       Atom.make<ServerUpdateState>({ status: "idle" }),
     ]),
   );
-  vi.stubGlobal("desktopBridge", {
-    getLocalEnvironmentBootstraps: () => [],
-    getUpdateState: async () => downloaded,
-    onUpdateState: (listener: (state: DesktopUpdateState) => void) => {
-      desktopListeners.add(listener);
-      return () => desktopListeners.delete(listener);
-    },
-    getLocalHostActivity: testState.localActivity,
-    installUpdate: testState.install,
-  } as unknown as DesktopBridge);
+  stack.use(
+    stubGlobal("desktopBridge", {
+      getLocalEnvironmentBootstraps: () => [],
+      getUpdateState: async () => downloaded,
+      onUpdateState: (listener: (state: DesktopUpdateState) => void) => {
+        desktopListeners.add(listener);
+        return () => desktopListeners.delete(listener);
+      },
+      getLocalHostActivity: testState.localActivity,
+      installUpdate: testState.install,
+    } as unknown as DesktopBridge),
+  );
   resetConfirmDialogForTests();
   registerConfirmDialogHost();
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  setUpdateEverythingRun(() => null);
-  appAtomRegistry.reset();
-  desktopListeners.clear();
-  localStorage.clear();
-  resetConfirmDialogForTests();
-  vi.useRealTimers();
-  vi.unstubAllGlobals();
-});
+  stack.defer(() => {
+    setUpdateEverythingRun(() => null);
+    appAtomRegistry.reset();
+    desktopListeners.clear();
+    localStorage.clear();
+    resetConfirmDialogForTests();
+  });
+  return stack.move();
+}
 
 describe("combined sidebar update", () => {
   it("keeps a safe activity check after provider installation silent", async () => {
+    using _setup = setup();
     const providers =
       deferred<AsyncResult.AsyncResult<{ providers: ReadonlyArray<ServerProvider> }>>();
     const recheck = deferred<AsyncResult.AsyncResult<HostActivity>>();
@@ -350,14 +342,14 @@ describe("combined sidebar update", () => {
     const presentations: Array<ReturnType<typeof readConfirmDialogState>> = [];
     const unsubscribe = subscribeConfirmDialog(() => presentations.push(readConfirmDialogState()));
     try {
-      await render();
-      await click(container.querySelector<HTMLButtonElement>("button")!);
+      await using screen = await renderPill();
+      await click(screen.container.querySelector<HTMLButtonElement>("button")!);
       testState.hostActivity.mockReturnValue(recheck.promise);
-      await act(async () => providers.resolve(AsyncResult.success({ providers: [] })));
+      await act(() => providers.resolve(AsyncResult.success({ providers: [] })));
       expect(readConfirmDialogState().status).toBe("idle");
       expect(testState.updateServer).not.toHaveBeenCalled();
 
-      await act(async () => recheck.resolve(AsyncResult.success(idle)));
+      await act(() => recheck.resolve(AsyncResult.success(idle)));
       expect(readConfirmDialogState().status).toBe("idle");
       expect(testState.updateServer).toHaveBeenCalledTimes(2);
       expect(presentations).toEqual([]);
@@ -367,13 +359,14 @@ describe("combined sidebar update", () => {
   });
 
   it("does not extend consent to servers that changed while the dialog was open", async () => {
+    using _setup = setup();
     testState.hostActivity.mockResolvedValue(
       AsyncResult.success({ ...idle, terminalsRequiringConfirmation: 1 }),
     );
-    await render();
-    await openConfirmation();
+    await using screen = await renderPill();
+    await openConfirmation(screen);
     // Another client starts updating the test machine, which drops it from this run.
-    await act(async () =>
+    await act(() =>
       appAtomRegistry.set(testState.updateAtoms.get("remote-b")!, {
         status: "running",
         stage: "resuming",
@@ -382,7 +375,7 @@ describe("combined sidebar update", () => {
       }),
     );
     await click(button("Update", dialog()!));
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
     // The remaining server is checked again and its terminal asks before any restart.
     expect(readConfirmDialogState()).toMatchObject({ status: "confirming" });
     expect(testState.updateServer).not.toHaveBeenCalled();
@@ -391,6 +384,7 @@ describe("combined sidebar update", () => {
   it.each(["local", "remote"] as const)(
     "automatically updates safe mixed hosts after %s inspection finishes first",
     async (first) => {
+      using _setup = setup();
       const local = deferred<ReadonlyArray<DesktopHostActivity | null>>();
       const remote = deferred<AsyncResult.AsyncResult<HostActivity>>();
       const remoteA = deferred<ReturnType<typeof updated>>();
@@ -402,10 +396,10 @@ describe("combined sidebar update", () => {
       testState.updateServer.mockImplementation(({ environmentId }) =>
         environmentId === "remote-a" ? remoteA.promise : remoteB.promise,
       );
-      await render();
-      await click(container.querySelector<HTMLButtonElement>("button")!);
+      await using screen = await renderPill();
+      await click(screen.container.querySelector<HTMLButtonElement>("button")!);
 
-      await act(async () => {
+      await act(() => {
         if (first === "local") local.resolve(safeLocalChecks);
         else remote.resolve(AsyncResult.success(resumableActivity));
       });
@@ -413,7 +407,7 @@ describe("combined sidebar update", () => {
       expect(testState.updateServer).not.toHaveBeenCalled();
       expect(testState.install).not.toHaveBeenCalled();
 
-      await act(async () => {
+      await act(() => {
         local.resolve(safeLocalChecks);
         remote.resolve(AsyncResult.success(resumableActivity));
       });
@@ -428,9 +422,9 @@ describe("combined sidebar update", () => {
       ]);
       expect(testState.install).not.toHaveBeenCalled();
 
-      await act(async () => remoteB.resolve(updated()));
+      await act(() => remoteB.resolve(updated()));
       expect(testState.install).not.toHaveBeenCalled();
-      await act(async () => remoteA.resolve(updated()));
+      await act(() => remoteA.resolve(updated()));
       expect(testState.install).toHaveBeenCalledExactlyOnceWith({
         expectedVersion: localVersion,
         confirmed: false,
@@ -442,8 +436,8 @@ describe("combined sidebar update", () => {
         "remote-a",
         "remote-b",
       ]);
-      expect(container.textContent).toContain("Restarting…");
-      expect(container.textContent).not.toContain("Restart in");
+      expect(screen.container.textContent).toContain("Restarting…");
+      expect(screen.container.textContent).not.toContain("Restart in");
       expect(testState.toast).not.toHaveBeenCalled();
     },
   );
@@ -454,6 +448,7 @@ describe("combined sidebar update", () => {
   ] as const)(
     "requires consent for $name on a $location host despite other resumable work",
     async ({ blocker: blocked, location }) => {
+      using _setup = setup();
       testState.localActivity.mockResolvedValue(location === "local" ? [blocked] : safeLocalChecks);
       testState.hostActivity.mockImplementation(({ environmentId }) =>
         Promise.resolve(
@@ -466,8 +461,8 @@ describe("combined sidebar update", () => {
                 : AsyncResult.success(blocked),
         ),
       );
-      await render();
-      await openConfirmation();
+      await using screen = await renderPill();
+      await openConfirmation(screen);
       expect(dialog()!.textContent).not.toContain("Checking for running work…");
       expect(button("Update", dialog()!).disabled).toBe(false);
       expect(dialog()!.querySelector('[aria-label="Will continue"]')!.textContent).toContain(
@@ -483,6 +478,7 @@ describe("combined sidebar update", () => {
   );
 
   it("retains a safe remote host's continuing rows when another host needs consent", async () => {
+    using _setup = setup();
     testState.localActivity.mockResolvedValue(safeLocalChecks);
     testState.hostActivity.mockImplementation(({ environmentId }) =>
       Promise.resolve(
@@ -497,8 +493,8 @@ describe("combined sidebar update", () => {
         ),
       ),
     );
-    await render();
-    await openConfirmation();
+    await using screen = await renderPill();
+    await openConfirmation(screen);
     const hosts = [...dialog()!.querySelector('[aria-label="Affected threads"]')!.children];
     expect(hosts.map((host) => host.querySelector("h3")?.textContent)).toEqual([
       "Local Linux",
@@ -526,12 +522,13 @@ describe("combined sidebar update", () => {
   it.each(["local", "remote"] as const)(
     "waits for both activity snapshots when %s finishes first",
     async (first) => {
+      using _setup = setup();
       const local = deferred<ReadonlyArray<DesktopHostActivity | null>>();
       const remote = deferred<AsyncResult.AsyncResult<HostActivity>>();
       testState.localActivity.mockReturnValue(local.promise);
       testState.hostActivity.mockReturnValue(remote.promise);
-      await render();
-      const pill = container.querySelector<HTMLButtonElement>("button")!;
+      await using screen = await renderPill();
+      const pill = screen.container.querySelector<HTMLButtonElement>("button")!;
       await click(pill);
 
       expect(testState.localActivity).toHaveBeenCalledTimes(1);
@@ -542,13 +539,13 @@ describe("combined sidebar update", () => {
       expect(dialog()).toBeNull();
       expect(pill.getAttribute("aria-disabled")).toBe("true");
 
-      await act(async () => {
+      await act(() => {
         if (first === "local") local.resolve(localChecks);
         else remote.resolve(AsyncResult.success(remoteActivity));
       });
       expect(dialog()).toBeNull();
 
-      await act(async () => {
+      await act(() => {
         local.resolve(localChecks);
         remote.resolve(AsyncResult.success(remoteActivity));
       });
@@ -583,14 +580,15 @@ describe("combined sidebar update", () => {
   it.each(["finished", "handed off"] as const)(
     "updates remote machines in parallel and installs immediately after they have %s",
     async (completion) => {
+      using _setup = setup();
       const remoteA = deferred<ReturnType<typeof updated>>();
       const remoteB = deferred<ReturnType<typeof updated>>();
       testState.updateServer.mockImplementation(({ environmentId }) =>
         environmentId === "remote-a" ? remoteA.promise : remoteB.promise,
       );
-      await render();
-      await openConfirmation();
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      await using screen = await renderPill();
+      await openConfirmation(screen);
+      using _timers = fakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
       await click(button("Update", dialog()!));
 
       expect(dialog()).toBeNull();
@@ -605,14 +603,14 @@ describe("combined sidebar update", () => {
       expect(readConfirmDialogState().status).toBe("idle");
       expect(testState.hostActivity).toHaveBeenCalledTimes(2);
 
-      await act(async () => {
+      await act(() => {
         for (const listener of desktopListeners)
           listener({ ...downloaded, downloadedVersion: "0.0.51", availableVersion: "0.0.51" });
       });
 
-      await act(async () => remoteB.resolve(updated()));
+      await act(() => remoteB.resolve(updated()));
       expect(testState.install).not.toHaveBeenCalled();
-      await act(async () => {
+      await act(() => {
         if (completion === "finished") remoteA.resolve(updated());
         else
           appAtomRegistry.set(testState.updateAtoms.get("remote-a")!, {
@@ -626,21 +624,22 @@ describe("combined sidebar update", () => {
         expectedVersion: localVersion,
         confirmed: true,
       });
-      expect(container.textContent).toContain("Restarting…");
+      expect(screen.container.textContent).toContain("Restarting…");
       expect(testState.toast).not.toHaveBeenCalled();
       expect(testState.localActivity).toHaveBeenCalledTimes(1);
-      await act(async () => remoteA.resolve(updated()));
+      await act(() => remoteA.resolve(updated()));
       expect(testState.install).toHaveBeenCalledTimes(1);
     },
   );
 
   it("finishes provider installation before restarting either remote server", async () => {
+    using _setup = setup();
     const providers =
       deferred<AsyncResult.AsyncResult<{ providers: ReadonlyArray<ServerProvider> }>>();
     testState.providers.set(EnvironmentId.make("remote-a"), [provider]);
     testState.updateProvider.mockReturnValue(providers.promise);
-    await render();
-    await openConfirmation();
+    await using screen = await renderPill();
+    await openConfirmation(screen);
     expect(dialog()!.textContent).toContain("Codex");
     await click(button("Update", dialog()!));
     expect(testState.updateProvider).toHaveBeenCalledExactlyOnceWith({
@@ -649,7 +648,7 @@ describe("combined sidebar update", () => {
     });
     expect(testState.updateServer).not.toHaveBeenCalled();
     expect(testState.install).not.toHaveBeenCalled();
-    await act(async () =>
+    await act(() =>
       providers.resolve(
         AsyncResult.success({
           providers: [
@@ -680,13 +679,14 @@ describe("combined sidebar update", () => {
   it.each(["terminal", "failed inspection"] as const)(
     "rechecks unconfirmed hosts after provider installation and prompts for a new %s",
     async (blocker) => {
+      using _setup = setup();
       const providers =
         deferred<AsyncResult.AsyncResult<{ providers: ReadonlyArray<ServerProvider> }>>();
       testState.providers.set(EnvironmentId.make("remote-a"), [provider]);
       testState.updateProvider.mockReturnValue(providers.promise);
       testState.localActivity.mockResolvedValue(safeLocalChecks);
-      await render();
-      await click(container.querySelector<HTMLButtonElement>("button")!);
+      await using screen = await renderPill();
+      await click(screen.container.querySelector<HTMLButtonElement>("button")!);
       expect(dialog()).toBeNull();
       expect(testState.updateProvider).toHaveBeenCalledTimes(1);
       expect(testState.updateServer).not.toHaveBeenCalled();
@@ -700,7 +700,7 @@ describe("combined sidebar update", () => {
               : AsyncResult.failure(Cause.fail(new Error("Inspection unavailable"))),
         ),
       );
-      await act(async () => providers.resolve(AsyncResult.success({ providers: [] })));
+      await act(() => providers.resolve(AsyncResult.success({ providers: [] })));
       const confirmation = readConfirmDialogState();
       expect(confirmation.status).toBe("confirming");
       expect(confirmation.status !== "idle" && confirmation.message).toContain(
@@ -710,7 +710,7 @@ describe("combined sidebar update", () => {
       expect(testState.install).not.toHaveBeenCalled();
       expect(testState.hostActivity).toHaveBeenCalledTimes(4);
 
-      await act(async () => {
+      await act(() => {
         respondToConfirmDialog(true);
         completeConfirmDialogClose();
       });
@@ -723,10 +723,11 @@ describe("combined sidebar update", () => {
   );
 
   it("falls back to the connected local host on legacy bridges and keeps installation guarded", async () => {
+    using _setup = setup();
     delete window.desktopBridge!.getLocalHostActivity;
     testState.hostActivity.mockResolvedValue(AsyncResult.success(remoteActivity));
-    await render();
-    await openConfirmation();
+    await using screen = await renderPill();
+    await openConfirmation(screen);
     expect(
       testState.hostActivity.mock.calls.map(([target]) => target.environmentId).toSorted(),
     ).toEqual(["local", "remote-a", "remote-b"]);
@@ -737,6 +738,7 @@ describe("combined sidebar update", () => {
   });
 
   it("warns when local inspection fails while preserving the inspected remote thread details", async () => {
+    using _setup = setup();
     testState.localActivity.mockRejectedValue(new Error("Local inspection unavailable"));
     testState.hostActivity.mockImplementation(({ environmentId }) =>
       Promise.resolve(
@@ -745,8 +747,8 @@ describe("combined sidebar update", () => {
           : AsyncResult.failure(Cause.fail(new Error("Remote inspection unavailable"))),
       ),
     );
-    await render();
-    await openConfirmation();
+    await using screen = await renderPill();
+    await openConfirmation(screen);
     expect(dialog()!.textContent).toContain("Could not check this app for running work.");
     expect(dialog()!.textContent).toContain("Could not check Test machine for running work.");
     expect(dialog()!.textContent).toContain("Build releaseRunning");

@@ -1,9 +1,9 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 
 import { EnvironmentId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
-import { act, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import { act, render } from "../../test/render";
 
 const serverConfigAtom = vi.hoisted(() => ({}));
 vi.mock(import("@effect/atom-react"), async (original) => ({
@@ -71,39 +71,17 @@ const threadRef = {
   environmentId: EnvironmentId.make("preview-environment"),
   threadId: ThreadId.make("preview-thread"),
 };
-let root: Root;
-let container: HTMLDivElement;
 
-async function render(element: ReactNode) {
-  await act(async () => root.render(element));
+function setup(): Disposable {
+  useRightPanelStore.setState({ byThreadKey: {} });
+  return { [Symbol.dispose]: () => useRightPanelStore.setState({ byThreadKey: {} }) };
 }
 
-function visibleText() {
-  return container.textContent ?? "";
-}
-
-function links() {
-  return [...container.querySelectorAll("a")];
-}
+const links = (container: HTMLElement) => [...container.querySelectorAll("a")];
 
 async function click(link: HTMLAnchorElement) {
   await act(async () => link.click());
 }
-
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  useRightPanelStore.setState({ byThreadKey: {} });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  useRightPanelStore.setState({ byThreadKey: {} });
-  vi.unstubAllGlobals();
-});
 
 describe.each(["chat", "preview"])("Markdown file links in %s", (surface) => {
   const renderMarkdown = (text: string) =>
@@ -123,12 +101,14 @@ describe.each(["chat", "preview"])("Markdown file links in %s", (surface) => {
     "- [Organizing **threads**](docs/thread-sidebar.md)",
     "1. [Organizing **threads**][guide]\n\n[guide]: docs/thread-sidebar.md",
   ])("keeps authored text and opens the linked file: %s", async (text) => {
-    await render(renderMarkdown(text));
-    expect(visibleText().trim()).toBe("Organizing threads");
+    using _setup = setup();
+    await using screen = await render(renderMarkdown(text));
+    const { container } = screen;
+    expect(container.textContent.trim()).toBe("Organizing threads");
     expect(container.querySelectorAll("strong")).toHaveLength(1);
     expect(container.querySelector("strong")!.textContent).toBe("threads");
 
-    await click(links()[0]!);
+    await click(links(container)[0]!);
     expect(useRightPanelStore.getState().byThreadKey[scopedThreadKey(threadRef)]).toMatchObject({
       isOpen: true,
       activeSurfaceId: "file:docs/thread-sidebar.md",
@@ -137,10 +117,14 @@ describe.each(["chat", "preview"])("Markdown file links in %s", (surface) => {
   });
 
   it("keeps explicit path references as chips while opening a requested line", async () => {
-    await render(renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12) and `src/main.ts`"));
-    expect(visibleText().trim()).toBe("settings.ts · L12 and main.ts");
-    expect(links()).toHaveLength(2);
-    await click(links()[0]!);
+    using _setup = setup();
+    await using screen = await render(
+      renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12) and `src/main.ts`"),
+    );
+    const { container } = screen;
+    expect(container.textContent.trim()).toBe("settings.ts · L12 and main.ts");
+    expect(links(container)).toHaveLength(2);
+    await click(links(container)[0]!);
     expect(useRightPanelStore.getState().byThreadKey[scopedThreadKey(threadRef)]).toMatchObject({
       activeSurfaceId: "file:docs/settings.ts",
       surfaces: [{ kind: "file", relativePath: "docs/settings.ts", revealLine: 12 }],
@@ -148,12 +132,14 @@ describe.each(["chat", "preview"])("Markdown file links in %s", (surface) => {
   });
 
   it("updates between descriptive labels and path chips for the same destination", async () => {
-    await render(renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12)"));
-    expect(visibleText().trim()).toBe("settings.ts · L12");
-    await render(renderMarkdown("[Default **settings**](docs/settings.ts:12)"));
-    expect(visibleText().trim()).toBe("Default settings");
-    await render(renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12)"));
-    expect(visibleText().trim()).toBe("settings.ts · L12");
+    using _setup = setup();
+    await using screen = await render(renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12)"));
+    const { container } = screen;
+    expect(container.textContent.trim()).toBe("settings.ts · L12");
+    await screen.rerender(renderMarkdown("[Default **settings**](docs/settings.ts:12)"));
+    expect(container.textContent.trim()).toBe("Default settings");
+    await screen.rerender(renderMarkdown("[docs/settings.ts:12](docs/settings.ts:12)"));
+    expect(container.textContent.trim()).toBe("settings.ts · L12");
   });
 });
 
@@ -162,7 +148,8 @@ describe("links in pending questions", () => {
     const onToggleOption = vi.fn();
     const onAdvance = vi.fn();
     const onDismiss = vi.fn();
-    await render(
+    using _setup = setup();
+    await using screen = await render(
       <ComposerPendingUserInputPanel
         cwd="/workspace/project"
         threadRef={threadRef}
@@ -192,12 +179,13 @@ describe("links in pending questions", () => {
         onDismiss={onDismiss}
       />,
     );
-    const external = links().find((link) =>
+    const { container } = screen;
+    const external = links(container).find((link) =>
       link.getAttribute("href")?.startsWith("https://example.com"),
     );
     expect(external?.getAttribute("href")).toBe("https://example.com/approval?request=demo_token");
-    expect(visibleText()).toContain("the guide");
-    await click(links().find((link) => link !== external)!);
+    expect(container.textContent).toContain("the guide");
+    await click(links(container).find((link) => link !== external)!);
     expect(useRightPanelStore.getState().byThreadKey[scopedThreadKey(threadRef)]).toMatchObject({
       activeSurfaceId: "file:docs/settings.ts",
       surfaces: [{ kind: "file", relativePath: "docs/settings.ts", revealLine: 12 }],

@@ -1,8 +1,8 @@
 import { EnvironmentId, FORK_CLIENT_USAGE_VERSION } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
+
+import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
 
 import { MentionedTimeChip } from "./MentionedTimeChip";
 
@@ -23,18 +23,14 @@ vi.mock("../../hooks/useSettings", () => ({
 }));
 
 it("keeps explanations usable across version skew and reports each mounted chip at most once", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("matchMedia", () => ({
+  using _matchMedia = stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener() {},
     removeEventListener() {},
   }));
-  vi.useFakeTimers();
+  using _timers = fakeTimers();
   run.mockResolvedValue(AsyncResult.success(undefined));
   const environmentId = EnvironmentId.make("synthetic-environment");
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
   const chip = (key: string) => (
     <MentionedTimeChip
       key={key}
@@ -47,6 +43,9 @@ it("keeps explanations usable across version skew and reports each mounted chip 
   );
   const support = (capabilities: Record<string, number | boolean>) =>
     readConfig.mockReturnValue({ environment: { capabilities } });
+  support({});
+  await using screen = await render(chip("first"));
+  const { container } = screen;
   const open = async () => {
     await act(async () => {
       const trigger = container.querySelector("span")!;
@@ -66,37 +65,28 @@ it("keeps explanations usable across version skew and reports each mounted chip 
     });
     expect(document.querySelector('[data-slot="tooltip-popup"][data-open]')).toBeNull();
   };
-  try {
-    support({});
-    await act(async () => root.render(chip("first")));
-    for (const capabilities of [{}, { forkClientUsage: true }, { forkClientUsageVersion: 1 }]) {
-      support(capabilities);
-      await open();
-      expect(run).not.toHaveBeenCalled();
-      await close();
-    }
-    support({ forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION });
+  for (const capabilities of [{}, { forkClientUsage: true }, { forkClientUsageVersion: 1 }]) {
+    support(capabilities);
     await open();
-    expect(run).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
-      environmentId,
-      input: { feature: "mentioned-time-chips", action: "details_opened" },
-    });
+    expect(run).not.toHaveBeenCalled();
     await close();
-    await open();
-    expect(run).toHaveBeenCalledOnce();
-    await close();
-    support({ forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION + 1 });
-    run.mockRejectedValueOnce(new Error("Synthetic transport failure"));
-    await act(async () => root.render(chip("remounted")));
-    await open();
-    expect(run).toHaveBeenCalledTimes(2);
-    await close();
-    await open();
-    expect(run).toHaveBeenCalledTimes(2);
-  } finally {
-    await act(async () => root.unmount());
-    container.remove();
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
   }
+  support({ forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION });
+  await open();
+  expect(run).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+    environmentId,
+    input: { feature: "mentioned-time-chips", action: "details_opened" },
+  });
+  await close();
+  await open();
+  expect(run).toHaveBeenCalledOnce();
+  await close();
+  support({ forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION + 1 });
+  run.mockRejectedValueOnce(new Error("Synthetic transport failure"));
+  await screen.rerender(chip("remounted"));
+  await open();
+  expect(run).toHaveBeenCalledTimes(2);
+  await close();
+  await open();
+  expect(run).toHaveBeenCalledTimes(2);
 });

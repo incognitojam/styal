@@ -1,46 +1,34 @@
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
+import { act, render } from "../../../test/render";
 import { ADD_PROVIDER_WIZARD_STEPS } from "./AddProviderInstanceDialog.logic";
 import { AddProviderInstanceWizardSteps } from "./AddProviderInstanceWizardSteps";
 
-let root: Root | undefined;
-beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
-afterEach(async () => {
-  await act(async () => root?.unmount());
-  root = undefined;
-  document.body.replaceChildren();
-  vi.unstubAllGlobals();
-});
-
-async function renderStepButtons(
+function renderStepButtons(
   currentStep: number,
   instanceIdError: string | null,
   onNavigation: Parameters<typeof AddProviderInstanceWizardSteps>[0]["onNavigation"],
 ) {
-  const container = document.body.appendChild(document.createElement("div"));
-  root = createRoot(container);
-  await act(async () => {
-    root!.render(
-      <AddProviderInstanceWizardSteps
-        currentStep={currentStep}
-        summaries={["Codex", "Codex Workspace", null]}
-        instanceIdError={instanceIdError}
-        onNavigation={onNavigation}
-      />,
-    );
-  });
-  return [...container.querySelectorAll("button")];
+  return render(
+    <AddProviderInstanceWizardSteps
+      currentStep={currentStep}
+      summaries={["Codex", "Codex Workspace", null]}
+      instanceIdError={instanceIdError}
+      onNavigation={onNavigation}
+    />,
+  );
 }
+
+const stepButtons = (container: HTMLElement) => [...container.querySelectorAll("button")];
 
 describe("AddProviderInstanceWizardSteps", () => {
   it("gates the actual Config header click through Identity validation", async () => {
     const onNavigation = vi.fn();
-    const buttons = await renderStepButtons(0, "Instance ID is required.", onNavigation);
+    await using screen = await renderStepButtons(0, "Instance ID is required.", onNavigation);
+    const buttons = stepButtons(screen.container);
 
     expect(buttons).toHaveLength(ADD_PROVIDER_WIZARD_STEPS.length);
-    await act(async () => buttons[2]!.click());
+    await act(() => buttons[2]!.click());
 
     expect(onNavigation).toHaveBeenCalledOnce();
     expect(onNavigation).toHaveBeenCalledWith({
@@ -51,7 +39,8 @@ describe("AddProviderInstanceWizardSteps", () => {
   });
 
   it("marks the wizard step separately from the clicked button focus", async () => {
-    const buttons = await renderStepButtons(1, "Instance ID is required.", vi.fn());
+    await using screen = await renderStepButtons(1, "Instance ID is required.", vi.fn());
+    const buttons = stepButtons(screen.container);
 
     expect(buttons[0]!.getAttribute("aria-current")).toBeNull();
     expect(buttons[1]!.getAttribute("aria-current")).toBe("step");
@@ -60,9 +49,10 @@ describe("AddProviderInstanceWizardSteps", () => {
 
   it("preserves the actual backward header click", async () => {
     const onNavigation = vi.fn();
-    const buttons = await renderStepButtons(2, "Instance ID is required.", onNavigation);
+    await using screen = await renderStepButtons(2, "Instance ID is required.", onNavigation);
+    const buttons = stepButtons(screen.container);
 
-    await act(async () => buttons[0]!.click());
+    await act(() => buttons[0]!.click());
 
     expect(onNavigation).toHaveBeenCalledWith({ kind: "navigate", step: 0 });
   });

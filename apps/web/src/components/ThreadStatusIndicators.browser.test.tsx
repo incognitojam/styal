@@ -1,28 +1,7 @@
-import { act, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
+import { render } from "../../test/render";
 import { ThreadPullRequestsMiniList } from "./ThreadStatusIndicators";
-
-let root: Root;
-let container: HTMLDivElement;
-
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-});
-
-afterEach(async () => {
-  await act(() => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
-
-async function render(element: ReactNode) {
-  await act(() => root.render(element));
-}
 
 describe("ThreadPullRequestsMiniList", () => {
   const branchPullRequest = {
@@ -35,13 +14,15 @@ describe("ThreadPullRequestsMiniList", () => {
   };
 
   it("lists the branch pull request when the thread has no linked pull requests", async () => {
-    await render(<ThreadPullRequestsMiniList pullRequests={[]} fallback={branchPullRequest} />);
-    expect(container.textContent).toContain("#579");
-    expect(container.textContent).toContain("Fix the branch pull request");
+    await using screen = await render(
+      <ThreadPullRequestsMiniList pullRequests={[]} fallback={branchPullRequest} />,
+    );
+    expect(screen.container.textContent).toContain("#579");
+    expect(screen.container.textContent).toContain("Fix the branch pull request");
   });
 
   it("lists linked pull requests instead of the branch pull request", async () => {
-    await render(
+    await using screen = await render(
       <ThreadPullRequestsMiniList
         pullRequests={[
           {
@@ -58,12 +39,12 @@ describe("ThreadPullRequestsMiniList", () => {
         fallback={branchPullRequest}
       />,
     );
-    expect(container.textContent).toContain("#42");
-    expect(container.textContent).not.toContain("#579");
+    expect(screen.container.textContent).toContain("#42");
+    expect(screen.container.textContent).not.toContain("#579");
   });
 
   it("renders nothing without linked or branch pull requests", async () => {
-    await render(<ThreadPullRequestsMiniList pullRequests={[]} />);
-    expect(container.innerHTML).toBe("");
+    await using screen = await render(<ThreadPullRequestsMiniList pullRequests={[]} />);
+    expect(screen.container.innerHTML).toBe("");
   });
 });

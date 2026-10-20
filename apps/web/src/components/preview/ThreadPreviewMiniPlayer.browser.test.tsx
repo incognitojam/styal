@@ -1,8 +1,7 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
+import { act, render } from "../../../test/render";
 import { ChatCanvasContext } from "../chat/ChatCanvasContext";
 import { resolveChatCanvasLayout } from "../chat/chatCanvasLayout";
 import {
@@ -94,106 +93,89 @@ function Player() {
   );
 }
 
-let root: Root;
-let host: HTMLDivElement;
-let captured: Set<number>;
-
-beforeEach(async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  captured = new Set();
-});
-
-afterEach(async () => {
-  await act(() => root?.unmount());
-  host?.remove();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
 async function mount(source = browserSource) {
   usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
   usePreviewMiniPlayerStore.getState().open(threadRef, source);
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(() => root.render(<Player />));
-}
-
-function frame() {
-  const element = host.querySelector<HTMLElement>("section")!;
+  const screen = await render(<Player />);
+  const host = screen.container;
+  const captured = new Set<number>();
   return {
-    x: Number.parseFloat(element.style.left),
-    y: Number.parseFloat(element.style.top),
-    width: Number.parseFloat(element.style.width),
-    height: Number.parseFloat(element.style.height),
+    host,
+    captured,
+    frame: () => {
+      const element = host.querySelector<HTMLElement>("section")!;
+      return {
+        x: Number.parseFloat(element.style.left),
+        y: Number.parseFloat(element.style.top),
+        width: Number.parseFloat(element.style.width),
+        height: Number.parseFloat(element.style.height),
+      };
+    },
+    shield: () => host.querySelector<HTMLElement>("section > div[aria-hidden='true']")!,
+    pointer: async (element: Element, type: string, x: number, y: number) => {
+      // Synthetic events have no active pointer for the browser to capture.
+      Object.assign(element, {
+        setPointerCapture: (id: number) => captured.add(id),
+        hasPointerCapture: (id: number) => captured.has(id),
+        releasePointerCapture: (id: number) => captured.delete(id),
+      });
+      await act(() => {
+        const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
+        Object.defineProperty(event, "pointerId", { value: 1 });
+        element.dispatchEvent(event);
+      });
+    },
+    [Symbol.asyncDispose]: () => screen[Symbol.asyncDispose](),
   };
-}
-
-function shield() {
-  return host.querySelector<HTMLElement>("section > div[aria-hidden='true']")!;
-}
-
-async function pointer(element: Element, type: string, x: number, y: number) {
-  // Synthetic events have no active pointer for the browser to capture.
-  Object.assign(element, {
-    setPointerCapture: (id: number) => captured.add(id),
-    hasPointerCapture: (id: number) => captured.has(id),
-    releasePointerCapture: (id: number) => captured.delete(id),
-  });
-  await act(() => {
-    const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
-    Object.defineProperty(event, "pointerId", { value: 1 });
-    element.dispatchEvent(event);
-  });
 }
 
 describe("floating browser preview gestures", () => {
   it("moves from its page surface on a narrow canvas, retains size, and stops on release", async () => {
-    await mount();
-    const start = frame();
-    const surface = shield();
-    await pointer(surface, "pointerdown", 700, 550);
-    await pointer(surface, "pointermove", 450, 450);
-    expect(frame()).toEqual({ ...start, x: start.x - 250, y: start.y - 100 });
-    await pointer(surface, "pointerup", 450, 450);
-    expect(captured.size).toBe(0);
-    const released = frame();
-    await pointer(surface, "pointermove", 300, 300);
-    expect(frame()).toEqual(released);
+    await using player = await mount();
+    const start = player.frame();
+    const surface = player.shield();
+    await player.pointer(surface, "pointerdown", 700, 550);
+    await player.pointer(surface, "pointermove", 450, 450);
+    expect(player.frame()).toEqual({ ...start, x: start.x - 250, y: start.y - 100 });
+    await player.pointer(surface, "pointerup", 450, 450);
+    expect(player.captured.size).toBe(0);
+    const released = player.frame();
+    await player.pointer(surface, "pointermove", 300, 300);
+    expect(player.frame()).toEqual(released);
   });
 
   it("keeps anchored edge resizing usable and stops a cancelled gesture", async () => {
-    await mount();
-    const start = frame();
-    const edge = host.querySelector("[data-preview-mini-player-resize='west']")!;
-    await pointer(edge, "pointerdown", 580, 550);
-    await pointer(edge, "pointermove", 540, 550);
-    expect(frame().width).toBe(start.width + 40);
-    expect(frame().x + frame().width).toBe(start.x + start.width);
-    await pointer(edge, "pointercancel", 540, 550);
-    const cancelled = frame();
-    await pointer(edge, "pointermove", 400, 550);
-    expect(frame()).toEqual(cancelled);
-    expect(captured.size).toBe(0);
+    await using player = await mount();
+    const start = player.frame();
+    const edge = player.host.querySelector("[data-preview-mini-player-resize='west']")!;
+    await player.pointer(edge, "pointerdown", 580, 550);
+    await player.pointer(edge, "pointermove", 540, 550);
+    expect(player.frame().width).toBe(start.width + 40);
+    expect(player.frame().x + player.frame().width).toBe(start.x + start.width);
+    await player.pointer(edge, "pointercancel", 540, 550);
+    const cancelled = player.frame();
+    await player.pointer(edge, "pointermove", 400, 550);
+    expect(player.frame()).toEqual(cancelled);
+    expect(player.captured.size).toBe(0);
   });
 
   it("closes through its toolbar without moving the preview", async () => {
-    await mount();
-    const start = frame();
-    const close = host.querySelector("button[aria-label='Close floating preview']")!;
-    await pointer(close, "pointerdown", 870, 500);
-    await pointer(close, "pointermove", 600, 300);
-    expect(frame()).toEqual(start);
+    await using player = await mount();
+    const start = player.frame();
+    const close = player.host.querySelector("button[aria-label='Close floating preview']")!;
+    await player.pointer(close, "pointerdown", 870, 500);
+    await player.pointer(close, "pointermove", 600, 300);
+    expect(player.frame()).toEqual(start);
     await act(() => close.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(host.querySelector("section")).toBeNull();
+    expect(player.host.querySelector("section")).toBeNull();
   });
 
   it("opens in the right panel as the thread's active browser tab", async () => {
-    await mount();
+    await using player = await mount();
     useRightPanelStore.setState({ byThreadKey: {} });
-    const open = host.querySelector("button[aria-label='Open preview in right panel']")!;
+    const open = player.host.querySelector("button[aria-label='Open preview in right panel']")!;
     await act(() => open.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    expect(host.querySelector("section")).toBeNull();
+    expect(player.host.querySelector("section")).toBeNull();
     expect(
       selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
     ).toMatchObject({ kind: "preview", resourceId: "tab-1" });
@@ -201,10 +183,10 @@ describe("floating browser preview gestures", () => {
   });
 
   it("opens the floating tab in the right panel on double-click", async () => {
-    await mount();
+    await using player = await mount();
     useRightPanelStore.setState({ byThreadKey: {} });
-    await act(() => shield().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-    expect(host.querySelector("section")).toBeNull();
+    await act(() => player.shield().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(player.host.querySelector("section")).toBeNull();
     expect(
       selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
     ).toMatchObject({ kind: "preview", resourceId: "tab-1" });
@@ -213,23 +195,23 @@ describe("floating browser preview gestures", () => {
 
 describe("floating device preview", () => {
   it("keeps the stream out of reach and moves from its surface", async () => {
-    await mount(deviceSource);
-    const stream = host.querySelector<HTMLElement>("section [inert]")!;
+    await using player = await mount(deviceSource);
+    const stream = player.host.querySelector<HTMLElement>("section [inert]")!;
     expect(stream.className).toContain("pointer-events-none");
-    const start = frame();
-    const surface = shield();
-    await pointer(surface, "pointerdown", start.x + 40, start.y + 80);
-    await pointer(surface, "pointermove", start.x + 10, start.y + 60);
-    expect(frame()).toEqual({ ...start, x: start.x - 30, y: start.y - 20 });
-    await pointer(surface, "pointerup", start.x + 10, start.y + 60);
-    expect(captured.size).toBe(0);
+    const start = player.frame();
+    const surface = player.shield();
+    await player.pointer(surface, "pointerdown", start.x + 40, start.y + 80);
+    await player.pointer(surface, "pointermove", start.x + 10, start.y + 60);
+    expect(player.frame()).toEqual({ ...start, x: start.x - 30, y: start.y - 20 });
+    await player.pointer(surface, "pointerup", start.x + 10, start.y + 60);
+    expect(player.captured.size).toBe(0);
   });
 
   it("opens the device in the right panel on double-click", async () => {
-    await mount(deviceSource);
+    await using player = await mount(deviceSource);
     useRightPanelStore.setState({ byThreadKey: {} });
-    await act(() => shield().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-    expect(host.querySelector("section")).toBeNull();
+    await act(() => player.shield().dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    expect(player.host.querySelector("section")).toBeNull();
     expect(
       selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
     ).toMatchObject({
