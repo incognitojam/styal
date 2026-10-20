@@ -2663,8 +2663,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   // Re-establish the control session after a detach, restoring the tab's
   // emulation overrides. Values are read after the session attaches so a
   // concurrent renderer update is not overwritten with a stale snapshot.
-  const restoreControlSession = (tabId: string, wc: Electron.WebContents) =>
-    Effect.gen(function* () {
+  const restoreControlSession = Effect.fn("PreviewManager.restoreControlSession")(
+    function* (tabId: string, wc: Electron.WebContents) {
       const beforeAttach = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
       if (beforeAttach?.webContentsId !== wc.id) return;
       const control = yield* ensureControlSession(wc);
@@ -2713,7 +2713,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           }
         }),
       );
-    }).pipe(Effect.ignore);
+    },
+    (effect, _tabId, _wc) => effect.pipe(Effect.ignore),
+  );
 
   const refreshViewportPresentation = Effect.fn("PreviewManager.refreshViewportPresentation")(
     function* (tabId: string, expectedPresentation?: ViewportPresentation) {
