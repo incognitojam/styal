@@ -379,17 +379,33 @@ jobs:
     needs: [changes, lint, typecheck, build, preview_calibration]
     if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
     steps:
       - name: Require change classification and ledger validation to pass
         run: test '${{ needs.changes.result }}' = success
 
       - name: Require lint, typecheck, build, and browser calibration to pass
         if: needs.changes.outputs.run_ci == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           test '${{ needs.lint.result }}' = success
           test '${{ needs.typecheck.result }}' = success
           test '${{ needs.build.result }}' = success
-          test '${{ needs.preview_calibration.result }}' = success
+          if [ '${{ needs.preview_calibration.result }}' = success ]; then exit 0; fi
+          # GitHub-hosted macOS runners are scarce, and GitHub cancels a job no runner picks up.
+          # Only that case passes: a macOS calibration that started must succeed.
+          blocking=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" --jq '
+            [.jobs[] | select(.name | startswith("Fork Browser Calibration ("))
+              | select(.conclusion != "success")
+              | select((.name == "Fork Browser Calibration (macOS)" and .conclusion == "cancelled" and (.steps | length) == 0) | not)
+              | .name] | join(", ")')
+          if [ -n "$blocking" ]; then
+            echo "::error::Browser calibration did not pass: $blocking"
+            exit 1
+          fi
+          echo "::warning::No macOS runner picked up Fork Browser Calibration (macOS), so it did not run."
 
   test_server:
     name: Fork Test (Server ${{ matrix.shard }}/${{ strategy.job-total }})
