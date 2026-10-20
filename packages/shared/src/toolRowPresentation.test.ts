@@ -3,6 +3,7 @@ import {
   deriveToolRowPresentation,
   formatAskUserQuestionBody,
   isPreviewToolName,
+  memoryFileToolKind,
 } from "./toolRowPresentation.ts";
 
 describe("deriveToolRowPresentation", () => {
@@ -220,6 +221,32 @@ describe("deriveToolRowPresentation", () => {
         input: { file_path: "/Users/x/.claude/projects/-p/memory/MEMORY.md" },
       }),
     ).toEqual({ heading: "Updated memory index" });
+  });
+
+  it("recognizes memory writes in projected file changes, which name no tool", () => {
+    expect(
+      deriveToolRowPresentation({
+        itemType: "file_change",
+        changedFiles: ["/synthetic/.claude/projects/-demo/memory/chart-hover.md"],
+      }),
+    ).toEqual({ heading: "Updated memory", argument: { kind: "text", value: "chart-hover" } });
+
+    expect(
+      deriveToolRowPresentation({
+        itemType: "file_change",
+        changedFiles: ["/synthetic/.claude/projects/-demo/memory/MEMORY.md"],
+      }),
+    ).toEqual({ heading: "Updated memory index" });
+
+    // One row for several files is not a single memory write.
+    expect(
+      memoryFileToolKind(
+        undefined,
+        undefined,
+        ["/synthetic/.claude/projects/-demo/memory/chart-hover.md", "/repo/src/app.ts"],
+        "file_change",
+      ),
+    ).toBeUndefined();
   });
 
   it("summarizes ToolSearch selections instead of echoing the query", () => {

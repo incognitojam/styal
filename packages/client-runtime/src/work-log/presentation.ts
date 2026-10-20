@@ -548,7 +548,7 @@ export function workEntryDisplayIndicatesToolFailure(entry: WorkLogPresentationE
  * killed. Clients show it as stopped rather than hiding it as still running.
  */
 export function workEntryIsStoppedToolCall(entry: WorkLogPresentationEntry): boolean {
-  return entry.sourceActivityKind === "tool.completed" && entry.toolLifecycleStatus === "stopped";
+  return workLogEntryIsToolLike(entry) && entry.toolLifecycleStatus === "stopped";
 }
 
 /** Decides whether the row can show a success marker. */
@@ -572,6 +572,32 @@ function workLogEntryIsLocalCodeSearch(entry: WorkLogPresentationEntry): boolean
   );
 }
 
+/** The Claude memory file, or memory index, that the entry wrote. */
+export function workEntryMemoryFilePath(entry: WorkLogPresentationEntry) {
+  return memoryFileToolPath(
+    structuredWorkEntryToolName(entry),
+    asRecord(workEntryToolInput(entry)) ?? undefined,
+    entry.changedFiles,
+    entry.itemType,
+  );
+}
+
+/** "Updated memory - <name>", or "Updated memory index" for MEMORY.md. */
+export function memoryRowLabel(entry: WorkLogPresentationEntry): string {
+  const row = resolveWorkEntryToolRowPresentation(entry);
+  if (!row) return entry.label;
+  return row.argument ? `${row.heading} - ${row.argument.value}` : row.heading;
+}
+
+export function workEntryMemoryFileKind(entry: WorkLogPresentationEntry) {
+  return memoryFileToolKind(
+    structuredWorkEntryToolName(entry),
+    asRecord(workEntryToolInput(entry)) ?? undefined,
+    entry.changedFiles,
+    entry.itemType,
+  );
+}
+
 export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupAction {
   if (entry.itemType === "thread_created") return "thread-create";
   const presentation = resolveWorkEntryToolPresentation(entry);
@@ -583,6 +609,7 @@ export function toolGroupAction(entry: WorkLogPresentationEntry): ToolGroupActio
   if (entry.itemType === "approval_request" || entry.itemType === "user_input_request") {
     return workLogEntryIsToolLike(entry) ? "other" : "update";
   }
+  if (workEntryMemoryFileKind(entry)) return "memory";
   const data = asRecord(entry.toolData) ?? {};
   const toolName =
     entry.structuredPayload?.type === "dynamic_tool"
@@ -677,20 +704,8 @@ function toolGroupActionCount(
   if (action === "memory") {
     const memoryPaths = new Set<string>();
     for (const entry of entries) {
-      if (
-        memoryFileToolKind(
-          workEntryToolName(entry),
-          asRecord(workEntryToolInput(entry)) ?? undefined,
-          entry.changedFiles,
-        ) !== "memory"
-      ) {
-        continue;
-      }
-      const path = memoryFileToolPath(
-        workEntryToolName(entry),
-        asRecord(workEntryToolInput(entry)) ?? undefined,
-        entry.changedFiles,
-      );
+      if (workEntryMemoryFileKind(entry) !== "memory") continue;
+      const path = workEntryMemoryFilePath(entry);
       if (path) memoryPaths.add(path);
     }
     return memoryPaths.size;

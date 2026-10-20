@@ -1,10 +1,5 @@
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
-import {
-  isPreviewToolName,
-  isWorkspaceSearchInput,
-  memoryFileToolKind,
-  memoryFileToolPath,
-} from "@t3tools/shared/toolRowPresentation";
+import { isPreviewToolName, isWorkspaceSearchInput } from "@t3tools/shared/toolRowPresentation";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 export { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -29,6 +24,9 @@ import {
   toolGroupSummaryKind,
   workEntryReviewFindings,
   workEntryIsStoppedToolCall,
+  memoryRowLabel,
+  workEntryMemoryFileKind,
+  workEntryMemoryFilePath,
   type ToolGroupSummaryKind,
 } from "@t3tools/client-runtime/work-log/presentation";
 export {
@@ -148,6 +146,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command?.trim()) return commandDisplayText(entry.command);
   const action = toolGroupAction(entry);
+  if (action === "memory") return memoryRowLabel(entry);
   if (action === "code-search" || action === "search") {
     // Adapters title file searches with their target; the item keeps only the pattern.
     const searchLabel =
@@ -795,8 +794,7 @@ const TURN_FOLD_ACTIVITY_ORDER: ReadonlyArray<TurnFoldActivityKind> = [
 ];
 
 function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null {
-  if (memoryFileToolKind(entry.toolName, workEntryToolInputRecord(entry), entry.changedFiles))
-    return "memory";
+  if (workEntryMemoryFileKind(entry)) return "memory";
   if (entry.requestKind === "command") return "terminal";
   if (entry.requestKind === "file-read") return "file-read";
   if (entry.requestKind === "file-change") return "file-change";
@@ -840,18 +838,8 @@ function summarizeTurnFoldActivity(entries: ReadonlyArray<TimelineEntry>) {
     if (entry.kind !== "work") continue;
     const kind = turnFoldActivityKind(entry.entry);
     if (kind === "memory") {
-      const path = memoryFileToolPath(
-        entry.entry.toolName,
-        workEntryToolInputRecord(entry.entry),
-        entry.entry.changedFiles,
-      );
-      if (
-        memoryFileToolKind(
-          entry.entry.toolName,
-          workEntryToolInputRecord(entry.entry),
-          entry.entry.changedFiles,
-        ) === "index"
-      ) {
+      const path = workEntryMemoryFilePath(entry.entry);
+      if (workEntryMemoryFileKind(entry.entry) === "index") {
         hasMemoryIndex = true;
       } else if (path) {
         memoryPaths.add(path);

@@ -13,6 +13,7 @@ import {
   resolveViewedImageAsset,
   resolveWorkEntryToolPresentation,
   resolveWorkEntryToolRowPresentation,
+  memoryRowLabel,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
@@ -251,6 +252,29 @@ describe("summarizeToolGroup", () => {
       "Thought (×2)",
     );
     expect(toolGroupSummaryKind([thought])).toBe("reasoning");
+  });
+
+  it("counts projected memory file changes as memory updates", () => {
+    const fileChange = (id: string, path: string) =>
+      entry(id, { label: `Changed ${path}`, itemType: "file_change", changedFiles: [path] });
+    const memory = (name: string) =>
+      fileChange(name, `/synthetic/.claude/projects/-demo/memory/${name}.md`);
+
+    expect(summarizeToolGroup([memory("first"), memory("first")]).summary).toBe("Updated 1 memory");
+    expect(toolGroupSummaryKind([memory("first")])).toBe("memory");
+    expect(
+      summarizeToolGroup([
+        memory("first"),
+        memory("MEMORY"),
+        fileChange("repo", "/synthetic/docs/memory/design.md"),
+      ]).summary,
+    ).toBe("Updated 1 memory and changed 1 file");
+    expect(memoryRowLabel(memory("first"))).toBe("Updated memory - first");
+    expect(memoryRowLabel(memory("MEMORY"))).toBe("Updated memory index");
+    // A write the user interrupted never finished, so it must not claim an update.
+    expect(memoryRowLabel({ ...memory("first"), toolLifecycleStatus: "stopped" })).toBe(
+      "Edit stopped - first",
+    );
   });
 
   it("counts created threads alongside adjacent commands", () => {

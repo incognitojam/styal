@@ -537,6 +537,40 @@ describe("buildThreadFeed", () => {
     expect(presented.some((entry) => entry.type === "run-fold")).toBe(false);
   });
 
+  it("labels Claude memory writes and keeps multi-file changes as edits", () => {
+    const memoryPath = "/synthetic/.claude/projects/-demo/memory/first.md";
+    const memoryWrite: OrchestrationV2TurnItem = {
+      ...base("memory-write", "2026-06-20T00:00:02.000Z", 1),
+      type: "file_change",
+      fileName: memoryPath,
+    };
+    const presented = deriveThreadFeedPresentation(
+      buildThreadFeed([projected(userMessage(), 0), projected(memoryWrite, 1)]),
+      {
+        runId,
+        status: "completed",
+        startedAt: "2026-06-20T00:00:01.000Z",
+        completedAt: "2026-06-20T00:00:05.000Z",
+      },
+      new Set([runId]),
+    );
+    expect(presented.find((entry) => entry.type === "work-toggle")).toMatchObject({
+      summary: "Updated memory - first",
+    });
+    const multiFile: OrchestrationV2TurnItem = {
+      ...memoryWrite,
+      ...base("multi-file", "2026-06-20T00:00:03.000Z", 2),
+      changes: [
+        { operation: "update", path: memoryPath },
+        { operation: "update", path: "/synthetic/repo/src/app.ts" },
+      ],
+    } as OrchestrationV2TurnItem;
+    const activities = buildThreadFeed([projected(memoryWrite, 0), projected(multiFile, 1)])
+      .flatMap((entry) => (entry.type === "activity-group" ? entry.activities : []))
+      .map((activity) => activity.icon);
+    expect(activities).toEqual(["brain", "edit"]);
+  });
+
   it("presents a usage-limit stop as a warning while preserving its explanation", () => {
     const message = "Plan usage limit reached. Try again after reset.";
     const entries = buildThreadFeed([

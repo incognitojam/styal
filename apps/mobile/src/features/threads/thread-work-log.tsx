@@ -1599,9 +1599,9 @@ function toolGroupSummarySymbolName(kind: ToolGroupSummaryKind): AppSymbolName {
       return { ios: "globe", android: "public" };
     case "code-search":
       return "magnifyingglass";
-    case "memory":
     case "other":
       return { ios: "wrench", android: "build" };
+    case "memory":
     case "reasoning":
       return { ios: "brain", android: "psychology" };
     case "agent-tool":

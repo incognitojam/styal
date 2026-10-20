@@ -125,13 +125,21 @@ function toolFilePath(
   );
 }
 
+/**
+ * The memory file a Write or Edit call touched. Projected `file_change` items
+ * name no tool, so an unnamed single-file change counts as a write too.
+ */
 export function memoryFileToolPath(
   toolName: string | undefined,
   input: Record<string, unknown> | undefined,
   changedFiles?: ReadonlyArray<string> | null,
+  itemType?: string | null,
 ): string | undefined {
   const normalizedToolName = toolName ? normalizeKnownToolName(toolName) : undefined;
-  if (normalizedToolName !== "Write" && normalizedToolName !== "Edit") return undefined;
+  const writesFile = normalizedToolName
+    ? normalizedToolName === "Write" || normalizedToolName === "Edit"
+    : itemType === "file_change" && (changedFiles?.length ?? 0) <= 1;
+  if (!writesFile) return undefined;
   const path = toolFilePath(input, changedFiles);
   return memorySlug(path) ? path : undefined;
 }
@@ -140,8 +148,9 @@ export function memoryFileToolKind(
   toolName: string | undefined,
   input: Record<string, unknown> | undefined,
   changedFiles?: ReadonlyArray<string> | null,
+  itemType?: string | null,
 ): "memory" | "index" | undefined {
-  const slug = memorySlug(memoryFileToolPath(toolName, input, changedFiles));
+  const slug = memorySlug(memoryFileToolPath(toolName, input, changedFiles, itemType));
   return slug === "MEMORY" ? "index" : slug ? "memory" : undefined;
 }
 
@@ -484,7 +493,7 @@ export function isWorkspaceSearchInput(input: Record<string, unknown> | undefine
  * itself, so tools added later (including MCP and user-defined ones) get a
  * correct row with no entry here.
  */
-function overrideHeading(toolName: string, filePath: string | undefined): string | undefined {
+function overrideHeading(toolName: string): string | undefined {
   switch (toolName) {
     // Substring classification in the adapters reads "create"/"delete" as a
     // file mutation, so these arrive typed as file_change.
@@ -497,18 +506,6 @@ function overrideHeading(toolName: string, filePath: string | undefined): string
     // Named like ACP's page fetches rather than by the tool's identifier.
     case "WebFetch":
       return "Fetched page";
-    case "Write":
-    case "Edit": {
-      const slug = memorySlug(filePath);
-      if (!slug) {
-        return undefined;
-      }
-      // MEMORY.md is the index every memory is listed in, not a memory.
-      if (slug === "MEMORY") {
-        return MEMORY_INDEX_HEADING;
-      }
-      return toolName === "Write" ? "Saved memory" : "Updated memory";
-    }
     default:
       return undefined;
   }
@@ -532,12 +529,9 @@ function argumentForToolName(
       return context.command ? { kind: "command", value: context.command } : undefined;
     case "Read":
     case "NotebookEdit":
-      return pathArgument(filePath, context.changedFiles);
     case "Write":
-    case "Edit": {
-      const slug = memorySlug(filePath);
-      return slug ? { kind: "text", value: slug } : pathArgument(filePath, context.changedFiles);
-    }
+    case "Edit":
+      return pathArgument(filePath, context.changedFiles);
     case "Glob":
     case "Grep":
       return textArgument(asTrimmedString(input?.pattern) ?? asTrimmedString(input?.query));
@@ -745,14 +739,23 @@ function deriveBaseToolRowPresentation(
     }
   }
 
-  const override = toolName ? overrideHeading(toolName, filePath) : undefined;
-  if (override) {
-    // The index's own name adds nothing next to the heading.
-    const suppressArgument = override === MEMORY_INDEX_HEADING;
+  const memoryPath = memoryFileToolPath(toolName, toolInput, changedFiles, itemType);
+  const memory = memorySlug(memoryPath);
+  if (memory) {
+    // MEMORY.md is the index every memory is listed in, not a memory, and its
+    // own name adds nothing next to the heading.
+    if (memory === "MEMORY") {
+      return { heading: MEMORY_INDEX_HEADING };
+    }
     return {
-      heading: override,
-      ...(argument && !suppressArgument ? { argument } : {}),
+      heading: toolName === "Write" ? "Saved memory" : "Updated memory",
+      argument: { kind: "text", value: memory },
     };
+  }
+
+  const override = toolName ? overrideHeading(toolName) : undefined;
+  if (override) {
+    return { heading: override, ...(argument ? { argument } : {}) };
   }
 
   // ACP rows name no tool: `deriveToolActivityPresentation` titles their reads
