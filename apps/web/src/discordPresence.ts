@@ -37,6 +37,8 @@ export function deriveDiscordPresence({
   for (const thread of threads) {
     // Cached/disconnected environments must not keep advertising stale activity.
     if (thread.archivedAt !== null || shellStatuses.get(thread.environmentId) !== "live") continue;
+    // Subagent threads are hidden from the sidebar; their parent already counts.
+    if (thread.lineage.relationshipToParent === "subagent") continue;
     const capabilities = serverConfigs.get(thread.environmentId)?.environment.capabilities;
     if (capabilities?.threadSnooze && effectiveSnoozed(thread, { now })) {
       const wakeAt = Date.parse(thread.snoozedUntil!);
