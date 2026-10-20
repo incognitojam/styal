@@ -8,6 +8,7 @@
  *   intake-run.ts apply (--count <n> | --through <upstream-sha> | --commits <sha,...>) [--branch <name>]
  *   intake-run.ts continue [--note <text>] [--feature <id,id>]
  *   intake-run.ts auto --branch <name> [--max <n>] [--push] [--no-rerere]
+ *   intake-run.ts push
  *   intake-run.ts survey [--base HEAD] [--count 100 | --through <sha>] [--json]
  *   intake-run.ts fix-trailers [--base origin/main]
  *   intake-run.ts fix-references [--base origin/main]
@@ -43,6 +44,7 @@ import {
   useNamespaceImport,
 } from "./lib/references.ts";
 import { applyIdentifierRenames, deriveIdentifierRenames } from "./lib/renames.ts";
+import { holdForPushedCandidate } from "./landing-hold.ts";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -1225,9 +1227,23 @@ function autoBatch(
     process.stdout.write(`\nVerified. Push ${options.branch} and wait for Fork CI.\n`);
     return true;
   }
-  git(cwd, ["push", "-q", "-u", "origin", options.branch]);
+  return pushCandidate(cwd, options.branch);
+}
+
+/**
+ * Pushes an intake candidate, holds open pull requests into main while it lands, and waits for
+ * Fork CI, after which promotion starts by itself.
+ */
+function pushCandidate(cwd: string, branch: string): boolean {
+  git(cwd, ["push", "-q", "--force-with-lease", "-u", "origin", `HEAD:refs/heads/${branch}`]);
   const sha = git(cwd, ["rev-parse", "HEAD"]).trim();
-  process.stdout.write(`\nPushed ${sha}; waiting for Fork CI.\n`);
+  process.stdout.write(`\nPushed ${sha}.\n`);
+  if (!holdForPushedCandidate(forkRepository(), branch, sha)) {
+    process.stdout.write(
+      "Fork CI has not started for it; the Intake landing hold workflow holds pull requests once it does.\n",
+    );
+  }
+  process.stdout.write("Waiting for Fork CI.\n");
   const conclusion = waitForForkCi(cwd, sha);
   if (conclusion !== "success") {
     process.stdout.write(`Fork CI: ${conclusion ?? "still running after two hours"}.\n`);
@@ -2167,6 +2183,13 @@ function main() {
         : 2;
       return;
     }
+    case "push": {
+      const branch = git(cwd, ["branch", "--show-current"]).trim();
+      if (!branch.startsWith("intake/"))
+        throw new Error("push needs an intake/ branch checked out.");
+      process.exitCode = pushCandidate(cwd, branch) ? 0 : 2;
+      return;
+    }
     case "survey": {
       const count = Number(flag("--count") ?? 100);
       if (!Number.isInteger(count) || count < 1)
@@ -2260,7 +2283,7 @@ function main() {
     }
     default:
       process.stdout.write(
-        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--changed-tests] | fingerprint [--base <ref>] [--json] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
+        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | push | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--changed-tests] | fingerprint [--base <ref>] [--json] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
       );
       process.exitCode = command === undefined ? 0 : 1;
   }

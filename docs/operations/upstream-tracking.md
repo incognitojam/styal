@@ -6,7 +6,7 @@ Use an `intake/<batch>` branch based on fork `main`. Preserve upstream authorshi
 
 Nothing automatically syncs upstream. Pushing an intake branch starts promotion once Fork CI passes, and a candidate that clears every automatic gate lands without approval (see [step 4](#4-promote-without-a-pr)), so push a candidate only when it is ready to land.
 
-While an intake branch runs Fork CI or waits for promotion, the **Intake landing hold** workflow sets a pending `Intake landing hold` status on every open pull request into `main`. The status is one of `main`'s required checks, so those pull requests cannot merge and move `main` under the candidate; pull requests set to auto-merge land once the hold lifts. The hold lifts when Fork CI fails or the promotion run finishes, however it ends. To lift it for a candidate you will not land, cancel its Fork CI run or reject its waiting promotion. Each run of the workflow recomputes the hold from workflow runs; dispatch it if a status looks stale. Pushes that bypass pull requests, such as the nightly mobile version bump, are not held.
+While an intake branch runs Fork CI or waits for promotion, the **Intake landing hold** workflow sets a pending `Intake landing hold` status on every open pull request into `main`. The status is one of `main`'s required checks, so those pull requests cannot merge and move `main` under the candidate; pull requests set to auto-merge land once the hold lifts. The hold lifts when Fork CI fails or the promotion run finishes, however it ends. To lift it for a candidate you will not land, cancel its Fork CI run or reject its waiting promotion. The workflow can wait minutes for a runner, so push candidates with `intake-run.ts push` (or `auto --push`), which sets the hold as soon as the candidate's Fork CI run exists and then waits for Fork CI. Each run of the workflow recomputes the hold from workflow runs; dispatch it if a status looks stale. Pushes that bypass pull requests, such as the nightly mobile version bump, are not held.
 
 ## 1. Choose the next batch
 
@@ -126,7 +126,7 @@ The successful local audit inspects the remote branch and reports the next actio
 
 **Promote upstream intake** is the landing path. It starts by itself when Fork CI passes on an `intake/**` push, and always runs from `main`, so a candidate cannot change the checks that promote it.
 
-1. Finish the combined-batch review described above, then push the candidate. Fork CI runs the full suite, the intake audit, a check that `pnpm-lock.yaml` matches the manifests, and a native fingerprint comparison with `main`.
+1. Finish the combined-batch review described above, then push the candidate with `intake-run.ts push`. Fork CI runs the full suite, the intake audit, a check that `pnpm-lock.yaml` matches the manifests, and a native fingerprint comparison with `main`.
 2. When Fork CI passes, the workflow audits the exact candidate SHA again with `main`'s code and chooses a lane:
    - **Automatic**: the audit reports "Eligible for automatic promotion" (every commit matches upstream, none carries a `Fork adaptation:` note, and no sensitive path, dependency, or tracked fork feature changes) and the native fingerprint is unchanged. The promote job runs in the `upstream-intake-automatic` environment without approval.
    - **Manual**: everything else, including a moved or unknown fingerprint. The promote job waits in `upstream-intake-manual`. Its name says when the fingerprint moved, and the run summary shows the audit, the fingerprint report, and the lane. Review it, then approve.
@@ -134,7 +134,7 @@ The successful local audit inspects the remote branch and reports the next actio
 
 Production mobile builds use a fingerprint runtime version, so an OTA from **Mobile EAS Production** reaches installed builds only when the Expo fingerprint is unchanged. Dependency changes can move it without any native code change. Intake batches land without a pull request, so the Mobile Fingerprint Check never labels them; Fork CI's fingerprint job compares it the same way. If it moved, the batch's JavaScript changes reach users only through new production builds, from upstream's next mobile version bump or a `mode=build` dispatch. Approving such a batch is that choice.
 
-If `main` moves before the promote job runs, it fails without changing anything. Rebase the standalone intake branch, rerun affected validation, and push; the new Fork CI run starts a new promotion, which replaces any older one still waiting for approval on that branch. Never rebase `main` onto upstream or force-push it.
+If `main` moves before the promote job runs, it fails without changing anything. Rebase the standalone intake branch, rerun affected validation, and push with `intake-run.ts push`; the new Fork CI run starts a new promotion, which replaces any older one still waiting for approval on that branch. Never rebase `main` onto upstream or force-push it.
 
 To retry a promotion, re-run Fork CI for the candidate; a successful run starts a new one.
 
