@@ -45,6 +45,7 @@ import {
   PaceIcon,
   ResetCreditDialog,
   barColor,
+  usePaceMark,
   resetCreditsSummary,
   useResetCredit,
 } from "./UsageLimits";
@@ -366,6 +367,7 @@ function SegmentTriggers({
   const payload: SegmentPayload = { account, window, reset, redeem };
   const remaining = remainingPercent(window);
   const timeLeft = paceRemainingPercent(window, now);
+  const [segmentRef, paceMark] = usePaceMark(timeLeft);
   const resetsIn = formatResetsIn(window, now);
   // A lone account's credits show once beside the provider instead.
   const credits = pooled ? (account.limits.resetCredits?.availableCount ?? 0) : 0;
@@ -378,7 +380,7 @@ function SegmentTriggers({
         render={
           <button
             type="button"
-            style={{ gridColumn: index, gridRow: 1 }}
+            style={{ gridColumn: index, gridRow: 1, ...(pooled ? paceMark?.gappedTrack : null) }}
             aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${resetsIn ? `, ${resetsIn}` : ""}${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
             className={
               pooled
@@ -388,7 +390,11 @@ function SegmentTriggers({
           />
         }
       >
-        <div className={pooled ? "relative h-full" : "relative h-2.5 rounded-full bg-muted"}>
+        <div
+          ref={segmentRef}
+          className={pooled ? "relative h-full" : "relative h-2.5 rounded-full bg-muted"}
+          style={pooled ? undefined : paceMark?.gappedTrack}
+        >
           <div
             aria-hidden
             className={
@@ -397,29 +403,32 @@ function SegmentTriggers({
                 : "absolute inset-0 overflow-hidden rounded-full"
             }
           >
-            {/* Translucent so the label reads over the fill for any provider colour and theme. */}
-            <div
-              aria-hidden
-              className="absolute inset-y-0 left-0 rounded-md opacity-35"
-              style={{ width: `${remaining}%`, backgroundColor: color }}
-            />
-            {/* The spent share is hatched, not blank: it is what the countdown restores. */}
-            {remaining < 100 && reset && refillPercent > 0 ? (
+            {/* Clipped inside the rounded clip so the bar's own corners keep their antialiasing. */}
+            <div className="absolute inset-0" style={paceMark?.gap}>
+              {/* Translucent so the label reads over the fill for any provider colour and theme. */}
               <div
                 aria-hidden
-                className="absolute inset-y-0 right-0 opacity-20"
-                style={{
-                  width: `${Math.min(100 - remaining, refillPercent)}%`,
-                  backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
-                }}
+                className="absolute inset-y-0 left-0 rounded-md opacity-35"
+                style={{ width: `${remaining}%`, backgroundColor: color }}
               />
-            ) : null}
+              {/* The spent share is hatched, not blank: it is what the countdown restores. */}
+              {remaining < 100 && reset && refillPercent > 0 ? (
+                <div
+                  aria-hidden
+                  className="absolute inset-y-0 right-0 opacity-20"
+                  style={{
+                    width: `${Math.min(100 - remaining, refillPercent)}%`,
+                    backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 1px, transparent 1px 5px)`,
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
-          {timeLeft !== null ? (
+          {paceMark ? (
             <span
               aria-hidden
-              className="absolute -inset-y-1 w-0.5 -translate-x-1/2 rounded-full bg-muted-foreground"
-              style={{ left: `${timeLeft}%` }}
+              className="absolute inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
+              style={paceMark.tick}
             />
           ) : null}
           {pooled ? (
