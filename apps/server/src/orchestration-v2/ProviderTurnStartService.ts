@@ -50,7 +50,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
-import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
+import { FORK_NOTE, forkNoteTransfer } from "./ForkNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -979,18 +979,13 @@ export const layer: Layer.Layer<
         run,
         attempts: projection.attempts,
       });
-      const sendForkNote = shouldSendForkNote({
+      const pendingForkNote = forkNoteTransfer({
         threadId: input.threadId,
-        run,
-        attemptId: attempt.id,
-        runs: projection.runs,
-        attempts: projection.attempts,
-        providerTurns: projection.providerTurns,
-        messages: projection.messages,
+        messageText: message.text,
         contextTransfers: projection.contextTransfers,
       });
       const turnNote = [
-        sendForkNote ? FORK_NOTE : "",
+        pendingForkNote === undefined ? "" : FORK_NOTE,
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),
@@ -1108,6 +1103,28 @@ export const layer: Layer.Layer<
                 !coveredItemIds.has(item.id) &&
                 historicalMessage(item) !== null,
             );
+      // Reads the transfer again: this turn's start may have consumed it since.
+      const markForkNoteDelivered = Effect.gen(function* () {
+        const { contextTransfers } = yield* projectionStore.getThreadRecords(input.threadId, [
+          "contextTransfers",
+        ]);
+        const transfer = contextTransfers.find((candidate) => candidate.id === pendingForkNote?.id);
+        if (transfer === undefined || transfer.forkNoteDeliveredAt !== undefined) return;
+        const deliveredAt = yield* DateTime.now;
+        yield* eventSink.write({
+          events: [
+            {
+              id: yield* idAllocator.allocate.event({ threadId: projection.thread.id }),
+              type: "context-transfer.updated",
+              threadId: projection.thread.id,
+              runId: run.id,
+              providerInstanceId: run.providerInstanceId,
+              occurredAt: deliveredAt,
+              payload: { ...transfer, forkNoteDeliveredAt: deliveredAt, updatedAt: deliveredAt },
+            },
+          ],
+        });
+      });
       const startWithHandoffs = (
         turnInput: Parameters<typeof session.startTurn>[0],
         compact = false,
@@ -1221,6 +1238,13 @@ export const layer: Layer.Layer<
               }),
             ),
           );
+          if (pendingForkNote !== undefined) {
+            yield* markForkNoteDelivered.pipe(
+              Effect.catchCause(() =>
+                Effect.logWarning("Failed to record fork note delivery", { runId: run.id }),
+              ),
+            );
+          }
         }).pipe(
           Effect.mapError((cause) =>
             cause._tag === "ProviderAdapterTurnStartError"
