@@ -15,6 +15,7 @@ import {
 import {
   AVAILABLE_CONNECTION_STATE,
   type ConnectionAttemptError,
+  ConnectionBlockedError,
   type SupervisorConnectionState,
 } from "./model.ts";
 import { ManagedRelayRequestFailedError } from "../relay/managedRelay.ts";
@@ -69,11 +70,29 @@ describe("presentConnectionDiagnosis", () => {
     expect(diagnosis?.steps.join(" ")).toContain("Tailscale exit node on Mac mini");
     expect(diagnosis?.facts).toContainEqual(["HTTP status", "530"]);
     expect(diagnosis?.facts).toContainEqual(["Trace ID", "trace-1"]);
+    expect(diagnosis?.moreInfoUrl).toMatch(
+      /t3-connect-troubleshooting\.md#the-hosts-tunnel-is-offline$/,
+    );
   });
 
-  it("tells a working tunnel apart from T3 Code not answering", () => {
+  it("links a host that rejects this device to the sign-in section", () => {
+    const failure = new ConnectionBlockedError({
+      reason: "authentication",
+      detail: "rejected",
+      hop: "server",
+      via: "relay",
+    });
+    expect(diagnose(backoff(failure))?.moreInfoUrl).toMatch(/#sign-in-account-or-link-problems$/);
+  });
+
+  it("links the guide only for styal Link routes", () => {
+    const failure = credentialMissingError("direct-1");
+    expect(diagnose(backoff(failure), "direct")?.moreInfoUrl).toBeNull();
+  });
+
+  it("tells a working tunnel apart from styal not answering", () => {
     expect(diagnose(backoff(unavailable("origin_unreachable")))?.headline).toBe(
-      "Tunnel works, but T3 Code on Mac mini did not answer",
+      "Tunnel works, but styal on Mac mini did not answer",
     );
     expect(results(backoff(unavailable("origin_unreachable")), "direct")).toEqual([
       "device:ok",
@@ -108,7 +127,7 @@ describe("presentConnectionDiagnosis", () => {
     expect(diagnosis?.steps.join(" ")).not.toContain("on this device");
   });
 
-  it("stops at T3 Connect when this device cannot reach the relay", () => {
+  it("stops at styal Link when this device cannot reach the relay", () => {
     const failure = mapManagedRelayError(
       new ManagedRelayRequestFailedError({
         action: "connect relay environment",
@@ -116,7 +135,7 @@ describe("presentConnectionDiagnosis", () => {
         cause: new TypeError("Failed to fetch"),
       }),
     );
-    expect(diagnose(backoff(failure))?.headline).toBe("This device can't reach T3 Connect");
+    expect(diagnose(backoff(failure))?.headline).toBe("This device can't reach styal Link");
     expect(results(backoff(failure))).toEqual([
       "device:ok",
       "relay:failed",
@@ -125,7 +144,7 @@ describe("presentConnectionDiagnosis", () => {
     ]);
   });
 
-  it("does not blame this device's network when T3 Connect answered with an error", () => {
+  it("does not blame this device's network when styal Link answered with an error", () => {
     const failure = mapManagedRelayError(
       new ManagedRelayRequestFailedError({
         action: "connect relay environment",
@@ -134,7 +153,7 @@ describe("presentConnectionDiagnosis", () => {
       }),
     );
     const diagnosis = diagnose(backoff(failure));
-    expect(diagnosis?.headline).toBe("T3 Connect returned an error");
+    expect(diagnosis?.headline).toBe("styal Link returned an error");
     expect(diagnosis?.steps.join(" ")).not.toContain("this device");
   });
 
@@ -200,7 +219,7 @@ describe("presentConnectionDiagnosis", () => {
     if (diagnosis === null) throw new Error("expected a diagnosis");
     const text = connectionDiagnosisText("Mac mini", diagnosis);
     expect(text).toContain("Mac mini tunnel: FAILED");
-    expect(text).toContain("T3 Code on Mac mini: not checked");
+    expect(text).toContain("styal on Mac mini: not checked");
     expect(text).toContain("Cause: tunnel_down");
     expect(text).toContain("Attempts: 3");
   });

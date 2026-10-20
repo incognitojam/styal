@@ -1,3 +1,7 @@
+import {
+  t3ConnectTroubleshootingUrl,
+  type T3ConnectTroubleshootingSection,
+} from "@t3tools/contracts";
 import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
 import * as DateTime from "effect/DateTime";
 
@@ -22,6 +26,8 @@ export interface ConnectionDiagnosis {
   readonly hops: ReadonlyArray<ConnectionDiagnosisHop>;
   readonly steps: ReadonlyArray<string>;
   readonly facts: ReadonlyArray<readonly [label: string, value: string]>;
+  /** The troubleshooting guide section for this failure. Null for direct routes. */
+  readonly moreInfoUrl: string | null;
 }
 
 export interface ConnectionDiagnosisInput {
@@ -79,24 +85,24 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "offline":
       return "This device is offline";
     case "outdated":
-      return `${host} runs an older T3 Code`;
+      return `${host} runs an older styal`;
     case "clock_skew":
       return "This device's clock is off";
     case "not_linked":
-      return `${host} is not linked to your T3 Connect account`;
+      return `${host} is not linked to your styal Link account`;
     case "relay_error":
-      return "T3 Connect returned an error";
+      return "styal Link returned an error";
     case "tunnel_pending":
       return `${host}'s tunnel is still being set up`;
     case "tunnel_not_enabled":
-      return `T3 Connect is not turned on for ${host}`;
+      return `styal Link is not turned on for ${host}`;
     case "released":
     case "tunnel_down":
       return `${host}'s tunnel is offline`;
     case "origin_unreachable":
-      return `Tunnel works, but T3 Code on ${host} did not answer`;
+      return `Tunnel works, but styal on ${host} did not answer`;
     case "invalid_response":
-      return `T3 Code on ${host} sent an unexpected answer`;
+      return `styal on ${host} sent an unexpected answer`;
     case "dns":
       return `${host}'s tunnel address did not resolve`;
     case "tls":
@@ -114,55 +120,55 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
       return "This device could not prepare the connection";
     case "relay":
       return failure?.reason === "authentication"
-        ? "T3 Connect did not accept this device's sign-in"
-        : "This device can't reach T3 Connect";
+        ? "styal Link did not accept this device's sign-in"
+        : "This device can't reach styal Link";
     case "tunnel":
       // The relay already reached the host when this device fails on its own (#17629).
       return failure?.reason === "network" ||
         failure?.reason === "transport" ||
         failure?.reason === "timeout"
         ? `This device can't reach ${host}'s tunnel`
-        : `T3 Connect could not reach ${host}'s tunnel`;
+        : `styal Link could not reach ${host}'s tunnel`;
     case "server":
       return failure?.reason === "authentication" || failure?.reason === "permission"
-        ? `T3 Code on ${host} did not accept this device`
-        : `T3 Code on ${host} did not answer`;
+        ? `styal on ${host} did not accept this device`
+        : `styal on ${host} did not answer`;
   }
 }
 
 function steps(host: string, located: Located, failure: ConnectionAttemptError | null): string[] {
-  const checkHost = `On ${host}, check Settings > Connections or run \`t3 connect status\`.`;
+  const checkHost = `On ${host}, check Settings > Connections or run \`styal link status\`.`;
   switch (located.cause) {
     case "offline":
-      return ["Connect this device to the internet. T3 Code reconnects on its own."];
+      return ["Connect this device to the internet. styal reconnects on its own."];
     case "outdated":
-      return [`Update T3 Code on ${host}.`];
+      return [`Update styal on ${host}.`];
     case "clock_skew":
       return [`Turn on automatic date and time on this device and on ${host}, then retry.`];
     case "not_linked":
       return [
-        "Check that this device is signed in to the same T3 Connect account as the host.",
-        `On ${host}, open Settings > Connections and turn T3 Connect on.`,
+        "Check that this device is signed in to the same styal Link account as the host.",
+        `On ${host}, open Settings > Connections and turn styal Link on.`,
       ];
     case "tunnel_pending":
-      return ["Wait a minute. T3 Code retries on its own.", checkHost];
+      return ["Wait a minute. styal retries on its own.", checkHost];
     case "relay_error":
       return [
-        "Wait a few minutes. T3 Code retries on its own.",
+        "Wait a few minutes. styal retries on its own.",
         "If it keeps failing, copy the diagnostics and report it.",
       ];
     case "tunnel_not_enabled":
-      return [`On ${host}, open Settings > Connections and turn T3 Connect on.`];
+      return [`On ${host}, open Settings > Connections and turn styal Link on.`];
     case "released":
     case "tunnel_down":
       return [
-        `Make sure ${host} is awake and T3 Code is running on it.`,
+        `Make sure ${host} is awake and styal is running on it.`,
         checkHost,
         `A VPN or Tailscale exit node on ${host} can block the tunnel (port 7844). Turn it off or allow the tunnel.`,
       ];
     case "origin_unreachable":
     case "invalid_response":
-      return [`Open or restart T3 Code on ${host}.`, checkHost];
+      return [`Open or restart styal on ${host}.`, checkHost];
     // The relay saw these on its way to the host, so the fix is on the host.
     case "dns":
     case "tls":
@@ -176,15 +182,15 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
   switch (located.hop) {
     case "device":
       return [
-        "Restart T3 Code on this device.",
+        "Restart styal on this device.",
         `If it keeps failing, remove ${host} from this device and add it again.`,
       ];
     case "relay":
       return failure?.reason === "authentication"
-        ? ["Sign out of T3 Connect and sign in again."]
+        ? ["Sign out of styal Link and sign in again."]
         : [
             "Check this device's internet connection.",
-            "A VPN, firewall, or ad blocker on this device can block T3 Connect.",
+            "A VPN, firewall, or ad blocker on this device can block styal Link.",
           ];
     case "tunnel":
       return failure?.reason === "network" ||
@@ -197,9 +203,61 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
         : [`Make sure ${host} is awake and online.`, checkHost];
     case "server":
       return [
-        `Make sure T3 Code is running on ${host}.`,
+        `Make sure styal is running on ${host}.`,
         "Retry. If it keeps failing, copy the diagnostics.",
       ];
+  }
+}
+
+function helpSection(
+  located: Located,
+  failure: ConnectionAttemptError | null,
+): T3ConnectTroubleshootingSection {
+  switch (located.cause) {
+    case "offline":
+      return "this-device-cant-reach-styal-link";
+    case "outdated":
+      return "the-host-runs-an-older-styal";
+    case "clock_skew":
+      return "the-clock-is-off";
+    case "not_linked":
+    case "tunnel_not_enabled":
+      return "sign-in-account-or-link-problems";
+    case "relay_error":
+      return "styal-link-returned-an-error";
+    case "released":
+    case "tunnel_down":
+    case "tunnel_pending":
+      return "the-hosts-tunnel-is-offline";
+    case "origin_unreachable":
+    case "invalid_response":
+      return "the-tunnel-works-but-styal-does-not-answer";
+    case "dns":
+    case "tls":
+    case "refused":
+    case "timeout":
+    case "unknown":
+      return "the-styal-link-address-does-not-resolve-or-answer";
+    case null:
+      break;
+  }
+  const onThisDevice =
+    failure?.reason === "network" ||
+    failure?.reason === "transport" ||
+    failure?.reason === "timeout";
+  switch (located.hop) {
+    case "device":
+      return "this-device-cant-reach-styal-link";
+    case "relay":
+      return failure?.reason === "authentication"
+        ? "sign-in-account-or-link-problems"
+        : "this-device-cant-reach-styal-link";
+    case "tunnel":
+      return onThisDevice ? "this-device-cant-reach-styal-link" : "the-hosts-tunnel-is-offline";
+    case "server":
+      return failure?.reason === "authentication" || failure?.reason === "permission"
+        ? "sign-in-account-or-link-problems"
+        : "the-tunnel-works-but-styal-does-not-answer";
   }
 }
 
@@ -213,11 +271,11 @@ function hopLabel(hop: ConnectionHop, host: string): string {
     case "device":
       return "This device";
     case "relay":
-      return "T3 Connect";
+      return "styal Link";
     case "tunnel":
       return `${host} tunnel`;
     case "server":
-      return `T3 Code on ${host}`;
+      return `styal on ${host}`;
   }
 }
 
@@ -260,7 +318,7 @@ export function presentConnectionDiagnosis(
       ? null
       : DateTime.formatIso(DateTime.makeUnsafe(input.state.retryAt)),
   );
-  add("Route", relayPath ? "T3 Connect" : "Direct");
+  add("Route", relayPath ? "styal Link" : "Direct");
   add("App version", input.clientVersion);
   add("Host version", input.serverVersion);
   add("Error", failure?.detail);
@@ -271,6 +329,7 @@ export function presentConnectionDiagnosis(
     hops,
     steps: steps(host, located, failure),
     facts,
+    moreInfoUrl: relayPath ? t3ConnectTroubleshootingUrl(helpSection(located, failure)) : null,
   };
 }
 
@@ -279,10 +338,11 @@ const HOP_MARK = { ok: "ok", failed: "FAILED", unchecked: "not checked" } as con
 /** One plain-text block for bug reports. */
 export function connectionDiagnosisText(hostLabel: string, diagnosis: ConnectionDiagnosis): string {
   return [
-    `T3 Code connection to ${hostLabel}: ${diagnosis.headline}`,
+    `styal connection to ${hostLabel}: ${diagnosis.headline}`,
     "",
     ...diagnosis.hops.map((hop) => `${hop.label}: ${HOP_MARK[hop.result]}`),
     "",
     ...diagnosis.facts.map(([label, value]) => `${label}: ${value}`),
+    ...(diagnosis.moreInfoUrl ? ["", `More info: ${diagnosis.moreInfoUrl}`] : []),
   ].join("\n");
 }

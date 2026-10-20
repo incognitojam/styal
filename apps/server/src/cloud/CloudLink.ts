@@ -96,6 +96,7 @@ import {
   RELAY_URL_SECRET,
 } from "./config.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
+import * as ConnectReachability from "./ConnectReachability.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import { relayUrlConfig } from "./publicConfig.ts";
 import {
@@ -530,6 +531,7 @@ const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const endpointRuntime = yield* ManagedEndpointRuntime.CloudManagedEndpointRuntime;
+  const reachability = yield* ConnectReachability.ConnectReachability;
   const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const cliTokenManager = yield* CliTokenManager.CloudCliTokenManager;
   const httpClient = yield* HttpClient.HttpClient;
@@ -1315,6 +1317,7 @@ const make = Effect.gen(function* () {
       publishAgentActivity,
       holdWebhooks,
       revoked,
+      latestReachability,
     ] = yield* Effect.all(
       [
         secrets.get(CLOUD_LINKED_USER_ID),
@@ -1324,8 +1327,9 @@ const make = Effect.gen(function* () {
         secrets.get(PUBLISH_AGENT_ACTIVITY_SECRET),
         secrets.get(HOLD_WEBHOOKS_WHILE_OFFLINE_SECRET),
         secrets.get(CLOUD_LINK_REVOKED),
+        reachability.latest,
       ],
-      { concurrency: 7 },
+      { concurrency: 8 },
     );
     return {
       linked: Option.isSome(cloudUserId),
@@ -1339,6 +1343,7 @@ const make = Effect.gen(function* () {
         : false,
       holdWebhooksWhileOffline:
         Option.isSome(holdWebhooks) && bytesToString(holdWebhooks.value) === "true",
+      ...(Option.isSome(latestReachability) ? { reachability: latestReachability.value } : {}),
     } satisfies EnvironmentCloudLinkStateResult;
   });
 

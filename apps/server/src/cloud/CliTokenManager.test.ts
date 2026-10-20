@@ -299,7 +299,7 @@ it.effect.each([
       const error = yield* manager.getExisting.pipe(Effect.flip);
       assert.instanceOf(error, CliTokenManager.CloudCliCredentialRefreshError);
       assert.equal(error.requiresLogin, requiresLogin);
-      assert.equal(error.message.includes("t3 connect login"), requiresLogin);
+      assert.equal(error.message.includes("styal link login"), requiresLogin);
       assert.equal(error.message.includes("OAuth error: invalid_grant"), diagnostic);
       assert.notInclude(error.message, "private");
       assert.equal(error.message.includes("OAuth error:"), diagnostic);
@@ -361,7 +361,7 @@ it.effect.each(["malformed", "unreadable", "stalled"] as const)(
         if (bodyKind === "stalled") assert.equal(Duration.toMillis(duration), 10_000);
         assert.instanceOf(error, CliTokenManager.CloudCliCredentialRefreshError);
         assert.isTrue(error.requiresLogin);
-        assert.include(error.message, "t3 connect login");
+        assert.include(error.message, "styal link login");
         assert.notInclude(error.message, "private");
         assert.notInclude(error.message, "OAuth error:");
         assert.isTrue(HttpClientError.isHttpClientError(error.cause));

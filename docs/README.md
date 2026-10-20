@@ -26,6 +26,7 @@
 - [Usage and limits](./user/usage.md)
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)
+- [styal Link troubleshooting](./user/t3-connect-troubleshooting.md)
 - [Drive styal from an agent](./user/drive.md)
 - [Outside agents (MCP)](./user/outside-agents.md)
 - [Running in the background](./user/background-service.md)

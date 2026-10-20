@@ -126,7 +126,7 @@ Downloads, it may need Full Disk Access for the styal executable listed in
 `~/Library/LaunchAgents/build.styal.app.service.plist`.
 
 For failures after signing in to styal Link, see
-[connection troubleshooting](./remote-access.md#styal-link-troubleshooting).
+[connection troubleshooting](./t3-connect-troubleshooting.md).
 
 ## Reclaim database space
 
