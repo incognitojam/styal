@@ -31,7 +31,7 @@ import {
 } from "./model.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import { ProjectScript, type ProjectMutation } from "./project.ts";
-import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
+import { DEFAULT_NEW_THREAD_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
 import {
   DEFAULT_PREVIEW_APPEARANCE,
@@ -1195,8 +1195,14 @@ export const ServerSettings = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  /**
+   * The mode new threads start in, resolved per provider by
+   * `resolveNewThreadRuntimeMode`. The old built-in Full access was never
+   * persisted (defaults are stripped on write), so configs that never chose a
+   * mode move to the new built-in.
+   */
   defaultRuntimeMode: RuntimeMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE)),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_NEW_THREAD_RUNTIME_MODE)),
   ),
   /**
    * Per-project overrides of the keys in `PROJECT_SCOPED_SERVER_SETTING_KEYS`.

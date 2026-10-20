@@ -7,6 +7,7 @@ import {
   type Project,
   ProjectId,
   ProviderInstanceId,
+  resolveNewThreadRuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
 import { DriveMode, applyDriveScenario } from "./driveMode.ts";
@@ -39,6 +40,7 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as ThreadLaunch from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
+import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
@@ -290,16 +292,19 @@ const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
     if (existingThread === undefined) {
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const settings = yield* serverSettings.getSettings;
+      const projectSettings = resolveProjectSettings(settings, project.id, project).settings;
+      const modelSelection = projectSettings.defaultModelSelection ?? threadModelSelection;
+      const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+      const providerInstance = yield* providerInstances.getInstance(modelSelection.instanceId);
+      const provider =
+        providerInstance === undefined ? undefined : yield* providerInstance.snapshot.getSnapshot;
       const launched = yield* threadLaunch.launch({
         commandId: CommandId.make(yield* randomUUID),
         projectId: project.id,
         title: "New thread",
-        modelSelection:
-          resolveProjectSettings(settings, project.id, project).settings.defaultModelSelection ??
-          threadModelSelection,
+        modelSelection,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        runtimeMode: resolveProjectSettings(settings, project.id, project).settings
-          .defaultRuntimeMode,
+        runtimeMode: resolveNewThreadRuntimeMode(projectSettings.defaultRuntimeMode, provider),
         workspaceStrategy: { type: "root" },
         createdBy: "system",
         creationSource: "server",

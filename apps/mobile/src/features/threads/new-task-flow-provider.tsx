@@ -20,6 +20,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   MessageId,
   repositoryGroupingKeyOf,
+  resolveNewThreadRuntimeMode,
   T3_PROJECT_FILE_NAME,
   ThreadId,
 } from "@t3tools/contracts";
@@ -560,11 +561,6 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const draftStartFromOrigin = selectedProjectDraft.workspaceSelection?.startFromOrigin;
   const startFromOrigin =
     draftStartFromOrigin ?? projectSettings.settings.newWorktreesStartFromOrigin;
-  const defaultRuntimeMode = editingPendingTask
-    ? (editingPendingTask.runtimeMode ?? DEFAULT_RUNTIME_MODE)
-    : projectSettings.settings.defaultRuntimeMode;
-  const runtimeMode = selectedProjectDraft.runtimeMode ?? defaultRuntimeMode;
-
   // Antigravity keeps unavailable selections so sign-out or a catalog change
   // cannot switch the user's model. Other providers retain their fallback
   // rules. Implicit defaults also exclude legacy models for those providers.
@@ -624,6 +620,13 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       ) ?? null,
     [selectedEnvironmentServerConfig, selectedModel?.instanceId],
   );
+  const defaultRuntimeMode = editingPendingTask
+    ? (editingPendingTask.runtimeMode ?? DEFAULT_RUNTIME_MODE)
+    : resolveNewThreadRuntimeMode(
+        projectSettings.settings.defaultRuntimeMode,
+        selectedProviderStatus,
+      );
+  const runtimeMode = selectedProjectDraft.runtimeMode ?? defaultRuntimeMode;
   const planModeEnabled =
     legacyPlanModeEnabled && selectedProviderStatus?.showInteractionModeToggle !== false;
   const interactionMode = planModeEnabled

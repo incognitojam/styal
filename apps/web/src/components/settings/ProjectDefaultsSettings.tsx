@@ -282,8 +282,8 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             {...searchableSetting("default-permissions")}
             description={
               isProjectScope
-                ? "Permissions for new threads in this project."
-                : "Default permissions for new threads. Projects can override them."
+                ? "Permissions for new threads in this project. With Auto, providers that can't review actions start in Full access."
+                : "Default permissions for new threads. With Auto, providers that can't review actions start in Full access. Projects can override them."
             }
             resetAction={
               settings.defaultRuntimeMode !== DEFAULT_SERVER_SETTINGS.defaultRuntimeMode ? (

@@ -82,6 +82,11 @@ const SUBMODULE_CHOICES: ReadonlyArray<{
   { mode: "none", label: "Skip", description: "Leave submodules empty for a setup script." },
 ];
 
+// As a default, Auto starts providers without their own reviewer in Full
+// access instead of asking (`resolveNewThreadRuntimeMode`).
+const DEFAULT_AUTO_RUNTIME_MODE_DESCRIPTION =
+  "Supported providers approve routine actions; others start in Full access.";
+
 const WORKSPACE_CHOICES: ReadonlyArray<{
   readonly mode: ThreadEnvMode | null;
   readonly label: string;
@@ -339,7 +344,11 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       <SettingsChoiceRow
                         key={choice.mode}
                         label={choice.label}
-                        description={choice.description}
+                        description={
+                          choice.mode === "auto"
+                            ? DEFAULT_AUTO_RUNTIME_MODE_DESCRIPTION
+                            : choice.description
+                        }
                         selected={uniform("defaultRuntimeMode") === choice.mode}
                         separated={index > 0}
                         disabled={disabledFor("defaultRuntimeMode")}

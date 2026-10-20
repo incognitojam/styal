@@ -22,6 +22,7 @@ import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as Projects from "./project/ProjectService.ts";
+import * as ProviderInstances from "./provider/ProviderInstanceRegistry.ts";
 import * as Relay from "./relay/AgentAwarenessRelay.ts";
 import * as Lifecycle from "./serverLifecycleEvents.ts";
 import * as Startup from "./serverRuntimeStartup.ts";
@@ -74,6 +75,9 @@ it.effect("admits commands after bootstrap and rejects them during shutdown", ()
         }),
         Layer.mock(Sessions.ProviderSessionManagerV2)({ shutdown: Effect.void }),
         Layer.mock(Relay.AgentAwarenessRelay)({ start: () => Effect.void }),
+        Layer.mock(ProviderInstances.ProviderInstanceRegistry)({
+          getInstance: () => Effect.succeed(undefined),
+        }),
         Layer.mock(Projects.ProjectService)({
           bootstrap: () =>
             Deferred.succeed(bootstrapStarted, undefined).pipe(
