@@ -506,13 +506,11 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     targetEntryPath: runtime.entryPath,
   });
 
-  // The service switch runs in this process against the target version: the
-  // downloaded runtime has already proven it runs (the `--version` check
-  // above), and doing it here rather than through the target's own CLI means
-  // a downgrade to a version without today's commands still works. The unit
-  // is rewritten either way so a later `styal service restart` lands on the new
-  // version; only the restart itself waits for the user's answer.
-  let serviceUpdated = false;
+  // Use today's service manager for the target version. Inside the service it hands off to
+  // the target CLI, so stopping this process cannot interrupt the switch. The unit is
+  // rewritten either way so a later `styal service restart` lands on the new version; only
+  // the restart itself waits for the user's answer.
+  let servicePlan: BootService.BootServicePlan | undefined;
   let migrationDeferred = false;
   if (serviceInstalled && !serviceCurrent) {
     yield* Console.log(
@@ -520,7 +518,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
         ? "Restarting the background service..."
         : "Updating the background service...",
     );
-    yield* BootService.BootService.pipe(
+    servicePlan = yield* BootService.BootService.pipe(
       Effect.flatMap((target) =>
         target.install({ allowDowngrade: input.allowDowngrade, start: restartService }),
       ),
@@ -535,6 +533,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
         BootServiceMigrationRestartRequiredError: () =>
           Effect.sync(() => {
             migrationDeferred = true;
+            return undefined;
           }),
       }),
       Effect.mapError(
@@ -544,7 +543,6 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
           }),
       ),
     );
-    serviceUpdated = restartService;
   }
 
   progress.success(`Installed styal ${targetVersion}`);
@@ -553,7 +551,11 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   } else {
     yield* Console.log(`  Run ${runtime.entryPath}\n`);
   }
-  if (serviceUpdated) {
+  if (servicePlan?.handedOff === true) {
+    yield* Console.log(
+      `  Background service switching to ${targetVersion} from a separate systemd unit, since this session runs inside it and disconnects when it restarts. Result: ${servicePlan.logPath}`,
+    );
+  } else if (servicePlan !== undefined && restartService) {
     yield* Console.log(`  Background service restarted on ${targetVersion}`);
   } else if (serviceInstalled && serviceCurrent) {
     yield* Console.log(`  Background service already on ${targetVersion}`);

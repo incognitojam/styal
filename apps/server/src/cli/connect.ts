@@ -45,7 +45,6 @@ import * as ExternalLauncher from "../process/externalLauncher.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { resolveCliCommand } from "./invocation.ts";
-import { offerServiceDuringOnboarding, recoverServiceOnboardingOffer } from "./service.ts";
 import * as CliService from "./service.ts";
 
 const jsonFlag = Flag.Boolean("json").pipe(
@@ -690,6 +689,30 @@ const connectLogoutCommand = Command.make("logout", {
   ),
 );
 
+export const reportServiceOnboarding = Effect.fn("cli.connect.report_service_onboarding")(
+  function* (outcome: CliService.ServiceOnboardingOutcome) {
+    if (outcome === "pending") {
+      yield* Console.log(
+        "\nBackground service restarting\n\nThe server establishes the styal Link connection once it is back. Check the log above if it does not come back.",
+      );
+      return;
+    }
+    if (outcome === "ready") {
+      const platform = yield* HostProcess.Platform;
+      yield* Console.log(
+        platform === "darwin"
+          ? "\n✓ Background service ready\n\nstyal is set to run while you are logged in to this Mac. The server establishes the styal Link connection on startup."
+          : "\n✓ Background service ready\n\nstyal is set to keep running after you log out. The server establishes the styal Link connection on startup.",
+      );
+      return;
+    }
+    const serveCommand = yield* resolveCliCommand("serve");
+    yield* Console.log(
+      `\nNext\n  Start the server with \`${serveCommand}\` to make this machine reachable.`,
+    );
+  },
+);
+
 const linkCommandFlags = {
   ...projectLocationFlags,
   headless: headlessFlag,
@@ -714,19 +737,8 @@ const runLinkOnboarding = (flags: {
 
       // Authorization is stored. If service setup fails, preserve it and
       // show how to run the server manually.
-      const background = yield* recoverServiceOnboardingOffer(offerServiceDuringOnboarding);
-      if (background) {
-        const platform = yield* HostProcess.Platform;
-        yield* Console.log(
-          platform === "darwin"
-            ? "\n✓ Background service ready\n\nstyal is set to run while you are logged in to this Mac. The server establishes the styal Link connection on startup."
-            : "\n✓ Background service ready\n\nstyal is set to keep running after you log out. The server establishes the styal Link connection on startup.",
-        );
-        return;
-      }
-      const serveCommand = yield* resolveCliCommand("serve");
-      yield* Console.log(
-        `\nNext\n  Start the server with \`${serveCommand}\` to make this machine reachable.`,
+      yield* reportServiceOnboarding(
+        yield* CliService.recoverServiceOnboardingOffer(CliService.offerServiceDuringOnboarding),
       );
     }),
   );
