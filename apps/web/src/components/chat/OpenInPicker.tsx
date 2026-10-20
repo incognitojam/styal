@@ -218,6 +218,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   availableEditors,
   openInCwd,
   openInLine,
+  openInCwdIsFile = false,
   presentation = "toolbar",
   compact = false,
   enableShortcut = true,
@@ -230,6 +231,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   openInCwd: string | null;
   /** Line to open `openInCwd` at. Remote editor links open the file without it. */
   openInLine?: number | undefined;
+  openInCwdIsFile?: boolean;
   presentation?: "toolbar" | "menu";
   compact?: boolean;
   enableShortcut?: boolean;
@@ -276,6 +278,7 @@ export const OpenInPicker = memo(function OpenInPicker({
         editor,
         host: remote.host.host,
         absolutePath: openInCwd,
+        isFile: openInCwdIsFile,
       });
       if (url === undefined) return;
       // Only record hint-seen/preferred when the shell actually accepted
