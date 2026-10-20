@@ -943,10 +943,12 @@ features:
       - Archived, server-settled, snoozed, and subagent threads are excluded using sidebar lifecycle and visibility rules; projects are scoped by environment. Pending approvals and input remain active.
       - Disabling, reaching zero active threads, closing the window, or losing the renderer clears presence; Discord restarts reconnect automatically.
       - The integration stays on the desktop client for local and remote environments; browser and mobile clients do not publish presence.
+      - Settings previews the Discord activity card with the same text, icon, and button the desktop publishes, filled with current counts.
     implementation_paths:
       - apps/desktop/src/discord/DesktopDiscordPresence.ts
       - apps/desktop/src/ipc/methods/discordPresence.ts
       - apps/web/src/components/desktop/DiscordPresenceSync.tsx
+      - apps/web/src/components/settings/DiscordPresencePreview.tsx
       - apps/web/src/discordPresence.ts
       - packages/contracts/src/ipc.ts
       - packages/contracts/src/settings.ts

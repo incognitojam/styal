@@ -13,7 +13,8 @@ export function DiscordPresenceSync() {
   return enabled && window.desktopBridge?.setDiscordPresence ? <ActiveDiscordPresenceSync /> : null;
 }
 
-function ActiveDiscordPresenceSync() {
+/** The activity Discord would show right now, re-derived when a snoozed thread wakes. */
+export function useDiscordPresenceActivity() {
   const threads = useThreadShells();
   const serverConfigs = useServerConfigs();
   const shellStatuses = useEnvironmentShellStatuses();
@@ -30,6 +31,20 @@ function ActiveDiscordPresenceSync() {
       }),
     [threads, serverConfigs, shellStatuses, now],
   );
+
+  useEffect(() => {
+    if (nextWakeAt === null) return;
+    const timer = window.setTimeout(
+      () => setWakeTime(Date.now()),
+      Math.min(Math.max(0, nextWakeAt - Date.now()) + 50, 2_147_483_647),
+    );
+    return () => window.clearTimeout(timer);
+  }, [nextWakeAt, wakeTime]);
+  return activity;
+}
+
+function ActiveDiscordPresenceSync() {
+  const activity = useDiscordPresenceActivity();
   const activeThreads = activity?.activeThreads ?? 0;
   const activeProjects = activity?.activeProjects ?? 0;
 
@@ -50,13 +65,5 @@ function ActiveDiscordPresenceSync() {
     };
   }, []);
 
-  useEffect(() => {
-    if (nextWakeAt === null) return;
-    const timer = window.setTimeout(
-      () => setWakeTime(Date.now()),
-      Math.min(Math.max(0, nextWakeAt - Date.now()) + 50, 2_147_483_647),
-    );
-    return () => window.clearTimeout(timer);
-  }, [nextWakeAt, wakeTime]);
   return null;
 }
