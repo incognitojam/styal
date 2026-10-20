@@ -180,7 +180,8 @@
         "react-native-reanimated",
         "@react-native-menu/menu",
         "expo-sharing",
-        "expo-audio"
+        "expo-audio",
+        "expo-network"
       ]
     }
   },
