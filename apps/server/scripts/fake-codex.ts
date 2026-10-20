@@ -189,8 +189,12 @@ function runAppServer(): void {
     const cwd = typeof params.cwd === "string" ? params.cwd : process.cwd();
     const model = typeof params.model === "string" ? params.model : MODEL;
     const createdAt = nowSeconds();
-    const config = params.config as { mcp_servers?: Record<string, McpServer> } | undefined;
-    threads.set(threadId, { cwd, mcpServer: Object.values(config?.mcp_servers ?? {})[0] });
+    // The adapter sends its own server as a dotted `mcp_servers.<name>` config key.
+    const config = (params.config ?? {}) as Record<string, unknown>;
+    const mcpServer = Object.entries(config).find(([key]) =>
+      key.startsWith("mcp_servers."),
+    )?.[1] as McpServer | undefined;
+    threads.set(threadId, { cwd, mcpServer });
     return {
       thread: {
         id: threadId,

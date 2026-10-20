@@ -1313,7 +1313,7 @@ export const CODEX_THREAD_CONFIG = {
 // that limit so the server's own wait timeout ends a long call.
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 
-export function codexThreadRuntimeParams(input: {
+function codexThreadRuntimeParams(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
@@ -1323,6 +1323,7 @@ export function codexThreadRuntimeParams(input: {
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
   const { mcpSession } = input;
+  const mcpServerName = mcpSession?.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME;
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
@@ -1331,13 +1332,12 @@ export function codexThreadRuntimeParams(input: {
       ...(mcpSession === undefined
         ? {}
         : {
-            mcp_servers: {
-              [mcpSession.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME]: {
-                url: mcpSession.endpoint,
-                tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
-                http_headers: {
-                  Authorization: mcpSession.authorizationHeader,
-                },
+            // Override only T3's server so launch-argument MCP servers survive.
+            [`mcp_servers.${mcpServerName}`]: {
+              url: mcpSession.endpoint,
+              tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
+              http_headers: {
+                Authorization: mcpSession.authorizationHeader,
               },
             },
           }),
