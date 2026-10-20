@@ -11,6 +11,8 @@ import "~/index.css";
 import { useTheme } from "../hooks/useTheme";
 import { applyThemeColorPreview, getStandardThemeColors } from "../themePalette";
 
+import { readLocalApi } from "../localApi";
+import { toastManager } from "./ui/toast";
 import { filesystemEnvironment } from "../state/filesystem";
 import { useRightPanelStore } from "../rightPanelStore";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
@@ -1469,6 +1471,61 @@ describe("ChatMarkdown table wrap toggle", () => {
     expect(buttonsLabelled(host, "Expand table cells")).toHaveLength(0);
     expect(buttonsLabelled(host, "Collapse table cells")).toHaveLength(0);
   });
+});
+
+it.each([
+  {
+    name: "Windows drive paths on a Mac client",
+    platform: "MacIntel",
+    cwd: "C:/repo",
+    href: "C:/repo/reports/Device Users.csv:12:3",
+    full: String.raw`C:\repo\reports\Device Users.csv:12:3`,
+    relative: String.raw`reports\Device Users.csv:12:3`,
+  },
+  {
+    name: "UNC paths on a Mac client",
+    platform: "MacIntel",
+    cwd: String.raw`\\server\share\repo`,
+    href: "file://server/share/repo/reports/report.csv",
+    full: String.raw`\\server\share\repo\reports\report.csv`,
+    relative: String.raw`reports\report.csv`,
+  },
+  {
+    name: "POSIX paths on a Windows client",
+    platform: "Win32",
+    cwd: "/home/repo",
+    href: "/home/repo/reports/report.csv",
+    full: "/home/repo/reports/report.csv",
+    relative: "reports/report.csv",
+  },
+])("copies $name and shows the copied text", async ({ platform, cwd, href, full, relative }) => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  vi.stubGlobal("ClipboardItem", undefined);
+  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+  const toast = vi.spyOn(toastManager, "add");
+  const api = readLocalApi();
+  if (!api) throw new Error("Local API unavailable");
+  const choose = vi.spyOn(api.contextMenu, "show");
+  const label = href.split("/").at(-1);
+  const container = await renderText(`[${label}](<${href}>)`, {
+    cwd,
+    environmentId: EnvironmentId.make("env-file-copy"),
+  });
+  const link = container.querySelector(".chat-markdown-file-link");
+  if (!link) throw new Error("File link unavailable");
+  for (const [action, expected] of [
+    ["copy-full", full],
+    ["copy-relative", relative],
+  ] as const) {
+    choose.mockResolvedValue(action);
+    await act(async () => {
+      link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    expect(writeText).toHaveBeenLastCalledWith(expected);
+    expect(toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: "success", description: expected }),
+    );
+  }
 });
 
 describe("ChatMarkdown math", () => {

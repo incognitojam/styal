@@ -3,6 +3,8 @@ import { attachmentBatchLimitError } from "@t3tools/client-runtime/state/attachm
 import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import { LogInIcon } from "lucide-react";
+import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
+import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { NextUnreadChip } from "./chat/NextUnreadChip";
@@ -4220,12 +4222,16 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
 
-    void writeTextToClipboard(relativePath).then(
+    const clipboardPath = formatFilePathForClipboard(
+      relativePath,
+      resolvePathLinkTarget(relativePath, gitCwd ?? activeProjectCwd ?? ""),
+    );
+    void writeTextToClipboard(clipboardPath).then(
       () => {
         toastManager.add({
           type: "success",
           title: "Path copied",
-          description: relativePath,
+          description: clipboardPath,
         });
       },
       (error) => {

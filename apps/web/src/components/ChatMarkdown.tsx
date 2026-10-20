@@ -1,3 +1,4 @@
+import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { MarkdownFindContext, findRevealRef } from "./chat/markdownFindContext";
 import {
   fileLinkLabel,
@@ -2170,7 +2171,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
       return;
     }
 
-    const value = resolveValue();
+    const value = resolveValue().then((text) => formatFilePathForClipboard(text, targetPath));
     void Promise.all([writeResolvedTextToClipboard(value), value]).then(
       ([, text]) => {
         toastManager.add({
