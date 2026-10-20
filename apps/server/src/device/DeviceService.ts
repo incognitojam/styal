@@ -18,6 +18,8 @@ import {
   type DeviceSession,
   type DeviceShutdownInput,
   type DeviceSummary,
+  type DeviceHostConfig,
+  type EasDeviceHostConfig,
   type SshDeviceHostConfig,
   type EnvironmentDeviceHostConfig,
   type ServerSettings as ServerSettingsValue,

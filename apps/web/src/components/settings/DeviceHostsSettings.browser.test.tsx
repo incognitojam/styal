@@ -78,7 +78,14 @@ async function render() {
 it("hides empty SSH setup and edits then removes a saved host on its owning environment", async () => {
   await render();
   expect(container.textContent).toBe("");
-  hosts = [{ id: "saved-host", label: "Simulator host", target: "builder@device.example.test" }];
+  hosts = [
+    {
+      kind: "ssh",
+      id: "saved-host",
+      label: "Simulator host",
+      target: "builder@device.example.test",
+    },
+  ];
   await render();
   const section = container.querySelector("button")!;
   expect(section.textContent).toContain("Existing SSH device hosts");
@@ -99,7 +106,12 @@ it("hides empty SSH setup and edits then removes a saved host on its owning envi
   );
   await act(async () => page.getByRole("button", { name: "Save host", exact: true }).click());
   expect(hosts).toEqual([
-    { id: "saved-host", label: "Renamed simulator", target: "builder@device.example.test" },
+    {
+      kind: "ssh",
+      id: "saved-host",
+      label: "Renamed simulator",
+      target: "builder@device.example.test",
+    },
   ]);
   expect(update).toHaveBeenCalledWith({ environmentId, input: { patch: { deviceHosts: hosts } } });
 

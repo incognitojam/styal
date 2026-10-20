@@ -217,6 +217,7 @@ const NOT_REPORTED: Record<string, string> = {
   deviceOnboardingCompleted: "onboarding state",
   deviceHosts: "host addresses",
   environmentDeviceHosts: "host addresses",
+  easDeviceHosts: "host records",
   hardwareDevices: "device records",
   automaticGitFetchInterval: "legacy, read through backgroundActivity",
   providerHealthRefreshInterval: "legacy, read through backgroundActivity",

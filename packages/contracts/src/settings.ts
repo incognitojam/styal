@@ -1,4 +1,5 @@
 import {
+  EasDeviceHostConfigs,
   EnvironmentDeviceHostConfigs,
   SimulatorMemoryMode,
   SshDeviceHostConfigs,
@@ -1293,6 +1294,7 @@ export const ServerSettings = Schema.Struct({
   projectFileActionApprovals: ProjectFileActionApprovals.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  easDeviceHosts: EasDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
@@ -1622,6 +1624,7 @@ export const ServerSettingsPatch = Schema.Struct({
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
   hardwareDevices: Schema.optionalKey(HardwareDeviceConfigs),
+  easDeviceHosts: Schema.optionalKey(EasDeviceHostConfigs),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   compactIdleThreads: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
