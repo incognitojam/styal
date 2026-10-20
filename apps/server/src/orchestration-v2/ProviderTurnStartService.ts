@@ -50,6 +50,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
+import { FORK_NOTE, shouldSendForkNote } from "./ForkNote.ts";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -65,14 +66,6 @@ const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
 const refusedBeforePrompt = (error: unknown): boolean =>
   Predicate.isTagged(error, "ClaudeBackgroundWorkBlocksQueryReplacementError") ||
   (Predicate.hasProperty(error, "cause") && refusedBeforePrompt(error.cause));
-
-/**
- * Sent with a fork's first turn. The copied history can end mid-task, and the
- * agent would otherwise take its source's background work, and the work that
- * continued in the source, for its own interrupted work.
- */
-export const FORK_NOTE =
-  "Note: this thread is a fork of another thread. The earlier conversation was copied from that thread up to the response the user forked from. Work may have continued in that thread since then. Background work started before the fork, such as commands, monitors and subagents, belongs to that thread and will not report back here.";
 
 export interface ProviderTurnStartServiceV2Shape {
   /**
@@ -986,16 +979,18 @@ export const layer: Layer.Layer<
         run,
         attempts: projection.attempts,
       });
-      const isForkFirstRun =
-        !compactionMessageIds.has(run.userMessageId) &&
-        projection.contextTransfers.some(
-          (transfer) =>
-            transfer.type === "fork" &&
-            transfer.targetThreadId === input.threadId &&
-            transfer.targetRunId === run.id,
-        );
+      const sendForkNote = shouldSendForkNote({
+        threadId: input.threadId,
+        run,
+        attemptId: attempt.id,
+        runs: projection.runs,
+        attempts: projection.attempts,
+        providerTurns: projection.providerTurns,
+        messages: projection.messages,
+        contextTransfers: projection.contextTransfers,
+      });
       const turnNote = [
-        isForkFirstRun ? FORK_NOTE : "",
+        sendForkNote ? FORK_NOTE : "",
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork),
