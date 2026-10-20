@@ -22,6 +22,7 @@ import { DeviceHostEditor } from "./DeviceHostEditor";
 import { useHostConnectionChecks } from "./useHostConnectionChecks";
 import { deviceHostConnectionKey } from "./deviceHostConnectionChecks";
 import { settingsScopeEnvironmentLabel } from "./settingsScopeAxis";
+import { DeviceHostDiagnostics } from "../device/DeviceSetup";
 
 export function DeviceHostsSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const { environment } = useSettingsScope();
@@ -198,6 +199,11 @@ function DeviceHostList({
               </details>
             </div>
           ) : null}
+          <DeviceHostDiagnostics
+            className="mt-1"
+            hosts={[host]}
+            hostStatuses={state.hostStatuses}
+          />
         </div>
         {progress ? (
           <span
