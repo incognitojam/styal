@@ -25,7 +25,7 @@ import * as ServerSettingsModule from "../serverSettings.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
 /** The `settings.snapshot` properties for one server's settings. */
-export function settingsSnapshotProperties(settings: ServerSettings) {
+function settingsSnapshotProperties(settings: ServerSettings) {
   // Environment-wide rules; a project's own rules are counted in projectsWithOverrides.
   const worktreeCleanup = resolveWorktreeCleanup(settings, null);
   return {
