@@ -1340,23 +1340,23 @@ function xAiPromptFailure(
  */
 export class XAiPromptFailureText extends Error {}
 
-const registerXAiPromptCompletionFallback = (
+// Runs only inside xaiAcpExtension.prompt, whose span covers the registration.
+const registerXAiPromptCompletionFallback = Effect.fnUntraced(function* (
   pendingRef: Ref.Ref<ReadonlyArray<PendingXAiPromptCompletion>>,
   sessionId: string,
   promptId: string,
-) =>
-  Effect.gen(function* () {
-    const deferred = yield* Deferred.make<
-      EffectAcpSchema.PromptResponse,
-      EffectAcpErrors.AcpRequestError
-    >();
-    const cancelled = yield* Deferred.make<void>();
-    yield* Ref.update(pendingRef, (pending) => [
-      ...pending,
-      { sessionId, promptId, deferred, cancelled, notified: false },
-    ]);
-    return { deferred, promptId, cancelled };
-  });
+) {
+  const deferred = yield* Deferred.make<
+    EffectAcpSchema.PromptResponse,
+    EffectAcpErrors.AcpRequestError
+  >();
+  const cancelled = yield* Deferred.make<void>();
+  yield* Ref.update(pendingRef, (pending) => [
+    ...pending,
+    { sessionId, promptId, deferred, cancelled, notified: false },
+  ]);
+  return { deferred, promptId, cancelled };
+});
 
 const unregisterXAiPromptCompletionFallback = (
   pendingRef: Ref.Ref<ReadonlyArray<PendingXAiPromptCompletion>>,

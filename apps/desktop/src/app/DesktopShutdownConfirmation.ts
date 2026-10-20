@@ -63,8 +63,8 @@ const make = Effect.gen(function* () {
           pending.resolve(confirmed);
         }
       }),
-    request: (message, confirmLabel, threadActivity) =>
-      Effect.gen(function* () {
+    request: Effect.fn("desktop.shutdown.requestConfirmation")(
+      function* (message, confirmLabel, threadActivity) {
         if (pending) return false;
         const window = yield* desktopWindow.revealOrCreateMain.pipe(
           Effect.timeout(PRESENTATION_TIMEOUT),
@@ -153,16 +153,16 @@ const make = Effect.gen(function* () {
         return yield* Effect.raceFirst(response, presentationDeadline).pipe(
           Effect.ensuring(Effect.sync(() => cleanup())),
         );
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.interrupt
-            : Effect.sync(() => {
-                quitOverride = true;
-                return false;
-              }),
-        ),
+      },
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.sync(() => {
+              quitOverride = true;
+              return false;
+            }),
       ),
+    ),
   });
 });
 

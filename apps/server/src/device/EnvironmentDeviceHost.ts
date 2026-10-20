@@ -106,13 +106,13 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
         : error,
     );
   };
-  const send = <A, I>(
-    url: string,
-    command: DevicePeerCommand,
-    schema: Schema.Codec<A, I>,
-    timeout: Duration.Input = commandTimeout(command.operation),
-  ) =>
-    Effect.gen(function* () {
+  const send = Effect.fn("EnvironmentDeviceHost.send")(
+    function* <A, I>(
+      url: string,
+      command: DevicePeerCommand,
+      schema: Schema.Codec<A, I>,
+      _timeout?: Duration.Input,
+    ) {
       const response = yield* HttpClientRequest.post(`${url}/api/device-share/command`).pipe(
         HttpClientRequest.setHeader("authorization", `Bearer ${token}`),
         HttpClientRequest.bodyJson(command),
@@ -129,7 +129,10 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
               `The device environment could not complete the request (HTTP ${response.status}). Update both environments and retry.`,
               response.status,
             );
-    }).pipe(Effect.scoped, Effect.timeout(timeout));
+    },
+    (effect, _url, command, _schema, timeout = commandTimeout(command.operation)) =>
+      effect.pipe(Effect.scoped, Effect.timeout(timeout)),
+  );
   const checkIdentity = <A extends typeof DeviceEnvironmentIdentity.Type>(value: A) =>
     value.environmentId === config.environmentId &&
     value.sourceEnvironmentId === sourceEnvironmentId
@@ -325,19 +328,20 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
    * the credential cannot come back into use when it returns; starting agent access
    * again cancels the retry.
    */
-  const stopRemote = (operation: "stop-agent" | "release") =>
-    Effect.gen(function* () {
-      generation += 1;
-      yield* cancelPendingStop;
-      const attempt = client.request({ operation }, Schema.Null);
-      const exit = yield* attempt.pipe(Effect.timeout("5 seconds"), Effect.exit);
-      if (Exit.isFailure(exit))
-        pendingStop = yield* attempt.pipe(
-          Effect.retry(Schedule.spaced("30 seconds")),
-          Effect.ignore,
-          Effect.forkIn(scope),
-        );
-    });
+  const stopRemote = Effect.fn("EnvironmentDeviceHost.stopRemote")(function* (
+    operation: "stop-agent" | "release",
+  ) {
+    generation += 1;
+    yield* cancelPendingStop;
+    const attempt = client.request({ operation }, Schema.Null);
+    const exit = yield* attempt.pipe(Effect.timeout("5 seconds"), Effect.exit);
+    if (Exit.isFailure(exit))
+      pendingStop = yield* attempt.pipe(
+        Effect.retry(Schedule.spaced("30 seconds")),
+        Effect.ignore,
+        Effect.forkIn(scope),
+      );
+  });
   const stopAgent = stopRemote("stop-agent");
   const stale = (started: number): Effect.Effect<void, DeviceHostUnavailableError> =>
     started === generation

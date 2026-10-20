@@ -13,14 +13,16 @@ export type PreviousSettleReason = "user" | AutoSettleRule | "unknown";
  * Records one server auto-settle with its rule, and the configured threshold
  * for inactivity. Thread, project and pull request identifiers are never sent.
  */
-export const recordAutoSettle = (rule: AutoSettleRule, afterDays: number | null) =>
-  Effect.gen(function* () {
+export const recordAutoSettle = Effect.fn("ThreadSettleUsage.recordAutoSettle")(
+  function* (rule: AutoSettleRule, afterDays: number | null) {
     const analytics = yield* AnalyticsService.AnalyticsService;
     yield* analytics.record("server.thread.settled", {
       reason: rule,
       ...(rule === "inactivity" && afterDays !== null ? { afterDays } : {}),
     });
-  }).pipe(Effect.ignoreCause);
+  },
+  (effect) => effect.pipe(Effect.ignoreCause),
+);
 
 /**
  * The `previousSettleReason` of an un-settle. `unknown` covers threads that

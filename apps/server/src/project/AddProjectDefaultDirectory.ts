@@ -11,8 +11,8 @@ import * as Path from "effect/Path";
  * empty. macOS reserves `~/Developer` for code (Finder gives it a hammer
  * icon), so start there when it exists; otherwise start at home.
  */
-export const resolveAddProjectDefaultDirectory = (options: { readonly homeDir?: string } = {}) =>
-  Effect.gen(function* () {
+export const resolveAddProjectDefaultDirectory = Effect.fn("resolveAddProjectDefaultDirectory")(
+  function* (options: { readonly homeDir?: string } = {}) {
     if ((yield* HostProcess.Platform) !== "darwin") {
       return "~/";
     }
@@ -21,4 +21,5 @@ export const resolveAddProjectDefaultDirectory = (options: { readonly homeDir?: 
     const developerDir = path.join(options.homeDir ?? NodeOS.homedir(), "Developer");
     const info = yield* fileSystem.stat(developerDir).pipe(Effect.option);
     return info._tag === "Some" && info.value.type === "Directory" ? "~/Developer/" : "~/";
-  });
+  },
+);

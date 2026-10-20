@@ -32,29 +32,30 @@ function foldedCommandOutput(
  * Each event and projection row is rewritten from its own payload, mostly in SQL. The history fence moves once the pass
  * finishes, since folded output can change a command's failure state.
  */
-export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
-  Effect.gen(function* () {
-    const done = yield* sql<{ readonly found: number }>`
+export const slimImportedHistory = Effect.fn("slimImportedHistory")(function* (
+  sql: SqlClient.SqlClient,
+) {
+  const done = yield* sql<{ readonly found: number }>`
       SELECT 1 AS found FROM orchestration_v2_projection_metadata
       WHERE projection_name = ${DONE_MARKER}
     `;
-    if (done.length > 0) return { threads: 0, rows: 0 };
-    const threads = yield* sql<{ readonly thread_id: string }>`
+  if (done.length > 0) return { threads: 0, rows: 0 };
+  const threads = yield* sql<{ readonly thread_id: string }>`
       SELECT DISTINCT thread_id
       FROM orchestration_v2_projection_turn_items
       WHERE turn_item_id LIKE 'import:v1:activity:%'
       ORDER BY thread_id
     `;
-    let rows = 0;
-    for (const { thread_id: threadId } of threads) {
-      rows += yield* sql.withTransaction(
-        Effect.gen(function* () {
-          // Commands whose output only the V1 payloads recorded keep it on the item.
-          const commands = yield* sql<{
-            readonly source: "item" | "event";
-            readonly key: string;
-            readonly payload_json: string;
-          }>`
+  let rows = 0;
+  for (const { thread_id: threadId } of threads) {
+    rows += yield* sql.withTransaction(
+      Effect.gen(function* () {
+        // Commands whose output only the V1 payloads recorded keep it on the item.
+        const commands = yield* sql<{
+          readonly source: "item" | "event";
+          readonly key: string;
+          readonly payload_json: string;
+        }>`
             SELECT 'item' AS source, turn_item_id AS key, payload_json
             FROM orchestration_v2_projection_turn_items
             WHERE thread_id = ${threadId}
@@ -76,13 +77,13 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
               AND (json_type(payload_json, '$.output') IS NULL
                 OR json_type(payload_json, '$.exitCode') IS NULL)
           `;
-          for (const command of commands) {
-            const folded = foldedCommandOutput(command.payload_json);
-            if (folded === null) continue;
-            const output = folded.output;
-            const exitCode = folded.exitCode;
-            if (command.source === "item") {
-              yield* sql`
+        for (const command of commands) {
+          const folded = foldedCommandOutput(command.payload_json);
+          if (folded === null) continue;
+          const output = folded.output;
+          const exitCode = folded.exitCode;
+          if (command.source === "item") {
+            yield* sql`
                 UPDATE orchestration_v2_projection_turn_items
                 SET payload_json = json_set(
                   payload_json,
@@ -91,8 +92,8 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
                 )
                 WHERE turn_item_id = ${command.key}
               `;
-            } else {
-              yield* sql`
+          } else {
+            yield* sql`
                 UPDATE orchestration_events
                 SET payload_json = json_set(
                   payload_json,
@@ -101,10 +102,10 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
                 )
                 WHERE sequence = ${Number(command.key)}
               `;
-            }
           }
-          // Remove explicit nulls together; fields that were absent must stay absent.
-          yield* sql`
+        }
+        // Remove explicit nulls together; fields that were absent must stay absent.
+        yield* sql`
             UPDATE orchestration_v2_projection_turn_items
             SET payload_json = CASE
               WHEN json_type(payload_json, '$.output') = 'null' THEN
@@ -117,7 +118,7 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
               AND (json_type(payload_json, '$.output') = 'null'
                 OR json_type(payload_json, '$.exitCode') = 'null')
           `;
-          yield* sql`
+        yield* sql`
             UPDATE orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
             SET payload_json = CASE
               WHEN json_type(payload_json, '$.output') = 'null' THEN
@@ -132,8 +133,8 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
               AND (json_type(payload_json, '$.output') = 'null'
                 OR json_type(payload_json, '$.exitCode') = 'null')
           `;
-          // Keep each activity reference, in order, without its payload.
-          const items = yield* sql`
+        // Keep each activity reference, in order, without its payload.
+        const items = yield* sql`
             UPDATE orchestration_v2_projection_turn_items
             SET payload_json = json_set(payload_json, '$.legacyActivities', (
               SELECT json_group_array(json(json_remove(activity.value, '$.payload')))
@@ -148,7 +149,7 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
               AND json_type(payload_json, '$.legacyActivities[0].payload') IS NOT NULL
             RETURNING 1
           `;
-          const events = yield* sql`
+        const events = yield* sql`
             UPDATE orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
             SET payload_json = json_set(payload_json, '$.legacyActivities', (
               SELECT json_group_array(json(json_remove(activity.value, '$.payload')))
@@ -166,20 +167,20 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
               AND json_type(payload_json, '$.legacyActivities[0].payload') IS NOT NULL
             RETURNING 1
           `;
-          return items.length + events.length;
-        }),
-      );
-      yield* Effect.yieldNow;
-    }
-    yield* sql.withTransaction(
-      Effect.gen(function* () {
-        if (rows > 0) {
-          yield* sql`
+        return items.length + events.length;
+      }),
+    );
+    yield* Effect.yieldNow;
+  }
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      if (rows > 0) {
+        yield* sql`
             UPDATE sqlite_sequence
             SET seq = MAX(seq, (SELECT COALESCE(MAX(sequence), 0) FROM orchestration_events)) + 1
             WHERE name = 'orchestration_events'
           `;
-          yield* sql`
+        yield* sql`
             INSERT INTO orchestration_v2_projection_metadata (
               projection_name, schema_version, last_sequence, updated_at
             )
@@ -192,15 +193,15 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
               last_sequence = excluded.last_sequence,
               updated_at = excluded.updated_at
           `;
-        }
-        yield* sql`
+      }
+      yield* sql`
           INSERT INTO orchestration_v2_projection_metadata (
             projection_name, schema_version, last_sequence, updated_at
           )
           VALUES (${DONE_MARKER}, 1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
           ON CONFLICT(projection_name) DO NOTHING
         `;
-      }),
-    );
-    return { threads: threads.length, rows };
-  });
+    }),
+  );
+  return { threads: threads.length, rows };
+});

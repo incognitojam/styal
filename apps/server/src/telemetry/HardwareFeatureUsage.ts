@@ -25,25 +25,28 @@ export const observeHandlers = Effect.fnUntraced(function* (handlers: Handlers) 
     FeatureUsage.observe({ feature: "hardware", source: "agent", ...usage }, effect).pipe(
       Effect.provideService(AnalyticsService.AnalyticsService, analytics),
     );
+  // The tier the calling thread sees, worktree overrides included. Tool calls
+  // are few, unlike proxied ones, so the extra lookup is cheap.
+  const actionTier = Effect.fn("HardwareFeatureUsage.actionTier")(function* (
+    input: Parameters<Handlers["hardware_call"]>[0],
+  ) {
+    const invocation = yield* McpInvocationContext.McpInvocationContext;
+    const hardware = yield* HardwareService.HardwareService;
+    const devices =
+      invocation.thread === undefined
+        ? []
+        : yield* hardware
+            .listForThread(invocation.thread.threadId, input.device)
+            .pipe(Effect.orElseSucceed(() => []));
+    return devices[0]?.actions.find((action) => action.name === input.action)?.tier;
+  });
   return {
     hardware_list: (input, context) =>
       observe({ action: "list" }, handlers.hardware_list(input, context)),
     hardware_acquire: (input, context) =>
       observe({ action: "acquire" }, handlers.hardware_acquire(input, context)),
     hardware_call: (input, context) =>
-      // The tier the calling thread sees, worktree overrides included. Tool calls
-      // are few, unlike proxied ones, so the extra lookup is cheap.
-      Effect.gen(function* () {
-        const invocation = yield* McpInvocationContext.McpInvocationContext;
-        const hardware = yield* HardwareService.HardwareService;
-        const devices =
-          invocation.thread === undefined
-            ? []
-            : yield* hardware
-                .listForThread(invocation.thread.threadId, input.device)
-                .pipe(Effect.orElseSucceed(() => []));
-        return devices[0]?.actions.find((action) => action.name === input.action)?.tier;
-      }).pipe(
+      actionTier(input).pipe(
         Effect.flatMap((hardwareTier) =>
           observe({ action: "call", hardwareTier }, handlers.hardware_call(input, context)),
         ),

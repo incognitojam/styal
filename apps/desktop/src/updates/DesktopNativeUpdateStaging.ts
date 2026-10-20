@@ -83,16 +83,15 @@ export const make = Effect.fn("desktop.updates.makeNativeUpdateStaging")(functio
   return {
     /** True while a download is staging or staged: it is what the next exit
         installs, so the caller skips the update check. */
-    holdsChecks: (reason: string) =>
-      Effect.gen(function* () {
-        const nativeStage = yield* Ref.get(nativeStageRef);
-        if (nativeStage === undefined || nativeStage.status === "failed") return false;
-        yield* logInfo("skipping update check while an update is staged", {
-          reason,
-          version: nativeStage.version,
-        });
-        return true;
-      }),
+    holdsChecks: Effect.fn("desktop.updates.nativeStagingHoldsChecks")(function* (reason: string) {
+      const nativeStage = yield* Ref.get(nativeStageRef);
+      if (nativeStage === undefined || nativeStage.status === "failed") return false;
+      yield* logInfo("skipping update check while an update is staged", {
+        reason,
+        version: nativeStage.version,
+      });
+      return true;
+    }),
 
     /** Whether a download is already staged, which before a handoff means
         it staged in the background rather than at the restart. */
@@ -104,12 +103,14 @@ export const make = Effect.fn("desktop.updates.makeNativeUpdateStaging")(functio
     /** MacUpdater re-emits Squirrel.Mac errors. A background staging failure
         only moves staging to quit time, so the caller ignores the error. This
         runs synchronously from the emit, before staging records its outcome. */
-    absorbsError: (error: { readonly message: string; readonly _tag: string }) =>
-      Effect.gen(function* () {
-        if ((yield* Ref.get(nativeStageRef))?.status !== "staging") return false;
-        yield* logWarning(error.message, { errorTag: error._tag, operation: "stage" });
-        return true;
-      }),
+    absorbsError: Effect.fn("desktop.updates.nativeStagingAbsorbsError")(function* (error: {
+      readonly message: string;
+      readonly _tag: string;
+    }) {
+      if ((yield* Ref.get(nativeStageRef))?.status !== "staging") return false;
+      yield* logWarning(error.message, { errorTag: error._tag, operation: "stage" });
+      return true;
+    }),
 
     /** Records the download electron-updater just pointed Squirrel's feed at,
         whatever its channel. */

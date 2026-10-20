@@ -36,28 +36,29 @@ export function createThreadSnapshotCommands<R, E>(
   return {
     fetchFull: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:fetch-full-snapshot",
-      execute: (input: { readonly threadId: ThreadId }) =>
-        Effect.gen(function* () {
-          const supervisor = yield* EnvironmentSupervisor;
-          const prepared = yield* SubscriptionRef.get(supervisor.prepared);
-          if (Option.isNone(prepared)) return Option.none<OrchestrationV2ThreadProjection>();
-          const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
-          const remoteAuthorization = yield* Effect.serviceOption(
-            RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
-          );
-          const snapshot = yield* fetchEnvironmentThreadSnapshot({
-            prepared: prepared.value,
+      execute: Effect.fn("threadSnapshot.fetchFull")(function* (input: {
+        readonly threadId: ThreadId;
+      }) {
+        const supervisor = yield* EnvironmentSupervisor;
+        const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+        if (Option.isNone(prepared)) return Option.none<OrchestrationV2ThreadProjection>();
+        const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
+        const remoteAuthorization = yield* Effect.serviceOption(
+          RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
+        );
+        const snapshot = yield* fetchEnvironmentThreadSnapshot({
+          prepared: prepared.value,
+          threadId: input.threadId,
+          signer,
+          remoteAuthorization,
+        }).pipe(Effect.provide(layerRemoteHttpClient(globalThis.fetch)), Effect.option);
+        if (Option.isSome(snapshot)) return Option.some(snapshot.value.projection);
+        return Option.some(
+          yield* EnvironmentRpc.request(ORCHESTRATION_V2_WS_METHODS.getThreadProjection, {
             threadId: input.threadId,
-            signer,
-            remoteAuthorization,
-          }).pipe(Effect.provide(layerRemoteHttpClient(globalThis.fetch)), Effect.option);
-          if (Option.isSome(snapshot)) return Option.some(snapshot.value.projection);
-          return Option.some(
-            yield* EnvironmentRpc.request(ORCHESTRATION_V2_WS_METHODS.getThreadProjection, {
-              threadId: input.threadId,
-            }),
-          );
-        }),
+          }),
+        );
+      }),
     }),
   };
 }

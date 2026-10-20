@@ -340,8 +340,12 @@ export const layer: Layer.Layer<
     const usagePricing = yield* Effect.serviceOption(UsageService);
     const ingestExecutor = yield* KeyedLock.make<ThreadId>();
 
-    const recordTurnUsage = (input: ProviderEventIngestInput, turn: OrchestrationV2ProviderTurn) =>
-      Effect.gen(function* () {
+    const recordTurnUsage =
+      /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
+      Effect.fnUntraced(function* (
+        input: ProviderEventIngestInput,
+        turn: OrchestrationV2ProviderTurn,
+      ) {
         if (
           turn.turnTokenUsage === undefined &&
           !["completed", "failed", "interrupted", "cancelled"].includes(turn.status)

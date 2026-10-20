@@ -89,37 +89,38 @@ export const make = Effect.gen(function* () {
   // and ends between two passes, or ends while the server is down, is not recorded.
   const seen = new Map<string, number>();
 
-  const recordEnd = (key: string, end: WorkflowRunWatchUsage.WorkflowRunWatchEnd) =>
-    Effect.gen(function* () {
-      const startedAt = seen.get(key);
-      seen.delete(key);
-      if (startedAt === undefined) return;
-      const now = yield* Clock.currentTimeMillis;
-      yield* WorkflowRunWatchUsage.recordEnd(end, now - startedAt).pipe(
-        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
-      );
-    });
+  const recordEnd = Effect.fn("WorkflowRunWatchReactor.recordEnd")(function* (
+    key: string,
+    end: WorkflowRunWatchUsage.WorkflowRunWatchEnd,
+  ) {
+    const startedAt = seen.get(key);
+    seen.delete(key);
+    if (startedAt === undefined) return;
+    const now = yield* Clock.currentTimeMillis;
+    yield* WorkflowRunWatchUsage.recordEnd(end, now - startedAt).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+    );
+  });
 
   /** Ends the watch, waking the agent when `wake` is set. Refused if the watch already ended. */
-  const finish = (
+  const finish = Effect.fn("WorkflowRunWatchReactor.finish")(function* (
     target: WatchTarget,
     wake?: { readonly text: string; readonly notification: OrchestrationV2Notification },
-  ) =>
-    Effect.gen(function* () {
-      const uuid = yield* crypto.randomUUIDv4();
-      yield* engine.dispatch({
-        type: "thread.workflow-run-watch.finish",
-        commandId: CommandId.make(`server:workflow-run-watch:${target.thread.id}:${uuid}`),
-        threadId: target.thread.id,
-        host: target.watch.host,
-        repository: target.watch.repository,
-        runId: target.watch.runId,
-        startedAt: target.watch.startedAt,
-        ...(wake === undefined
-          ? {}
-          : { wake: { ...wake, messageId: MessageId.make(`message:workflow-run-watch:${uuid}`) } }),
-      });
+  ) {
+    const uuid = yield* crypto.randomUUIDv4();
+    yield* engine.dispatch({
+      type: "thread.workflow-run-watch.finish",
+      commandId: CommandId.make(`server:workflow-run-watch:${target.thread.id}:${uuid}`),
+      threadId: target.thread.id,
+      host: target.watch.host,
+      repository: target.watch.repository,
+      runId: target.watch.runId,
+      startedAt: target.watch.startedAt,
+      ...(wake === undefined
+        ? {}
+        : { wake: { ...wake, messageId: MessageId.make(`message:workflow-run-watch:${uuid}`) } }),
     });
+  });
 
   const check = Effect.fn("WorkflowRunWatchReactor.check")(function* (target: WatchTarget) {
     const key = targetKey(target);

@@ -131,8 +131,8 @@ async function run() {
                 guest.invalidate();
               });
             });
-          const present = (width, height, availableWidth, availableHeight, pageZoom) =>
-            Effect.gen(function* () {
+          const present = Effect.fn("PreviewCalibration.present")(
+            function* (width, height, availableWidth, availableHeight, pageZoom) {
               const layout = resolveBrowserViewportLayout(
                 { width: availableWidth, height: availableHeight },
                 { _tag: "freeform", width, height },
@@ -149,9 +149,10 @@ async function run() {
                 height,
                 scale: layout.viewportScale,
               });
-            });
-          const check = (name, requestedWidth, requestedHeight) =>
-            Effect.gen(function* () {
+            },
+          );
+          const check = Effect.fn("PreviewCalibration.check")(
+            function* (name, requestedWidth, requestedHeight) {
               yield* paint();
               const artifact = yield* manager.captureScreenshot(tabId);
               const png = yield* Effect.promise(() => NodeFSP.readFile(artifact.path));
@@ -208,7 +209,8 @@ async function run() {
               console.log(
                 `PASS ${name}: ${metrics.width}x${metrics.height}, capture ${width}x${height}`,
               );
-            });
+            },
+          );
           for (const pageZoom of [0.9, 1, 1.1]) {
             yield* manager.resetZoom(tabId);
             if (pageZoom < 1) yield* manager.zoomOut(tabId);

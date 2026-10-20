@@ -223,26 +223,25 @@ export class DiscordPresenceController {
   }
 }
 
-const make = (
+const make = Effect.fn("desktop.discordPresence.make")(function* (
   createClient: () => DiscordRpcClient = () => new Client({ clientId: DISCORD_APPLICATION_ID }),
-) =>
-  Effect.gen(function* () {
-    const electronWindow = yield* ElectronWindow.ElectronWindow;
-    const startedAt = yield* Clock.currentTimeMillis;
-    const runFork = Effect.runForkWith(yield* Effect.context<never>());
-    const controller = yield* Effect.acquireRelease(
-      Effect.sync(
-        () =>
-          new DiscordPresenceController(createClient, startedAt, (status) => {
-            runFork(electronWindow.sendAll(IpcChannels.DISCORD_PRESENCE_STATUS_CHANNEL, status));
-          }),
-      ),
-      (controller) => Effect.promise(() => controller.dispose()),
-    );
-    return DesktopDiscordPresence.of({
-      setActivity: (activity) => Effect.promise(() => controller.setActivity(activity)),
-      status: Effect.sync(() => controller.status),
-    });
+) {
+  const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const startedAt = yield* Clock.currentTimeMillis;
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  const controller = yield* Effect.acquireRelease(
+    Effect.sync(
+      () =>
+        new DiscordPresenceController(createClient, startedAt, (status) => {
+          runFork(electronWindow.sendAll(IpcChannels.DISCORD_PRESENCE_STATUS_CHANNEL, status));
+        }),
+    ),
+    (controller) => Effect.promise(() => controller.dispose()),
+  );
+  return DesktopDiscordPresence.of({
+    setActivity: (activity) => Effect.promise(() => controller.setActivity(activity)),
+    status: Effect.sync(() => controller.status),
   });
+});
 
 export const layer = Layer.effect(DesktopDiscordPresence, make());

@@ -2526,34 +2526,36 @@ const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function
 // later read through CFBundleIconName. actool names the icon after the
 // project directory, so the project is copied under MAC_ICON_NAME first.
 // Requires Xcode 26 or later.
-function stageMacIconCatalog(stageAppDir: string, iconComposerProject: string, verbose: boolean) {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    if (!(yield* fs.exists(iconComposerProject))) {
-      return yield* new DesktopIconSourceMissingError({
-        platform: "mac",
-        sourcePath: iconComposerProject,
-      });
-    }
-
-    const tmpRoot = yield* fs.makeTempDirectoryScoped({
-      prefix: "styal-icon-catalog-",
+const stageMacIconCatalog = Effect.fn("build-desktop-artifact.stageMacIconCatalog")(function* (
+  stageAppDir: string,
+  iconComposerProject: string,
+  verbose: boolean,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  if (!(yield* fs.exists(iconComposerProject))) {
+    return yield* new DesktopIconSourceMissingError({
+      platform: "mac",
+      sourcePath: iconComposerProject,
     });
-    const projectCopy = path.join(tmpRoot, `${MAC_ICON_NAME}.icon`);
-    yield* fs.copy(iconComposerProject, projectCopy);
+  }
 
-    const catalogDir = path.join(stageAppDir, MAC_ICON_CATALOG_DIR);
-    yield* fs.makeDirectory(catalogDir, { recursive: true });
-    const partialInfoPlist = path.join(tmpRoot, "assetcatalog_generated_info.plist");
-    yield* runCommand(
-      ChildProcess.make(
-        {},
-      )`actool ${projectCopy} --compile ${catalogDir} --app-icon ${MAC_ICON_NAME} --output-partial-info-plist ${partialInfoPlist} --platform macosx --target-device mac --minimum-deployment-target 26.0 --output-format human-readable-text --errors --warnings`,
-      { label: "actool icon catalog", verbose },
-    );
+  const tmpRoot = yield* fs.makeTempDirectoryScoped({
+    prefix: "styal-icon-catalog-",
   });
-}
+  const projectCopy = path.join(tmpRoot, `${MAC_ICON_NAME}.icon`);
+  yield* fs.copy(iconComposerProject, projectCopy);
+
+  const catalogDir = path.join(stageAppDir, MAC_ICON_CATALOG_DIR);
+  yield* fs.makeDirectory(catalogDir, { recursive: true });
+  const partialInfoPlist = path.join(tmpRoot, "assetcatalog_generated_info.plist");
+  yield* runCommand(
+    ChildProcess.make(
+      {},
+    )`actool ${projectCopy} --compile ${catalogDir} --app-icon ${MAC_ICON_NAME} --output-partial-info-plist ${partialInfoPlist} --platform macosx --target-device mac --minimum-deployment-target 26.0 --output-format human-readable-text --errors --warnings`,
+    { label: "actool icon catalog", verbose },
+  );
+});
 
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
   stageResourcesDir: string,

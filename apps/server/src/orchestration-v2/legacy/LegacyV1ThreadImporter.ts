@@ -359,39 +359,39 @@ const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const transcriptImports = yield* KeyedLock.make<ThreadId>();
 
-  const continuationFor = (thread: OrchestrationV2AppThread) =>
-    Effect.gen(function* () {
-      const rows = yield* sql<{
-        readonly provider_name: string;
-        readonly provider_instance_id: string | null;
-        readonly resume_cursor_json: string | null;
-      }>`
+  const continuationFor = Effect.fn("LegacyV1ThreadImporter.continuationFor")(function* (
+    thread: OrchestrationV2AppThread,
+  ) {
+    const rows = yield* sql<{
+      readonly provider_name: string;
+      readonly provider_instance_id: string | null;
+      readonly resume_cursor_json: string | null;
+    }>`
       SELECT provider_name, provider_instance_id, resume_cursor_json
       FROM provider_session_runtime WHERE thread_id = ${thread.id}
     `;
-      const row = rows[0];
-      if (row === undefined || row.resume_cursor_json === null) return null;
-      const driver = Schema.decodeUnknownOption(ProviderDriverKind)(row.provider_name);
-      if (Option.isNone(driver)) return null;
-      const instanceId =
-        row.provider_instance_id === null
-          ? defaultInstanceIdForDriver(driver.value)
-          : ProviderInstanceId.make(row.provider_instance_id);
-      return legacyProviderContinuation({
-        thread,
-        driver: driver.value,
-        instanceId,
-        resumeCursor: parseJson(row.resume_cursor_json),
-      });
+    const row = rows[0];
+    if (row === undefined || row.resume_cursor_json === null) return null;
+    const driver = Schema.decodeUnknownOption(ProviderDriverKind)(row.provider_name);
+    if (Option.isNone(driver)) return null;
+    const instanceId =
+      row.provider_instance_id === null
+        ? defaultInstanceIdForDriver(driver.value)
+        : ProviderInstanceId.make(row.provider_instance_id);
+    return legacyProviderContinuation({
+      thread,
+      driver: driver.value,
+      instanceId,
+      resumeCursor: parseJson(row.resume_cursor_json),
     });
+  });
 
-  const usageFor = (threadId: ThreadId) =>
-    Effect.gen(function* () {
-      const rows = yield* sql<{
-        readonly turn_id: string;
-        readonly payload_json: string;
-        readonly created_at: string;
-      }>`
+  const usageFor = Effect.fn("LegacyV1ThreadImporter.usageFor")(function* (threadId: ThreadId) {
+    const rows = yield* sql<{
+      readonly turn_id: string;
+      readonly payload_json: string;
+      readonly created_at: string;
+    }>`
       SELECT turn_id, payload_json, created_at FROM (
         SELECT turn_id, payload_json, created_at,
           ROW_NUMBER() OVER (
@@ -402,37 +402,37 @@ const make = Effect.gen(function* () {
       ) WHERE latest = 1
       ORDER BY created_at ASC, turn_id ASC
     `;
-      const records = rows.flatMap((row) => {
-        const payload = parseJson(row.payload_json);
-        const usage = Option.getOrNull(Schema.decodeUnknownOption(TurnTokenUsage)(payload));
-        const model = Option.getOrNull(Schema.decodeUnknownOption(TurnModel)(payload));
-        return usage === null && model === null
-          ? []
-          : [{ turnId: TurnId.make(row.turn_id), usage, model }];
-      });
-      const counts = yield* sql<{ readonly turns: number }>`
+    const records = rows.flatMap((row) => {
+      const payload = parseJson(row.payload_json);
+      const usage = Option.getOrNull(Schema.decodeUnknownOption(TurnTokenUsage)(payload));
+      const model = Option.getOrNull(Schema.decodeUnknownOption(TurnModel)(payload));
+      return usage === null && model === null
+        ? []
+        : [{ turnId: TurnId.make(row.turn_id), usage, model }];
+    });
+    const counts = yield* sql<{ readonly turns: number }>`
       SELECT COUNT(*) AS turns FROM styal_legacy_v1_turns WHERE thread_id = ${threadId}
     `;
-      const latestTotal = rows
-        .toReversed()
-        .map((row) =>
-          Option.getOrNull(
-            Schema.decodeUnknownOption(Schema.Struct({ thread: ThreadTokenUsage }))(
-              parseJson(row.payload_json),
-            ),
+    const latestTotal = rows
+      .toReversed()
+      .map((row) =>
+        Option.getOrNull(
+          Schema.decodeUnknownOption(Schema.Struct({ thread: ThreadTokenUsage }))(
+            parseJson(row.payload_json),
           ),
-        )
-        .find((total) => total !== null)?.thread;
-      const thread =
-        latestTotal ??
-        sumThreadTokenUsage({
-          activities: records.map((record) => ({ turnId: record.turnId, payload: record.usage })),
-          turnId: "migration:no-extra-turn",
-          usage: null,
-          turns: counts[0]?.turns ?? 0,
-        });
-      return { records, thread } satisfies LegacyTurnUsage;
-    });
+        ),
+      )
+      .find((total) => total !== null)?.thread;
+    const thread =
+      latestTotal ??
+      sumThreadTokenUsage({
+        activities: records.map((record) => ({ turnId: record.turnId, payload: record.usage })),
+        turnId: "migration:no-extra-turn",
+        usage: null,
+        turns: counts[0]?.turns ?? 0,
+      });
+    return { records, thread } satisfies LegacyTurnUsage;
+  });
 
   const listMessages = (threadId: ThreadId) =>
     sql<LegacyMessageRow>`

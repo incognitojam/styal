@@ -497,57 +497,59 @@ function makeHelpers(client: Client, projectId: ProjectId, instanceId: ProviderI
       Effect.tap((value) => Effect.sync(() => writeEvidence(`projection-${threadId}.json`, value))),
     );
 
-  const send = (threadId: ThreadId, text: string) =>
-    Effect.gen(function* () {
-      const messageId = MessageId.make(NodeCrypto.randomUUID());
-      yield* client["orchestration.dispatchCommand"]({
-        type: "message.dispatch",
-        commandId: CommandId.make(NodeCrypto.randomUUID()),
-        createdBy: "user",
-        creationSource: "web",
-        threadId,
-        messageId,
-        text,
-        attachments: [],
-        dispatchMode: { type: "start_immediately" },
-      });
-      return messageId;
+  const send = Effect.fn("verify-provider-live.send")(function* (threadId: ThreadId, text: string) {
+    const messageId = MessageId.make(NodeCrypto.randomUUID());
+    yield* client["orchestration.dispatchCommand"]({
+      type: "message.dispatch",
+      commandId: CommandId.make(NodeCrypto.randomUUID()),
+      createdBy: "user",
+      creationSource: "web",
+      threadId,
+      messageId,
+      text,
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
     });
+    return messageId;
+  });
 
-  const launch = (
+  const launch = Effect.fn("verify-provider-live.launch")(function* (
     title: string,
     text: string,
     runtimeMode: RuntimeMode = "full-access",
     workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy = { type: "root" },
-  ) =>
-    Effect.gen(function* () {
-      const threadId = ThreadId.make(NodeCrypto.randomUUID());
-      const messageId = MessageId.make(NodeCrypto.randomUUID());
-      yield* client["orchestration.launchThread"]({
-        commandId: CommandId.make(NodeCrypto.randomUUID()),
-        threadId,
-        projectId,
-        title,
-        generateTitle: false,
-        modelSelection,
-        runtimeMode,
-        interactionMode: "default",
-        workspaceStrategy,
-        initialMessage: { messageId, text, attachments: [] },
-      });
-      return { threadId, messageId };
+  ) {
+    const threadId = ThreadId.make(NodeCrypto.randomUUID());
+    const messageId = MessageId.make(NodeCrypto.randomUUID());
+    yield* client["orchestration.launchThread"]({
+      commandId: CommandId.make(NodeCrypto.randomUUID()),
+      threadId,
+      projectId,
+      title,
+      generateTitle: false,
+      modelSelection,
+      runtimeMode,
+      interactionMode: "default",
+      workspaceStrategy,
+      initialMessage: { messageId, text, attachments: [] },
     });
+    return { threadId, messageId };
+  });
 
   /** Sends a no-tools turn asking for `token` and asserts the reply contains it. */
-  const askForToken = (threadId: ThreadId, text: string, token: string, label: string) =>
-    Effect.gen(function* () {
-      const messageId = yield* send(threadId, text);
-      const ended = yield* waitForRunEnd(threadId, messageId, label);
-      if (ended.run.status !== "completed") fail(`The ${label} ended ${ended.run.status}`);
-      if (!assistantText(ended.projection, ended.run).includes(token))
-        fail(`The ${label} reply did not contain ${token}`);
-      return ended;
-    });
+  const askForToken = Effect.fn("verify-provider-live.askForToken")(function* (
+    threadId: ThreadId,
+    text: string,
+    token: string,
+    label: string,
+  ) {
+    const messageId = yield* send(threadId, text);
+    const ended = yield* waitForRunEnd(threadId, messageId, label);
+    if (ended.run.status !== "completed") fail(`The ${label} ended ${ended.run.status}`);
+    if (!assistantText(ended.projection, ended.run).includes(token))
+      fail(`The ${label} reply did not contain ${token}`);
+    return ended;
+  });
 
   return { client, waitFor, waitForRunEnd, projection, send, launch, askForToken };
 }

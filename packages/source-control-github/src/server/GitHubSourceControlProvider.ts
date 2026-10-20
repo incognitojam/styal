@@ -1103,8 +1103,8 @@ export const make = Effect.gen(function* () {
       },
       (effect, input) => effect.pipe(Effect.mapError(providerError("getDefaultBranch", input.cwd))),
     ),
-    listIssues: (input) =>
-      Effect.gen(function* () {
+    listIssues: Effect.fn("GitHubSourceControlProvider.listIssues")(
+      function* (input) {
         const locator = yield* resolveRepository({ cwd: input.cwd });
         const issues = yield* graphqlRead(
           { host: locator.host, operation: "listIssues" },
@@ -1119,9 +1119,11 @@ export const make = Effect.gen(function* () {
             .pipe(Effect.map(toGitHubIssueList)),
         );
         return issues.map(toIssueSummary);
-      }).pipe(Effect.mapError(providerError("listIssues", input.cwd))),
-    getIssue: (input) =>
-      Effect.gen(function* () {
+      },
+      (effect, input) => effect.pipe(Effect.mapError(providerError("listIssues", input.cwd))),
+    ),
+    getIssue: Effect.fn("GitHubSourceControlProvider.getIssue")(
+      function* (input) {
         const locator = yield* resolveRepository({ cwd: input.cwd });
         const missing = `Issue #${input.number} was not found in ${locator.owner}/${locator.name}.`;
         const pages: GitHubIssuePage[] = [];
@@ -1153,9 +1155,14 @@ export const make = Effect.gen(function* () {
             pages.flatMap((page) => page.comments),
           ),
         );
-      }).pipe(
-        Effect.mapError(providerError("getIssue", input.cwd, { reference: String(input.number) })),
-      ),
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError(
+            providerError("getIssue", input.cwd, { reference: String(input.number) }),
+          ),
+        ),
+    ),
     resolveReferences: (input) =>
       Effect.forEach(
         input.references.slice(0, MAX_REFERENCES_PER_REQUEST),

@@ -797,22 +797,25 @@ const live = Layer.effectContext(
             ),
           ),
       },
-      memoryModeForThread: (input) =>
-        Effect.gen(function* () {
+      memoryModeForThread: Effect.fn("DeviceIdle.memoryModeForThread")(
+        function* (input) {
           const thread = yield* projections.getThreadShell(input.threadId);
           const current = yield* settings.getSettings;
           return resolveProjectSettings(current, thread?.projectId ?? input.projectId ?? null)
             .settings.simulatorMemoryMode;
-        }).pipe(
-          Effect.mapError(
-            (cause) =>
-              new DeviceOperationError({
-                operation: "read project memory mode",
-                reason: "settings_failed",
-                cause,
-              }),
+        },
+        (effect) =>
+          effect.pipe(
+            Effect.mapError(
+              (cause) =>
+                new DeviceOperationError({
+                  operation: "read project memory mode",
+                  reason: "settings_failed",
+                  cause,
+                }),
+            ),
           ),
-        ),
+      ),
       // An unreadable projection keeps the device.
       threadStatus: (threadId) =>
         projections.getThreadShell(threadId).pipe(

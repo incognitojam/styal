@@ -73,15 +73,16 @@ export const make = Effect.gen(function* () {
   const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const localInstalls = yield* Ref.make<ReadonlySet<LocalInstall>>(new Set());
 
-  const targetFor = (instanceId: ProviderInstanceId) =>
-    Effect.gen(function* () {
-      const instance = yield* instances.getInstance(instanceId);
-      if (instance === undefined) return null;
-      const capabilities = yield* instance.snapshot.resolveMaintenance();
-      return capabilities.update === null
-        ? null
-        : { lockKey: capabilities.update.lockKey, packageName: capabilities.packageName };
-    });
+  // A lookup for the caller's operation, which owns the span; `awaitInstance` repeats it
+  // on every poll, and the auto-updater's busy check once per instance.
+  const targetFor = Effect.fnUntraced(function* (instanceId: ProviderInstanceId) {
+    const instance = yield* instances.getInstance(instanceId);
+    if (instance === undefined) return null;
+    const capabilities = yield* instance.snapshot.resolveMaintenance();
+    return capabilities.update === null
+      ? null
+      : { lockKey: capabilities.update.lockKey, packageName: capabilities.packageName };
+  });
 
   const tryInstall: ProviderInstallGate["Service"]["tryInstall"] = (target, install) =>
     lock.tryRun(target.lockKey, (recordChildPid) =>
@@ -109,32 +110,32 @@ export const make = Effect.gen(function* () {
     return yield* remoteHeld(lock.anyHeld);
   });
 
-  const awaitInstance = (instanceId: ProviderInstanceId) =>
-    Effect.gen(function* () {
-      let logged = false;
-      while (yield* installing) {
-        const target = yield* targetFor(instanceId);
-        if (target === null) return;
-        const local = [...(yield* Ref.get(localInstalls))];
-        const same = local.find((entry) => sameTarget(entry.target, target));
-        // While this server installs under the key, the lock is its own.
-        const remote =
-          same === undefined &&
-          !local.some((entry) => entry.target.lockKey === target.lockKey) &&
-          (yield* remoteHeld(lock.keyHeld(target.lockKey)));
-        if (same === undefined && !remote) return;
-        if (!logged) {
-          logged = true;
-          yield* Effect.logInfo("Turn start is waiting for a provider update to finish", {
-            instanceId,
-            lockKey: target.lockKey,
-          });
-        }
-        yield* same === undefined
-          ? Effect.sleep(REMOTE_INSTALL_POLL_INTERVAL)
-          : Deferred.await(same.done);
+  // Runs inside the turn start's install-wait span, and only while an install is in progress.
+  const awaitInstance = Effect.fnUntraced(function* (instanceId: ProviderInstanceId) {
+    let logged = false;
+    while (yield* installing) {
+      const target = yield* targetFor(instanceId);
+      if (target === null) return;
+      const local = [...(yield* Ref.get(localInstalls))];
+      const same = local.find((entry) => sameTarget(entry.target, target));
+      // While this server installs under the key, the lock is its own.
+      const remote =
+        same === undefined &&
+        !local.some((entry) => entry.target.lockKey === target.lockKey) &&
+        (yield* remoteHeld(lock.keyHeld(target.lockKey)));
+      if (same === undefined && !remote) return;
+      if (!logged) {
+        logged = true;
+        yield* Effect.logInfo("Turn start is waiting for a provider update to finish", {
+          instanceId,
+          lockKey: target.lockKey,
+        });
       }
-    });
+      yield* same === undefined
+        ? Effect.sleep(REMOTE_INSTALL_POLL_INTERVAL)
+        : Deferred.await(same.done);
+    }
+  });
 
   return ProviderInstallGate.of({
     tryInstall,

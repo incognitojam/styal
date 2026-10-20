@@ -59,19 +59,21 @@ export const make = Effect.fn("desktop.updates.makeIdleRestart")(function* (opti
   const reported = new Set<string>();
   const pendingPath = environment.path.join(options.runtimeDir, IDLE_RESTART_PENDING_FILE);
 
-  const report = (version: string, delayBucket: DesktopIdleRestartDelayBucket) =>
-    Effect.gen(function* () {
-      reported.add(version);
-      yield* telemetry.publishFeatureUsage({
-        version: 1,
-        type: "desktopFeatureUsage",
-        feature: "desktop-update-idle-restart",
-        action: "would_restart",
-        updateVersion: version,
-        delayBucket,
-      });
-      yield* fileSystem.remove(pendingPath, { force: true }).pipe(Effect.ignore);
+  const report = Effect.fn("desktop.updates.reportIdleRestart")(function* (
+    version: string,
+    delayBucket: DesktopIdleRestartDelayBucket,
+  ) {
+    reported.add(version);
+    yield* telemetry.publishFeatureUsage({
+      version: 1,
+      type: "desktopFeatureUsage",
+      feature: "desktop-update-idle-restart",
+      action: "would_restart",
+      updateVersion: version,
+      delayBucket,
     });
+    yield* fileSystem.remove(pendingPath, { force: true }).pipe(Effect.ignore);
+  });
 
   const userIsAway = powerMonitor
     .getSystemIdleState(IDLE_RESTART_IDLE_SECONDS)
@@ -95,13 +97,15 @@ export const make = Effect.fn("desktop.updates.makeIdleRestart")(function* (opti
   });
 
   // Runs when an idle restart would install the staged update.
-  const restartWhileIdle = (pending: { readonly version: string; readonly stagedAt: number }) =>
-    Effect.gen(function* () {
-      yield* Ref.set(pendingRef, undefined);
-      const delayMs = (yield* Clock.currentTimeMillis) - pending.stagedAt;
-      yield* report(pending.version, idleRestartDelayBucket(delayMs));
-      if (IDLE_RESTART_INSTALLS) yield* options.install(pending.version);
-    });
+  const restartWhileIdle = Effect.fn("desktop.updates.restartWhileIdle")(function* (pending: {
+    readonly version: string;
+    readonly stagedAt: number;
+  }) {
+    yield* Ref.set(pendingRef, undefined);
+    const delayMs = (yield* Clock.currentTimeMillis) - pending.stagedAt;
+    yield* report(pending.version, idleRestartDelayBucket(delayMs));
+    if (IDLE_RESTART_INSTALLS) yield* options.install(pending.version);
+  });
 
   const check = Effect.gen(function* () {
     if ((yield* candidate) === undefined || !(yield* userIsAway)) return;
@@ -114,17 +118,16 @@ export const make = Effect.fn("desktop.updates.makeIdleRestart")(function* (opti
 
   return {
     /** Starts measuring once an update has staged. */
-    start: (version: string) =>
-      Effect.gen(function* () {
-        if (reported.has(version)) return;
-        const stagedAt = yield* Clock.currentTimeMillis;
-        // Written before the candidate is visible to the idle check, so a
-        // report cannot remove the file before this write recreates it.
-        yield* fileSystem
-          .makeDirectory(options.runtimeDir, { recursive: true })
-          .pipe(Effect.andThen(fileSystem.writeFileString(pendingPath, version)), Effect.ignore);
-        yield* Ref.set(pendingRef, { version, stagedAt });
-      }),
+    start: Effect.fn("desktop.updates.startIdleRestart")(function* (version: string) {
+      if (reported.has(version)) return;
+      const stagedAt = yield* Clock.currentTimeMillis;
+      // Written before the candidate is visible to the idle check, so a
+      // report cannot remove the file before this write recreates it.
+      yield* fileSystem
+        .makeDirectory(options.runtimeDir, { recursive: true })
+        .pipe(Effect.andThen(fileSystem.writeFileString(pendingPath, version)), Effect.ignore);
+      yield* Ref.set(pendingRef, { version, stagedAt });
+    }),
 
     /** A staged download that is discarded before an idle moment never had one. */
     abandon: Ref.getAndSet(pendingRef, undefined).pipe(

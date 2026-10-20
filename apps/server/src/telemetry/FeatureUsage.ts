@@ -330,72 +330,72 @@ function workflowRunWatchFailureReason(cause: Cause.Cause<unknown>) {
 
 /**
  * Observe one public operation, preserving its result, failure and interruption.
- * `resultProperties` reads bounded categories from a successful result.
+ * `resultProperties` reads bounded categories from a successful result. Untraced:
+ * the observed operation owns the span, and this only records usage around it.
  */
-export const observe = <A, E, R>(
+export const observe = Effect.fnUntraced(function* <A, E, R>(
   usage: ObservedUsage,
   effect: Effect.Effect<A, E, R>,
   client: ClientDimensions = {},
   resultProperties?: (value: A) => Readonly<Record<string, string>>,
-) =>
-  Effect.gen(function* () {
-    const analytics = yield* AnalyticsService.AnalyticsService;
-    const startedAt = yield* Clock.currentTimeMillis;
-    return yield* effect.pipe(
-      Effect.onExit((exit) =>
-        Effect.gen(function* () {
-          const finishedAt = yield* Clock.currentTimeMillis;
-          yield* analytics.record("feature.used", {
-            feature: usage.feature,
-            action: usage.action,
-            source: usage.source,
-            ...((usage.feature === "devices" || usage.feature === "simulator-memory") &&
-            Exit.isFailure(exit) &&
-            !Cause.hasInterruptsOnly(exit.cause)
-              ? { failureReason: deviceFailureReason(exit.cause) }
-              : {}),
-            ...(usage.feature === "workflow-run-watch" &&
-            Exit.isFailure(exit) &&
-            !Cause.hasInterruptsOnly(exit.cause)
-              ? { failureReason: workflowRunWatchFailureReason(exit.cause) }
-              : {}),
-            ...(usage.feature === "hardware" &&
-            Exit.isFailure(exit) &&
-            !Cause.hasInterruptsOnly(exit.cause)
-              ? { failureReason: hardwareFailureReason(exit.cause) }
-              : {}),
-            ...(usage.feature === "project-file-approvals" &&
-            Exit.isFailure(exit) &&
-            !Cause.hasInterruptsOnly(exit.cause)
-              ? { failureReason: projectFileApprovalFailureReason(exit.cause) }
-              : {}),
-            ...(usage.feature === "hardware" && usage.hardwareTier
-              ? { hardwareTier: usage.hardwareTier }
-              : {}),
-            ...(usage.feature === "workflow-run-watch" && usage.action === "review"
-              ? { reviewState: usage.reviewState }
-              : {}),
-            ...(resultProperties !== undefined && Exit.isSuccess(exit)
-              ? resultProperties(exit.value)
-              : {}),
-            ...(usage.feature === "simulator-memory" ? { memoryMode: usage.memoryMode } : {}),
-            ...(usage.feature === "devices"
-              ? {
-                  ...(usage.devicePlatform ? { devicePlatform: usage.devicePlatform } : {}),
-                  ...(usage.deviceLocation ? { deviceLocation: usage.deviceLocation } : {}),
-                }
-              : {}),
-            ...(client.surface ? { surface: client.surface } : {}),
-            ...(client.clientOs ? { clientOs: client.clientOs } : {}),
-            ...(client.clientAppVersion ? { clientAppVersion: client.clientAppVersion } : {}),
-            outcome: Exit.isSuccess(exit)
-              ? "success"
-              : Cause.hasInterruptsOnly(exit.cause)
-                ? "cancelled"
-                : "failure",
-            durationMs: Math.max(0, finishedAt - startedAt),
-          });
-        }).pipe(Effect.ignoreCause),
-      ),
-    );
-  });
+) {
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  const startedAt = yield* Clock.currentTimeMillis;
+  return yield* effect.pipe(
+    Effect.onExit((exit) =>
+      Effect.gen(function* () {
+        const finishedAt = yield* Clock.currentTimeMillis;
+        yield* analytics.record("feature.used", {
+          feature: usage.feature,
+          action: usage.action,
+          source: usage.source,
+          ...((usage.feature === "devices" || usage.feature === "simulator-memory") &&
+          Exit.isFailure(exit) &&
+          !Cause.hasInterruptsOnly(exit.cause)
+            ? { failureReason: deviceFailureReason(exit.cause) }
+            : {}),
+          ...(usage.feature === "workflow-run-watch" &&
+          Exit.isFailure(exit) &&
+          !Cause.hasInterruptsOnly(exit.cause)
+            ? { failureReason: workflowRunWatchFailureReason(exit.cause) }
+            : {}),
+          ...(usage.feature === "hardware" &&
+          Exit.isFailure(exit) &&
+          !Cause.hasInterruptsOnly(exit.cause)
+            ? { failureReason: hardwareFailureReason(exit.cause) }
+            : {}),
+          ...(usage.feature === "project-file-approvals" &&
+          Exit.isFailure(exit) &&
+          !Cause.hasInterruptsOnly(exit.cause)
+            ? { failureReason: projectFileApprovalFailureReason(exit.cause) }
+            : {}),
+          ...(usage.feature === "hardware" && usage.hardwareTier
+            ? { hardwareTier: usage.hardwareTier }
+            : {}),
+          ...(usage.feature === "workflow-run-watch" && usage.action === "review"
+            ? { reviewState: usage.reviewState }
+            : {}),
+          ...(resultProperties !== undefined && Exit.isSuccess(exit)
+            ? resultProperties(exit.value)
+            : {}),
+          ...(usage.feature === "simulator-memory" ? { memoryMode: usage.memoryMode } : {}),
+          ...(usage.feature === "devices"
+            ? {
+                ...(usage.devicePlatform ? { devicePlatform: usage.devicePlatform } : {}),
+                ...(usage.deviceLocation ? { deviceLocation: usage.deviceLocation } : {}),
+              }
+            : {}),
+          ...(client.surface ? { surface: client.surface } : {}),
+          ...(client.clientOs ? { clientOs: client.clientOs } : {}),
+          ...(client.clientAppVersion ? { clientAppVersion: client.clientAppVersion } : {}),
+          outcome: Exit.isSuccess(exit)
+            ? "success"
+            : Cause.hasInterruptsOnly(exit.cause)
+              ? "cancelled"
+              : "failure",
+          durationMs: Math.max(0, finishedAt - startedAt),
+        });
+      }).pipe(Effect.ignoreCause),
+    ),
+  );
+});

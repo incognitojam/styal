@@ -126,12 +126,14 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const readMarkerMatches = (fileName: string) =>
-    Effect.gen(function* () {
+  const readMarkerMatches = Effect.fn("DesktopWslServerTree.readMarkerMatches")(
+    function* (fileName: string) {
       const raw = yield* fs.readFileString(join(versionDir, fileName));
       const marker = yield* decodeMarker(raw);
       return marker.version === version;
-    }).pipe(Effect.orElseSucceed(() => false));
+    },
+    Effect.orElseSucceed(() => false),
+  );
 
   const markerMatches = Effect.gen(function* () {
     if (yield* readMarkerMatches(MARKER_FILE_NAME)) return true;

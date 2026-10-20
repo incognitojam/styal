@@ -6148,19 +6148,18 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
       );
 
-    const getProviderStallCandidates: ProjectionStoreV2Shape["getProviderStallCandidates"] = (
-      runId,
-    ) =>
-      Effect.gen(function* () {
-        // Scan the compact status index, not overflow pages holding historical run
-        // payloads. The commit guard selects one run and keeps its primary-key lookup.
-        const rows = yield* sql<{
-          readonly payload_json: string;
-          readonly attempt_id: string;
-          readonly provider_turn_id: string | null;
-          readonly last_activity_at: string;
-          readonly blocked: number;
-        }>`
+    const getProviderStallCandidates: ProjectionStoreV2Shape["getProviderStallCandidates"] =
+      Effect.fn("ProjectionStore.getProviderStallCandidates")(
+        function* (runId) {
+          // Scan the compact status index, not overflow pages holding historical run
+          // payloads. The commit guard selects one run and keeps its primary-key lookup.
+          const rows = yield* sql<{
+            readonly payload_json: string;
+            readonly attempt_id: string;
+            readonly provider_turn_id: string | null;
+            readonly last_activity_at: string;
+            readonly blocked: number;
+          }>`
           WITH startup AS (
             SELECT candidate.run_id, (
               SELECT event.occurred_at FROM orchestration_events AS event
@@ -6253,21 +6252,25 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             AND json_extract(thread.payload_json, '$.archivedAt') IS NULL
             ${runId === undefined ? sql`` : sql`AND run.run_id = ${runId}`}
         `;
-        return yield* Effect.forEach(rows, (row) =>
-          decodeRunPayload(row.payload_json).pipe(
-            Effect.map((run): ProjectionProviderStallCandidate => ({
-              run,
-              attemptId: RunAttemptId.make(row.attempt_id),
-              phase: row.provider_turn_id === null ? "startup" : "provider_silent",
-              lastActivityAt: DateTime.toEpochMillis(DateTime.makeUnsafe(row.last_activity_at)),
-              blocked: row.blocked !== 0,
-            })),
-          ),
-        );
-      }).pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
+          return yield* Effect.forEach(rows, (row) =>
+            decodeRunPayload(row.payload_json).pipe(
+              Effect.map((run): ProjectionProviderStallCandidate => ({
+                run,
+                attemptId: RunAttemptId.make(row.attempt_id),
+                phase: row.provider_turn_id === null ? "startup" : "provider_silent",
+                lastActivityAt: DateTime.toEpochMillis(DateTime.makeUnsafe(row.last_activity_at)),
+                blocked: row.blocked !== 0,
+              })),
+            ),
+          );
+        },
+        Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+      );
 
-    const getOpenProviderStalls: ProjectionStoreV2Shape["getOpenProviderStalls"] = () =>
-      Effect.gen(function* () {
+    const getOpenProviderStalls: ProjectionStoreV2Shape["getOpenProviderStalls"] = Effect.fn(
+      "ProjectionStore.getOpenProviderStalls",
+    )(
+      function* () {
         // The primary-key prefix bounds this read to diagnostic notices, including
         // notices whose runs have ended since the previous sweep.
         const rows = yield* sql<PayloadRow>`
@@ -6280,11 +6283,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           (item): item is Extract<OrchestrationV2TurnItem, { type: "system_notice" }> =>
             item.type === "system_notice" && item.providerStall !== undefined,
         );
-      }).pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
+      },
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+    );
 
-    const getThreadsWithWorkflowRuns: ProjectionStoreV2Shape["getThreadsWithWorkflowRuns"] = () =>
-      Effect.gen(function* () {
-        const rows = yield* sql<PayloadRow>`
+    const getThreadsWithWorkflowRuns: ProjectionStoreV2Shape["getThreadsWithWorkflowRuns"] =
+      Effect.fn("ProjectionStore.getThreadsWithWorkflowRuns")(
+        function* () {
+          const rows = yield* sql<PayloadRow>`
           SELECT payload_json
           FROM orchestration_v2_projection_threads
           WHERE deleted_at IS NULL
@@ -6292,18 +6298,20 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             AND json_array_length(payload_json, '$.workflowRuns') > 0
           ORDER BY updated_at ASC, thread_id ASC
         `;
-        return yield* Effect.forEach(rows, (row) =>
-          decodeThreadPayload(row.payload_json).pipe(
-            Effect.map((thread): ProjectionThreadWorkflowRuns => ({
-              id: thread.id,
-              projectId: thread.projectId,
-              settledOverride: thread.settledOverride,
-              settledAt: thread.settledAt,
-              workflowRuns: thread.workflowRuns ?? [],
-            })),
-          ),
-        );
-      }).pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
+          return yield* Effect.forEach(rows, (row) =>
+            decodeThreadPayload(row.payload_json).pipe(
+              Effect.map((thread): ProjectionThreadWorkflowRuns => ({
+                id: thread.id,
+                projectId: thread.projectId,
+                settledOverride: thread.settledOverride,
+                settledAt: thread.settledAt,
+                workflowRuns: thread.workflowRuns ?? [],
+              })),
+            ),
+          );
+        },
+        Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+      );
 
     const decodeThreadTokenUsage = Schema.decodeUnknownEffect(
       Schema.fromJsonString(ThreadTokenUsage),

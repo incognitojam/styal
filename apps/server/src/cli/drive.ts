@@ -71,14 +71,16 @@ const withConnection = Effect.fn("drive.withConnection")(function* <A, E, R>(
     headers: { authorization: string; readonly "x-t3-orchestration-protocol": "2" },
   ) => Effect.Effect<A, E, R>,
 ) {
-  const call = (origin: string, token: string) =>
-    Effect.gen(function* () {
+  const call = Effect.fn("drive.call")(
+    function* (origin: string, token: string) {
       const client = yield* makeClient(origin);
       return yield* run(client, {
         authorization: `Bearer ${token}`,
         [ORCHESTRATION_PROTOCOL_HEADER]: ORCHESTRATION_PROTOCOL_VERSION_TEXT,
       });
-    }).pipe(Effect.timeout("30 seconds"), Effect.provide(FetchHttpClient.layer));
+    },
+    (effect) => effect.pipe(Effect.timeout("30 seconds"), Effect.provide(FetchHttpClient.layer)),
+  );
 
   if (Option.isSome(flags.url)) {
     const origin = flags.url.value;

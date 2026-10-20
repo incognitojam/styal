@@ -54,8 +54,8 @@ const CONCLUSIONS = new Set(["success", "failure", "cancelled", "timed_out", "sk
  * Records one ended watch: why it ended, the run's conclusion as a fixed category, and how long
  * it was watched. `stopped` is anything outside the reactor: unwatch, settle, archive or Stop.
  */
-export const recordEnd = (end: WorkflowRunWatchEnd, watchedMs: number) =>
-  Effect.gen(function* () {
+export const recordEnd = Effect.fn("WorkflowRunWatchUsage.recordEnd")(
+  function* (end: WorkflowRunWatchEnd, watchedMs: number) {
     const analytics = yield* AnalyticsService.AnalyticsService;
     yield* analytics.record("feature.used", {
       feature: "workflow-run-watch",
@@ -70,4 +70,6 @@ export const recordEnd = (end: WorkflowRunWatchEnd, watchedMs: number) =>
         : {}),
       watchedMinutes: Math.max(0, Math.round(watchedMs / 60_000)),
     });
-  }).pipe(Effect.ignoreCause);
+  },
+  (effect) => effect.pipe(Effect.ignoreCause),
+);

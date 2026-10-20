@@ -592,29 +592,27 @@ function queryRunnerError(cause: unknown, method: string): ClaudeAgentSdkQueryRu
     : new ClaudeAgentSdkQueryRunnerError({ cause, method });
 }
 
-export function closeClaudeQuery(
+export const closeClaudeQuery = Effect.fn("closeClaudeQuery")(function* (
   queryRuntime: Pick<ClaudeQuery, "close">,
   process?: ClaudeProcessHandle,
   graceMs = 3_500,
 ) {
-  return Effect.gen(function* () {
-    const closeStartedAt = yield* Clock.currentTimeMillis;
-    yield* Effect.try({
-      try: () => queryRuntime.close(),
-      catch: (cause) => queryRunnerError(cause, "close"),
-    });
-    const pid = process?.pid();
-    if (process === undefined || pid === undefined || process.exited() !== undefined) return;
-    const elapsed = (yield* Clock.currentTimeMillis) - closeStartedAt;
-    const exit = yield* Effect.promise(() => process.exit).pipe(
-      Effect.timeoutOption(Duration.millis(Math.max(0, graceMs - elapsed))),
-    );
-    if (Option.isSome(exit)) return;
-    yield* Effect.logWarning("claude.cli.exit-timeout", { pid, graceMs });
-    process.kill("SIGKILL");
-    yield* Effect.promise(() => process.exit).pipe(Effect.timeoutOption(Duration.millis(500)));
+  const closeStartedAt = yield* Clock.currentTimeMillis;
+  yield* Effect.try({
+    try: () => queryRuntime.close(),
+    catch: (cause) => queryRunnerError(cause, "close"),
   });
-}
+  const pid = process?.pid();
+  if (process === undefined || pid === undefined || process.exited() !== undefined) return;
+  const elapsed = (yield* Clock.currentTimeMillis) - closeStartedAt;
+  const exit = yield* Effect.promise(() => process.exit).pipe(
+    Effect.timeoutOption(Duration.millis(Math.max(0, graceMs - elapsed))),
+  );
+  if (Option.isSome(exit)) return;
+  yield* Effect.logWarning("claude.cli.exit-timeout", { pid, graceMs });
+  process.kill("SIGKILL");
+  yield* Effect.promise(() => process.exit).pipe(Effect.timeoutOption(Duration.millis(500)));
+});
 
 // Iterate the Query itself, not query[Symbol.asyncIterator]() (the raw
 // sdkMessages generator). The raw generator's return() queues behind the

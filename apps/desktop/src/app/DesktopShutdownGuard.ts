@@ -136,28 +136,27 @@ const make = Effect.gen(function* () {
   });
   return DesktopShutdownGuard.of({
     inspect,
-    confirm: (action, options) =>
-      Effect.gen(function* () {
-        if (pending) return false;
-        if (action === "quit" && (yield* dialog.consumeQuitOverride)) return true;
-        pending = true;
-        return yield* Effect.gen(function* () {
-          const checks = yield* inspect;
-          const confirmation = shutdownConfirmation(checks, action, options);
-          if (confirmation === null) return true;
-          return yield* dialog.request(
-            `${confirmation.message}\n\n${confirmation.detail}`,
-            confirmation.confirmLabel,
-            confirmation.threadActivity,
-          );
-        }).pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              pending = false;
-            }),
-          ),
+    confirm: Effect.fn("desktop.shutdown.confirm")(function* (action, options) {
+      if (pending) return false;
+      if (action === "quit" && (yield* dialog.consumeQuitOverride)) return true;
+      pending = true;
+      return yield* Effect.gen(function* () {
+        const checks = yield* inspect;
+        const confirmation = shutdownConfirmation(checks, action, options);
+        if (confirmation === null) return true;
+        return yield* dialog.request(
+          `${confirmation.message}\n\n${confirmation.detail}`,
+          confirmation.confirmLabel,
+          confirmation.threadActivity,
         );
-      }),
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            pending = false;
+          }),
+        ),
+      );
+    }),
   });
 });
 export const layer = Layer.effect(DesktopShutdownGuard, make);

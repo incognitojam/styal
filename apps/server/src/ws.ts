@@ -1816,8 +1816,8 @@ const layerWsRpc = (
         ),
       );
 
-      const refreshRepositoryIdentity = (cwd: string) =>
-        Effect.gen(function* () {
+      const refreshRepositoryIdentity = Effect.fn("ws.refreshRepositoryIdentity")(
+        function* (cwd: string) {
           yield* repositoryIdentityResolver.resolve(cwd, { refresh: true });
           const project = yield* projectService.getByWorkspaceRoot(cwd);
           if (Option.isNone(project)) return;
@@ -1825,7 +1825,9 @@ const layerWsRpc = (
             projectId: project.value.id,
             commandId: yield* serverCommandId("default-repository"),
           });
-        }).pipe(Effect.ignoreCause({ log: true }));
+        },
+        Effect.ignoreCause({ log: true }),
+      );
 
       const subscribeOrchestrationV2ArchivedShell = Effect.fn(
         "ws.orchestrationV2.subscribeArchivedShell",

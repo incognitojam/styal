@@ -106,10 +106,8 @@ const INVENTORY_INTERVAL = Duration.hours(24);
  * `takeBusySkips` returns and resets the background updates skipped per
  * instance since the previous report.
  */
-const reportProviderInventory = (
-  takeBusySkips: Effect.Effect<ReadonlyMap<ProviderInstanceId, number>>,
-) =>
-  Effect.gen(function* () {
+const reportProviderInventory = Effect.fn("ProviderAnalytics.reportProviderInventory")(
+  function* (takeBusySkips: Effect.Effect<ReadonlyMap<ProviderInstanceId, number>>) {
     const analytics = yield* AnalyticsService.AnalyticsService;
     const registry = yield* ProviderRegistry;
     const settings = yield* (yield* ServerSettings.ServerSettingsService).getSettings;
@@ -132,9 +130,9 @@ const reportProviderInventory = (
         }),
       );
     }
-  }).pipe(
-    Effect.catchCause((cause) => Effect.logDebug("Provider inventory report failed", { cause })),
-  );
+  },
+  Effect.catchCause((cause) => Effect.logDebug("Provider inventory report failed", { cause })),
+);
 
 /** Reports the provider inventory after startup settles, then daily, without blocking startup. */
 export const startProviderInventory = (

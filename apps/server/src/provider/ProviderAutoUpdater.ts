@@ -153,8 +153,8 @@ export const make = Effect.gen(function* () {
    * Why `target` cannot be replaced now, or null when no thread uses it.
    * Archived threads have no provider session, so only active ones count.
    */
-  const busyReason = (target: ProviderInstallTarget) =>
-    Effect.gen(function* () {
+  const busyReason = Effect.fn("ProviderAutoUpdater.busyReason")(
+    function* (target: ProviderInstallTarget) {
       const { threads } = yield* projections
         .getShellSnapshot({ location: "active" })
         .pipe(NodeSqliteClient.readOnly);
@@ -186,10 +186,10 @@ export const make = Effect.gen(function* () {
         }),
       );
       return null;
-    }).pipe(
-      // Unknown activity counts as busy; the next pass tries again.
-      Effect.catchCause(() => Effect.succeed("thread activity could not be read")),
-    );
+    },
+    // Unknown activity counts as busy; the next pass tries again.
+    Effect.catchCause(() => Effect.succeed("thread activity could not be read")),
+  );
 
   const maintenanceFor = (provider: ServerProvider, options?: { readonly fresh?: boolean }) =>
     providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
@@ -211,12 +211,12 @@ export const make = Effect.gen(function* () {
   // A fresh health check sees a manual update or another server's install
   // that finished while this one waited, or another instance that shares the
   // same CLI and was already updated or taken over.
-  const shouldStart = (
-    provider: ServerProvider,
-    decision: ProviderAutoUpdateDecision,
-    target: ProviderInstallTarget,
-  ) =>
-    Effect.gen(function* () {
+  const shouldStart = Effect.fn("ProviderAutoUpdater.shouldStart")(
+    function* (
+      provider: ServerProvider,
+      decision: ProviderAutoUpdateDecision,
+      target: ProviderInstallTarget,
+    ) {
       const skip = (reason: string) =>
         Effect.logInfo("Background provider update skipped", {
           instanceId: provider.instanceId,
@@ -247,13 +247,13 @@ export const make = Effect.gen(function* () {
         return yield* skip(busy);
       }
       return true;
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Background provider update check failed", { cause }).pipe(
-          Effect.as(false),
-        ),
+    },
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Background provider update check failed", { cause }).pipe(
+        Effect.as(false),
       ),
-    );
+    ),
+  );
 
   const runPass = Effect.gen(function* () {
     if (!(yield* isEnabled)) return;

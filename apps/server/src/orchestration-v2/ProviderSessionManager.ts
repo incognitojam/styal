@@ -1790,11 +1790,11 @@ export const layerWithOptions = (
               modelFamily: normalizeModelMetricLabel(model),
             },
           });
-        const recordSent = (
-          message: ProviderAdapter.ProviderAdapterV2TurnMessage,
-          context: ProviderSendContext | undefined,
-        ) =>
-          Effect.gen(function* () {
+        const recordSent = Effect.fn("ProviderSessionManager.recordSent")(
+          function* (
+            message: ProviderAdapter.ProviderAdapterV2TurnMessage,
+            context: ProviderSendContext | undefined,
+          ) {
             if (Option.isNone(analytics)) return;
             const instance = Option.isSome(serverSettings)
               ? (yield* serverSettings.value.getSettings).providerInstances[runtime.instanceId]
@@ -1813,7 +1813,9 @@ export const layerWithOptions = (
               attachmentCount: message.attachments.length,
               hasInput: message.text.trim().length > 0,
             });
-          }).pipe(Effect.ignoreCause);
+          },
+          (effect) => effect.pipe(Effect.ignoreCause),
+        );
         return {
           ...runtime,
           subscribeEvents,

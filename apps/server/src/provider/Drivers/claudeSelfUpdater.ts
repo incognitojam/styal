@@ -104,20 +104,19 @@ export interface ClaudeUpdaterPaths {
 
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
+// These helpers run inside the self-updater operations below, which own the spans.
 // A missing file reads as empty; one that is not JSON reads as `undefined`.
-const readJson = (filePath: string) =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    if (!(yield* fileSystem.exists(filePath))) return { text: null, value: {} as unknown };
-    const text = yield* fileSystem.readFileString(filePath);
-    return { text, value: Option.getOrUndefined(decodeJson(text)) };
-  });
+const readJson = Effect.fnUntraced(function* (filePath: string) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  if (!(yield* fileSystem.exists(filePath))) return { text: null, value: {} as unknown };
+  const text = yield* fileSystem.readFileString(filePath);
+  return { text, value: Option.getOrUndefined(decodeJson(text)) };
+});
 
-const settingsPath = (paths: ClaudeUpdaterPaths) =>
-  Effect.gen(function* () {
-    const path = yield* Path.Path;
-    return path.join(paths.configDir, "settings.json");
-  });
+const settingsPath = Effect.fnUntraced(function* (paths: ClaudeUpdaterPaths) {
+  const path = yield* Path.Path;
+  return path.join(paths.configDir, "settings.json");
+});
 
 /** Whether native Claude Code's own updater is on for this instance; null when it cannot be read. */
 export const claudeSelfUpdaterActive = Effect.fn("claudeSelfUpdaterActive")(

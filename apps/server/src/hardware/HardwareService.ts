@@ -992,8 +992,8 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => undefined),
     );
 
-  const acquire: HardwareService["Service"]["acquire"] = (threadId, input) =>
-    Effect.gen(function* () {
+  const acquire: HardwareService["Service"]["acquire"] = Effect.fn("HardwareService.acquire")(
+    function* (threadId, input) {
       const { device } = yield* resolve(threadId, input.device);
       yield* loadDefinition(device, { fetch: true });
       const run = yield* activeRun(threadId);
@@ -1118,17 +1118,20 @@ export const make = Effect.gen(function* () {
           Effect.ignore,
         );
       }
-    }).pipe(
-      Effect.onExit(() =>
-        Ref.get(queues).pipe(
-          Effect.flatMap((map) =>
-            (map.get(input.device) ?? []).some((waiter) => waiter.threadId === threadId)
-              ? dequeue(input.device, threadId)
-              : Effect.void,
+    },
+    (effect, threadId, input) =>
+      effect.pipe(
+        Effect.onExit(() =>
+          Ref.get(queues).pipe(
+            Effect.flatMap((map) =>
+              (map.get(input.device) ?? []).some((waiter) => waiter.threadId === threadId)
+                ? dequeue(input.device, threadId)
+                : Effect.void,
+            ),
           ),
         ),
       ),
-    );
+  );
 
   // Approvals
 
@@ -1534,8 +1537,8 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const proxy: HardwareService["Service"]["proxy"] = (request) =>
-    Effect.gen(function* () {
+  const proxy: HardwareService["Service"]["proxy"] = Effect.fn("HardwareService.proxy")(
+    function* (request) {
       const lease = [...(yield* Ref.get(leases)).values()].find(
         (candidate) => isHeld(candidate) && candidate.token === request.token,
       );
@@ -1591,10 +1594,11 @@ export const make = Effect.gen(function* () {
         contentType: result.success.contentType,
         body: result.success.bytes,
       };
-    });
+    },
+  );
 
-  const release: HardwareService["Service"]["release"] = (threadId, deviceId) =>
-    Effect.gen(function* () {
+  const release: HardwareService["Service"]["release"] = Effect.fn("HardwareService.release")(
+    function* (threadId, deviceId) {
       // Releasing needs no access check: a thread can always hand a device back.
       const device = yield* findDevice(deviceId);
       const shell = yield* getShell(threadId);
@@ -1611,52 +1615,53 @@ export const make = Effect.gen(function* () {
           return { released: true };
         }),
       );
-    });
+    },
+  );
 
-  const listForThread: HardwareService["Service"]["listForThread"] = (threadId, only) =>
-    Effect.gen(function* () {
-      const shell = yield* getShell(threadId);
-      if (shell === null) return [];
-      const usable = (yield* devices).filter(
-        (device) =>
-          device.projectId === shell.projectId && (only === undefined || device.id === only),
-      );
-      return yield* Effect.forEach(usable, (device) =>
-        Effect.gen(function* () {
-          const definition = yield* loadDefinition(device);
-          const runtimeState = yield* runtimeFor(device.id);
-          const health =
-            runtimeState.lastProbeAt === 0 ? yield* probe(device) : runtimeState.health;
-          const effective = effectiveFor(device, definition);
-          const entry = (yield* Ref.get(leases)).get(device.id);
-          const lease = isHeld(entry) ? entry : undefined;
-          const leaseShell = lease === undefined ? null : yield* getShell(lease.threadId);
-          return {
-            id: device.id,
-            name: definition.main?.name ?? device.id,
-            health: health.status,
-            summary: health.summary,
-            holder:
-              lease === undefined
-                ? entry === undefined
-                  ? null
-                  : "cleaning up after the last lease"
-                : yield* holderTitle(lease, threadId),
-            leaseIdleExpiresAt:
-              lease === undefined || lease.keepUntilReleased || threadBusy(leaseShell)
+  const listForThread: HardwareService["Service"]["listForThread"] = Effect.fn(
+    "HardwareService.listForThread",
+  )(function* (threadId, only) {
+    const shell = yield* getShell(threadId);
+    if (shell === null) return [];
+    const usable = (yield* devices).filter(
+      (device) =>
+        device.projectId === shell.projectId && (only === undefined || device.id === only),
+    );
+    return yield* Effect.forEach(usable, (device) =>
+      Effect.gen(function* () {
+        const definition = yield* loadDefinition(device);
+        const runtimeState = yield* runtimeFor(device.id);
+        const health = runtimeState.lastProbeAt === 0 ? yield* probe(device) : runtimeState.health;
+        const effective = effectiveFor(device, definition);
+        const entry = (yield* Ref.get(leases)).get(device.id);
+        const lease = isHeld(entry) ? entry : undefined;
+        const leaseShell = lease === undefined ? null : yield* getShell(lease.threadId);
+        return {
+          id: device.id,
+          name: definition.main?.name ?? device.id,
+          health: health.status,
+          summary: health.summary,
+          holder:
+            lease === undefined
+              ? entry === undefined
                 ? null
-                : iso(lease.lastActivityAt + lease.idleMinutes * 60_000),
-            queueLength: ((yield* Ref.get(queues)).get(device.id) ?? []).length,
-            paused: runtimeState.paused,
-            actions:
-              effective === null
-                ? []
-                : summarizeActions(yield* actionsForThread(device, shell, effective)),
-            definitionPending: (effective?.pendingChanges.length ?? 0) > 0,
-          } satisfies HardwareToolDevice;
-        }),
-      );
-    });
+                : "cleaning up after the last lease"
+              : yield* holderTitle(lease, threadId),
+          leaseIdleExpiresAt:
+            lease === undefined || lease.keepUntilReleased || threadBusy(leaseShell)
+              ? null
+              : iso(lease.lastActivityAt + lease.idleMinutes * 60_000),
+          queueLength: ((yield* Ref.get(queues)).get(device.id) ?? []).length,
+          paused: runtimeState.paused,
+          actions:
+            effective === null
+              ? []
+              : summarizeActions(yield* actionsForThread(device, shell, effective)),
+          definitionPending: (effective?.pendingChanges.length ?? 0) > 0,
+        } satisfies HardwareToolDevice;
+      }),
+    );
+  });
 
   // User controls
 
@@ -1683,24 +1688,23 @@ export const make = Effect.gen(function* () {
       Effect.asVoid,
     );
 
-  const setPaused = ({
+  const setPaused = Effect.fn("HardwareService.setPaused")(function* ({
     deviceId,
     paused,
   }: {
     readonly deviceId: HardwareDeviceId;
     readonly paused: boolean;
-  }) =>
-    Effect.gen(function* () {
-      yield* requireDevice(deviceId);
-      yield* updateRuntime(deviceId, (current) => ({ ...current, paused }));
-      yield* store.audit({
-        deviceId,
-        actor: "user",
-        threadId: null,
-        event: paused ? "paused" : "resumed",
-      });
-      yield* notifyLeaseChanged;
+  }) {
+    yield* requireDevice(deviceId);
+    yield* updateRuntime(deviceId, (current) => ({ ...current, paused }));
+    yield* store.audit({
+      deviceId,
+      actor: "user",
+      threadId: null,
+      event: paused ? "paused" : "resumed",
     });
+    yield* notifyLeaseChanged;
+  });
 
   const setKeep = ({
     deviceId,
@@ -1729,37 +1733,40 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const acceptDefinition = ({ deviceId }: { readonly deviceId: HardwareDeviceId }) =>
-    Effect.gen(function* () {
-      const device = yield* requireDevice(deviceId);
-      const loaded = yield* loadDefinition(device, { fetch: true, force: true });
-      if (loaded.main === null) {
-        return yield* new HardwareError({
-          reason: loaded.error ?? "There is no definition to accept.",
-        });
-      }
-      const main = loaded.main;
-      // updateSettings replaces the whole list, so read it right before writing.
-      // (withSettingsSnapshot would deadlock: it pauses the writes it waits on.)
-      yield* settingsService.getSettings.pipe(
-        Effect.flatMap((settings) =>
-          settingsService.updateSettings({
-            hardwareDevices: settings.hardwareDevices.map((entry) =>
-              entry.id === deviceId ? { ...entry, acceptedDefinition: main } : entry,
-            ),
-          }),
-        ),
-        Effect.mapError(() => new HardwareError({ reason: "Could not save the settings." })),
-      );
-      yield* store.audit({
-        deviceId,
-        actor: "user",
-        threadId: null,
-        event: "definition.accepted",
-        detail: { source: loaded.source },
+  const acceptDefinition = Effect.fn("HardwareService.acceptDefinition")(function* ({
+    deviceId,
+  }: {
+    readonly deviceId: HardwareDeviceId;
+  }) {
+    const device = yield* requireDevice(deviceId);
+    const loaded = yield* loadDefinition(device, { fetch: true, force: true });
+    if (loaded.main === null) {
+      return yield* new HardwareError({
+        reason: loaded.error ?? "There is no definition to accept.",
       });
-      yield* publish;
+    }
+    const main = loaded.main;
+    // updateSettings replaces the whole list, so read it right before writing.
+    // (withSettingsSnapshot would deadlock: it pauses the writes it waits on.)
+    yield* settingsService.getSettings.pipe(
+      Effect.flatMap((settings) =>
+        settingsService.updateSettings({
+          hardwareDevices: settings.hardwareDevices.map((entry) =>
+            entry.id === deviceId ? { ...entry, acceptedDefinition: main } : entry,
+          ),
+        }),
+      ),
+      Effect.mapError(() => new HardwareError({ reason: "Could not save the settings." })),
+    );
+    yield* store.audit({
+      deviceId,
+      actor: "user",
+      threadId: null,
+      event: "definition.accepted",
+      detail: { source: loaded.source },
     });
+    yield* publish;
+  });
 
   const setCredential = ({
     deviceId,

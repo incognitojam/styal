@@ -216,8 +216,13 @@ const make = Effect.gen(function* () {
     return file;
   });
 
-  const tryRun: ProviderInstallLock["Service"]["tryRun"] = (lockKey, run) =>
-    Effect.gen(function* () {
+  const tryRun: ProviderInstallLock["Service"]["tryRun"] = Effect.fn("ProviderInstallLock.tryRun")(
+    function* <A, E, R>(
+      lockKey: string,
+      run: (
+        recordChildPid: (pid: number) => Effect.Effect<void, ProviderInstallLockError>,
+      ) => Effect.Effect<A, E, R>,
+    ): Effect.fn.Return<Option.Option<A>, E | ProviderInstallLockError, R> {
       const key = `${encodeURIComponent(lockKey)}.lock`;
       const owner = yield* crypto.randomUUIDv4().pipe(Effect.mapError(toLockError));
       const contents = `${process.pid}\n${owner}`;
@@ -282,7 +287,8 @@ const make = Effect.gen(function* () {
                 Effect.ignore,
               ),
       );
-    });
+    },
+  );
 
   const anyHeld = Effect.gen(function* () {
     const names = yield* fileSystem.readDirectory(directory).pipe(ignoreNotFound([]));
@@ -295,17 +301,18 @@ const make = Effect.gen(function* () {
     return false;
   }).pipe(Effect.mapError(toLockError));
 
-  const keyHeld = (lockKey: string) =>
-    Effect.gen(function* () {
-      const key = `${encodeURIComponent(lockKey)}.lock`;
-      const names = yield* fileSystem.readDirectory(directory).pipe(ignoreNotFound([]));
-      for (const name of names) {
-        if (name === key || parseGeneration(name)?.key === key) {
-          if (yield* isHeld(path.join(directory, name)).pipe(ignoreNotFound(false))) return true;
-        }
+  // Polled each second while a turn start waits on another server's install; the turn
+  // start owns the span.
+  const keyHeld = Effect.fnUntraced(function* (lockKey: string) {
+    const key = `${encodeURIComponent(lockKey)}.lock`;
+    const names = yield* fileSystem.readDirectory(directory).pipe(ignoreNotFound([]));
+    for (const name of names) {
+      if (name === key || parseGeneration(name)?.key === key) {
+        if (yield* isHeld(path.join(directory, name)).pipe(ignoreNotFound(false))) return true;
       }
-      return false;
-    }).pipe(Effect.mapError(toLockError));
+    }
+    return false;
+  }, Effect.mapError(toLockError));
 
   const untilIdle: Effect.Effect<void> = Effect.suspend(() =>
     anyHeld.pipe(
