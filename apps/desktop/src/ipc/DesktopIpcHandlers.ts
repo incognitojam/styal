@@ -49,6 +49,7 @@ import {
 import {
   getAppBranding,
   getLocalEnvironmentBootstraps,
+  readLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
   getRelayTelemetryEnabled,
   getSystemActive,
@@ -112,6 +113,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getSystemActive);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
+  yield* ipc.handle(readLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
