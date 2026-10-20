@@ -5,7 +5,7 @@ composer; it applies to that thread.
 
 Set the default for new threads in **Settings → General → New threads → Permissions**.
 Projects can override the environment default. New threads use this setting rather than the
-mode of the thread you were viewing. The initial default is **Auto**. With **Auto** as the
+mode of the thread you were viewing. The initial default is **Full access**. With **Auto** as the
 default, new threads on a provider without automatic review, such as OpenCode or Antigravity,
 start in **Full access** instead of asking about every action; choose **Auto** in the composer to
 keep it for one thread. Existing threads and modes you choose in a draft keep their permissions.

@@ -32,13 +32,6 @@ export type RuntimeMode = typeof RuntimeMode.Type;
 export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 
 /**
- * The built-in default for new threads. A provider whose Auto mode has no
- * reviewer of its own starts in Full access instead; see
- * `resolveNewThreadRuntimeMode`.
- */
-export const DEFAULT_NEW_THREAD_RUNTIME_MODE: RuntimeMode = "auto";
-
-/**
  * The mode a new thread starts in from the default-permissions setting. Auto
  * relies on the provider's own reviewer to approve actions; a provider without
  * one asks about every action, so a default of Auto starts its threads in Full
