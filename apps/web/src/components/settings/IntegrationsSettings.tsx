@@ -15,6 +15,7 @@ import { SimulatorMemorySetting } from "./SimulatorMemorySetting";
  *
  * @module IntegrationsSettings
  */
+import { EasDeviceHostsSettings } from "./EasDeviceHostsSettings";
 import {
   AuthSettingsWriteScope,
   resolveEnvironmentMachineKind,
@@ -1039,6 +1040,7 @@ export function DeviceIntegrationControls({
         <SimulatorMemorySetting />
       </FoldedSettingsSection>
       <DeviceHostsSettings environmentId={environmentId} />
+      {state.supportsEasHosts ? <EasDeviceHostsSettings environmentId={environmentId} /> : null}
     </>
   );
 }

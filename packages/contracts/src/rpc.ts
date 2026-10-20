@@ -302,6 +302,9 @@ import {
   DeviceError,
   DeviceListInput,
   SshDeviceHostConfig,
+  DeviceEasAccount,
+  DeviceEasAccountError,
+  DeviceEasAccountInput,
   DeviceHostSummary,
   DeviceOpenInput,
   DeviceServiceState,
@@ -511,6 +514,7 @@ export const WS_METHODS = {
   deviceDisconnectEnvironment: "device.disconnectEnvironment",
   deviceList: "device.list",
   deviceTestHost: "device.testHost",
+  deviceEasAccount: "device.easAccount",
   deviceOpen: "device.open",
   deviceClose: "device.close",
   deviceShutdown: "device.shutdown",
@@ -1745,6 +1749,12 @@ const WsDeviceDisconnectEnvironmentRpc = Rpc.make(WS_METHODS.deviceDisconnectEnv
   error: Schema.Union([DeviceError, EnvironmentAuthorizationError]),
 });
 
+const WsDeviceEasAccountRpc = Rpc.make(WS_METHODS.deviceEasAccount, {
+  payload: DeviceEasAccountInput,
+  success: DeviceEasAccount,
+  error: Schema.Union([DeviceEasAccountError, EnvironmentAuthorizationError]),
+});
+
 const WsDeviceListRpc = Rpc.make(WS_METHODS.deviceList, {
   payload: DeviceListInput,
   success: DeviceServiceState,
@@ -2272,6 +2282,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsDeviceDisconnectEnvironmentRpc,
   WsDeviceListRpc,
   WsDeviceTestHostRpc,
+  WsDeviceEasAccountRpc,
   WsDeviceOpenRpc,
   WsDeviceCloseRpc,
   WsDeviceShutdownRpc,

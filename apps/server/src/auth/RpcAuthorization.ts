@@ -213,6 +213,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.deviceConnectEnvironment]: AuthSettingsWriteScope,
   [WS_METHODS.deviceDisconnectEnvironment]: AuthSettingsWriteScope,
   [WS_METHODS.deviceTestHost]: AuthSettingsWriteScope,
+  [WS_METHODS.deviceEasAccount]: AuthSettingsWriteScope,
   [WS_METHODS.deviceList]: AuthOrchestrationReadScope,
   [WS_METHODS.deviceOpen]: AuthOrchestrationOperateScope,
   [WS_METHODS.deviceClose]: AuthOrchestrationOperateScope,
