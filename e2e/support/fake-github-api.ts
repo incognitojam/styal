@@ -217,6 +217,13 @@ export async function startFakeGitHubApi(
             },
           },
         });
+      case "PullRequestFileStats":
+        // Matches the additions, deletions, and file count `detail` reports.
+        return repository({
+          pullRequest: pr
+            ? { files: connection([{ path: "src/app.ts", additions: 4, deletions: 1 }]) }
+            : null,
+        });
       case "WorkflowApprovalSuites":
         return repository({ object: { __typename: "Commit", checkSuites: connection([]) } });
       case "PullRequestActivity":
