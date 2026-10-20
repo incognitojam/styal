@@ -1128,7 +1128,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
               )}
             </WorkLogIconSlot>
             <WorkLogLabel tone={isWarning ? "warning" : iconIsDestructive ? "danger" : "default"}>
-              {isSystemNotice ? row.summary : displayText}
+              {displayText}
               {answerPreview ? (
                 <Text
                   className={
