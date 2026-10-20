@@ -51,19 +51,17 @@ function IndexDraftLanding() {
   // Read at effect time: this page stays mounted while a navigation away from
   // "/" is still loading, but the router already points at the new location.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
-  // One start per attempt; a retry request opens the next attempt.
   const startedAttemptRef = useRef<number | null>(null);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
 
   const bootstrapRoutePending = isBootstrapWelcomePending(primaryWelcome, handledBootstrapKey);
-  const mostRecentProject =
-    bootstrapped && !bootstrapRoutePending
-      ? (sortScopedProjectsForSidebar(
-          projects.filter((project) => project.archivedAt == null),
-          threads,
-          "updated_at",
-        )[0] ?? null)
-      : null;
+  const mostRecentProject = !bootstrapRoutePending
+    ? (sortScopedProjectsForSidebar(
+        projects.filter((project) => project.archivedAt == null),
+        threads,
+        "updated_at",
+      )[0] ?? null)
+    : null;
   const attempt = startState.retryRequest;
 
   useEffect(() => {
@@ -101,7 +99,7 @@ function IndexDraftLanding() {
       .finally(() => release("index-draft"));
   }, [attempt, handleNewThread, launchNavigationOwner, mostRecentProject, startState.failed]);
 
-  if (!bootstrapped || bootstrapRoutePending) {
+  if (bootstrapRoutePending) {
     return null;
   }
   if (mostRecentProject !== null) {
@@ -116,7 +114,8 @@ function IndexDraftLanding() {
       />
     ) : null;
   }
-  return <NoProjectsHero />;
+  // A pending environment cannot prove the workspace is empty.
+  return bootstrapped ? <NoProjectsHero /> : null;
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
