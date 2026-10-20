@@ -2,8 +2,9 @@
 
 The T3 Code server sends product usage events to PostHog, associated with a hashed account or
 installation identifier. Events include the provider, model, reasoning effort, permission mode,
-turn result, duration, how many approval requests the turn raised, and main-agent token totals
-when available. Approval counts never include the command or file involved.
+turn result, duration, how many approval requests the turn raised, how many actions Codex's Auto
+reviewer approved or denied, and main-agent token totals when available. Approval and review
+counts never include the command or file involved.
 
 Agent browser usage includes the operation name, whether it succeeded, failed, or was cancelled,
 and its duration. It does not include visited URLs, page content, screenshots, selectors, typed

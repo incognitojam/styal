@@ -1830,6 +1830,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         );
         const activeTurns = yield* Ref.make(new Map<string, ActiveCodexTurnContext>());
         const turnTokenUsageByThread = new Map<string, CodexTurnTokenUsageState>();
+        // Auto reviewer verdicts by native turn id, reported when the turn ends.
+        const autoReviewsByTurn = new Map<string, ProviderAdapter.ProviderAdapterV2AutoReviews>();
         const usageStateForThread = (nativeThreadId: string) => {
           let state = turnTokenUsageByThread.get(nativeThreadId);
           if (!state) {
@@ -4390,6 +4392,20 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           }).pipe(Effect.orDie),
         );
 
+        yield* client.handleServerNotification("item/autoApprovalReview/completed", (payload) =>
+          Effect.gen(function* () {
+            if (!(yield* Ref.get(activeTurns)).has(payload.turnId)) return;
+            const status = payload.review.status;
+            if (status === "inProgress") return;
+            const counts = autoReviewsByTurn.get(payload.turnId) ?? {
+              approved: 0,
+              denied: 0,
+              timedOut: 0,
+              aborted: 0,
+            };
+            autoReviewsByTurn.set(payload.turnId, { ...counts, [status]: counts[status] + 1 });
+          }),
+        );
         yield* client.handleServerNotification("thread/settings/updated", (payload) =>
           updateSubagentSelection(
             payload.threadId,
@@ -5803,6 +5819,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 nativeThreadId != null &&
                 (goalsByNativeThread.get(nativeThreadId)?.status === "active" ||
                   (activation !== undefined && !activation.stopped));
+              const turnAutoReviews = autoReviewsByTurn.get(input.nativeTurnId);
+              autoReviewsByTurn.delete(input.nativeTurnId);
+              const autoReviews =
+                input.context.input.runtimePolicy.runtimeMode === "auto"
+                  ? (turnAutoReviews ?? { approved: 0, denied: 0, timedOut: 0, aborted: 0 })
+                  : undefined;
               const completedTurn: OrchestrationV2ProviderTurn = {
                 id: input.context.providerTurnId,
                 providerThreadId: input.context.providerThread.id,
@@ -5833,6 +5855,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   driver: CODEX_PROVIDER,
                   threadId: input.context.projectionThreadId,
                   providerTurn: completedTurn,
+                  ...(autoReviews === undefined ? {} : { autoReviews }),
                 });
               }
               if (input.context.subagent !== null) {

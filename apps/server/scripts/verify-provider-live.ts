@@ -925,8 +925,8 @@ try {
       );
     }
 
-    // Auto: new threads default to it on providers with their own reviewer, so a
-    // routine workspace write must run without asking the user.
+    // Auto: on providers with their own reviewer, a routine workspace write must
+    // run without asking the user.
     if (selected("auto")) {
       if (snapshot.reviewsAutoMode !== true) {
         skip("auto", "skipped: the provider has no Auto reviewer");

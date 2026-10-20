@@ -1513,6 +1513,7 @@ function makeCodexTestTurnInput(input: {
   readonly now: DateTime.Utc;
   readonly attemptId: RunAttemptId;
   readonly text: string;
+  readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
 }): ProviderAdapter.ProviderAdapterV2TurnInput {
   return {
     appThread: makeCodexTestAppThread(input),
@@ -1531,7 +1532,7 @@ function makeCodexTestTurnInput(input: {
       attachments: [],
     },
     modelSelection: CODEX_TEST_MODEL_SELECTION,
-    runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+    runtimePolicy: input.runtimePolicy ?? CODEX_TEST_RUNTIME_POLICY,
   };
 }
 
@@ -1559,6 +1560,8 @@ function codexReplayPreamble(input: {
   readonly prompt: string;
   /** Text the adapter should send, when it differs from what the user typed. */
   readonly sentPrompt?: string;
+  /** Approval settings turn/start should carry; defaults to Full access. */
+  readonly turnPolicy?: Record<string, unknown>;
 }): Array<CodexReplay.CodexAppServerReplayEntry> {
   return [
     {
@@ -1652,9 +1655,11 @@ function codexReplayPreamble(input: {
           input: [{ type: "text", text: input.sentPrompt ?? input.prompt }],
           cwd: "/workspace",
           model: "gpt-5.4",
-          approvalPolicy: "never",
-          approvalsReviewer: "user",
-          sandboxPolicy: { type: "dangerFullAccess" },
+          ...(input.turnPolicy ?? {
+            approvalPolicy: "never",
+            approvalsReviewer: "user",
+            sandboxPolicy: { type: "dangerFullAccess" },
+          }),
           summary: "detailed",
         },
       },
@@ -2594,6 +2599,93 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         : [],
     );
 
+  it.effect("reports the Auto reviewer's verdicts when an Auto turn ends", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const nativeThreadId = "auto-review-thread";
+        const nativeTurnId = "auto-review-turn";
+        const review = (reviewId: string, status: string) => ({
+          type: "emit_inbound" as const,
+          label: `review ${reviewId}`,
+          frame: {
+            method: "item/autoApprovalReview/completed",
+            params: {
+              threadId: nativeThreadId,
+              turnId: nativeTurnId,
+              reviewId,
+              startedAtMs: 1782622441000,
+              completedAtMs: 1782622442000,
+              decisionSource: "agent",
+              action: { type: "command", command: "git push", cwd: "/workspace", source: "shell" },
+              review: { status, riskLevel: "medium" },
+            },
+          },
+        });
+        const transcript = makeCodexReplayTranscript({
+          scenario: "auto-review-verdicts",
+          entries: [
+            ...codexReplayPreamble({
+              nativeThreadId,
+              nativeTurnId,
+              prompt: "Push the branch.",
+              turnPolicy: {
+                approvalPolicy: "on-request",
+                approvalsReviewer: "auto_review",
+                sandboxPolicy: { type: "workspaceWrite" },
+              },
+            }),
+            review("review-1", "approved"),
+            review("review-2", "denied"),
+            review("review-3", "approved"),
+            {
+              type: "emit_inbound",
+              label: "complete",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+                },
+              },
+            },
+          ],
+        });
+        const harness = yield* makeCodexReplayHarness(transcript);
+        yield* harness.runtime.startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("auto-review-attempt"),
+            text: "Push the branch.",
+            runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              ...CODEX_TEST_RUNTIME_POLICY,
+              runtimeMode: "auto",
+            }),
+          }),
+        );
+        yield* harness.firstTerminal;
+        const completed = harness.events.find(
+          (event) =>
+            event.type === "provider_turn.updated" && event.providerTurn.status === "completed",
+        );
+        assert.equal(completed?.type, "provider_turn.updated");
+        if (completed?.type === "provider_turn.updated") {
+          assert.deepEqual(completed.autoReviews, {
+            approved: 2,
+            denied: 1,
+            timedOut: 0,
+            aborted: 0,
+          });
+        }
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
   it.effect("keeps an asynchronous Codex question actionable after the turn completes", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -2725,6 +2817,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         );
         assert.equal(completed?.type, "provider_turn.updated");
         if (completed?.type === "provider_turn.updated") {
+          assert.isUndefined(completed.autoReviews);
           assert.deepEqual(completed.providerTurn.turnTokenUsage, {
             usageStatus: "complete",
             usageScope: "main_agent",

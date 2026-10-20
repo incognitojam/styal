@@ -246,7 +246,7 @@ it.effect("records accepted billed turn usage once without billing the context w
   }).pipe(Effect.provide(layerTest.pipe(Layer.provide(layerAnalytics))));
 });
 
-it.effect("counts the approval requests a completed turn raised", () => {
+it.effect("counts the approval requests and Auto reviews of a completed turn", () => {
   const recorded: Array<Readonly<Record<string, unknown>>> = [];
   const layerAnalytics = Layer.succeed(ProviderEventIngestor.ProviderTurnAnalytics, {
     record: (properties: Readonly<Record<string, unknown>>) =>
@@ -326,11 +326,15 @@ it.effect("counts the approval requests a completed turn raised", () => {
           startedAt: now,
           completedAt: now,
         },
+        autoReviews: { approved: 3, denied: 1, timedOut: 0, aborted: 0 },
       },
     });
     assert.lengthOf(recorded, 1);
     assert.strictEqual(recorded[0]?.runtimeMode, "auto");
     assert.strictEqual(recorded[0]?.approvalRequests, 2);
+    assert.strictEqual(recorded[0]?.autoReviewsApproved, 3);
+    assert.strictEqual(recorded[0]?.autoReviewsDenied, 1);
+    assert.strictEqual(recorded[0]?.autoReviewsTimedOut, 0);
   }).pipe(Effect.provide(layerTest.pipe(Layer.provide(layerAnalytics))));
 });
 
