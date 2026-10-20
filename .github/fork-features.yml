@@ -3111,7 +3111,7 @@ features:
   - id: provider-auto-default
     title: Start new threads in Auto where the provider reviews actions
     status: maintained
-    prs: []
+    prs: [928]
     invariants:
       - The built-in default permission mode for new threads is Auto. Configs that never chose a mode, including those that kept the old Full access default, use it.
       - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, and Grok report one. An unloaded snapshot or an older server counts as no reviewer.
