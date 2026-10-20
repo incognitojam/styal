@@ -48,7 +48,6 @@ import {
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { openAddProjectToMachine } from "./AddProjectToMachineDialog";
 import { type AddProjectTarget, useAddProjectTargets } from "../hooks/useAddProjectTargets";
-import type { PendingServerUpdate } from "./ServerUpdateAction";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
@@ -119,7 +118,6 @@ interface BranchToolbarProps {
   threadUsage?: TurnUsageView | null;
   /** The thread the total counts, so a cost figure rolls only within it. */
   threadUsageKey?: string;
-  serverUpdate?: PendingServerUpdate | null;
 }
 
 function showWorkspaceContextMenu(event: ReactMouseEvent, workspacePath: string) {
@@ -655,7 +653,6 @@ export const BranchToolbar = memo(function BranchToolbar({
   worktreeUnavailableReason = null,
   threadUsage = null,
   threadUsageKey,
-  serverUpdate = null,
 }: BranchToolbarProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = scopeThreadRef(environmentId, threadId);
@@ -721,7 +718,6 @@ export const BranchToolbar = memo(function BranchToolbar({
   const showEnvironmentIndicator = shouldShowEnvironmentIndicator({
     activeEnvironment: activeEnvironmentOption,
     canPickEnvironment: hasMultipleEnvironments,
-    serverUpdateAvailable: serverUpdate !== null,
   });
   const [stripElement, setStripElement] = useState<HTMLDivElement | null>(null);
   const labelsOverflow = useLabelsOverflow(stripElement);
@@ -789,18 +785,6 @@ export const BranchToolbar = memo(function BranchToolbar({
         !contextStripVisible && "pointer-events-none invisible absolute inset-x-0 top-full",
       )}
     >
-      {serverUpdate && availableEnvironments ? (
-        <BranchToolbarEnvironmentSelector
-          autoEnvironmentLabel={autoEnvironmentLabel}
-          onAutoEnvironment={onAutoEnvironment}
-          envLocked={envLocked}
-          environmentId={environmentId}
-          availableEnvironments={availableEnvironments}
-          {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-          {...(addTargets.length > 0 ? { onAddToMachine: () => onAddToMachine(null) } : {})}
-          serverUpdate={serverUpdate}
-        />
-      ) : null}
       {showGitControls ? (
         <div className="contents @3xl/composer-surface:hidden">
           <RunContextSelector
@@ -811,8 +795,8 @@ export const BranchToolbar = memo(function BranchToolbar({
             envModeLocked={envModeLocked}
             environmentId={environmentId}
             availableEnvironments={availableEnvironments}
-            showEnvironmentPicker={showEnvironmentPicker && serverUpdate === null}
-            showEnvironmentIndicator={showEnvironmentIndicator && serverUpdate === null}
+            showEnvironmentPicker={showEnvironmentPicker}
+            showEnvironmentIndicator={showEnvironmentIndicator}
             onEnvironmentChange={onEnvironmentChange}
             effectiveEnvMode={effectiveEnvMode}
             activeWorktreePath={activeWorktreePath}
@@ -826,7 +810,7 @@ export const BranchToolbar = memo(function BranchToolbar({
           />
         </div>
       ) : null}
-      {showGitControls || (showEnvironmentIndicator && serverUpdate === null) ? (
+      {showGitControls || showEnvironmentIndicator ? (
         <div
           className={cn(
             "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",
@@ -836,17 +820,15 @@ export const BranchToolbar = memo(function BranchToolbar({
         >
           {showEnvironmentIndicator && availableEnvironments && (
             <>
-              {serverUpdate === null ? (
-                <BranchToolbarEnvironmentSelector
-                  autoEnvironmentLabel={autoEnvironmentLabel}
-                  onAutoEnvironment={onAutoEnvironment}
-                  envLocked={envLocked}
-                  environmentId={environmentId}
-                  availableEnvironments={availableEnvironments}
-                  {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-                  {...(addTargets.length > 0 ? { onAddToMachine: () => onAddToMachine(null) } : {})}
-                />
-              ) : null}
+              <BranchToolbarEnvironmentSelector
+                autoEnvironmentLabel={autoEnvironmentLabel}
+                onAutoEnvironment={onAutoEnvironment}
+                envLocked={envLocked}
+                environmentId={environmentId}
+                availableEnvironments={availableEnvironments}
+                {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
+                {...(addTargets.length > 0 ? { onAddToMachine: () => onAddToMachine(null) } : {})}
+              />
               {showGitControls ? (
                 <Separator
                   orientation="vertical"

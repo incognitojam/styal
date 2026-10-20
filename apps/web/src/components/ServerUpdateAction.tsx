@@ -14,7 +14,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { CircleArrowUpIcon } from "lucide-react";
-import { type ComponentProps, type ReactNode, useRef, useState } from "react";
+import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -66,18 +66,6 @@ export interface ServerUpdateTarget {
       which threads will continue, applying each project's setting. */
   readonly threadContinuation?: boolean;
   readonly targetVersion: string;
-}
-
-export type PendingServerUpdate = ServerUpdateTarget & {
-  readonly serverVersion: string;
-};
-
-export interface ServerUpdateControl {
-  readonly label: string;
-  readonly disabled: boolean;
-  /** Checking for running work or updating; a dialog opens only if something needs confirming. */
-  readonly pending: boolean;
-  readonly onClick: () => void;
 }
 
 type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
@@ -364,13 +352,7 @@ export function ServerUpdateAction({
   size = "xs",
   className,
   appearance = "button",
-  render,
-}: ServerUpdateTarget &
-  UpdateButtonProps & {
-    readonly render?: (control: ServerUpdateControl) => ReactNode;
-  }) {
-  const unsupportedDesktopUpdate = selfUpdate === "desktop-managed" && !desktopAppUpdate;
-  const [instructionsOpen, setInstructionsOpen] = useState(false);
+}: ServerUpdateTarget & UpdateButtonProps) {
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
   const update = useServerUpdates();
@@ -412,15 +394,7 @@ export function ServerUpdateAction({
     setIsPending(false);
   };
 
-  if (unsupportedDesktopUpdate) {
-    if (render) {
-      return render({
-        label: "Update the desktop app on",
-        disabled: true,
-        pending: false,
-        onClick: () => {},
-      });
-    }
+  if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
     return (
       <span className="text-muted-foreground text-xs">
         Update the desktop app on that machine to update this server.
@@ -509,21 +483,6 @@ export function ServerUpdateAction({
         </DialogPanel>
       </DialogPopup>
     );
-    if (render) {
-      return (
-        <>
-          {render({
-            label: "Update instructions for",
-            disabled: false,
-            pending: false,
-            onClick: () => setInstructionsOpen(true),
-          })}
-          <Dialog open={instructionsOpen} onOpenChange={setInstructionsOpen}>
-            {instructions}
-          </Dialog>
-        </>
-      );
-    }
     if (appearance === "icon") {
       return (
         <Dialog>
@@ -564,7 +523,6 @@ export function ServerUpdateAction({
   const onClick = () => void handleUpdate();
 
   const disabled = !canUpdate || isPending;
-  if (render) return render({ label: actionLabel, disabled, pending: isPending, onClick });
 
   if (appearance === "icon") {
     return (

@@ -144,6 +144,25 @@ export function manualServerUpdateCommand(
   return `${runner} ${CLI_PACKAGE_NAME}@${targetVersion} serve`;
 }
 
+/** One sentence telling the user how to resolve version skew for a server,
+    matched to the update path it offers. */
+export function serverUpdateGuidance(
+  capability: ServerUpdateCapability | null,
+  serverLabel: string = "server",
+): string {
+  switch (capability) {
+    case "boot-service":
+    case "respawn":
+      return `Update the ${serverLabel} so they stay in sync.`;
+    case "service-migration":
+      return `Follow the update instructions on the ${serverLabel} once to migrate its launcher to styal.`;
+    case "desktop-managed":
+      return `Update the desktop app that runs the ${serverLabel}.`;
+    default:
+      return `Follow the update instructions for how the ${serverLabel} is installed.`;
+  }
+}
+
 export function buildVersionMismatchDismissalKey(
   environmentId: EnvironmentId,
   mismatch: Pick<VersionMismatch, "clientVersion" | "serverVersion">,

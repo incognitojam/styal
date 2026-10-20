@@ -5034,7 +5034,6 @@ features:
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts
       - apps/server/src/orchestration-v2/RestartContinuation.test.ts
       - apps/server/src/serverRuntimeStartup.test.ts
-      - apps/web/src/components/BranchToolbar.panel.browser.test.tsx
       - apps/web/src/components/ServerUpdateAction.browser.test.tsx
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/confirmDialog.test.ts
