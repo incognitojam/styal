@@ -949,8 +949,8 @@ features:
       - apps/desktop/src/ipc/methods/discordPresence.ts
       - apps/web/src/components/desktop/DiscordPresenceSync.tsx
       - apps/web/src/components/settings/DiscordPresencePreview.tsx
-      - apps/web/src/hooks/useDiscordPresenceActivity.ts
       - apps/web/src/discordPresence.ts
+      - apps/web/src/hooks/useDiscordPresenceActivity.ts
       - packages/contracts/src/discordPresence.ts
       - packages/contracts/src/ipc.ts
       - packages/contracts/src/settings.ts
