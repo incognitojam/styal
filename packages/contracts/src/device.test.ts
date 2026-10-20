@@ -10,7 +10,6 @@ import {
 import { secretSettingsFields } from "./settings.ts";
 
 import { DeviceConnectEnvironmentInput, EnvironmentDeviceHostConfig } from "./device.ts";
-import * as Schema from "effect/Schema";
 
 const grant = {
   environmentId: "orion",

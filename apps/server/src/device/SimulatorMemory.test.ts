@@ -26,7 +26,7 @@ const fixture = (installed = true, supported = true) => {
     installFails: false,
   };
   const ready: DeviceHostReady = {
-devices: {
+    devices: {
       list: Effect.die("Typed environment operations are required"),
       boot: () => Effect.die("Typed environment operations are required"),
       attach: () => Effect.die("Typed environment operations are required"),

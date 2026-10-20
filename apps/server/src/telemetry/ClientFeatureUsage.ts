@@ -86,7 +86,7 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
       : ("remote" as const);
   return DeviceService.DeviceService.of({
     ...service,
-    open: (input) =>
+    open: (input, context) =>
       observe(
         {
           feature: "devices",
@@ -95,7 +95,7 @@ export const devices = Effect.fnUntraced(function* (client: FeatureUsage.ClientD
           devicePlatform: input.platform,
           deviceLocation: location(input.hostId),
         },
-        service.open(input),
+        service.open(input, context),
       ),
     close: (input) =>
       observe(

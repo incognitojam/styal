@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/ai";
 
+import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
@@ -31,6 +32,7 @@ it.effect(
     Effect.gen(function* () {
       const events: Array<{ event: string; properties: unknown }> = [];
       const layer = McpHttpServer.layerDeviceToolkit.pipe(
+        Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(

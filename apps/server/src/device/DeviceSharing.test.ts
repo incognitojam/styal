@@ -320,8 +320,14 @@ const fixture = Effect.gen(function* () {
     entryPath: "/driver",
   };
   const ready: DeviceHost.DeviceHostAgentReady = {
-get devices() {
-      return makeDeviceHubOperations({ hostId: LOCAL_DEVICE_HOST_ID, origin: ready.hub.origin, http: http, run: ready.run, androidAvailable: Effect.succeed(true) });
+    get devices() {
+      return makeDeviceHubOperations({
+        hostId: LOCAL_DEVICE_HOST_ID,
+        origin: ready.hub.origin,
+        http: http,
+        run: ready.run,
+        androidAvailable: Effect.succeed(true),
+      });
     },
     nodePath: process.execPath,
     hub: { origin: "http://hub.test" },
@@ -354,6 +360,7 @@ get devices() {
     },
   };
   const local = DeviceHost.DeviceHost.of({
+    label: "Test host",
     id: LOCAL_DEVICE_HOST_ID,
     summary: Effect.sync(() => ({
       id: LOCAL_DEVICE_HOST_ID,
@@ -800,9 +807,9 @@ it.effect(
       yield* f.connect;
       const host = yield* f.host;
       const ready = yield* host.ensureAgentReady(() => Effect.void);
-      expect(ready.agentDevice.baseUrl).toBe("http://orion.test/api/device-share/agent");
-      expect(ready.agentDevice.token).not.toBe(f.grant.token);
-      const agentToken = ready.agentDevice.token;
+      expect(ready.agentDevice!.baseUrl).toBe("http://orion.test/api/device-share/agent");
+      expect(ready.agentDevice!.token).not.toBe(f.grant.token);
+      const agentToken = ready.agentDevice!.token;
       const call = (path: string, token: string, init: RequestInit = {}) =>
         Effect.promise(() =>
           f.handler(
@@ -880,7 +887,7 @@ it.effect(
         error: { code: -32001, message: expect.stringContaining("device_open") },
       });
       const renewed = yield* host.ensureAgentReady(() => Effect.void);
-      const renewedResponse = yield* call("agent/health", renewed.agentDevice.token);
+      const renewedResponse = yield* call("agent/health", renewed.agentDevice!.token);
       expect(renewedResponse.status).toBe(200);
       yield* Effect.promise(() => renewedResponse.text());
     }).pipe(Effect.scoped),
@@ -988,7 +995,7 @@ it.effect("retries stopping agent access until the device environment is reachab
     const health = Effect.promise(() =>
       f.handler(
         new Request("http://orion.test/api/device-share/agent/health", {
-          headers: { authorization: `Bearer ${agentDevice.token}` },
+          headers: { authorization: `Bearer ${agentDevice!.token}` },
         }),
       ),
     );
@@ -1090,6 +1097,7 @@ it.effect("does not replace an SSH host with a colliding ID", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
     const host = {
+      kind: "ssh" as const,
       id: EnvironmentDeviceHost.environmentDeviceHostId(targetId),
       label: "SSH device host",
       target: "device.test",
@@ -1504,7 +1512,7 @@ it.effect("counts an agent request for as long as it stays open", () =>
       Effect.promise(() =>
         f.handler(
           new Request("http://orion.test/api/device-share/agent/artifacts/recording", {
-            headers: { authorization: `Bearer ${agentDevice.token}` },
+            headers: { authorization: `Bearer ${agentDevice!.token}` },
           }),
         ),
       );

@@ -375,6 +375,7 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
       : Effect.void,
   );
   return DeviceHost.DeviceHost.of({
+    label: config.label,
     id: config.id,
     // MCP structured content rejects keys set to undefined, so an unreachable host omits it.
     summary: Effect.sync(() => {

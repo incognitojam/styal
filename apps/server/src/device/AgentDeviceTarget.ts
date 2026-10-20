@@ -5,13 +5,12 @@ import * as Schema from "effect/Schema";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-import type { AgentDeviceEndpoint } from "./DeviceHost.ts";
+import type { AgentDaemonEndpoint } from "./DeviceHost.ts";
 
-const encodeEndpoint = Schema.encodeEffect(
-  Schema.fromJsonString(
-    Schema.Struct({ daemonBaseUrl: Schema.String, daemonAuthToken: Schema.String }),
-  ),
+const AgentDeviceConfig = Schema.fromJsonString(
+  Schema.Struct({ daemonBaseUrl: Schema.String, daemonAuthToken: Schema.String }),
 );
+const encodeEndpoint = Schema.encodeEffect(AgentDeviceConfig);
 
 const key = Effect.fn("AgentDeviceTarget.key")(function* (value: string) {
   const crypto = yield* Crypto.Crypto;
@@ -21,16 +20,26 @@ const key = Effect.fn("AgentDeviceTarget.key")(function* (value: string) {
   return Hex.encode(digest).slice(0, 24);
 });
 
-/** A stable file per host lets forwarded endpoints change without retargeting other commands. */
-export const agentDeviceConfigPath = (stateDir: string, hostId: string, path: Path.Path) =>
-  key(hostId).pipe(Effect.map((hash) => path.join(stateDir, "device", "hosts", `${hash}.json`)));
+/**
+ * A stable file per host lets forwarded endpoints change without retargeting
+ * other commands. Hosts with a daemon per device get a file per device.
+ */
+export const agentDeviceConfigPath = (
+  stateDir: string,
+  hostId: string,
+  path: Path.Path,
+  deviceId?: string,
+) =>
+  key(deviceId === undefined ? hostId : JSON.stringify([hostId, deviceId])).pipe(
+    Effect.map((hash) => path.join(stateDir, "device", "hosts", `${hash}.json`)),
+  );
 
 export const agentDeviceSession = (threadId: string, hostId: string, deviceId: string) =>
   key(JSON.stringify([threadId, hostId, deviceId])).pipe(Effect.map((hash) => `t3-${hash}`));
 
 export const writeAgentDeviceConfig = Effect.fn("AgentDeviceTarget.writeConfig")(function* (
   file: string,
-  endpoint: AgentDeviceEndpoint,
+  endpoint: AgentDaemonEndpoint,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -46,4 +55,29 @@ export const writeAgentDeviceConfig = Effect.fn("AgentDeviceTarget.writeConfig")
     yield* fs.writeFileString(temporary, content);
     yield* fs.rename(temporary, file);
   }).pipe(Effect.ensuring(fs.remove(temporary, { force: true }).pipe(Effect.ignore)));
+});
+
+/**
+ * The daemon last written for an agent targeting this device: its own file on hosts
+ * with a daemon per device, otherwise its host's. Null when neither was written.
+ */
+export const readAgentDeviceConfig = Effect.fn("AgentDeviceTarget.readConfig")(function* (
+  stateDir: string,
+  hostId: string,
+  deviceId: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const read = (file: string) =>
+    fs.readFileString(file).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(AgentDeviceConfig)),
+      Effect.map((saved): AgentDaemonEndpoint => ({
+        baseUrl: saved.daemonBaseUrl,
+        token: saved.daemonAuthToken,
+      })),
+    );
+  return yield* read(yield* agentDeviceConfigPath(stateDir, hostId, path, deviceId)).pipe(
+    Effect.catch(() => agentDeviceConfigPath(stateDir, hostId, path).pipe(Effect.flatMap(read))),
+    Effect.orElseSucceed(() => null),
+  );
 });

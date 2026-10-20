@@ -854,15 +854,15 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     const scrcpyServer = running.scrcpyServer;
     return {
       hub: { origin: running.hub.origin } satisfies DeviceHost.DeviceHubEndpoint,
-    devices: makeDeviceHubOperations({
-      hostId,
-      origin: running.hub.origin,
-      http: httpClient,
-      run,
-      androidAvailable: platformAvailability("android").pipe(
-        Effect.map((availability) => availability.available),
-      ),
-    }),
+      devices: makeDeviceHubOperations({
+        hostId,
+        origin: running.hub.origin,
+        http: httpClient,
+        run,
+        androidAvailable: platformAvailability("android").pipe(
+          Effect.map((availability) => availability.available),
+        ),
+      }),
       nodePath: running.hub.nodePath,
       run,
       helpers: running.helpers,
@@ -908,6 +908,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
 
   const host: DeviceHost.DeviceHost["Service"] = {
     id: hostId,
+    label,
     summary,
     platformAvailability,
     ensureReady,

@@ -66,7 +66,7 @@ const DROPPED_REQUEST_HEADERS = new Set([
   "transfer-encoding",
   "accept-encoding",
   // Describes the client's HTTPS hop to T3. The hub builds its own origin from it and then
-  // rejects the loopback Origin set below, so every mutation fails over T3 Connect.
+  // rejects the loopback Origin set below, so every mutation fails over styal Link.
   "x-forwarded-proto",
 ]);
 
@@ -88,14 +88,23 @@ export const proxyDeviceWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(f
   request: HttpServerRequest.HttpServerRequest,
   upstreamUrl: string,
   headers?: Readonly<Record<string, string>>,
+  protocols: ReadonlyArray<string> = [],
 ) {
   const client = yield* request.upgrade;
   const constructor = yield* Socket.WebSocketConstructor;
   const upstream = yield* Socket.makeWebSocket(upstreamUrl, {
     openTimeout: "10 seconds",
+    ...(protocols.length > 0 ? { protocols: [...protocols] } : {}),
   }).pipe(
     Effect.provideService(Socket.WebSocketConstructor, (url, options) =>
-      constructor(url, headers ? { headers } : options),
+      constructor(
+        url,
+        headers
+          ? typeof options === "string" || Array.isArray(options)
+            ? { protocols: options, headers }
+            : { ...options, headers }
+          : options,
+      ),
     ),
   );
   yield* Effect.scoped(
@@ -125,25 +134,39 @@ const pumpFrames =
 export const proxyDeviceHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
   request: HttpServerRequest.HttpServerRequest,
   upstreamUrl: string,
-  hubOrigin: string,
+  extraHeaders: Readonly<Record<string, string>> = {},
   upstreamHeaders?: Readonly<Record<string, string>>,
   jsonBody?: unknown,
 ) {
   const httpClient = HttpClient.withScope(yield* HttpClient.HttpClient);
   const method = request.method;
   const upstreamRequest = HttpClientRequest.make(method)(upstreamUrl).pipe(
-    HttpClientRequest.setHeaders({ ...forwardHeaders(request, hubOrigin), ...upstreamHeaders }),
+    HttpClientRequest.setHeaders({
+      ...forwardHeaders(request, new URL(upstreamUrl).origin),
+      ...extraHeaders,
+      ...upstreamHeaders,
+    }),
   );
   const bodyRequest =
     jsonBody === undefined
       ? method === "GET" || method === "HEAD"
         ? upstreamRequest
-        : upstreamRequest.pipe(HttpClientRequest.bodyStream(request.stream, { contentType: request.headers["content-type"] }))
+        : upstreamRequest.pipe(
+            HttpClientRequest.bodyStream(request.stream, {
+              contentType: request.headers["content-type"],
+            }),
+          )
       : yield* HttpClientRequest.bodyJson(upstreamRequest, jsonBody);
   const response = yield* httpClient.execute(bodyRequest);
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(response.headers)) {
-    if (name === "content-encoding" || name === "transfer-encoding" || name === "connection") {
+    // A cookie from an upstream such as an EAS session's preview host would land on styal's origin.
+    if (
+      name === "content-encoding" ||
+      name === "transfer-encoding" ||
+      name === "connection" ||
+      name === "set-cookie"
+    ) {
       continue;
     }
     if (value !== undefined) headers[name] = value;
@@ -204,20 +227,21 @@ const handler = Effect.gen(function* () {
   upstreamSearch.delete("wsTicket");
   upstreamSearch.delete("hostId");
   const search = upstreamSearch.size > 0 ? `?${upstreamSearch.toString()}` : "";
-  const upstreamPath = `${hubPath}${search}`;
+  // Hosts with several upstreams (one per cloud session) route and authenticate requests themselves.
+  const routed = ready.upstream ? yield* ready.upstream(hubPath, upstreamSearch) : undefined;
+  if (routed === null) {
+    return HttpServerResponse.text("Not Found", { status: 404 });
+  }
+  const upstreamUrl = routed?.url ?? `${ready.hub.origin}${hubPath}${search}`;
   if (upgrade) {
     return yield* proxyDeviceWebSocket(
       request,
-      `${ready.hub.origin.replace(/^http/, "ws")}${upstreamPath}`,
+      upstreamUrl.replace(/^http/, "ws"),
       ready.hub.headers,
+      routed?.protocols,
     ).pipe(whileStreaming(ready.hostId, hubPath, upstreamSearch));
   }
-  return yield* proxyDeviceHttp(
-    request,
-    `${ready.hub.origin}${upstreamPath}`,
-    ready.hub.origin,
-    ready.hub.headers,
-  );
+  return yield* proxyDeviceHttp(request, upstreamUrl, routed?.headers, ready.hub.headers);
 });
 
 export const layer = HttpRouter.add("*", `${DeviceService.DEVICE_HUB_ROUTE_PREFIX}/*`, handler);

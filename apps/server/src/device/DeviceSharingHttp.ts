@@ -148,7 +148,7 @@ const proxy = errors(
       ? proxyDeviceWebSocket(request, upstream.replace(/^http/, "ws")).pipe(
           whileStreaming(LOCAL_DEVICE_HOST_ID, path, url.value.searchParams),
         )
-      : proxyDeviceHttp(request, upstream, target.origin, target.headers, jsonBody);
+      : proxyDeviceHttp(request, upstream, {}, target.headers, jsonBody);
   }),
 );
 

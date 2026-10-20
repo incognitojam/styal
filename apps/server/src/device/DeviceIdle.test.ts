@@ -1,11 +1,14 @@
 import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS, LOCAL_DEVICE_HOST_ID, ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -13,7 +16,12 @@ import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as ServerSettings from "../serverSettings.ts";
-import { agentDeviceSession } from "./AgentDeviceTarget.ts";
+import {
+  agentDeviceConfigPath,
+  agentDeviceSession,
+  readAgentDeviceConfig,
+  writeAgentDeviceConfig,
+} from "./AgentDeviceTarget.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as DeviceIdle from "./DeviceIdle.ts";
 import * as DeviceService from "./DeviceService.ts";
@@ -43,6 +51,8 @@ const fixture = Effect.fn("fixture")(function* (
   options: {
     readonly gate?: Deferred.Deferred<void>;
     readonly saveGate?: Deferred.Deferred<void>;
+    /** Runs an agent-device daemon per device, like EAS, whose endpoints are saved here. */
+    readonly perDeviceDaemonDir?: string;
   } = {},
 ) {
   for (const [thread, hostId] of [
@@ -73,8 +83,21 @@ const fixture = Effect.fn("fixture")(function* (
   const calls: string[] = [];
   let booted = false;
   const ready: DeviceHost.DeviceHostReady = {
-get devices() {
-      return makeDeviceHubOperations({ hostId: LOCAL_DEVICE_HOST_ID, origin: ready.hub.origin, http: httpClient, run: ready.run, androidAvailable: Effect.succeed(true) });
+    get devices() {
+      const operations = makeDeviceHubOperations({
+        hostId: LOCAL_DEVICE_HOST_ID,
+        origin: ready.hub.origin,
+        http: httpClient,
+        run: ready.run,
+        androidAvailable: Effect.succeed(true),
+      });
+      return options.perDeviceDaemonDir === undefined
+        ? operations
+        : {
+            ...operations,
+            agentEndpoint: (deviceId: string) =>
+              Effect.succeed({ ...agentDevice, agentDeviceId: deviceId }),
+          };
     },
     nodePath: process.execPath,
     hub: { origin: "http://device.test" },
@@ -89,6 +112,7 @@ get devices() {
   const agentDevice = { baseUrl: "http://agent.test", token: "agent-token", entryPath: "" };
   const host: DeviceHost.DeviceHost["Service"] = {
     id: LOCAL_DEVICE_HOST_ID,
+    label: "Test host",
     summary: Effect.succeed({
       id: LOCAL_DEVICE_HOST_ID,
       kind: "local",
@@ -99,7 +123,13 @@ get devices() {
     }),
     platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
     ensureReady: () => Effect.sync(() => (starts.push("start"), ready)),
-    ensureAgentReady: () => Effect.sync(() => (starts.push("start"), { ...ready, agentDevice })),
+    ensureAgentReady: () =>
+      Effect.sync(
+        () => (
+          starts.push("start"),
+          { ...ready, agentDevice: options.perDeviceDaemonDir === undefined ? agentDevice : null }
+        ),
+      ),
     current: Effect.sync(() => (starts.length > 0 ? ready : null)),
     stopAgent: Effect.void,
     stop: Effect.void,
@@ -154,8 +184,23 @@ get devices() {
       );
     }),
   );
-  const inner = yield* DeviceService.makeWithHosts(new Map([[host.id, host]]), undefined, () =>
-    Effect.succeed("/agent-device.json"),
+  const daemonDir = options.perDeviceDaemonDir;
+  const inner = yield* DeviceService.makeWithHosts(
+    new Map([[host.id, host]]),
+    undefined,
+    daemonDir === undefined
+      ? () => Effect.succeed("/agent-device.json")
+      : (hostId, endpoint, deviceId) =>
+          Effect.gen(function* () {
+            const file = yield* agentDeviceConfigPath(
+              daemonDir,
+              hostId,
+              yield* Path.Path,
+              deviceId,
+            );
+            yield* writeAgentDeviceConfig(file, endpoint);
+            return file;
+          }).pipe(Effect.provide(NodeServices.layer), Effect.orDie),
   ).pipe(
     Effect.provideService(
       ServerSettings.ServerSettingsService,
@@ -191,8 +236,13 @@ get devices() {
       load: Ref.get(releasedNames),
       save: (names) => Ref.set(releasedNames, names),
     },
-    agentEndpoint: () =>
-      Ref.get(daemonRunning).pipe(Effect.map((running) => (running ? agentDevice : null))),
+    agentEndpoint: (hostId, deviceId) =>
+      daemonDir === undefined
+        ? Ref.get(daemonRunning).pipe(Effect.map((running) => (running ? agentDevice : null)))
+        : readAgentDeviceConfig(daemonDir, hostId, deviceId).pipe(
+            Effect.map((saved) => (saved ? { ...saved, entryPath: "" } : null)),
+            Effect.provide(NodeServices.layer),
+          ),
     environmentId: OWN_ENVIRONMENT,
     threadStatus: (thread) =>
       Effect.sync(() => (busy.has(thread) ? "working" : (ended.get(thread) ?? "idle"))),
@@ -246,14 +296,41 @@ const agentOpen = (
 ) =>
   service.agentTarget({ threadId: thread, hostId: LOCAL_DEVICE_HOST_ID, deviceId }).pipe(
     Effect.andThen(
-      service.open({
-        threadId: thread,
-        deviceId,
-        platform: "android",
-        ...(takeOver === undefined ? {} : { takeOver }),
-      }),
+      service.open(
+        {
+          threadId: thread,
+          deviceId,
+          platform: "android",
+          ...(takeOver === undefined ? {} : { takeOver }),
+        },
+        { agentRequested: true },
+      ),
     ),
   );
+/**
+ * The whole device_open tool: it targets the device first unless the host runs a daemon
+ * per device, and targets the opened device again once it runs.
+ */
+const deviceOpenTool = (
+  service: DeviceService.DeviceService["Service"],
+  options: { readonly thread?: ThreadId; readonly targetFirst?: boolean } = {},
+) =>
+  Effect.gen(function* () {
+    const thread = options.thread ?? threadId;
+    const deviceId = "Pixel_API_35";
+    if (options.targetFirst !== false)
+      yield* service.agentTarget({ threadId: thread, hostId: LOCAL_DEVICE_HOST_ID, deviceId });
+    const session = yield* service.open(
+      { threadId: thread, deviceId, platform: "android" },
+      { agentRequested: true },
+    );
+    yield* service.agentTarget({
+      threadId: thread,
+      hostId: session.hostId,
+      deviceId: session.deviceId,
+    });
+    return session;
+  });
 const threads = (service: DeviceService.DeviceService["Service"]) =>
   service.state.pipe(Effect.map((state) => state.sessions.map((session) => session.threadId)));
 
@@ -273,6 +350,83 @@ describe("hand-back", () => {
         expect(state.sessions).toEqual([]);
         expect(state.devices[0]?.booted).toBe(true);
       }).pipe(Effect.scoped),
+  );
+
+  it.effect("device_close releases the claim on a device with its own agent-device daemon", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-idle-" });
+      const { service, calls } = yield* fixture(yield* Ref.make<BootRecords>([]), {
+        perDeviceDaemonDir: dir,
+      });
+      yield* service.configure({ enabled: true });
+      yield* deviceOpenTool(service, { targetFirst: false });
+      yield* service.close({ threadId });
+      expect(calls).toEqual([release("thread-1"), release("thread-1", "emulator-5554")]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("device_open hands out the booted device's session again after a power-off", () =>
+    Effect.gen(function* () {
+      const { service, releasedNames } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* deviceOpenTool(service);
+      yield* service.close({ threadId, shutdown: true });
+      expect(yield* Ref.get(releasedNames)).toContain(sessionName("thread-1", "emulator-5554"));
+      yield* deviceOpenTool(service);
+      expect(yield* Ref.get(releasedNames)).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("device_open hands out a serial session whose cleanup failed at power-off", () =>
+    Effect.gen(function* () {
+      const { service, releasedNames, sessionErrors } = yield* fixture(
+        yield* Ref.make<BootRecords>([]),
+      );
+      yield* service.configure({ enabled: true });
+      yield* deviceOpenTool(service);
+      sessionErrors.set(sessionName("thread-1", "emulator-5554"), "CLEANUP_FAILED");
+      yield* service.close({ threadId, shutdown: true });
+      expect(yield* Ref.get(releasedNames)).toContain(sessionName("thread-1", "emulator-5554"));
+      yield* deviceOpenTool(service);
+      expect(yield* Ref.get(releasedNames)).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("targeting after a reopen does not hand out a session a take-over released", () =>
+    Effect.gen(function* () {
+      const gate = yield* Deferred.make<void>();
+      const { service, calls, releasedNames, daemonRunning } = yield* fixture(
+        yield* Ref.make<BootRecords>([]),
+        { gate },
+      );
+      yield* service.configure({ enabled: true });
+      yield* deviceOpenTool(service);
+      // Power off without a daemon, so both of thread-1's sessions stay refused without a release call.
+      yield* Ref.set(daemonRunning, false);
+      yield* service.close({ threadId, shutdown: true });
+      yield* Ref.set(daemonRunning, true);
+      const serial = sessionName("thread-1", "emulator-5554");
+      expect(yield* Ref.get(releasedNames)).toContain(serial);
+      calls.length = 0;
+
+      // thread-1 reopens the AVD, and thread-2 takes it over before thread-1 targets the serial.
+      yield* agentOpen(service);
+      const takingOver = yield* agentOpen(service, thread2, "emulator-5554", true).pipe(
+        Effect.forkChild,
+      );
+      while (calls.length === 0) yield* Effect.yieldNow;
+      expect(calls).toEqual([release("thread-1")]);
+      const targeting = yield* service
+        .agentTarget({ threadId, hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" })
+        .pipe(Effect.forkChild);
+      for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+      yield* Deferred.succeed(gate, undefined);
+      yield* Fiber.join(takingOver);
+      yield* Fiber.join(targeting);
+      expect(yield* threads(service)).toEqual([thread2]);
+      expect(yield* Ref.get(releasedNames)).toContain(serial);
+    }).pipe(Effect.scoped),
   );
 
   it.effect("releases every session a thread was given when it reopened the device", () =>
@@ -479,17 +633,14 @@ describe("hand-back", () => {
       const target = { threadId: thread2, hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" };
       yield* service.agentTarget(target);
       yield* service.agentTarget(target);
-      const open = service.open({
-        threadId: thread2,
-        deviceId: "emulator-5554",
-        platform: "android",
-      });
+      const input = { threadId: thread2, deviceId: "emulator-5554", platform: "android" } as const;
+      const open = service.open(input, { agentRequested: true });
       expect(yield* open.pipe(Effect.flip)).toMatchObject({ _tag: "DeviceHeldError" });
       expect(yield* open.pipe(Effect.flip)).toMatchObject({ _tag: "DeviceHeldError" });
       expect(yield* threads(service)).toEqual([threadId]);
 
-      // With both agent opens consumed, a Device panel open shares the device again.
-      yield* open;
+      // A Device panel open from the refused thread shares the device.
+      yield* service.open(input);
       expect(yield* threads(service)).toEqual([threadId, thread2]);
     }).pipe(Effect.scoped),
   );
@@ -518,6 +669,22 @@ describe("hand-back", () => {
         }),
       );
       expect(yield* activity.inUse(ThreadId.make("thread-3"))).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("a thread's agent opening a device earlier leaves its Device panel opens shared", () =>
+    Effect.gen(function* () {
+      const { service, calls, busy } = yield* fixture(yield* Ref.make<BootRecords>([]));
+      yield* service.configure({ enabled: true });
+      yield* deviceOpenTool(service);
+      yield* service.close({ threadId });
+      yield* agentOpen(service, thread2, "emulator-5554");
+      busy.add(thread2);
+      calls.length = 0;
+
+      yield* service.open({ threadId, deviceId: "emulator-5554", platform: "android" });
+      expect(calls).toEqual([]);
+      expect(yield* threads(service)).toEqual([thread2, threadId]);
     }).pipe(Effect.scoped),
   );
 

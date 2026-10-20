@@ -60,7 +60,7 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { releasedAgentSessionsPath } from "./AgentDeviceShim.ts";
-import { agentDeviceConfigPath, agentDeviceSession } from "./AgentDeviceTarget.ts";
+import { agentDeviceSession, readAgentDeviceConfig } from "./AgentDeviceTarget.ts";
 import type { AgentDeviceEndpoint } from "./DeviceHost.ts";
 import * as DeviceService from "./DeviceService.ts";
 import { environmentDeviceHostId } from "./EnvironmentDeviceHost.ts";
@@ -185,8 +185,11 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       readonly load: Effect.Effect<ReadonlyArray<string>>;
       readonly save: (names: ReadonlyArray<string>) => Effect.Effect<void>;
     };
-    /** The agent-device daemon agents on this host use, or null when none can hold claims. */
-    readonly agentEndpoint: (hostId: DeviceHostId) => Effect.Effect<AgentDeviceEndpoint | null>;
+    /** The agent-device daemon agents on this device use, or null when none can hold claims. */
+    readonly agentEndpoint: (
+      hostId: DeviceHostId,
+      deviceId: DeviceId,
+    ) => Effect.Effect<AgentDeviceEndpoint | null>;
     /** This environment's id, which connected environments use to name their claims here. */
     readonly environmentId: string;
     readonly threadStatus: (threadId: ThreadId) => Effect.Effect<DeviceThreadStatus>;
@@ -207,18 +210,11 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   const viewers = new Map<string, number>();
   /**
    * agent-device session names handed out by `agentTarget`, keyed by the device id asked
-   * for, with how many agent opens have yet to consume it. Concurrent agent opens of one
-   * device from one thread each count, so a refused open cannot turn its sibling into a
-   * Device panel open.
+   * for. A connected environment's host namespaces its names, so an agent open cannot
+   * derive them itself. Only `agentRequested` makes an open an agent's: device_open also
+   * targets the device after opening it, so no later open may count on a targeting call.
    */
-  const targeted = new Map<string, { readonly name: string; readonly pending: number }>();
-  /** Marks one agent open of `key` as finished with its session name. */
-  const consumeTarget = (key: string) => {
-    const entry = targeted.get(key);
-    if (!entry) return;
-    if (entry.pending <= 1) targeted.delete(key);
-    else targeted.set(key, { name: entry.name, pending: entry.pending - 1 });
-  };
+  const targeted = new Map<string, string>();
   const holds = new Map<string, Hold>();
   /** Claims whose release the daemon did not confirm, retried on the next reclaim or power-off. */
   const unreleased = new Map<string, Hold>();
@@ -360,6 +356,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     // Peer sessions run on this environment's own daemon.
     const endpoint = yield* options.agentEndpoint(
       hold.threadId.startsWith(PEER_THREAD_PREFIX) ? LOCAL_DEVICE_HOST_ID : hold.hostId,
+      hold.deviceId,
     );
     // No daemon means no claims: they belong to the daemon that is gone.
     if (!endpoint) return [];
@@ -475,12 +472,22 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
 
   const agentTarget: DeviceService.DeviceService["Service"]["agentTarget"] = (input) =>
     inner.agentTarget(input).pipe(
-      Effect.tap((args) => {
+      Effect.tap(({ args }) => {
         const name = args[args.indexOf("--session") + 1];
         if (!name) return Effect.void;
         const key = holdKey(input.threadId, input.hostId, input.deviceId);
-        targeted.set(key, { name, pending: (targeted.get(key)?.pending ?? 0) + 1 });
-        return Effect.void;
+        targeted.set(key, name);
+        // Under the device lock, a hand-over has either released this thread's hold
+        // already or has not started, so it releases the name added here too.
+        return Effect.suspend(() => {
+          const hold = holds.get(key);
+          if (!hold) return Effect.void;
+          if (!hold.names.includes(name)) holds.set(key, { ...hold, names: [...hold.names, name] });
+          // device_open targets a device again once it runs, and a booted Android device's
+          // serial names a session that an earlier power-off may have refused, even one a
+          // reopen carried over because its cleanup was never confirmed.
+          return setReleased([name], false);
+        }).pipe(withDevice(input.hostId, input.deviceId));
       }),
     );
 
@@ -490,7 +497,13 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       Effect.gen(function* () {
         const hostId = input.hostId ?? LOCAL_DEVICE_HOST_ID;
         const asked = holdKey(input.threadId, hostId, input.deviceId);
-        const name = targeted.get(asked)?.name;
+        const name =
+          typeof memoryMode === "object" && memoryMode.agentRequested
+            ? (targeted.get(asked) ??
+              (yield* agentDeviceSession(input.threadId, hostId, input.deviceId).pipe(
+                Effect.provideService(Crypto.Crypto, crypto),
+              )))
+            : undefined;
         // Only an agent open hands a device over or is refused one; the user opening a
         // panel shares the stream and never takes the device from an agent.
         if (name) {
@@ -501,7 +514,6 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
                 onDevice(hostId, input.deviceId),
               );
           if (held.length > 0 && input.takeOver !== true) {
-            consumeTarget(asked);
             return yield* new DeviceHeldError({
               hostId,
               deviceId: input.deviceId,
@@ -514,9 +526,12 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
         const mode =
           input.platform === "android"
             ? "standard"
-            : (memoryMode ??
+            : ((typeof memoryMode === "string" ? memoryMode : undefined) ??
               (yield* options.memoryModeForThread?.(input) ?? Effect.succeed("standard" as const)));
-        const session = yield* inner.open(input, mode);
+        const session = yield* inner.open(
+          input,
+          typeof memoryMode === "object" ? { ...memoryMode, memoryMode: mode } : mode,
+        );
         const key = deviceKey(session.hostId, session.deviceId);
         const states = yield* PubSub.takeUpTo(updates, 10_000);
         const bootedHere = states.some((state) =>
@@ -540,7 +555,6 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
           // Only a completed open hands the session out again. Keep it refused while
           // a concurrent hand-over is releasing this thread's earlier session.
           yield* setReleased([name], false);
-          consumeTarget(asked);
           const opened = holdKey(session.threadId, session.hostId, session.deviceId);
           // A thread reopening a device keeps every session name it was given until each is released.
           const previous = [
@@ -758,10 +772,6 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
   };
 });
 
-const AgentDeviceConfig = Schema.fromJsonString(
-  Schema.Struct({ daemonBaseUrl: Schema.String, daemonAuthToken: Schema.String }),
-);
-
 const live = Layer.effectContext(
   Effect.gen(function* () {
     const inner = yield* DeviceService.DeviceService;
@@ -842,19 +852,16 @@ const live = Layer.effectContext(
       },
       // The local daemon is supervised here, so a stopped one holds nothing. Other hosts
       // are reached through the endpoint written when an agent last targeted them.
-      agentEndpoint: (hostId) =>
+      agentEndpoint: (hostId, deviceId) =>
         hostId === LOCAL_DEVICE_HOST_ID
           ? inner.currentAgentEndpoint(hostId)
-          : agentDeviceConfigPath(config.stateDir, hostId, path).pipe(
+          : readAgentDeviceConfig(config.stateDir, hostId, deviceId).pipe(
+              Effect.map((saved): AgentDeviceEndpoint | null =>
+                saved ? { ...saved, entryPath: "" } : null,
+              ),
+              Effect.provideService(FileSystem.FileSystem, fs),
+              Effect.provideService(Path.Path, path),
               Effect.provideService(Crypto.Crypto, crypto),
-              Effect.flatMap((file) => fs.readFileString(file)),
-              Effect.flatMap(Schema.decodeUnknownEffect(AgentDeviceConfig)),
-              Effect.map((saved): AgentDeviceEndpoint => ({
-                baseUrl: saved.daemonBaseUrl,
-                token: saved.daemonAuthToken,
-                entryPath: "",
-              })),
-              Effect.orElseSucceed(() => null),
             ),
     });
 

@@ -93,6 +93,7 @@ const fixture = Effect.fn("fixture")(function* (
     | DeviceHost.AgentDeviceStartError,
   inspectError = false,
   installTool?: Parameters<typeof DeviceService.makeWithHosts>[3],
+  options: { readonly endsDevices?: boolean } = {},
 ) {
   const settings = yield* Ref.make(DEFAULT_SERVER_SETTINGS);
   const starts: string[] = [];
@@ -164,13 +165,16 @@ const fixture = Effect.fn("fixture")(function* (
   const ready: DeviceHost.DeviceHostReady = {
     nodePath: process.execPath,
     hub: { origin: "http://device.test" },
-    devices: makeDeviceHubOperations({
-      hostId: LOCAL_DEVICE_HOST_ID,
-      origin: "http://device.test",
-      http,
-      run,
-      androidAvailable: Effect.succeed(true),
-    }),
+    devices: {
+      ...makeDeviceHubOperations({
+        hostId: LOCAL_DEVICE_HOST_ID,
+        origin: "http://device.test",
+        http,
+        run,
+        androidAvailable: Effect.succeed(true),
+      }),
+      ...(options.endsDevices ? { endsDevices: true } : {}),
+    },
     helpers: { serveSimAxSettings: null, serveSimCli: null },
     run,
   };
@@ -187,6 +191,7 @@ const fixture = Effect.fn("fixture")(function* (
         }
       : {}),
     id: LOCAL_DEVICE_HOST_ID,
+    label: "This machine",
     summary: Effect.succeed({
       id: LOCAL_DEVICE_HOST_ID,
       kind: "local",
@@ -255,6 +260,10 @@ const fixture = Effect.fn("fixture")(function* (
       }),
     ),
   );
+  // The host ending a device on its own, as EAS does at a session's limits.
+  const endDevice = () => {
+    booted = false;
+  };
   return {
     service,
     starts,
@@ -265,6 +274,7 @@ const fixture = Effect.fn("fixture")(function* (
     devices,
     encoderResult,
     discoveryErrors,
+    endDevice,
   };
 });
 
@@ -513,6 +523,36 @@ it.effect("publishes boot progress and does not restore sessions after support i
   }).pipe(Effect.scoped),
 );
 
+it.effect.each([
+  { case: "drops it on a host that ends devices itself", endsDevices: true, kept: 0 },
+  {
+    case: "keeps it on a host that can miss a device for one listing",
+    endsDevices: false,
+    kept: 1,
+  },
+])("when a host stops listing a session's device, $case", ({ endsDevices, kept }) =>
+  Effect.gen(function* () {
+    const { service, endDevice } = yield* fixture(
+      Effect.void,
+      undefined,
+      false,
+      undefined,
+      false,
+      undefined,
+      { endsDevices },
+    );
+    yield* service.configure({ enabled: true });
+    const threadId = ThreadId.make("ended-by-host");
+    yield* service.open({ threadId, deviceId: "Pixel_API_35", platform: "android" });
+    expect((yield* service.state).sessions.map((session) => session.deviceId)).toEqual([
+      "emulator-5554",
+    ]);
+    endDevice();
+    yield* service.list;
+    expect((yield* service.state).sessions).toHaveLength(kept);
+  }).pipe(Effect.scoped),
+);
+
 describe("device discovery after server restart", () => {
   it.effect("captures an explicit device before any client lists devices", () =>
     Effect.gen(function* () {
@@ -706,7 +746,12 @@ it.effect.each(["shutdown", "close"] as const)(
           return HttpClientResponse.fromWeb(request, Response.json({ ok: true, id: deviceId }));
         }),
       );
-      const run = () => Effect.succeed({ code: 0, stdout: JSON.stringify({ supported: true, installed: false, executable: "/simslim" }), stderr: "" });
+      const run = () =>
+        Effect.succeed({
+          code: 0,
+          stdout: JSON.stringify({ supported: true, installed: false, executable: "/simslim" }),
+          stderr: "",
+        });
       const ready: DeviceHost.DeviceHostReady = {
         nodePath: process.execPath,
         hub: { origin: "http://device.test" },
@@ -722,6 +767,7 @@ it.effect.each(["shutdown", "close"] as const)(
       };
       const host: DeviceHost.DeviceHost["Service"] = {
         id: LOCAL_DEVICE_HOST_ID,
+        label: "This machine",
         summary: Effect.succeed({
           id: LOCAL_DEVICE_HOST_ID,
           kind: "local",
@@ -820,6 +866,7 @@ it.effect.each([
       };
       const host: DeviceHost.DeviceHost["Service"] = {
         id: LOCAL_DEVICE_HOST_ID,
+        label: "This machine",
         summary: Effect.succeed({
           id: LOCAL_DEVICE_HOST_ID,
           kind: "local",
@@ -891,6 +938,7 @@ it.effect.each([LOCAL_DEVICE_HOST_ID, "ssh-fixture"])(
       };
       const host: DeviceHost.DeviceHost["Service"] = {
         id: hostId,
+        label: "Test device host",
         summary: Effect.succeed({
           id: hostId,
           kind: hostId === LOCAL_DEVICE_HOST_ID ? "local" : "ssh",
@@ -1246,9 +1294,11 @@ it.effect("reconciles SSH host settings without publishing no-op changes", () =>
     const settings = yield* ServerSettings.ServerSettingsService;
     // Each change is acknowledged after reconciliation consumed it, so no-ops are observable.
     const changes = yield* Queue.unbounded<{ value: Settings; done: Deferred.Deferred<void> }>();
+    let subscriptions = 0;
     const removedFiles: string[] = [];
     const localHost: DeviceHost.DeviceHost["Service"] = {
       id: LOCAL_DEVICE_HOST_ID,
+      label: "This machine",
       summary: Effect.succeed({
         id: LOCAL_DEVICE_HOST_ID,
         label: "Local",
@@ -1268,16 +1318,18 @@ it.effect("reconciles SSH host settings without publishing no-op changes", () =>
       Effect.provideService(DeviceHost.DeviceHost, localHost),
       Effect.provideService(ServerSettings.ServerSettingsService, {
         ...settings,
-        subscribeChanges: Effect.succeed(
-          Stream.fromQueue(changes).pipe(
-            Stream.flatMap(({ value, done }) =>
-              Stream.make(value).pipe(
-                Stream.concat(
-                  Stream.fromEffect(Deferred.succeed(done, undefined)).pipe(Stream.drain),
+        subscribeChanges: Effect.sync(() =>
+          subscriptions++ === 0
+            ? Stream.fromQueue(changes).pipe(
+                Stream.flatMap(({ value, done }) =>
+                  Stream.make(value).pipe(
+                    Stream.concat(
+                      Stream.fromEffect(Deferred.succeed(done, undefined)).pipe(Stream.drain),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
+              )
+            : Stream.never,
         ),
       }),
       Effect.provideService(
@@ -1360,6 +1412,7 @@ it.effect("a failed tool update reports npm's exit code but not its output", () 
   Effect.gen(function* () {
     const host: DeviceHost.DeviceHost["Service"] = {
       id: LOCAL_DEVICE_HOST_ID,
+      label: "This machine",
       summary: Effect.succeed({
         id: LOCAL_DEVICE_HOST_ID,
         kind: "local",

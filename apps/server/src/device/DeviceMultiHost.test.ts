@@ -56,6 +56,7 @@ it.effect("keeps hosts independent when serials collide and another host fails",
       };
       return {
         id,
+        label: id,
         summary: Effect.succeed({
           id,
           label: id,
@@ -165,6 +166,13 @@ it.effect(
       const opened: string[] = [];
       const unsupported = () => Effect.die("Unexpected device operation");
       const ready: DeviceHost.DeviceHostReady = {
+        devices: {
+          list: Effect.die("Unused"),
+          boot: () => Effect.die("Unused"),
+          attach: () => Effect.die("Unused"),
+          shutdown: () => Effect.die("Unused"),
+          screenshot: () => Effect.die("Unused"),
+        },
         nodePath: "",
         hub: { origin: "http://peer" },
         run: unsupported,
@@ -204,6 +212,7 @@ it.effect(
       };
       const host: DeviceHost.DeviceHost["Service"] = {
         id: "peer",
+        label: "Test host",
         summary: Effect.succeed({
           id: "peer",
           label: "Peer",
@@ -239,9 +248,13 @@ it.effect("does not hold local device work behind a connected environment that i
   Effect.gen(function* () {
     const peerStarted = yield* Deferred.make<void>();
     const ready = {
-get devices() {
-      return makeDeviceHubOperations({ hostId: LOCAL_DEVICE_HOST_ID, origin: ready.hub.origin, http: http, run: ready.run, androidAvailable: Effect.succeed(true) });
-    },
+      devices: {
+        list: Effect.die("Unused"),
+        boot: () => Effect.die("Unused"),
+        attach: () => Effect.die("Unused"),
+        shutdown: () => Effect.die("Unused"),
+        screenshot: () => Effect.die("Unused"),
+      },
       nodePath: process.execPath,
       hub: { origin: "http://local" },
       agentDevice: { baseUrl: "http://local", token: "test", entryPath: "/agent-device" },
@@ -253,6 +266,7 @@ get devices() {
       const waiting = Deferred.succeed(peerStarted, undefined).pipe(Effect.andThen(Effect.never));
       return {
         id,
+        label: id,
         summary: Effect.succeed({
           id,
           label: id,
@@ -304,9 +318,13 @@ it.effect(
       const stopped: string[] = [];
       const written: string[] = [];
       const ready = {
-get devices() {
-      return makeDeviceHubOperations({ hostId: LOCAL_DEVICE_HOST_ID, origin: ready.hub.origin, http: http, run: ready.run, androidAvailable: Effect.succeed(true) });
-    },
+        devices: {
+          list: Effect.succeed({ devices: [], detail: undefined }),
+          boot: () => Effect.die("Unused"),
+          attach: () => Effect.die("Unused"),
+          shutdown: () => Effect.die("Unused"),
+          screenshot: () => Effect.die("Unused"),
+        },
         nodePath: process.execPath,
         hub: { origin: "http://peer" },
         run: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
@@ -314,6 +332,7 @@ get devices() {
       };
       const peer: DeviceHost.DeviceHost["Service"] = {
         id: "peer",
+        label: "Test host",
         summary: Effect.succeed({
           id: "peer",
           label: "Peer",
@@ -344,7 +363,7 @@ get devices() {
         undefined,
         (_hostId, ready) =>
           Effect.sync(() => {
-            written.push(ready.agentDevice.token);
+            written.push(ready.token);
             return "/host-config.json";
           }),
       ).pipe(
@@ -388,6 +407,7 @@ it.effect("omits a missing host status detail so device_list stays valid MCP JSO
   Effect.gen(function* () {
     const host: DeviceHost.DeviceHost["Service"] = {
       id: "local",
+      label: "Test host",
       summary: Effect.succeed({
         id: "local",
         label: "local",

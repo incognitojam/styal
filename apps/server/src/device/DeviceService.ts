@@ -63,6 +63,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
 import * as EnvironmentDeviceHost from "./EnvironmentDeviceHost.ts";
+import * as EasDeviceHost from "./EasDeviceHost.ts";
 import * as Exit from "effect/Exit";
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
 
@@ -102,7 +103,8 @@ export interface DeviceReadiness extends DeviceHost.DeviceHostReady {
 }
 
 export interface DeviceAgentReadiness extends DeviceReadiness {
-  readonly agentDevice: DeviceHost.AgentDeviceEndpoint;
+  /** Null when each device has its own daemon; see `DeviceOperations.agentEndpoint`. */
+  readonly agentDevice: DeviceHost.AgentDeviceEndpoint | null;
 }
 
 export class DeviceService extends Context.Service<
@@ -112,11 +114,18 @@ export class DeviceService extends Context.Service<
     readonly testHost: (
       config: SshDeviceHostConfig,
     ) => Effect.Effect<DeviceHostSummary, DeviceError>;
+    /**
+     * The agent-device flags that reach the device: its config and session,
+     * and the id agent-device selects it by, which can differ from its id here.
+     */
     readonly agentTarget: (input: {
       threadId: ThreadId;
       hostId: DeviceHostId;
       deviceId: DeviceId;
-    }) => Effect.Effect<ReadonlyArray<string>, DeviceError>;
+    }) => Effect.Effect<
+      { readonly agentDeviceId: string; readonly args: ReadonlyArray<string> },
+      DeviceError
+    >;
     readonly state: Effect.Effect<DeviceServiceState>;
     readonly subscribe: Effect.Effect<PubSub.Subscription<DeviceServiceState>, never, Scope.Scope>;
     readonly configure: (
@@ -129,7 +138,7 @@ export class DeviceService extends Context.Service<
     readonly retryHost: (hostId: DeviceHostId) => Effect.Effect<DeviceServiceState, DeviceError>;
     readonly open: (
       input: DeviceOpenInput,
-      memoryMode?: SimulatorMemoryMode,
+      context?: DeviceHost.DeviceOpenContext | SimulatorMemoryMode,
     ) => Effect.Effect<DeviceSession, DeviceError>;
     readonly close: (input: DeviceCloseInput) => Effect.Effect<void, DeviceError>;
     readonly shutdown: (input: DeviceShutdownInput) => Effect.Effect<void, DeviceError>;
@@ -165,12 +174,14 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     Effect.fail(
       new DeviceHostUnavailableError({
         hostId: host.id,
+        hostLabel: host.label,
         reason: "SSH probing is unavailable in this device service.",
       }),
     ),
   configureAgent: (
     hostId: DeviceHostId,
-    ready: DeviceHost.DeviceHostAgentReady,
+    endpoint: DeviceHost.AgentDaemonEndpoint,
+    deviceId?: DeviceId,
   ) => Effect.Effect<string, DeviceError> = (hostId) =>
     Effect.fail(
       new DeviceHostUnavailableError({
@@ -290,6 +301,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       if (!(yield* readDeviceSettings).enabled) {
         return yield* new DeviceHostUnavailableError({
           hostId: host.id,
+          hostLabel: host.label,
           reason:
             "Device support is off. Enable it in the Device panel before installing or starting device tools.",
         });
@@ -314,6 +326,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               hostReason(error) ??
               new DeviceHostUnavailableError({
                 hostId: host.id,
+                hostLabel: host.label,
                 reason:
                   error._tag === "NodeRuntimeUnavailableError"
                     ? nodeRuntimeUnavailableMessage("Local device support")
@@ -327,6 +340,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       if (hosts.get(host.id) !== host)
         return yield* new DeviceHostUnavailableError({
           hostId: host.id,
+          hostLabel: host.label,
           reason: "Host configuration changed. Retry the operation.",
         });
       const { state } = yield* SynchronizedRef.get(stateRef);
@@ -377,6 +391,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               hostReason(error) ??
               new DeviceHostUnavailableError({
                 hostId: host.id,
+                hostLabel: host.label,
                 reason:
                   error._tag === "NodeRuntimeUnavailableError"
                     ? nodeRuntimeUnavailableMessage("Local device support")
@@ -431,6 +446,11 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
 
   const refresh = Effect.fn("DeviceService.refresh")(function* (ready: DeviceReadiness) {
     const host = hosts.get(ready.hostId);
+    // A session opened while the listing ran is on a device the listing could
+    // not have seen yet; only sessions from before it can be pruned by it.
+    const sessionKey = (session: DeviceSession) =>
+      `${session.hostId}\u0000${session.deviceId}\u0000${session.threadId}\u0000${session.openedAt}`;
+    const before = new Set((yield* SynchronizedRef.get(stateRef)).state.sessions.map(sessionKey));
     const { devices, detail, externalSessions, androidDiscoveryIncomplete } =
       yield* fetchDevices(ready);
 
@@ -451,6 +471,17 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
             ...(state.externalSessions ?? []).filter((session) => session.hostId !== ready.hostId),
             ...externalSessions,
           ],
+          // A host that ends devices itself (EAS stops sessions at their limits)
+          // leaves sessions on devices it no longer lists with nothing to stream.
+          // Other hosts can miss a device for one listing, so theirs stay.
+          sessions: ready.devices.endsDevices
+            ? state.sessions.filter(
+                (session) =>
+                  session.hostId !== ready.hostId ||
+                  !before.has(sessionKey(session)) ||
+                  devices.some((device) => device.id === session.deviceId),
+              )
+            : state.sessions,
           hostStatuses: {
             ...state.hostStatuses,
             [ready.hostId]: {
@@ -616,163 +647,166 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     }
   });
 
-  const open: DeviceService["Service"]["open"] = Effect.fn("DeviceService.open")(function* (
-    input,
-    memoryMode = "standard",
-  ) {
-    const host = yield* resolveHost(input.hostId);
-    yield* ensurePlatform(host, input.platform);
-    const ready = yield* readiness(host.id);
-    let state = yield* refresh(ready);
-    let device = findDevice(state, host.id, input.deviceId);
-    if (!device) {
-      return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: input.deviceId });
-    }
-    if (!ready.remote && device.platform === "android" && !device.physical) {
-      // Resolve the override on the device host the way its hub does.
-      const encoders = yield* ready.run(ready.nodePath, [
-        "-e",
-        `const { spawnSync } = require("node:child_process");
+  const open: DeviceService["Service"]["open"] = Effect.fn("DeviceService.open")(
+    function* (input, context) {
+      const memoryMode =
+        typeof context === "string" ? context : (context?.memoryMode ?? "standard");
+      const openContext = typeof context === "string" ? undefined : context;
+
+      const host = yield* resolveHost(input.hostId);
+      yield* ensurePlatform(host, input.platform);
+      const ready = yield* readiness(host.id);
+      let state = yield* refresh(ready);
+      let device = findDevice(state, host.id, input.deviceId);
+      if (!device) {
+        return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: input.deviceId });
+      }
+      if (!ready.remote && device.platform === "android" && !device.physical) {
+        // Resolve the override on the device host the way its hub does.
+        const encoders = yield* ready.run(ready.nodePath, [
+          "-e",
+          `const { spawnSync } = require("node:child_process");
 const result = spawnSync(process.env.SERVE_EMU_FFMPEG?.trim() || "ffmpeg", ["-hide_banner", "-encoders"], {
   stdio: "inherit", timeout: 10000, killSignal: "SIGKILL",
 });
 process.exitCode = result.error ? 1 : (result.status ?? 1);`,
-      ]);
-      if (encoders.code !== 0) {
-        return yield* new DevicePlatformUnavailableError({
-          hostId: host.id,
-          platform: "android",
-          reason:
-            "Android emulator video needs working ffmpeg with the libx264 encoder. Install it on the device host's PATH or set SERVE_EMU_FFMPEG there, then retry opening the emulator. After changing PATH or SERVE_EMU_FFMPEG, turn device support off and on for SSH hosts, or restart the local environment server.",
-        });
-      }
-      if (!/^\s*V\S*[ \t]+libx264(?:[ \t]|$)/m.test(`${encoders.stdout}\n${encoders.stderr}`)) {
-        return yield* new DevicePlatformUnavailableError({
-          hostId: host.id,
-          platform: "android",
-          reason:
-            "Android emulator video needs the libx264 encoder. Install an ffmpeg build that includes libx264 on the device host, then retry opening the emulator. After changing PATH or SERVE_EMU_FFMPEG, turn device support off and on for SSH hosts, or restart the local environment server.",
-        });
-      }
-    }
-    let notice: string | undefined;
-    if (ready.remote) {
-      const opened = yield* ready.remote.open(
-        input,
-        device.platform === "ios" ? memoryMode : "standard",
-      );
-      notice = opened.notice;
-      state = yield* refresh(ready);
-      device = findDevice(state, host.id, opened.deviceId);
-      if (!device)
-        return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: opened.deviceId });
-    } else if (!device.booted && input.boot !== false) {
-      const booting = { ...device, threadId: input.threadId };
-      const markBooting = publish((current) => ({
-        ...current,
-        bootingDevices: [
-          ...(current.bootingDevices ?? []).filter(
-            (entry) => entry.hostId !== booting.hostId || entry.id !== booting.id,
-          ),
-          booting,
-        ],
-      })).pipe(Effect.asVoid);
-      const bootedId = yield* Effect.gen(function* () {
-        // DeviceIdle serializes every lifecycle operation on this host/device.
-        const unclaimedAndStopped = refresh(ready).pipe(
-          Effect.map(
-            (current) =>
-              current.devices.some(
-                (value) => value.id === booting.id && value.hostId === host.id && !value.booted,
-              ) &&
-              !current.sessions.some(
-                (session) => session.hostId === host.id && session.deviceId === booting.id,
-              ),
-          ),
-        );
-        if (booting.platform === "ios" && (yield* unclaimedAndStopped)) {
-          const prepare = prepareSimulatorMemory(ready, booting, memoryMode, {
-            stillStopped: unclaimedAndStopped,
-            onMutationStart: markBooting,
-            onMutationError: shutdownDevice(host.id, booting.id, booting.platform).pipe(
-              Effect.ignore,
-            ),
+        ]);
+        if (encoders.code !== 0) {
+          return yield* new DevicePlatformUnavailableError({
+            hostId: host.id,
+            platform: "android",
+            reason:
+              "Android emulator video needs working ffmpeg with the libx264 encoder. Install it on the device host's PATH or set SERVE_EMU_FFMPEG there, then retry opening the emulator. After changing PATH or SERVE_EMU_FFMPEG, turn device support off and on for SSH hosts, or restart the local environment server.",
           });
-          const result = yield* Option.isSome(analytics)
-            ? FeatureUsage.observe(
-                { feature: "simulator-memory", action: "prepare", source: "system", memoryMode },
-                prepare,
-                {},
-                (memoryResult) => ({ memoryResult }),
-              ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value))
-            : prepare;
-          notice = simulatorMemoryNotice(result);
         }
-        // A tool outside styal can start the simulator during helper setup.
-        // Only claim idle-shutdown ownership when styal actually starts it.
-        if (
-          (yield* refresh(ready)).devices.some(
-            (value) => value.id === booting.id && value.hostId === host.id && !value.booted,
-          )
-        )
-          yield* markBooting;
-        return yield* ready.devices.boot(booting);
-      }).pipe(
-        Effect.ensuring(
-          publish((current) => ({
-            ...current,
-            bootingDevices: (current.bootingDevices ?? []).filter(
+        if (!/^\s*V\S*[ \t]+libx264(?:[ \t]|$)/m.test(`${encoders.stdout}\n${encoders.stderr}`)) {
+          return yield* new DevicePlatformUnavailableError({
+            hostId: host.id,
+            platform: "android",
+            reason:
+              "Android emulator video needs the libx264 encoder. Install an ffmpeg build that includes libx264 on the device host, then retry opening the emulator. After changing PATH or SERVE_EMU_FFMPEG, turn device support off and on for SSH hosts, or restart the local environment server.",
+          });
+        }
+      }
+      let notice: string | undefined;
+      if (ready.remote) {
+        const opened = yield* ready.remote.open(
+          input,
+          device.platform === "ios" ? memoryMode : "standard",
+        );
+        notice = opened.notice;
+        state = yield* refresh(ready);
+        device = findDevice(state, host.id, opened.deviceId);
+        if (!device)
+          return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: opened.deviceId });
+      } else if (!device.booted && input.boot !== false) {
+        const booting = { ...device, threadId: input.threadId };
+        const markBooting = publish((current) => ({
+          ...current,
+          bootingDevices: [
+            ...(current.bootingDevices ?? []).filter(
               (entry) => entry.hostId !== booting.hostId || entry.id !== booting.id,
             ),
-          })),
-        ),
-      );
-      state = yield* refresh(ready);
-      device = findDevice(state, host.id, bootedId) ?? findDevice(state, host.id, device.id);
-      if (!device) {
-        return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: bootedId });
-      }
-    } else if (device.booted) {
-      yield* ready.devices.attach(device);
-    }
-    if (hosts.get(host.id) !== host)
-      return yield* new DeviceHostUnavailableError({
-        hostId: host.id,
-        reason: "Host configuration changed. Retry the operation.",
-      });
-    const openedAt = DateTime.formatIso(yield* DateTime.now);
-    const session: DeviceSession = {
-      threadId: input.threadId,
-      hostId: host.id,
-      deviceId: device.id,
-      platform: device.platform,
-      openedAt,
-    };
-    yield* lifecycleLock.withPermit(
-      Effect.gen(function* () {
-        if (!(yield* readDeviceSettings).enabled)
-          return yield* new DeviceHostUnavailableError({
-            hostId: host.id,
-            reason: "Device support was turned off while the device was opening.",
-          });
-        yield* publish((current) => ({
-          ...current,
-          sessions: [
-            ...current.sessions.filter(
-              (existing) =>
-                !(
-                  existing.threadId === session.threadId &&
-                  existing.hostId === session.hostId &&
-                  existing.deviceId === session.deviceId
+            booting,
+          ],
+        })).pipe(Effect.asVoid);
+        const bootedId = yield* Effect.gen(function* () {
+          // DeviceIdle serializes every lifecycle operation on this host/device.
+          const unclaimedAndStopped = refresh(ready).pipe(
+            Effect.map(
+              (current) =>
+                current.devices.some(
+                  (value) => value.id === booting.id && value.hostId === host.id && !value.booted,
+                ) &&
+                !current.sessions.some(
+                  (session) => session.hostId === host.id && session.deviceId === booting.id,
                 ),
             ),
-            session,
-          ],
-        }));
-      }),
-    );
-    return notice === undefined ? session : { ...session, notice };
-  });
+          );
+          if (booting.platform === "ios" && (yield* unclaimedAndStopped)) {
+            const prepare = prepareSimulatorMemory(ready, booting, memoryMode, {
+              stillStopped: unclaimedAndStopped,
+              onMutationStart: markBooting,
+              onMutationError: shutdownDevice(host.id, booting.id, booting.platform).pipe(
+                Effect.ignore,
+              ),
+            });
+            const result = yield* Option.isSome(analytics)
+              ? FeatureUsage.observe(
+                  { feature: "simulator-memory", action: "prepare", source: "system", memoryMode },
+                  prepare,
+                  {},
+                  (memoryResult) => ({ memoryResult }),
+                ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics.value))
+              : prepare;
+            notice = simulatorMemoryNotice(result);
+          }
+          // A tool outside styal can start the simulator during helper setup.
+          // Only claim idle-shutdown ownership when styal actually starts it.
+          if (
+            (yield* refresh(ready)).devices.some(
+              (value) => value.id === booting.id && value.hostId === host.id && !value.booted,
+            )
+          )
+            yield* markBooting;
+          return yield* ready.devices.boot(booting, openContext);
+        }).pipe(
+          Effect.ensuring(
+            publish((current) => ({
+              ...current,
+              bootingDevices: (current.bootingDevices ?? []).filter(
+                (entry) => entry.hostId !== booting.hostId || entry.id !== booting.id,
+              ),
+            })),
+          ),
+        );
+        state = yield* refresh(ready);
+        device = findDevice(state, host.id, bootedId) ?? findDevice(state, host.id, device.id);
+        if (!device) {
+          return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: bootedId });
+        }
+      } else if (device.booted) {
+        yield* ready.devices.attach(device);
+      }
+      if (hosts.get(host.id) !== host)
+        return yield* new DeviceHostUnavailableError({
+          hostId: host.id,
+          reason: "Host configuration changed. Retry the operation.",
+        });
+      const openedAt = DateTime.formatIso(yield* DateTime.now);
+      const session: DeviceSession = {
+        threadId: input.threadId,
+        hostId: host.id,
+        deviceId: device.id,
+        platform: device.platform,
+        openedAt,
+      };
+      yield* lifecycleLock.withPermit(
+        Effect.gen(function* () {
+          if (!(yield* readDeviceSettings).enabled)
+            return yield* new DeviceHostUnavailableError({
+              hostId: host.id,
+              reason: "Device support was turned off while the device was opening.",
+            });
+          yield* publish((current) => ({
+            ...current,
+            sessions: [
+              ...current.sessions.filter(
+                (existing) =>
+                  !(
+                    existing.threadId === session.threadId &&
+                    existing.hostId === session.hostId &&
+                    existing.deviceId === session.deviceId
+                  ),
+              ),
+              session,
+            ],
+          }));
+        }),
+      );
+      return notice === undefined ? session : { ...session, notice };
+    },
+  );
 
   const shutdownDevice = Effect.fn("DeviceService.shutdownDevice")(function* (
     hostId: DeviceHostId,
@@ -941,15 +975,17 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
         const ready = yield* agentReadinessIfSupported(input.hostId);
         if (!ready)
           return yield* new DeviceHostUnavailableError({
-            hostId: input.hostId,
+            hostId: host.id,
+            hostLabel: host.label,
             reason:
               "Agent device access requires enabled device support, agent access, and an available simulator platform on this host.",
           });
-        const configPath = yield* lifecycleLock.withPermit(
+        const { configPath, agentDeviceId } = yield* lifecycleLock.withPermit(
           Effect.gen(function* () {
             if (hosts.get(host.id) !== host)
               return yield* new DeviceHostUnavailableError({
                 hostId: host.id,
+                hostLabel: host.label,
                 reason: "Host configuration changed. Retry the operation.",
               });
             // Environment hosts start agent access without this lock. If access was
@@ -962,7 +998,23 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
                 reason: "Agent device access was turned off.",
               });
             }
-            return yield* configureAgent(input.hostId, ready);
+            if (ready.devices.agentEndpoint) {
+              const endpoint = yield* ready.devices.agentEndpoint(input.deviceId);
+              return {
+                configPath: yield* configureAgent(input.hostId, endpoint, input.deviceId),
+                agentDeviceId: endpoint.agentDeviceId,
+              };
+            }
+            if (!ready.agentDevice)
+              return yield* new DeviceHostUnavailableError({
+                hostId: host.id,
+                hostLabel: host.label,
+                reason: "This host has no agent-device daemon.",
+              });
+            return {
+              configPath: yield* configureAgent(input.hostId, ready.agentDevice),
+              agentDeviceId: input.deviceId,
+            };
           }),
         );
         const session = yield* agentDeviceSession(
@@ -972,7 +1024,7 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
           input.hostId,
           input.deviceId,
         ).pipe(Effect.provideService(Crypto.Crypto, crypto));
-        return ["--config", configPath, "--session", session];
+        return { agentDeviceId, args: ["--config", configPath, "--session", session] };
       }),
       state: SynchronizedRef.get(stateRef).pipe(Effect.map(({ state }) => state)),
       subscribe: PubSub.subscribe(statePubSub),
@@ -1029,14 +1081,18 @@ export const make = Effect.gen(function* () {
     [localHost.id, localHost],
   ]);
   const crypto = yield* Crypto.Crypto;
-  const configPath = (hostId: DeviceHostId) =>
-    agentDeviceConfigPath(config.stateDir, hostId, path).pipe(
+  const configPath = (hostId: DeviceHostId, deviceId?: DeviceId) =>
+    agentDeviceConfigPath(config.stateDir, hostId, path, deviceId).pipe(
       Effect.provideService(Crypto.Crypto, crypto),
     );
   const configureAgent = Effect.fn("DeviceService.configureAgent")(
-    function* (hostId: DeviceHostId, ready: DeviceHost.DeviceHostAgentReady) {
-      const file = yield* configPath(hostId);
-      yield* writeAgentDeviceConfig(file, ready.agentDevice);
+    function* (
+      hostId: DeviceHostId,
+      endpoint: DeviceHost.AgentDaemonEndpoint,
+      deviceId?: DeviceId,
+    ) {
+      const file = yield* configPath(hostId, deviceId);
+      yield* writeAgentDeviceConfig(file, endpoint);
       return file;
     },
     Effect.provideService(FileSystem.FileSystem, fs),
@@ -1092,25 +1148,35 @@ export const make = Effect.gen(function* () {
   );
   const hostContext =
     yield* Effect.context<Effect.Services<ReturnType<typeof SshDeviceHost.make>>>();
+  const easContext =
+    yield* Effect.context<Effect.Services<ReturnType<typeof EasDeviceHost.make>>>();
   const configured = new Map<
     string,
-    { config: SshDeviceHostConfig | EnvironmentDeviceHostConfig; scope: Scope.Closeable }
+    { config: DeviceHostConfig | EnvironmentDeviceHostConfig; scope: Scope.Closeable }
   >();
+  const unchanged = (
+    current: DeviceHostConfig | EnvironmentDeviceHostConfig,
+    previous: DeviceHostConfig | EnvironmentDeviceHostConfig,
+  ) =>
+    "kind" in current && "kind" in previous && current.kind === "ssh" && previous.kind === "ssh"
+      ? current.label === previous.label &&
+        current.target === previous.target &&
+        current.port === previous.port &&
+        current.identityFile === previous.identityFile
+      : JSON.stringify(current) === JSON.stringify(previous);
   const reconcile = Effect.fn("DeviceService.reconcile")(function* (value: ServerSettingsValue) {
-    const sshHosts = yield* remoteSshDeviceHosts(value.deviceHosts).pipe(
-      Effect.provide(localTargetContext),
-    );
+    const sshHosts = yield* remoteSshDeviceHosts([
+      ...value.deviceHosts,
+      ...value.easDeviceHosts.filter(
+        (host) => !value.deviceHosts.some((ssh) => ssh.id === host.id),
+      ),
+    ]).pipe(Effect.provide(localTargetContext));
     const next = [...sshHosts, ...value.environmentDeviceHosts];
     const removed = yield* service.withLifecycleLock(
       Effect.gen(function* () {
         const removed: Array<{ id: string; scope: Scope.Closeable }> = [];
         for (const [id, previous] of configured) {
-          if (
-            next.some(
-              (host) => host.id === id && JSON.stringify(host) === JSON.stringify(previous.config),
-            )
-          )
-            continue;
+          if (next.some((host) => host.id === id && unchanged(host, previous.config))) continue;
           hosts.delete(id);
           configured.delete(id);
           removed.push({ id, scope: previous.scope });
@@ -1136,13 +1202,24 @@ export const make = Effect.gen(function* () {
           if (configured.has(host.id)) continue;
           added = true;
           const hostScope = yield* Scope.fork(scope);
+          if ("kind" in host && host.kind === "eas") {
+            // Closing this scope stops the host's running sessions, so a changed
+            // limit or token never leaves a billed session behind.
+            const instance = yield* EasDeviceHost.make(host).pipe(
+              Effect.provideService(Scope.Scope, hostScope),
+              Effect.provide(easContext),
+            );
+            hosts.set(host.id, instance);
+            configured.set(host.id, { config: host, scope: hostScope });
+            continue;
+          }
           const instance = yield* (
             "environmentId" in host
               ? EnvironmentDeviceHost.make(host)
               : SshDeviceHost.make(
                   host,
                   (ready) =>
-                    configureAgent(host.id, ready).pipe(
+                    configureAgent(host.id, ready.agentDevice!).pipe(
                       Effect.asVoid,
                       Effect.mapError(
                         (error) =>
@@ -1194,6 +1271,7 @@ export const make = Effect.gen(function* () {
         error._tag === "NodeRuntimeUnavailableError"
           ? new DeviceHostUnavailableError({
               hostId: LOCAL_DEVICE_HOST_ID,
+              hostLabel: "Local devices",
               reason: nodeRuntimeUnavailableMessage("Device automation"),
               cause: error,
             })

@@ -47,8 +47,14 @@ const fixture = Effect.fn("simulatorStartupFixture")(function* (
   };
   const calls: string[] = [];
   const ready: DeviceHost.DeviceHostReady = {
-get devices() {
-      return makeDeviceHubOperations({ hostId: LOCAL_DEVICE_HOST_ID, origin: ready.hub.origin, http: http, run: ready.run, androidAvailable: Effect.succeed(true) });
+    get devices() {
+      return makeDeviceHubOperations({
+        hostId: LOCAL_DEVICE_HOST_ID,
+        origin: ready.hub.origin,
+        http: http,
+        run: ready.run,
+        androidAvailable: Effect.succeed(true),
+      });
     },
     nodePath: "/node",
     hub: { origin: "http://simulator.test" },
@@ -83,6 +89,7 @@ get devices() {
   };
   const host: DeviceHost.DeviceHost["Service"] = {
     id: LOCAL_DEVICE_HOST_ID,
+    label: "Test host",
     summary: Effect.succeed({
       id: LOCAL_DEVICE_HOST_ID,
       kind: "local",

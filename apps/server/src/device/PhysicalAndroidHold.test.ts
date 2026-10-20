@@ -43,7 +43,7 @@ const state = (sessions: ReadonlyArray<DeviceSession>) =>
 const fakeHost = Effect.fn("fakeHost")(function* (holdEndsAfterStart = false) {
   const events = yield* Queue.unbounded<string>();
   const ready: DeviceHost.DeviceHostReady = {
-devices: {
+    devices: {
       list: Effect.die("Typed environment operations are required"),
       boot: () => Effect.die("Typed environment operations are required"),
       attach: () => Effect.die("Typed environment operations are required"),

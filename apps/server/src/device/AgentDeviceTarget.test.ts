@@ -12,6 +12,7 @@ import { ensureAgentDeviceShim } from "./AgentDeviceShim.ts";
 import {
   agentDeviceConfigPath,
   agentDeviceSession,
+  readAgentDeviceConfig,
   writeAgentDeviceConfig,
 } from "./AgentDeviceTarget.ts";
 
@@ -186,7 +187,6 @@ if (process.env.AGENT_DEVICE_DAEMON_BASE_URL) process.exit(2);`,
         yield* writeAgentDeviceConfig(file, {
           baseUrl: `http://127.0.0.1:${1000 + index}`,
           token: `token-${index}`,
-          entryPath,
         });
       const invoke = (file: string) =>
         exec(
@@ -209,10 +209,24 @@ if (process.env.AGENT_DEVICE_DAEMON_BASE_URL) process.exit(2);`,
       yield* writeAgentDeviceConfig(files[0]!, {
         baseUrl: "http://127.0.0.1:2000",
         token: "new",
-        entryPath,
       });
       expect((yield* Effect.promise(() => invoke(files[0]!))).daemonAuthToken).toBe("new");
       expect(yield* fs.readFileString(files[1]!)).toBe(second);
+      // Hosts with a daemon per device get a file per device, apart from the host's own.
+      const perDevice = yield* Effect.forEach(["udid-1", "udid-2"], (device) =>
+        agentDeviceConfigPath(dir, "eas", path, device),
+      );
+      expect(new Set([...perDevice, yield* agentDeviceConfigPath(dir, "eas", path)]).size).toBe(3);
+      yield* writeAgentDeviceConfig(perDevice[0]!, { baseUrl: "http://eas.test", token: "udid-1" });
+      expect(yield* readAgentDeviceConfig(dir, "eas", "udid-1")).toEqual({
+        baseUrl: "http://eas.test",
+        token: "udid-1",
+      });
+      expect(yield* readAgentDeviceConfig(dir, "eas", "udid-2")).toBeNull();
+      expect(yield* readAgentDeviceConfig(dir, "android", "emulator-5554")).toEqual({
+        baseUrl: "http://127.0.0.1:1001",
+        token: "token-1",
+      });
       expect(yield* agentDeviceSession("thread", "mini", "same-id")).not.toBe(
         yield* agentDeviceSession("thread", "android", "same-id"),
       );

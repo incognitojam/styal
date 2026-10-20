@@ -1203,6 +1203,8 @@ features:
     rationale: Connecting a machine to the client does not give an agent server access to it. An explicit device-only grant provides persistent access without copying a client credential or requiring redundant SSH setup.
     implementation_paths:
       - apps/mobile/src/features/settings/SettingsDevicesRouteScreen.tsx
+      - apps/server/src/device/DeviceHost.ts
+      - apps/server/src/device/DeviceHubOperations.ts
       - apps/server/src/device/DeviceSharing.ts
       - apps/server/src/device/DeviceSharingHttp.ts
       - apps/server/src/device/EnvironmentDeviceHost.ts
@@ -1265,6 +1267,7 @@ features:
       - packages/contracts/src/deviceIdleShutdown.ts
     upstream_paths:
       - apps/server/src/device/AgentDeviceShim.ts
+      - apps/server/src/device/AgentDeviceTarget.ts
       - apps/server/src/device/DeviceHubProxy.ts
       - apps/server/src/device/DeviceService.ts
       - apps/server/src/mcp/toolkits/device/handlers.ts
