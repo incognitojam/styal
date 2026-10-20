@@ -31,7 +31,6 @@ import {
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
-import * as ReviewService from "../review/ReviewService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -294,7 +293,6 @@ const makeHarness = (options: HarnessOptions = {}) => {
   const layer = WorktreeMcpService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        Layer.mock(ReviewService.ReviewService)({}),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           dispatch,
           getThreadRecords,
