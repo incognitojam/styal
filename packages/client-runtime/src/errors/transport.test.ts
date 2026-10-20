@@ -25,6 +25,11 @@ describe("isTransportConnectionErrorMessage", () => {
     expect(isTransportConnectionErrorMessage("Test environment stopped responding.")).toBe(true);
     expect(
       isTransportConnectionErrorMessage(
+        "Test environment stopped responding for 15s. It may be overloaded, asleep, or off the network.",
+      ),
+    ).toBe(true);
+    expect(
+      isTransportConnectionErrorMessage(
         "Test environment could not establish a WebSocket connection.",
       ),
     ).toBe(true);
@@ -47,10 +52,10 @@ describe("isTransportConnectionErrorMessage", () => {
     ).toBe(false);
   });
 
-  it("returns true for the T3 server WebSocket message", () => {
-    expect(isTransportConnectionErrorMessage("Unable to connect to the T3 server WebSocket.")).toBe(
-      true,
-    );
+  it("returns true for the styal server WebSocket message", () => {
+    expect(
+      isTransportConnectionErrorMessage("Unable to connect to the styal server WebSocket."),
+    ).toBe(true);
   });
 
   it("returns true for ping timeout", () => {
