@@ -1207,7 +1207,7 @@ export const recordAcceptedClientCommandAnalytics = (
     : analytics.record(event, properties).pipe(Effect.ignore);
 };
 
-const layerWsRpc = (
+export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
@@ -3007,8 +3007,11 @@ const layerWsRpc = (
           Stream.unwrap(
             Effect.gen(function* () {
               const usageLimitsCommand = input.usageLimitsCommand === true;
+              // Buffer changes through discovery and the initial snapshot's RPC ACK wait.
+              const keybindingsChanges = yield* keybindings.subscribeChanges;
+              const settingsChanges = yield* serverSettings.subscribeChanges;
               const config = yield* loadServerConfig({ usageLimitsCommand });
-              const keybindingsUpdates = keybindings.streamChanges.pipe(
+              const keybindingsUpdates = keybindingsChanges.pipe(
                 Stream.map((event) => ({
                   version: 1 as const,
                   type: "keybindingsUpdated" as const,
@@ -3074,7 +3077,7 @@ const layerWsRpc = (
                       })),
                     )
                   : Stream.empty;
-              const settingsUpdates = serverSettings.streamChanges.pipe(
+              const settingsUpdates = settingsChanges.pipe(
                 Stream.map((settings) => ServerSettings.redactServerSettingsForClient(settings)),
                 Stream.map((settings) => ({
                   version: 1 as const,
