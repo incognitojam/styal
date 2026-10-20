@@ -101,10 +101,6 @@
       "reason": "Imported early from its unmerged commit: Android code block copy buttons showed no icon because they passed an iOS-only symbol name. When it merges, the queue takes it and must reconcile with that import, which applied unchanged. #16979 (Enriched Markdown migration) deletes the patched module; if it merges first, take its version."
     },
     {
-      "pr": 17022,
-      "reason": "Shows the machine icon and environment name on the empty branch line of projectless threads when projects span multiple environments. Fork #770 restored the remote machine glyph but left this newer enhancement for chronological intake. Take upstream's behavior when the queue reaches it, preserving the fork's compact rows and avoiding a duplicate remote glyph when the machine label is shown. Verify local and remote projectless threads with multiple environments, branch-bearing threads, and the single-environment case, then remove this entry."
-    },
-    {
       "pr": 17118,
       "reason": "A thread snoozed during its own run, such as an agent snoozing its thread through `t3_thread_organize` before its final reply, wakes as soon as that run completes. The fix only wakes for runs requested after the snooze. Not imported early: it builds on #16782 (`isSnoozed`), which conflicts with a chain of pending MCP changes. Take it at chronological intake; #15135 (an agent archiving its own thread fails its turn) is a related open issue it does not cover."
     },
@@ -125,20 +121,8 @@
       }
     },
     {
-      "pr": 17710,
-      "reason": "The PR detail panel shows generic success notifications such as Pull request merged without identifying the PR, repository, or project. Upstream replaces blocking confirmations with inline confirmation and removes success toasts for actions whose results are visible in the panel; revert and error toasts remain. Take it at chronological intake and verify merge, ready/draft, close/reopen, branch update, auto-merge, and workflow approval update the panel without a redundant success toast. Quick-action and stack notifications are outside this change and still need a separate context review. Remove this entry once the change is recorded."
-    },
-    {
-      "pr": 17711,
-      "reason": "Supersedes #10845, which upstream closed: Usage → Limits keeps one email signed in to two workspaces, such as a ChatGPT Plus plan and a Business workspace or a Claude login in two orgs, as two accounts instead of merging their quotas. Follow-up to #10300."
-    },
-    {
       "pr": 17900,
       "reason": "Moves the mobile environment update check from GitHub's API to github.com release pages to avoid the anonymous quota. The fork already fixed this for the mobile check and `styal update` through npm dist-tags (fork #741, ledger fork-distribution-identity). Expect conflicts in `packages/shared/src/cliRelease.ts` and `apps/mobile/src/features/settings/environment-maintenance.ts`; keep the fork's lookup."
-    },
-    {
-      "pr": 17945,
-      "reason": "Fork #860 ports only its latestProviderTurnTokenUsage helper, test, and ChatView call site, unchanged: thread snapshots order provider turns by provider thread, so after a Codex to Claude switch the context meter and resume compaction banner read the last Codex turn's usage. Not imported early: ChatView.tsx and docs/user/providers-claude.md conflict with pending upstream work, including the #17127 Compact chip. When the queue reaches it, take upstream's implementation, including the reported promptCacheTtlMs, and resolve the ported lines to upstream's. Keep the fork's 60-minute fallback when no TTL is reported, and pass the TTL to claudeSelectionCacheLoss as well (ledger claude-resume-compaction-cache-expiry, claude-settings-change-cache-warning). Verify a stale Claude thread offers compaction after a 5-minute cache and a Codex to Claude switch does not, then remove this entry."
     },
     {
       "pr": 18053,
