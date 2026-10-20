@@ -580,6 +580,8 @@ interface MessagesTimelineProps {
   findOpen?: boolean;
   cancelPositionRestoreRef?: React.RefObject<(() => void) | null> | undefined;
   hideEmptyPlaceholder?: boolean;
+  /** Composer space to center the empty state against; held steady through collapse. */
+  emptyPlaceholderInset: number;
   topFadeEnabled?: boolean;
   historyControls?: MessagesTimelineHistoryControls | undefined;
   loadEarlier?: CitationHistoryPage | null;
@@ -674,6 +676,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onManualNavigation,
   cancelPositionRestoreRef,
   hideEmptyPlaceholder = false,
+  emptyPlaceholderInset,
   topFadeEnabled = false,
   historyControls,
   loadEarlier = null,
@@ -1537,7 +1540,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     return (
       <div
         className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
-        style={{ paddingBottom: contentInsetEndAdjustment }}
+        style={{ paddingBottom: emptyPlaceholderInset }}
       >
         <p className="text-sm text-muted-foreground/30">
           Send a message to start the conversation.
