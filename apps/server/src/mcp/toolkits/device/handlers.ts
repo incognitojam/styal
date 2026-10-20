@@ -113,7 +113,7 @@ const reclaimableDevices = (open: ReadonlyArray<DeviceRef & { readonly inUse: bo
 const isListed = (refs: ReadonlyArray<DeviceRef>, device: DeviceSummary) =>
   refs.some((ref) => ref.hostId === device.hostId && ref.deviceId === device.id);
 
-export const pickDevice = (
+export const pickDevice = Effect.fn("handlers.pickDevice")(function* (
   devices: ReadonlyArray<DeviceSummary>,
   openInOtherThreads: ReadonlyArray<DeviceRef>,
   input: {
@@ -121,48 +121,47 @@ export const pickDevice = (
     readonly platform?: DevicePlatform | undefined;
     readonly hostId?: DeviceHostId | undefined;
   },
-): Effect.Effect<DeviceSummary, DeviceToolUnavailableError> =>
-  Effect.gen(function* () {
-    const hostId = input.hostId ?? LOCAL_DEVICE_HOST_ID;
-    if (input.deviceId !== undefined) {
-      const match = devices.find(
-        (device) => device.hostId === hostId && device.id === input.deviceId,
-      );
-      if (match) return match;
-      return yield* new DeviceToolUnavailableError({
-        reason: `No device ${input.deviceId} on host ${hostId}. Call device_list for current ids.`,
-      });
-    }
-    const candidates = devices.filter(
-      (device) =>
-        device.hostId === hostId &&
-        (input.platform === undefined || device.platform === input.platform),
+): Effect.fn.Return<DeviceSummary, DeviceToolUnavailableError> {
+  const hostId = input.hostId ?? LOCAL_DEVICE_HOST_ID;
+  if (input.deviceId !== undefined) {
+    const match = devices.find(
+      (device) => device.hostId === hostId && device.id === input.deviceId,
     );
-    if (candidates.length === 0) {
-      return yield* new DeviceToolUnavailableError({
-        reason:
-          input.platform === undefined
-            ? "No simulators or emulators were found. Call device_list to see why."
-            : `No ${input.platform} devices were found on host ${hostId}. Call device_list to see why.`,
-      });
-    }
-    const platforms = new Set(candidates.map((device) => device.platform));
-    if (input.platform === undefined && platforms.size > 1) {
-      return yield* new DeviceToolUnavailableError({
-        reason: "Both iOS and Android devices are available; pass platform or deviceId.",
-      });
-    }
-    const booted = candidates.filter((device) => device.booted);
-    const free = booted.find((device) => !isListed(openInOtherThreads, device));
-    if (free) return free;
-    if (booted.length > 0) {
-      // Never take over another thread's device implicitly; its agent may be mid-run.
-      return yield* new DeviceToolUnavailableError({
-        reason: `Another thread is using ${booted.map((device) => `${device.name} (${device.id})`).join(", ")}. Pass deviceId: a stopped device from device_list to start it, or, if the user agrees, one of these with takeOver: true.`,
-      });
-    }
-    return candidates[0]!;
-  });
+    if (match) return match;
+    return yield* new DeviceToolUnavailableError({
+      reason: `No device ${input.deviceId} on host ${hostId}. Call device_list for current ids.`,
+    });
+  }
+  const candidates = devices.filter(
+    (device) =>
+      device.hostId === hostId &&
+      (input.platform === undefined || device.platform === input.platform),
+  );
+  if (candidates.length === 0) {
+    return yield* new DeviceToolUnavailableError({
+      reason:
+        input.platform === undefined
+          ? "No simulators or emulators were found. Call device_list to see why."
+          : `No ${input.platform} devices were found on host ${hostId}. Call device_list to see why.`,
+    });
+  }
+  const platforms = new Set(candidates.map((device) => device.platform));
+  if (input.platform === undefined && platforms.size > 1) {
+    return yield* new DeviceToolUnavailableError({
+      reason: "Both iOS and Android devices are available; pass platform or deviceId.",
+    });
+  }
+  const booted = candidates.filter((device) => device.booted);
+  const free = booted.find((device) => !isListed(openInOtherThreads, device));
+  if (free) return free;
+  if (booted.length > 0) {
+    // Never take over another thread's device implicitly; its agent may be mid-run.
+    return yield* new DeviceToolUnavailableError({
+      reason: `Another thread is using ${booted.map((device) => `${device.name} (${device.id})`).join(", ")}. Pass deviceId: a stopped device from device_list to start it, or, if the user agrees, one of these with takeOver: true.`,
+    });
+  }
+  return candidates[0]!;
+});
 
 const toolError = (error: DeviceError | DeviceToolUnavailableError) => error;
 
