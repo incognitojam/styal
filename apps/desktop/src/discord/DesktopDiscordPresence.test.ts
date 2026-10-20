@@ -13,6 +13,7 @@ function fakeClient() {
       return connected;
     },
     user: {
+      username: "example_user",
       setActivity: vi.fn(async (_activity: ReturnType<typeof formatDiscordPresence>) => {}),
       clearActivity: vi.fn(async () => {}),
     },
@@ -123,11 +124,47 @@ describe("Discord presence lifecycle", () => {
     const controller = new DiscordPresenceController(() => client, 0);
     const update = controller.setActivity({ activeThreads: 3, activeProjects: 2 });
     await connecting.promise;
+    expect(controller.status).toEqual({ _tag: "connecting" });
     const disable = controller.setActivity(null);
     login.resolve();
     await Promise.all([update, disable]);
     expect(client.user.setActivity).not.toHaveBeenCalled();
     expect(client.destroy).toHaveBeenCalled();
+    expect(controller.status).toEqual({ _tag: "idle" });
+    await controller.dispose();
+  });
+
+  it("reports whether Discord is reachable, without flickering while it retries", async () => {
+    vi.useFakeTimers();
+    const client = fakeClient();
+    client.login.mockRejectedValueOnce(new Error("Discord is not running"));
+    const statuses: string[] = [];
+    const controller = new DiscordPresenceController(
+      () => client,
+      0,
+      (status) =>
+        statuses.push(status._tag === "connected" ? `connected:${status.username}` : status._tag),
+    );
+    expect(controller.status).toEqual({ _tag: "idle" });
+    await controller.setActivity({ activeThreads: 1, activeProjects: 1 });
+    expect(controller.status).toEqual({ _tag: "unavailable" });
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(controller.status).toEqual({ _tag: "connected", username: "example_user" });
+    await controller.setActivity({ activeThreads: 2, activeProjects: 1 });
+    client.disconnect();
+    expect(controller.status).toEqual({ _tag: "unavailable" });
+    client.login.mockRejectedValueOnce(new Error("Discord is not running"));
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await controller.setActivity(null);
+    expect(statuses).toEqual([
+      "connecting",
+      "unavailable",
+      "connected:example_user",
+      "unavailable",
+      "connected:example_user",
+      "idle",
+    ]);
     await controller.dispose();
   });
 

@@ -4,11 +4,15 @@ import {
   DISCORD_PRESENCE_BUTTON,
   formatDiscordPresenceDetails,
   type DesktopDiscordPresenceActivity,
+  type DesktopDiscordPresenceStatus,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+
+import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import * as IpcChannels from "../ipc/channels.ts";
 
 // Public application identifier, shared by every styal desktop installation.
 const DISCORD_APPLICATION_ID = "1550496042082893854";
@@ -16,11 +20,13 @@ const RETRY_DELAY_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 
 type Activity = DesktopDiscordPresenceActivity | null;
+type Status = DesktopDiscordPresenceStatus;
 
 export interface DiscordRpcClient {
   readonly isConnected: boolean;
   readonly user:
     | {
+        username: string;
         setActivity: (activity: {
           details: string;
           startTimestamp: number;
@@ -36,7 +42,10 @@ export interface DiscordRpcClient {
 
 export class DesktopDiscordPresence extends Context.Service<
   DesktopDiscordPresence,
-  { readonly setActivity: (activity: Activity) => Effect.Effect<void> }
+  {
+    readonly setActivity: (activity: Activity) => Effect.Effect<void>;
+    readonly status: Effect.Effect<Status>;
+  }
 >()("@t3tools/desktop/discord/DesktopDiscordPresence") {}
 
 /** `startTimestamp` pins Discord's elapsed timer, which otherwise restarts on every update. */
@@ -59,14 +68,28 @@ export class DiscordPresenceController {
   private operation = Promise.resolve();
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private currentStatus: Status = { _tag: "idle" };
 
   private readonly createClient: () => DiscordRpcClient;
   private readonly startedAt: number;
+  private readonly onStatus: (status: Status) => void;
 
-  /** `startedAt` is the desktop launch time, reported to Discord as the activity start. */
-  constructor(createClient: () => DiscordRpcClient, startedAt: number) {
+  /**
+   * `startedAt` is the desktop launch time, reported to Discord as the activity start.
+   * `onStatus` hears each change of {@link status}.
+   */
+  constructor(
+    createClient: () => DiscordRpcClient,
+    startedAt: number,
+    onStatus: (status: Status) => void = () => {},
+  ) {
     this.createClient = createClient;
     this.startedAt = startedAt;
+    this.onStatus = onStatus;
+  }
+
+  get status(): Status {
+    return this.currentStatus;
   }
 
   setActivity(activity: Activity): Promise<void> {
@@ -95,6 +118,9 @@ export class DiscordPresenceController {
       .then(() => this.reconcile())
       .catch(async () => {
         await this.disconnect();
+        this.setStatus(
+          this.disposed || this.desired === null ? { _tag: "idle" } : { _tag: "unavailable" },
+        );
         this.scheduleRetry();
       });
     return this.operation;
@@ -103,30 +129,56 @@ export class DiscordPresenceController {
   private async reconcile(): Promise<void> {
     if (this.disposed || this.desired === null) {
       await this.disconnect();
+      this.setStatus({ _tag: "idle" });
       return;
     }
     if (!this.client?.isConnected) {
       await this.disconnect();
-      if (this.disposed || this.desired === null) return;
+      if (this.disposed || this.desired === null) {
+        this.setStatus({ _tag: "idle" });
+        return;
+      }
+      // Retries stay `unavailable` rather than flickering through `connecting`.
+      if (this.currentStatus._tag !== "unavailable") this.setStatus({ _tag: "connecting" });
       const client = this.createClient();
       this.client = client;
       client.on("disconnected", () => {
         if (this.client !== client) return;
         this.applied = null;
+        this.setStatus({ _tag: "unavailable" });
         this.scheduleRetry();
       });
       await this.bounded(client.login());
     }
     if (this.disposed || this.desired === null) {
       await this.disconnect();
+      this.setStatus({ _tag: "idle" });
       return;
     }
     if (this.equal(this.desired, this.applied)) return;
-    const user = this.client?.user;
+    const client = this.client;
+    const user = client?.user;
     if (!user) throw new Error("Discord RPC has no user session.");
     const activity = this.desired;
     await this.bounded(user.setActivity(formatDiscordPresence(activity, this.startedAt)));
+    // Discord may have disconnected while the update was in flight.
+    if (this.client !== client) return;
     this.applied = activity;
+    this.setStatus({ _tag: "connected", username: user.username });
+  }
+
+  private setStatus(status: Status): void {
+    const current = this.currentStatus;
+    if (
+      this.disposed ||
+      (current._tag === status._tag &&
+        (current._tag !== "connected" ||
+          (status._tag === "connected" && current.username === status.username)))
+    ) {
+      return;
+    }
+    this.currentStatus = status;
+    this.onStatus(status);
   }
 
   private async disconnect(): Promise<void> {
@@ -174,17 +226,23 @@ export class DiscordPresenceController {
 const make = (
   createClient: () => DiscordRpcClient = () => new Client({ clientId: DISCORD_APPLICATION_ID }),
 ) =>
-  Effect.acquireRelease(
-    Clock.currentTimeMillis.pipe(
-      Effect.map((startedAt) => new DiscordPresenceController(createClient, startedAt)),
-    ),
-    (controller) => Effect.promise(() => controller.dispose()),
-  ).pipe(
-    Effect.map((controller) =>
-      DesktopDiscordPresence.of({
-        setActivity: (activity) => Effect.promise(() => controller.setActivity(activity)),
-      }),
-    ),
-  );
+  Effect.gen(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const startedAt = yield* Clock.currentTimeMillis;
+    const runFork = Effect.runForkWith(yield* Effect.context<never>());
+    const controller = yield* Effect.acquireRelease(
+      Effect.sync(
+        () =>
+          new DiscordPresenceController(createClient, startedAt, (status) => {
+            runFork(electronWindow.sendAll(IpcChannels.DISCORD_PRESENCE_STATUS_CHANNEL, status));
+          }),
+      ),
+      (controller) => Effect.promise(() => controller.dispose()),
+    );
+    return DesktopDiscordPresence.of({
+      setActivity: (activity) => Effect.promise(() => controller.setActivity(activity)),
+      status: Effect.sync(() => controller.status),
+    });
+  });
 
 export const layer = Layer.effect(DesktopDiscordPresence, make());

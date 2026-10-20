@@ -21,6 +21,11 @@ Only counts are shared, never project names, thread titles, prompts, paths, or m
 choices. Activity disappears when there are no active threads, you disable the setting,
 or you close the desktop window. If Discord restarts, styal reconnects automatically.
 
+Once enabled, the setting shows whether styal reached Discord and which Discord account
+it is sharing as. If it says Discord can't be reached, open the Discord desktop app;
+styal keeps trying. If it shows your account but friends can't see the activity, check
+**Activity Privacy** in Discord's settings, which styal cannot read.
+
 This setting is available only in the desktop app. It works with remote environments
 because the connection to Discord stays on your computer. No Discord login or bot token
 is needed in styal.

@@ -13,6 +13,7 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { HostActivityThread } from "./environmentHttp.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
+import type { DesktopDiscordPresenceStatus } from "./discordPresence.ts";
 import type { EditorId } from "./editor.ts";
 import type { PreviewForwardedShortcut } from "./keybindings.ts";
 
@@ -1180,6 +1181,10 @@ export interface DesktopBridge {
   setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
   setDiscordPresence?: (activity: DesktopDiscordPresenceActivity | null) => Promise<void>;
+  getDiscordPresenceStatus?: () => Promise<DesktopDiscordPresenceStatus>;
+  onDiscordPresenceStatus?: (
+    listener: (status: DesktopDiscordPresenceStatus) => void,
+  ) => () => void;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog?: () => Promise<string | null>;

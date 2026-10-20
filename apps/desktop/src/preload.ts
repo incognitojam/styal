@@ -139,6 +139,19 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setDiscordPresence: (activity) =>
     ipcRenderer.invoke(IpcChannels.SET_DISCORD_PRESENCE_CHANNEL, activity),
+  getDiscordPresenceStatus: () =>
+    ipcRenderer.invoke(IpcChannels.GET_DISCORD_PRESENCE_STATUS_CHANNEL),
+  onDiscordPresenceStatus: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, status: unknown) => {
+      if (typeof status !== "object" || status === null) return;
+      listener(status as Parameters<typeof listener>[0]);
+    };
+
+    ipcRenderer.on(IpcChannels.DISCORD_PRESENCE_STATUS_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.DISCORD_PRESENCE_STATUS_CHANNEL, wrappedListener);
+    };
+  },
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),
   requestSnapShotPermissions: (includeAccessibility) =>
