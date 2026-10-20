@@ -7,7 +7,7 @@ computer, with activity sharing enabled in Discord.
 Your activity shows **styal**, with a summary such as
 **3 active threads across 2 projects**. Active means unsettled, including threads waiting for you;
 it does not mean an agent is currently generating a response. Archived and snoozed
-threads are excluded. Automatic settlement follows your sidebar preferences.
+threads are excluded, as are subagent threads that agents start, which the sidebar hides. Automatic settlement follows your sidebar preferences.
 A **View on GitHub** button links to the public styal repository. The elapsed time counts
 from when you opened the desktop app.
 

@@ -88,6 +88,21 @@ describe("Discord presence counts", () => {
     });
   });
 
+  it("counts a parent thread but not the subagents it started", () => {
+    const parent = thread("parent");
+    const child = thread("child", {
+      lineage: {
+        parentThreadId: parent.id,
+        relationshipToParent: "subagent",
+        rootThreadId: parent.id,
+      },
+    });
+    expect(deriveDiscordPresence({ ...options, threads: [parent, child] }).activity).toEqual({
+      activeThreads: 1,
+      activeProjects: 1,
+    });
+  });
+
   it("waits for server settlement instead of deriving it from message age", () => {
     const idle = thread("idle", { latestUserMessageAt: "2026-09-01T00:00:00.000Z" });
     expect(deriveDiscordPresence({ ...options, threads: [idle] }).activity?.activeThreads).toBe(1);
