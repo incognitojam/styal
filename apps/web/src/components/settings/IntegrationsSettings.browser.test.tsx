@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import "../../index.css";
-import { act, render } from "../../../test/render";
+import { render } from "../../../test/render";
 
 const { listBrowserImportSources } = vi.hoisted(() => ({
   listBrowserImportSources: vi.fn().mockResolvedValue([]),
@@ -83,7 +83,7 @@ describe("Integrations browser discovery", () => {
     await using screen = await openSettings();
 
     expect(screen.container.querySelectorAll("section#browser")).toHaveLength(1);
-    await act(async () => page.getByRole("button", { name: /Browser preferences/ }).click());
+    await page.getByRole("button", { name: /Browser preferences/ }).click();
     const searchEngine = page.getByRole("combobox", { name: "Search engine", exact: true });
     await expect.element(searchEngine).toBeVisible();
     expect(searchEngine.element().closest("section")).toBe(
