@@ -2438,6 +2438,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                       mimeType={image.mimeType}
                       src={image.previewUrl}
                       alt={image.name}
+                      decoding="async"
                       className="block size-full object-cover"
                     />
                   </button>
