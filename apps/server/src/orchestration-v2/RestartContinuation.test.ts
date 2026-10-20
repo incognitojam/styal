@@ -23,6 +23,7 @@ import {
   CONTINUE_PROMPT,
   INTERRUPTED_TURN_NOTE,
   restartContinuationRun,
+  restartContinuationChainFull,
   continueRestartedRun,
 } from "./RestartContinuation.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
@@ -62,6 +63,8 @@ function makeProjection() {
         providerThreadId,
         activeAttemptId: attemptId,
         status: "running",
+        requestedAt: now,
+        completedAt: null,
       },
     ],
     providerThreads: [
@@ -217,6 +220,28 @@ it.effect("does not list runs that delivery after the restart skips as continuab
       ),
     ),
   ).pipe(Effect.asVoid);
+});
+
+it("measures a still-working run's continuation window from the restart preview time", () => {
+  const base = makeProjection().runs[0]!;
+  const minutes = (count: number) => DateTime.add(now, { minutes: count });
+  const chain = [0, 1, 2].map((index) => ({
+    ...base,
+    id: RunId.make(`run:chain-${index}`),
+    status: "cancelled" as const,
+    requestedAt: minutes(index),
+    completedAt: minutes(index),
+    ...(index > 0 ? { restartContinuationOfRunId: RunId.make(`run:chain-${index - 1}`) } : {}),
+  }));
+  const working = {
+    ...base,
+    requestedAt: minutes(3),
+    restartContinuationOfRunId: RunId.make("run:chain-2"),
+  };
+  const runs = [...chain, working];
+  assert.equal(restartContinuationChainFull(working, runs, minutes(4)), true);
+  // Recovery completes the run at the restart, by which time the chain is outside the window.
+  assert.equal(restartContinuationChainFull(working, runs, minutes(15)), false);
 });
 
 it("requires matching saved native state for an unfinished root run", () => {
@@ -1054,6 +1079,7 @@ const cutMidTurn = (extra: Record<string, unknown> = {}) => {
       {
         ...base.runs[0]!,
         status: "cancelled",
+        completedAt: now,
         userMessageId: MessageId.make("message:user"),
         ...extra,
       },
@@ -1252,7 +1278,7 @@ it.effect("prepares later threads' continuations when one thread fails", () =>
   }),
 );
 
-it.effect("stops continuing after three automatic restart continuations in a row", () =>
+it.effect("stops rapid restart loops but allows repeated restarts after normal work", () =>
   Effect.gen(function* () {
     const first = RunId.make("run:first-continuation");
     const second = RunId.make("run:second-continuation");
@@ -1273,7 +1299,24 @@ it.effect("stops continuing after three automatic restart continuations in a row
         run.id === first ? { ...run, restartContinuationOfRunId: RunId.make("run:root") } : run,
       ),
     } as unknown as OrchestrationV2ThreadProjection;
-    assert.lengthOf(yield* continuationTexts(withThreeLinks), 0);
+    for (const { completedAt, oldestRequestAge, expected } of [
+      { completedAt: null, oldestRequestAge: { minutes: 6 }, expected: 0 },
+      { completedAt: null, oldestRequestAge: { minutes: 6, milliseconds: 1 }, expected: 1 },
+      { completedAt: now, oldestRequestAge: { minutes: 6 }, expected: 1 },
+    ]) {
+      const projection = {
+        ...withThreeLinks,
+        runs: withThreeLinks.runs.map((run, index) => ({
+          ...run,
+          completedAt,
+          requestedAt: DateTime.subtract(
+            now,
+            run.id === first ? oldestRequestAge : { minutes: index + 1 },
+          ),
+        })),
+      };
+      assert.lengthOf(yield* continuationTexts(projection), expected);
+    }
   }),
 );
 

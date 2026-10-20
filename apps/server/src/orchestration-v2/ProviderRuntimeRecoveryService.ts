@@ -111,9 +111,10 @@ export const listContinuableThreadIds = Effect.fn(
         .continueThreadsAfterServerUpdate
     )
       continue;
-    const run = restartContinuationRun(projection, yield* DateTime.now);
+    const now = yield* DateTime.now;
+    const run = restartContinuationRun(projection, now);
     // Delivery after the restart skips these runs, so they are not continuable.
-    if (!run || restartContinuationChainFull(run, projection.runs)) continue;
+    if (!run || restartContinuationChainFull(run, projection.runs, now)) continue;
     const records = yield* projections.getThreadRecords(
       threadId,
       ["messages", "turnItems"],

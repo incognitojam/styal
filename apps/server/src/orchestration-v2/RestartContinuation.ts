@@ -39,6 +39,7 @@ export const INTERRUPTED_TURN_NOTE =
   "Note: the styal server restarted and interrupted this turn. Check unfinished work before retrying.";
 
 const MAX_CONTINUATION_CHAIN = 3;
+const CONTINUATION_LOOP_WINDOW_MS = 5 * 60 * 1_000;
 
 function restartContinuationBlocked(
   projection: Pick<
@@ -198,18 +199,24 @@ export function restartContinuationRun(
 
 /**
  * True when `run` ends a chain of automatic continuations that reached the
- * limit. A turn that keeps crashing the server would otherwise restart it forever.
+ * limit within five minutes. A turn that keeps crashing the server would
+ * otherwise restart it forever. A restart preview passes `now` for a run that
+ * is still working, because recovery completes it at the restart.
  */
 export function restartContinuationChainFull(
   run: OrchestrationV2Run,
   runs: ReadonlyArray<OrchestrationV2Run>,
+  now?: DateTime.Utc,
 ): boolean {
   let chainLength = 0;
+  const loopWindowStart =
+    DateTime.toEpochMillis(run.completedAt ?? now ?? run.requestedAt) - CONTINUATION_LOOP_WINDOW_MS;
   for (
     let current: OrchestrationV2Run | undefined = run;
     current?.restartContinuationOfRunId !== undefined && chainLength < MAX_CONTINUATION_CHAIN;
     current = runs.find((candidate) => candidate.id === current?.restartContinuationOfRunId)
   ) {
+    if (DateTime.toEpochMillis(current.requestedAt) < loopWindowStart) break;
     chainLength += 1;
   }
   return chainLength >= MAX_CONTINUATION_CHAIN;
