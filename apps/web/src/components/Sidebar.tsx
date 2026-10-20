@@ -2587,6 +2587,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {props.grouped ? null : props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
+              {/* Left of the status slot, the pin would slide when hover swaps the
+                label for the wider row controls. */}
+              {pinIndicator}
               {props.grouped ? (
                 <>
                   {title}
@@ -2604,7 +2607,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ) : (
                 <span className="flex-1" />
               )}
-              {pinIndicator}
               {props.compact ? (
                 <>
                   {terminalStatusIcon}
