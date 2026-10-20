@@ -3,7 +3,8 @@
 In the desktop app, open **Settings → General → Activity sharing** and enable
 **Discord Rich Presence**. It is off by default. Discord must be running on the same
 computer, with activity sharing enabled in Discord. The setting previews the activity
-card with your current counts, so you can check what others will see before enabling it.
+card with your current counts, or example counts when nothing is active, so you can
+check what others will see before enabling it.
 
 Your activity shows **styal**, with a summary such as
 **3 active threads across 2 projects**. Active means unsettled, including threads waiting for you;
