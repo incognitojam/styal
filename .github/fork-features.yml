@@ -4286,7 +4286,7 @@ features:
   - id: setup-thread-settlement
     title: Choose automatic settlement during setup
     status: maintained
-    prs: []
+    prs: [935]
     invariants:
       - Web and desktop setup ends with a Workflow step that offers automatic settlement when a selected computer supports it; computers without the capability are left out, and when none support it the import steps finish setup as before.
       - The step starts from the first selected computer's current settings, and Finish writes merge and inactivity settlement only to computers whose values differ, keeping each computer's own inactivity threshold when turning it on.
