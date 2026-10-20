@@ -362,6 +362,9 @@ const CLAUDE_SCRIPT_EXTENSIONS = [".js", ".mjs", ".tsx", ".ts", ".jsx"];
 // mcp_set_servers once each server connected or hit its own 30 s timeout.
 const CLAUDE_MCP_REGISTRATION_TIMEOUT = "90 seconds";
 const CLAUDE_CLI_CLOSE_GRACE_MS = 3_500;
+// Claude can consume a subagent result before the launching turn ends, leaving
+// its notification with no native wake turn to answer the continuation.
+const CLAUDE_WAKE_TURN_START_DEADLINE = "2 minutes";
 // Claude Code flushes transcript writes every 100 ms, so a workflow member's
 // reply can land after the progress frame that settles it. Its transcript
 // stays the source of its answer this long after it settles.
@@ -2424,6 +2427,14 @@ function isClaudeTurnStartMessage(message: SDKMessage): boolean {
   return message.type === "system" && message.subtype === "init";
 }
 
+function isClaudeRootTurnFrame(message: SDKMessage): boolean {
+  return (
+    isClaudeTurnStartMessage(message) ||
+    ((message.type === "user" || message.type === "assistant" || message.type === "stream_event") &&
+      message.parent_tool_use_id == null)
+  );
+}
+
 function claudePendingBackgroundTasksFromRoster(
   roster: ReadonlyMap<string, OrchestrationV2PendingBackgroundTask>,
 ): ReadonlyArray<OrchestrationV2PendingBackgroundTask> {
@@ -3408,6 +3419,7 @@ interface ActiveClaudeTurnContext {
   readonly promptUuid: string | null;
   promptEcho: "pending" | "confirmed";
   promptStarted: boolean;
+  nativeWakeStarted: boolean;
   gatedFramesBeforeEcho: number;
   readonly heldRootFrames: Array<SDKMessage>;
 }
@@ -8800,6 +8812,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const context = yield* Ref.get(activeTurn);
           const liveQuery = yield* Ref.get(queryContext);
           if (
+            context?.promptUuid === null &&
+            liveQuery?.query === input.query &&
+            isClaudeRootTurnFrame(message)
+          ) {
+            context.nativeWakeStarted = true;
+          }
+          if (
             context === null ||
             context.promptUuid === null ||
             context.promptEcho === "confirmed" ||
@@ -9634,6 +9653,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               streamedUsageByMessageId: new Map(),
               streamingMessageId: undefined,
               promptStarted: false,
+              nativeWakeStarted: false,
               gatedFramesBeforeEcho: 0,
               heldRootFrames: [],
             };
@@ -9750,15 +9770,36 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   yield* handleSdkMessage({ query: querySession.query, message: lastResult });
                   return;
                 }
-                const hasNativeWakeFrame = drained.some(
-                  (entry) =>
-                    entry.type === "user" ||
-                    entry.type === "assistant" ||
-                    isClaudeTurnStartMessage(entry),
-                );
-                if (hasOpaqueTaskNotification && !hasNativeWakeFrame) {
+                if (hasOpaqueTaskNotification && !context.nativeWakeStarted) {
                   const completedAt = yield* DateTime.now;
                   yield* finalizeActiveTurn({ context, status: "completed", completedAt });
+                } else if (!context.nativeWakeStarted) {
+                  yield* Effect.sleep(CLAUDE_WAKE_TURN_START_DEADLINE).pipe(
+                    Effect.andThen(
+                      sdkMessageLock.withPermits(1)(
+                        Effect.gen(function* () {
+                          if (
+                            (yield* Ref.get(activeTurn)) !== context ||
+                            (yield* Ref.get(queryContext)) !== querySession ||
+                            querySession.stopping ||
+                            context.nativeWakeStarted ||
+                            (yield* Ref.get(interruptedTurns)).has(context.providerTurnId)
+                          )
+                            return;
+                          yield* Effect.logWarning(
+                            "orchestration-v2.claude-wake-turn-never-opened",
+                            {
+                              providerTurnId: context.providerTurnId,
+                              nativeThreadId,
+                            },
+                          );
+                          const completedAt = yield* DateTime.now;
+                          yield* finalizeActiveTurn({ context, status: "completed", completedAt });
+                        }),
+                      ),
+                    ),
+                    Effect.forkIn(sessionScope),
+                  );
                 }
               }),
             );
