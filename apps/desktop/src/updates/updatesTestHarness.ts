@@ -31,6 +31,13 @@ export interface UpdatesHarnessOptions extends NativeUpdatesFakeOptions {
   readonly setUpdateChannelError?: DesktopAppSettings.DesktopSettingsWriteError;
   readonly setDisableDifferentialDownload?: Effect.Effect<void>;
   readonly downloadUpdate?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterDownloadUpdateError>;
+  /** sha512 of a download an earlier launch left in electron-updater's cache. */
+  readonly cachedDownloadSha512?: string;
+  readonly cachedDownloadInfo?: string;
+  readonly cachedFileExists?: boolean;
+  readonly updater?: ElectronUpdater.ElectronUpdater["Service"];
+  readonly fileSystem?: FileSystem.FileSystem;
+  readonly runningUnderArm64Translation?: boolean;
   readonly quitAndInstall?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>;
   readonly stopBackend?: Effect.Effect<void>;
   readonly startBackend?: Effect.Effect<void>;
@@ -41,6 +48,8 @@ export interface UpdatesHarnessOptions extends NativeUpdatesFakeOptions {
   readonly packageType?: string | undefined;
   readonly installRecord?: string | undefined;
 }
+
+const PENDING_DOWNLOAD_DIRECTORY = "/cache/t3code-updater/pending";
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
   let autoInstallOnAppQuit = false;
@@ -80,7 +89,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   };
   const nativeFakes = makeNativeUpdatesFakes(options, emit);
 
-  const layerUpdater = Layer.succeed(ElectronUpdater.ElectronUpdater, {
+  const stubUpdater = {
     setFeedURL: (options) =>
       Effect.sync(() => {
         feedUrls.push(options);
@@ -102,6 +111,11 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         fullChangelog = value;
       }),
     setDisableDifferentialDownload: () => options.setDisableDifferentialDownload ?? Effect.void,
+    pendingDownloadDirectory: Effect.succeed(
+      options.cachedDownloadSha512 === undefined
+        ? Option.none()
+        : Option.some(PENDING_DOWNLOAD_DIRECTORY),
+    ),
     checkForUpdates: Effect.sync(() => {
       checkCount += 1;
     }).pipe(Effect.andThen(options.checkForUpdates ?? Effect.void)),
@@ -132,7 +146,11 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
             removeListener(eventName, listener as unknown as (...args: readonly unknown[]) => void);
           }),
       ).pipe(Effect.asVoid),
-  } satisfies ElectronUpdater.ElectronUpdater["Service"]);
+  } satisfies ElectronUpdater.ElectronUpdater["Service"];
+  const layerUpdater = Layer.succeed(
+    ElectronUpdater.ElectronUpdater,
+    options.updater ?? stubUpdater,
+  );
 
   const layerWindow = Layer.succeed(ElectronWindow.ElectronWindow, {
     create: () => Effect.die("unexpected BrowserWindow creation"),
@@ -188,7 +206,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     appPath: "/repo",
     isPackaged: true,
     resourcesPath: "/missing/resources",
-    runningUnderArm64Translation: false,
+    runningUnderArm64Translation: options.runningUnderArm64Translation ?? false,
   }).pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -253,15 +271,28 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       if (installRecord !== undefined) return Effect.succeed(installRecord);
       return path === "/missing/resources/package-type" && options.packageType !== undefined
         ? Effect.succeed(options.packageType)
-        : Effect.fail(
-            PlatformError.systemError({
-              module: "FileSystem",
-              method: "readFileString",
-              _tag: "NotFound",
-              pathOrDescriptor: path,
-            }),
-          );
+        : path === `${PENDING_DOWNLOAD_DIRECTORY}/update-info.json` &&
+            options.cachedDownloadSha512 !== undefined
+          ? Effect.succeed(
+              options.cachedDownloadInfo ??
+                JSON.stringify({
+                  fileName: "update.zip",
+                  sha512: options.cachedDownloadSha512,
+                }),
+            )
+          : Effect.fail(
+              PlatformError.systemError({
+                module: "FileSystem",
+                method: "readFileString",
+                _tag: "NotFound",
+                pathOrDescriptor: path,
+              }),
+            );
     },
+    exists: (path) =>
+      Effect.succeed(
+        options.cachedFileExists !== false && path === `${PENDING_DOWNLOAD_DIRECTORY}/update.zip`,
+      ),
     makeDirectory: () => Effect.void,
     writeFileString: (path, data) =>
       Effect.sync(() => {
@@ -275,8 +306,11 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         if (isInstallRecord(path)) previousInstallRecord = undefined;
       }),
   } satisfies Partial<FileSystem.FileSystem>;
-  const layerFileSystem = FileSystem.layerNoop(nativeFakes.withIdleRestartFile(fileSystem));
+  const stubFileSystem = FileSystem.layerNoop(nativeFakes.withIdleRestartFile(fileSystem));
 
+  const layerFileSystem = options.fileSystem
+    ? Layer.succeed(FileSystem.FileSystem, options.fileSystem)
+    : stubFileSystem;
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(
       Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
