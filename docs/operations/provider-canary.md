@@ -20,8 +20,9 @@ Claude Code, and OpenCode it finds npm releases that the current stable and
 nightly styal builds may not install yet, installs
 each one into an isolated prefix, and runs real turns against that build's
 server, checked out from its release tag: a tool turn, its checkpoint, a
-resumed follow-up, an interrupt, an approval round trip, a rewind, a native
-subagent, and follow-ups after a server restart. It fails on error items or
+resumed follow-up, an interrupt, an approval round trip, a routine write in
+Auto that must not ask for approval (on providers that report an Auto reviewer),
+a rewind, a native subagent, and follow-ups after a server restart. It fails on error items or
 server warnings any of them leave behind. A failed run is retried once; a pass
 on the retry is still recorded and is listed in the status issue. Versions that
 pass are recorded in one pull request from `automation/provider-canary`, which

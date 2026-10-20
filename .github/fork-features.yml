@@ -3116,14 +3116,18 @@ features:
   - id: provider-auto-default
     title: Start new threads in Auto where the provider reviews actions
     status: maintained
-    prs: [928]
+    prs: [928, 930]
     invariants:
       - The built-in default permission mode for new threads is Auto. Configs that never chose a mode, including those that kept the old Full access default, use it.
       - With Auto as the default, a new thread on a provider whose snapshot does not report its own Auto reviewer (reviewsAutoMode) starts in Full access; Claude, Codex, and Grok report one. An unloaded snapshot or an older server counts as no reviewer.
       - Web and mobile drafts follow their selected provider until the user picks a mode; the server's bootstrap thread uses the same resolution. Picking Auto for one thread keeps Auto on every provider.
+      - The provider canary's auto scenario fails a release whose Auto turn asks for approval of a routine workspace write, or whose provider does not report applying Auto; providers without reviewsAutoMode skip it.
+      - provider.turn.completed reports approvalRequests, the command, file, and permission approvals the turn raised, alongside its runtimeMode.
     rationale: Auto is the safer default where a reviewer approves routine actions, but on a provider without one Auto asks about every action, which would stall threads nobody is watching.
     implementation_paths:
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/server/scripts/verify-provider-live.ts
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/provider/ClaudeProvider.ts
       - apps/server/src/provider/CodexProvider.ts
       - apps/server/src/serverRuntimeStartup.ts
@@ -3135,10 +3139,12 @@ features:
       - packages/provider-grok/src/server/status.ts
     upstream_paths:
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/web/src/components/ChatView.tsx
       - packages/contracts/src/providerPolicy.ts
       - packages/contracts/src/settings.ts
     tests:
+      - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
       status: unassessed
