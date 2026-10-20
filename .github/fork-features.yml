@@ -4755,7 +4755,7 @@ features:
     invariants:
       - Each automatic settlement records exactly one reason on the thread, a merged or closed pull request with its number and link or inactivity with the threshold in days; an explicit settle records `user`, re-settling keeps the first reason, and un-settling, pinning, or new work clears it.
       - The reason survives projection rebuilds, reaches clients on the thread shell, and appears in the agent thread read; older clients and servers interoperate because the field is optional.
-      - Web, desktop, and mobile settled rows label automatic settles ("PR #123 merged", "Idle 3 days"); on web and desktop the pull request number opens the pull request like other sidebar PR links.
+      - Settled rows show why a thread settled automatically without crowding its title. Web and desktop keep the row's pull request badge for pull request settles, falling back to a compact "#123 merged" link when the row has no badge, and show "Idle 3d" for inactivity; mobile shows "PR #123 merged" or "Idle 3 days" on a second line.
       - Web and desktop show one persistent notice for automatic settles that happened after the device first ran this version, combined when several threads settled, and never again on that device after it is dismissed or acted on.
       - The server records each automatic settle as `server.thread.settled` with its rule, and un-settle analytics carry `previousSettleReason`, without thread or pull request identifiers.
     rationale: Upstream settles threads automatically without recording why, so users find threads missing from the active list without an explanation and maintainers cannot tell how often an automatic rule is undone.

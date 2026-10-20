@@ -195,7 +195,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   checked October 10, 2026, but unpinning waits for its next settlement sweep.
   [Pin and reorder threads](./thread-sidebar.md#pin-and-reorder-threads).
 - **See why a thread settled.** Threads that settle automatically say why in the Settled shelf,
-  such as **PR #123 merged** or **Idle 3 days**, and web and desktop explain the first automatic
+  such as the merged pull request or **Idle 3 days**, and web and desktop explain the first automatic
   settles once with a link to the settings that control them. T3 Code settles threads
   automatically without recording a reason as of
   [revision 67c0fc0](https://github.com/pingdotgg/t3code/tree/67c0fc0cdaf963b103518862dd7b68a9c758ecf2),

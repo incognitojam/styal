@@ -1908,32 +1908,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     )
   ) : null;
 
-  // Settled rows say why the server settled them; explicit settles carry no label.
+  // Settled rows say why the server settled them; explicit settles carry no label. A
+  // pull request settle is already shown by the row's PR badge, whose glyph carries the
+  // merged or closed state, so only inactivity needs its own compact tag.
   const settleReason = variantAction === "unsettle" ? thread.settleReason : null;
-  const settleReasonText = settleReasonLabel(settleReason);
   const settleReasonTag =
-    settleReasonText === null ? null : (
+    settleReason?.kind === "inactivity" ? (
       <span
         data-testid={`sidebar-settle-reason-${thread.id}`}
-        className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+        className="shrink-0 text-xs text-muted-foreground"
+        aria-label={settleReasonLabel(settleReason) ?? undefined}
       >
-        {settleReason?.kind === "pull_request" ? (
-          <>
-            <InlineButton tone="muted" onClick={(event) => handlePrClick(event, settleReason.url)}>
-              PR #{settleReason.number}
-            </InlineButton>
-            {settleReason.state}
-          </>
-        ) : (
-          settleReasonText
-        )}
+        Idle {settleReason.days}d
       </span>
-    );
-  // The reason already names this pull request, so its badge would repeat it.
-  const settleReasonNamesBadge =
-    settleReason?.kind === "pull_request" &&
-    prBadgeShape?.kind !== "stack" &&
-    (pr?.number ?? currentLinkedPr?.number) === settleReason.number;
+    ) : settleReason?.kind === "pull_request" && prBadge === null ? (
+      <InlineButton tone="muted" onClick={(event) => handlePrClick(event, settleReason.url)}>
+        #{settleReason.number} {settleReason.state}
+      </InlineButton>
+    ) : null;
 
   if (variant === "slim") {
     return (
@@ -1991,7 +1983,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               remain visible AND clickable while the row is hovered. Only
               the time/jump label yields to the settle affordance. */}
             {settleReasonTag}
-            {settleReasonNamesBadge ? null : prBadge}
+            {prBadge}
             {sortable?.isDragging ? (
               dragDestination
             ) : (
