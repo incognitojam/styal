@@ -24,7 +24,7 @@ function relayStatus(
 }
 
 describe("available cloud environment presentation", () => {
-  it("shows an offline relay without marking the row as failing", () => {
+  it("shows a machine the relay cannot reach as offline without its health-check error", () => {
     expect(
       availableCloudEnvironmentPresentation({
         isStatusPending: false,
@@ -33,10 +33,10 @@ describe("available cloud environment presentation", () => {
         statusErrorTraceId: null,
       }),
     ).toEqual({
-      connectionError: "Tunnel is unavailable.",
-      connectionErrorTraceId: "trace-offline",
+      connectionError: null,
+      connectionErrorTraceId: null,
       connectionState: "available",
-      statusText: "Tunnel is unavailable.",
+      statusText: "Relay offline",
     });
   });
 
