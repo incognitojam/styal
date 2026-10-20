@@ -2187,6 +2187,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     themeAppearance,
     userBubbleColor,
     viewportWidth,
+    contentWidth,
+    skills: props.skills,
     workflowOpening,
   };
   const reportHeaderMaterialVisibility = (visible: boolean) => {
