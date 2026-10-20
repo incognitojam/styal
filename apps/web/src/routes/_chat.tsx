@@ -13,10 +13,7 @@ import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentScope } from "../state/session";
 import { selectProjectGroupingSettings } from "../logicalProject";
-import {
-  buildSidebarProjectSnapshots,
-  countSidebarProjectChoices,
-} from "../sidebarProjectGrouping";
+import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -82,7 +79,7 @@ function ChatRouteGlobalShortcuts() {
   // fallback default, so with nothing open they land in the project on screen
   // rather than the top of the project list.
   const scopedProjectGroup = useScopedProjectGroup(projectGroups);
-  const projectChoiceCount = countSidebarProjectChoices(projectGroups);
+  const projectGroupCount = projectGroups.length;
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -154,7 +151,7 @@ function ChatRouteGlobalShortcuts() {
         // project filter does not suppress the chooser here — chat.newLocal is
         // already the "create in the current project" command, so collapsing
         // the two would leave no way to deliberately pick.
-        if (!legacySidebarEnabled && projectChoiceCount > 1) {
+        if (!legacySidebarEnabled && projectGroupCount > 1) {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }
@@ -238,7 +235,7 @@ function ChatRouteGlobalShortcuts() {
     defaultProjectRef,
     previewOpen,
     primaryEnvironmentId,
-    projectChoiceCount,
+    projectGroupCount,
     routeThreadRef,
     scopedProjectGroup,
     scratchEnvironmentId,
