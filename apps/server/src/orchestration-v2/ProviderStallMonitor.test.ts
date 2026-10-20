@@ -197,6 +197,7 @@ const withHarness = <A, E>(
       Layer.provide(IdAllocator.layer),
       Layer.provide(
         Layer.succeed(AnalyticsService.AnalyticsService, {
+          recordOwners: () => Effect.void,
           record: (name, properties) =>
             Effect.sync(() => {
               events.push({ name, properties });

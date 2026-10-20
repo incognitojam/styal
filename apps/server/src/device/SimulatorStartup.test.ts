@@ -137,6 +137,7 @@ const fixture = Effect.fn("simulatorStartupFixture")(function* (
       : Effect.provideService(
           AnalyticsService.AnalyticsService,
           AnalyticsService.AnalyticsService.of({
+            recordOwners: () => Effect.void,
             record: (event, properties) =>
               Effect.sync(() => {
                 options.events?.push({ event, properties: { ...properties } });

@@ -15,6 +15,7 @@ it.effect("records integration setting requests without environment names or set
     const events: unknown[] = [];
     const report = yield* ClientFeatureUsage.reporter({ surface: "web" }).pipe(
       Effect.provideService(AnalyticsService.AnalyticsService, {
+        recordOwners: () => Effect.void,
         record: (event, properties) =>
           Effect.sync(() => {
             events.push({ event, properties });
@@ -266,6 +267,7 @@ it.effect("records allowlisted client interactions with socket attribution and n
     });
     const unavailable = yield* ClientFeatureUsage.reporter(client).pipe(
       Effect.provideService(AnalyticsService.AnalyticsService, {
+        recordOwners: () => Effect.void,
         ...analytics,
         record: () => Effect.die("Synthetic collector failure"),
       }),

@@ -2144,6 +2144,7 @@ it.layer(
               Layer.succeed(
                 AnalyticsService.AnalyticsService,
                 AnalyticsService.AnalyticsService.of({
+                  recordOwners: () => Effect.void,
                   record: () => Effect.void,
                   flush: Effect.void,
                 }),

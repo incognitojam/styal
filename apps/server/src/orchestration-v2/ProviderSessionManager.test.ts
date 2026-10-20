@@ -1082,6 +1082,7 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
           state,
           idleTimeoutMs: 60_000,
           analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
+            recordOwners: () => Effect.void,
             record: (event, properties) =>
               Effect.sync(() => {
                 assert.equal(event, "provider.turn.sent");
@@ -1417,6 +1418,7 @@ it.effect.each([false, true])("turn stays busy after acceptance=%s", (telemetry)
           idleTimeoutMs: 1000,
           startTurn: telemetry ? Effect.void : blocked,
           analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
+            recordOwners: () => Effect.void,
             record: () => blocked,
             flush: Effect.void,
           }),

@@ -129,6 +129,7 @@ const recordingAnalytics = (events: Array<{ event: string; properties: unknown }
   Layer.succeed(
     AnalyticsService.AnalyticsService,
     AnalyticsService.AnalyticsService.of({
+      recordOwners: () => Effect.void,
       record: (event, properties) =>
         Effect.sync(() => {
           events.push({ event, properties });

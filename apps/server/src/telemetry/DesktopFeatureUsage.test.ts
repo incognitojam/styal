@@ -26,6 +26,7 @@ it.effect("records each desktop usage report as one feature.used event", () =>
     const events: Array<unknown> = [];
     const recorded = yield* Deferred.make<void>();
     const analytics = AnalyticsService.AnalyticsService.of({
+      recordOwners: () => Effect.void,
       record: (event, properties) =>
         Effect.suspend(() => {
           events.push({ event, properties });
@@ -74,6 +75,7 @@ it.effect("records desktop launch timing as desktop.launched events", () =>
     const events: Array<unknown> = [];
     const recorded = yield* Deferred.make<void>();
     const analytics = AnalyticsService.AnalyticsService.of({
+      recordOwners: () => Effect.void,
       record: (event, properties) =>
         Effect.suspend(() => {
           events.push({ event, properties });

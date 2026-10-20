@@ -1154,6 +1154,7 @@ it.effect(
       const { service, requests } = yield* fixture();
       const events: Array<{ event: string; properties: unknown }> = [];
       const analytics = AnalyticsService.AnalyticsService.of({
+        recordOwners: () => Effect.void,
         record: (event, properties) =>
           Effect.sync(() => {
             events.push({ event, properties });

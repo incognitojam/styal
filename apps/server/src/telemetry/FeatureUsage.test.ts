@@ -27,6 +27,7 @@ import { featureUsage } from "./FeatureUsage.ts";
 const usage = { feature: "browser-tools", action: "snapshot", source: "agent" } as const;
 const capture = (events: Array<unknown>) =>
   AnalyticsService.AnalyticsService.of({
+    recordOwners: () => Effect.void,
     record: (event, properties) =>
       Effect.sync(() => {
         events.push({ event, properties });
@@ -90,6 +91,7 @@ it.effect("analytics defects cannot turn a successful operation into a failure",
   Effect.gen(function* () {
     const result = yield* FeatureUsage.observe(usage, Effect.succeed("operation result")).pipe(
       Effect.provideService(AnalyticsService.AnalyticsService, {
+        recordOwners: () => Effect.void,
         record: () => Effect.die("analytics unavailable"),
         flush: Effect.void,
       }),

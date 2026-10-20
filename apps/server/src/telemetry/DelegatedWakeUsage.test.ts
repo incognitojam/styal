@@ -13,6 +13,7 @@ it.effect("records the wake each delegate_task call chooses, and nothing from th
   Effect.gen(function* () {
     const events: Array<unknown> = [];
     const analytics = AnalyticsService.AnalyticsService.of({
+      recordOwners: () => Effect.void,
       record: (event, properties) =>
         Effect.sync(() => {
           events.push({ event, properties });

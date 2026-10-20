@@ -205,6 +205,7 @@ it.effect("reports each available instance after startup settles, then daily", (
         Layer.succeed(
           AnalyticsService.AnalyticsService,
           AnalyticsService.AnalyticsService.of({
+            recordOwners: () => Effect.void,
             record: (event, properties) =>
               Effect.sync(() => {
                 events.push({ event, properties });

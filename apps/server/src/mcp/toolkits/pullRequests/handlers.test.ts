@@ -249,6 +249,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
     Layer.succeed(
       AnalyticsService.AnalyticsService,
       AnalyticsService.AnalyticsService.of({
+        recordOwners: () => Effect.void,
         record: (_event, properties) =>
           Effect.sync(() => {
             usage.push(properties ?? {});

@@ -56,6 +56,7 @@ it.effect(
         Layer.provideMerge(NodeServices.layer),
         Layer.provide(
           Layer.succeed(AnalyticsService.AnalyticsService, {
+            recordOwners: () => Effect.void,
             record: (event, properties) =>
               Effect.sync(() => {
                 events.push({ event, properties });

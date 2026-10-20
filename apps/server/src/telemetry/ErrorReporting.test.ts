@@ -217,6 +217,7 @@ describe("ErrorReporting delivery", () => {
             Layer.succeed(
               AnalyticsService,
               AnalyticsService.of({
+                recordOwners: () => Effect.void,
                 record: (event, properties) =>
                   Effect.sync(() => {
                     recorded.push({ event, properties });

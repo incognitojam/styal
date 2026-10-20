@@ -40,6 +40,8 @@ import * as Settings from "./serverSettings.ts";
 import * as Environment from "./environment/ServerEnvironment.ts";
 import * as Launcher from "./cloud/serviceLauncherClient.ts";
 import * as Analytics from "./telemetry/AnalyticsService.ts";
+import * as FileSystem from "effect/FileSystem";
+import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as Git from "./vcs/GitVcsDriver.ts";
 
 it.effect.each(["success", "retry"] as const)(
@@ -64,6 +66,8 @@ it.effect.each(["success", "retry"] as const)(
           Layer.mock(HttpServer.HttpServer)({
             address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
           }),
+          FileSystem.layerNoop({}),
+          Layer.mock(ServerSecretStore.ServerSecretStore)({ get: () => Effect.succeedNone }),
           Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
           Layer.mock(ExternalLauncher.ExternalLauncher)({}),
           Layer.mock(EventSink.EventSinkV2)({}),
@@ -227,6 +231,8 @@ it.effect("starts the bootstrap thread on Codex when the environment turned Clau
         Layer.mock(HttpServer.HttpServer)({
           address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
         }),
+        FileSystem.layerNoop({}),
+        Layer.mock(ServerSecretStore.ServerSecretStore)({ get: () => Effect.succeedNone }),
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
         Layer.mock(ExternalLauncher.ExternalLauncher)({}),
         Layer.mock(EventSink.EventSinkV2)({}),

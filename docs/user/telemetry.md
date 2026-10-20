@@ -2,6 +2,7 @@
 
 The styal server sends product usage events to styal's own PostHog project on PostHog EU Cloud,
 associated with a hashed account or installation identifier. They do not go to T3 Code's analytics.
+To count installations and their owners, events also carry a stable hashed installation ID. The server reports hashed styal Link, OpenAI and Claude account identifiers when signed in, and hashed random identifiers for client devices that connect.
 Events include the provider, model, reasoning effort, permission mode, turn result, duration, how
 many approval requests the turn raised, how many actions Codex's Auto reviewer approved or denied,
 the build's release channel, and main-agent token totals when available. Approval and review

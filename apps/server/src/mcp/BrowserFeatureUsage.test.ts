@@ -106,6 +106,7 @@ const callSnapshot = (args: Record<string, unknown>) =>
 it.effect("counts screenshot-save errors as failed browser usage", () => {
   const outcomes: Array<unknown> = [];
   const analytics = Layer.succeed(AnalyticsService.AnalyticsService, {
+    recordOwners: () => Effect.void,
     record: (_event, properties) =>
       Effect.sync(() => {
         outcomes.push(properties?.outcome);
@@ -140,6 +141,7 @@ it.effect("records one browser usage event per tool, excluding internal status r
     properties: Readonly<Record<string, unknown>> | undefined;
   }> = [];
   const analytics = Layer.succeed(AnalyticsService.AnalyticsService, {
+    recordOwners: () => Effect.void,
     record: (event, properties) =>
       Effect.sync(() => {
         recorded.push({ event, properties });
