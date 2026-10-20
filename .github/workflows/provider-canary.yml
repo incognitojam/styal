@@ -6,9 +6,16 @@ name: Provider canary
 # build it passed on. Servers fetch that manifest from main and automatically
 # update only to a version verified on a build their code contains. Problems
 # are kept in one "Provider canary status" issue.
+#
+# It checks npm hourly and again after each nightly build, which may carry an
+# adapter fix. A run with nothing new to verify ends after the plan and report.
 on:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "23 * * * *"
+  workflow_run:
+    workflows: [Fork Nightly]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       provider:
@@ -34,11 +41,15 @@ env:
 jobs:
   plan:
     name: Plan
-    if: github.repository == 'incognitojam/styal'
+    # A nightly run that skipped or failed published no build to verify.
+    if: >-
+      github.repository == 'incognitojam/styal' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
+      issues: read
       pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -79,9 +90,12 @@ jobs:
               > "$RUNNER_TEMP/plan/pending-base-manifest.json"
           fi
 
+      # A release that failed on a build in the last six hours, as the status
+      # issue records, is held rather than verified again every hour.
       - id: plan
         name: Find provider releases to verify
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           PROVIDER: ${{ inputs.provider }}
           FORCE: ${{ inputs.force }}
         run: |
@@ -272,6 +286,10 @@ jobs:
     if: ${{ !cancelled() && needs.plan.outputs.has_work == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # For GITHUB_TOKEN, which enables auto-merge on the pull request.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Download outcomes
         uses: actions/download-artifact@v8
@@ -357,11 +375,19 @@ jobs:
           echo "builds=$builds" >> "$GITHUB_OUTPUT"
           echo "summary=$summary" >> "$GITHUB_OUTPUT"
 
+      # The pull request merges itself once required checks pass, but only when
+      # it changes nothing except recorded autoUpdates entries and updatedAt.
+      # GITHUB_TOKEN enables auto-merge, not the app token: the app bypasses
+      # main's rulesets, so its auto-merge need not wait for required checks.
+      # A GITHUB_TOKEN merge starts no push workflows, so no nightly is built
+      # for it; servers read the manifest from main and need none.
       - name: Open or update the pull request
         if: steps.record.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          MERGE_TOKEN: ${{ github.token }}
           GH_REPO: incognitojam/styal
+          MANIFEST: apps/server/src/provider/model-manifest.json
           SUMMARY: ${{ steps.record.outputs.summary }}
           BUILDS: ${{ steps.record.outputs.builds }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -370,20 +396,43 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$CANARY_BRANCH"
-          git add apps/server/src/provider/model-manifest.json
+          git add "$MANIFEST"
           git commit -m "$title"
           # Rebuilt from main on every run; entries the open pull request held
           # were carried over by the record step.
           git push --force origin "$CANARY_BRANCH"
+
+          # The branch is one commit on main, so its parent is the base to check.
+          if [[ "$(git diff --name-only HEAD^ HEAD)" != "$MANIFEST" ]]; then
+            blocker="it changes files other than the model manifest"
+          else
+            git show "HEAD^:$MANIFEST" > "$RUNNER_TEMP/main-manifest.json"
+            blocker="$(node scripts/provider-canary.ts merge-guard --base "$RUNNER_TEMP/main-manifest.json" --head "$MANIFEST")" ||
+              blocker="the merge guard failed (see the canary run)"
+          fi
+          if [[ -z "$blocker" ]]; then
+            merging="It merges automatically once the required checks pass."
+          else
+            merging="It does not merge automatically because $blocker. Review it and merge it by hand."
+            echo "::warning title=Canary pull request needs review::$blocker"
+          fi
+
           body="$(printf '%s\n\n%s\n\n%s\n' \
             "Real provider turns passed for $SUMMARY on styal $BUILDS: a tool turn, checkpoint, resume, interrupt, approval, rewind, native subagent, and follow-ups after a server restart." \
-            "Merging this adds them to \`autoUpdates\` in the model manifest. Servers whose code contains those builds, with styal managed updates on, then install them." \
+            "Merging this adds them to \`autoUpdates\` in the model manifest. Servers whose code contains those builds, with styal managed updates on, then install them. $merging" \
             "Canary run: $RUN_URL")"
           number="$(gh pr list --head "$CANARY_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
           if [[ -n "$number" ]]; then
             gh pr edit "$number" --title "$title" --body "$body"
           else
-            gh pr create --head "$CANARY_BRANCH" --base main --title "$title" --body "$body"
+            url="$(gh pr create --head "$CANARY_BRANCH" --base main --title "$title" --body "$body")"
+            number="${url##*/}"
+          fi
+          if [[ -z "$blocker" ]]; then
+            GH_TOKEN="$MERGE_TOKEN" gh pr merge "$number" --auto --squash
+          else
+            # An earlier run may have enabled it for a change that was safe.
+            GH_TOKEN="$MERGE_TOKEN" gh pr merge "$number" --disable-auto || true
           fi
 
   # Keeps the "Provider canary status" issue in step with this run. It comments
@@ -391,7 +440,7 @@ jobs:
   report:
     name: Report
     needs: [plan, verify, record]
-    if: ${{ !cancelled() && github.repository == 'incognitojam/styal' }}
+    if: ${{ !cancelled() && github.repository == 'incognitojam/styal' && needs.plan.result != 'skipped' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
