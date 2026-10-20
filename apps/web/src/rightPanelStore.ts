@@ -128,6 +128,7 @@ interface RightPanelStoreState {
       | Extract<RightPanelSurface, { kind: "pull-request" | "pull-requests" }>
       | { kind: "diff"; turnId: RunId },
     expectedUserActionRevision: number,
+    activateExisting?: boolean,
   ) => boolean;
   open: (
     ref: ScopedThreadRef,
@@ -309,24 +310,31 @@ export function pullRequestSurface(target: {
   };
 }
 
+const matchesPullRequestSurface = (
+  entry: RightPanelSurface,
+  surface: PullRequestSurface,
+): entry is PullRequestSurface => {
+  const hostOf = (entry: PullRequestSurface) =>
+    entry.host?.toLowerCase() ?? (entry.url ? parseChangeRequestUrl(entry.url)?.host : undefined);
+  return (
+    entry.kind === "pull-request" &&
+    (entry.id === surface.id ||
+      (entry.environmentId === surface.environmentId &&
+        entry.projectId === surface.projectId &&
+        entry.repository.toLowerCase() === surface.repository.toLowerCase() &&
+        entry.number === surface.number &&
+        hostOf(entry) === hostOf(surface)))
+  );
+};
+
 const upsertSurface = (
   current: ThreadRightPanelState,
   surface: RightPanelSurface,
   activate = true,
 ): ThreadRightPanelState => {
   if (surface.kind === "pull-request") {
-    const hostOf = (entry: PullRequestSurface) =>
-      entry.host?.toLowerCase() ?? (entry.url ? parseChangeRequestUrl(entry.url)?.host : undefined);
-    // Linked PRs carry a URL but no host, while sidebar links carry both. Keep the
-    // existing tab ID so opening either entry point preserves the tab's identity.
     const matches = (entry: RightPanelSurface): entry is PullRequestSurface =>
-      entry.kind === "pull-request" &&
-      (entry.id === surface.id ||
-        (entry.environmentId === surface.environmentId &&
-          entry.projectId === surface.projectId &&
-          entry.repository.toLowerCase() === surface.repository.toLowerCase() &&
-          entry.number === surface.number &&
-          hostOf(entry) === hostOf(surface)));
+      matchesPullRequestSurface(entry, surface);
     const existing = current.surfaces.find(matches);
     if (existing) {
       return {
@@ -662,7 +670,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       closeRevisionByThreadKey: {},
       getUserActionRevision: (ref) =>
         get().userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0,
-      openProactive: (ref, request, expectedUserActionRevision) => {
+      openProactive: (ref, request, expectedUserActionRevision, activateExisting = false) => {
         let opened = false;
         set((state) => {
           const threadKey = scopedThreadKey(ref);
@@ -685,6 +693,17 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           }
           if (
             (state.userActionRevisionByThreadKey[threadKey] ?? 0) !== expectedUserActionRevision
+          ) {
+            return state;
+          }
+          // Keep an existing PR tab where the user left it when revisiting a thread.
+          if (
+            !activateExisting &&
+            selectThreadRightPanelState(state.byThreadKey, ref).surfaces.some((entry) =>
+              request.kind === "pull-request"
+                ? matchesPullRequestSurface(entry, request)
+                : entry.id === request.id,
+            )
           ) {
             return state;
           }
