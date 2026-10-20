@@ -609,12 +609,17 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
             const couldNotVerify =
               verifiedProviders.length === 0 ||
               (autoUpdate?.takeover === true && verified.selfUpdaterActive !== false) ||
-              verifiedProviders.some(
-                (verifiedProvider) =>
+              verifiedProviders.some((verifiedProvider) => {
+                const installedVersion =
+                  verifiedProvider.installedVersion !== undefined
+                    ? verifiedProvider.installedVersion
+                    : verifiedProvider.version;
+                return (
                   !isStillInstalled(verifiedProvider) ||
                   (targetVersion !== undefined &&
-                    verifiedProvider.version?.replace(/^v/, "") !== targetVersion),
-              );
+                    installedVersion?.replace(/^v/, "") !== targetVersion)
+                );
+              });
             // npm exits 0 when an optional platform package fails to download,
             // leaving a launcher that cannot start. The probe error says why.
             const brokenProvider = verifiedProviders.find(
