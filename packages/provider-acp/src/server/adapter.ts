@@ -1613,6 +1613,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         const activeSelection = yield* Ref.make<ModelSelection | null>(null);
         const activeInteractionMode = yield* Ref.make<ProviderInteractionMode | null>(null);
         const promptInstructionStates = yield* Ref.make(new Map<string, T3AcpInstructionState>());
+        // Unique markers keep delayed prompt completions from clearing later compactions.
+        const compactionMarkers = yield* Ref.make(new Map<string, symbol>());
         const runtimeRestartRequired = yield* Ref.make(false);
         const runtimeTeardownState = yield* Ref.make<AcpRuntimeTeardownState>({ _tag: "Idle" });
         const runtimeCallbackGeneration = yield* Ref.make(0);
@@ -3704,6 +3706,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               yield* Ref.update(contextUsageBySessionId, (current) => {
                 const updated = new Map(current);
                 updated.delete(context.nativeThreadId);
+                return updated;
+              });
+              yield* Ref.update(compactionMarkers, (current) => {
+                const updated = new Map(current);
+                updated.set(context.nativeThreadId, Symbol());
                 return updated;
               });
             }
@@ -6931,6 +6938,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             settledStatus === "completed"
           ) {
             const nativeItemId = `${context.nativeTurnId}:compaction`;
+            yield* Ref.update(compactionMarkers, (current) => {
+              const updated = new Map(current);
+              updated.set(context.nativeThreadId, Symbol());
+              return updated;
+            });
             yield* emitProviderEvent({
               type: "turn_item.updated",
               driver,
@@ -7099,6 +7111,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               mcpContext.session?.mcpServerName ?? McpProviderSession.ACTIVE_MCP_SERVER_NAME,
           } satisfies T3AcpInstructionState;
           const previousInstructionState = (yield* Ref.get(promptInstructionStates)).get(sessionId);
+          const compactionMarker = (yield* Ref.get(compactionMarkers)).get(sessionId);
           const messageText = providerMessageTextWithAttachmentPaths({
             text: turnInput.message.text,
             attachments: turnInput.message.attachments,
@@ -7108,7 +7121,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const text = t3AcpPromptWithInstructions({
             prompt: messageText,
             state: instructionState,
-            ...(previousInstructionState === undefined
+            ...(previousInstructionState === undefined || compactionMarker !== undefined
               ? {}
               : { previousState: previousInstructionState }),
           });
@@ -7164,7 +7177,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               }),
             });
           }
-          return { prompt, instructionState: text === messageText ? undefined : instructionState };
+          return {
+            prompt,
+            instructionState: text === messageText ? undefined : instructionState,
+            compactionMarker,
+          };
         });
 
         const restartRuntimeAfterTeardownIfRequired = Effect.fnUntraced(function* (
@@ -7476,6 +7493,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   if (promptParts?.instructionState === undefined) return current;
                   const updated = new Map(current);
                   updated.set(requestedSessionId, promptParts.instructionState);
+                  return updated;
+                }),
+              ),
+              Effect.tap(() =>
+                Ref.update(compactionMarkers, (current) => {
+                  if (promptParts?.instructionState === undefined) return current;
+                  const observedMarker = promptParts.compactionMarker;
+                  if (
+                    observedMarker === undefined ||
+                    current.get(requestedSessionId) !== observedMarker
+                  )
+                    return current;
+                  const updated = new Map(current);
+                  updated.delete(requestedSessionId);
                   return updated;
                 }),
               ),
@@ -8278,6 +8309,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                         yield* Ref.set(activeSelection, null);
                         yield* Ref.set(activeInteractionMode, null);
                         yield* Ref.set(promptInstructionStates, new Map());
+                        yield* Ref.set(compactionMarkers, new Map());
                         yield* Ref.set(providerTurns, new Map());
                         yield* Ref.set(snapshot, {
                           order: [],
