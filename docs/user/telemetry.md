@@ -91,9 +91,14 @@ LAN, or Tailscale. It does not include network or carrier names, IP addresses, o
 server receives only the summaries of its own connections and sends them as usage events. The mobile
 app keeps its own copy in **Settings → About → Diagnostics** either way.
 
-To disable collection, set `T3CODE_TELEMETRY_ENABLED=false` in the server's environment before
-starting it. This stops product events from being recorded or sent. Test and CI processes default to
-collection disabled; `T3CODE_TELEMETRY_ENABLED=true` explicitly enables it.
+styal also sends styal Link connection traces to Axiom to diagnose styal Link connectivity.
+
+To disable product events and styal Link tracing, set `T3CODE_TELEMETRY_ENABLED=false` in the
+server's environment before starting it. This stops product events from being recorded or sent.
+Test and CI processes default to product event collection disabled;
+`T3CODE_TELEMETRY_ENABLED=true` explicitly enables it. styal Link tracing also stops when
+`T3CODE_OTEL_SDK_DISABLED` or `OTEL_SDK_DISABLED` turns OpenTelemetry export off. The web app in a
+browser, including one the `styal` CLI opens, does not read these variables.
 To send events to your own PostHog project instead, set `T3CODE_POSTHOG_HOST` and
 `T3CODE_POSTHOG_KEY`.
 
@@ -110,7 +115,7 @@ logs alongside an error are not sent.
 To stop error reports while keeping usage events, set `T3CODE_ERROR_REPORTING_ENABLED=false`.
 Disabling telemetry with `T3CODE_TELEMETRY_ENABLED=false` stops both.
 
-The desktop app reads the variable from your shell profile (for example `~/.zshrc`) on macOS and
+The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
 
 ## Export diagnostics to your own receiver

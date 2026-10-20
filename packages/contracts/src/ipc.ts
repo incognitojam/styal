@@ -1082,6 +1082,7 @@ export interface DesktopBridge {
   ) => () => void;
   resolveShutdownConfirmation: (requestId: number, confirmed: boolean) => Promise<void>;
   getAppBranding: () => DesktopAppBranding | null;
+  getRelayTelemetryEnabled?: () => boolean;
   getPathForFile?: (file: File) => string;
   getClientPlatform?: () => string;
   setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
