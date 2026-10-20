@@ -2705,6 +2705,18 @@ export const OrchestrationV2StoredEventJson = Schema.Struct({
 export type OrchestrationV2StoredEventJson = typeof OrchestrationV2StoredEventJson.Type;
 
 export const OrchestrationV2Command = Schema.Union([
+  /**
+   * Stop for one thread, whatever it is doing: interrupts its running turn, holds its queue,
+   * ends its pull request and workflow run watches, and drops pending delegated-task wakes.
+   * Nothing to stop is an accepted no-op. Delegated tasks under the thread get their own
+   * `thread.stop`.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.stop"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    reason: Schema.optional(Schema.String),
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.create"),
     ...OrchestrationV2CreationFields,
@@ -3229,18 +3241,6 @@ const OrchestrationV2InternalCommand = Schema.Union([
         }),
       }),
     ),
-  }),
-  /**
-   * Stop for one thread, whatever it is doing: interrupts its running turn, holds its queue,
-   * ends its pull request and workflow run watches, and drops pending delegated-task wakes.
-   * Nothing to stop is an accepted no-op. Delegated tasks under the thread get their own
-   * `thread.stop`.
-   */
-  Schema.Struct({
-    type: Schema.Literal("thread.stop"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    reason: Schema.optional(Schema.String),
   }),
   /**
    * Internal so no client can mark a request saved without the value being

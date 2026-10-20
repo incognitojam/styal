@@ -269,6 +269,7 @@ export const make = Effect.gen(function* () {
       composerDraftSync: true,
       forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
       serverResolvedCommandContext: true,
+      threadStop: true,
       environmentIcon: true,
       projectCloneTracking: true,
       projectOrganization: true,

@@ -144,6 +144,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       threads, and routes PullRequestRef.host across projects on the same host. Same
       version-skew contract as threadSettlement. */
   serverResolvedCommandContext: Schema.optionalKey(Schema.Boolean),
+  threadStop: Schema.optionalKey(Schema.Boolean),
   threadPullRequests: Schema.optionalKey(Schema.Boolean),
   threadPullRequestWatch: Schema.optionalKey(Schema.Boolean),
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),
