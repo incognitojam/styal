@@ -10,7 +10,7 @@ import {
 } from "./methods/shutdownConfirmation.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
-import { setDiscordPresence } from "./methods/discordPresence.ts";
+import { getDiscordPresenceStatus, setDiscordPresence } from "./methods/discordPresence.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
@@ -111,6 +111,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);
   yield* ipc.handle(setDiscordPresence);
+  yield* ipc.handle(getDiscordPresenceStatus);
   yield* ipc.handle(getConnectionCatalog);
   yield* ipc.handle(getSnapShotState);
   yield* ipc.handle(setupSnapShot);

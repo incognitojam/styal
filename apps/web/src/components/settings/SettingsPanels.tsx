@@ -4,6 +4,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { DiscordPresencePreview } from "./DiscordPresencePreview";
+import { DiscordPresenceStatus } from "./DiscordPresenceStatus";
 import { ArchiveIcon, ArchiveX, CheckIcon, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
@@ -3612,6 +3613,7 @@ export function GeneralSettingsPanel() {
             {...searchableSetting("discord-rich-presence")}
             forkFeature="desktop-discord-rich-presence"
             description="Show your active thread and project counts in Discord. Names and conversation content are never shared. Requires Discord running on this computer."
+            status={settings.discordRichPresence ? <DiscordPresenceStatus /> : undefined}
             resetAction={
               settings.discordRichPresence ? (
                 <SettingResetButton
