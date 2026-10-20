@@ -256,15 +256,16 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       return PubSub.publish(statePubSub, next).pipe(Effect.as({ state: next }));
     }).pipe(Effect.map(({ state }) => state));
 
-  const resolveHost = (hostId: DeviceHostId | undefined) =>
-    Effect.gen(function* () {
-      const id = hostId ?? LOCAL_DEVICE_HOST_ID;
-      const host = hosts.get(id);
-      if (!host) {
-        return yield* new DeviceHostUnavailableError({ hostId: id, reason: "Unknown host." });
-      }
-      return host;
-    });
+  const resolveHost = Effect.fn("DeviceService.resolveHost")(function* (
+    hostId: DeviceHostId | undefined,
+  ) {
+    const id = hostId ?? LOCAL_DEVICE_HOST_ID;
+    const host = hosts.get(id);
+    if (!host) {
+      return yield* new DeviceHostUnavailableError({ hostId: id, reason: "Unknown host." });
+    }
+    return host;
+  });
 
   const setHostStatus = (
     hostId: DeviceHostId,
@@ -1148,45 +1149,44 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
           reason: "Agent CLI installation is unavailable in this device service.",
         }),
       ),
-      agentTarget: (input) =>
-        Effect.gen(function* () {
-          const host = yield* resolveHost(input.hostId);
-          const ready = yield* agentReadinessIfSupported(input.hostId);
-          if (!ready)
-            return yield* new DeviceHostUnavailableError({
-              hostId: input.hostId,
-              reason:
-                "Agent device access requires enabled device support, agent access, and an available simulator platform on this host.",
-            });
-          const configPath = yield* lifecycleLock.withPermit(
-            Effect.gen(function* () {
-              if (hosts.get(host.id) !== host)
-                return yield* new DeviceHostUnavailableError({
-                  hostId: host.id,
-                  reason: "Host configuration changed. Retry the operation.",
-                });
-              // Environment hosts start agent access without this lock. If access was
-              // turned off meanwhile, drop the credential instead of writing it.
-              const current = yield* readDeviceSettings;
-              if (!current.enabled || !current.agentAccessEnabled) {
-                yield* host.stopAgent;
-                return yield* new DeviceHostUnavailableError({
-                  hostId: host.id,
-                  reason: "Agent device access was turned off.",
-                });
-              }
-              return yield* configureAgent(input.hostId, ready);
-            }),
-          );
-          const session = yield* agentDeviceSession(
-            ready.agentSessionNamespace
-              ? `${ready.agentSessionNamespace}:${input.threadId}`
-              : input.threadId,
-            input.hostId,
-            input.deviceId,
-          ).pipe(Effect.provideService(Crypto.Crypto, crypto));
-          return ["--config", configPath, "--session", session];
-        }),
+      agentTarget: Effect.fn("DeviceService.agentTarget")(function* (input) {
+        const host = yield* resolveHost(input.hostId);
+        const ready = yield* agentReadinessIfSupported(input.hostId);
+        if (!ready)
+          return yield* new DeviceHostUnavailableError({
+            hostId: input.hostId,
+            reason:
+              "Agent device access requires enabled device support, agent access, and an available simulator platform on this host.",
+          });
+        const configPath = yield* lifecycleLock.withPermit(
+          Effect.gen(function* () {
+            if (hosts.get(host.id) !== host)
+              return yield* new DeviceHostUnavailableError({
+                hostId: host.id,
+                reason: "Host configuration changed. Retry the operation.",
+              });
+            // Environment hosts start agent access without this lock. If access was
+            // turned off meanwhile, drop the credential instead of writing it.
+            const current = yield* readDeviceSettings;
+            if (!current.enabled || !current.agentAccessEnabled) {
+              yield* host.stopAgent;
+              return yield* new DeviceHostUnavailableError({
+                hostId: host.id,
+                reason: "Agent device access was turned off.",
+              });
+            }
+            return yield* configureAgent(input.hostId, ready);
+          }),
+        );
+        const session = yield* agentDeviceSession(
+          ready.agentSessionNamespace
+            ? `${ready.agentSessionNamespace}:${input.threadId}`
+            : input.threadId,
+          input.hostId,
+          input.deviceId,
+        ).pipe(Effect.provideService(Crypto.Crypto, crypto));
+        return ["--config", configPath, "--session", session];
+      }),
       state: SynchronizedRef.get(stateRef).pipe(Effect.map(({ state }) => state)),
       subscribe: PubSub.subscribe(statePubSub),
       configure,
@@ -1246,23 +1246,23 @@ export const make = Effect.gen(function* () {
     agentDeviceConfigPath(config.stateDir, hostId, path).pipe(
       Effect.provideService(Crypto.Crypto, crypto),
     );
-  const configureAgent = (hostId: DeviceHostId, ready: DeviceHost.DeviceHostAgentReady) =>
-    Effect.gen(function* () {
+  const configureAgent = Effect.fn("DeviceService.configureAgent")(
+    function* (hostId: DeviceHostId, ready: DeviceHost.DeviceHostAgentReady) {
       const file = yield* configPath(hostId);
       yield* writeAgentDeviceConfig(file, ready.agentDevice);
       return file;
-    }).pipe(
-      Effect.provideService(FileSystem.FileSystem, fs),
-      Effect.provideService(Path.Path, path),
-      Effect.mapError(
-        (cause) =>
-          new DeviceOperationError({
-            operation: "configure agent",
-            reason: "settings_failed",
-            cause,
-          }),
-      ),
-    );
+    },
+    Effect.provideService(FileSystem.FileSystem, fs),
+    Effect.provideService(Path.Path, path),
+    Effect.mapError(
+      (cause) =>
+        new DeviceOperationError({
+          operation: "configure agent",
+          reason: "settings_failed",
+          cause,
+        }),
+    ),
+  );
   const probeContext =
     yield* Effect.context<Effect.Services<ReturnType<typeof SshDeviceHost.probe>>>();
   const localTargetContext =
@@ -1309,79 +1309,77 @@ export const make = Effect.gen(function* () {
     string,
     { config: SshDeviceHostConfig | EnvironmentDeviceHostConfig; scope: Scope.Closeable }
   >();
-  const reconcile = (value: ServerSettingsValue) =>
-    Effect.gen(function* () {
-      const sshHosts = yield* remoteSshDeviceHosts(value.deviceHosts).pipe(
-        Effect.provide(localTargetContext),
-      );
-      const next = [...sshHosts, ...value.environmentDeviceHosts];
-      const removed = yield* service.withLifecycleLock(
-        Effect.gen(function* () {
-          const removed: Array<{ id: string; scope: Scope.Closeable }> = [];
-          for (const [id, previous] of configured) {
-            if (
-              next.some(
-                (host) =>
-                  host.id === id && JSON.stringify(host) === JSON.stringify(previous.config),
-              )
+  const reconcile = Effect.fn("DeviceService.reconcile")(function* (value: ServerSettingsValue) {
+    const sshHosts = yield* remoteSshDeviceHosts(value.deviceHosts).pipe(
+      Effect.provide(localTargetContext),
+    );
+    const next = [...sshHosts, ...value.environmentDeviceHosts];
+    const removed = yield* service.withLifecycleLock(
+      Effect.gen(function* () {
+        const removed: Array<{ id: string; scope: Scope.Closeable }> = [];
+        for (const [id, previous] of configured) {
+          if (
+            next.some(
+              (host) => host.id === id && JSON.stringify(host) === JSON.stringify(previous.config),
             )
-              continue;
-            hosts.delete(id);
-            configured.delete(id);
-            removed.push({ id, scope: previous.scope });
-          }
-          if (removed.length > 0) yield* service.refreshHosts;
-          return removed;
-        }),
-      );
-      // Stop old writers before deleting config files or publishing replacements, without blocking healthy hosts.
-      yield* Effect.forEach(
-        removed,
-        ({ id, scope }) =>
-          Effect.gen(function* () {
-            yield* Scope.close(scope, Exit.void);
-            yield* fs.remove(yield* configPath(id), { force: true }).pipe(Effect.ignore);
-          }),
-        { concurrency: 4, discard: true },
-      );
-      yield* service.withLifecycleLock(
+          )
+            continue;
+          hosts.delete(id);
+          configured.delete(id);
+          removed.push({ id, scope: previous.scope });
+        }
+        if (removed.length > 0) yield* service.refreshHosts;
+        return removed;
+      }),
+    );
+    // Stop old writers before deleting config files or publishing replacements, without blocking healthy hosts.
+    yield* Effect.forEach(
+      removed,
+      ({ id, scope }) =>
         Effect.gen(function* () {
-          let added = false;
-          for (const host of next) {
-            if (configured.has(host.id)) continue;
-            added = true;
-            const hostScope = yield* Scope.fork(scope);
-            const instance = yield* (
-              "environmentId" in host
-                ? EnvironmentDeviceHost.make(host)
-                : SshDeviceHost.make(
-                    host,
-                    (ready) =>
-                      configureAgent(host.id, ready).pipe(
-                        Effect.asVoid,
-                        Effect.mapError(
-                          (error) =>
-                            new DeviceHost.DeviceHostError({
-                              hostId: host.id,
-                              step: "configuring agent access",
-                              cause: error,
-                            }),
-                        ),
-                      ),
-                    (status, detail) =>
-                      service
-                        .setHostStatus(host.id, { status, ...(detail ? { detail } : {}) })
-                        .pipe(Effect.asVoid),
-                  ).pipe(Effect.provide(hostContext))
-            ).pipe(Effect.provideService(Scope.Scope, hostScope));
-            hosts.set(host.id, instance);
-            configured.set(host.id, { config: host, scope: hostScope });
-          }
-          // Refresh again after removed scopes closed so a late status write from an old host cannot linger.
-          if (added || removed.length > 0) yield* service.refreshHosts;
+          yield* Scope.close(scope, Exit.void);
+          yield* fs.remove(yield* configPath(id), { force: true }).pipe(Effect.ignore);
         }),
-      );
-    });
+      { concurrency: 4, discard: true },
+    );
+    yield* service.withLifecycleLock(
+      Effect.gen(function* () {
+        let added = false;
+        for (const host of next) {
+          if (configured.has(host.id)) continue;
+          added = true;
+          const hostScope = yield* Scope.fork(scope);
+          const instance = yield* (
+            "environmentId" in host
+              ? EnvironmentDeviceHost.make(host)
+              : SshDeviceHost.make(
+                  host,
+                  (ready) =>
+                    configureAgent(host.id, ready).pipe(
+                      Effect.asVoid,
+                      Effect.mapError(
+                        (error) =>
+                          new DeviceHost.DeviceHostError({
+                            hostId: host.id,
+                            step: "configuring agent access",
+                            cause: error,
+                          }),
+                      ),
+                    ),
+                  (status, detail) =>
+                    service
+                      .setHostStatus(host.id, { status, ...(detail ? { detail } : {}) })
+                      .pipe(Effect.asVoid),
+                ).pipe(Effect.provide(hostContext))
+          ).pipe(Effect.provideService(Scope.Scope, hostScope));
+          hosts.set(host.id, instance);
+          configured.set(host.id, { config: host, scope: hostScope });
+        }
+        // Refresh again after removed scopes closed so a late status write from an old host cannot linger.
+        if (added || removed.length > 0) yield* service.refreshHosts;
+      }),
+    );
+  });
   const changes = yield* settings.subscribeChanges;
   yield* reconcile(yield* settings.getSettings);
   yield* changes.pipe(Stream.runForEach(reconcile), Effect.forkIn(scope));

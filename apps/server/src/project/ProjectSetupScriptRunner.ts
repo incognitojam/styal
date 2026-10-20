@@ -549,12 +549,12 @@ export const make = Effect.gen(function* () {
    * The subscription is torn down once an exit, close, error or restart
    * arrives.
    */
-  const observeTerminalCompletion = (input: {
-    readonly threadId: string;
-    readonly terminalId: string;
-    readonly onOutputLine: ((line: string) => Effect.Effect<void>) | undefined;
-  }) =>
-    Effect.gen(function* () {
+  const observeTerminalCompletion = Effect.fn("ProjectSetupScriptRunner.observeTerminalCompletion")(
+    function* (input: {
+      readonly threadId: string;
+      readonly terminalId: string;
+      readonly onOutputLine: ((line: string) => Effect.Effect<void>) | undefined;
+    }) {
       const startedAtMs = yield* Clock.currentTimeMillis;
       const done = yield* Deferred.make<ProjectSetupScriptCompletion>();
       let lineBuffer = "";
@@ -614,7 +614,8 @@ export const make = Effect.gen(function* () {
         Effect.ensuring(Effect.sync(() => unsubscribe())),
       );
       return { completion, unsubscribe };
-    });
+    },
+  );
 
   const runForThread: ProjectSetupScriptRunner["Service"]["runForThread"] = Effect.fn(
     "ProjectSetupScriptRunner.runForThread",
