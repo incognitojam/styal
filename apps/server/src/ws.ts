@@ -150,7 +150,10 @@ import {
   toShellApplicationEvent,
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
-import { ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION } from "./orchestration-v2/ProjectionStore.ts";
+import {
+  ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION,
+  ProjectionStoreV2,
+} from "./orchestration-v2/ProjectionStore.ts";
 import { bufferLiveStream } from "./orchestration-v2/LiveStreamBudget.ts";
 import { coalesceThreadLiveStream } from "./orchestration-v2/ThreadLiveEventCoalescer.ts";
 import {
@@ -233,6 +236,7 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import { inspectHostActivity } from "./environment/HostActivity.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
+import * as ThreadSettleUsage from "./telemetry/ThreadSettleUsage.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -1266,8 +1270,25 @@ const layerWsRpc = (
       // client starts is credited to its surface + app version. Best-effort:
       // attribution must never fail the user's command.
       const originProps = clientAnalyticsProps;
-      const recordClientCommandAnalytics = (command: OrchestrationV2Command) =>
-        recordAcceptedClientCommandAnalytics(command, analytics, originProps);
+      const projections = yield* ProjectionStoreV2;
+      const recordClientCommandAnalytics = (
+        command: OrchestrationV2Command,
+        commandProps: Readonly<Record<string, unknown>> = {},
+      ) =>
+        recordAcceptedClientCommandAnalytics(command, analytics, {
+          ...originProps,
+          ...commandProps,
+        });
+      // Read before dispatch: the un-settle clears the reason it reports.
+      const clientCommandAnalyticsProps = (command: OrchestrationV2Command) =>
+        command.type === "thread.unsettle"
+          ? projections.getThread(command.threadId).pipe(
+              Effect.map((thread) => ({
+                previousSettleReason: ThreadSettleUsage.previousSettleReason(thread),
+              })),
+              Effect.orElseSucceed(() => ({ previousSettleReason: "unknown" })),
+            )
+          : Effect.succeed({});
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
@@ -1929,7 +1950,8 @@ const layerWsRpc = (
               ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
               : {}),
           }).pipe(
-            Effect.andThen(
+            Effect.andThen(clientCommandAnalyticsProps(command)),
+            Effect.flatMap((commandAnalyticsProps) =>
               startup
                 .enqueueCommand(
                   // A retry also restarts the preparation work the launch owns.
@@ -1945,7 +1967,7 @@ const layerWsRpc = (
                   ).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
-                  Effect.tap(() => recordClientCommandAnalytics(command)),
+                  Effect.tap(() => recordClientCommandAnalytics(command, commandAnalyticsProps)),
                   Effect.map((result) => ({ sequence: result.sequence })),
                   Effect.mapError((cause) => {
                     const detail = userFacingDispatchErrorMessage(cause);

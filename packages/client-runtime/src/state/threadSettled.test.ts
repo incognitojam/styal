@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { advanceSettledShelfFocus, type SettledShelfFocus } from "./threadSettled.ts";
+import {
+  advanceSettledShelfFocus,
+  settleReasonLabel,
+  settleReasonSentence,
+  type SettledShelfFocus,
+} from "./threadSettled.ts";
 
 const active = (threadKey: string, latestUserMessageAt: string | null = null) =>
   ({ threadKey, settled: false, latestUserMessageAt }) satisfies SettledShelfFocus;
@@ -57,5 +62,21 @@ describe("advanceSettledShelfFocus", () => {
   it("keeps the last thread across non-thread screens", () => {
     expect(collapses(active("a"), [noThread, active("a")])).toEqual([false, false]);
     expect(collapses(active("a"), [noThread, active("b")])).toEqual([false, true]);
+  });
+});
+
+describe("settle reason labels", () => {
+  it("labels automatic settles and leaves explicit ones unlabeled", () => {
+    const merged = { kind: "pull_request", state: "merged", number: 123, url: "u" } as const;
+    expect(settleReasonLabel(merged)).toBe("PR #123 merged");
+    expect(settleReasonSentence({ ...merged, state: "closed" })).toBe("because PR #123 closed");
+    expect(settleReasonLabel({ kind: "inactivity", days: 3 })).toBe("Idle 3 days");
+    expect(settleReasonLabel({ kind: "inactivity", days: 1 })).toBe("Idle 1 day");
+    expect(settleReasonSentence({ kind: "inactivity", days: 3 })).toBe(
+      "after 3 days without activity",
+    );
+    expect(settleReasonLabel({ kind: "user" })).toBeNull();
+    expect(settleReasonLabel(null)).toBeNull();
+    expect(settleReasonSentence(undefined)).toBeNull();
   });
 });

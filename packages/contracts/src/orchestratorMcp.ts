@@ -29,6 +29,7 @@ import {
   OrchestrationV2Actor,
   OrchestrationV2CreationSource,
   OrchestrationV2RunStatus,
+  OrchestrationV2ThreadSettleReason,
   OrchestrationV2TurnItemStatus,
 } from "./orchestrationV2.ts";
 import {
@@ -374,6 +375,11 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   archived: Schema.Boolean,
   settled: Schema.Boolean,
   settledAt: Schema.NullOr(IsoDateTime),
+  /**
+   * Why the thread settled: `user`, a merged or closed pull request, or
+   * inactivity. Null when not settled or settled before reasons were recorded.
+   */
+  settleReason: Schema.optional(Schema.NullOr(OrchestrationV2ThreadSettleReason)),
   snoozed: Schema.Boolean,
   /** When a snoozed thread wakes; null when it is not snoozed. */
   snoozedUntil: Schema.NullOr(IsoDateTime),

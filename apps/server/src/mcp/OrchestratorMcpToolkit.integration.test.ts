@@ -2310,7 +2310,11 @@ describe("orchestrator MCP toolkit", () => {
               settled: false,
               settledAt: null,
             });
-            expect(metadataRead.thread).toMatchObject({ settled: false, settledAt: null });
+            expect(metadataRead.thread).toMatchObject({
+              settled: false,
+              settledAt: null,
+              settleReason: null,
+            });
 
             yield* orchestrator.dispatch({
               type: "thread.settle",
@@ -2327,6 +2331,7 @@ describe("orchestrator MCP toolkit", () => {
             expect(settledRead.thread).toMatchObject({
               settled: true,
               settledAt: "2026-01-01T00:00:00.000Z",
+              settleReason: { kind: "user" },
             });
             const settledListCall = yield* invoke("t3_thread_list", { settled: true, limit: 100 });
             const settledList = yield* decodeThreadListResult(

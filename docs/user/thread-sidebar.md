@@ -204,6 +204,12 @@ settlement, but an old closed or merged pull request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a pull request watch starts on its own does not.
 
+Threads that settled automatically say why in the Settled shelf, for example
+**PR #123 merged** or **Idle 3 days**. On web and desktop, select the pull request number
+to open it. The first time web or desktop sees threads settle automatically, a notice
+explains why and links to the settings that control it. It stays until you dismiss it and
+does not return on that device.
+
 To keep one thread out of the settled shelf no matter how long it sits idle, open its menu,
 choose **Auto-settle behavior**, and pick **Disabled**. The current option is checked. Pick
 **Enabled** to return to the usual rules. Manual settle, snooze, and archive still work while it

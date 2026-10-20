@@ -36,6 +36,7 @@ import {
   advanceSettledShelfFocus,
   canSnooze,
   effectiveSnoozed,
+  settleReasonLabel,
   threadWokeAt,
   type SettledShelfFocus,
 } from "@t3tools/client-runtime/state/thread-settled";
@@ -233,6 +234,7 @@ import {
   sidebarListItemId,
   sidebarMarkerId,
   sidebarThreadKeyAtY,
+  SETTLED_SHELF_EXPANDED_KEY,
   sortInboxThreadsByReturn,
   sortPinnedThreadsForSidebar,
   sortSidebarV2ProjectGroups,
@@ -319,7 +321,6 @@ const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 // Fresh keys deliberately reset both shelves to collapsed for existing users.
-const SETTLED_SHELF_EXPANDED_KEY = "styal:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "styal:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "styal:sidebar:working-expanded";
 
@@ -1907,6 +1908,33 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     )
   ) : null;
 
+  // Settled rows say why the server settled them; explicit settles carry no label.
+  const settleReason = variantAction === "unsettle" ? thread.settleReason : null;
+  const settleReasonText = settleReasonLabel(settleReason);
+  const settleReasonTag =
+    settleReasonText === null ? null : (
+      <span
+        data-testid={`sidebar-settle-reason-${thread.id}`}
+        className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+      >
+        {settleReason?.kind === "pull_request" ? (
+          <>
+            <InlineButton tone="muted" onClick={(event) => handlePrClick(event, settleReason.url)}>
+              PR #{settleReason.number}
+            </InlineButton>
+            {settleReason.state}
+          </>
+        ) : (
+          settleReasonText
+        )}
+      </span>
+    );
+  // The reason already names this pull request, so its badge would repeat it.
+  const settleReasonNamesBadge =
+    settleReason?.kind === "pull_request" &&
+    prBadgeShape?.kind !== "stack" &&
+    (pr?.number ?? currentLinkedPr?.number) === settleReason.number;
+
   if (variant === "slim") {
     return (
       <li
@@ -1962,7 +1990,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             {/* The PR badge stays outside the hover-fading slot: it must
               remain visible AND clickable while the row is hovered. Only
               the time/jump label yields to the settle affordance. */}
-            {prBadge}
+            {settleReasonTag}
+            {settleReasonNamesBadge ? null : prBadge}
             {sortable?.isDragging ? (
               dragDestination
             ) : (

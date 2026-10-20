@@ -33,6 +33,8 @@ mentioned time's explanation, and which automatic settling rules you keep when f
 when you choose Refresh. These events use the relevant paired environment's telemetry setting.
 File paths, written times, deployment identifiers, and composer drafts are not collected.
 
+Each automatic thread settlement records its rule (a merged or closed pull request, or inactivity with the configured number of days), and un-settling a thread records which of those rules, or a manual settle, had settled it. Thread titles, pull request numbers and links are not collected.
+
 Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
 
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation

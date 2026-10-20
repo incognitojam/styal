@@ -40,6 +40,7 @@ import {
   type OrchestrationV2DelegatedCompletionCohort,
   type OrchestrationV2DelegatedCompletionDelivery,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ThreadSettleReason,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurn,
@@ -2517,6 +2518,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+    /** For `thread.settle`: why it settles. An explicit settle records `user`. */
+    settleReason: OrchestrationV2ThreadSettleReason | null = { kind: "user" },
   ) {
     const thread = yield* projectionStore.getThread(command.threadId).pipe(
       Effect.mapError(
@@ -2920,6 +2923,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             settledOverride: "settled",
             settledAt: alreadySettled ? thread.settledAt : (command.settledAt ?? now),
+            // Re-settling a settled thread keeps the reason it first settled for.
+            settleReason: alreadySettled ? (thread.settleReason ?? null) : settleReason,
             pullRequests: thread.pullRequests?.map((link) => withPullRequestWatch(link, undefined)),
             ...(thread.workflowRuns === undefined ? {} : { workflowRuns: [] }),
             unsettledAt: null,
@@ -2935,6 +2940,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             settledOverride: "active",
             settledAt: null,
+            settleReason: null,
             unsettledAt: alreadyPinnedActive ? (thread.unsettledAt ?? null) : now,
             updatedAt: alreadyPinnedActive ? thread.updatedAt : now,
           };
@@ -2988,6 +2994,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : { pinOrderKey: command.orderKey }),
             settledOverride: thread.settledOverride === "settled" ? null : thread.settledOverride,
             settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
+            settleReason: thread.settledOverride === "settled" ? null : thread.settleReason,
             snoozedUntil: null,
             snoozedAt: null,
             lastSnoozeWakeAt: thread.snoozedUntil == null ? thread.lastSnoozeWakeAt : now,
@@ -4735,6 +4742,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...projection.thread,
           settledOverride: null,
           settledAt: null,
+          settleReason: null,
           unsettledAt:
             projection.thread.settledOverride === "active"
               ? (projection.thread.unsettledAt ?? null)
@@ -11045,6 +11053,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           },
           events,
           effects,
+          command.reason ?? null,
         );
         break;
       }

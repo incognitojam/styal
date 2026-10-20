@@ -1,4 +1,5 @@
 // @effect-diagnostics globalDate:off -- UI snooze presets use local calendar boundaries and Intl labels.
+import type { OrchestrationV2ThreadSettleReason } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 interface SettlementRunLike {
@@ -385,4 +386,40 @@ export function localSnoozeDate(date: Date): string {
 
 export function localSnoozeTime(date: Date): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function dayCount(days: number): string {
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
+/**
+ * Short label for a thread the server settled automatically, such as
+ * "PR #123 merged" or "Idle 3 days". Null for explicit settles and settles
+ * recorded before reasons existed.
+ */
+export function settleReasonLabel(
+  reason: OrchestrationV2ThreadSettleReason | null | undefined,
+): string | null {
+  switch (reason?.kind) {
+    case "pull_request":
+      return `PR #${reason.number} ${reason.state}`;
+    case "inactivity":
+      return `Idle ${dayCount(reason.days)}`;
+    default:
+      return null;
+  }
+}
+
+/** Completes "<title> settled …" for an automatic settle; null otherwise. */
+export function settleReasonSentence(
+  reason: OrchestrationV2ThreadSettleReason | null | undefined,
+): string | null {
+  switch (reason?.kind) {
+    case "pull_request":
+      return `because PR #${reason.number} ${reason.state}`;
+    case "inactivity":
+      return `after ${dayCount(reason.days)} without activity`;
+    default:
+      return null;
+  }
 }

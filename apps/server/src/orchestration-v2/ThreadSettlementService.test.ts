@@ -35,6 +35,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerActivation from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -383,6 +384,90 @@ const NOW = "2026-08-28T12:00:00.000Z";
 const PROJECT_ID = ProjectId.make("settlement-project");
 const LINKED_PROJECT_ID = ProjectId.make("linked-settlement-project");
 
+describe("resolveAutoSettlement", () => {
+  const url = "https://example.test/owner/repository/pull/7";
+
+  it("records the pull request or inactivity rule that settled the thread", () => {
+    const thread = shell({ latestUserMessageAt: at(-4 * DAY_MS) });
+    const input = {
+      thread,
+      nowMs: NOW_MS,
+      autoSettleAfterDays: 3,
+      autoSettleOnMerge: true,
+    };
+    const terminal = DateTime.formatIso(at(-DAY_MS));
+    expect(
+      ThreadSettlementService.resolveAutoSettlement({
+        ...input,
+        pullRequest: { state: "merged", mergedAt: terminal, number: 7, url },
+      }),
+    ).toEqual({
+      settledAt: at(-4 * DAY_MS),
+      rule: "merged",
+      reason: { kind: "pull_request", state: "merged", number: 7, url },
+    });
+    expect(
+      ThreadSettlementService.resolveAutoSettlement({
+        ...input,
+        pullRequest: { state: "closed", closedAt: terminal, number: 7, url },
+      })?.reason,
+    ).toEqual({ kind: "pull_request", state: "closed", number: 7, url });
+    // A merge the settings ignore falls through to inactivity.
+    expect(
+      ThreadSettlementService.resolveAutoSettlement({
+        ...input,
+        autoSettleOnMerge: false,
+        pullRequest: { state: "merged", mergedAt: terminal, number: 7, url },
+      }),
+    ).toEqual({
+      settledAt: at(-4 * DAY_MS),
+      rule: "inactivity",
+      reason: { kind: "inactivity", days: 3 },
+    });
+  });
+
+  it("takes the pull request identity from the latest terminal link", () => {
+    const link = (number: number, mergedAt: string) => ({
+      host: "example.test",
+      repository: "owner/repository",
+      number,
+      url: `https://example.test/owner/repository/pull/${number}`,
+      source: "manual" as const,
+      linkedAt: DateTime.formatIso(at(-10 * DAY_MS)),
+      snapshot: {
+        state: "merged" as const,
+        title: "Pull request",
+        headBranch: "feature",
+        baseBranch: "main",
+        isDraft: false,
+        updatedAt: mergedAt,
+        syncedAt: mergedAt,
+        mergedAt,
+      },
+      stack: null,
+    });
+    const settlement = ThreadSettlementService.resolveAutoSettlement({
+      thread: shell({
+        latestUserMessageAt: at(-4 * DAY_MS),
+        pullRequests: [
+          link(8, DateTime.formatIso(at(-DAY_MS))),
+          link(5, DateTime.formatIso(at(-2 * DAY_MS))),
+        ],
+      }),
+      pullRequest: null,
+      nowMs: NOW_MS,
+      autoSettleAfterDays: null,
+      autoSettleOnMerge: true,
+    });
+    expect(settlement?.reason).toEqual({
+      kind: "pull_request",
+      state: "merged",
+      number: 8,
+      url: "https://example.test/owner/repository/pull/8",
+    });
+  });
+});
+
 describe("autoSettlementSettingsKey", () => {
   it("distinguishes a project that inherits the threshold from one that disables it", () => {
     const inherits = ThreadSettlementService.autoSettlementSettingsKey({
@@ -528,6 +613,9 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const settingsChanges = yield* PubSub.unbounded<ContractServerSettings>();
   const mergedPullRequests = yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
   const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
+  const analyticsRecords = yield* Ref.make<
+    ReadonlyArray<{ readonly event: string; readonly properties: unknown }>
+  >([]);
   const branchCalls = yield* Ref.make<
     ReadonlyArray<{ readonly cwd: string; readonly branch: string }>
   >([]);
@@ -652,6 +740,10 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     Layer.succeed(ServerSettings.ServerSettingsService, serverSettings),
     Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
     Layer.succeed(Crypto.Crypto, testCrypto),
+    Layer.mock(AnalyticsService.AnalyticsService)({
+      record: (event, properties) =>
+        Ref.update(analyticsRecords, (records) => [...records, { event, properties }]),
+    }),
     FileSystem.layerNoop({
       exists: (path) => Effect.succeed(options.existingWorktreePaths?.includes(path) ?? false),
     }),
@@ -664,6 +756,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     snapshotReads,
     candidateReads,
     commands,
+    analyticsRecords,
     branchCalls,
     summaryCalls,
     summaryRecovery,
@@ -729,8 +822,17 @@ describe("ThreadSettlementServiceV2 worker", () => {
         yield* Effect.gen(function* () {
           const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
-          expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
-            thread.id,
+          const commands = yield* Ref.get(fixture.commands);
+          expect(commands.map((command) => command.threadId)).toEqual([thread.id]);
+          expect(commands[0]?.reason).toEqual({
+            kind: "pull_request",
+            state: "merged",
+            number: 42,
+            url: "https://example.test/owner/repository/pull/42",
+          });
+          // The analytics event carries the rule only, no thread or PR identity.
+          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([
+            { event: "server.thread.settled", properties: { reason: "merged" } },
           ]);
         }).pipe(Effect.provide(fixture.layer));
       }),
@@ -759,6 +861,10 @@ describe("ThreadSettlementServiceV2 worker", () => {
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
           const commands = yield* Ref.get(fixture.commands);
           expect(commands.map((command) => command.threadId)).toEqual([thread.id]);
+          expect(commands[0]?.reason).toEqual({ kind: "inactivity", days: 2 });
+          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([
+            { event: "server.thread.settled", properties: { reason: "inactivity", afterDays: 2 } },
+          ]);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
@@ -1039,6 +1145,35 @@ describe("ThreadSettlementServiceV2 worker", () => {
               { cwd: "/workspace/project-root", branch: "feature/deleted" },
             ]),
           );
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("records a closed branch pull request as the settle reason", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const thread = makeThread("closed-branch", { branch: "feature" });
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([thread]),
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null },
+          branchPullRequest: () => Effect.succeed(makeBranchPullRequest("closed")),
+        });
+        yield* Effect.gen(function* () {
+          const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+          expect((yield* Ref.get(fixture.commands)).map((command) => command.reason)).toEqual([
+            {
+              kind: "pull_request",
+              state: "closed",
+              number: 42,
+              url: "https://example.test/owner/repository/pull/42",
+            },
+          ]);
+          expect(yield* Ref.get(fixture.analyticsRecords)).toEqual([
+            { event: "server.thread.settled", properties: { reason: "closed" } },
+          ]);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
