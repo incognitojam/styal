@@ -31,6 +31,14 @@ describe("diffFileTier", () => {
     expect(diffFileTier("public/app.min.js")).toBe("generated");
     expect(diffFileTier("dist/app.js")).toBe("generated");
     expect(diffFileTier("packages/core/vendor/lib.js")).toBe("generated");
+    expect(diffFileTier("src/routeTree.gen.ts")).toBe("generated");
+  });
+
+  it("puts drizzle-kit metadata last but keeps its SQL migrations as source", () => {
+    expect(diffFileTier("drizzle/meta/_journal.json")).toBe("generated");
+    expect(diffFileTier("drizzle/meta/0004_snapshot.json")).toBe("generated");
+    expect(diffFileTier("drizzle/0004_small_mentor.sql")).toBe("source");
+    expect(diffFileTier("src/meta/settings.json")).toBe("source");
   });
 
   it("recognises a test by its name or by the directory holding it", () => {
@@ -55,6 +63,7 @@ describe("diffFileTier", () => {
     expect(diffFileTier("src/testing.ts")).toBe("source");
     expect(diffFileTier("src/fixtures.ts")).toBe("source");
     expect(diffFileTier("src/dist.ts")).toBe("source");
+    expect(diffFileTier("src/codegen.ts")).toBe("source");
   });
 
   it("lets a repository attribution mark any path generated", () => {
