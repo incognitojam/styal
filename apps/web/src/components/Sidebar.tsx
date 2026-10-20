@@ -145,6 +145,7 @@ import { readLocalApi } from "../localApi";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import {
+  countSidebarProjectChoices,
   projectGroupsSpanEnvironments,
   resolveSidebarProjectScopeKey,
   getSidebarProjectSettingsKey,
@@ -5230,6 +5231,7 @@ export default function Sidebar() {
     handleNewThread: newThreadContext.handleNewThread,
     scopedProjectGroup,
   };
+  const projectChoiceCount = countSidebarProjectChoices(projectGroups);
   const handleNewThreadClick = (event?: ReactMouseEvent) => {
     // One project, or a filtered list: nothing left to pick, create
     // immediately. Shift+click creates directly in the current project even
@@ -5237,7 +5239,7 @@ export default function Sidebar() {
     if (
       shouldCreateNewThreadInCurrentProject({
         shiftKey: event?.shiftKey ?? false,
-        projectGroupCount: projectGroups.length,
+        projectGroupCount: projectChoiceCount,
         hasProjectScope: scopedProjectGroup !== null,
       })
     ) {
@@ -5251,7 +5253,7 @@ export default function Sidebar() {
 
   const newThreadPicksProject = !shouldCreateNewThreadInCurrentProject({
     shiftKey: false,
-    projectGroupCount: projectGroups.length,
+    projectGroupCount: projectChoiceCount,
     hasProjectScope: scopedProjectGroup !== null,
   });
   // The tooltip must not advertise a shortcut that lands somewhere other than
@@ -5262,7 +5264,7 @@ export default function Sidebar() {
   // leaves the button with no twin at all — chat.new still opens the chooser
   // and chat.newLocal follows the thread on screen — so it names none.
   const newThreadShortcutLabel =
-    newThreadPicksProject || projectGroups.length <= 1
+    newThreadPicksProject || projectChoiceCount <= 1
       ? (shortcutLabelForCommand(keybindings, "chat.new") ??
         (newThreadPicksProject ? undefined : shortcutLabelForCommand(keybindings, "chat.newLocal")))
       : undefined;
