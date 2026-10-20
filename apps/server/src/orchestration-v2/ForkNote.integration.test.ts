@@ -10,6 +10,7 @@ import {
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
+import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
@@ -31,7 +32,7 @@ const instanceId = ProviderInstanceId.make("codex");
 const modelSelection = { instanceId, model: "test-model" };
 
 it.effect(
-  "sends the fork note with the first turn the provider accepts, skipping commands and refusals",
+  "sends the fork note until a turn carrying it completes, skipping provider commands",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -142,9 +143,20 @@ it.effect(
           const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
           const sourceThreadId = ThreadId.make("thread:fork-note-source");
           const forkThreadId = ThreadId.make("thread:fork-note-fork");
-          const send = (threadId: ThreadId, text: string) =>
+          /**
+           * Sends a message and settles its provider turn: "completed" and
+           * "failed" end the turn through provider events, as an adapter whose
+           * start returned before the provider answered would; "refused" fails
+           * the start itself after the provider turn was recorded.
+           */
+          const send = (
+            threadId: ThreadId,
+            text: string,
+            outcome: "completed" | "failed" | "refused" = "completed",
+          ) =>
             Effect.gen(function* () {
               const before = started.length;
+              if (outcome === "refused") refuse.add(text);
               const recorded = yield* orchestrator.streamDomainEvents.pipe(
                 Stream.filter(
                   (event) =>
@@ -169,47 +181,64 @@ it.effect(
               });
               const drained = yield* Effect.forkScoped(worker.drain());
               yield* Fiber.join(recorded);
-              if (refuse.has(text)) yield* Deferred.succeed(releaseRefusal, undefined);
+              if (outcome === "refused") yield* Deferred.succeed(releaseRefusal, undefined);
               yield* Fiber.join(drained);
               assert.equal(started.length, before + 1, `"${text}" starts one provider turn`);
               const turn = started.at(-1)!;
-              if (!refuse.has(text)) {
+              if (outcome !== "refused") {
                 const projection = yield* orchestrator.getThreadProjection(threadId);
                 const providerTurn = projection.providerTurns.find(
                   (candidate) => candidate.runAttemptId === turn.attemptId,
                 )!;
+                const settled = yield* orchestrator.streamDomainEvents.pipe(
+                  Stream.filter(
+                    (event) =>
+                      event.type === "run.updated" &&
+                      event.payload.id === turn.runId &&
+                      (event.payload.status === "waiting" ||
+                        event.payload.status === "completed" ||
+                        event.payload.status === "failed"),
+                  ),
+                  Stream.take(1),
+                  Stream.runDrain,
+                  Effect.forkScoped,
+                );
                 yield* Queue.offer(events, {
                   type: "provider_turn.updated",
                   driver,
                   providerTurn: {
                     ...providerTurn,
-                    status: "completed",
+                    status: outcome,
                     completedAt: yield* DateTime.now,
                   },
                 });
-                yield* Queue.offer(events, {
+                const terminal = {
                   type: "turn.terminal",
                   driver,
                   providerThreadId: providerTurn.providerThreadId,
                   providerTurnId: providerTurn.id,
                   runOrdinal: turn.runOrdinal,
-                  status: "completed",
-                  failure: null,
                   threadDisposition: "reusable",
-                });
-                yield* orchestrator.streamDomainEvents.pipe(
-                  Stream.filter(
-                    (event) =>
-                      event.type === "run.updated" &&
-                      event.payload.id === turn.runId &&
-                      (event.payload.status === "waiting" || event.payload.status === "completed"),
-                  ),
-                  Stream.take(1),
-                  Stream.runDrain,
+                } as const;
+                yield* Queue.offer(
+                  events,
+                  outcome === "failed"
+                    ? {
+                        ...terminal,
+                        status: "failed",
+                        failureItemOrdinal: 1,
+                        failure: makeProviderFailure({
+                          message: "The provider rejected the prompt.",
+                          code: "invalid_request",
+                          class: "validation_error",
+                        }),
+                      }
+                    : { ...terminal, status: "completed", failure: null },
                 );
+                yield* Fiber.join(settled);
                 yield* worker.drain();
               }
-              return { text: turn.message.text, runId: turn.runId };
+              return { text: turn.message.text, attemptId: turn.attemptId, runId: turn.runId };
             });
           const forkTransfer = Effect.map(
             orchestrator.getThreadProjection(forkThreadId),
@@ -248,27 +277,22 @@ it.effect(
           const command = yield* send(forkThreadId, "/goal ship the fix");
           assert.equal(command.text, "/goal ship the fix", "a provider command is sent unprefixed");
 
-          refuse.add("Is the check done?");
-          const refused = yield* send(forkThreadId, "Is the check done?");
+          const refused = yield* send(forkThreadId, "Is the check done?", "refused");
           assert.include(refused.text, FORK_NOTE);
           const afterRefusal = yield* orchestrator.getThreadProjection(forkThreadId);
           assert.equal(afterRefusal.runs.find((run) => run.id === refused.runId)?.status, "failed");
           assert.isTrue(
-            afterRefusal.providerTurns.some((turn) =>
-              afterRefusal.attempts.some(
-                (attempt) => attempt.runId === refused.runId && attempt.id === turn.runAttemptId,
-              ),
-            ),
+            afterRefusal.providerTurns.some((turn) => turn.runAttemptId === refused.attemptId),
             "the refused attempt has a recorded provider turn",
           );
-          assert.isUndefined(
-            (yield* forkTransfer)?.forkNoteDeliveredAt,
-            "a refused prompt has not delivered the note",
-          );
 
-          const accepted = yield* send(forkThreadId, "Try again");
+          // The start returned, then the provider failed the turn.
+          const failed = yield* send(forkThreadId, "Try again", "failed");
+          assert.include(failed.text, FORK_NOTE);
+
+          const accepted = yield* send(forkThreadId, "One more time");
           assert.include(accepted.text, FORK_NOTE);
-          assert.isDefined((yield* forkTransfer)?.forkNoteDeliveredAt);
+          assert.equal((yield* forkTransfer)?.forkNoteAttemptId, accepted.attemptId);
 
           const later = yield* send(forkThreadId, "And then?");
           assert.notInclude(later.text, FORK_NOTE);

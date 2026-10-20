@@ -981,8 +981,9 @@ export const layer: Layer.Layer<
       });
       const pendingForkNote = forkNoteTransfer({
         threadId: input.threadId,
-        messageText: message.text,
+        message,
         contextTransfers: projection.contextTransfers,
+        providerTurns: projection.providerTurns,
       });
       const turnNote = [
         pendingForkNote === undefined ? "" : FORK_NOTE,
@@ -1104,27 +1105,30 @@ export const layer: Layer.Layer<
                 historicalMessage(item) !== null,
             );
       // Reads the transfer again: this turn's start may have consumed it since.
-      const markForkNoteDelivered = Effect.gen(function* () {
-        const { contextTransfers } = yield* projectionStore.getThreadRecords(input.threadId, [
-          "contextTransfers",
-        ]);
-        const transfer = contextTransfers.find((candidate) => candidate.id === pendingForkNote?.id);
-        if (transfer === undefined || transfer.forkNoteDeliveredAt !== undefined) return;
-        const deliveredAt = yield* DateTime.now;
-        yield* eventSink.write({
-          events: [
-            {
-              id: yield* idAllocator.allocate.event({ threadId: projection.thread.id }),
-              type: "context-transfer.updated",
-              threadId: projection.thread.id,
-              runId: run.id,
-              providerInstanceId: run.providerInstanceId,
-              occurredAt: deliveredAt,
-              payload: { ...transfer, forkNoteDeliveredAt: deliveredAt, updatedAt: deliveredAt },
-            },
-          ],
+      const recordForkNoteAttempt = (attemptId: typeof attempt.id) =>
+        Effect.gen(function* () {
+          const { contextTransfers } = yield* projectionStore.getThreadRecords(input.threadId, [
+            "contextTransfers",
+          ]);
+          const transfer = contextTransfers.find(
+            (candidate) => candidate.id === pendingForkNote?.id,
+          );
+          if (transfer === undefined || transfer.forkNoteAttemptId === attemptId) return;
+          const now = yield* DateTime.now;
+          yield* eventSink.write({
+            events: [
+              {
+                id: yield* idAllocator.allocate.event({ threadId: projection.thread.id }),
+                type: "context-transfer.updated",
+                threadId: projection.thread.id,
+                runId: run.id,
+                providerInstanceId: run.providerInstanceId,
+                occurredAt: now,
+                payload: { ...transfer, forkNoteAttemptId: attemptId, updatedAt: now },
+              },
+            ],
+          });
         });
-      });
       const startWithHandoffs = (
         turnInput: Parameters<typeof session.startTurn>[0],
         compact = false,
@@ -1207,6 +1211,13 @@ export const layer: Layer.Layer<
           const context = [delivery.context, turnNote].filter((part) => part !== "").join("\n\n");
           // A note continuation has no turn to resume; its text is the prompt.
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
+          if (pendingForkNote !== undefined) {
+            yield* recordForkNoteAttempt(turnInput.attemptId).pipe(
+              Effect.catchCause(() =>
+                Effect.logWarning("Failed to record the fork note attempt", { runId: run.id }),
+              ),
+            );
+          }
           yield* start({
             ...(noteContinuation ? promptedInput : turnInput),
             message: {
@@ -1238,13 +1249,6 @@ export const layer: Layer.Layer<
               }),
             ),
           );
-          if (pendingForkNote !== undefined) {
-            yield* markForkNoteDelivered.pipe(
-              Effect.catchCause(() =>
-                Effect.logWarning("Failed to record fork note delivery", { runId: run.id }),
-              ),
-            );
-          }
         }).pipe(
           Effect.mapError((cause) =>
             cause._tag === "ProviderAdapterTurnStartError"

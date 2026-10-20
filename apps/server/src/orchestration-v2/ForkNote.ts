@@ -1,4 +1,8 @@
-import type { OrchestrationV2ContextTransfer } from "@t3tools/contracts";
+import type {
+  OrchestrationV2Actor,
+  OrchestrationV2ContextTransfer,
+  OrchestrationV2ProviderTurn,
+} from "@t3tools/contracts";
 
 /**
  * Sent with a forked thread's first turn. The copied history can end mid-task,
@@ -9,25 +13,39 @@ export const FORK_NOTE =
   "Note: this thread is a fork of another thread. The earlier conversation was copied from that thread up to the response the user forked from. Work may have continued in that thread since then. Background work started before the fork, such as commands, monitors and subagents, belongs to that thread and will not report back here.";
 
 /**
- * The fork transfer whose note the starting turn should carry, if any. The
- * note waits until a provider accepts a turn carrying it, which sets
- * `forkNoteDeliveredAt`, so a refused or failed attempt does not use it up and
- * a later attempt does not repeat it. A provider command such as /compact or
+ * The fork transfer whose note the starting turn should carry, if any.
+ *
+ * The transfer records the latest attempt that carried the note, and the note
+ * counts as delivered once that attempt's provider turn completes. Adapters
+ * report a started turn before the provider has accepted the prompt, so a
+ * refused or interrupted turn sends the note again with the next one.
+ *
+ * Only messages the user wrote carry it: continuations and wakes may resume
+ * natively without sending their text. A provider command such as /compact or
  * /goal must stay at the start of its text, so it is sent without the note.
  */
 export function forkNoteTransfer<
   Transfer extends Pick<
     OrchestrationV2ContextTransfer,
-    "type" | "targetThreadId" | "forkNoteDeliveredAt"
+    "type" | "targetThreadId" | "forkNoteAttemptId"
   >,
 >(input: {
   readonly threadId: string;
-  readonly messageText: string;
+  readonly message: { readonly text: string; readonly createdBy: OrchestrationV2Actor };
   readonly contextTransfers: ReadonlyArray<Transfer>;
+  readonly providerTurns: ReadonlyArray<
+    Pick<OrchestrationV2ProviderTurn, "runAttemptId" | "status">
+  >;
 }): Transfer | undefined {
-  if (input.messageText.trimStart().startsWith("/")) return undefined;
+  if (input.message.createdBy !== "user" || input.message.text.trimStart().startsWith("/")) {
+    return undefined;
+  }
   const fork = input.contextTransfers.findLast(
     (transfer) => transfer.type === "fork" && transfer.targetThreadId === input.threadId,
   );
-  return fork?.forkNoteDeliveredAt === undefined ? fork : undefined;
+  if (fork === undefined) return undefined;
+  const delivered = input.providerTurns.some(
+    (turn) => turn.runAttemptId === fork.forkNoteAttemptId && turn.status === "completed",
+  );
+  return delivered ? undefined : fork;
 }

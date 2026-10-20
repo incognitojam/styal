@@ -1765,8 +1765,8 @@ features:
     status: maintained
     prs: [913]
     invariants:
-      - The first turn of a forked thread that the provider accepts, native or portable and on every provider, carries a note saying the history was copied up to the forked response, work may have continued in the source thread, and background work started before the fork will not report back.
-      - The fork transfer records forkNoteDeliveredAt once a provider accepts a turn carrying the note. A refused or failed attempt, including one whose provider turn was already recorded, leaves the note for the next turn; a steer that replaces an accepted attempt does not repeat it; provider commands such as /compact and /goal are sent unprefixed and leave the note for the next turn.
+      - A forked thread's turns carry a note saying the history was copied up to the forked response, work may have continued in the source thread, and background work started before the fork will not report back, until a provider turn carrying it completes. The fork transfer records the latest attempt that carried it in forkNoteAttemptId.
+      - A refused, failed, or interrupted turn leaves the note for the next turn. Only messages the user wrote carry it; continuations and wakes do not, and provider commands such as /compact and /goal are sent unprefixed.
     rationale: A fork can be taken from a response that ended while background work was still running. Without the note, the agent sees that work missing and reports it as interrupted, though it finished in the source thread.
     implementation_paths:
       - apps/server/src/orchestration-v2/ForkNote.ts

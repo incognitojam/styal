@@ -194,8 +194,8 @@ export const OrchestrationV2ContextTransfer = Schema.Struct({
   createdAt: Schema.DateTimeUtc,
   updatedAt: Schema.DateTimeUtc,
   consumedAt: Schema.NullOr(Schema.DateTimeUtc),
-  /** When the provider accepted the forked thread's first turn carrying the fork note. */
-  forkNoteDeliveredAt: Schema.optional(Schema.DateTimeUtc),
+  /** The latest attempt that carried the fork note; its completed provider turn delivered it. */
+  forkNoteAttemptId: Schema.optional(RunAttemptId),
 });
 export type OrchestrationV2ContextTransfer = typeof OrchestrationV2ContextTransfer.Type;
 
@@ -2189,7 +2189,6 @@ export const OrchestrationV2ContextTransferJson = OrchestrationV2ContextTransfer
     createdAt: Schema.DateTimeUtcFromString,
     updatedAt: Schema.DateTimeUtcFromString,
     consumedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
-    forkNoteDeliveredAt: Schema.optional(Schema.DateTimeUtcFromString),
   }),
 );
 export type OrchestrationV2ContextTransferJson = typeof OrchestrationV2ContextTransferJson.Type;
