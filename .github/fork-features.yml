@@ -3392,11 +3392,14 @@ features:
       - When the last attempt failed on every usable route of an environment with more than one, status text on web, desktop and mobile reads "Unreachable on every route" instead of naming the last route's error, and each route row shows its own short reason with the full error in a tooltip or accessibility label.
       - While connected, routes ahead of the one in use keep their reason in a muted style; the route in use never shows one.
       - A styal Link machine that is not added on mobile shows the host's offline status in muted text; only a failed status request is red, matching web.
+      - Hop diagnosis never replaces the all-routes-unreachable summary with the last route's failure; individual route reasons remain available.
     rationale: Upstream keeps one failure per environment, usually styal Link's endpoint_request_failed, so a sleeping computer read as a styal Link fault. Usage is not measured; a count of unreachable states would measure how often computers sleep, not whether the reasons help.
     implementation_paths:
       - apps/mobile/src/features/cloud/cloudEnvironmentPresentation.ts
       - apps/mobile/src/features/connection/CloudEnvironmentRows.tsx
+      - apps/mobile/src/features/connection/ConnectionDiagnosisDetails.tsx
       - apps/mobile/src/features/settings/EnvironmentRoutesSection.tsx
+      - apps/web/src/components/settings/ConnectionDiagnosisDetails.tsx
       - apps/web/src/components/settings/ConnectionsSettings.tsx
       - apps/web/src/components/settings/EnvironmentRoutesList.tsx
       - packages/client-runtime/src/connection/driver.ts

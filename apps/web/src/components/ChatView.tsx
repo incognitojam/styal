@@ -383,6 +383,7 @@ import {
 } from "../lib/composerContextRecords";
 import { type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
+import { ConnectionDiagnosisHeadline } from "./settings/ConnectionDiagnosisDetails";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnectDelay";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -2465,9 +2466,11 @@ export default function ChatView(props: ChatViewProps) {
           title: `${activeEnvironmentUnavailableState.label} is ${
             environmentReconnecting ? "reconnecting" : connectionFailed ? "unavailable" : "offline"
           }`,
-          ...(connectionFailed && unavailableConnection.error
-            ? { description: unavailableConnection.error }
-            : {}),
+          description: activeEnvironment ? (
+            <ConnectionDiagnosisHeadline environment={activeEnvironment} />
+          ) : connectionFailed ? (
+            unavailableConnection.error
+          ) : undefined,
           actions: (
             <>
               {!environmentReconnecting ? (
