@@ -306,6 +306,74 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     ).toBeNull();
   });
 
+  const claudeUpdate = {
+    provider: driver("claudeAgent"),
+    npmPackageName: "@anthropic-ai/claude-code",
+    nativeUpdate: {
+      args: ["update"],
+      isCommandPath: isNativeTestCommandPath("/.local/bin/claude"),
+    },
+  };
+  const resolveInstall = (input: {
+    readonly definition: typeof claudeUpdate;
+    readonly resolved: string;
+    readonly real: string;
+    readonly platform: NodeJS.Platform;
+  }) =>
+    resolvePackageManagedProviderMaintenance(input.definition, {
+      binaryPath: "claude",
+      resolvedCommandPath: input.resolved,
+      realCommandPath: input.real,
+      env: {},
+      platform: input.platform,
+    }).pipe(
+      Effect.provideService(HostProcess.Platform, input.platform),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
+    );
+
+  it.effect.each([
+    {
+      name: "the default home",
+      resolved: "/Users/theo/.vite-plus/bin/claude",
+      real: "/Users/theo/.vite-plus/current/bin/vp",
+      platform: "darwin",
+    },
+    {
+      name: "the XDG home",
+      resolved: "/home/theo/.local/share/vite-plus/bin/claude",
+      real: "/home/theo/.local/share/vite-plus/current/bin/vp",
+      platform: "linux",
+    },
+    {
+      name: "the Windows home",
+      resolved: "C:\\Users\\Theo\\AppData\\Local\\vite-plus\\bin\\claude.cmd",
+      real: "C:\\Users\\Theo\\AppData\\Local\\vite-plus\\packages\\@anthropic-ai\\claude-code\\lib\\node_modules\\@anthropic-ai\\claude-code\\cli.js",
+      platform: "win32",
+    },
+  ] as const)("updates a Vite+ global install in $name with vp", (fixture) =>
+    Effect.gen(function* () {
+      const capabilities = yield* resolveInstall({ definition: claudeUpdate, ...fixture });
+
+      expect(capabilities.update).toMatchObject({
+        command: "vp i -g @anthropic-ai/claude-code",
+        lockKey: "vite-plus-global",
+      });
+    }),
+  );
+
+  it.effect("keeps a project folder named vite-plus manual-only", () =>
+    Effect.gen(function* () {
+      const capabilities = yield* resolveInstall({
+        definition: claudeUpdate,
+        resolved: "/work/vite-plus/bin/claude",
+        real: "/work/vite-plus/node_modules/@anthropic-ai/claude-code/cli.js",
+        platform: "linux",
+      });
+
+      expect(capabilities.update).toBeNull();
+    }),
+  );
+
   it.effect("proves Windows npm ownership from the package manifest beside the shim", () =>
     Effect.gen(function* () {
       const tempDir = yield* makeTempDir("t3-npm-windows-capabilities");
