@@ -104,6 +104,7 @@ export interface EnvironmentThreadShell {
   readonly tokenUsage?: OrchestrationV2ThreadShell["tokenUsage"];
   readonly latestRun: ThreadRunSummary | null;
   readonly runtime: ThreadRuntimeSummary | null;
+  readonly blockedOnThreadWait?: boolean;
   readonly latestUserMessageAt: string | null;
   readonly latestMessageAt?: string | null;
   readonly latestUserAuthoredMessageAt?: string | null;
@@ -256,6 +257,7 @@ export function presentThreadShell(
     ...(thread.tokenUsage === undefined ? {} : { tokenUsage: thread.tokenUsage }),
     latestRun,
     runtime,
+    blockedOnThreadWait: thread.blockedOnThreadWait ?? false,
     latestUserMessageAt: nullableIso(thread.latestUserMessageAt),
     latestMessageAt: nullableIso(thread.latestMessageAt ?? null),
     ...(thread.latestUserAuthoredMessageAt === undefined
