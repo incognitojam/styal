@@ -28,6 +28,12 @@ the background, records the provider type, its versions before and after, whethe
 fixed failure category, and how long it took. Instance names, installation paths, update commands,
 installer output, and error messages are not collected.
 
+Once after startup and then daily, the server also reports the current values of its settings, so
+we can see which defaults people change: on/off settings, chosen options such as the default permission mode, and day or minute
+counts. Paths, branch prefixes, instructions, model choices, and per-project settings are not
+collected; for those it reports only whether they were changed or how many projects have their own
+settings.
+
 Web and desktop clients also record explicit diff-order selections, when you open a
 mentioned time's explanation, and which automatic settling rules you keep when finishing setup. The web app records when a new-build notice is visible and
 when you choose Refresh. These events use the relevant paired environment's telemetry setting.
