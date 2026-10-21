@@ -4359,6 +4359,7 @@ features:
       - apps/server/src/http.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/ChatMarkdownMedia.tsx
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
       - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts
       - packages/contracts/src/assets.ts
@@ -4368,6 +4369,7 @@ features:
       - apps/server/src/http.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/ChatMarkdownMedia.tsx
       - apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
       - apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts
       - packages/contracts/src/assets.ts

@@ -34,7 +34,8 @@ import {
   workEntrySignalsSevereFailure,
   workLogEntryIsToolLike,
 } from "../../session-logic";
-import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
+import ChatMarkdown from "../ChatMarkdown";
+import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
 import {
   CheckIcon,
   ChevronRightIcon,
