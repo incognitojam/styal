@@ -170,52 +170,49 @@ const seedLegacyThread = Effect.gen(function* () {
   }
 });
 
-it.live(
-  "keeps imported V1 thread history within the client transfer budget",
-  () =>
-    Effect.gen(function* () {
-      yield* seedLegacyThread;
-      const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
-      yield* importer.reconcileShells;
-      yield* importer.ensureTranscript(THREAD_ID);
+it.live("keeps imported V1 thread history within the client transfer budget", () =>
+  Effect.gen(function* () {
+    yield* seedLegacyThread;
+    const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+    yield* importer.reconcileShells;
+    yield* importer.ensureTranscript(THREAD_ID);
 
-      // Persistence keeps every command's full recorded output on the converted item.
-      const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const durable = yield* projections.getThreadProjection(THREAD_ID);
-      const outputs = durable.turnItems.flatMap((item) =>
-        item.type === "command_execution" ? [item.output?.length ?? 0] : [],
-      );
-      assert.equal(outputs.length, TURNS * COMMANDS_PER_TURN);
-      assert.isTrue(outputs.every((length) => length >= OUTPUT_BYTES_PER_COMMAND * 0.6));
+    // Persistence keeps every command's full recorded output on the converted item.
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const durable = yield* projections.getThreadProjection(THREAD_ID);
+    const outputs = durable.turnItems.flatMap((item) =>
+      item.type === "command_execution" ? [item.output?.length ?? 0] : [],
+    );
+    assert.equal(outputs.length, TURNS * COMMANDS_PER_TURN);
+    assert.isTrue(outputs.every((length) => length >= OUTPUT_BYTES_PER_COMMAND * 0.6));
 
-      const context = yield* Effect.context<Layer.Success<typeof services>>();
-      const server = yield* Layer.build(
-        HttpRouter.serve(routes, { disableListenLog: true }).pipe(
-          Layer.provide(Layer.succeedContext(context)),
-          Layer.provideMerge(NodeHttpServer.layer(NodeHttp.createServer, { port: 0 })),
-        ),
-      );
-      const address = Context.get(server, HttpServer.HttpServer).address;
-      if (!("port" in address)) return yield* Effect.die("Expected TCP server");
-      const snapshot = yield* measureHttpGet({
-        url: `http://127.0.0.1:${address.port}/api/orchestration/threads/${THREAD_ID}`,
-        headers: { [ORCHESTRATION_PROTOCOL_HEADER]: String(ORCHESTRATION_PROTOCOL_VERSION) },
-      });
-      const body = Buffer.from(snapshot.decodedBody).toString();
-      assert.equal(snapshot.status, 200, body);
-      const decoded = yield* decodeThreadSnapshot(body);
-      assert.equal(
-        decoded.projection.turnItems.filter((item) => item.type === "command_execution").length,
-        TURNS * COMMANDS_PER_TURN,
-      );
-      assert.notInclude(body, "legacyActivities");
+    const context = yield* Effect.context<Layer.Success<typeof services>>();
+    const server = yield* Layer.build(
+      HttpRouter.serve(routes, { disableListenLog: true }).pipe(
+        Layer.provide(Layer.succeedContext(context)),
+        Layer.provideMerge(NodeHttpServer.layer(NodeHttp.createServer, { port: 0 })),
+      ),
+    );
+    const address = Context.get(server, HttpServer.HttpServer).address;
+    if (!("port" in address)) return yield* Effect.die("Expected TCP server");
+    const snapshot = yield* measureHttpGet({
+      url: `http://127.0.0.1:${address.port}/api/orchestration/threads/${THREAD_ID}`,
+      headers: { [ORCHESTRATION_PROTOCOL_HEADER]: String(ORCHESTRATION_PROTOCOL_VERSION) },
+    });
+    const body = Buffer.from(snapshot.decodedBody).toString();
+    assert.equal(snapshot.status, 200, body);
+    const decoded = yield* decodeThreadSnapshot(body);
+    assert.equal(
+      decoded.projection.turnItems.filter((item) => item.type === "command_execution").length,
+      TURNS * COMMANDS_PER_TURN,
+    );
+    assert.notInclude(body, "legacyActivities");
 
-      assert.isAtMost(snapshot.wireBytes, BUDGET.snapshotWireBytes, "snapshot wire bytes");
-      assert.isAtMost(
-        snapshot.decodedBodyBytes,
-        BUDGET.snapshotDecodedBytes,
-        "snapshot decoded bytes",
-      );
-    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(services, NodeServices.layer))),
-  30_000,
+    assert.isAtMost(snapshot.wireBytes, BUDGET.snapshotWireBytes, "snapshot wire bytes");
+    assert.isAtMost(
+      snapshot.decodedBodyBytes,
+      BUDGET.snapshotDecodedBytes,
+      "snapshot decoded bytes",
+    );
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(services, NodeServices.layer))),
 );

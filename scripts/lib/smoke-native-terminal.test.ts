@@ -41,4 +41,4 @@ it("verifies a native terminal and exits without retaining its output worker", (
   } finally {
     NodeFS.rmSync(project, { recursive: true, force: true });
   }
-}, 15_000);
+});

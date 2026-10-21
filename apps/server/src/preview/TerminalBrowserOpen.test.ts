@@ -252,4 +252,4 @@ it("captures a real Vite+ --open launch through the OS shim", async () => {
     await closeServer(portReservation);
     await NodeFSP.rm(tempDir, { recursive: true, force: true });
   }
-}, 15_000);
+});
