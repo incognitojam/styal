@@ -86,6 +86,29 @@ describe("serverSettings helpers", () => {
       tokens: {},
     });
   });
+  it("replaces styal.json action approvals whole, so a revoked approval is gone", () => {
+    const approval = {
+      command: "vp i",
+      roles: ["setup" as const],
+      approvedAt: "2026-10-21T00:00:00.000Z",
+    };
+    const approved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      projectFileActionApprovals: {
+        "github.com/acme/widgets": { setup: approval, lint: approval },
+      },
+    });
+    const revoked = applyServerSettingsPatch(approved, {
+      projectFileActionApprovals: { "github.com/acme/widgets": { lint: approval } },
+    });
+    expect(revoked.projectFileActionApprovals).toEqual({
+      "github.com/acme/widgets": { lint: approval },
+    });
+    expect(
+      applyServerSettingsPatch(revoked, { projectFileActionApprovals: {} })
+        .projectFileActionApprovals,
+    ).toEqual({});
+  });
+
   it("replaces SSH host lists when saving, editing, and removing hosts", () => {
     const host = { id: "mini", label: "Mac mini", target: "mini" };
     const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });

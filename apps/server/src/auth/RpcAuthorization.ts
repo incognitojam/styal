@@ -231,6 +231,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.hardwareControl]: AuthOrchestrationOperateScope,
   [WS_METHODS.hardwareConfigure]: AuthSettingsWriteScope,
   [WS_METHODS.hardwareAuditList]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectsFileActionReview]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectsFileActionApprovalSet]: AuthSettingsWriteScope,
   [WS_METHODS.subscribeHardwareState]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerLifecycle]: AuthOrchestrationReadScope,

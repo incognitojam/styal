@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 
 import * as DeviceService from "../device/DeviceService.ts";
 import * as HardwareService from "../hardware/HardwareService.ts";
+import * as ProjectFileActionApprovals from "../project/ProjectFileActionApprovals.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as FeatureUsage from "./FeatureUsage.ts";
 
@@ -132,5 +133,32 @@ export const hardware = Effect.fnUntraced(function* (client: FeatureUsage.Client
         input.type === "accept-definition" ? "accept_definition" : "set_credential",
         service.configure(input),
       ),
+  });
+});
+
+/** Observe the user reviewing, approving and revoking styal.json actions that run on their own. */
+export const projectFileApprovals = Effect.fnUntraced(function* (
+  client: FeatureUsage.ClientDimensions,
+) {
+  const service = yield* ProjectFileActionApprovals.ProjectFileActionApprovals;
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  if (!client.surface) return service;
+  const observe = <A, E, R>(
+    action: Extract<
+      Parameters<typeof FeatureUsage.observe>[0],
+      { feature: "project-file-approvals" }
+    >["action"],
+    effect: Effect.Effect<A, E, R>,
+  ) =>
+    FeatureUsage.observe(
+      { feature: "project-file-approvals", action, source: "user" },
+      effect,
+      client,
+    ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics));
+  return ProjectFileActionApprovals.ProjectFileActionApprovals.of({
+    ...service,
+    review: (input) => observe("review", service.review(input)),
+    setApproved: (input) =>
+      observe(input.approved ? "approve" : "revoke", service.setApproved(input)),
   });
 });

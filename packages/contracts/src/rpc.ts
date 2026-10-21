@@ -413,6 +413,11 @@ import {
 } from "./composerDraft.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 import { ForkClientUsageInput } from "./forkClientUsage.ts";
+import {
+  ProjectFileActionApprovalError,
+  ProjectFileActionApprovalInput,
+  ProjectFileActionReview,
+} from "./projectFileApprovals.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -424,6 +429,8 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsFileActionReview: "projects.fileActionReview",
+  projectsFileActionApprovalSet: "projects.fileActionApprovalSet",
   projectsMutate: "projects.mutate",
   projectsEnsureScratch: "projects.ensureScratch",
   projectsCreateNew: "projects.createNew",
@@ -1378,6 +1385,22 @@ const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries, {
   error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
 });
 
+const ProjectFileActionRpcError = Schema.Union([
+  ProjectFileActionApprovalError,
+  EnvironmentAuthorizationError,
+]);
+/** What approving a styal.json action would cover, read from the project root. */
+const WsProjectsFileActionReviewRpc = Rpc.make(WS_METHODS.projectsFileActionReview, {
+  payload: ProjectFileActionApprovalInput,
+  success: ProjectFileActionReview,
+  error: ProjectFileActionRpcError,
+});
+/** Approve what the server reads now, or revoke; user-only, never exposed to agents. */
+const WsProjectsFileActionApprovalSetRpc = Rpc.make(WS_METHODS.projectsFileActionApprovalSet, {
+  payload: Schema.Struct({ ...ProjectFileActionApprovalInput.fields, approved: Schema.Boolean }),
+  success: ProjectFileActionReview,
+  error: ProjectFileActionRpcError,
+});
 const WsProjectsReadFileRpc = Rpc.make(WS_METHODS.projectsReadFile, {
   payload: ProjectReadFileInput,
   success: ProjectReadFileResult,
@@ -2277,6 +2300,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsHardwareControlRpc,
   WsHardwareConfigureRpc,
   WsHardwareAuditListRpc,
+  WsProjectsFileActionReviewRpc,
+  WsProjectsFileActionApprovalSetRpc,
   WsSubscribeHardwareStateRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,

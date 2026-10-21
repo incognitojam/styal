@@ -47,6 +47,11 @@ type FeatureUsage =
       readonly hardwareTier?: HardwareTier | undefined;
     }
   | {
+      readonly feature: "project-file-approvals";
+      readonly action: "review" | "approve" | "revoke";
+      readonly source: "user";
+    }
+  | {
       readonly feature: "workflow-run-watch";
       readonly action: "watch" | "unwatch";
       readonly source: "agent";
@@ -123,6 +128,26 @@ function hardwareFailureReason(cause: Cause.Cause<unknown>) {
   }
 }
 
+/** The approval service's own refusals, so a stale review is not counted as broken. */
+function projectFileApprovalFailureReason(cause: Cause.Cause<unknown>) {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause));
+  const failure = typeof error === "object" && error !== null ? error : undefined;
+  if (failure === undefined || !("_tag" in failure)) return "operation_failed";
+  if (failure._tag === "EnvironmentAuthorizationError") return "refused";
+  if (failure._tag !== "ProjectFileActionApprovalError" || !("reason" in failure)) {
+    return "operation_failed";
+  }
+  switch (failure.reason) {
+    case "project-not-found":
+    case "action-not-found":
+      return "not_found";
+    case "nothing-to-approve":
+      return "invalid_request";
+    default:
+      return "operation_failed";
+  }
+}
+
 function workflowRunWatchFailureReason(cause: Cause.Cause<unknown>) {
   const error = Option.getOrUndefined(Cause.findErrorOption(cause));
   const failure = typeof error === "object" && error !== null ? error : undefined;
@@ -183,6 +208,11 @@ export const observe = <A, E, R>(
             Exit.isFailure(exit) &&
             !Cause.hasInterruptsOnly(exit.cause)
               ? { failureReason: hardwareFailureReason(exit.cause) }
+              : {}),
+            ...(usage.feature === "project-file-approvals" &&
+            Exit.isFailure(exit) &&
+            !Cause.hasInterruptsOnly(exit.cause)
+              ? { failureReason: projectFileApprovalFailureReason(exit.cause) }
               : {}),
             ...(usage.feature === "hardware" && usage.hardwareTier
               ? { hardwareTier: usage.hardwareTier }

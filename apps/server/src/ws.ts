@@ -1360,6 +1360,8 @@ const layerWsRpc = (
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+      const fileActionApprovals =
+        yield* ClientFeatureUsage.projectFileApprovals(clientAnalyticsProps);
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
@@ -2739,6 +2741,9 @@ const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.projectsFileActionReview]: (input) => fileActionApprovals.review(input),
+        [WS_METHODS.projectsFileActionApprovalSet]: (input) =>
+          fileActionApprovals.setApproved(input),
         [WS_METHODS.projectsMutate]: (mutation) =>
           startup.enqueueCommand(mutateProject(mutation)).pipe(
             Effect.mapError(

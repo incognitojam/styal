@@ -123,8 +123,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [Project instructions](./project-settings.md#give-agents-project-instructions).
 - **Shared actions live in `styal.json`.** Actions declared in a repository's `styal.json` appear
   in every thread of the project as soon as the file changes, with stable ids for shortcuts, and
-  you can keep your own edited version of one without changing the file. They never run
-  automatically. A `t3.json` still supplies its settings, and selecting one of its scripts opens it
+  you can keep your own edited version of one without changing the file. One only runs when a
+  worktree is created or a thread settles after you approve its exact command. A `t3.json` still supplies its settings, and selecting one of its scripts opens it
   for review before saving a local copy. [Project actions](./project-scripts.md#share-actions-with-styaljson).
   Compared with
   [T3 Code revision 680152e](https://github.com/pingdotgg/t3code/tree/680152e27b2a961686389ca69a1557cbb2c55f08),

@@ -49,6 +49,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
 
   [WS_METHODS.hardwareControl]: AuthOrchestrationOperateScope,
   [WS_METHODS.hardwareConfigure]: AuthSettingsWriteScope,
+  [WS_METHODS.projectsFileActionApprovalSet]: AuthSettingsWriteScope,
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
 } as const;
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;

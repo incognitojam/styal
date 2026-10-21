@@ -481,6 +481,8 @@ export function applyServerSettingsPatch(
     usageModelAliases: usageModelAliasesPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
+    // Whole-value replacement, so revoking an approval removes it.
+    projectFileActionApprovals: projectFileActionApprovalsPatch,
     // Already translated into `projectSettingsOverrides` above; the legacy
     // maps are derived views and must never be merged directly.
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
@@ -656,6 +658,9 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }
+      : {}),
+    ...(projectFileActionApprovalsPatch !== undefined
+      ? { projectFileActionApprovals: projectFileActionApprovalsPatch }
       : {}),
     ...(usageLimitSourcesPatch !== undefined
       ? {

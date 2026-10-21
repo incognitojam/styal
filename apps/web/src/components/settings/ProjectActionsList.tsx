@@ -12,11 +12,14 @@ export function ProjectActionsList({
   keybindings,
   disabled,
   onEdit,
+  onReview,
 }: {
   scripts: readonly ResolvedProjectAction[];
   keybindings: ResolvedKeybindingsConfig;
   disabled: boolean;
   onEdit: (script: ResolvedProjectAction) => void;
+  /** Review a styal.json action that asks to run on its own; absent where approval is unavailable. */
+  onReview?: (script: ResolvedProjectAction) => void;
 }) {
   if (scripts.length === 0)
     return (
@@ -51,11 +54,27 @@ export function ProjectActionsList({
             ) : null}
           </span>
         }
-        description={<code className="block max-w-full truncate font-mono">{script.command}</code>}
+        description={
+          <>
+            <code className="block max-w-full truncate font-mono">{script.command}</code>
+            {script.source === "file" && script.awaitingApproval ? (
+              <span className="block text-warning">Needs approval to run automatically</span>
+            ) : script.source === "file" && (script.runOnWorktreeCreate || script.runOnSettle) ? (
+              <span className="block">Approved to run automatically</span>
+            ) : null}
+          </>
+        }
         control={
           <>
             {shortcutLabel ? (
               <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
+            ) : null}
+            {onReview &&
+            script.source === "file" &&
+            (script.awaitingApproval || script.runOnWorktreeCreate || script.runOnSettle) ? (
+              <Button size="xs" variant="outline" onClick={() => onReview(script)}>
+                Review
+              </Button>
             ) : null}
             <span className="flex shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
               <Button

@@ -12,7 +12,7 @@ import {
   isProjectCheckoutRun,
   isSetupScriptOutsideWorktree,
   projectScriptRuntimeEnv,
-  resolveProjectScripts,
+  resolveProjectActions,
   settleProjectScript,
   setupProjectScript,
 } from "@t3tools/shared/projectScripts";
@@ -37,6 +37,7 @@ import {
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as TurnItemPositions from "../orchestration-v2/TurnItemPositionStore.ts";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as ProjectFileActionApprovals from "./ProjectFileActionApprovals.ts";
 import * as ProjectService from "./ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -70,6 +71,9 @@ const SetupRunActivityPayload = Schema.Struct({
   command: Schema.String,
   terminalId: Schema.String,
   worktreePath: Schema.String,
+  awaitingApproval: Schema.optionalKey(
+    Schema.Struct({ projectId: ProjectId, actionId: Schema.String }),
+  ),
 });
 const decodeSetupRunActivityPayload = Schema.decodeUnknownOption(SetupRunActivityPayload);
 
@@ -168,8 +172,16 @@ export interface ProjectSetupScriptRunnerResultAlreadyRunning {
   readonly terminalId: string;
 }
 
+/** A styal.json action asks for this role, but the user has not approved its command. */
+export interface ProjectSetupScriptRunnerResultAwaitingApproval {
+  readonly status: "awaiting-approval";
+  readonly scriptId: string;
+  readonly scriptName: string;
+}
+
 export type ProjectSetupScriptRunnerResult =
   | ProjectSetupScriptRunnerResultNoScript
+  | ProjectSetupScriptRunnerResultAwaitingApproval
   | ProjectSetupScriptRunnerResultNotAWorktree
   | ProjectSetupScriptRunnerResultAlreadyRunning
   | ProjectSetupScriptRunnerResultStarted;
@@ -328,6 +340,9 @@ export const make = Effect.gen(function* () {
               ...(metadata.scriptIcon === undefined ? {} : { scriptIcon: metadata.scriptIcon }),
               terminalId: metadata.terminalId,
               worktreePath: metadata.worktreePath,
+              ...(metadata.awaitingApproval === undefined
+                ? {}
+                : { awaitingApproval: metadata.awaitingApproval }),
             },
             status:
               input.kind === "setup-script.completed"
@@ -338,7 +353,10 @@ export const make = Effect.gen(function* () {
                     : "failed"
                   : input.kind === "setup-script.started"
                     ? "running"
-                    : "pending",
+                    : input.kind === "setup-script.awaiting-approval"
+                      ? // Not "waiting": nothing runs, so the thread must not look busy.
+                        "idle"
+                      : "pending",
             startedAt: previous?.startedAt == null ? at : DateTime.makeUnsafe(previous.startedAt),
             completedAt: finished ? at : null,
             updatedAt: at,
@@ -524,6 +542,7 @@ export const make = Effect.gen(function* () {
   );
   yield* forkParked(recoverInterruptedRuns());
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const fileActionApprovals = yield* ProjectFileActionApprovals.ProjectFileActionApprovals;
 
   /**
    * Watches the setup terminal until its command process exits. Terminal
@@ -653,10 +672,53 @@ export const make = Effect.gen(function* () {
       ),
     );
     const trigger = input.trigger ?? "setup";
-    const scripts = resolveProjectScripts(settings, project);
+    const scripts = resolveProjectActions(
+      settings,
+      project,
+      yield* fileActionApprovals.automationConfig(project),
+    );
     const script =
       trigger === "settle" ? settleProjectScript(scripts) : setupProjectScript(scripts);
     if (!script) {
+      // A styal.json action asking for this role runs only once its command is
+      // approved; until then the thread says so instead of silently skipping.
+      const awaiting = scripts.find((candidate) =>
+        candidate.awaitingApproval?.includes(trigger === "settle" ? "settle" : "setup"),
+      );
+      if (
+        awaiting !== undefined &&
+        !isProjectCheckoutRun({
+          projectCwd: project.workspaceRoot,
+          worktreePath: input.worktreePath,
+        })
+      ) {
+        const requestedAt = yield* nowIso;
+        nextRunSequence += 1;
+        const runId = `${input.threadId}:${awaiting.id}:${requestedAt}:${nextRunSequence}`;
+        yield* appendActivity({
+          threadId: input.threadId,
+          runId,
+          kind: "setup-script.awaiting-approval",
+          summary: `${awaiting.name} needs approval`,
+          tone: "info",
+          createdAt: requestedAt,
+          payload: {
+            runId,
+            scriptId: awaiting.id,
+            scriptName: awaiting.name,
+            scriptIcon: awaiting.icon,
+            command: awaiting.command,
+            terminalId: `${trigger}-${awaiting.id}`,
+            worktreePath: input.worktreePath,
+            awaitingApproval: { projectId: project.id, actionId: awaiting.id },
+          },
+        }).pipe(Effect.ignoreCause({ log: true }));
+        return {
+          status: "awaiting-approval",
+          scriptId: awaiting.id,
+          scriptName: awaiting.name,
+        } as const;
+      }
       return {
         status: "no-script",
       } as const;

@@ -4,6 +4,7 @@ import {
   DeviceHostId,
   DeviceId,
   HardwareToolError,
+  ProjectFileActionApprovalError,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -155,4 +156,67 @@ it.effect("records a hardware call's tier and a bounded refusal, never the devic
       },
     ]);
   }),
+);
+
+it.effect(
+  "records styal.json approvals with bounded refusals and no project, action or command",
+  () =>
+    Effect.gen(function* () {
+      const events: Array<unknown> = [];
+      const observe = (
+        action: "review" | "approve" | "revoke",
+        effect: Effect.Effect<unknown, ProjectFileActionApprovalError>,
+      ) =>
+        FeatureUsage.observe(
+          { feature: "project-file-approvals", action, source: "user" },
+          effect,
+          {
+            surface: "web",
+          },
+        ).pipe(
+          Effect.provideService(AnalyticsService.AnalyticsService, capture(events)),
+          Effect.exit,
+        );
+      yield* observe("approve", Effect.succeed({ command: "./scripts/setup.sh" }));
+      yield* observe(
+        "review",
+        Effect.fail(
+          new ProjectFileActionApprovalError({
+            reason: "action-not-found",
+            message: "styal.json no longer has this action.",
+          }),
+        ),
+      );
+      yield* observe(
+        "approve",
+        Effect.fail(
+          new ProjectFileActionApprovalError({
+            reason: "nothing-to-approve",
+            message: "This action does not run on its own.",
+          }),
+        ),
+      );
+      const base = {
+        feature: "project-file-approvals",
+        source: "user",
+        surface: "web",
+        durationMs: 0,
+      };
+      expect(events).toEqual([
+        { event: "feature.used", properties: { ...base, action: "approve", outcome: "success" } },
+        {
+          event: "feature.used",
+          properties: { ...base, action: "review", failureReason: "not_found", outcome: "failure" },
+        },
+        {
+          event: "feature.used",
+          properties: {
+            ...base,
+            action: "approve",
+            failureReason: "invalid_request",
+            outcome: "failure",
+          },
+        },
+      ]);
+    }),
 );

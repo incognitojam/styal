@@ -129,7 +129,7 @@ describe("resolveProjectActions", () => {
     projectSettingsFolded: true,
     projectSettingsOverrides: { [projectId]: { defaultProjectScripts: scripts } },
   });
-  const project = { id: projectId, scripts: [] };
+  const project = { id: projectId, scripts: [], workspaceRoot: "/repo" };
 
   it("lists saved actions first, then file actions they do not override", () => {
     const actions = resolveProjectActions(
@@ -149,7 +149,7 @@ describe("resolveProjectActions", () => {
     ]);
   });
 
-  it("never lets a file action run on its own", () => {
+  it("never lets an unapproved file action run on its own", () => {
     const [setup] = resolveProjectActions(settingsWith([]), project, {
       actions: [
         {
@@ -170,6 +170,51 @@ describe("resolveProjectActions", () => {
       icon: "configure",
       runOnWorktreeCreate: false,
       source: "file",
+      awaitingApproval: ["setup", "settle"],
+    });
+  });
+
+  const setupFile = {
+    actions: [
+      {
+        id: "setup",
+        name: "Setup",
+        command: "vp i",
+        icon: "configure" as const,
+        runOnWorktreeCreate: true,
+        runOnSettle: true,
+        async: false,
+      },
+    ],
+  };
+  const approving = (command: string, roles: ("setup" | "settle")[]) => ({
+    ...settingsWith([]),
+    projectFileActionApprovals: {
+      [`project:${projectId}`]: {
+        setup: { command, roles, approvedAt: "2026-10-21T12:00:00.000Z" },
+      },
+    },
+  });
+
+  it("runs an approved file action in the roles it was approved for", () => {
+    const [setup] = resolveProjectActions(approving("vp i", ["setup"]), project, setupFile);
+    expect(setup).toMatchObject({
+      runOnWorktreeCreate: true,
+      async: false,
+      awaitingApproval: ["settle"],
+    });
+    expect(setup?.runOnSettle).toBeUndefined();
+  });
+
+  it("voids an approval once the file's command changes", () => {
+    const [setup] = resolveProjectActions(
+      approving("vp install", ["setup", "settle"]),
+      project,
+      setupFile,
+    );
+    expect(setup).toMatchObject({
+      runOnWorktreeCreate: false,
+      awaitingApproval: ["setup", "settle"],
     });
   });
 

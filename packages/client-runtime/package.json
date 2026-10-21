@@ -191,6 +191,10 @@
       "types": "./src/state/device.ts",
       "default": "./src/state/device.ts"
     },
+    "./state/projectFileActions": {
+      "types": "./src/state/projectFileActions.ts",
+      "default": "./src/state/projectFileActions.ts"
+    },
     "./state/hardware": {
       "types": "./src/state/hardware.ts",
       "default": "./src/state/hardware.ts"

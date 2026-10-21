@@ -1,4 +1,7 @@
-import { setupScriptActivityLabel } from "@t3tools/client-runtime/state/setup-script-activity";
+import {
+  setupScriptActivityLabel,
+  setupScriptAwaitingApproval,
+} from "@t3tools/client-runtime/state/setup-script-activity";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import {
   type AssetResource,
@@ -363,6 +366,8 @@ function projectedItemCreatedAt(row: OrchestrationV2ProjectedTurnItem): string {
 function projectedWorkEntryStatus(
   item: OrchestrationV2TurnItem,
 ): NonNullable<WorkLogEntry["toolLifecycleStatus"]> {
+  // Nothing runs while a setup action waits for approval, so no spinner.
+  if (item.type === "command_execution" && setupScriptAwaitingApproval(item)) return "idle";
   switch (item.status) {
     case "pending":
     case "running":

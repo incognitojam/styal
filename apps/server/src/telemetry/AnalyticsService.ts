@@ -217,6 +217,7 @@ export const make = Effect.gen(function* () {
           browserToolsUsageVersion: 1,
           deviceUsageVersion: 1,
           hardwareUsageVersion: 1,
+          projectFileApprovalsUsageVersion: 1,
           workflowRunWatchUsageVersion: 1,
           threadSettleReasonUsageVersion: 1,
           providerAnalyticsUsageVersion: 1,
