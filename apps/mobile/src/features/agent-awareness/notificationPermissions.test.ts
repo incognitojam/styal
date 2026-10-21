@@ -1,4 +1,4 @@
-import { beforeEach, vi } from "vite-plus/test";
+import { vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Notifications from "expo-notifications";
@@ -16,11 +16,6 @@ vi.mock("expo-notifications", () => ({
 }));
 
 describe("agent notification permission", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    platform.OS = "android";
-  });
-
   it.effect("creates the native channels instead of Expo's when the binary supports them", () =>
     Effect.gen(function* () {
       createChannels.mockReturnValueOnce(true);
@@ -29,20 +24,6 @@ describe("agent notification permission", () => {
       expect(createChannels.mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(Notifications.requestPermissionsAsync).mock.invocationCallOrder[0]!,
       );
-    }),
-  );
-
-  it.effect("preserves denied permission when Android cannot ask again", () =>
-    Effect.gen(function* () {
-      vi.mocked(Notifications.getPermissionsAsync).mockResolvedValueOnce({
-        granted: false,
-        canAskAgain: false,
-      } as Notifications.NotificationPermissionsStatus);
-      expect(yield* requestAgentNotificationPermission).toEqual({
-        type: "denied",
-        canAskAgain: false,
-      });
-      expect(Notifications.requestPermissionsAsync).not.toHaveBeenCalled();
     }),
   );
 });

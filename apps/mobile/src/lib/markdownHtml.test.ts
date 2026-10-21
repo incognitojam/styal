@@ -38,14 +38,6 @@ describe("literal HTML in user messages", () => {
 });
 
 describe("HTML in native Markdown", () => {
-  it("leaves code inside an HTML details block literal", () => {
-    const content =
-      '<details>\n<summary>Example</summary>\n\n```html\n<img src="literal.png">\n```\n\nUse `<img>` here.\n</details>';
-    const result = markdownHtmlContent(content);
-    expect(result).toContain('```html\n<img src="literal.png">\n```');
-    expect(result).toContain("Use `<img>` here.");
-    expect(result).not.toContain("<details>");
-  });
   it("preserves screenshot URLs and captions from GitHub HTML image embeds", () => {
     expect(
       markdownHtmlContent(

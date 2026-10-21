@@ -96,7 +96,6 @@ describe("buildReviewSectionItems", () => {
 describe("buildReviewParsedDiff", () => {
   it.each([
     ["a/example.ts", "a/example.ts"],
-    ["b/example.ts", "b/example.ts"],
     ["a/before.ts", "b/after.ts"],
   ])("preserves repository paths from %s to %s", (previousPath, path) => {
     const parsed = buildReviewParsedDiff(

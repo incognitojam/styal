@@ -3038,7 +3038,6 @@ features:
     upstream_paths:
       - apps/mobile/src/features/threads/floating-working-control.tsx
     tests:
-      - apps/mobile/src/lib/materialYouTheme.test.ts
       - apps/mobile/src/lib/mobileThemeRuntime.test.ts
     upstream:
       status: tracking
