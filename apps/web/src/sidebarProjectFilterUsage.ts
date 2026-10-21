@@ -1,8 +1,5 @@
 import type { ForkClientUsageInput } from "@t3tools/contracts";
 
-import { reportForkClientUsage } from "./forkClientUsage";
-import { appAtomRegistry } from "./rpc/atomRegistry";
-import { primaryEnvironmentIdAtom } from "./state/primaryEnvironment";
 import { useUiStateStore } from "./uiStateStore";
 
 type FilterEntryPoint = Extract<
@@ -13,10 +10,18 @@ type FilterEntryPoint = Extract<
 /**
  * The filter is a device preference rather than a property of one project, so
  * reports go through the primary environment like the page-level update notice.
+ * The reporting modules load on first use so thread actions stay free of the
+ * connection layer.
  */
-function report(input: Extract<ForkClientUsageInput, { feature: "sidebar-project-filter" }>) {
+async function report(input: Extract<ForkClientUsageInput, { feature: "sidebar-project-filter" }>) {
   try {
-    void reportForkClientUsage(appAtomRegistry.get(primaryEnvironmentIdAtom), input);
+    const [{ reportForkClientUsage }, { appAtomRegistry }, { primaryEnvironmentIdAtom }] =
+      await Promise.all([
+        import("./forkClientUsage"),
+        import("./rpc/atomRegistry"),
+        import("./state/primaryEnvironment"),
+      ]);
+    await reportForkClientUsage(appAtomRegistry.get(primaryEnvironmentIdAtom), input);
   } catch {
     // Reporting must never affect the filter or thread creation.
   }
@@ -30,7 +35,7 @@ export function setSidebarProjectFilterFromUser(
   const store = useUiStateStore.getState();
   if (store.sidebarProjectScopeKey === projectKey) return;
   store.setSidebarProjectScopeKey(projectKey);
-  report({
+  return report({
     feature: "sidebar-project-filter",
     action: projectKey === null ? "filter_cleared" : "filter_set",
     entryPoint,
@@ -40,5 +45,5 @@ export function setSidebarProjectFilterFromUser(
 /** Count a new-thread action taken while the filter is on. */
 export function reportNewThreadWhileFiltered() {
   if (useUiStateStore.getState().sidebarProjectScopeKey === null) return;
-  report({ feature: "sidebar-project-filter", action: "thread_started" });
+  return report({ feature: "sidebar-project-filter", action: "thread_started" });
 }

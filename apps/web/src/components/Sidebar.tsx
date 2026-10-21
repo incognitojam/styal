@@ -3049,7 +3049,7 @@ export default function Sidebar() {
         );
         if (clicked._tag === "Failure" || !clicked.value) return;
         if (clicked.value === "filter-project") {
-          setSidebarProjectFilterFromUser(
+          void setSidebarProjectFilterFromUser(
             isFiltered ? null : projectGroup.projectKey,
             "project_menu",
           );
@@ -5177,7 +5177,7 @@ export default function Sidebar() {
             // This item is the only scope control here, so picking the
             // already-scoped project again is the way back to all projects.
             if (threadProjectGroup) {
-              setSidebarProjectFilterFromUser(
+              void setSidebarProjectFilterFromUser(
                 projectScopeKey === threadProjectGroup.projectKey
                   ? null
                   : threadProjectGroup.projectKey,
@@ -5556,7 +5556,7 @@ export default function Sidebar() {
                       return;
                     }
                     if (!item) return;
-                    setSidebarProjectFilterFromUser(
+                    void setSidebarProjectFilterFromUser(
                       item.value === "all" ? null : item.value,
                       "filter_menu",
                     );

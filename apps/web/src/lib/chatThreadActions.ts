@@ -154,6 +154,6 @@ export async function startNewThreadFromContext(
   }
 
   await context.handleNewThread(projectRef);
-  reportNewThreadWhileFiltered();
+  void reportNewThreadWhileFiltered();
   return true;
 }
