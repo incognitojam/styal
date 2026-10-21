@@ -3254,8 +3254,8 @@ features:
       - apps/server/src/orchestration-v2/ProviderTurnStartService.ts
       - apps/server/src/orchestration-v2/runtimeLayer.ts
       - apps/server/src/provider/Drivers/ClaudeDriver.ts
-      - apps/server/src/provider/Drivers/claudeSelfUpdater.ts
       - apps/server/src/provider/Drivers/CodexDriver.ts
+      - apps/server/src/provider/Drivers/claudeSelfUpdater.ts
       - apps/server/src/provider/Drivers/codexPinnedInstall.ts
       - apps/server/src/provider/ModelManifest.ts
       - apps/server/src/provider/ProviderAutoUpdater.ts
@@ -3308,8 +3308,8 @@ features:
       - apps/server/src/environment/HostActivity.test.ts
       - apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts
       - apps/server/src/provider/Drivers/ClaudeMaintenance.test.ts
-      - apps/server/src/provider/Drivers/claudeSelfUpdater.test.ts
       - apps/server/src/provider/Drivers/CodexDriver.test.ts
+      - apps/server/src/provider/Drivers/claudeSelfUpdater.test.ts
       - apps/server/src/provider/Drivers/codexPinnedInstall.test.ts
       - apps/server/src/provider/ModelManifest.test.ts
       - apps/server/src/provider/ProviderAutoUpdater.test.ts
