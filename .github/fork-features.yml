@@ -1985,7 +1985,6 @@ features:
       - apps/web/src/components/SidebarStageBackdrop.test.tsx
       - apps/web/src/components/settings/forkFeatures.test.ts
       - packages/client-runtime/src/connection/compatibility.test.ts
-      - packages/client-runtime/src/state/pullRequestDiffHttp.test.ts
       - packages/contracts/src/settings.test.ts
       - packages/shared/src/cliRelease.test.ts
       - packages/shared/src/cliReleaseVersion.test.ts

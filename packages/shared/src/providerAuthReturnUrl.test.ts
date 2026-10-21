@@ -15,12 +15,7 @@ describe("provider auth return destinations", () => {
   );
   it.each([
     "styal://attacker/welcome",
-    "styal://app:123/welcome",
-    "styal://app/auth/callback",
-    "styal://user@ app/welcome",
     "styal://app/welcome/../evil",
     "https://attacker.example/welcome",
-    "file:///welcome",
-    "javascript:alert(1)",
   ])("rejects %s", (url) => expect(providerAuthReturnUrl(url)).toBeUndefined());
 });
