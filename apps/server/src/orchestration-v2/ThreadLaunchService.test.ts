@@ -309,21 +309,6 @@ function launchInput(input: {
   };
 }
 
-function waitUntil<E, R>(predicate: () => Effect.Effect<boolean, E, R>): Effect.Effect<void, E, R> {
-  return Effect.gen(function* () {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (yield* predicate()) return;
-      yield* Effect.promise(
-        () =>
-          new Promise<void>((resolve) => {
-            setImmediate(resolve);
-          }),
-      );
-    }
-    assert.fail("Condition was not reached before timeout.");
-  });
-}
-
 it.effect.each(
   (["new", "existing"] as const).flatMap((target) =>
     (["user", "agent"] as const).map((createdBy) => ({ target, createdBy })),
@@ -1057,11 +1042,13 @@ it.effect("provisions under styal-<hash> when a plain styal branch blocks styal/
           workspace: { type: "worktree", baseRef: "main", branch: "styal/abcd1234" },
         }),
       );
-      yield* waitUntil(() =>
-        threads
-          .getThreadProjection(launched.threadId)
-          .pipe(Effect.map((projection) => projection.thread.branch === "generated-branch")),
+      // The generated name lands after preparation releases the run.
+      yield* threads.streamStoredEventsFrom({ threadId: launched.threadId }).pipe(
+        Stream.filter((stored) => stored.commandId?.endsWith(":branch-rename") === true),
+        Stream.runHead,
       );
+      const projection = yield* threads.getThreadProjection(launched.threadId);
+      assert.equal(projection.thread.branch, "generated-branch");
       assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.newRefName, "styal-abcd1234");
       assert.equal(harness.renameBranch.mock.calls[0]?.[0]?.oldBranch, "styal-abcd1234");
     }).pipe(Effect.provide(harness.layer));

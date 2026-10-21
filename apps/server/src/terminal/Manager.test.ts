@@ -12,20 +12,16 @@ import {
   TerminalProviderInstanceNotFoundError,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -49,10 +45,6 @@ vi.mock("effect/SynchronizedRef", async (importOriginal) => {
 });
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
-
-class WaitForConditionError extends Data.TaggedError("WaitForConditionError")<{
-  readonly message: string;
-}> {}
 
 class FakePtyProcess implements PtyAdapter.PtyProcess {
   readonly writes: string[] = [];
@@ -204,26 +196,6 @@ class GatedPtyAdapter extends FakePtyAdapter {
     );
   }
 }
-
-const waitFor = <E, R>(
-  predicate: Effect.Effect<boolean, E, R>,
-  timeout: Duration.Input = 800,
-): Effect.Effect<void, WaitForConditionError | E, R> =>
-  predicate.pipe(
-    Effect.filterOrFail(
-      (done) => done,
-      () => new WaitForConditionError({ message: "Condition not met" }),
-    ),
-    Effect.retry(Schedule.spaced("15 millis")),
-    Effect.timeoutOption(timeout),
-    Effect.flatMap((result) =>
-      Option.match(result, {
-        onNone: () =>
-          Effect.fail(new WaitForConditionError({ message: "Timed out waiting for condition" })),
-        onSome: () => Effect.void,
-      }),
-    ),
-  );
 
 function openInput(overrides: Partial<TerminalOpenInput> = {}): TerminalOpenInput {
   return {
@@ -766,6 +738,13 @@ it.layer(
         subprocessInspector: () => Effect.succeed(inspect),
         subprocessPollIntervalMs: 20,
       });
+      const childSeen = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "activity" && event.hasRunningSubprocess
+          ? Deferred.succeed(childSeen, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
 
       yield* manager.openCommand({
         ...openInput({ terminalId: "setup-setup" }),
@@ -774,12 +753,7 @@ it.layer(
       });
 
       inspect = { hasRunningSubprocess: true, childCommand: "vp", processIds: [100] };
-      yield* waitFor(
-        Effect.map(getEvents, (events) =>
-          events.some((event) => event.type === "activity" && event.hasRunningSubprocess === true),
-        ),
-        "1200 millis",
-      );
+      yield* Deferred.await(childSeen);
 
       const labels = (yield* getEvents).flatMap((event) =>
         event.type === "activity" ? [event.label] : [],
@@ -908,10 +882,12 @@ it.layer(
     Effect.gen(function* () {
       let failSnapshots = false;
       let failedCalls = 0;
+      const threeFailedSnapshots = yield* Deferred.make<void>();
       const processRunner: ProcessRunner.ProcessRunner["Service"] = {
         run: () =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             if (failSnapshots) failedCalls += 1;
+            if (failedCalls === 3) yield* Deferred.succeed(threeFailedSnapshots, undefined);
             return {
               stdout: failSnapshots ? "" : "  100  9000 vim",
               stderr: "",
@@ -931,25 +907,19 @@ it.layer(
         Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
         Effect.provide(layerWithHostPlatform("linux")),
       );
+      const vimSeen = yield* Deferred.make<void>();
+      const unsubscribe = yield* manager.subscribe((event) =>
+        event.type === "activity" && event.hasRunningSubprocess && event.label === "vim"
+          ? Deferred.succeed(vimSeen, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
 
       yield* manager.open(openInput());
-      yield* waitFor(
-        Effect.map(getEvents, (events) =>
-          events.some(
-            (event) =>
-              event.type === "activity" &&
-              event.hasRunningSubprocess === true &&
-              event.label === "vim",
-          ),
-        ),
-        "1200 millis",
-      );
+      yield* Deferred.await(vimSeen);
 
       failSnapshots = true;
-      yield* waitFor(
-        Effect.sync(() => failedCalls >= 3),
-        "1200 millis",
-      );
+      yield* Deferred.await(threeFailedSnapshots);
 
       expect(yield* manager.shutdownPreflight).toEqual({
         terminalsRequiringConfirmation: 1,
@@ -1002,7 +972,7 @@ it.layer(
     Effect.gen(function* () {
       const ptyAdapter = new FakePtyAdapter();
       let duringCheck: (pid: number) => Effect.Effect<void> = () => Effect.void;
-      const { manager, getEvents } = yield* createManager(5, {
+      const { manager } = yield* createManager(5, {
         ptyAdapter,
         subprocessPollIntervalMs: 60_000,
         subprocessInspector: (pid) =>
@@ -1010,6 +980,13 @@ it.layer(
             Effect.as({ hasRunningSubprocess: false, childCommand: null, processIds: [] }),
           ),
       });
+      const outputSeen = yield* Deferred.make<void>();
+      const unsubscribeOutput = yield* manager.subscribe((event) =>
+        event.type === "output"
+          ? Deferred.succeed(outputSeen, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribeOutput));
       yield* manager.open(openInput({ terminalId: "typed" }));
       yield* manager.open(openInput({ terminalId: "echoed" }));
       const [typed, echoed] = ptyAdapter.processes;
@@ -1020,9 +997,7 @@ it.layer(
               .pipe(Effect.orDie)
           : Effect.gen(function* () {
               echoed!.emitData("make build\r\n");
-              yield* waitFor(
-                Effect.map(getEvents, (events) => events.some((event) => event.type === "output")),
-              );
+              yield* Deferred.await(outputSeen);
             }).pipe(Effect.orDie);
 
       yield* manager.closeIdle({ threadId: "thread-1" });
@@ -1474,6 +1449,7 @@ it.layer(
     Effect.gen(function* () {
       const registered: TerminalBrowserOpenOwner[] = [];
       const unregistered: TerminalBrowserOpenOwner[] = [];
+      const revoked = yield* Deferred.make<void>();
       const { manager, ptyAdapter } = yield* createManager(5, {
         registerBrowserOpen: (owner) =>
           Effect.sync(() => {
@@ -1487,7 +1463,7 @@ it.layer(
         unregisterBrowserOpen: (owner) =>
           Effect.sync(() => {
             unregistered.push(owner);
-          }),
+          }).pipe(Effect.andThen(Deferred.succeed(revoked, undefined)), Effect.asVoid),
       });
 
       yield* manager.open(openInput());
@@ -1503,7 +1479,7 @@ it.layer(
       expect(spawnInput.env.T3CODE_TERMINAL_BROWSER_OPEN_TOKEN).toBe("terminal-token");
 
       process.emitExit({ exitCode: 0, signal: 0 });
-      yield* waitFor(Effect.sync(() => unregistered.length === 1));
+      yield* Deferred.await(revoked);
       expect(unregistered).toEqual([{ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID }]);
     }),
   );
