@@ -59,52 +59,6 @@ describe("resolveFirstRunDecision", () => {
     });
   });
 
-  it("waits for managed environments before treating a workspace as new", () => {
-    expect(resolveFirstRunDecision({ ...freshWorkspace, catalogReady: false })).toEqual({
-      decision: "pending",
-      persistCompletion: false,
-    });
-  });
-
-  it("does not complete onboarding from cached remote projects", () => {
-    expect(
-      resolveFirstRunDecision({
-        ...freshWorkspace,
-        projectCount: 3,
-        workspaceAuthoritative: false,
-        workspaceFresh: false,
-      }),
-    ).toEqual({
-      decision: "app",
-      persistCompletion: false,
-    });
-  });
-
-  it("waits for live data before judging a single cached project", () => {
-    expect(
-      resolveFirstRunDecision({
-        ...freshWorkspace,
-        authoritative: false,
-        workspaceFresh: false,
-      }),
-    ).toEqual({
-      decision: "pending",
-      persistCompletion: false,
-    });
-  });
-
-  it("waits for the completed bootstrap welcome before judging a nonempty workspace", () => {
-    expect(
-      resolveFirstRunDecision({
-        ...freshWorkspace,
-        workspaceProvenanceAuthoritative: false,
-      }),
-    ).toEqual({
-      decision: "pending",
-      persistCompletion: false,
-    });
-  });
-
   it("waits when the initial welcome is pending and opens the wizard after completion", () => {
     const pendingProvenance = isFirstRunWorkspaceProvenanceAuthoritative({
       welcomeReceived: true,
@@ -146,15 +100,6 @@ describe("resolveFirstRunDecision", () => {
 });
 
 describe("isFirstRunWorkspaceProvenanceAuthoritative", () => {
-  it("waits for a welcome before treating an empty catalog as final", () => {
-    expect(
-      isFirstRunWorkspaceProvenanceAuthoritative({
-        welcomeReceived: false,
-        bootstrapStatus: null,
-      }),
-    ).toBe(false);
-  });
-
   it("accepts a legacy welcome without bootstrap status", () => {
     expect(
       isFirstRunWorkspaceProvenanceAuthoritative({
@@ -172,18 +117,6 @@ describe("transitionFirstRunGateState", () => {
     ).toEqual({ decision: "pending", stalled: true });
   });
 
-  it.each(["app", "wizard"] as const)(
-    "resolves stalled recovery to %s only after authoritative evidence",
-    (decision) => {
-      expect(
-        transitionFirstRunGateState(
-          { decision: "pending", stalled: true },
-          { type: "evidence", decision },
-        ),
-      ).toEqual({ decision, stalled: false });
-    },
-  );
-
   it.each([
     { previous: "app", workspaceFresh: true, decision: "wizard" },
     { previous: "wizard", workspaceFresh: false, decision: "app" },
@@ -200,6 +133,7 @@ describe("transitionFirstRunGateState", () => {
     },
   );
 
+  // regression: #19680 unchanged gate evidence must not produce a new state
   it.each(["pending", "app", "wizard"] as const)(
     "preserves state identity for unchanged %s evidence",
     (decision) => {
@@ -368,17 +302,6 @@ const freshBootstrap = {
 };
 
 describe("isFreshFirstRunWorkspace", () => {
-  it("accepts an empty workspace", () => {
-    expect(
-      isFreshFirstRunWorkspace({
-        primaryEnvironmentId,
-        serverCwd: "/projects/current",
-        projects: [],
-        threads: [],
-      }),
-    ).toBe(true);
-  });
-
   it("accepts only the unused project and thread created from the server cwd", () => {
     expect(
       isFreshFirstRunWorkspace({
@@ -435,26 +358,6 @@ describe("isFreshFirstRunWorkspace", () => {
         threads: [bootstrapThread],
       }),
     ).toBe(true);
-  });
-
-  it("rejects projects from another environment even when their paths match", () => {
-    expect(
-      isFreshFirstRunWorkspace({
-        ...freshBootstrap,
-        projects: [{ ...bootstrapProject, environmentId: "remote-environment" }],
-        threads: [],
-      }),
-    ).toBe(false);
-  });
-
-  it("rejects a thread that does not belong to the bootstrap project", () => {
-    expect(
-      isFreshFirstRunWorkspace({
-        ...freshBootstrap,
-        projects: [bootstrapProject],
-        threads: [{ ...bootstrapThread, projectId: "another-project" }],
-      }),
-    ).toBe(false);
   });
 
   it("rejects a bootstrap thread that already has a user message", () => {

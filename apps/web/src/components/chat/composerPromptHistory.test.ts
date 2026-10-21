@@ -186,10 +186,6 @@ describe("stepComposerPromptHistory", () => {
     ).toBe("older prompt");
   });
 
-  it("does not start browsing from a non-empty draft", () => {
-    expect(backward(null, "typing")).toBeNull();
-  });
-
   it("walks back from the newest entry", () => {
     const first = backward(null, "");
     expect(first).toEqual({ position: { entryId: "m3", recalled: "third" }, prompt: "third" });

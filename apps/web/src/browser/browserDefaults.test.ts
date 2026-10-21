@@ -6,7 +6,7 @@ const settings = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock("~/hooks/useSettings", () => ({
   getClientSettings: () => settings.current,
   useClientSettings: () => undefined,
-  ensureClientSettingsHydrated: () => Promise.resolve(),
+  ensureClientSettingsHydrated: vi.fn(async () => undefined),
 }));
 
 const { getBrowserDefaults } = await import("./browserDefaults");

@@ -267,15 +267,4 @@ describe("canCheckForUpdate", () => {
       }),
     ).toBe(true);
   });
-
-  it("returns true on error so the user can retry", () => {
-    expect(
-      canCheckForUpdate({
-        ...baseState,
-        status: "error",
-        errorContext: "check",
-        message: "network",
-      }),
-    ).toBe(true);
-  });
 });

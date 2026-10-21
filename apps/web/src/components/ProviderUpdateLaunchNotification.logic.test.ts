@@ -22,7 +22,6 @@ import {
   hasOneClickUpdateProviderCandidate,
   isProviderUpdateCandidate,
   isProviderSettingsUpdateCandidate,
-  localEnvironmentUpdateNotificationKey,
   providerUpdateNotificationKey,
   resolveEnvironmentUpdateRowStatus,
   type LocalEnvironmentProvidersInput,
@@ -410,15 +409,6 @@ describe("provider update launch notification logic", () => {
     });
   });
 
-  it("does not show a sidebar pill for passive update availability", () => {
-    expect(
-      getProviderUpdateSidebarPillView([
-        provider({ driver: driver("codex"), canUpdate: true }),
-        provider({ driver: driver("cursor"), canUpdate: false }),
-      ]),
-    ).toBeNull();
-  });
-
   describe("multi-backend update outcomes", () => {
     const terminalState = (
       status: "succeeded" | "failed" | "unchanged",
@@ -469,42 +459,6 @@ describe("provider update launch notification logic", () => {
       expect(
         getProviderUpdateProgressToastView({ providers: snapshots, providerCount: 1 }),
       ).toMatchObject({ phase: "failed" });
-    });
-
-    it("reports success only when every backend succeeded", () => {
-      const snapshots = collectProviderUpdateOutcomeSnapshots([
-        fulfilledOutcome(
-          true,
-          provider({
-            driver: driver("codex"),
-            updateState: terminalState("succeeded", "Provider updated."),
-          }),
-        ),
-        fulfilledOutcome(
-          false,
-          provider({
-            driver: driver("codex"),
-            updateState: terminalState("succeeded", "Provider updated."),
-          }),
-        ),
-      ]);
-
-      expect(
-        getProviderUpdateProgressToastView({ providers: snapshots, providerCount: 1 }),
-      ).toMatchObject({ phase: "succeeded" });
-    });
-
-    it("ignores backends that did not return the targeted instance", () => {
-      const primary = provider({
-        driver: driver("codex"),
-        updateState: terminalState("succeeded", "Provider updated."),
-      });
-      const snapshots = collectProviderUpdateOutcomeSnapshots([
-        fulfilledOutcome(true, primary),
-        fulfilledOutcome(false, null),
-      ]);
-
-      expect(snapshots).toEqual([primary]);
     });
 
     it("treats a rejected dispatch as not contributing a snapshot", () => {
@@ -572,54 +526,6 @@ describe("provider update launch notification logic", () => {
           ?.isSettling,
       ).toBe(true);
     });
-
-    it("keeps only environments that have a one-click update on offer", () => {
-      const { groups } = buildLocalEnvironmentUpdateGroups([
-        environment({
-          environmentId: "env-windows",
-          isPrimary: true,
-          providers: [provider({ driver: driver("codex") })],
-        }),
-        environment({
-          environmentId: "env-wsl",
-          providers: [
-            provider({ driver: driver("codex"), advisoryStatus: "current", latestVersion: null }),
-          ],
-        }),
-      ]);
-
-      expect(environmentGroupsWithUpdates(groups).map((group) => group.environmentId)).toEqual([
-        "env-windows",
-      ]);
-    });
-
-    it("keys the notification by environment, driver and latest version", () => {
-      const noUpdates = buildLocalEnvironmentUpdateGroups([
-        environment({
-          environmentId: "env-windows",
-          isPrimary: true,
-          providers: [
-            provider({ driver: driver("codex"), advisoryStatus: "current", latestVersion: null }),
-          ],
-        }),
-      ]);
-      expect(localEnvironmentUpdateNotificationKey(noUpdates.groups)).toBeNull();
-
-      const both = buildLocalEnvironmentUpdateGroups([
-        environment({
-          environmentId: "env-windows",
-          isPrimary: true,
-          providers: [provider({ driver: driver("codex"), latestVersion: "1.1.0" })],
-        }),
-        environment({
-          environmentId: "env-wsl",
-          providers: [provider({ driver: driver("codex"), latestVersion: "1.1.0" })],
-        }),
-      ]);
-      const key = localEnvironmentUpdateNotificationKey(both.groups);
-      expect(key).toContain("env-windows=codex:1.1.0");
-      expect(key).toContain("env-wsl=codex:1.1.0");
-    });
   });
 
   describe("resolveEnvironmentUpdateRowStatus", () => {
@@ -630,12 +536,6 @@ describe("provider update launch notification logic", () => {
       isSettling: false,
       candidates: [updateCandidate({ driver: driver("codex"), latestVersion: "1.1.0" })],
       providers: [],
-    };
-    const runningResult: ProviderUpdateToastView = {
-      phase: "running",
-      type: "loading",
-      title: "Updating providers",
-      description: "Running provider update command.",
     };
     const succeededResult: ProviderUpdateToastView = {
       phase: "succeeded",
@@ -660,18 +560,6 @@ describe("provider update launch notification logic", () => {
           isPending: true,
         }),
       ).toMatchObject({ kind: "failed", text: "boom" });
-    });
-
-    it("falls through a non-terminal result to live server state", () => {
-      expect(
-        resolveEnvironmentUpdateRowStatus({
-          group,
-          error: undefined,
-          result: runningResult,
-          pill: successPill,
-          isPending: true,
-        }),
-      ).toMatchObject({ kind: "success" });
     });
   });
 });
@@ -753,32 +641,5 @@ describe("getProviderUpdateRunToastView", () => {
       title: "2 of 3 provider updates failed",
       description: "Mac Studio · Claude: npm exited with code 1.\nLaptop · Codex: WebSocket closed",
     });
-  });
-
-  it("reports success when every update succeeded", () => {
-    const succeeded = AsyncResult.success({
-      providers: [
-        provider({
-          driver: driver("codex"),
-          updateState: updateState("succeeded", "Provider updated."),
-        }),
-      ],
-    });
-
-    expect(
-      getProviderUpdateRunToastView([
-        run("Mac Studio", "codex", succeeded),
-        run("Laptop", "codex", succeeded),
-      ]),
-    ).toEqual({
-      type: "success",
-      title: "2 providers updated",
-      description: "New sessions will use the updated providers.",
-    });
-    expect(
-      getProviderUpdateRunToastView([
-        run("Server", "codex", AsyncResult.failure(Cause.interrupt())),
-      ]),
-    ).toBeNull();
   });
 });

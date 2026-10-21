@@ -4433,7 +4433,7 @@ features:
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/ThreadStatusIndicators.tsx
     tests:
-      - apps/web/src/components/ThreadStatusIndicators.test.tsx
+      - apps/web/src/components/ThreadStatusIndicators.browser.test.tsx
     upstream:
       status: unassessed
       tracking: []
