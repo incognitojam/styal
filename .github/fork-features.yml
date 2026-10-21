@@ -201,6 +201,7 @@ features:
       - apps/web/src/components/chat/ComposerPrimaryActions.tsx
       - apps/web/src/components/chat/QueuedRunsControl.tsx
       - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+      - apps/web/src/components/chat/useComposerStash.ts
       - apps/web/src/components/contextChipParts.tsx
       - apps/web/src/components/files/AttachmentFilePreview.tsx
       - apps/web/src/composerDraftStore.ts
@@ -218,6 +219,7 @@ features:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+      - apps/web/src/components/chat/useComposerStash.ts
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-core/src/server/attachmentPrompt.ts
