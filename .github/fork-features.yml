@@ -2335,12 +2335,14 @@ features:
     implementation_paths:
       - apps/mobile/src/components/ComposerContextSheet.tsx
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/IssueContextChip.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/TimelineUserMessageRow.tsx
       - apps/web/src/components/chat/UserMessageContextChips.tsx
+      - apps/web/src/components/chat/chatViewSend.ts
       - apps/web/src/components/chat/useQueuedRunEdit.ts
       - apps/web/src/components/composerContextPresentation.tsx
       - apps/web/src/components/contextPresentationRegistry.ts
@@ -2358,11 +2360,13 @@ features:
     upstream_paths:
       - apps/mobile/src/components/ComposerContextSheet.tsx
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+      - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/TimelineUserMessageRow.tsx
       - apps/web/src/components/chat/UserMessageContextChips.tsx
+      - apps/web/src/components/chat/chatViewSend.ts
       - apps/web/src/components/composerContextPresentation.tsx
       - apps/web/src/components/contextPresentationRegistry.ts
       - apps/web/src/composerDraftStore.ts
