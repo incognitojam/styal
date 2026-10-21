@@ -388,6 +388,7 @@ function PullRequestCodeTab({
       slices: previous.key === scopeKey ? previous.slices : NO_SLICES,
       refreshing: true,
     }));
+    setAppliedPage(null);
     refreshFirstDiffPage();
   };
   const reviewKey = referenceKey;
