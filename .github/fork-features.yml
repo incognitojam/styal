@@ -6323,6 +6323,7 @@ features:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MarkdownFileLink.tsx
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/OpenInPicker.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
@@ -6336,6 +6337,7 @@ features:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MarkdownFileLink.tsx
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/OpenInPicker.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
