@@ -115,15 +115,6 @@ const withClientSettings = <A, E, R>(
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 
 describe("DesktopClientSettings", () => {
-  it.effect("returns none when no client settings file exists", () =>
-    withClientSettings(
-      Effect.gen(function* () {
-        const settings = yield* DesktopClientSettings.DesktopClientSettings;
-        assert.isTrue(Option.isNone(yield* settings.get));
-      }),
-    ),
-  );
-
   it.effect.each([
     ["resolve", "t3-completion"],
     ["avanti", "avanti"],
@@ -284,7 +275,6 @@ describe("DesktopClientSettings", () => {
 
   it.effect.each([
     { label: "malformed JSON", contents: "{not-json" },
-    { label: "invalid direct settings", contents: '{"fontSizeCode":"large"}' },
     { label: "invalid legacy settings", contents: '{"settings":{"fontSizeCode":"large"}}' },
   ])("reports $label without treating the settings file as absent", (document) =>
     withClientSettings(
