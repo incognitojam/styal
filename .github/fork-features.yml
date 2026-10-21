@@ -4888,12 +4888,12 @@ features:
       - Recalling sent prompts normalizes their text before recording the history position, so automatic formatting preserves Up/Down browsing while actual edits still end browsing.
     implementation_paths:
       - apps/web/src/components/ComposerPromptEditorTiptap.tsx
-      - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/composerPromptHistory.ts
+      - apps/web/src/components/chat/useComposerCommandKey.ts
     upstream_paths:
       - apps/web/src/components/ComposerPromptEditorTiptap.tsx
-      - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/composerPromptHistory.ts
+      - apps/web/src/components/chat/useComposerCommandKey.ts
     tests:
       - apps/web/src/components/ComposerPromptEditorTiptap.restoredDraft.browser.test.tsx
       - apps/web/src/components/chat/composerPromptHistory.test.ts
