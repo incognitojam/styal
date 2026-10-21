@@ -325,6 +325,7 @@ features:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/contracts/src/orchestrationV2.ts
@@ -332,6 +333,7 @@ features:
       - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/contracts/src/orchestrationV2.ts
@@ -1914,6 +1916,7 @@ features:
       - apps/web/src/components/StyalToolIcon.tsx
       - apps/web/src/components/StyalWordmark.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineToolActivityIcon.tsx
       - apps/web/src/components/chat/V2LifecycleRow.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/components/settings/BranchNamingSettings.tsx
@@ -2639,11 +2642,15 @@ features:
       - apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts
       - apps/server/src/persistence/ForkMigrations.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/orchestration-v2/CommandOutputQuery.test.ts
@@ -3576,6 +3583,8 @@ features:
       - apps/mobile/src/components/ui/AppSymbol.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineToolActivityIcon.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/projectScriptEditor.tsx
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/t3ProjectFile.ts
@@ -3583,6 +3592,8 @@ features:
       - apps/mobile/src/components/ui/AppSymbol.tsx
       - apps/mobile/src/lib/threadActivity.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineToolActivityIcon.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/projectScriptEditor.tsx
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/t3ProjectFile.ts
@@ -4739,6 +4750,7 @@ features:
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/shared/src/toolRowPresentation.ts
@@ -4747,6 +4759,7 @@ features:
       - apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts
       - apps/server/src/serverRuntimeStartup.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
     tests:
@@ -5204,6 +5217,8 @@ features:
       - apps/web/src/components/PersistentThreadTerminals.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/lib/projectScriptTerminal.ts
       - apps/web/src/session-logic.ts
@@ -5218,6 +5233,8 @@ features:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/lib/projectScriptTerminal.ts
       - apps/web/src/session-logic.ts
@@ -5660,6 +5677,8 @@ features:
       - apps/web/src/components/FileActionApprovalDialog.tsx
       - apps/web/src/components/ProjectScriptsControl.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
+      - apps/web/src/components/chat/timelineRowContext.ts
       - apps/web/src/components/chat/useProjectScriptEditing.ts
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/components/settings/ProjectActionsList.tsx
@@ -5680,6 +5699,8 @@ features:
       - packages/shared/src/projectScripts.ts
       - packages/shared/src/projectSettings.ts
     upstream_paths:
+      - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
+      - apps/web/src/components/chat/timelineRowContext.ts
       - packages/contracts/src/t3ProjectFile.ts
       - packages/shared/src/t3ProjectFile.ts
     tests:
@@ -6275,6 +6296,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/files/FileMarkdownPreview.tsx
       - apps/web/src/filePathDisplay.ts
       - apps/web/src/index.css
@@ -6288,6 +6310,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/OpenInPicker.tsx
+      - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/files/FileMarkdownPreview.tsx
       - apps/web/src/filePathDisplay.ts
       - apps/web/src/index.css
