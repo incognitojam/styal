@@ -1991,8 +1991,8 @@ code {
   text-decoration: none;
 }
 
-/* File chips own their colors; descriptive file links retain the prose link style. */
-.chat-markdown a:not(.chat-markdown-file-link),
+/* File chips and context chips own their colors; descriptive file links retain the prose link style. */
+.chat-markdown a:not(.chat-markdown-file-link, :has([data-slot="context-chip-label"])),
 .chat-markdown .chat-markdown-file-text {
   color: var(--info-foreground);
   text-decoration: none;
@@ -2002,8 +2002,18 @@ code {
   cursor: pointer;
 }
 
-.chat-markdown a:not(.chat-markdown-file-link, [data-markdown-image-link]):hover,
-.chat-markdown a:not(.chat-markdown-file-link, [data-markdown-image-link]):focus-visible,
+.chat-markdown
+  a:not(
+    .chat-markdown-file-link,
+    :has([data-slot="context-chip-label"]),
+    [data-markdown-image-link]
+  ):hover,
+.chat-markdown
+  a:not(
+    .chat-markdown-file-link,
+    :has([data-slot="context-chip-label"]),
+    [data-markdown-image-link]
+  ):focus-visible,
 .chat-markdown .chat-markdown-file-text:hover,
 .chat-markdown .chat-markdown-file-text:focus-visible {
   background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
