@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 4;
+export const FORK_CLIENT_USAGE_VERSION = 5;
 
 export const WebBuildUpdateUsageAction = Schema.Literals(["notice_shown", "refresh_requested"]);
 export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
@@ -40,6 +40,10 @@ export const ForkClientUsageInput = Schema.Union([
   Schema.Struct({
     feature: Schema.Literal("sidebar-project-filter"),
     action: Schema.Literal("thread_started"),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("desktop-update-notice"),
+    action: Schema.Literals(["notice_shown", "release_notes_opened"]),
   }),
 ]);
 export type ForkClientUsageInput = typeof ForkClientUsageInput.Type;

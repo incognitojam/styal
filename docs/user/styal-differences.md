@@ -294,10 +294,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 - **Updates ready for your next launch.** styal downloads updates in the background and installs
   them when you quit. The sidebar shows an icon only when you can restart to update immediately;
-  checks, download progress, and retries are available in Settings.
-  [Updating styal](./updating.md). Compared with
+  checks, download progress, and retries are available in Settings. After an update, the desktop
+  app names the version it now runs and links to its release notes.
+  [Updating styal](./updating.md#desktop-app-updates). Compared with
   [T3 Code revision 1ab2dfb](https://github.com/pingdotgg/t3code/tree/1ab2dfb5a7bd2996f79407b5d02cae6132a7626c),
-  which disables automatic downloads and installation on quit.
+  which disables automatic downloads and installation on quit, and
+  [revision 680152e](https://github.com/pingdotgg/t3code/tree/680152e27b2a961686389ca69a1557cbb2c55f08),
+  which shows no notice after an update.
 
 - **Confirm only when quitting may interrupt work.** Desktop quits and restarts check agents and
   terminal work across the environments hosted by the app, including work started from other devices

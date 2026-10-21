@@ -37,7 +37,8 @@ settings.
 Web and desktop clients also record explicit diff-order selections, when you open a
 mentioned time's explanation, which automatic settling rules you keep when finishing setup, and when
 you change the sidebar's project filter or start a thread while it is applied. The web app records when a new-build notice is visible and
-when you choose Refresh. These events use the relevant paired environment's telemetry setting.
+when you choose Refresh. The desktop app records when its notice
+naming the version it updated to is shown and when you open that version's release notes. These events use the relevant paired environment's telemetry setting.
 File paths, written times, deployment identifiers, project names, and composer drafts are not collected.
 
 Each automatic thread settlement records its rule (a merged or closed pull request, or inactivity with the configured number of days), and un-settling a thread records which of those rules, or a manual settle, had settled it. Thread titles, pull request numbers and links are not collected.
