@@ -1551,7 +1551,7 @@ features:
       - Fork release intermediate artifacts expire after three days; manual desktop deliverables remain downloadable for 90 days, and published GitHub release assets keep their own lifetimes.
       - CLI help and triage copy identify styal, and a bare CLI invocation shows command guidance while explicit `start` and `serve` commands own server startup.
       - The web and desktop setup wizard and sidebar share the outlined Zilla Slab styal wordmark.
-      - Web and desktop product tool icons and created-thread work-log rows use the canonical monochrome styal mark in their icon color, including historical calls using the `t3-code` namespace.
+      - Web, desktop, and mobile product tool icons and created-thread work-log rows use the canonical monochrome styal mark in their icon color, including historical calls using the `t3-code` namespace.
       - Android agent activity cards and status bar chips use the styal cotton reel, and shared client errors, accessibility labels, clipboard labels, and terminal previews identify styal.
       - Subscription usage widgets on iOS and Android name styal when they ask the user to open the app.
       - Canonical brand asset paths and icon geometry stay shared across desktop, mobile configuration, web packaging, and export tooling so production and nightly artwork cannot silently diverge.
@@ -1602,11 +1602,13 @@ features:
       - apps/mobile/modules/t3-composer-editor/android/src/main/java/expo/modules/t3composereditor/T3ComposerEditorModule.kt
       - apps/mobile/modules/t3-native-controls/android/src/main/AndroidManifest.xml
       - apps/mobile/modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3NativeControlsModule.kt
+      - apps/mobile/src/components/StyalMark.tsx
       - apps/mobile/src/features/connection/GitHubRoutingSettings.tsx
       - apps/mobile/src/features/settings/appearance/components/AppearancePreviews.tsx
       - apps/mobile/src/features/settings/components/BranchNamingSettings.tsx
       - apps/mobile/src/features/settings/components/NativeAppUpdateRow.tsx
       - apps/mobile/src/features/settings/environment-maintenance.ts
+      - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/mobile/src/features/updates/native-app-update-download.ts
       - apps/mobile/src/features/updates/native-app-updates.ts
       - apps/mobile/src/lib/appLinking.ts
