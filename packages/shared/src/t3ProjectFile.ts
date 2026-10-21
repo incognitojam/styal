@@ -2,7 +2,6 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
 import {
-  ProjectScriptIcon,
   T3ProjectFile,
   T3ProjectFileScript,
   T3_PROJECT_FILE_MAX_SCRIPTS,
@@ -19,53 +18,60 @@ export const T3ProjectFileFromJson = fromLenientJson(T3ProjectFile);
 
 const decodeT3ProjectFileValue = Schema.decodeUnknownExit(T3ProjectFile);
 const decodeT3ProjectFileScript = Schema.decodeUnknownExit(T3ProjectFileScript);
-const decodeProjectScriptIcon = Schema.decodeUnknownExit(ProjectScriptIcon);
-const decodeBoolean = Schema.decodeUnknownExit(Schema.Boolean);
 const decodeJsonObject = Schema.decodeUnknownExit(Schema.Record(Schema.String, Schema.Unknown));
 const decodeJsonArray = Schema.decodeUnknownExit(Schema.Array(Schema.Unknown));
 const decodeLenientJson = Schema.decodeExit(fromLenientJson(Schema.Unknown));
-
-const PROJECT_FILE_KEYS: ReadonlySet<string> = new Set([
-  "$schema",
-  "iconPath",
-  "defaultThreadEnvMode",
-  "scripts",
-]);
-const PROJECT_FILE_SCRIPT_KEYS: ReadonlySet<string> = new Set([
-  "name",
-  "command",
-  "icon",
-  "runOnWorktreeCreate",
-]);
 
 export type T3ProjectFileParseResult =
   | { readonly status: "valid"; readonly file: T3ProjectFile }
   | { readonly status: "partial"; readonly file: T3ProjectFile }
   | { readonly status: "invalid"; readonly file: null };
 
-function recoverScript(input: unknown): T3ProjectFileScript | null {
+type JsonRecord = Readonly<Record<string, unknown>>;
+type FieldValidators = ReadonlyMap<string, (value: unknown) => boolean>;
+
+/**
+ * One validator per field of a struct schema, keyed by field name. Recovery
+ * and unknown-key detection read their keys from here, so a field added to
+ * the contract is recovered without touching this file.
+ */
+function makeFieldValidators(fields: {
+  readonly [key: string]: Schema.Top & { readonly DecodingServices: never };
+}): FieldValidators {
+  return new Map(
+    Object.entries(fields).map(([key, field]) => {
+      const decode = Schema.decodeUnknownExit(Schema.Struct({ [key]: field }));
+      return [key, (value: unknown) => Exit.isSuccess(decode({ [key]: value }))];
+    }),
+  );
+}
+
+const PROJECT_FILE_FIELDS = makeFieldValidators(T3ProjectFile.fields);
+const PROJECT_FILE_SCRIPT_FIELDS = makeFieldValidators(T3ProjectFileScript.fields);
+
+/** The known fields of `record` that are valid on their own, still encoded. */
+function pickValidFields(record: JsonRecord, validators: FieldValidators): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (validators.get(key)?.(value) === true) {
+      picked[key] = value;
+    }
+  }
+  return picked;
+}
+
+/** A script without its invalid optional fields, or null when a required field is invalid. */
+function recoverScript(input: unknown): JsonRecord | null {
   const decodedRecord = decodeJsonObject(input);
   if (Exit.isFailure(decodedRecord)) {
     return null;
   }
-
-  const record = decodedRecord.value;
-  const decodedIcon = decodeProjectScriptIcon(record.icon);
-  const decodedRunOnWorktreeCreate = decodeBoolean(record.runOnWorktreeCreate);
-  const candidate = {
-    name: record.name,
-    command: record.command,
-    ...(Exit.isSuccess(decodedIcon) ? { icon: decodedIcon.value } : {}),
-    ...(Exit.isSuccess(decodedRunOnWorktreeCreate)
-      ? { runOnWorktreeCreate: decodedRunOnWorktreeCreate.value }
-      : {}),
-  };
-  const decoded = decodeT3ProjectFileScript(candidate);
-  return Exit.isSuccess(decoded) ? decoded.value : null;
+  const candidate = pickValidFields(decodedRecord.value, PROJECT_FILE_SCRIPT_FIELDS);
+  return Exit.isSuccess(decodeT3ProjectFileScript(candidate)) ? candidate : null;
 }
 
-function recoverScripts(inputs: ReadonlyArray<unknown>): ReadonlyArray<T3ProjectFileScript> {
-  const scripts: Array<T3ProjectFileScript> = [];
+function recoverScripts(inputs: ReadonlyArray<unknown>): ReadonlyArray<JsonRecord> {
+  const scripts: Array<JsonRecord> = [];
   for (const input of inputs) {
     const script = recoverScript(input);
     if (script !== null) {
@@ -78,32 +84,27 @@ function recoverScripts(inputs: ReadonlyArray<unknown>): ReadonlyArray<T3Project
   return scripts;
 }
 
-function recoverProjectFile(record: Readonly<Record<string, unknown>>): T3ProjectFile {
-  const schemaField = decodeT3ProjectFileValue({ $schema: record.$schema });
-  const iconPathField = decodeT3ProjectFileValue({ iconPath: record.iconPath });
-  const defaultThreadEnvModeField = decodeT3ProjectFileValue({
-    defaultThreadEnvMode: record.defaultThreadEnvMode,
-  });
-  const decodedScripts = decodeJsonArray(record.scripts);
-  const scripts = Exit.isSuccess(decodedScripts) ? recoverScripts(decodedScripts.value) : undefined;
-
-  return {
-    ...(Exit.isSuccess(schemaField) ? schemaField.value : {}),
-    ...(Exit.isSuccess(iconPathField) ? iconPathField.value : {}),
-    ...(Exit.isSuccess(defaultThreadEnvModeField) ? defaultThreadEnvModeField.value : {}),
-    ...(scripts === undefined ? {} : { scripts }),
+function recoverProjectFile(record: JsonRecord): T3ProjectFile {
+  // Scripts recover one by one, so a bad script or an over-long list does not
+  // discard the valid ones.
+  const { scripts: rawScripts, ...fields } = record;
+  const decodedScripts = decodeJsonArray(rawScripts);
+  const candidate = {
+    ...pickValidFields(fields, PROJECT_FILE_FIELDS),
+    ...(Exit.isSuccess(decodedScripts) ? { scripts: recoverScripts(decodedScripts.value) } : {}),
   };
+  // Every field in the candidate validated alone, and the struct has no
+  // cross-field rules, so this decode only applies the field transformations.
+  const decoded = decodeT3ProjectFileValue(candidate);
+  return Exit.isSuccess(decoded) ? decoded.value : {};
 }
 
-function hasUnknownKeys(
-  record: Readonly<Record<string, unknown>>,
-  knownKeys: ReadonlySet<string>,
-): boolean {
+function hasUnknownKeys(record: JsonRecord, knownKeys: FieldValidators): boolean {
   return Object.keys(record).some((key) => !knownKeys.has(key));
 }
 
-function hasUnknownProjectFileKeys(record: Readonly<Record<string, unknown>>): boolean {
-  if (hasUnknownKeys(record, PROJECT_FILE_KEYS)) {
+function hasUnknownProjectFileKeys(record: JsonRecord): boolean {
+  if (hasUnknownKeys(record, PROJECT_FILE_FIELDS)) {
     return true;
   }
   const decodedScripts = decodeJsonArray(record.scripts);
@@ -113,7 +114,8 @@ function hasUnknownProjectFileKeys(record: Readonly<Record<string, unknown>>): b
   return decodedScripts.value.some((script) => {
     const decodedScript = decodeJsonObject(script);
     return (
-      Exit.isSuccess(decodedScript) && hasUnknownKeys(decodedScript.value, PROJECT_FILE_SCRIPT_KEYS)
+      Exit.isSuccess(decodedScript) &&
+      hasUnknownKeys(decodedScript.value, PROJECT_FILE_SCRIPT_FIELDS)
     );
   });
 }
