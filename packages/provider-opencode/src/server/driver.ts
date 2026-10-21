@@ -101,6 +101,17 @@ export const openCodeUpdateFor = (generation: ProbedOpenCode["generation"]) =>
     nativeUpdate: {
       args: ["upgrade"],
       isCommandPath: isOpenCodeNativeCommandPath,
+      // OpenCode 2's `upgrade <version>` installs exactly that release with its
+      // own installer (downloaded first, run with `--no-modify-path`). Tested
+      // versions only exist for 2.x, so a native 1.x install is not pinned.
+      ...(generation === "v2"
+        ? {
+            pinned: (version: string, context: { readonly resolvedCommandPath: string }) => ({
+              executable: context.resolvedCommandPath,
+              args: ["upgrade", version],
+            }),
+          }
+        : {}),
     },
   });
 

@@ -3195,7 +3195,7 @@ features:
     prs: [868]
     invariants:
       - With styal managed updates (setting key `autoUpdateProviders`, unchanged on the wire) and provider update checks on (both default on), a non-dev server installs a provider version in the background only when an `autoUpdates` entry in the matching compatibility policy of a manifest fetched from main in the last two days names it, for the installation's own npm package, verified on a published styal build the server's code contains (a later nightly, or a stable release of a later version; a stable or same build itself). It installs the newest such version and never anything newer. The bundled manifest never authorizes an automatic install.
-      - Only installers that can pin a version take part, and they install exactly the verified version. On macOS and Linux that includes proven native Claude Code installs (`claude install <version>`) and standalone Codex installs (the `codex update` install script with `--release <version>` against the shared `CODEX_HOME`, without touching shell profiles), which removes Codex's self-update marker so styal takes over from Codex's own updater until a manual update hands it back; manual updates of those installs still run `claude update` / `codex update`. Homebrew, other native self-updaters, and native installs on Windows are never run in the background.
+      - Only installers that can pin a version take part, and they install exactly the verified version. On macOS and Linux that includes proven native Claude Code installs (`claude install <version>`) and standalone Codex installs (the `codex update` install script with `--release <version>` against the shared `CODEX_HOME`, without touching shell profiles), which removes Codex's self-update marker so styal takes over from Codex's own updater until a manual update hands it back, and proven native OpenCode 2 installs (`opencode upgrade <version>`, whose own installer runs with `--no-modify-path` and which refuses rather than installs elsewhere when it does not recognise the install as its own), which leave OpenCode's own `autoupdate` setting alone; native OpenCode 1.x installs are not pinned. Manual updates of those installs still run `claude update` / `codex update` / `opencode upgrade`. Homebrew, other native self-updaters, and native installs on Windows are never run in the background.
       - A background pass skips a provider CLI only while a non-archived thread whose provider instance runs the same install (installer lock key and package) is preparing, starting, running, waiting, or has a pending approval or question; threads on other CLIs never hold it back, and each skip is logged with its reason. Passes also skip providers that are disabled, missing, or already failing their health check, and try each instance and version at most once per six hours. Under the machine-wide install lock, a fresh health check and activity check run again, and the install is dropped without publishing a state when a thread became active, settings changed, or the provider already reached the version.
       - Manual and background updates share one server-lifetime maintenance runner and its install locks, and background updates publish the same update state clients show for manual updates.
       - Every manual or background install holds a machine-wide lock file per installer lock key, in upstream's directory and format so styal and T3 Code servers on one host exclude each other. A background update skips while another process holds it; a manual update reports that another update is running. The lock also records the installer's pid, so it stays held if the server dies while the installer keeps running.
@@ -3243,6 +3243,7 @@ features:
       - packages/contracts/src/settings.ts
       - packages/provider-core/src/server/maintenance.ts
       - packages/provider-core/src/server/maintenanceResolver.ts
+      - packages/provider-opencode/src/server/driver.ts
       - packages/shared/src/hostActivity.ts
       - scripts/provider-canary.ts
     upstream_paths:
@@ -3267,6 +3268,7 @@ features:
       - packages/contracts/src/settings.ts
       - packages/provider-core/src/server/maintenance.ts
       - packages/provider-core/src/server/maintenanceResolver.ts
+      - packages/provider-opencode/src/server/driver.ts
     tests:
       - apps/mobile/src/features/settings/environment-maintenance.test.ts
       - apps/server/src/environment/HostActivity.test.ts
@@ -3283,6 +3285,7 @@ features:
       - apps/web/src/components/ProviderUpdateLaunchNotification.logic.test.ts
       - apps/web/src/components/settings/providerStatus.test.ts
       - packages/provider-core/src/server/maintenanceResolver.test.ts
+      - packages/provider-opencode/src/server/driver.test.ts
       - packages/shared/src/hostActivity.test.ts
       - scripts/provider-canary.test.ts
     upstream:

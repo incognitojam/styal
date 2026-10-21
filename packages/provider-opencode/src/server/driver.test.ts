@@ -192,6 +192,67 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     }),
 );
 
+it.effect("pins a native OpenCode 2 install with `opencode upgrade <version>` on POSIX only", () =>
+  Effect.gen(function* () {
+    const resolveNative = (
+      generation: "v1" | "v2",
+      platform: NodeJS.Platform,
+      commandPath = "/home/developer/.opencode/bin/opencode",
+      realCommandPath = commandPath,
+    ) =>
+      openCodeUpdateFor(generation)
+        .resolve({
+          binaryPath: "opencode",
+          resolvedCommandPath: commandPath,
+          realCommandPath,
+          env: {},
+          platform,
+        })
+        .pipe(
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.die("resolving an update must not spawn")),
+          ),
+          Effect.provide(NodeServices.layer),
+        );
+    const pin = (capabilities: Effect.Success<ReturnType<typeof resolveNative>>) =>
+      ProviderMaintenance.makeTargetedProviderUpdateAction(capabilities, "2.1.2");
+
+    for (const platform of ["darwin", "linux"] as const) {
+      const native = yield* resolveNative("v2", platform);
+      // A manual update still moves to the latest release.
+      assert.deepStrictEqual(native.update?.args, ["upgrade"]);
+      assert.deepStrictEqual(pin(native), {
+        executable: "/home/developer/.opencode/bin/opencode",
+        args: ["upgrade", "2.1.2"],
+        command: "/home/developer/.opencode/bin/opencode upgrade 2.1.2",
+        lockKey: "opencode-native",
+      });
+    }
+    // A symlink on PATH proves the install by its real path and runs through it.
+    const linked = yield* resolveNative(
+      "v2",
+      "linux",
+      "/usr/local/bin/opencode",
+      "/home/developer/.opencode/bin/opencode",
+    );
+    assert.deepStrictEqual(pin(linked)?.args, ["upgrade", "2.1.2"]);
+
+    // Windows native installs, 1.x installs, and unproven paths stay manual.
+    const windows = yield* resolveNative(
+      "v2",
+      "win32",
+      "C:/Users/Developer/.opencode/bin/opencode.exe",
+    );
+    assert.deepStrictEqual(windows.update?.args, ["upgrade"]);
+    assert.isNull(pin(windows));
+    assert.isNull(pin(yield* resolveNative("v1", "darwin")));
+    const unproven = yield* resolveNative("v2", "linux", "/opt/tools/opencode");
+    assert.deepStrictEqual(unproven.update?.args, ["upgrade"]);
+    assert.isNull(pin(unproven));
+  }),
+);
+
 // The update the driver offers follows the version the binary reports now.
 const versionOutput: { current: string | undefined } = { current: undefined };
 const versionProbes: Array<string> = [];
