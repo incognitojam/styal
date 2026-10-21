@@ -30,6 +30,8 @@ const notice = () => (
 it("restores skipped reasons once after relaunching, including older results without them", async () => {
   using _setup = setup();
   using toast = vi.spyOn(toastManager, "add");
+  const now = Date.parse("2026-07-02T00:00:00.000Z");
+  using _now = vi.spyOn(Date, "now").mockReturnValue(now);
   const savedKey = "t3code:update-everything-result:v1";
   const description = [
     "Skipped Offline machine: not connected.",
@@ -67,7 +69,7 @@ it("restores skipped reasons once after relaunching, including older results wit
   window.localStorage.setItem(
     savedKey,
     JSON.stringify({
-      savedAt: Date.now(),
+      savedAt: now,
       localVersion: APP_VERSION,
       updatedServers: 0,
       updatedProviders: 0,

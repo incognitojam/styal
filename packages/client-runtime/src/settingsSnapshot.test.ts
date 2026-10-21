@@ -53,7 +53,7 @@ describe("startSettingsSnapshotReports", () => {
         storage.stored = reportedAt;
       },
       report: () => {
-        attempts.push(Date.now());
+        attempts.push(vi.getMockedSystemTime()!.getTime());
         const reply = replies.shift();
         if (reply instanceof Error) return Promise.reject(reply);
         return reply === undefined ? undefined : Promise.resolve(reply);

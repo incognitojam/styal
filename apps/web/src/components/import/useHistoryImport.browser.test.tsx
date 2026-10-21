@@ -46,7 +46,10 @@ vi.mock(import("../../state/use-atom-command"), async (original) => {
 });
 import { useHistoryImport } from "./useHistoryImport";
 const environmentId = EnvironmentId.make("demo-desktop");
+// Candidates active at this instant fall inside the recent window, so they start selected.
+const LAST_ACTIVE_AT = "2026-07-02T00:00:00.000Z";
 function setup() {
+  const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse(LAST_ACTIVE_AT));
   mocks.create.mockReset();
   mocks.importThreads.mockReset();
   mocks.canOperate = true;
@@ -61,7 +64,7 @@ function setup() {
     projectId: ProjectId.make(id),
     threadCount: 3,
     sources: ["codex"],
-    lastActiveAt: new Date().toISOString(),
+    lastActiveAt: LAST_ACTIVE_AT,
     git: { remoteKey: null, repository: null },
   }));
   let current!: ReturnType<typeof useHistoryImport>;
@@ -86,6 +89,7 @@ function setup() {
     },
     [Symbol.asyncDispose]: async () => {
       await screen?.[Symbol.asyncDispose]();
+      now.mockRestore();
     },
   };
 }
@@ -127,7 +131,7 @@ describe("setup CLI history importer", () => {
         path: "/demo/new",
         threadCount: 3,
         sources: ["codex"],
-        lastActiveAt: new Date().toISOString(),
+        lastActiveAt: LAST_ACTIVE_AT,
         git: { remoteKey: null, repository: null },
       },
     ];
@@ -163,7 +167,7 @@ describe("setup CLI history importer", () => {
         path: "/demo/new",
         threadCount: 3,
         sources: ["codex"],
-        lastActiveAt: new Date().toISOString(),
+        lastActiveAt: LAST_ACTIVE_AT,
         git: { remoteKey: null, repository: null },
       },
     ];
