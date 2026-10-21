@@ -28,8 +28,8 @@ the background, records the provider type, its versions before and after, whethe
 fixed failure category, and how long it took. Instance names, installation paths, update commands,
 installer output, and error messages are not collected.
 
-Once after startup and then daily, the server also reports which of its settings differ from their
-defaults: on/off settings, chosen options such as the default permission mode, and day or minute
+Once after startup and then daily, the server also reports the current values of its settings, so
+we can see which defaults people change: on/off settings, chosen options such as the default permission mode, and day or minute
 counts. Paths, branch prefixes, instructions, model choices, and per-project settings are not
 collected; for those it reports only whether they were changed or how many projects have their own
 settings.

@@ -1,10 +1,9 @@
 /**
- * Settings snapshot: which server preferences an installation has changed
- * from their defaults.
+ * Settings snapshot: the current values of a server's preferences, so
+ * maintainers can see which defaults installations change.
  *
  * `settings.snapshot` reports a fixed allowlist of server settings once after
- * startup and then daily, so maintainers can see which defaults people
- * change. Every allowlisted key is sent on every report, at its default or
+ * startup and then daily. Every allowlisted key is sent on every report, at its default or
  * not, so a missing key always means an older server. Values are booleans,
  * enum literals and small integers only: never paths, names, prefixes,
  * instructions, model or instance ids, or the contents of per-project and
@@ -67,6 +66,9 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     removeAgentCreditsOnMerge: settings.removeAgentCreditsOnMerge,
     // null reuses the method last chosen on the device.
     pullRequestMergeMethod: settings.pullRequestMergeMethod,
+    reviewGuidesEnabled: settings.reviewGuidesEnabled,
+    reviewGuideModelSet: settings.reviewGuideModelSelection !== null,
+    reviewGuideInstructionsCustomized: settings.reviewGuideInstructions !== "",
     // Storage cleanup
     worktreeCleanupKeepWhen: worktreeCleanup.worktreeKeepWhen,
     worktreeCleanupAfterDays: worktreeCleanup.worktreeAfterDays,
@@ -82,6 +84,8 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     enableDeviceSupport: settings.enableDeviceSupport,
     // null keeps devices running.
     deviceIdleShutdownMinutes: settings.deviceIdleShutdownMinutes,
+    // Usage
+    cursorKeychainUsageEnabled: settings.cursorKeychainUsageEnabled,
     // Background activity
     backgroundActivityProfile: settings.backgroundActivity.profile,
   };

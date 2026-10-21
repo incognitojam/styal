@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -33,6 +33,9 @@ const defaultSnapshot = {
   followChangeRequestTemplates: true,
   removeAgentCreditsOnMerge: false,
   pullRequestMergeMethod: null,
+  reviewGuidesEnabled: false,
+  reviewGuideModelSet: false,
+  reviewGuideInstructionsCustomized: false,
   worktreeCleanupKeepWhen: "uncommitted-changes",
   worktreeCleanupAfterDays: null,
   worktreeCleanupOnMerge: false,
@@ -45,6 +48,7 @@ const defaultSnapshot = {
   enableAgentHardwareAccess: false,
   enableDeviceSupport: false,
   deviceIdleShutdownMinutes: 10,
+  cursorKeychainUsageEnabled: false,
   backgroundActivityProfile: "balanced",
 };
 
@@ -86,6 +90,12 @@ const customizedSettings = {
     customInstructions: "synthetic marker style",
   },
   pullRequestMergeMethod: "squash",
+  reviewGuidesEnabled: true,
+  reviewGuideModelSelection: {
+    instanceId: ProviderInstanceId.make("synthetic_marker_guide"),
+    model: "synthetic-marker-guide-model",
+  },
+  reviewGuideInstructions: "synthetic marker guide instructions",
   storageCleanup: { worktreeAfterDays: 14, worktreeOnMerge: true, logsAfterDays: 30 },
   deviceIdleShutdownMinutes: null,
   usagePriceOverrides: {
@@ -150,6 +160,9 @@ it.effect("reports changed values without names, paths, ids or record contents",
           textGenerationModelCustomized: true,
           sourceControlWritingStyleMode: "custom",
           pullRequestMergeMethod: "squash",
+          reviewGuidesEnabled: true,
+          reviewGuideModelSet: true,
+          reviewGuideInstructionsCustomized: true,
           worktreeCleanupAfterDays: 14,
           worktreeCleanupOnMerge: true,
           logsCleanupAfterDays: 30,
@@ -163,5 +176,77 @@ it.effect("reports changed values without names, paths, ids or record contents",
     Effect.provide(
       Layer.mergeAll(recordingAnalytics(events), ServerSettings.layerTest(customizedSettings)),
     ),
+  );
+});
+
+// Settings the snapshot deliberately leaves out. A new server setting must be
+// reported or listed here, so the snapshot does not silently fall behind.
+const NOT_REPORTED: Record<string, string> = {
+  favorites: "per-user records",
+  providerModelPreferences: "per-model records",
+  previousWorktreesDirectories: "paths",
+  enableProviderUpdateChecks: "in provider.inventory",
+  autoUpdateProviders: "in provider.inventory",
+  projectAgentBrowserAccessOverrides: "legacy view of projectSettingsOverrides",
+  projectScriptOverrides: "legacy view of projectSettingsOverrides",
+  projectAutoPullOverrides: "legacy view of projectSettingsOverrides",
+  projectSettingsFolded: "migration marker",
+  deviceOnboardingCompleted: "onboarding state",
+  deviceHosts: "host addresses",
+  environmentDeviceHosts: "host addresses",
+  hardwareDevices: "device records",
+  automaticGitFetchInterval: "legacy, read through backgroundActivity",
+  providerHealthRefreshInterval: "legacy, read through backgroundActivity",
+  backgroundActivityProfile: "legacy, read through backgroundActivity",
+  defaultTheme: "free text",
+  defaultThemeSetAt: "timestamp",
+  environmentIcon: "user-chosen icon",
+  addProjectBaseDirectory: "path",
+  branchNameInstructions: "free text, implied by branchNamingMode",
+  providerInstances: "provider.inventory",
+  observability: "endpoints and credentials",
+  sourceControlHosts: "host records",
+  usageLimitSources: "account records",
+  usagePriceOverrides: "per-model records",
+  usageModelAliases: "per-model records",
+};
+
+it.effect("reads every server setting that is not deliberately left out", () => {
+  const events: Array<{ event: string; properties: unknown }> = [];
+  const readKeys = new Set<string>();
+  const recordingSettings = Layer.effect(
+    ServerSettings.ServerSettingsService,
+    Effect.gen(function* () {
+      const service = yield* ServerSettings.ServerSettingsService;
+      return ServerSettings.ServerSettingsService.of({
+        ...service,
+        getSettings: service.getSettings.pipe(
+          Effect.map(
+            (settings) =>
+              new Proxy(settings, {
+                get: (target, key, receiver) => {
+                  if (typeof key === "string") readKeys.add(key);
+                  return Reflect.get(target, key, receiver);
+                },
+              }),
+          ),
+        ),
+      });
+    }),
+  ).pipe(Layer.provide(ServerSettings.layerTest()));
+
+  return Effect.gen(function* () {
+    yield* Layer.build(SettingsSnapshot.layer);
+    yield* TestClock.adjust(Duration.minutes(2));
+
+    const unaccounted = Object.keys(DEFAULT_SERVER_SETTINGS).filter(
+      (key) => !readKeys.has(key) && !(key in NOT_REPORTED),
+    );
+    assert.deepStrictEqual(unaccounted, []);
+    const listedButRead = Object.keys(NOT_REPORTED).filter((key) => readKeys.has(key));
+    assert.deepStrictEqual(listedButRead, []);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(Layer.mergeAll(recordingAnalytics(events), recordingSettings)),
   );
 });
