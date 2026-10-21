@@ -127,10 +127,12 @@ With **styal managed updates** on, styal manages your provider CLI versions. It
 installs only versions it has tested: an automated check runs real agent turns
 against each new Codex, Claude Code, and OpenCode release on the current stable
 and nightly styal builds. It installs in the background once none of that
-provider's threads are running or waiting for you; a turn that starts during an
-install waits for it. styal never moves a provider back, and it does not show an
-update prompt for providers it manages. **Settings → Providers** says when the
-newest release has not been tested yet, and you can still install it yourself.
+provider's threads are running or waiting for you. A question left unanswered
+for over an hour after the agent finished does not hold it back. A turn that
+starts during an install waits for it. styal never moves a provider back, and
+it does not show an update prompt for providers it manages. **Settings →
+Providers** says when the newest release has not been tested yet, and you can
+still install it yourself.
 
 Managed updates are on by default. Turn them on or off in **Settings → General**
 (**Settings → Maintenance** on mobile); they need provider update checks on.
