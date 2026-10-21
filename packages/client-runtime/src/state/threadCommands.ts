@@ -420,6 +420,7 @@ export function createThreadEnvironmentAtoms<R, E>(
             activityRunStartedAt: now,
             settledOverride: null,
             settledAt: null,
+            settleReason: null,
             snoozedAt: null,
             snoozedUntil: null,
           },
@@ -434,6 +435,10 @@ export function createThreadEnvironmentAtoms<R, E>(
             pendingRuntimeRequest: null,
             settledOverride: "settled",
             settledAt: thread.settledOverride === "settled" ? (thread.settledAt ?? now) : now,
+            settleReason:
+              thread.settledOverride === "settled"
+                ? (thread.settleReason ?? null)
+                : { kind: "user" },
             unsettledAt: null,
             activeOrderKey: null,
             pinnedAt: null,
@@ -446,6 +451,7 @@ export function createThreadEnvironmentAtoms<R, E>(
       ...thread,
       settledOverride: input.reason === "user" ? "active" : null,
       settledAt: null,
+      settleReason: null,
       unsettledAt: thread.settledOverride === "active" ? (thread.unsettledAt ?? null) : now,
     })),
     snooze: optimistic.wrap(commands.snooze, (thread, input, now, accepted) =>
@@ -482,6 +488,7 @@ export function createThreadEnvironmentAtoms<R, E>(
         ? {
             settledOverride: null,
             settledAt: null,
+            settleReason: null,
             unsettledAt: now,
           }
         : {}),

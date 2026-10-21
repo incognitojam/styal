@@ -2226,6 +2226,83 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("records why a thread settled and clears it when the thread returns", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      const threadId = ThreadId.make("runtime-settle-reason");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("settle-reason-create"),
+        threadId,
+        projectId: ProjectId.make("settle-reason-project"),
+        title: "Settle reason",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const reasons = () =>
+        Effect.gen(function* () {
+          const projection = yield* orchestrator.getThreadProjection(threadId);
+          const shell = yield* orchestrator.getThreadShell(threadId);
+          assert.deepEqual(shell?.settleReason ?? null, projection.thread.settleReason ?? null);
+          return projection.thread.settleReason ?? null;
+        });
+      const merged = {
+        kind: "pull_request",
+        state: "merged",
+        number: 12,
+        url: "https://example.test/owner/repository/pull/12",
+      } as const;
+
+      const before = yield* orchestrator.getThreadShell(threadId);
+      assert.isNotNull(before);
+      if (before === null) return;
+      yield* orchestrator.dispatch({
+        type: "thread.auto-settle",
+        commandId: CommandId.make("settle-reason-auto"),
+        threadId,
+        snapshotAt: before.updatedAt,
+        reason: merged,
+      });
+      assert.deepEqual(yield* reasons(), merged);
+      // Re-settling keeps the reason the thread first settled for.
+      yield* orchestrator.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make("settle-reason-resettle"),
+        threadId,
+      });
+      assert.deepEqual(yield* reasons(), merged);
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      assert.deepEqual(yield* reasons(), merged);
+
+      yield* orchestrator.dispatch({
+        type: "thread.unsettle",
+        commandId: CommandId.make("settle-reason-unsettle"),
+        threadId,
+        reason: "user",
+      });
+      assert.isNull(yield* reasons());
+
+      yield* orchestrator.dispatch({
+        type: "thread.settle",
+        commandId: CommandId.make("settle-reason-manual"),
+        threadId,
+      });
+      assert.deepEqual(yield* reasons(), { kind: "user" });
+      yield* orchestrator.dispatch({
+        type: "thread.pin",
+        commandId: CommandId.make("settle-reason-pin"),
+        threadId,
+      });
+      assert.isNull(yield* reasons());
+    }),
+  );
+
   it.effect("retains multiple pull requests and dismissed stack members through rebuilds", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

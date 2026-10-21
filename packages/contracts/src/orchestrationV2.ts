@@ -368,6 +368,32 @@ export const OrchestrationV2LimitRecoveryUpdate = Schema.Struct({
 );
 export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitRecoveryUpdate.Type;
 
+/** Why the settlement sweep settled a thread. Exactly one rule decides each automatic settle. */
+export const OrchestrationV2ThreadAutoSettleReason = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("pull_request"),
+    state: Schema.Literals(["merged", "closed"]),
+    number: PositiveInt,
+    url: Schema.String,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("inactivity"),
+    days: PositiveInt,
+  }),
+]);
+export type OrchestrationV2ThreadAutoSettleReason =
+  typeof OrchestrationV2ThreadAutoSettleReason.Type;
+
+/**
+ * Why a thread is settled: `user` for an explicit settle, otherwise the
+ * automatic rule. Absent on threads settled before reasons were recorded.
+ */
+export const OrchestrationV2ThreadSettleReason = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("user") }),
+  ...OrchestrationV2ThreadAutoSettleReason.members,
+]);
+export type OrchestrationV2ThreadSettleReason = typeof OrchestrationV2ThreadSettleReason.Type;
+
 export const OrchestrationV2AppThread = Schema.Struct({
   ...OrchestrationV2CreationFields,
   id: ThreadId,
@@ -413,6 +439,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** Cleared on un-settle; omitted by servers that predate settle reasons. */
+  settleReason: Schema.optional(Schema.NullOr(OrchestrationV2ThreadSettleReason)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   /** Manual wakes restart inactivity without changing the sidebar's sort position. */
@@ -2073,6 +2101,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   settledOverride: Schema.NullOr(Schema.Literals(["settled", "active"])),
   settledAt: Schema.NullOr(Schema.DateTimeUtc),
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** Omitted by servers that predate settle reasons. */
+  settleReason: Schema.optional(Schema.NullOr(OrchestrationV2ThreadSettleReason)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
@@ -2859,6 +2889,7 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     snapshotAt: Schema.DateTimeUtc,
     settledAt: Schema.optional(Schema.DateTimeUtc),
+    reason: Schema.optional(OrchestrationV2ThreadAutoSettleReason),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.unsettle"),

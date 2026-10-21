@@ -768,6 +768,10 @@ function threadDetail(
     ).length,
     archived: projection.thread.archivedAt !== null,
     ...threadSettlement(projection.thread),
+    settleReason:
+      projection.thread.settledOverride === "settled"
+        ? (projection.thread.settleReason ?? null)
+        : null,
     // From the shell, like the list, so read and list agree on snooze state.
     ...threadSnooze(shell, nowMs),
     createdAt: DateTime.formatIso(projection.thread.createdAt),

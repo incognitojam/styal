@@ -194,6 +194,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 4f63275](https://github.com/pingdotgg/t3code/tree/4f63275ac7885281d245022e65f1e9e8816b1382),
   checked October 10, 2026, but unpinning waits for its next settlement sweep.
   [Pin and reorder threads](./thread-sidebar.md#pin-and-reorder-threads).
+- **See why a thread settled.** Threads that settle automatically say why in the Settled shelf,
+  such as the merged pull request or **Idle 3 days**, and web and desktop explain the first automatic
+  settles once with a link to the settings that control them. T3 Code settles threads
+  automatically without recording a reason as of
+  [revision 67c0fc0](https://github.com/pingdotgg/t3code/tree/67c0fc0cdaf963b103518862dd7b68a9c758ecf2),
+  checked October 20, 2026. [Settle finished work](./thread-sidebar.md#settle-finished-work).
 - **Discard drafts with a swipe on mobile.** New-task drafts support swipe-to-discard with
   confirmation in the thread list and tablet sidebar. T3 Code offers discard from the long-press
   menu as of [revision 98beed1](https://github.com/pingdotgg/t3code/tree/98beed1a226c42b85c52ff5ee9d5dbb67d776a77),

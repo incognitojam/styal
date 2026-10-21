@@ -19,6 +19,7 @@ import type {
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
 import { AuthOrchestrationOperateScope, type EnvironmentMachineKind } from "@t3tools/contracts";
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
+import { settleReasonLabel } from "@t3tools/client-runtime/state/thread-settle-reason";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Alert, Pressable, useWindowDimensions, View } from "react-native";
@@ -1252,6 +1253,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     cardContent
   );
 
+  // Why the server settled this row; explicit settles carry no label.
+  const settleReasonText =
+    thread.settledOverride === "settled" ? settleReasonLabel(thread.settleReason) : null;
+
   const rowContent = (close: () => void) =>
     variant === "card" ? (
       <RowPressable
@@ -1338,6 +1343,18 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                 query={props.searchQuery ?? ""}
                 selected={selected}
               />
+            ) : settleReasonText !== null ? (
+              <Text
+                className={cn(
+                  "text-xs",
+                  selected
+                    ? selectedThreadRowColors.mutedForegroundClassName
+                    : rowAppearance.tertiaryForegroundClassName,
+                )}
+                numberOfLines={1}
+              >
+                {settleReasonText}
+              </Text>
             ) : null}
           </View>
           {showDraftIcon ? <UnsentDraftIcon /> : null}

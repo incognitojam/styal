@@ -33,8 +33,8 @@ client groups during a period; adding those groups double-counts users.
 
 Thread lifecycle events (`client.thread.settled`, `unsettled`, `archived`,
 `unarchived`, and `deleted`) record accepted commands. `client.thread.settled`
-counts only explicit settles; settled states a client derives from inactivity or a
-merged pull request do not emit it.
+counts only explicit settles; the server records its automatic settles as
+`server.thread.settled` (see [Feature usage](../operations/feature-usage.md#thread-settle-reasons)).
 
 `client.network.report` summarizes up to 15 minutes of foreground use of one
 environment on one network type and route. Its event time is when the window

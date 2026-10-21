@@ -48,6 +48,8 @@ export function shouldNavigateAfterThreadPark(input: {
 
 const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
+/** Fresh keys deliberately reset the shelf to collapsed for existing users. */
+export const SETTLED_SHELF_EXPANDED_KEY = "styal:sidebar:settled-expanded";
 
 export function resolveSidebarRowAccessibility(input: {
   readonly title: string;

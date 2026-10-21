@@ -5,6 +5,7 @@ import {
   CommandId,
   type ThreadId,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ThreadAutoSettleReason,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
@@ -24,6 +25,8 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as ThreadSettleUsage from "../telemetry/ThreadSettleUsage.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -33,6 +36,16 @@ export interface SettlementPullRequest {
   readonly state: "open" | "closed" | "merged";
   readonly closedAt?: string | null;
   readonly mergedAt?: string | null;
+  /** Identity recorded in the settle reason; a settle without it records no reason. */
+  readonly number?: number;
+  readonly url?: string;
+}
+
+export interface AutoSettlement {
+  readonly settledAt: DateTime.Utc;
+  readonly rule: ThreadSettleUsage.AutoSettleRule;
+  /** Absent only when the deciding pull request carried no identity. */
+  readonly reason: OrchestrationV2ThreadAutoSettleReason | undefined;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -196,13 +209,38 @@ export function isSnoozed(
   return !wokeOnError && !wokeOnCompletion;
 }
 
-export function resolveAutoSettlementAt(input: {
+interface AutoSettlementInput {
   readonly thread: ProjectionStore.ProjectionSettlementCandidate;
   readonly pullRequest: SettlementPullRequest | null;
   readonly nowMs: number;
   readonly autoSettleAfterDays: number | null;
   readonly autoSettleOnMerge: boolean;
-}): DateTime.Utc | null {
+}
+
+export function resolveAutoSettlementAt(input: AutoSettlementInput): DateTime.Utc | null {
+  return resolveAutoSettlement(input)?.settledAt ?? null;
+}
+
+function pullRequestReason(
+  pullRequest: SettlementPullRequest,
+): OrchestrationV2ThreadAutoSettleReason | undefined {
+  if (
+    pullRequest.state === "open" ||
+    pullRequest.number === undefined ||
+    pullRequest.url === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    kind: "pull_request",
+    state: pullRequest.state,
+    number: pullRequest.number,
+    url: pullRequest.url,
+  };
+}
+
+/** When a thread settles automatically and the one rule that settles it. */
+export function resolveAutoSettlement(input: AutoSettlementInput): AutoSettlement | null {
   const { thread } = input;
   let pullRequest = input.pullRequest;
   const links = visibleThreadPullRequests(thread.pullRequests ?? []);
@@ -224,6 +262,8 @@ export function resolveAutoSettlementAt(input: {
             state: latest.snapshot.state,
             mergedAt: latest.snapshot.mergedAt ?? null,
             closedAt: latest.snapshot.closedAt ?? null,
+            number: latest.number,
+            url: latest.url,
           };
   }
   if (!isAutoSettlementCandidate(thread, input.nowMs)) return null;
@@ -234,7 +274,11 @@ export function resolveAutoSettlementAt(input: {
     toMillis(thread.latestRunCompletedAt),
   ]);
   if (pullRequest !== null && pullRequestSettles(thread, pullRequest, input.autoSettleOnMerge)) {
-    return activityAtMs === null ? thread.createdAt : DateTime.makeUnsafe(activityAtMs);
+    return {
+      settledAt: activityAtMs === null ? thread.createdAt : DateTime.makeUnsafe(activityAtMs),
+      rule: pullRequest.state === "merged" ? "merged" : "closed",
+      reason: pullRequestReason(pullRequest),
+    };
   }
   if (input.autoSettleAfterDays === null || activityAtMs === null) return null;
   // A passed wake timer restarts inactivity. An earlier wake can only delay settlement.
@@ -244,7 +288,11 @@ export function resolveAutoSettlementAt(input: {
   const inactivityAtMs =
     latestMillis([activityAtMs, toMillis(thread.lastSnoozeWakeAt), timerWakeAtMs]) ?? activityAtMs;
   return inactivityAtMs < input.nowMs - input.autoSettleAfterDays * DAY_MS
-    ? DateTime.makeUnsafe(inactivityAtMs)
+    ? {
+        settledAt: DateTime.makeUnsafe(inactivityAtMs),
+        rule: "inactivity",
+        reason: { kind: "inactivity", days: input.autoSettleAfterDays },
+      }
     : null;
 }
 
@@ -306,6 +354,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const terminals = yield* TerminalManager.TerminalManager;
   const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+  const analytics = yield* AnalyticsService.AnalyticsService;
   // Settling a settled thread re-emits thread.settled with the same settledAt,
   // so this keeps the settle action to one run per settlement.
   const settleActionRunAt = new Map<ThreadId, number>();
@@ -337,22 +386,27 @@ export const make = Effect.gen(function* () {
           thread.projectId,
         ).settings;
         const decisionNow = yield* DateTime.now;
-        const settledAt = resolveAutoSettlementAt({
+        const settlement = resolveAutoSettlement({
           thread,
           pullRequest,
           nowMs: DateTime.toEpochMillis(decisionNow),
           autoSettleAfterDays: currentSettings.sidebarAutoSettleAfterDays,
           autoSettleOnMerge: currentSettings.sidebarAutoSettleOnMerge,
         });
-        if (settledAt === null) return thread;
+        if (settlement === null) return thread;
         const uuid = yield* crypto.randomUUIDv4;
         yield* orchestrator.dispatch({
           type: "thread.auto-settle",
           commandId: CommandId.make(`server:auto-settle:${thread.id}:${uuid}`),
           threadId: thread.id,
           snapshotAt: thread.updatedAt,
-          settledAt,
+          settledAt: settlement.settledAt,
+          ...(settlement.reason === undefined ? {} : { reason: settlement.reason }),
         });
+        yield* ThreadSettleUsage.recordAutoSettle(
+          settlement.rule,
+          settlement.reason?.kind === "inactivity" ? settlement.reason.days : null,
+        ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics));
         return null;
       },
       (effect, thread) =>
@@ -474,6 +528,8 @@ export const make = Effect.gen(function* () {
               state: "merged",
               closedAt: null,
               mergedAt: mergedPullRequest.mergedAt,
+              number: reference.number,
+              url: reference.url,
             } satisfies SettlementPullRequest)
           : yield* pullRequests.summary(
               {
@@ -487,6 +543,8 @@ export const make = Effect.gen(function* () {
           state: summary.state,
           closedAt: summary.closedAt ?? null,
           mergedAt: summary.mergedAt ?? null,
+          number: summary.number,
+          url: summary.url,
         } satisfies SettlementPullRequest;
         const cwd = lookupCwdByThreadId.get(thread.id);
         if (summary.state !== "open" && thread.branch !== null && cwd !== undefined) {

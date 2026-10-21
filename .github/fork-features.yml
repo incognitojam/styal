@@ -4783,6 +4783,59 @@ features:
         - https://github.com/pingdotgg/t3code/pull/8481
       retire_when: Upstream records client analytics events for thread settle, unsettle, archive, unarchive, and delete commands with the same client metadata as thread creation.
 
+  - id: thread-settle-reasons
+    title: Show why a thread settled
+    status: maintained
+    prs: [942]
+    invariants:
+      - Each automatic settlement records exactly one reason on the thread, a merged or closed pull request with its number and link or inactivity with the threshold in days; an explicit settle records `user`, re-settling keeps the first reason, and un-settling, pinning, or new work clears it.
+      - The reason survives projection rebuilds, reaches clients on the thread shell, and appears in the agent thread read; older clients and servers interoperate because the field is optional.
+      - Settled rows show why a thread settled automatically without crowding its title. Web and desktop keep the row's pull request badge for pull request settles, falling back to a compact "#123 merged" link when the row has no badge, and show "Idle 3d" for inactivity; mobile shows "PR #123 merged" or "Idle 3 days" on a second line.
+      - Web and desktop show one persistent notice for automatic settles that happened after the device first ran this version, combined when several threads settled, and never again on that device after it is dismissed or acted on.
+      - The server records each automatic settle as `server.thread.settled` with its rule, and un-settle analytics carry `previousSettleReason`, without thread or pull request identifiers.
+    rationale: Upstream settles threads automatically without recording why, so users find threads missing from the active list without an explanation and maintainers cannot tell how often an automatic rule is undone.
+    implementation_paths:
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/server/src/mcp/OrchestratorMcpService.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
+      - apps/server/src/telemetry/ThreadSettleUsage.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/AutoSettleNotice.logic.ts
+      - apps/web/src/components/AutoSettleNotice.tsx
+      - apps/web/src/components/Sidebar.tsx
+      - packages/client-runtime/src/state/models.ts
+      - packages/client-runtime/src/state/threadCommands.ts
+      - packages/client-runtime/src/state/threadSettleReason.ts
+      - packages/contracts/src/orchestrationV2.ts
+      - packages/contracts/src/orchestratorMcp.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/thread-list-v2-items.tsx
+      - apps/server/src/mcp/OrchestratorMcpService.ts
+      - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/Sidebar.tsx
+      - packages/client-runtime/package.json
+      - packages/client-runtime/src/state/models.ts
+      - packages/client-runtime/src/state/threadCommands.ts
+      - packages/contracts/src/orchestrationV2.ts
+      - packages/contracts/src/orchestratorMcp.ts
+    tests:
+      - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
+      - apps/server/src/orchestration-v2/ThreadSettlementService.test.ts
+      - apps/server/src/orchestration-v2/runtimeLayer.test.ts
+      - apps/server/src/telemetry/ThreadSettleUsage.test.ts
+      - apps/web/src/components/AutoSettleNotice.logic.test.ts
+      - packages/client-runtime/src/state/threadSettleReason.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/blob/67c0fc0cdaf963b103518862dd7b68a9c758ecf2/apps/server/src/orchestration-v2/ThreadSettlementService.ts
+      retire_when: Upstream records and shows why each thread settled automatically on every client, explains it once, and reports automatic settles and their undo rate per rule.
+
   - id: thread-transcript-export
     title: Copy a complete thread transcript
     status: maintained

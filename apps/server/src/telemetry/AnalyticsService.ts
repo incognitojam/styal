@@ -218,6 +218,7 @@ export const make = Effect.gen(function* () {
           deviceUsageVersion: 1,
           hardwareUsageVersion: 1,
           workflowRunWatchUsageVersion: 1,
+          threadSettleReasonUsageVersion: 1,
           providerAnalyticsUsageVersion: 1,
           settingsSnapshotUsageVersion: 1,
           ...buildContext,

@@ -39,6 +39,7 @@ import {
   threadWokeAt,
   type SettledShelfFocus,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { settleReasonLabel } from "@t3tools/client-runtime/state/thread-settle-reason";
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import {
@@ -234,6 +235,7 @@ import {
   sidebarListItemId,
   sidebarMarkerId,
   sidebarThreadKeyAtY,
+  SETTLED_SHELF_EXPANDED_KEY,
   sortInboxThreadsByReturn,
   sortPinnedThreadsForSidebar,
   sortSidebarV2ProjectGroups,
@@ -320,7 +322,6 @@ const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 // Fresh keys deliberately reset both shelves to collapsed for existing users.
-const SETTLED_SHELF_EXPANDED_KEY = "styal:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "styal:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "styal:sidebar:working-expanded";
 
@@ -1908,6 +1909,25 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     )
   ) : null;
 
+  // Settled rows say why the server settled them; explicit settles carry no label. A
+  // pull request settle is already shown by the row's PR badge, whose glyph carries the
+  // merged or closed state, so only inactivity needs its own compact tag.
+  const settleReason = variantAction === "unsettle" ? thread.settleReason : null;
+  const settleReasonTag =
+    settleReason?.kind === "inactivity" ? (
+      <span
+        data-testid={`sidebar-settle-reason-${thread.id}`}
+        className="shrink-0 text-xs text-muted-foreground"
+        aria-label={settleReasonLabel(settleReason) ?? undefined}
+      >
+        Idle {settleReason.days}d
+      </span>
+    ) : settleReason?.kind === "pull_request" && prBadge === null ? (
+      <InlineButton tone="muted" onClick={(event) => handlePrClick(event, settleReason.url)}>
+        #{settleReason.number} {settleReason.state}
+      </InlineButton>
+    ) : null;
+
   if (variant === "slim") {
     return (
       <li
@@ -1963,6 +1983,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             {/* The PR badge stays outside the hover-fading slot: it must
               remain visible AND clickable while the row is hovered. Only
               the time/jump label yields to the settle affordance. */}
+            {settleReasonTag}
             {prBadge}
             {sortable?.isDragging ? (
               dragDestination
