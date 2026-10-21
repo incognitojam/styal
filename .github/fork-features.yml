@@ -4680,6 +4680,7 @@ features:
       - When effective GitHub rules require a behind branch to be updated, the Checks tab explains that auto-merge will wait and offers the update methods the viewer may use; an unavailable policy read does not claim the update is optional.
       - Turning on auto-merge is offered to any viewer who may merge, and afterwards the server reads the pull request back as it does after a merge, because GitHub merges an already mergeable pull request at once; a resulting merge is published so linked threads settle.
     implementation_paths:
+      - apps/web/src/components/pullRequest/PullRequestDetailCrumbs.tsx
       - apps/mobile/src/features/pull-requests/PullRequestMergeControls.tsx
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
       - apps/server/src/pullRequest/PullRequestService.ts
