@@ -56,14 +56,12 @@ let nextAgentRequestId = 1;
 const pendingClientRequestIds = new Map<string, string | number>();
 const pendingAgentRequestMethods = new Map<string, string>();
 
-/**
- * The client may stop this process as soon as it reads a frame, so status is replaced
- * atomically: a reader sees the previous or the next status, never a partial file.
- */
+// The test reads status while this agent may still be running; rename makes each
+// write atomic so a reader never sees a truncated file.
 function writeStatus(failure?: unknown): void {
-  const temporaryPath = `${replayStatusPath}.${process.pid}.tmp`;
+  const temporaryStatusPath = `${replayStatusPath}.${process.pid}.tmp`;
   NodeFS.writeFileSync(
-    temporaryPath,
+    temporaryStatusPath,
     JSON.stringify({
       scenario: transcript.scenario,
       cursor,
@@ -72,7 +70,7 @@ function writeStatus(failure?: unknown): void {
     }),
     "utf8",
   );
-  NodeFS.renameSync(temporaryPath, replayStatusPath);
+  NodeFS.renameSync(temporaryStatusPath, replayStatusPath);
 }
 
 function stableStringify(value: unknown): string {
