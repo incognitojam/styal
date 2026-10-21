@@ -6288,6 +6288,7 @@ features:
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/web/src/components/chat/ThreadActivityBanners.tsx
       - packages/client-runtime/src/operations/commands.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/contracts/src/threadPullRequest.ts
