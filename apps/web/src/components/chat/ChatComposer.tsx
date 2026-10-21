@@ -278,8 +278,6 @@ import {
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useComposerPathSearch, useDebouncedValue } from "~/state/queries";
-import { ProviderModelPicker } from "./ProviderModelPicker";
-import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import {
   type ComposerCommandItem,
   ComposerCommandMenu,
@@ -288,6 +286,7 @@ import {
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import {
+  ComposerAttachButton,
   ComposerAttachmentFileList,
   ComposerAttachmentMediaRow,
   ComposerFilePreviewDialog,
@@ -295,7 +294,11 @@ import {
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ComposerFooterModeControls, ComposerFooterPrimaryActions } from "./ComposerFooterControls";
+import {
+  ComposerFooterModeControls,
+  ComposerFooterPrimaryActions,
+  ComposerModelPicker,
+} from "./ComposerFooterControls";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { WorkflowRunReviewPanel } from "./WorkflowRunReviewPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -980,9 +983,8 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
   );
 }
 import { Button } from "../ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import { CircleAlertIcon, HistoryIcon, PaperclipIcon, PlayIcon, ShieldIcon } from "lucide-react";
+import { CircleAlertIcon, HistoryIcon, PlayIcon, ShieldIcon } from "lucide-react";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import {
@@ -2290,7 +2292,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     targetKey: "",
     names: new Set(),
   });
-  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   const providerInputRejectedRef = useRef(false);
@@ -5011,6 +5012,64 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const hiddenRestingBlockIds = restingBlockDefs
     .slice(restingBlockDefs.length - restingHiddenBlockCount)
     .map((def) => def.id);
+  // Its own element, so typing (which rebuilds the controls around it) leaves it cached.
+  const composerModelPicker = (
+    <ComposerModelPicker
+      environmentId={environmentId}
+      compact={false}
+      isComposerOwned
+      disabled={providerCatalogPending || isSendBusy}
+      multipleModelsEnabled={routeKind === "draft" && supportsMultipleModels}
+      multipleModelSelections={multipleModelSelections}
+      onMultipleModelSelectionsChange={setMultipleModelSelections}
+      selectedModelSelection={selectedModelSelection}
+      onProviderModelSelect={onProviderModelSelect}
+      activeInstanceId={
+        providerCatalogPending
+          ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
+          : selectedInstanceId
+      }
+      model={
+        providerCatalogPending
+          ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
+          : selectedModelForPickerWithCustomFallback
+      }
+      lockedProvider={lockedProvider}
+      lockedContinuationGroupKey={lockedContinuationGroupKey}
+      instanceEntries={providerInstanceEntries}
+      keybindings={keybindings}
+      modelOptionsByInstance={modelOptionsByInstance}
+      size={composerControlsCollapsed ? "xs" : "sm"}
+      triggerClassName={
+        composerControlsCollapsed
+          ? cn(
+              "min-w-13 shrink text-xs!",
+              !showInlineRestingControls &&
+                "@max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none",
+            )
+          : "-ms-2.5 min-w-13"
+      }
+      terminalOpen={terminalOpen}
+      open={isComposerModelPickerOpen}
+      instanceIndicatorBackground={
+        composerControlsCollapsed
+          ? "color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent)"
+          : "var(--contrast-input)"
+      }
+      {...(composerProviderState.modelPickerIconClassName || composerControlsCollapsed
+        ? {
+            activeProviderIconClassName: cn(
+              composerProviderState.modelPickerIconClassName,
+              composerControlsCollapsed &&
+                "fill-muted-foreground/70! text-muted-foreground/70! [&_path]:fill-muted-foreground/70! [&_rect]:fill-muted-foreground/70! [&_[data-icon-detail]]:fill-transparent! [&[data-provider-package-icon]]:opacity-70 [&[data-provider-package-icon]_path:not([data-icon-detail])]:fill-muted-foreground!",
+            ),
+          }
+        : {})}
+      onOpenChange={setIsComposerModelPickerOpen}
+      getModelDisabledReason={getModelDisabledReason}
+      onOpenProviderSetup={onOpenProviderSetup}
+    />
+  );
   const composerControls = showProviderUnavailable ? (
     <ComposerControl
       type="button"
@@ -5037,95 +5096,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           data-resting-controls-separator="true"
         />
       ) : null}
-      <ProviderModelPicker
-        environmentId={environmentId}
-        compact={false}
-        isComposerOwned
-        disabled={providerCatalogPending || isSendBusy}
-        {...(routeKind === "draft" && supportsMultipleModels
-          ? {
-              ...(multipleModelSelections !== null
-                ? { selectedModels: multipleModelSelections }
-                : {}),
-              onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
-                const current = multipleModelSelections ?? [selectedModelSelection];
-                const matchesModel = (selection: ModelSelection) => {
-                  if (selection.instanceId !== instanceId) return false;
-                  const entry = providerInstanceEntries.find(
-                    (entry) => entry.instanceId === selection.instanceId,
-                  );
-                  const resolvedModel = resolveModelPickerSelectedModel({
-                    driverKind: entry?.driverKind,
-                    model: selection.model,
-                    options: modelOptionsByInstance.get(selection.instanceId) ?? [],
-                  });
-                  return (resolvedModel?.slug ?? selection.model) === model;
-                };
-                const exists = current.some(matchesModel);
-                const next = exists
-                  ? current.filter((selection) => !matchesModel(selection))
-                  : [...current, createModelSelection(instanceId, model)];
-                if (next.length > 1) {
-                  setMultipleModelSelections(next);
-                } else {
-                  setMultipleModelSelections(null);
-                  const remaining = next[0] ?? selectedModelSelection;
-                  onProviderModelSelect(remaining.instanceId, remaining.model, {
-                    focusComposer: false,
-                  });
-                }
-              },
-            }
-          : {})}
-        activeInstanceId={
-          providerCatalogPending
-            ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
-            : selectedInstanceId
-        }
-        model={
-          providerCatalogPending
-            ? (activeThreadModelSelection?.model ?? selectedModelForPickerWithCustomFallback)
-            : selectedModelForPickerWithCustomFallback
-        }
-        lockedProvider={lockedProvider}
-        lockedContinuationGroupKey={lockedContinuationGroupKey}
-        instanceEntries={providerInstanceEntries}
-        keybindings={keybindings}
-        modelOptionsByInstance={modelOptionsByInstance}
-        size={composerControlsCollapsed ? "xs" : "sm"}
-        triggerClassName={
-          composerControlsCollapsed
-            ? cn(
-                "min-w-13 shrink text-xs!",
-                !showInlineRestingControls &&
-                  "@max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none",
-              )
-            : "-ms-2.5 min-w-13"
-        }
-        terminalOpen={terminalOpen}
-        open={isComposerModelPickerOpen}
-        instanceIndicatorBackground={
-          composerControlsCollapsed
-            ? "color-mix(in srgb, var(--chat-composer-glass-surface) var(--glass-opacity), transparent)"
-            : "var(--contrast-input)"
-        }
-        {...(composerProviderState.modelPickerIconClassName || composerControlsCollapsed
-          ? {
-              activeProviderIconClassName: cn(
-                composerProviderState.modelPickerIconClassName,
-                composerControlsCollapsed &&
-                  "fill-muted-foreground/70! text-muted-foreground/70! [&_path]:fill-muted-foreground/70! [&_rect]:fill-muted-foreground/70! [&_[data-icon-detail]]:fill-transparent! [&[data-provider-package-icon]]:opacity-70 [&[data-provider-package-icon]_path:not([data-icon-detail])]:fill-muted-foreground!",
-              ),
-            }
-          : {})}
-        onOpenChange={setIsComposerModelPickerOpen}
-        getModelDisabledReason={getModelDisabledReason}
-        onInstanceModelChange={(instanceId, model) => {
-          setMultipleModelSelections(null);
-          onProviderModelSelect(instanceId, model);
-        }}
-        onOpenProviderSetup={onOpenProviderSetup}
-      />
+      {composerModelPicker}
 
       <>
         {restingBlockDefs.map((def, index) => {
@@ -6324,6 +6295,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemoveFile={removeComposerFileFromDraft}
       />
     ) : null;
+  const composerAttachButton = showComposerAttachAction ? (
+    <ComposerAttachButton
+      addComposerAttachments={addComposerAttachments}
+      focusComposer={focusComposer}
+    />
+  ) : null;
   return (
     <form
       ref={composerFormRef}
@@ -6830,43 +6807,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       />
                     </span>
                   ) : null}
-                  {showComposerAttachAction ? (
-                    <>
-                      <input
-                        ref={attachmentInputRef}
-                        type="file"
-                        multiple
-                        className="hidden"
-                        onChange={(event) => {
-                          const files = Array.from(event.currentTarget.files ?? []);
-                          event.currentTarget.value = "";
-                          // Inserting a chip refocuses the editor after the draft renders;
-                          // focusing synchronously here would report the editor's stale text
-                          // over the prompt that was just written.
-                          void addComposerAttachments(files).then((inserted) => {
-                            if (!inserted) focusComposer();
-                          });
-                        }}
-                      />
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onPointerDown={(event) => event.preventDefault()}
-                              onClick={() => attachmentInputRef.current?.click()}
-                              aria-label="Attach files"
-                            />
-                          }
-                        >
-                          <PaperclipIcon />
-                        </TooltipTrigger>
-                        <TooltipPopup>Attach files</TooltipPopup>
-                      </Tooltip>
-                    </>
-                  ) : null}
+                  {composerAttachButton}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}
