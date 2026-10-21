@@ -5930,6 +5930,7 @@ features:
       - The shared thread action menu offers Transcript inside its Copy submenu on both sidebar and chat-header surfaces.
       - Copying fetches a complete server snapshot, builds readable Markdown from the same visible turn items the timeline renders, attributes each prompt to the user, another agent, or an automation as the timeline does, and leaves out partial streaming messages, injected context, and notification items, and never overwrites a newer clipboard action when requests race.
     implementation_paths:
+      - apps/web/src/components/chat/useRightPanelActions.ts
       - apps/web/src/components/threadActionMenu.logic.ts
       - apps/web/src/hooks/useCopyThreadTranscript.ts
       - apps/web/src/hooks/useThreadActionMenu.ts
