@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 3;
+export const FORK_CLIENT_USAGE_VERSION = 4;
 
 export const WebBuildUpdateUsageAction = Schema.Literals(["notice_shown", "refresh_requested"]);
 export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
@@ -31,6 +31,15 @@ export const ForkClientUsageInput = Schema.Union([
     action: Schema.Literal("continued"),
     settleOnMerge: Schema.Boolean,
     settleWhenInactive: Schema.Boolean,
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("sidebar-project-filter"),
+    action: Schema.Literals(["filter_set", "filter_cleared"]),
+    entryPoint: Schema.Literals(["filter_menu", "project_menu", "thread_menu"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("sidebar-project-filter"),
+    action: Schema.Literal("thread_started"),
   }),
 ]);
 export type ForkClientUsageInput = typeof ForkClientUsageInput.Type;

@@ -145,6 +145,7 @@ import {
 } from "../sidebarProjectGrouping";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
+import { setSidebarProjectFilterFromUser } from "../sidebarProjectFilterUsage";
 import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
@@ -3048,7 +3049,10 @@ export default function Sidebar() {
         );
         if (clicked._tag === "Failure" || !clicked.value) return;
         if (clicked.value === "filter-project") {
-          setProjectScopeKey(isFiltered ? null : projectGroup.projectKey);
+          void setSidebarProjectFilterFromUser(
+            isFiltered ? null : projectGroup.projectKey,
+            "project_menu",
+          );
         } else if (clicked.value === "project-settings") {
           openProjectSettings(projectGroup);
         } else if (clicked.value === "new-thread") {
@@ -3088,7 +3092,6 @@ export default function Sidebar() {
       projectGroupByKey,
       projectGroupByLogicalKey,
       projectScopeKey,
-      setProjectScopeKey,
     ],
   );
   // Anchor for the scope popup: the header search field, not its icon trigger.
@@ -5174,10 +5177,11 @@ export default function Sidebar() {
             // This item is the only scope control here, so picking the
             // already-scoped project again is the way back to all projects.
             if (threadProjectGroup) {
-              setProjectScopeKey(
+              void setSidebarProjectFilterFromUser(
                 projectScopeKey === threadProjectGroup.projectKey
                   ? null
                   : threadProjectGroup.projectKey,
+                "thread_menu",
               );
             }
             return;
@@ -5373,7 +5377,6 @@ export default function Sidebar() {
       projectScopeKey,
       projectByKey,
       serverConfigs,
-      setProjectScopeKey,
       setThreadAutoSettle,
       startThreadRename,
       updateThreadMetadata,
@@ -5553,7 +5556,10 @@ export default function Sidebar() {
                       return;
                     }
                     if (!item) return;
-                    setProjectScopeKey(item.value === "all" ? null : item.value);
+                    void setSidebarProjectFilterFromUser(
+                      item.value === "all" ? null : item.value,
+                      "filter_menu",
+                    );
                   }}
                 >
                   <ComboboxTrigger
