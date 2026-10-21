@@ -17,6 +17,7 @@ features:
       - apps/server/src/ws.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/ThreadTerminalDrawer.tsx
+      - apps/web/src/components/chat/useChatTerminalActions.ts
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/hooks/useRightPanelSurfaceClose.ts
       - apps/web/src/hooks/useTerminalCloseConfirmation.ts
@@ -5257,6 +5258,7 @@ features:
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
+      - apps/web/src/components/chat/useChatTerminalActions.ts
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/lib/projectScriptTerminal.ts
       - apps/web/src/session-logic.ts
@@ -5696,6 +5698,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
       - apps/web/src/components/chat/timelineRowContext.ts
+      - apps/web/src/components/chat/useChatTerminalActions.ts
       - apps/web/src/components/chat/useProjectScriptEditing.ts
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/components/settings/ProjectActionsList.tsx
