@@ -1633,12 +1633,14 @@ features:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/followUpBehavior.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
       - packages/client-runtime/src/userMessage.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/followUpBehavior.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
       - packages/contracts/src/settings.ts
     tests:
       - apps/mobile/src/features/threads/composerSendPresentation.test.ts
@@ -1917,6 +1919,7 @@ features:
       - apps/web/src/components/StyalWordmark.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/TimelineToolActivityIcon.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
       - apps/web/src/components/chat/V2LifecycleRow.tsx
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/components/settings/BranchNamingSettings.tsx
@@ -2340,6 +2343,8 @@ features:
       - apps/web/src/components/IssueContextChip.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+      - apps/web/src/components/chat/UserMessageContextChips.tsx
       - apps/web/src/components/chat/useQueuedRunEdit.ts
       - apps/web/src/components/composerContextPresentation.tsx
       - apps/web/src/components/contextPresentationRegistry.ts
@@ -2361,6 +2366,8 @@ features:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineUserMessageRow.tsx
+      - apps/web/src/components/chat/UserMessageContextChips.tsx
       - apps/web/src/components/composerContextPresentation.tsx
       - apps/web/src/components/contextPresentationRegistry.ts
       - apps/web/src/composerDraftStore.ts
@@ -4257,6 +4264,8 @@ features:
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/UserMessageContextChips.tsx
+      - apps/web/src/components/chat/timelineRowContext.ts
       - apps/web/src/components/composerContextPresentation.tsx
       - apps/web/src/components/contextChipParts.tsx
       - apps/web/src/hooks/useExternalLinkContextMenu.ts
@@ -4264,6 +4273,8 @@ features:
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/UserMessageContextChips.tsx
+      - apps/web/src/components/chat/timelineRowContext.ts
       - apps/web/src/components/composerContextPresentation.tsx
       - apps/web/src/components/contextChipParts.tsx
     tests:
