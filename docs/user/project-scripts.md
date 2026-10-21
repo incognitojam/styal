@@ -124,6 +124,15 @@ pnpm dev -- --port "$STYAL_WORKSPACE_PORT" &
 pnpm run api -- --port "$((STYAL_WORKSPACE_PORT + 1))"
 ```
 
+Settling a thread leaves running dev servers open. To stop them when the thread settles, use an
+action that runs on settle and stops whatever listens on the ports, for example on macOS or Linux:
+
+```sh
+for port in "$STYAL_WORKSPACE_PORT" "$((STYAL_WORKSPACE_PORT + 1))"; do
+  if pids=$(lsof -ti "tcp:$port" -sTCP:LISTEN); then kill $pids; fi
+done
+```
+
 The assigned range is stable across restarts and does not overlap with another T3 Code workspace
 in the same environment. It does not reserve the sockets from unrelated programs on the host. See
 [Project settings](./project-settings.md#stable-workspace-ports) for allocation details and
