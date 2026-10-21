@@ -10,6 +10,7 @@ import {
   nativeFingerprintVerdict,
   newestAndroidReleaseTag,
   draftAdaptationNote,
+  hasTypecheckTask,
   intakeCommitMessage,
   ledgerFeaturesByPath,
   lockfilePackages,
@@ -185,6 +186,24 @@ describe("moveLedgerPaths", () => {
         "    tests:",
         "      - apps/server/src/provider/ProviderRegistry.test.ts",
       ].join("\n"),
+    );
+  });
+});
+
+describe("hasTypecheckTask", () => {
+  it("finds a typecheck script or a Vite+ typecheck task", () => {
+    assert.isTrue(hasTypecheckTask('{ "scripts": { "typecheck": "tsc-rs --noEmit" } }', ""));
+    assert.isTrue(
+      hasTypecheckTask(
+        '{ "scripts": { "dev": "vp dev" } }',
+        'run: {\n    tasks: {\n      typecheck: {\n        command: "tsc-rs --noEmit",',
+      ),
+    );
+    assert.isFalse(
+      hasTypecheckTask(
+        '{ "scripts": { "dev": "vp dev" } }',
+        'dependsOn: ["@t3tools/web#typecheck"]',
+      ),
     );
   });
 });

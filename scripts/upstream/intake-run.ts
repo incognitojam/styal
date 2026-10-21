@@ -2102,6 +2102,23 @@ function owningPackages(cwd: string, paths: ReadonlyArray<string>): ReadonlyArra
 }
 
 /**
+ * A package's typecheck is either a package.json script or a Vite+ task in its vite.config.ts,
+ * which is where packages define it when `vp run --cache` needs task-level cache inputs.
+ */
+export function hasTypecheckTask(packageJson: string, viteConfig: string): boolean {
+  return /"typecheck"\s*:/u.test(packageJson) || /^\s*typecheck\s*:\s*\{/mu.test(viteConfig);
+}
+
+function typecheckPackages(cwd: string, changed: ReadonlyArray<string>): ReadonlyArray<string> {
+  return owningPackages(cwd, changed).filter((directory) =>
+    hasTypecheckTask(
+      readIfExists(NodePath.join(cwd, directory, "package.json")),
+      readIfExists(NodePath.join(cwd, directory, "vite.config.ts")),
+    ),
+  );
+}
+
+/**
  * The environment checks run in: a styal session passes its own server settings and the service
  * launcher's context to the agents it runs, and server tests read them as if they were their own.
  * CI has none of them.
@@ -2322,9 +2339,7 @@ async function verify(
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
     (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
   );
-  const packages = owningPackages(cwd, changed).filter((directory) =>
-    /"typecheck"\s*:/u.test(readIfExists(NodePath.join(cwd, directory, "package.json"))),
-  );
+  const packages = typecheckPackages(cwd, changed);
   const env = verificationEnvironment(process.env);
   const started = performance.now();
   const elapsed = (since: number) => `${((performance.now() - since) / 1000).toFixed(1)}s`;
@@ -2352,7 +2367,7 @@ async function verify(
     ...packages.map((directory) => ({
       name: `typecheck ${directory}`,
       directory: NodePath.join(cwd, directory),
-      command: "pnpm",
+      command: "vp",
       args: ["run", "typecheck"],
     })),
     ...(sources.length > 0
@@ -2714,16 +2729,14 @@ function fixReferences(cwd: string, base: string): ReadonlyArray<string> {
   const { byFile, exported, moves } = batchRenames(cwd, [...pickBySource.keys()]);
   const movedFrom = new Map([...moves].map(([from, to]) => [to.value, from]));
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`]));
-  const packages = owningPackages(cwd, changed).filter((directory) =>
-    /"typecheck"\s*:/u.test(readIfExists(NodePath.join(cwd, directory, "package.json"))),
-  );
+  const packages = typecheckPackages(cwd, changed);
   const fileSource = new Map<string, string>();
   let remaining: Array<string> = [];
   for (let round = 0; round < 6; round += 1) {
     remaining = [];
     let fixed = 0;
     for (const directory of packages) {
-      const result = run(NodePath.join(cwd, directory), "pnpm", ["run", "typecheck"]);
+      const result = run(NodePath.join(cwd, directory), "vp", ["run", "typecheck"]);
       for (const error of parseReferenceErrors(`${result.stdout}\n${result.stderr}`, directory)) {
         const absolute = NodePath.join(cwd, error.file);
         if (!NodeFS.existsSync(absolute)) continue;
