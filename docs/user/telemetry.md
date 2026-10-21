@@ -35,9 +35,10 @@ collected; for those it reports only whether they were changed or how many proje
 settings.
 
 Web and desktop clients also record explicit diff-order selections, when you open a
-mentioned time's explanation, and which automatic settling rules you keep when finishing setup. The web app records when a new-build notice is visible and
+mentioned time's explanation, which automatic settling rules you keep when finishing setup, and when
+you change the sidebar's project filter or start a thread while it is applied. The web app records when a new-build notice is visible and
 when you choose Refresh. These events use the relevant paired environment's telemetry setting.
-File paths, written times, deployment identifiers, and composer drafts are not collected.
+File paths, written times, deployment identifiers, project names, and composer drafts are not collected.
 
 Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
 

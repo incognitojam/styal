@@ -3128,19 +3128,24 @@ features:
     invariants:
       - Reopening the sidebar does not discard the user's project filter.
       - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project.
+      - Explicit filter changes and new-thread actions taken while filtered emit bounded client-usage events through the primary environment, with the entry point but never project names or keys; clearing a vanished project's filter is not counted.
     implementation_paths:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/lib/chatThreadActions.ts
+      - apps/web/src/sidebarProjectFilterUsage.ts
       - apps/web/src/sidebarProjectScopeStore.ts
       - apps/web/src/uiStateStore.ts
+      - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/web/src/components/AppSidebarLayout.tsx
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/uiStateStore.ts
     tests:
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/lib/chatThreadActions.test.ts
+      - apps/web/src/sidebarProjectFilterUsage.test.ts
       - apps/web/src/uiStateStore.test.ts
     upstream:
       status: partial
