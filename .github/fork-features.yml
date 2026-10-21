@@ -1545,10 +1545,12 @@ features:
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/ThreadVisitBaselineObserver.tsx
       - apps/web/src/components/chat/useComposerSend.ts
+      - apps/web/src/components/chat/useProposedPlanSend.ts
       - apps/web/src/uiStateStore.ts
     upstream_paths:
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/chat/useComposerSend.ts
+      - apps/web/src/components/chat/useProposedPlanSend.ts
       - apps/web/src/uiStateStore.ts
     tests:
       - apps/web/src/threadUnreadCompletion.flow.test.ts
