@@ -21,7 +21,6 @@ import {
 } from "@t3tools/contracts";
 import { cn } from "~/lib/utils";
 import { shortcutLabelForCommand } from "../../keybindings";
-import { memo } from "react";
 import {
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
@@ -32,7 +31,7 @@ import type { useComposerProviderModel } from "./useComposerProviderModel";
  * The composer footer controls: model picker, traits, mode controls and the overflow menu for
  * blocks that do not fit. Rendered in the expanded footer or the resting controls host.
  */
-export const ComposerControlsBar = memo(function ComposerControlsBar(props: {
+export function ComposerControlsBar(props: {
   environmentId: EnvironmentId;
   routeKind: ChatComposerProps["routeKind"];
   routeThreadRef: ChatComposerProps["routeThreadRef"];
@@ -332,4 +331,4 @@ export const ComposerControlsBar = memo(function ComposerControlsBar(props: {
       </>
     </>
   );
-});
+}
