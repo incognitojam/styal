@@ -6259,6 +6259,7 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
+      - apps/web/src/components/ChatView.logic.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/WorkflowRunLabel.tsx
