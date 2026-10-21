@@ -35,6 +35,7 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { ProjectActionsList } from "./ProjectActionsList";
+import { ProjectFileMigrationRow } from "./ProjectFileMigrationRow";
 import { useProjectScriptSettings } from "./useProjectScriptSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -234,6 +235,13 @@ export function ProjectActionsSettings() {
           title={`Some ${projectConfig.source} values were ignored`}
           description="Invalid or unrecognized fields and actions were skipped. Valid project settings and actions remain available."
           className="text-warning"
+        />
+      ) : null}
+      {isProjectScope && representativeMember && projectConfig.legacyContents !== null ? (
+        <ProjectFileMigrationRow
+          environmentId={representativeMember.environmentId}
+          projectRoot={projectConfigRoot(representativeMember)}
+          legacyContents={projectConfig.legacyContents}
         />
       ) : null}
       <FileActionApprovalDialog target={reviewing} onClose={() => setReviewing(null)} />

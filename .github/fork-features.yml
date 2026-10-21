@@ -4703,6 +4703,7 @@ features:
       - An unapproved automatic file action leaves a waiting work-log row that offers review, with no running indicator; approving from it runs the action in that worktree.
       - The approval review warns that it covers the command, not the files it runs, naming those files or package.json script when it can.
       - Running an action reports only whether it was saved, from styal.json, or an override.
+      - Writing styal.json from a legacy t3.json carries its settings over and turns its scripts into actions with derived ids; the t3.json is left for the user to delete.
     implementation_paths:
       - apps/marketing/src/pages/schema/styal.json.ts
       - apps/mobile/src/features/projects/useProjectRootConfig.ts
@@ -4720,6 +4721,7 @@ features:
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/components/settings/ProjectActionsList.tsx
       - apps/web/src/components/settings/ProjectActionsSettings.tsx
+      - apps/web/src/components/settings/ProjectFileMigrationRow.tsx
       - apps/web/src/components/settings/SettingsScopeContext.tsx
       - apps/web/src/components/settings/useProjectScriptSettings.ts
       - apps/web/src/hooks/useProjectConfig.ts

@@ -121,6 +121,11 @@ imported: select one from the thread actions menu or from **Settings** → **Pro
 it. Imported actions are saved copies, so later changes to `t3.json` do not change them. Once the
 repository has a `styal.json`, styal ignores `t3.json` entirely.
 
+To move the repository over, choose **Write styal.json** in **Settings** → **Projects** →
+**Actions**. styal writes a `styal.json` at the project root with the `t3.json` settings and its
+scripts as shared actions, each with an `id`. Commit it and delete `t3.json`. Actions that run on
+their own still wait for your approval.
+
 ## Project environment variables
 
 T3 Code adds project context to commands it launches. These variables are intended for project

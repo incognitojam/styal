@@ -9,6 +9,7 @@ import {
   buildStyalProjectFileJsonSchema,
   parseStyalProjectFileResult,
   resolveProjectConfig,
+  styalProjectFileFromT3,
 } from "./projectFile.ts";
 
 const VALID_FILE = {
@@ -192,5 +193,35 @@ describe("buildStyalProjectFileJsonSchema", () => {
     expect(schema.$id).toBe("https://styal.build/schema/styal.json");
     expect(schema.additionalProperties).toBe(false);
     expect(Object.keys(schema.properties as object)).toEqual(Object.keys(StyalProjectFile.fields));
+  });
+});
+
+describe("styalProjectFileFromT3", () => {
+  it("carries settings over and turns scripts into actions with ids", () => {
+    const migrated = styalProjectFileFromT3(`{
+      // legacy
+      "$schema": "https://t3.codes/schema/t3.json",
+      "iconPath": "logo.svg",
+      "worktreeSubmodules": "none",
+      "scripts": [
+        { "name": "Install", "command": "pnpm i", "runOnWorktreeCreate": true },
+        { "name": "Install", "command": "pnpm i --frozen-lockfile" },
+        { "name": "Bad" }
+      ]
+    }`);
+    expect(migrated && JSON.parse(migrated)).toEqual({
+      $schema: "https://styal.build/schema/styal.json",
+      iconPath: "logo.svg",
+      worktreeSubmodules: "none",
+      actions: [
+        { id: "install", name: "Install", command: "pnpm i", runOnWorktreeCreate: true },
+        { id: "install-2", name: "Install", command: "pnpm i --frozen-lockfile" },
+      ],
+    });
+    expect(migrated && parseStyalProjectFileResult(migrated).status).toBe("valid");
+  });
+
+  it("refuses a t3.json that cannot be read", () => {
+    expect(styalProjectFileFromT3("{")).toBeNull();
   });
 });

@@ -152,6 +152,7 @@ const legacyConfigState = (config: {
   source: "t3.json",
   config: { source: "t3.json", defaultThreadEnvMode: config.defaultThreadEnvMode, actions: [] },
   legacyScripts: config.scripts,
+  legacyContents: JSON.stringify(config),
 });
 
 describe("project query refresh", () => {
@@ -265,6 +266,7 @@ describe("project query refresh", () => {
         source: "styal.json",
         config: { source: "styal.json", defaultThreadEnvMode: "local", actions: [] },
         legacyScripts: [],
+        legacyContents: null,
       });
     } finally {
       registry.dispose();
