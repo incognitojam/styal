@@ -23,7 +23,11 @@ import {
 } from "./claudeWorkflowProgress.ts";
 
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
-import { normalizeClaudeTurnTokenUsage } from "../../provider/ClaudeTurnTokenUsage.ts";
+import {
+  claudeModelUsageDelta,
+  normalizeClaudeTurnTokenUsage,
+  type ClaudeModelUsageCounts,
+} from "../../provider/ClaudeTurnTokenUsage.ts";
 import {
   type CanUseTool,
   forkSession as forkClaudeSession,
@@ -3527,6 +3531,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const interruptedTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const steeredTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const queryContext = yield* Ref.make<ClaudeLiveQueryContext | null>(null);
+        // Each result's share of its query's running `modelUsage`, taken when
+        // the result arrives so held and replayed results keep their share.
+        const resultModelUsage = new WeakMap<SDKMessage, ClaudeModelUsageCounts>();
         const openedNativeThreads = yield* Ref.make(new Set<string>());
         const latestPlanByKind = yield* Ref.make(new Map<string, OrchestrationV2PlanArtifact>());
         // Claude 5 task tools edit one list per native session, across turns.
@@ -6109,6 +6116,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     input.context.subagentsByTaskId.size > 0 ||
                       input.context.subagentsByToolUseId.size > 0,
                     input.status,
+                    input.result === undefined ? undefined : resultModelUsage.get(input.result),
                   ),
                 },
               }),
@@ -8805,10 +8813,25 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ),
           };
           yield* Ref.set(queryContext, context);
+          let lastModelUsage: SDKResultMessage["modelUsage"] | undefined;
+          // A resumed session's modelUsage starts from the totals Claude Code restored
+          // for it, so the first result has no baseline and reports main usage only.
+          let hasModelUsageBaseline = !shouldResume;
           yield* querySession.messages.pipe(
             Stream.runForEach((message) =>
               sdkMessageLock.withPermits(1)(
                 Effect.suspend(() => {
+                  // Every result moves the baseline, including ones that complete no turn.
+                  if (message.type === "result" && message.modelUsage) {
+                    if (hasModelUsageBaseline) {
+                      resultModelUsage.set(
+                        message,
+                        claudeModelUsageDelta(lastModelUsage, message.modelUsage),
+                      );
+                    }
+                    lastModelUsage = message.modelUsage;
+                    hasModelUsageBaseline = true;
+                  }
                   if (
                     message.type === "system" &&
                     (message.subtype === "init" || message.subtype === "status") &&

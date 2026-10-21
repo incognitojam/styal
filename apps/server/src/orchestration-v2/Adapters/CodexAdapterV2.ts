@@ -9,6 +9,7 @@ import {
   makeCodexTurnTokenUsageState,
   getCodexTurnAccumulator,
   accumulateCodexTurnTokenUsage,
+  addCodexSubagentTokenUsage,
   completeCodexTurnTokenUsage,
   currentCodexTurnTokenUsage,
   type CodexTurnTokenUsageState,
@@ -4349,7 +4350,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
         yield* client.handleServerNotification("thread/tokenUsage/updated", (payload) =>
           Effect.gen(function* () {
-            accumulateCodexTurnTokenUsage(
+            const delta = accumulateCodexTurnTokenUsage(
               usageStateForThread(payload.threadId),
               payload.turnId,
               payload.tokenUsage,
@@ -4357,6 +4358,28 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const context = yield* awaitActiveTurn(payload.turnId);
             if (context === undefined) {
               return;
+            }
+            if (delta !== undefined && context.subagent !== null) {
+              // A subagent thread's usage also counts toward every live turn
+              // above it; its own thread keeps its own figures.
+              const model =
+                subagentSelections.get(payload.threadId)?.model ??
+                context.subagent.task.model ??
+                undefined;
+              for (
+                let ancestor: ActiveCodexTurnContext | undefined = context.subagent.parentContext;
+                ancestor !== undefined;
+                ancestor = ancestor.subagent?.parentContext
+              ) {
+                const nativeThreadId = ancestor.providerThread.nativeThreadRef?.nativeId;
+                if (!nativeThreadId) continue;
+                addCodexSubagentTokenUsage(
+                  usageStateForThread(nativeThreadId),
+                  ancestor.nativeTurnId,
+                  delta,
+                  model,
+                );
+              }
             }
             const now = yield* DateTime.now;
             // Live context usage rides on the provider turn (#8144): the turn

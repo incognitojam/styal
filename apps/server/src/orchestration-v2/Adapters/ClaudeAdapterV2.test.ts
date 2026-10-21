@@ -7628,6 +7628,130 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     return { childThreadId, toolThreadIds, assistantTexts };
   };
 
+  it.effect("reports each model's growth in modelUsage, without a baseline after a resume", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const now = yield* DateTime.now;
+        const startTurn = (attempt: string, providerTurnOrdinal: number) =>
+          harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now,
+              attemptId: RunAttemptId.make(attempt),
+              text: "Go on.",
+              attachments: [],
+              providerTurnOrdinal,
+            }),
+          );
+        const modelUsage = (
+          input: number,
+          cacheRead: number,
+          cacheCreation: number,
+          output: number,
+          costUSD: number,
+        ) => ({
+          inputTokens: input,
+          cacheReadInputTokens: cacheRead,
+          cacheCreationInputTokens: cacheCreation,
+          outputTokens: output,
+          webSearchRequests: 0,
+          costUSD,
+          contextWindow: 200_000,
+          maxOutputTokens: 32_000,
+        });
+        const completedUsage = () =>
+          harness.events
+            .flatMap((event) =>
+              event.type === "provider_turn.updated" &&
+              event.providerTurn.turnTokenUsage?.usageStatus === "complete"
+                ? [event.providerTurn.turnTokenUsage]
+                : [],
+            )
+            .at(-1);
+
+        // A later provider turn resumes the session, and Claude Code restores the
+        // earlier usage into `modelUsage`, so this turn reports its main usage only.
+        yield* startTurn("attempt-subagent-usage-1", 2);
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            ...makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000a01", result: "Done." }),
+            usage: {
+              input_tokens: 100,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+              output_tokens: 10,
+            },
+            modelUsage: { "claude-opus-5-5": modelUsage(5100, 0, 0, 510, 1.25) },
+          }),
+        );
+        yield* awaitUntil(() => harness.terminalEvents().length === 1, "resumed turn terminal");
+        assert.equal(completedUsage()?.inputTokens, 100);
+        assert.isUndefined(completedUsage()?.byModel);
+
+        // A subagent on another model runs during the next turn.
+        yield* startTurn("attempt-subagent-usage-2", 3);
+        for (const frame of [
+          claudeSdkFrame({
+            ...makeSubagentTaskStartedFrame({
+              taskId: "task-subagent-usage",
+              toolUseId: "toolu_subagent_usage",
+              uuid: "00000000-0000-4000-8000-000000000a02",
+            }),
+            is_backgrounded: false,
+          }),
+          makeSubagentNotificationFrame({
+            taskId: "task-subagent-usage",
+            toolUseId: "toolu_subagent_usage",
+            summary: "AUDITED",
+            uuid: "00000000-0000-4000-8000-000000000a03",
+          }),
+          claudeSdkFrame({
+            ...makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000a04", result: "Done." }),
+            usage: {
+              input_tokens: 10,
+              cache_read_input_tokens: 1200,
+              cache_creation_input_tokens: 30,
+              output_tokens: 40,
+            },
+            modelUsage: {
+              "claude-opus-5-5": modelUsage(5110, 1200, 30, 550, 1.75),
+              "claude-haiku-4-5": modelUsage(500, 2000, 300, 120, 0.125),
+            },
+          }),
+        ]) {
+          yield* Queue.offer(harness.sdkMessages, frame);
+        }
+        yield* awaitUntil(() => harness.terminalEvents().length === 2, "subagent turn terminal");
+        assert.isTrue(completedUsage()?.hasSubagents);
+        assert.deepEqual(completedUsage()?.byModel, [
+          {
+            model: "claude-opus-5-5",
+            inputTokens: 1240,
+            cachedInputTokens: 1200,
+            cacheCreationTokens: 30,
+            outputTokens: 40,
+            reportedCostUsd: 0.5,
+          },
+          {
+            model: "claude-haiku-4-5",
+            inputTokens: 2800,
+            cachedInputTokens: 2000,
+            cacheCreationTokens: 300,
+            outputTokens: 120,
+            reportedCostUsd: 0.125,
+          },
+        ]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
   it.effect("a subagent re-run in the foreground does not join a later wake", () =>
     Effect.scoped(
       Effect.gen(function* () {

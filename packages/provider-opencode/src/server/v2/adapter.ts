@@ -201,6 +201,38 @@ const OpenCode2ProviderCapabilities = {
 type EventOf<T extends OpenCodeEvent["type"]> = Extract<OpenCodeEvent, { readonly type: T }>;
 type Tokens = EventOf<"session.step.ended">["data"]["tokens"];
 
+/** Summed step tokens, and OpenCode's own price for those steps. */
+interface StepUsage {
+  input: number;
+  cached: number;
+  cacheWrite: number;
+  output: number;
+  reasoning: number;
+  costUsd: number;
+  /** Steps OpenCode gave no price, which leave `costUsd` short of the whole. */
+  unpriced: number;
+}
+
+const emptyStepUsage = (): StepUsage => ({
+  input: 0,
+  cached: 0,
+  cacheWrite: 0,
+  output: 0,
+  reasoning: 0,
+  costUsd: 0,
+  unpriced: 0,
+});
+
+const addStep = (usage: StepUsage, tokens: Tokens, cost: number | undefined) => {
+  usage.input += tokens.input + tokens.cache.read + tokens.cache.write;
+  usage.cached += tokens.cache.read;
+  usage.cacheWrite += tokens.cache.write;
+  usage.output += tokens.output + tokens.reasoning;
+  usage.reasoning += tokens.reasoning;
+  if (cost !== undefined && Number.isFinite(cost) && cost > 0) usage.costUsd += cost;
+  else usage.unpriced += 1;
+};
+
 /** What a turn reports against: a run's own turn, or a subagent session's runless one. */
 interface TurnOwner {
   readonly appThread: OrchestrationV2AppThread;
@@ -223,13 +255,9 @@ interface ActiveTurn {
   readonly ordinals: Map<string, number>;
   nextOrdinal: number;
   /** Input includes cache reads and writes, as 1.x reports it; the parts are also kept apart. */
-  readonly usage: {
-    input: number;
-    cached: number;
-    cacheWrite: number;
-    output: number;
-    reasoning: number;
-  };
+  readonly usage: StepUsage;
+  /** What subagent sessions under this turn used while it was live. */
+  readonly subagentUsage: StepUsage;
   steps: number;
   lastStep: Tokens | undefined;
   /**
@@ -821,25 +849,57 @@ const skillsNamed = (text: string, known: ReadonlySet<string>) => [
 
 /**
  * The turn's own tokens: steps add up, and the last step's input is the live
- * context size. A subagent's tokens are its own session's, never these.
+ * context size. What its subagents used while it was live is reported
+ * alongside, and OpenCode's price for all of it when it has one.
  */
-const turnTokenUsage = (turn: ActiveTurn, status: OrchestrationV2ProviderTurn["status"]) =>
-  turn.steps === 0
-    ? {
-        usageScope: "main_agent" as const,
-        usageStatus: "unavailable" as const,
-        hasSubagents: turn.usedSubagents,
-      }
-    : {
-        usageScope: "main_agent" as const,
-        usageStatus: status === "completed" ? ("complete" as const) : ("partial" as const),
-        inputTokens: turn.usage.input,
-        cachedInputTokens: turn.usage.cached,
-        cacheCreationTokens: turn.usage.cacheWrite,
-        outputTokens: turn.usage.output,
-        reasoningTokens: turn.usage.reasoning,
-        hasSubagents: turn.usedSubagents,
-      };
+const turnTokenUsage = (turn: ActiveTurn, status: OrchestrationV2ProviderTurn["status"]) => {
+  if (turn.steps === 0) {
+    return {
+      usageScope: "main_agent" as const,
+      usageStatus: "unavailable" as const,
+      hasSubagents: turn.usedSubagents,
+    };
+  }
+  const main = turn.usage;
+  const sub = turn.subagentUsage;
+  const costUsd = main.unpriced + sub.unpriced === 0 ? main.costUsd + sub.costUsd : 0;
+  return {
+    usageScope: "main_agent" as const,
+    usageStatus: status === "completed" ? ("complete" as const) : ("partial" as const),
+    inputTokens: main.input,
+    cachedInputTokens: main.cached,
+    cacheCreationTokens: main.cacheWrite,
+    outputTokens: main.output,
+    reasoningTokens: main.reasoning,
+    hasSubagents: turn.usedSubagents,
+    ...(sub.input + sub.output > 0
+      ? {
+          subagents: {
+            inputTokens: sub.input,
+            cachedInputTokens: sub.cached,
+            cacheCreationTokens: sub.cacheWrite,
+            outputTokens: sub.output,
+            reasoningTokens: Math.min(sub.output, sub.reasoning),
+          },
+        }
+      : {}),
+    // OpenCode's price when it priced every step. Without that, the server
+    // prices the tokens at the turn's model.
+    ...(costUsd > 0
+      ? {
+          byModel: [
+            {
+              inputTokens: main.input + sub.input,
+              cachedInputTokens: main.cached + sub.cached,
+              cacheCreationTokens: main.cacheWrite + sub.cacheWrite,
+              outputTokens: main.output + sub.output,
+              reportedCostUsd: costUsd,
+            },
+          ],
+        }
+      : {}),
+  };
+};
 
 /**
  * The adapter for one provider instance. It talks to the instance's
@@ -1284,7 +1344,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       startedAt: new Map(),
       ordinals: new Map(),
       nextOrdinal: providerTurn.ordinal * 100 + 1,
-      usage: { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0 },
+      usage: emptyStepUsage(),
+      subagentUsage: emptyStepUsage(),
       steps: 0,
       lastStep: undefined,
       before: undefined,
@@ -2343,11 +2404,15 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           if (tokens === undefined) return;
           turn.steps += 1;
           turn.lastStep = tokens;
-          turn.usage.input += tokens.input + tokens.cache.read + tokens.cache.write;
-          turn.usage.cached += tokens.cache.read;
-          turn.usage.cacheWrite += tokens.cache.write;
-          turn.usage.output += tokens.output + tokens.reasoning;
-          turn.usage.reasoning += tokens.reasoning;
+          addStep(turn.usage, tokens, event.data.cost);
+          // A subagent's step also counts toward every live turn above it.
+          // Steps after the calling turn ended stay on the subagent's thread.
+          for (let call = state.subagent?.call; call !== undefined;) {
+            if (call.state.active === call.turn) {
+              addStep(call.turn.subagentUsage, tokens, event.data.cost);
+            }
+            call = call.state.subagent?.call;
+          }
           return;
         }
         case "session.execution.started":
