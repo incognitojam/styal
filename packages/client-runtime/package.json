@@ -486,6 +486,10 @@
     "./pull-request-deployments": {
       "types": "./src/pullRequestDeployments.ts",
       "default": "./src/pullRequestDeployments.ts"
+    },
+    "./model-traits": {
+      "types": "./src/modelTraits.ts",
+      "default": "./src/modelTraits.ts"
     }
   },
   "scripts": {
