@@ -3124,7 +3124,7 @@ features:
   - id: project-filter-continuity
     title: Preserve project filters while navigating and creating threads
     status: maintained
-    prs: [83, 162]
+    prs: [83, 162, 954]
     invariants:
       - Reopening the sidebar does not discard the user's project filter.
       - New-thread actions follow the visible project scope without unexpectedly switching the active thread's project.
