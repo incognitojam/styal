@@ -5365,6 +5365,7 @@ features:
       - apps/server/src/persistence/ForkMigrations.ts
       - apps/server/src/persistence/ForkMigrations/004_ProjectionThreadLatestMessageAt.ts
       - apps/web/src/components/CommandPalette.logic.ts
+      - apps/web/src/components/CommandPaletteThreadItems.tsx
       - apps/web/src/components/LegacySidebar.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
