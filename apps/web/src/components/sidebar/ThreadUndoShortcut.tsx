@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import {
@@ -25,12 +25,13 @@ export function ThreadUndoShortcut() {
   // A collapsed sidebar hides the notice, so text fields keep their own undo.
   const noticeVisible = useSidebarVisibility();
 
+  const heldUndoKey = useRef<string | null>(null);
+
   useEffect(() => {
-    let heldUndoKey: string | null = null;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
       // Keep repeats consumed after the notice disappears, until keyup.
-      if (event.repeat && heldUndoKey === event.key.toLowerCase()) {
+      if (event.repeat && heldUndoKey.current === event.key.toLowerCase()) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -51,7 +52,7 @@ export function ThreadUndoShortcut() {
       if (isCommandPaletteOpen() || isModelPickerOpen()) return;
       if (event.repeat) return;
       if (undoLatestThreadAction()) {
-        heldUndoKey = event.key.toLowerCase();
+        heldUndoKey.current = event.key.toLowerCase();
         event.preventDefault();
         event.stopPropagation();
       }
@@ -59,10 +60,10 @@ export function ThreadUndoShortcut() {
     // Pastes from a menu, dictation and drops edit text without a keypress.
     const onInput = () => releaseThreadUndoShortcut();
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === heldUndoKey) heldUndoKey = null;
+      if (event.key.toLowerCase() === heldUndoKey.current) heldUndoKey.current = null;
     };
     const onBlur = () => {
-      heldUndoKey = null;
+      heldUndoKey.current = null;
     };
 
     window.addEventListener("keydown", onKeyDown, true);

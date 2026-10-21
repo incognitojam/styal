@@ -44,6 +44,7 @@ describe("thread undo notice", () => {
     await notice().undo();
     expect(undo).toHaveBeenCalledOnce();
   });
+
   it("claims mod+z from text fields until the user types, then again for a new notice", () => {
     const { options } = setup();
     expect(threadUndoClaimsShortcut()).toBe(false);
