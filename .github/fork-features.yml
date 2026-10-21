@@ -4575,8 +4575,8 @@ features:
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/PullRequestLinkPreview.tsx
       - apps/web/src/components/pullRequest/PullRequestMergeIntentIcon.tsx
+      - apps/web/src/components/pullRequest/pullRequestListGroups.logic.ts
       - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
-      - apps/web/src/components/pullRequest/usePullRequestListView.ts
       - packages/contracts/src/threadPullRequest.ts
       - packages/shared/src/threadPullRequests.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
