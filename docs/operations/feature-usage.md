@@ -46,7 +46,7 @@ Installations by installed provider: count distinct identities of `provider.inve
 
 Servers with `settingsSnapshotUsageVersion = 1` send one `settings.snapshot` event two minutes after startup and then every 24 hours while the server runs. It is not a `feature.used` event. Every property below is sent on every report, whether or not it is at its default, so a missing property means an older server rather than an unchanged setting.
 
-- New threads: `defaultRuntimeMode`, `defaultThreadEnvMode` (`local`, `worktree`, or null to inherit the repository's t3.json), `defaultModelSelectionSet`, `responseStreamingMode`, `continueThreadsAfterServerUpdate`.
+- New threads: `defaultRuntimeMode`, `defaultThreadEnvMode` (`local`, `worktree`, or null to inherit the repository's styal.json or legacy t3.json), `defaultModelSelectionSet`, `responseStreamingMode`, `continueThreadsAfterServerUpdate`.
 - Worktrees and projects: `newWorktreesStartFromOrigin`, `worktreeSubmodules` (null to inherit), `worktreesDirectoryCustomized`, `defaultAutoPull`, `defaultProjectScriptCount`, `projectsWithOverrides` (projects with at least one project-level setting).
 - Thread settlement: `sidebarAutoSettleOnMerge`, `sidebarAutoSettleAfterDays` (null when off), `snoozeLimitedThreads`, `autoResumeLimitedThreads`.
 - Source control writing: `branchNamingMode`, `branchNamePrefixCustomized`, `textGenerationModelCustomized`, `sourceControlWriterModelSet`, `sourceControlWritingStyleMode`, `followChangeRequestTemplates`, `removeAgentCreditsOnMerge`, `pullRequestMergeMethod` (null reuses the device's last choice), `reviewGuidesEnabled`, `reviewGuideModelSet`, `reviewGuideInstructionsCustomized`.

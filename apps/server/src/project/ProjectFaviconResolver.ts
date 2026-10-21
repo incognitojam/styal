@@ -20,7 +20,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
-import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
+import * as ProjectConfigLoader from "./ProjectConfigLoader.ts";
 
 // Resolution probes 23 well-known paths plus 7 source files, so a miss
 // costs ~30 filesystem probes. AssetAccess resolves on every project-favicon
@@ -163,7 +163,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
-  const projectFileLoader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+  const projectConfigLoader = yield* ProjectConfigLoader.ProjectConfigLoader;
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
     const clean = href.replace(/^\//, "");
@@ -300,14 +300,10 @@ export const make = Effect.gen(function* () {
       }
     }
 
-    // A t3.json iconPath takes precedence over the well-known locations.
-    const projectFile = yield* projectFileLoader.load(projectCwd);
-    if (Option.isSome(projectFile) && projectFile.value.iconPath !== undefined) {
-      const existing = yield* findExistingFile(
-        projectCwd,
-        [projectFile.value.iconPath],
-        "workspace",
-      );
+    // The project file's iconPath takes precedence over the well-known locations.
+    const { config } = yield* projectConfigLoader.load(projectCwd);
+    if (config?.iconPath !== undefined) {
+      const existing = yield* findExistingFile(projectCwd, [config.iconPath], "workspace");
       if (existing) {
         return existing;
       }

@@ -12,6 +12,7 @@ import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/process";
 
 import {
+  type ProjectConfigFileName,
   GitCommandError,
   VcsProcessExitError,
   type VcsSwitchRefInput,
@@ -143,7 +144,7 @@ export interface CreateWorktreeProgress {
   readonly onSubmodulesStarted?: () => Effect.Effect<void, never>;
   /** Fires when `.gitmodules` exists but the resolved submodule mode is `"none"`. */
   readonly onSubmodulesDisabled?: (input: {
-    source: "settings" | "t3.json";
+    source: "settings" | ProjectConfigFileName;
   }) => Effect.Effect<void, never>;
   readonly onSubmoduleLine?: (line: string) => Effect.Effect<void, never>;
   readonly onSubmodulesFinished?: (input: {

@@ -119,17 +119,35 @@ additional instructions, actions, checkouts and removal. Actions belong to a pro
 creates the project's own list on each selected environment, and reset returns to the
 environment's shared list. A project's `t3.json` actions can be reviewed and imported there.
 
-Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
-resolve in one order: a project override, then the environment setting, then `t3.json`, then the
-built-in default. Leave a setting on **Inherit** to let the next tier decide.
+Settings a repository can also declare in its project file, such as the workspace for new threads,
+resolve in one order: a project override, then the environment setting, then the project file, then
+the built-in default. Leave a setting on **Inherit** to let the next tier decide.
+
+The project file is `styal.json` at the repository root. A repository that still has only a
+`t3.json` from T3 Code keeps working: its settings and icon apply until it gains a `styal.json`,
+after which `t3.json` is ignored entirely, even if `styal.json` cannot be read.
+
+```json
+{
+  "$schema": "https://styal.build/schema/styal.json",
+  "iconPath": "assets/logo.svg",
+  "defaultThreadEnvMode": "worktree",
+  "worktreeSubmodules": "top-level"
+}
+```
+
+The `$schema` entry is optional, but enables validation and suggestions in editors that support
+JSON Schema. styal also accepts comments and trailing commas in this file. It keeps reading valid
+settings when another value fails validation, and **Settings** → **Projects** shows a warning when
+any part of the file is ignored.
 Browser access changes apply when an agent session next starts.
 
 New worktrees initialize git submodules recursively. If that step is slow because the repository
 declares many nested submodules, set **Submodules** in **Settings → General** (with the project
 selected to override it there) to **Top level only** to stop at the ones the repository declares
 itself, or **Skip** to leave them for a setup script. It resolves in the same order as the
-workspace default: a `"worktreeSubmodules"` value in the `t3.json` of the branch being checked out
-applies when the project and environment are both on **Inherit**.
+workspace default: a `"worktreeSubmodules"` value in the project file of the branch being checked
+out applies when the project and environment are both on **Inherit**.
 
 ## Worktree location
 

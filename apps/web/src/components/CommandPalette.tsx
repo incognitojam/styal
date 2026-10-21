@@ -2622,6 +2622,7 @@ function OpenCommandPaletteDialog(props: {
         "grouping",
         "checkout",
         "remove",
+        "styal.json",
         "t3.json",
       ],
       title: "Project settings",

@@ -3178,7 +3178,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect("resolves the submodule mode from the option, then t3.json", () =>
+    it.effect("resolves the submodule mode from the option, then the project file", () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const pathService = yield* Path.Path;
@@ -3220,13 +3220,14 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           fileMode: WorktreeSubmodules,
           branch: string,
           submodules: WorktreeSubmodules | null = null,
+          fileName: "t3.json" | "styal.json" = "t3.json",
         ) {
-          yield* writeTextFile(cwd, "t3.json", `{ "worktreeSubmodules": "${fileMode}" }`);
-          yield* git(cwd, ["add", "t3.json"]);
+          yield* writeTextFile(cwd, fileName, `{ "worktreeSubmodules": "${fileMode}" }`);
+          yield* git(cwd, ["add", fileName]);
           // Consecutive cases may reuse a file mode to test the option alone.
           yield* git(cwd, ["commit", "--allow-empty", "-m", `submodules: ${fileMode}`]);
           const worktreePath = pathService.join(worktreesDir, branch);
-          const disabled = yield* Ref.make<"settings" | "t3.json" | false>(false);
+          const disabled = yield* Ref.make<"settings" | "t3.json" | "styal.json" | false>(false);
           yield* driver.createWorktree(
             { cwd, path: worktreePath, refName: initialBranch, newRefName: branch },
             {
@@ -3266,6 +3267,14 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         });
         assert.deepEqual(yield* createWithMode("none", "none"), {
           disabled: "t3.json",
+          inner: false,
+          nested: false,
+        });
+        // styal.json outranks a t3.json still in the checkout.
+        yield* writeTextFile(cwd, "t3.json", `{ "worktreeSubmodules": "recursive" }`);
+        yield* git(cwd, ["add", "t3.json"]);
+        assert.deepEqual(yield* createWithMode("none", "styal-none", null, "styal.json"), {
+          disabled: "styal.json",
           inner: false,
           nested: false,
         });

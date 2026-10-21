@@ -111,11 +111,12 @@ vi.mock("~/hooks/useSettings", () => ({
   usePrimarySettings: () => DEFAULT_SERVER_SETTINGS,
   useEnvironmentSettings: () => DEFAULT_SERVER_SETTINGS,
 }));
-vi.mock("~/hooks/useT3ProjectFileScripts", () => ({
-  useT3ProjectFileState: () => ({
+vi.mock("~/hooks/useProjectConfig", () => ({
+  useProjectConfigState: () => ({
     status: "valid",
-    file: null,
-    scripts: [{ name: "Imported", command: "vp test" }],
+    source: "t3.json",
+    config: { source: "t3.json", actions: [] },
+    legacyScripts: [{ name: "Imported", command: "vp test" }],
   }),
 }));
 vi.mock("~/hooks/useCopyToClipboard", () => ({

@@ -3128,19 +3128,22 @@ features:
       - Unknown keys and invalid values produce a partial-file warning without discarding valid configuration.
       - Recovery and unknown-key detection derive from the project-file contract, so every declared top-level and action field, including ones added later, survives an invalid sibling and a fully valid file is reported as valid.
     implementation_paths:
-      - apps/server/src/project/T3ProjectFileLoader.ts
+      - apps/server/src/project/ProjectConfigLoader.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
-      - apps/web/src/hooks/useT3ProjectFileScripts.ts
+      - apps/web/src/hooks/useProjectConfig.ts
       - packages/contracts/src/t3ProjectFile.ts
+      - packages/shared/src/projectFile.ts
+      - packages/shared/src/projectFileRecovery.ts
       - packages/shared/src/t3ProjectFile.ts
     upstream_paths:
-      - apps/server/src/project/T3ProjectFileLoader.ts
+      - apps/server/src/project/ProjectConfigLoader.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
-      - apps/web/src/hooks/useT3ProjectFileScripts.ts
+      - apps/web/src/hooks/useProjectConfig.ts
       - packages/contracts/src/t3ProjectFile.ts
       - packages/shared/src/t3ProjectFile.ts
     tests:
-      - apps/server/src/project/T3ProjectFileLoader.test.ts
+      - apps/server/src/project/ProjectConfigLoader.test.ts
+      - packages/shared/src/projectFile.test.ts
       - packages/shared/src/t3ProjectFile.test.ts
     upstream:
       status: partial
@@ -4681,6 +4684,40 @@ features:
       status: unassessed
       tracking: []
       retire_when: Upstream coordinates startup and cached-draft navigation so late bootstrap resolution never moves users away from an editable composer.
+
+  - id: styal-project-file
+    title: Read project configuration from styal.json
+    status: maintained
+    prs: []
+    rationale: styal owns its checked-in project file so its schema can drop T3 Code fields the fork removed and add stable action ids, while repositories that only have a t3.json keep their settings.
+    invariants:
+      - styal.json at the project root is the project file; a t3.json is read only when there is no styal.json, including when styal.json is invalid.
+      - A t3.json contributes its settings and icon but never runs or lists its scripts; they are only offered for import or migration.
+      - File-backed settings resolve project override, environment setting, project file, then built-in, and report the file they came from.
+      - Every styal.json action has an id; missing ids derive from the name and a later duplicate of an explicit id is dropped.
+    implementation_paths:
+      - apps/marketing/src/pages/schema/styal.json.ts
+      - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/server/src/project/ProjectConfigLoader.ts
+      - apps/server/src/vcs/GitVcsDriverCore.ts
+      - apps/web/src/components/settings/SettingsScopeContext.tsx
+      - apps/web/src/hooks/useProjectConfig.ts
+      - apps/web/src/lib/projectConfigDefaults.ts
+      - packages/contracts/src/styalProjectFile.ts
+      - packages/shared/src/projectFile.ts
+      - packages/shared/src/projectSettings.ts
+    upstream_paths:
+      - packages/contracts/src/t3ProjectFile.ts
+      - packages/shared/src/t3ProjectFile.ts
+    tests:
+      - apps/server/src/project/ProjectConfigLoader.test.ts
+      - apps/server/src/vcs/GitVcsDriverCore.test.ts
+      - packages/shared/src/projectFile.test.ts
+      - packages/shared/src/projectSettings.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream reads a project file under a name and schema styal can share.
 
   - id: terminal-scroll-on-input
     title: Return the terminal to the live screen when the user types

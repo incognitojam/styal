@@ -5,7 +5,7 @@ import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
+import { useProjectConfigState } from "../../hooks/useProjectConfig";
 import { useEnvironments } from "../../state/environments";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
@@ -85,16 +85,16 @@ export function ProjectActionsSettings() {
     }),
   );
 
-  // A project's t3.json can declare actions to import. Read it from the
-  // representative checkout; the imported action still fans out.
+  // A legacy t3.json can declare actions to import; a styal.json hides it.
+  // Read it from the representative checkout; the imported action still fans out.
   const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
-  const t3File = useT3ProjectFileState(
+  const projectConfig = useProjectConfigState(
     representativeMember?.environmentId ?? EnvironmentId.make("none"),
     representativeMember?.workspaceRoot ?? null,
   );
   const importableScripts = useMemo(
     () =>
-      t3File.scripts.filter(
+      projectConfig.legacyScripts.filter(
         (fileScript) =>
           !scripts.some(
             (script) =>
@@ -102,7 +102,7 @@ export function ProjectActionsSettings() {
               script.name.toLowerCase() === fileScript.name.toLowerCase(),
           ),
       ),
-    [scripts, t3File.scripts],
+    [scripts, projectConfig.legacyScripts],
   );
   const importFileScript = useCallback((fileScript: T3ProjectFileScript) => {
     setRequest(editorRequestForFileScript(fileScript));
@@ -187,16 +187,16 @@ export function ProjectActionsSettings() {
           onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
         />
       )}
-      {t3File.status === "invalid" ? (
+      {projectConfig.status === "invalid" ? (
         <SettingsRow
-          title="t3.json is invalid"
-          description="A t3.json exists in this checkout but its JSON is malformed or its root is not an object, so the file cannot be read."
+          title={`${projectConfig.source} is invalid`}
+          description={`A ${projectConfig.source} exists in this checkout but its JSON is malformed or its root is not an object, so the file cannot be read.`}
           className="text-warning"
         />
       ) : null}
-      {t3File.status === "partial" ? (
+      {projectConfig.status === "partial" ? (
         <SettingsRow
-          title="Some t3.json values were ignored"
+          title={`Some ${projectConfig.source} values were ignored`}
           description="Invalid or unrecognized fields and actions were skipped. Valid project settings and actions remain available."
           className="text-warning"
         />

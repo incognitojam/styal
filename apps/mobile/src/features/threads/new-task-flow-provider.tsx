@@ -21,12 +21,13 @@ import {
   MessageId,
   repositoryGroupingKeyOf,
   resolveNewThreadRuntimeMode,
+  STYAL_PROJECT_FILE_NAME,
   T3_PROJECT_FILE_NAME,
   ThreadId,
 } from "@t3tools/contracts";
 import { sanitizeNewRefName } from "@t3tools/shared/git";
 import { resolveNewThreadEnvMode, resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
+import { resolveProjectConfig } from "@t3tools/shared/projectFile";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 
@@ -492,8 +493,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const attachments = selectedProjectDraft.attachments;
   // Default mode until the user picks one explicitly — same resolution web
   // uses for new draft threads: project override, environment setting,
-  // checked-in t3.json, then the built-in worktree default (which a new
-  // project with no threads yet replaces with its checkout).
+  // checked-in project file (styal.json, or a legacy t3.json), then the
+  // built-in worktree default (which a new project with no threads yet
+  // replaces with its checkout).
   const fileAccessSession = useEnvironmentQuery(
     selectedProject !== null && selectedProject.workspaceRoot !== ""
       ? environmentSession.sessionStateAtom(selectedProject.environmentId)
@@ -509,23 +511,41 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const { canReadFiles } = fileAccess;
   const fileAccessPending =
     selectedProject !== null && selectedProject.workspaceRoot !== "" && fileAccess.isPending;
+  const canReadProjectFiles =
+    canReadFiles && selectedProject !== null && selectedProject.workspaceRoot !== "";
+  const styalProjectFileQuery = useEnvironmentQuery(
+    canReadProjectFiles
+      ? projectEnvironment.readFile({
+          environmentId: selectedProject.environmentId,
+          input: { cwd: selectedProject.workspaceRoot, relativePath: STYAL_PROJECT_FILE_NAME },
+        })
+      : null,
+  );
   const t3ProjectFileQuery = useEnvironmentQuery(
-    canReadFiles && selectedProject !== null && selectedProject.workspaceRoot !== ""
+    canReadProjectFiles
       ? projectEnvironment.readFile({
           environmentId: selectedProject.environmentId,
           input: { cwd: selectedProject.workspaceRoot, relativePath: T3_PROJECT_FILE_NAME },
         })
       : null,
   );
+  const styalProjectFileData = styalProjectFileQuery.data as ProjectReadFileResult | null;
   const t3ProjectFileData = t3ProjectFileQuery.data as ProjectReadFileResult | null;
-  const t3ProjectFile = useMemo(
-    () =>
-      t3ProjectFileData === null || t3ProjectFileData.truncated
-        ? null
-        : parseT3ProjectFile(t3ProjectFileData.contents),
-    [t3ProjectFileData],
-  );
-  // Environment settings with the project's overrides and its t3.json
+  const projectConfig = useMemo(() => {
+    const contents = (data: ProjectReadFileResult | null) =>
+      data === null || data.truncated ? null : data.contents;
+    return resolveProjectConfig({
+      styal: contents(styalProjectFileData),
+      t3: contents(t3ProjectFileData),
+    }).config;
+  }, [styalProjectFileData, t3ProjectFileData]);
+  // Without styal.json contents, wait for its read to settle before falling
+  // back to t3.json, so a legacy file never decides ahead of its replacement.
+  const projectConfigPending =
+    styalProjectFileData === null &&
+    (styalProjectFileQuery.isPending ||
+      (t3ProjectFileData === null && t3ProjectFileQuery.isPending));
+  // Environment settings with the project's overrides and its project file
   // applied; the aggregate's own legacy fields still count until the server
   // folds them.
   const projectSettings = useMemo(
@@ -534,9 +554,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         selectedEnvironmentServerConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
         selectedProject?.id ?? null,
         selectedProject,
-        t3ProjectFile,
+        projectConfig,
       ),
-    [selectedEnvironmentServerConfig?.settings, selectedProject, t3ProjectFile],
+    [selectedEnvironmentServerConfig?.settings, selectedProject, projectConfig],
   );
   // A thread without a project runs in a plain folder, so worktree mode
   // would leave it unsendable: it is always local and offers no choice.
@@ -559,11 +579,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // While the file read is pending and nothing above it decided, the
   // resolved default is provisional. Nothing may write it into the draft
   // during that window (the auto-branch effect does), or the frozen interim
-  // value beats the t3.json default once it loads.
+  // value beats the project file default once it loads.
   const defaultWorkspaceModeSettled =
     selectedProjectDraft.workspaceSelection?.mode !== undefined ||
     projectSettings.sources.defaultThreadEnvMode !== "environment" ||
-    (!t3ProjectFileQuery.isPending && !fileAccessPending);
+    (!projectConfigPending && !fileAccessPending);
   const requestedWorkspaceMode = canChooseWorkspace
     ? (selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode)
     : "local";

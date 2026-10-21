@@ -4,6 +4,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ProjectConfig,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { createModelSelection } from "./model.ts";
@@ -17,6 +18,12 @@ import {
   withProjectSettingsOverrides,
 } from "./projectSettings.ts";
 import { applyServerSettingsPatch } from "./serverSettings.ts";
+
+const styalConfig = (fields: Omit<ProjectConfig, "source" | "actions">): ProjectConfig => ({
+  source: "styal.json",
+  actions: [],
+  ...fields,
+});
 
 const projectId = ProjectId.make("project-a");
 const otherProjectId = ProjectId.make("project-b");
@@ -189,21 +196,26 @@ describe("resolveProjectSettings", () => {
   });
 });
 
-describe("resolveProjectSettings with a t3.json", () => {
+describe("resolveProjectSettings with a project file", () => {
   it("uses worktree only as the last workspace default", () => {
     expect(
       resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, null).settings
         .defaultThreadEnvMode,
     ).toBe("worktree");
     expect(
-      resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, {
-        defaultThreadEnvMode: "local",
-      }).settings.defaultThreadEnvMode,
+      resolveProjectSettings(
+        DEFAULT_SERVER_SETTINGS,
+        projectId,
+        null,
+        styalConfig({
+          defaultThreadEnvMode: "local",
+        }),
+      ).settings.defaultThreadEnvMode,
     ).toBe("local");
   });
 
   it("walks project override, environment value, file, then built-in for file-backed keys", () => {
-    const file = { defaultThreadEnvMode: "worktree" as const };
+    const file = styalConfig({ defaultThreadEnvMode: "worktree" });
     const fromOverride = resolveProjectSettings(
       {
         ...DEFAULT_SERVER_SETTINGS,
@@ -227,7 +239,7 @@ describe("resolveProjectSettings with a t3.json", () => {
 
     const fromFile = resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, file);
     expect(fromFile.settings.defaultThreadEnvMode).toBe("worktree");
-    expect(fromFile.sources.defaultThreadEnvMode).toBe("t3.json");
+    expect(fromFile.sources.defaultThreadEnvMode).toBe("styal.json");
 
     const builtIn = resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, null);
     expect(builtIn.settings.defaultThreadEnvMode).toBe("worktree");
@@ -244,22 +256,38 @@ describe("resolveProjectSettings with a t3.json", () => {
       file,
     );
     expect(nullOverride.settings.defaultThreadEnvMode).toBe("worktree");
-    expect(nullOverride.sources.defaultThreadEnvMode).toBe("t3.json");
+    expect(nullOverride.sources.defaultThreadEnvMode).toBe("styal.json");
     // A file that does not mention the key leaves the source alone too.
     expect(
-      resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, {}).sources
+      resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, styalConfig({})).sources
         .defaultThreadEnvMode,
     ).toBe("environment");
   });
 
   it("resolves one key from the settings tier, then the file, then the built-in", () => {
     expect(
-      resolveProjectFileBackedSetting("worktreeSubmodules", "none", {
-        worktreeSubmodules: "top-level",
-      }),
+      resolveProjectFileBackedSetting(
+        "worktreeSubmodules",
+        "none",
+        styalConfig({
+          worktreeSubmodules: "top-level",
+        }),
+      ),
     ).toEqual({ value: "none", source: "environment" });
     expect(
+      resolveProjectFileBackedSetting(
+        "worktreeSubmodules",
+        null,
+        styalConfig({
+          worktreeSubmodules: "top-level",
+        }),
+      ),
+    ).toEqual({ value: "top-level", source: "styal.json" });
+    // A legacy t3.json names itself as the source.
+    expect(
       resolveProjectFileBackedSetting("worktreeSubmodules", null, {
+        source: "t3.json",
+        actions: [],
         worktreeSubmodules: "top-level",
       }),
     ).toEqual({ value: "top-level", source: "t3.json" });
@@ -326,9 +354,14 @@ describe("resolveNewThreadEnvMode", () => {
         null,
         null,
       ),
-      resolveProjectSettings(DEFAULT_SERVER_SETTINGS, projectId, null, {
-        defaultThreadEnvMode: "worktree",
-      }),
+      resolveProjectSettings(
+        DEFAULT_SERVER_SETTINGS,
+        projectId,
+        null,
+        styalConfig({
+          defaultThreadEnvMode: "worktree",
+        }),
+      ),
     ]) {
       expect(resolveNewThreadEnvMode({ ...newProject, projectSettings })).toBe("worktree");
     }
