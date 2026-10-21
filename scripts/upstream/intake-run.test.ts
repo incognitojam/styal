@@ -13,6 +13,8 @@ import {
   mergedModuleMoves,
   moveLedgerPaths,
   overrideSelector,
+  plannedTestRuns,
+  relatedTestFiles,
   rewriteServiceKeyText,
   summarizeSurvey,
   touchesNativeFingerprint,
@@ -193,6 +195,104 @@ describe("verificationEnvironment", () => {
         T3_OTHER: "kept",
       }),
       { PATH: "/usr/bin", T3_OTHER: "kept" },
+    );
+  });
+});
+
+describe("relatedTestFiles", () => {
+  const workspace = new Map([
+    [
+      "@t3tools/provider-core",
+      {
+        directory: "packages/provider-core",
+        exports: {
+          "./server/auth": { types: "./src/server/auth.ts", import: "./src/server/auth.ts" },
+        },
+      },
+    ],
+  ]);
+  const sources: Record<string, string> = {
+    "apps/server/src/a.test.ts": 'import { a } from "./a.ts";',
+    "apps/server/src/b.test.ts": 'import { b } from "./b";\nvi.mock("../c.js");',
+    "apps/server/src/auth.test.ts": 'import { auth } from "@t3tools/provider-core/server/auth";',
+    "apps/server/src/indirect.test.ts": 'import { server } from "./server.ts";',
+    "apps/web/src/view.test.tsx": 'import { View } from "~/components/View";',
+    "apps/server/src/changed.test.ts": "",
+  };
+  const select = (changed: ReadonlyArray<string>) =>
+    relatedTestFiles({
+      changed,
+      testFiles: Object.keys(sources),
+      packageOf: (path) => /^(?:apps|packages)\/[^/]+/u.exec(path)?.[0],
+      workspace,
+      readFile: (path) => sources[path] ?? "",
+    });
+
+  it("selects changed tests and tests that import a changed file directly", () => {
+    assert.deepStrictEqual(
+      select([
+        "apps/server/src/a.ts",
+        "apps/server/c.ts",
+        "apps/server/src/changed.test.ts",
+        "apps/web/src/components/View.tsx",
+      ]),
+      [
+        "apps/server/src/a.test.ts",
+        "apps/server/src/b.test.ts",
+        "apps/web/src/view.test.tsx",
+        "apps/server/src/changed.test.ts",
+      ],
+    );
+  });
+
+  it("follows workspace package exports into other packages", () => {
+    assert.deepStrictEqual(select(["packages/provider-core/src/server/auth.ts"]), [
+      "apps/server/src/auth.test.ts",
+    ]);
+  });
+
+  it("leaves tests that reach a changed file only through other modules to Fork CI", () => {
+    assert.deepStrictEqual(select(["apps/server/src/server-helpers.ts"]), []);
+  });
+});
+
+describe("plannedTestRuns", () => {
+  const testScripts = new Map([
+    ["apps/server", "vp test run"],
+    ["packages/shared", "vp test run --config ../../vite.config.ts --dir ."],
+    ["apps/marketing", "astro check && vitest"],
+  ]);
+
+  it("runs related tests through each package's own test configuration", () => {
+    assert.deepStrictEqual(
+      plannedTestRuns({
+        mode: "related",
+        touchedPackages: ["apps/server"],
+        testScripts,
+        relatedTests: [
+          "packages/shared/src/git.test.ts",
+          "apps/server/src/a.test.ts",
+          "apps/server/src/b.test.ts",
+          "apps/marketing/src/page.test.ts",
+        ],
+      }).map(({ name, command, args }) => [name, command, ...args].join(" ")),
+      [
+        "tests apps/marketing (1 related file) pnpm run test",
+        "tests apps/server (2 related files) vp test run src/a.test.ts src/b.test.ts",
+        "tests packages/shared (1 related file) vp test run --config ../../vite.config.ts --dir . src/git.test.ts",
+      ],
+    );
+  });
+
+  it("runs every touched package's whole suite with --all-tests", () => {
+    assert.deepStrictEqual(
+      plannedTestRuns({
+        mode: "all",
+        touchedPackages: ["apps/server", "packages/no-tests"],
+        testScripts,
+        relatedTests: [],
+      }).map(({ directory, command, args }) => [directory, command, ...args].join(" ")),
+      ["apps/server pnpm run test"],
     );
   });
 });

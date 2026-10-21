@@ -12,7 +12,7 @@
  *   intake-run.ts survey [--base HEAD] [--count 100 | --through <sha>] [--json]
  *   intake-run.ts fix-trailers [--base origin/main]
  *   intake-run.ts fix-references [--base origin/main]
- *   intake-run.ts verify [--base origin/main] [--changed-tests]
+ *   intake-run.ts verify [--base origin/main] [--all-tests]
  *   intake-run.ts replay <promoted-candidate-sha> [--base <fork-sha>] [--skip-lockfile] [--json] [--dump <dir>]
  *   intake-run.ts score <dump-dir> [--exclude <sha-prefixes>] [--verbose]
  */
@@ -1646,17 +1646,170 @@ export function verificationEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessE
   );
 }
 
+/** A workspace package as test selection sees it: where it lives and what its subpaths export. */
+export interface WorkspacePackage {
+  readonly directory: string;
+  readonly exports: Readonly<Record<string, unknown>>;
+}
+
+const IMPORT_SPECIFIER = /(?:\bfrom|\bimport|\bvi\.(?:doMock|mock))\s*\(?\s*["']([^"']+)["']/gu;
+
+/** Repository paths an import specifier in `testPath` may name; none for a third-party module. */
+function importedPathCandidates(
+  specifier: string,
+  testPath: string,
+  packageDirectory: string,
+  workspace: ReadonlyMap<string, WorkspacePackage>,
+): ReadonlyArray<string> {
+  let target: string;
+  if (specifier.startsWith(".")) {
+    target = NodePath.posix.join(NodePath.posix.dirname(testPath), specifier);
+  } else if (specifier.startsWith("~/")) {
+    target = NodePath.posix.join(packageDirectory, "src", specifier.slice(2));
+  } else {
+    const name = [...workspace.keys()].find(
+      (candidate) => specifier === candidate || specifier.startsWith(`${candidate}/`),
+    );
+    const owner = name === undefined ? undefined : workspace.get(name);
+    if (name === undefined || owner === undefined) return [];
+    const entry = owner.exports[`.${specifier.slice(name.length)}`];
+    const conditions: Record<string, unknown> =
+      typeof entry === "object" && entry !== null ? { ...entry } : {};
+    const file = [entry, conditions.import, conditions.default, conditions.types].find(
+      (value): value is string => typeof value === "string",
+    );
+    if (file === undefined) return [];
+    target = NodePath.posix.join(owner.directory, file);
+  }
+  const stem = target.replace(/\.(?:m?js|jsx)$/u, "");
+  return [target, `${stem}.ts`, `${stem}.tsx`, `${target}/index.ts`, `${target}/index.tsx`];
+}
+
+/**
+ * Test files the batch changes, plus test files that import a changed file directly: by relative
+ * path, the web `~/` alias, or a workspace package export. Imports through other modules are left
+ * to Fork CI's whole suites; following them selects most of a package's suite.
+ */
+export function relatedTestFiles(input: {
+  readonly changed: ReadonlyArray<string>;
+  readonly testFiles: ReadonlyArray<string>;
+  readonly packageOf: (path: string) => string | undefined;
+  readonly workspace: ReadonlyMap<string, WorkspacePackage>;
+  readonly readFile: (path: string) => string;
+}): ReadonlyArray<string> {
+  const changed = new Set(input.changed);
+  return input.testFiles.filter((testPath) => {
+    if (changed.has(testPath)) return true;
+    const packageDirectory = input.packageOf(testPath);
+    if (packageDirectory === undefined) return false;
+    return [...input.readFile(testPath).matchAll(IMPORT_SPECIFIER)].some(
+      ([, specifier]) =>
+        specifier !== undefined &&
+        importedPathCandidates(specifier, testPath, packageDirectory, input.workspace).some(
+          (path) => changed.has(path),
+        ),
+    );
+  });
+}
+
+export interface PlannedTestRun {
+  readonly name: string;
+  readonly directory: string;
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+}
+
+/**
+ * The test commands verify runs. `all` runs the `test` script of every package the batch touches,
+ * as Fork CI does. `related` runs only the given test files through the owning package's
+ * `vp test run` script, so its config and flags still apply; a package whose test script is
+ * anything else runs that script whole.
+ */
+export function plannedTestRuns(input: {
+  readonly mode: "related" | "all";
+  readonly touchedPackages: ReadonlyArray<string>;
+  readonly testScripts: ReadonlyMap<string, string>;
+  readonly relatedTests: ReadonlyArray<string>;
+}): ReadonlyArray<PlannedTestRun> {
+  if (input.mode === "all") {
+    return input.touchedPackages
+      .filter((directory) => input.testScripts.has(directory))
+      .map((directory) => ({
+        name: `tests ${directory}`,
+        directory,
+        command: "pnpm",
+        args: ["run", "test"],
+      }));
+  }
+  const byPackage = new Map<string, Array<string>>();
+  for (const path of input.relatedTests) {
+    const directory = [...input.testScripts.keys()]
+      .filter((candidate) => path.startsWith(`${candidate}/`))
+      .toSorted((left, right) => right.length - left.length)[0];
+    if (directory === undefined) continue;
+    byPackage.set(directory, [...(byPackage.get(directory) ?? []), path]);
+  }
+  return [...byPackage]
+    .toSorted(([left], [right]) => left.localeCompare(right))
+    .map(([directory, paths]) => {
+      const tests = paths.map((path) => path.slice(directory.length + 1));
+      const script = (input.testScripts.get(directory) ?? "").trim().split(/\s+/u);
+      const name = `tests ${directory} (${tests.length} related file${tests.length === 1 ? "" : "s"})`;
+      return script.slice(0, 3).join(" ") === "vp test run"
+        ? { name, directory, command: "vp", args: [...script.slice(1), ...tests] }
+        : { name, directory, command: "pnpm", args: ["run", "test"] };
+    });
+}
+
+/** The test commands for a batch's changed files, reading the workspace from `cwd`. */
+function verifyTestRuns(
+  cwd: string,
+  changed: ReadonlyArray<string>,
+  mode: "related" | "all",
+): ReadonlyArray<PlannedTestRun> {
+  const workspace = new Map<string, WorkspacePackage>();
+  const testScripts = new Map<string, string>();
+  for (const manifest of lines(git(cwd, ["ls-files", "--", "*/package.json"]))) {
+    if (manifest.startsWith(".repos/")) continue;
+    const directory = NodePath.posix.dirname(manifest);
+    const json = JSON.parse(readIfExists(NodePath.join(cwd, manifest)) || "{}") as {
+      readonly name?: unknown;
+      readonly exports?: unknown;
+      readonly scripts?: { readonly test?: unknown };
+    };
+    if (typeof json.name === "string") {
+      const exports: Record<string, unknown> =
+        typeof json.exports === "object" && json.exports !== null ? { ...json.exports } : {};
+      workspace.set(json.name, { directory, exports });
+    }
+    if (typeof json.scripts?.test === "string") testScripts.set(directory, json.scripts.test);
+  }
+  return plannedTestRuns({
+    mode,
+    touchedPackages: owningPackages(cwd, changed),
+    testScripts,
+    relatedTests:
+      mode === "all"
+        ? []
+        : relatedTestFiles({
+            changed,
+            testFiles: lines(git(cwd, ["ls-files", "--", "*.test.ts", "*.test.tsx"])).filter(
+              (path) => !path.startsWith(".repos/"),
+            ),
+            packageOf: (path) => owningPackages(cwd, [path])[0],
+            workspace,
+            readFile: (path) => readIfExists(NodePath.join(cwd, path)),
+          }),
+  });
+}
+
 /**
  * Installs once, then typechecks every package the batch touches, lints its changed files, runs
- * the test suite of every package the batch touches (only its changed tests with
- * `changedTestsOnly`), checks formatting, and checks the ledger. Prints one line per step and the
- * failures in full. Whole suites catch fork tests an upstream change breaks without touching them.
+ * the tests related to the batch (the whole suite of every touched package with `allTests`),
+ * checks formatting, and checks the ledger. Prints one line per step and the failures in full.
+ * Whole suites run in Fork CI, which every candidate must pass before promotion.
  */
-function verify(
-  cwd: string,
-  base: string,
-  options: { readonly changedTestsOnly?: boolean } = {},
-): boolean {
+function verify(cwd: string, base: string, options: { readonly allTests?: boolean } = {}): boolean {
   const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`])).filter(
     (path) => !path.startsWith(".repos/") && NodeFS.existsSync(NodePath.join(cwd, path)),
   );
@@ -1677,17 +1830,10 @@ function verify(
   const sources = changed.filter((path) => /\.(ts|tsx|mts|mjs|js)$/u.test(path));
   if (sources.length > 0)
     step("lint changed files", "vp", ["lint", "--report-unused-disable-directives", ...sources]);
-  for (const directory of owningPackages(cwd, changed)) {
-    if (!options.changedTestsOnly) {
-      if (/"test"\s*:/u.test(readIfExists(NodePath.join(cwd, directory, "package.json"))))
-        step(`tests ${directory}`, "vp", ["test", "run"], NodePath.join(cwd, directory));
-      continue;
-    }
-    const tests = changed
-      .filter((path) => path.startsWith(`${directory}/`) && /\.test\.tsx?$/u.test(path))
-      .map((path) => path.slice(directory.length + 1));
-    if (tests.length > 0)
-      step(`tests ${directory}`, "vp", ["test", "run", ...tests], NodePath.join(cwd, directory));
+  const testRuns = verifyTestRuns(cwd, changed, options.allTests ? "all" : "related");
+  if (testRuns.length === 0) process.stdout.write("--   no tests related to the batch\n");
+  for (const test of testRuns) {
+    step(test.name, test.command, test.args, NodePath.join(cwd, test.directory));
   }
   // Renames and moved imports can leave lines the formatter would wrap differently.
   step("formatting", "vp", ["fmt", "--check", "--no-error-on-unmatched-pattern", ...changed]);
@@ -2236,7 +2382,7 @@ function main() {
     }
     case "verify": {
       process.exitCode = verify(cwd, flag("--base") ?? "origin/main", {
-        changedTestsOnly: process.argv.includes("--changed-tests"),
+        allTests: process.argv.includes("--all-tests"),
       })
         ? 0
         : 1;
@@ -2283,7 +2429,7 @@ function main() {
     }
     default:
       process.stdout.write(
-        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | push | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--changed-tests] | fingerprint [--base <ref>] [--json] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
+        "Usage: intake-run.ts apply (--count <n> | --through <sha> | --commits <sha,...>) [--branch <name>] | continue [--note <text>] [--feature <ids>] | auto --branch <name> [--max <n>] [--push] [--no-rerere] | push | survey [--base <ref>] [--count <n> | --through <sha>] [--json] | fix-trailers [--base <ref>] | verify [--base <ref>] [--all-tests] | fingerprint [--base <ref>] [--json] | replay <candidate-sha> [--base <sha>] [--skip-lockfile] [--json] [--dump <dir>] | score <dump-dir> [--exclude <sha-prefixes>] [--verbose]\n",
       );
       process.exitCode = command === undefined ? 0 : 1;
   }
