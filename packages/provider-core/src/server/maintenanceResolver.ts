@@ -115,6 +115,13 @@ export interface PackageManagedProviderMaintenanceDefinition {
       /** Shown instead of `<executable> <args>`, for a command run through a shell script. */
       readonly command?: string;
     };
+    /**
+     * Whether the provider's own updater still owns the install `pinned`
+     * targets; null when that cannot be read. A cheap read-only file check.
+     */
+    readonly selfUpdaterActive?: (
+      context: ProviderMaintenanceResolutionContext,
+    ) => Effect.Effect<boolean | null, never, FileSystem.FileSystem | Path.Path>;
   } | null;
 }
 
@@ -421,8 +428,12 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     const pinned = nativeUpdate.pinned;
     if (!pinned || context.platform === "win32" || native.update === null) return native;
     const lockKey = native.update.lockKey;
+    const selfUpdaterActive = nativeUpdate.selfUpdaterActive
+      ? yield* nativeUpdate.selfUpdaterActive(context)
+      : undefined;
     return {
       ...native,
+      ...(selfUpdaterActive !== undefined ? { selfUpdaterActive } : {}),
       pinnedUpdate: (version) => {
         const action = pinned(version, context);
         return {

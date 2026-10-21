@@ -6,7 +6,14 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { CODEX_INSTALL_SCRIPT_URL, makeCodexPinnedInstall } from "./codexPinnedInstall.ts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Effect from "effect/Effect";
+
+import {
+  CODEX_INSTALL_SCRIPT_URL,
+  codexSelfUpdaterActive,
+  makeCodexPinnedInstall,
+} from "./codexPinnedInstall.ts";
 
 const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
@@ -92,4 +99,39 @@ describe("makeCodexPinnedInstall", () => {
       CODEX_NON_INTERACTIVE: "1",
     });
   });
+});
+
+describe("codexSelfUpdaterActive", () => {
+  it.skipIf(windowsHost)(
+    "is active only while the self-update marker names the selected release",
+    async () => {
+      const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "styal-codex-marker-"));
+      const check = () =>
+        codexSelfUpdaterActive(home).pipe(Effect.provide(NodeServices.layer), Effect.runPromise);
+      try {
+        const standalone = NodePath.join(home, "packages", "standalone");
+        const release = "0.162.1-aarch64-apple-darwin";
+        const marker = NodePath.join(standalone, "auto-update-version");
+        // No standalone tree, or one installed with `--release`: no marker.
+        expect(await check()).toBe(false);
+        NodeFS.mkdirSync(NodePath.join(standalone, "releases", release), { recursive: true });
+        NodeFS.symlinkSync(
+          NodePath.join(standalone, "releases", release),
+          NodePath.join(standalone, "current"),
+        );
+        expect(await check()).toBe(false);
+        // A latest-channel install writes the release name without a newline.
+        NodeFS.writeFileSync(marker, release);
+        expect(await check()).toBe(true);
+        // A marker left from another release does not keep the updater on.
+        NodeFS.writeFileSync(marker, "0.161.0-aarch64-apple-darwin");
+        expect(await check()).toBe(false);
+        // The selection cannot be read: unknown.
+        NodeFS.rmSync(NodePath.join(standalone, "current"));
+        expect(await check()).toBe(null);
+      } finally {
+        NodeFS.rmSync(home, { recursive: true, force: true });
+      }
+    },
+  );
 });

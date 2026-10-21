@@ -143,11 +143,13 @@ macOS and Linux also Claude Code, Codex, and OpenCode 2 installed with their own
 installers. Homebrew, other native installers, and native installs on Windows keep
 updating the way they always have.
 
-For native Claude Code and Codex installs, styal manages updates in place of the
-provider's own updater. To hand updates back to the provider, turn managed updates
-off, then select **Update** for it in **Settings → Providers** once. Native
-OpenCode keeps its own `autoupdate` setting, so turn that off if you only want
-tested versions.
+For native Codex installs, styal manages updates in place of Codex's own
+updater. If native Codex already has the tested version, styal reinstalls that
+same version in the background to take over its updates. To hand updates back to
+Codex, turn managed updates off, then select **Update** for it in
+**Settings → Providers** once. Native Claude Code keeps its own updater, so it
+can move to a newer release before styal has tested it. Native OpenCode keeps its
+own `autoupdate` setting, so turn that off if you only want tested versions.
 
 ## Mobile updates
 
