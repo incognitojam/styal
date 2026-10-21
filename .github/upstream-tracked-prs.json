@@ -135,6 +135,10 @@
         "base": "dd5c7bd09e83bbeb7c3f63aa787e6ffdd3cc6221",
         "head": "b57afe0fa54f4769fdcdf3d38e67bd8c08e74b3e"
       }
+    },
+    {
+      "pr": 20134,
+      "reason": "Claude's Auto classifier denies actions inside the SDK without asking styal, so the fork's Auto analytics cannot see them: approvalRequests stays 0 for Claude while autoReviewsDenied covers only Codex (fork #943). This PR reads result.permission_denials and filters out denials styal already handled. Do not import it early: its migration 065 collides with upstream's 065 to 067, which the fork does not have yet. When it lands through intake, count its filtered denials into autoReviewsDenied on Claude Auto turns, add Claude's denial rate to the PostHog Auto alert, and update the provider-auto-default ledger entry."
     }
   ]
 }
