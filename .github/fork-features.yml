@@ -4561,6 +4561,7 @@ features:
       - Lightweight host summaries, GitHub list and search results, and persisted thread snapshots carry optional merge intent without adding detail reads or interpreting unsupported fields as false; a new observation clears an older marker when intent is absent or disabled.
     rationale: Automatic merge intent helps users see which work has been handed to the host without changing thread lifecycle or treating an open pull request as merged.
     implementation_paths:
+      - apps/web/src/components/pullRequest/usePullRequestListView.ts
       - apps/web/src/components/pullRequest/PullRequestDetailActions.tsx
       - apps/mobile/src/features/pull-requests/PullRequestListRow.tsx
       - apps/mobile/src/features/pull-requests/PullRequestMergeIntentIcon.tsx
@@ -4734,8 +4735,8 @@ features:
       - A server listing every project it holds is still asked without a project filter, so a workspace with nothing archived sends the same requests as before.
     rationale: Archiving a project is meant to put it away everywhere; its open pull requests otherwise kept the page full of work the user had set aside.
     implementation_paths:
+      - apps/web/src/components/pullRequest/usePullRequestListView.ts
       - apps/web/src/components/pullRequest/pullRequestProjectAssignment.logic.ts
-      - apps/web/src/routes/_chat.pull-requests.tsx
     upstream_paths:
       - apps/web/src/components/pullRequest/pullRequestProjectAssignment.logic.ts
       - apps/web/src/routes/_chat.pull-requests.tsx
