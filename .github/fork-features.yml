@@ -1921,6 +1921,7 @@ features:
       - apps/web/src/components/onboarding/WelcomeWizard.tsx
       - apps/web/src/components/settings/BranchNamingSettings.tsx
       - apps/web/src/components/settings/MobileAppSettingsRow.tsx
+      - apps/web/src/components/settings/SavedEnvironmentRows.tsx
       - apps/web/src/components/settings/SettingsFontPreviews.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/settings/forkFeatures.ts
@@ -3411,8 +3412,8 @@ features:
       - apps/mobile/src/features/connection/ConnectionDiagnosisDetails.tsx
       - apps/mobile/src/features/settings/EnvironmentRoutesSection.tsx
       - apps/web/src/components/settings/ConnectionDiagnosisDetails.tsx
-      - apps/web/src/components/settings/ConnectionsSettings.tsx
       - apps/web/src/components/settings/EnvironmentRoutesList.tsx
+      - apps/web/src/components/settings/SavedEnvironmentRows.tsx
       - packages/client-runtime/src/connection/driver.ts
       - packages/client-runtime/src/connection/presentation.ts
       - packages/client-runtime/src/connection/supervisor.ts
