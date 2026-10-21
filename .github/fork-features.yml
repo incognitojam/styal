@@ -1918,6 +1918,7 @@ features:
       - apps/web/src/components/StyalToolIcon.tsx
       - apps/web/src/components/StyalWordmark.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineAssistantRows.tsx
       - apps/web/src/components/chat/TimelineToolActivityIcon.tsx
       - apps/web/src/components/chat/TimelineUserMessageRow.tsx
       - apps/web/src/components/chat/V2LifecycleRow.tsx
@@ -2771,6 +2772,7 @@ features:
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/MentionedTimeChip.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineAssistantRows.tsx
       - apps/web/src/forkClientUsage.ts
       - apps/web/src/markdown-mentioned-times.ts
       - apps/web/src/timestampFormat.ts
@@ -2781,6 +2783,7 @@ features:
       - apps/server/src/environment/ServerEnvironment.ts
       - apps/web/src/components/ChatMarkdown.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineAssistantRows.tsx
       - apps/web/src/timestampFormat.ts
       - packages/contracts/src/environment.ts
     tests:
@@ -4838,6 +4841,7 @@ features:
       - apps/server/src/orchestration-v2/WireProjection.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineAssistantRows.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/shared/src/reviewFindings.ts
@@ -4848,6 +4852,7 @@ features:
       - apps/server/src/orchestration-v2/WireProjection.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineAssistantRows.tsx
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
     tests:
@@ -4938,6 +4943,7 @@ features:
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/timelineRowContext.ts
       - apps/web/src/session-logic.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/contracts/src/orchestrationV2.ts
@@ -4950,6 +4956,7 @@ features:
       - apps/server/src/orchestration-v2/RestartContinuation.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/timelineRowContext.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/shared/src/orchestrationTiming.ts
@@ -6025,6 +6032,8 @@ features:
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/TimelineAssistantRows.tsx
+      - apps/web/src/components/chat/timelineRowContext.ts
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/index.css
