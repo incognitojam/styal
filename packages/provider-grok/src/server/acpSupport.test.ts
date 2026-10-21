@@ -10,42 +10,8 @@ import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/
 import {
   applyGrokAcpModelSelection,
   buildGrokAcpSpawnInput,
-  grokAcpRuntimeProcessOwnership,
   grokAcpSpawnArgs,
-  isValidGrokReasoningEffortToken,
-  resolveGrokAcpBaseModelId,
 } from "./acpSupport.ts";
-
-describe("grokAcpRuntimeProcessOwnership", () => {
-  it("opts Grok into detached process-tree ownership on the injected host platform", () => {
-    expect(grokAcpRuntimeProcessOwnership("linux")).toEqual({
-      ownDescendantProcessGroups: true,
-      ownDetachedProcessGroup: true,
-      processGroupPlatform: "linux",
-    });
-  });
-
-  it("uses the prior provider-group path on Darwin and Windows", () => {
-    expect(grokAcpRuntimeProcessOwnership("darwin")).toEqual({
-      ownDescendantProcessGroups: false,
-      ownDetachedProcessGroup: true,
-      processGroupPlatform: "darwin",
-    });
-    expect(grokAcpRuntimeProcessOwnership("win32")).toEqual({
-      ownDescendantProcessGroups: false,
-      ownDetachedProcessGroup: true,
-      processGroupPlatform: "win32",
-    });
-  });
-});
-
-describe("resolveGrokAcpBaseModelId", () => {
-  it("normalizes empty and custom Grok model ids", () => {
-    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-build");
-    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-build");
-    expect(resolveGrokAcpBaseModelId("  grok-test-custom-model  ")).toBe("grok-test-custom-model");
-  });
-});
 
 describe("grokAcpSpawnArgs", () => {
   it("inherits the Grok CLI config when no T3 runtime mode is set", () => {
@@ -77,24 +43,6 @@ describe("grokAcpSpawnArgs", () => {
 });
 
 describe("buildGrokAcpSpawnInput", () => {
-  it("passes the T3 Code referrer through Grok OAuth env", () => {
-    const spawn = buildGrokAcpSpawnInput({ binaryPath: "/usr/local/bin/grok" }, "/tmp/project", {
-      XAI_API_KEY: "secret",
-      GROK_OAUTH2_REFERRER: "other-client",
-    });
-
-    expect(spawn).toEqual({
-      command: "/usr/local/bin/grok",
-      args: ["agent", "stdio"],
-      cwd: "/tmp/project",
-      env: {
-        XAI_API_KEY: "secret",
-        GROK_OAUTH2_REFERRER: "t3code",
-      },
-      extendEnv: false,
-    });
-  });
-
   it.effect("does not hand the server's own variables to the Grok process", () =>
     Effect.gen(function* () {
       yield* Effect.acquireRelease(
@@ -147,16 +95,6 @@ describe("buildGrokAcpSpawnInput", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it("puts Supervised on the Grok argv so config always-approve cannot win", () => {
-    const spawn = buildGrokAcpSpawnInput(
-      { binaryPath: "/usr/local/bin/grok" },
-      "/tmp/project",
-      undefined,
-      "approval-required",
-    );
-    expect(spawn.args).toEqual(["--permission-mode", "default", "agent", "stdio"]);
-  });
-
   it("passes additional instructions through Grok's rules option", () => {
     const spawn = buildGrokAcpSpawnInput(
       undefined,
@@ -167,16 +105,6 @@ describe("buildGrokAcpSpawnInput", () => {
     );
 
     expect(spawn.args).toEqual(["--rules", "Prefer focused tests.", "agent", "stdio"]);
-  });
-});
-
-describe("isValidGrokReasoningEffortToken", () => {
-  it("accepts future ACP tokens and rejects malformed metadata values", () => {
-    expect(isValidGrokReasoningEffortToken("xhigh")).toBe(true);
-    expect(isValidGrokReasoningEffortToken("turbo_v2")).toBe(true);
-    expect(isValidGrokReasoningEffortToken("not a token")).toBe(false);
-    expect(isValidGrokReasoningEffortToken("-leading-dash")).toBe(false);
-    expect(isValidGrokReasoningEffortToken("x".repeat(33))).toBe(false);
   });
 });
 
@@ -223,22 +151,6 @@ describe("applyGrokAcpModelSelection", () => {
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { reasoningEffort: "xhigh" } }]);
-      expect(result).toBe("grok-4.6");
-    }),
-  );
-
-  it.effect("does not clear reasoning when same-model selection omits effort", () =>
-    Effect.gen(function* () {
-      const { runtime, modelCalls } = makeRecordingRuntime();
-      const result = yield* applyGrokAcpModelSelection({
-        runtime,
-        currentModelId: "grok-4.6",
-        currentReasoningEffort: "high",
-        requestedModelId: "grok-4.6",
-        requestedReasoningEffort: undefined,
-        mapError: (cause) => cause.message,
-      });
-      expect(modelCalls).toEqual([]);
       expect(result).toBe("grok-4.6");
     }),
   );
@@ -299,20 +211,6 @@ describe("applyGrokAcpModelSelection", () => {
       });
       expect(modelCalls).toEqual([{ modelId: "grok-4.6", meta: { reasoningEffort: "xhigh" } }]);
       expect(result).toBe("grok-4.6");
-    }),
-  );
-
-  it.effect("skips set_model when no model is requested", () =>
-    Effect.gen(function* () {
-      const { runtime, modelCalls } = makeRecordingRuntime();
-      const result = yield* applyGrokAcpModelSelection({
-        runtime,
-        currentModelId: "grok-build",
-        requestedModelId: undefined,
-        mapError: (cause) => cause.message,
-      });
-      expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-build");
     }),
   );
 

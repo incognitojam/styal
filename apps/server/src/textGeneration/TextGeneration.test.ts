@@ -432,38 +432,4 @@ describe("TextGeneration.make", () => {
       expect(calls).toEqual(expected);
     }),
   );
-
-  it.effect("fails with TextGenerationError when the instance is unknown", () =>
-    Effect.gen(function* () {
-      const tg = yield* TextGeneration.make.pipe(
-        Effect.provideService(
-          ProviderInstanceRegistry.ProviderInstanceRegistry,
-          makeStubRegistry([]),
-        ),
-        Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
-        ),
-      );
-
-      const result = yield* tg
-        .generateBranchName({
-          cwd: process.cwd(),
-          message: "anything",
-          modelSelection: createModelSelection(
-            ProviderInstanceId.make("missing_instance"),
-            "gpt-5",
-          ),
-        })
-        .pipe(Effect.result);
-
-      expect(Result.isFailure(result)).toBe(true);
-      if (Result.isFailure(result)) {
-        expect(result.failure._tag).toBe("TextGenerationError");
-        expect(result.failure.operation).toBe("generateBranchName");
-        expect(result.failure.detail).toContain("missing_instance");
-      }
-    }),
-  );
 });

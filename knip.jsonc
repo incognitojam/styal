@@ -20,12 +20,13 @@
       // Knip loads its preprocessor through a CLI option; native verification and
       // worktree setup (from t3.json) run directly. CI uses the reporter and CLI check.
       // release-desktop.yml bundles the Windows verify script with esbuild through a
-      // path knip does not trace.
+      // path knip does not trace, and electron-builder loads the macOS signer by path.
       "entry": [
         "knip-schemas.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
         "verify-cli-package.mjs",
+        "sign-macos.ts",
         "verify-windows-desktop-artifact.ts",
         "vitest-ci-exit-reporter.ts",
       ],

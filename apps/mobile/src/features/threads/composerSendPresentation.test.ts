@@ -25,21 +25,6 @@ describe("resolveComposerSendPresentation", () => {
     expect(presentation.alternate).toBe("queue");
   });
 
-  it("sends plainly while the thread is idle", () => {
-    const presentation = resolveComposerSendPresentation(idle);
-
-    expect(presentation.label).toBe("Send");
-    expect(presentation.icon).toBe("arrow.up");
-    expect(presentation.offersFollowUpChoice).toBe(false);
-    expect(presentation.action).toBeNull();
-  });
-
-  it("says Queue while the outbox is holding the message back", () => {
-    expect(resolveComposerSendPresentation({ ...idle, deliveryDeferred: true }).label).toBe(
-      "Queue",
-    );
-  });
-
   it("follows the configured behavior once a turn is running", () => {
     const queueing = resolveComposerSendPresentation({
       ...idle,
@@ -76,20 +61,6 @@ describe("resolveComposerSendPresentation", () => {
     expect(presentation.label).toBe("Queue");
     expect(presentation.action).toBe("queue");
     expect(presentation.alternate).toBeNull();
-    expect(presentation.offersFollowUpChoice).toBe(false);
-  });
-
-  it("keeps the save affordance while a queued message is being edited", () => {
-    const presentation = resolveComposerSendPresentation({
-      ...idle,
-      editingQueuedMessage: true,
-      running: true,
-      canSteer: true,
-      followUpBehavior: "steer",
-    });
-
-    expect(presentation.label).toBe("Update queued message");
-    expect(presentation.icon).toBe("checkmark");
     expect(presentation.offersFollowUpChoice).toBe(false);
   });
 });

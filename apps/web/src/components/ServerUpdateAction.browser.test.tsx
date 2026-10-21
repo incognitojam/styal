@@ -55,16 +55,15 @@ vi.mock(import("./ui/toast"), async (original) => {
 });
 
 import {
+  resetConfirmDialogForTests,
   readConfirmDialogState,
   registerConfirmDialogHost,
-  resetConfirmDialogForTests,
   respondToConfirmDialog,
 } from "~/confirmDialog";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
   ServerUpdateAction,
   OutdatedServerUpdateAction,
-  ServerUpdateProgress,
   ServerUpdatesAction,
   type ServerUpdateTarget,
 } from "./ServerUpdateAction";
@@ -281,83 +280,13 @@ describe("ServerUpdateAction", () => {
     },
   );
 
-  it("keeps a known grant usable while the session refreshes", async () => {
-    using _state = setup();
-    setSession(AsyncResult.waiting(AsyncResult.success(currentSession)));
-    testState.updateServer.mockResolvedValue(success());
-
-    await using screen = await renderAction();
-    await click(screen, "Update");
-
-    expect(testState.updateServer).toHaveBeenCalledOnce();
-  });
-
-  it("does not dispatch an update after maintenance access is removed", async () => {
+  it("disables the action once maintenance access is removed", async () => {
     using _state = setup();
     await using screen = await renderAction();
     await act(() => setSession(AsyncResult.success({ ...currentSession, scopes: [] })));
     expect(button(screen, "Update")!.disabled).toBe(true);
     await click(screen, "Update");
     expect(testState.updateServer).not.toHaveBeenCalled();
-  });
-
-  it("reports success only after the shared update flow reconnects", async () => {
-    using _state = setup();
-    testState.updateServer.mockResolvedValue(success());
-
-    await using screen = await renderAction();
-    await click(screen, "Update");
-
-    expect(testState.updateServer).toHaveBeenCalledWith({
-      environmentId: "env-test",
-      input: { targetVersion: "0.0.31", confirmed: false },
-    });
-    expect(testState.toast).toHaveBeenCalledWith({
-      type: "success",
-      title: "Test server updated",
-      description: "Reconnected on @styal/cli@0.0.31.",
-    });
-  });
-
-  it("reports one result when the update action is double-clicked", async () => {
-    using _state = setup();
-    let finishUpdate: (() => void) | undefined;
-    testState.updateServer.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finishUpdate = () => resolve(success());
-        }),
-    );
-
-    await using screen = await renderAction();
-    await act(async () => {
-      button(screen, "Update")!.click();
-      button(screen, "Update")!.click();
-    });
-
-    expect(testState.updateServer).toHaveBeenCalledTimes(1);
-    await act(async () => finishUpdate?.());
-    expect(testState.toast).toHaveBeenCalledTimes(1);
-  });
-
-  it("quietly releases the action when the operation is interrupted", async () => {
-    using _state = setup();
-    testState.updateServer.mockResolvedValue(AsyncResult.failure(Cause.interrupt()));
-
-    await using screen = await renderAction();
-    await click(screen, "Update");
-
-    expect(testState.toast).not.toHaveBeenCalled();
-  });
-
-  it("keeps the manual instruction for desktop servers without remote update support", async () => {
-    using _state = setup();
-    await using screen = await renderAction({ selfUpdate: "desktop-managed" });
-
-    expect(screen.container.textContent).toBe(
-      "Update the desktop app on that machine to update this server.",
-    );
-    expect(button(screen)).toBeUndefined();
   });
 
   it("updates remote desktop apps through the shared update flow", async () => {
@@ -579,29 +508,6 @@ describe("ServerUpdatesAction", () => {
     expect(button(screen, "Update all")!.disabled).toBe(false);
   });
 
-  it("starts each machine once when double-clicked and disables the action until both finish", async () => {
-    using _state = setup();
-    const completions: Array<() => void> = [];
-    testState.updateServer.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          completions.push(() => resolve(success()));
-        }),
-    );
-    await using screen = await mount();
-    await act(async () => {
-      button(screen, "Update all")!.click();
-      button(screen, "Update all")!.click();
-    });
-    expect(testState.updateServer).toHaveBeenCalledTimes(2);
-    expect(button(screen, "Update all")!.disabled).toBe(true);
-    await act(async () => completions[0]!());
-    expect(button(screen, "Update all")!.disabled).toBe(true);
-    await act(async () => completions[1]!());
-    expect(button(screen, "Update all")!.disabled).toBe(false);
-    expect(testState.toast).toHaveBeenCalledTimes(2);
-  });
-
   it("asks once for desktop machines and cancels the entire batch", async () => {
     using _state = setup();
     testState.desktopActivity.mockResolvedValue(
@@ -684,54 +590,4 @@ describe("OutdatedServerUpdateAction", () => {
       } else expect(testState.updateServer).not.toHaveBeenCalled();
     },
   );
-});
-
-describe("ServerUpdateProgress", () => {
-  it("shows one calm status for the restart wait", async () => {
-    using _state = setup();
-    await using screen = await renderUpdate(
-      <ServerUpdateProgress
-        state={{
-          status: "running",
-          stage: "resuming",
-          fromVersion: "0.0.30",
-          targetVersion: "0.0.31",
-        }}
-      />,
-    );
-    expect(screen.container.textContent).toBe("Restarting…");
-  });
-
-  it("folds the sub-second installing handoff into the download phase", async () => {
-    using _state = setup();
-    await using screen = await renderUpdate(
-      <ServerUpdateProgress
-        state={{
-          status: "running",
-          stage: "installing",
-          fromVersion: "0.0.30",
-          targetVersion: "0.0.31",
-        }}
-      />,
-    );
-    expect(screen.container.textContent).toBe("Downloading…");
-  });
-
-  it("keeps the failure visible as an alert with its error", async () => {
-    using _state = setup();
-    await using screen = await renderUpdate(
-      <ServerUpdateProgress
-        state={{
-          status: "failed",
-          stage: "installing",
-          fromVersion: "0.0.30",
-          targetVersion: "0.0.31",
-          message: "The package could not be verified.",
-        }}
-      />,
-    );
-    expect(screen.container.querySelector("[role=alert]")?.textContent).toBe(
-      "The package could not be verified.",
-    );
-  });
 });

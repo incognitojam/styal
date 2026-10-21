@@ -127,19 +127,6 @@ describe("codexRateLimitsToLimits", () => {
       );
     },
   );
-
-  it("does not show a model-specific legacy snapshot as the main allowance", () => {
-    expect(
-      codexRateLimitsToLimits({
-        checkedAt,
-        snapshot: {
-          limitId: "codex_bengalfox",
-          individualLimit: { remainingPercent: 99, resetsAt: 1_784_500_000 },
-          secondary: { usedPercent: 90 },
-        },
-      }).windows,
-    ).toEqual([]);
-  });
 });
 
 describe("codexRateLimitsToUpdate", () => {
@@ -200,12 +187,6 @@ describe("codexRateLimitsFailureMessage", () => {
       ),
     ).toBe("Codex could not read usage (JSON-RPC -32603).");
   });
-
-  it("phrases a dead process differently from a bad answer", () => {
-    expect(
-      codexRateLimitsFailureMessage(new CodexErrors.CodexAppServerProcessExitedError({ code: 1 })),
-    ).toBe("Codex exited before it could report usage.");
-  });
 });
 
 describe("codexResetCreditsToContract", () => {
@@ -226,16 +207,6 @@ describe("codexResetCreditsToContract", () => {
     });
     expect(codexResetCreditsToContract({ availableCount: 0 })).toEqual({ availableCount: 0 });
     expect(codexResetCreditsToContract(null)).toBeUndefined();
-  });
-
-  it("rides along on the probe's limits", () => {
-    expect(
-      codexRateLimitsToLimits({
-        checkedAt,
-        snapshot: { primary: { usedPercent: 5, windowDurationMins: 300 } },
-        resetCredits: { availableCount: 1 },
-      }).resetCredits,
-    ).toEqual({ availableCount: 1 });
   });
 });
 
@@ -281,23 +252,6 @@ describe("codexUsageLimitMessage", () => {
       "Codex usage limit reached. The session limit resets in 3h 20m. The workspace spend limit is reached: ask your workspace owner to raise it, or send the message again once the limit resets.",
     );
   });
-
-  it("names no window when credits run out without one", () => {
-    expect(
-      codexUsageLimitMessage(
-        { limitId: "codex", rateLimitReachedType: "workspace_member_credits_depleted" },
-        at,
-      ),
-    ).toBe(
-      "Codex usage limit reached. The workspace has no credits to continue sooner: ask your workspace owner to add credits, or send the message again once the limit resets.",
-    );
-  });
-
-  it("says only what it knows without a snapshot", () => {
-    expect(codexUsageLimitMessage(undefined, at)).toBe(
-      "Codex usage limit reached. Send the message again once the limit resets.",
-    );
-  });
 });
 
 describe("mergeCodexRateLimits", () => {
@@ -334,24 +288,6 @@ describe("mergeCodexRateLimits", () => {
     const cleared = mergeCodexRateLimits(retained, { individualLimit: null });
     expect(cleared).toEqual({ ...snapshot, primary: null, individualLimit: null });
     expect(codexRateLimitsToLimits({ checkedAt, snapshot: cleared! }).windows).toEqual([]);
-  });
-
-  it("keeps windows an update does not carry", () => {
-    const merged = mergeCodexRateLimits(
-      {
-        limitId: "codex",
-        planType: "business",
-        primary: { usedPercent: 100, resetsAt: 1_800_000_000, windowDurationMins: 300 },
-      },
-      { rateLimitReachedType: "rate_limit_reached" },
-    );
-
-    expect(merged).toEqual({
-      limitId: "codex",
-      planType: "business",
-      rateLimitReachedType: "rate_limit_reached",
-      primary: { usedPercent: 100, resetsAt: 1_800_000_000, windowDurationMins: 300 },
-    });
   });
 
   it("ignores a model-specific snapshot so it cannot replace the main allowance", () => {

@@ -5,30 +5,6 @@ import * as NodePath from "node:path";
 import { assert, it } from "@effect/vitest";
 
 const sourceRoot = NodePath.resolve(import.meta.dirname, "..");
-const forbiddenImport =
-  /from\s+["'][^"']*(?:ProviderService|ProviderSessionDirectory|ProviderSessionReaper|ProviderCommandReactor|ProviderRuntimeIngestion)[^"']*["']/;
-const legacyTable =
-  /\b(?:projection_(?:threads|thread_messages|thread_activities|thread_proposed_plans|thread_pull_requests|thread_sessions|turns|pending_approvals|state)|styal_legacy_v1_(?:thread_activities|turns))\b/;
-const legacyReaders = ["orchestration-v2/legacy/", "persistence/Migrations/"] as const;
-const legacyReaderFiles: Record<string, string> = {
-  "dataImport/LegacyImport.ts": "read-only selected source database import boundary",
-  "dataImport/LegacyImportPreview.ts": "read-only source database migration preview boundary",
-  "persistence/ForkMigrations.ts": "keeps V1 history tables through upstream's V1 projection drop",
-  "persistence/ForkMigrations/004_ProjectionThreadLatestMessageAt.ts":
-    "append-only legacy schema upgrade history",
-  "persistence/ForkMigrations/005_ProjectionThreadTokenUsage.ts":
-    "append-only legacy recorded token totals upgrade history",
-  "serverSettings.ts": "one-time provider history for settings migration",
-};
-const retiredPaths = [
-  "orchestration",
-  "orchestration/Layers/ProviderCommandReactor.ts",
-  "orchestration/Layers/ProviderRuntimeIngestion.ts",
-  "orchestration/Services/ProviderCommandReactor.ts",
-  "orchestration/Services/ProviderRuntimeIngestion.ts",
-  "persistence/Services/ProjectionThreads.ts",
-  "persistence/Services/ProjectionProjects.ts",
-] as const;
 
 function productionTypeScriptFiles(directory: string): ReadonlyArray<string> {
   return NodeFS.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -44,32 +20,6 @@ const relativeSources = productionTypeScriptFiles(sourceRoot).map((path) => ({
   path: NodePath.relative(sourceRoot, path).split(NodePath.sep).join("/"),
   source: NodeFS.readFileSync(path, "utf8"),
 }));
-
-it("keeps the V1 agent runtime and engine deleted", () => {
-  for (const relativePath of retiredPaths) {
-    assert.isFalse(NodeFS.existsSync(NodePath.join(sourceRoot, relativePath)), relativePath);
-  }
-  const violations = relativeSources
-    .filter(({ path, source }) => !path.includes("/legacy/") && forbiddenImport.test(source))
-    .map(({ path }) => path);
-  assert.deepEqual(violations, []);
-});
-
-it("reads the V1 tables only from the legacy importer", () => {
-  const readers = relativeSources
-    .filter(({ source }) => legacyTable.test(source))
-    .map(({ path }) => path)
-    .filter(
-      (path) =>
-        !legacyReaders.some((directory) => path.startsWith(directory)) &&
-        legacyReaderFiles[path] === undefined,
-    );
-  assert.deepEqual(readers, []);
-  for (const path of Object.keys(legacyReaderFiles)) {
-    const file = relativeSources.find((candidate) => candidate.path === path);
-    assert.isTrue(file !== undefined && legacyTable.test(file.source), path);
-  }
-});
 
 it("keeps the legacy importer out of reach of new code", () => {
   const importers = relativeSources

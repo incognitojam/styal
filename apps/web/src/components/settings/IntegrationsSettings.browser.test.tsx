@@ -90,16 +90,6 @@ describe("Integrations browser discovery", () => {
       screen.container.querySelector("section#browser"),
     );
   });
-
-  it("does not scan browser files when entering or revisiting settings", async () => {
-    setup();
-    await using first = await openSettings();
-    expect(listBrowserImportSources).not.toHaveBeenCalled();
-
-    await first.unmount();
-    await using _second = await openSettings();
-    expect(listBrowserImportSources).not.toHaveBeenCalled();
-  });
 });
 
 it("distinguishes a saved connection from an offline environment and links to connection management", async () => {

@@ -222,7 +222,6 @@ features:
       - packages/provider-core/src/server/attachmentPrompt.ts
     tests:
       - apps/mobile/src/features/sharing/incoming-share-inbox.test.ts
-      - apps/mobile/src/features/sharing/incoming-share-presentation.test.ts
       - apps/mobile/src/features/threads/pending-thread-feed.test.ts
       - apps/mobile/src/lib/attachmentUpload.test.ts
       - apps/mobile/src/lib/composerAttachmentUploadQueue.test.ts
@@ -992,7 +991,6 @@ features:
       - apps/web/src/components/ServerUpdateAction.browser.test.tsx
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/components/desktopUpdate.logic.test.ts
-      - apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.test.tsx
       - apps/web/src/confirmDialog.test.ts
       - apps/web/src/state/desktopUpdate.test.ts
       - packages/contracts/src/environmentHttp.test.ts
@@ -1497,7 +1495,6 @@ features:
       - apps/web/src/components/diffs/DiffCommentAnnotation.tsx
     tests:
       - apps/web/src/components/diffs/DiffCommentAnnotation.browser.test.tsx
-      - apps/web/src/components/diffs/commentSubmitShortcut.test.ts
     upstream:
       status: tracking
       tracking:
@@ -1643,7 +1640,6 @@ features:
       - packages/contracts/src/settings.ts
     tests:
       - apps/mobile/src/features/threads/composerSendPresentation.test.ts
-      - packages/client-runtime/src/state/composerDispatch.test.ts
       - packages/client-runtime/src/userMessage.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
@@ -1970,7 +1966,6 @@ features:
       - scripts/lib/brand-assets.ts
     tests:
       - apps/desktop/src/app/DesktopAppIdentity.test.ts
-      - apps/desktop/src/app/DesktopAssets.test.ts
       - apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts
       - apps/desktop/src/app/DesktopEnvironment.test.ts
       - apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
@@ -1980,7 +1975,6 @@ features:
       - apps/mobile/src/features/updates/native-app-update-download.test.ts
       - apps/mobile/src/features/updates/native-app-updates.test.ts
       - apps/mobile/src/lib/appLinking.test.ts
-      - apps/mobile/src/widgets/SubscriptionUsage.android.test.ts
       - apps/server/src/cli/app.test.ts
       - apps/server/src/cli/invocation.test.ts
       - apps/server/src/cli/update.test.ts
@@ -2155,10 +2149,7 @@ features:
       - apps/server/src/cloud/publicConfig.test.ts
       - apps/web/src/cloud/linkEnvironment.test.ts
       - infra/relay/src/Config.test.ts
-      - infra/relay/src/agentActivity/AgentActivityRows.test.ts
       - infra/relay/src/apexRedirect.test.ts
-      - infra/relay/src/auth/DpopProofs.test.ts
-      - infra/relay/src/observability.test.ts
       - packages/client-runtime/src/relay/managedRelayState.test.ts
       - packages/shared/src/connectAuth.test.ts
     upstream:
@@ -2217,7 +2208,6 @@ features:
       - apps/server/src/cli/theme.test.ts
       - apps/server/src/serviceLauncher.test.ts
       - apps/web/src/clientPersistenceStorage.test.ts
-      - apps/web/src/hooks/useEnvironmentThemeSync.test.ts
       - apps/web/src/hostedStorageCleanup.test.ts
     upstream:
       status: unassessed
@@ -2874,6 +2864,7 @@ features:
       - apps/server/src/relay/AgentAwarenessRelay.test.ts
       - apps/web/src/lib/backgroundActivityReporter.test.ts
       - infra/relay/src/agentActivity/AgentActivityPublisher.test.ts
+      - infra/relay/src/agentActivity/AgentActivityRows.test.ts
       - infra/relay/src/agentActivity/ApnsDeliveries.test.ts
       - infra/relay/src/agentActivity/FcmDeliveries.test.ts
       - infra/relay/src/agentActivity/agentActivityPolicy.test.ts
@@ -3626,7 +3617,6 @@ features:
       - apps/web/src/components/settings/ProjectActionsSettings.tsx
     tests:
       - apps/web/src/projectScripts.test.ts
-      - packages/contracts/src/t3ProjectFile.test.ts
     upstream:
       status: tracking
       tracking:
@@ -3958,7 +3948,6 @@ features:
       - packages/contracts/src/server.ts
     tests:
       - apps/server/src/provider/Drivers/ClaudeHistoryRetention.test.ts
-      - apps/web/src/components/usage/UsagePage.browser.test.tsx
     upstream:
       status: tracking
       tracking:
@@ -4475,7 +4464,6 @@ features:
     tests:
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/web/src/components/pullRequest/pullRequestDiff.logic.test.ts
-      - apps/web/src/hooks/useLiveRefresh.test.ts
       - packages/contracts/src/pullRequest.test.ts
     upstream:
       status: partial
@@ -5087,7 +5075,6 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/settings/DeviceToolUpdate.browser.test.tsx
       - apps/web/src/components/settings/IntegrationsSettings.browser.test.tsx
-      - apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx
       - apps/web/src/components/settings/scopedSettings.test.ts
       - apps/web/src/components/settings/settingsScopeNavigation.test.ts
       - apps/web/src/components/settings/settingsSearch.test.ts
@@ -5117,7 +5104,6 @@ features:
       - apps/web/src/routes/settings.tsx
     tests:
       - apps/web/src/components/settings/SettingsScopeDock.browser.test.tsx
-      - apps/web/src/components/settings/settingsLayout.browser.test.tsx
       - apps/web/src/components/settings/settingsScopeAxis.test.ts
     upstream:
       status: tracking
@@ -6313,7 +6299,6 @@ features:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/web/src/components/ChatMarkdown.browser.test.tsx
       - apps/web/src/components/ChatMarkdown.file-preview.browser.test.tsx
-      - apps/web/src/components/chat/ChatHeader.test.ts
       - apps/web/src/components/chat/MessagesTimeline.browser.test.tsx
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - apps/web/src/filePathDisplay.test.ts

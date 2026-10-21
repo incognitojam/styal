@@ -1,16 +1,11 @@
 export {
   appendBrowsePathSegment,
-  canNavigateUp,
   findProjectByPath,
   getBrowseDirectoryPath,
-  getBrowseLeafPathSegment,
-  getBrowseParentPath,
   hasTrailingPathSeparator,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
-  isFilesystemBrowseQuery,
   isUnsupportedWindowsProjectPath,
   normalizeProjectPathForComparison,
-  normalizeProjectPathForDispatch,
   resolveProjectPathForDispatch,
 } from "@t3tools/client-runtime/state/projects";

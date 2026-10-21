@@ -17,7 +17,7 @@ export interface HostedBrowserWebviewWrapperStyle {
   readonly visibility?: "hidden" | "visible";
 }
 
-export const HIDDEN_BROWSER_WEBVIEW_OFFSET = -100_000;
+const HIDDEN_BROWSER_WEBVIEW_OFFSET = -100_000;
 
 export function resolveHostedBrowserContentStyle(input: {
   readonly left: number;

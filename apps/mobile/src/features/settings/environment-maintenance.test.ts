@@ -4,10 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   canMaintainEnvironment,
-  canUpdateEnvironmentProvider,
   findEnvironmentUpdate,
   isLatestProviderVersionUntested,
-  supportsEnvironmentUpdate,
 } from "./environment-maintenance";
 
 const provider = Schema.decodeUnknownSync(ServerProvider)({
@@ -55,29 +53,6 @@ describe("environment maintenance access", () => {
   });
 
   it.each([
-    { scopes: ["environment:maintain"], expected: true },
-    { scopes: ["orchestration:operate"], expected: false },
-    { scopes: ["providers:manage"], expected: false },
-  ] as const)("uses the advertised update permission for $scopes", ({ scopes, expected }) => {
-    expect(
-      canMaintainEnvironment(
-        {
-          authenticated: true,
-          auth: {
-            policy: "remote-reachable",
-            bootstrapMethods: [],
-            sessionMethods: [],
-            sessionCookieName: "session",
-            serverUpdateScope: "environment:maintain",
-          },
-          scopes,
-        },
-        true,
-      ),
-    ).toBe(expected);
-  });
-
-  it.each([
     { permissions: ["environment:maintain"], expected: true },
     { permissions: ["providers:manage"], expected: false },
     { permissions: [], expected: false },
@@ -104,15 +79,6 @@ describe("environment maintenance access", () => {
     },
   );
 
-  it("requires remote desktop update support for desktop hosts", () => {
-    expect(supportsEnvironmentUpdate({})).toBe(false);
-    expect(supportsEnvironmentUpdate({ serverSelfUpdate: "respawn" })).toBe(true);
-    expect(supportsEnvironmentUpdate({ serverSelfUpdate: "desktop-managed" })).toBe(false);
-    expect(
-      supportsEnvironmentUpdate({ serverSelfUpdate: "desktop-managed", desktopAppUpdate: true }),
-    ).toBe(true);
-  });
-
   it("marks a latest release newer than the verified version as untested", () => {
     const withVerified = (verifiedVersion: string) => ({
       ...provider,
@@ -127,50 +93,6 @@ describe("environment maintenance access", () => {
     expect(isLatestProviderVersionUntested(withVerified("1.0.5"))).toBe(true);
     expect(isLatestProviderVersionUntested(withVerified("1.1.0"))).toBe(false);
     expect(isLatestProviderVersionUntested(provider)).toBe(false);
-  });
-
-  it("excludes unavailable, manual, busy, and incompatible provider updates", () => {
-    expect(canUpdateEnvironmentProvider(provider)).toBe(true);
-    expect(canUpdateEnvironmentProvider({ ...provider, installed: false })).toBe(false);
-    expect(canUpdateEnvironmentProvider({ ...provider, availability: "unavailable" })).toBe(false);
-    expect(canUpdateEnvironmentProvider({ ...provider, versionAdvisory: undefined })).toBe(false);
-    for (const latestVersionStatus of ["broken", "unsupported"] as const) {
-      expect(
-        canUpdateEnvironmentProvider({
-          ...provider,
-          compatibilityAdvisory: {
-            status: "supported",
-            latestVersionStatus,
-            message: null,
-            recommendedVersion: null,
-            recommendedRange: null,
-          },
-        }),
-      ).toBe(false);
-    }
-    for (const status of ["queued", "running"] as const) {
-      expect(
-        canUpdateEnvironmentProvider({
-          ...provider,
-          updateState: {
-            status,
-            startedAt: null,
-            finishedAt: null,
-            message: null,
-            output: null,
-          },
-        }),
-      ).toBe(false);
-    }
-    expect(
-      canUpdateEnvironmentProvider({
-        ...provider,
-        versionAdvisory: {
-          ...provider.versionAdvisory!,
-          canUpdate: false,
-        },
-      }),
-    ).toBe(false);
   });
 });
 

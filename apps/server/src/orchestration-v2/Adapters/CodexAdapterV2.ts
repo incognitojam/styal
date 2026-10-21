@@ -160,7 +160,7 @@ type CodexFileChangeKinds = Readonly<
   Record<string, CodexSchema.V2ItemStartedNotification__PatchChangeKind>
 >;
 
-export function codexFileChangeApprovalPrompt(input: {
+function codexFileChangeApprovalPrompt(input: {
   readonly reason?: string | null;
   readonly grantRoot?: string | null;
   readonly fileChanges?: CodexFileChangeKinds;
@@ -422,14 +422,14 @@ function codexItemStatus(status: "inProgress" | "completed" | "failed" | "declin
  * The composers let a skill be typed with any currency sigil (`€review`), but
  * Codex only parses `$name` as a skill mention.
  */
-export function codexSkillMentionText(text: string): string {
+function codexSkillMentionText(text: string): string {
   return text.replace(SKILL_MENTION_PATTERN, "$1$$$2");
 }
 
 const BACKGROUND_COMMAND_DETAIL_COMMAND_MAX_LENGTH = 200;
 const BACKGROUND_COMMAND_DETAIL_OUTPUT_TAIL_MAX_LENGTH = 1_000;
 
-export function codexBackgroundCommandDetail(item: {
+function codexBackgroundCommandDetail(item: {
   readonly command: string;
   readonly exitCode?: number | null | undefined;
   readonly aggregatedOutput?: string | null | undefined;
@@ -910,7 +910,7 @@ export type CodexGoalCommand =
   | { readonly type: "resume" }
   | { readonly type: "set"; readonly objective: string };
 
-export function parseCodexGoalCommand(text: string): CodexGoalCommand | null {
+function parseCodexGoalCommand(text: string): CodexGoalCommand | null {
   const match = /^\/goal(?:\s+([\s\S]*))?$/u.exec(text.trim());
   if (match === null) return null;
   const argument = (match[1] ?? "").trim();
@@ -1425,47 +1425,6 @@ export const makeCodexAppServerSpawnCommand = Effect.fn(
   });
 });
 
-const layerCodexAppServerClientFactoryCommand = (
-  options: CodexClient.CodexAppServerClientOptions & {
-    readonly command: string;
-    readonly args?: ReadonlyArray<string>;
-    readonly cwd?: string;
-    readonly env?: NodeJS.ProcessEnv;
-  },
-): Layer.Layer<CodexAppServerClientFactory, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  Layer.effect(
-    CodexAppServerClientFactory,
-    Effect.gen(function* () {
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      return CodexAppServerClientFactory.of({
-        open: Effect.fn("CodexAdapterV2.open")(function* (input) {
-          const scope = yield* Scope.Scope;
-          const command = yield* makeCodexAppServerSpawnCommand({
-            command: options.command,
-            args: [...(options.args ?? [])],
-            ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-            ...(options.env === undefined ? {} : { env: options.env, extendEnv: true }),
-          });
-          const handle = yield* spawner.spawn(command).pipe(
-            Effect.provideService(Scope.Scope, scope),
-            Effect.mapError(
-              (cause) =>
-                new ProviderAdapter.ProviderAdapterOpenSessionError({
-                  driver: CODEX_PROVIDER,
-                  providerSessionId: input.providerSessionId,
-                  cause,
-                }),
-            ),
-          );
-          const context = yield* Layer.build(CodexClient.layerChildProcess(handle, options));
-          return yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
-            Effect.provide(context),
-          );
-        }),
-      });
-    }),
-  );
-
 export function makeCodexAppServerProtocolLogger(input: {
   readonly nativeEventLogger: ProviderEventLoggers.EventNdjsonLogger | undefined;
   readonly threadId: ThreadId;
@@ -1662,40 +1621,6 @@ export const CodexAdapterV2Driver: ProviderAdapterDriver<CodexSettings, CodexAda
   defaultConfig: (): CodexSettings => DEFAULT_CODEX_SETTINGS,
   create: createCodexAdapterV2,
 };
-
-const layer: Layer.Layer<
-  ProviderAdapter.ProviderAdapterV2,
-  never,
-  | CodexAppServerClientFactory
-  | Crypto.Crypto
-  | FileSystem.FileSystem
-  | IdAllocator.IdAllocatorV2
-  | McpProviderSessions.McpProviderSessions
-  | ServerConfig
-> = Layer.effect(
-  ProviderAdapter.ProviderAdapterV2,
-  Effect.gen(function* () {
-    const clientFactory = yield* CodexAppServerClientFactory;
-    const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
-    const crypto = yield* Crypto.Crypto;
-    const fileSystem = yield* FileSystem.FileSystem;
-    const hostEnvironment = yield* HostProcess.Environment;
-    const idAllocator = yield* IdAllocator.IdAllocatorV2;
-    const serverConfig = yield* ServerConfig;
-
-    return yield* makeCodexAdapterV2({
-      instanceId: CODEX_DEFAULT_INSTANCE_ID,
-      settings: DEFAULT_CODEX_SETTINGS,
-      environment: hostEnvironment,
-      clientFactory,
-      crypto,
-      fileSystem,
-      idAllocator,
-      serverConfig,
-      continuationRequests,
-    });
-  }),
-);
 
 export interface CodexAdapterV2Options {
   readonly instanceId: ProviderInstanceId;

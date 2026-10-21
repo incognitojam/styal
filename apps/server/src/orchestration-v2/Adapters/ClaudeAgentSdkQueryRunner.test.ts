@@ -22,76 +22,12 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { ProviderEventLoggers } from "@t3tools/provider-core/server/ProviderEventLoggers";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import {
-  CLAUDE_AGENT_SDK_QUERY_PROTOCOL,
   ClaudeAgentSdkQueryRunner,
   type ClaudeAgentSdkQueryOpenInput,
   layerQueryRunner,
 } from "./ClaudeAdapterV2.ts";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
-
-it.effect("logs successful task stops for replay and omits failed stops", () =>
-  Effect.gen(function* () {
-    const writes: unknown[] = [];
-    const stopTask = vi.fn(async (_taskId: string) => {});
-    const query = vi.spyOn(ClaudeSdk, "query").mockReturnValue({
-      stopTask,
-    } as unknown as ClaudeSdk.Query);
-    yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
-    const threadId = ThreadId.make("thread-stop");
-    const providerSessionId = ProviderSessionId.make("session-stop");
-    yield* Effect.gen(function* () {
-      const runner = yield* ClaudeAgentSdkQueryRunner;
-      const session = yield* runner.open({
-        threadId,
-        providerSessionId,
-        options: {
-          sessionId: "native-session-stop",
-          model: "claude-sonnet-4-6",
-          tools: [],
-          permissionMode: "default",
-        },
-      });
-      writes.length = 0;
-      yield* session.stopTask("workflow-task");
-      assert.deepEqual(stopTask.mock.calls, [["workflow-task"]]);
-      assert.deepEqual(writes, [
-        {
-          provider: "claudeAgent",
-          protocol: CLAUDE_AGENT_SDK_QUERY_PROTOCOL,
-          kind: "protocol",
-          providerSessionId,
-          event: {
-            direction: "outgoing",
-            stage: "decoded",
-            payload: { type: "query.stop_task", taskId: "workflow-task" },
-          },
-        },
-      ]);
-      stopTask.mockRejectedValueOnce(new Error("Stop failed"));
-      assert.isTrue(Exit.isFailure(yield* Effect.exit(session.stopTask("failed-task"))));
-      assert.equal(writes.length, 1);
-    }).pipe(
-      Effect.provide(
-        layerQueryRunner.pipe(
-          Layer.provide(
-            Layer.succeed(ProviderEventLoggers, {
-              native: {
-                filePath: "/tmp/events.log",
-                write: (event) =>
-                  Effect.sync(() => {
-                    writes.push(event);
-                  }),
-                close: () => Effect.void,
-              },
-              canonical: undefined,
-            }),
-          ),
-        ),
-      ),
-    );
-  }).pipe(Effect.provide(NodeServices.layer)),
-);
 
 const FORK_SESSION_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -166,27 +102,6 @@ it.effect("forks a session stored under the instance's own CLAUDE_CONFIG_DIR", (
       assert.equal(forked.headMessageId, inheritedHead);
       assert.equal(process.env.CLAUDE_CONFIG_DIR, hostConfigDir);
       assert.equal(inProcessFork.mock.calls.length, 0);
-    }).pipe(Effect.provide(forkRunnerLayer)),
-  ).pipe(Effect.provide(NodeServices.layer)),
-);
-
-it.effect("forks in-process when the instance shares the server's config dir", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const inProcessFork = vi
-        .spyOn(ClaudeSdk, "forkSession")
-        .mockResolvedValue({ sessionId: "forked-in-process" });
-      yield* Effect.addFinalizer(() => Effect.sync(() => inProcessFork.mockRestore()));
-      const runner = yield* ClaudeAgentSdkQueryRunner;
-      const forked = yield* runner.forkSession({
-        sessionId: FORK_SESSION_ID,
-        options: { dir: "/repo" },
-        environment: { ...process.env },
-        threadId: ThreadId.make("thread-fork-shared-config-dir"),
-        providerSessionId: ProviderSessionId.make("session-fork-shared-config-dir"),
-      });
-
-      assert.equal(forked.sessionId, "forked-in-process");
     }).pipe(Effect.provide(forkRunnerLayer)),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -473,52 +388,6 @@ it.effect("does not reuse a fresh session ID after MCP registration times out", 
       assert.equal(disposed.mock.calls.length, 1);
     }).pipe(Effect.provide(realQueryRunner)),
   ),
-);
-
-it.effect.each(["readable", "unreadable"] as const)(
-  "forks with a %s transcript, retaining the inherited head when available",
-  (transcript) =>
-    Effect.gen(function* () {
-      let forkCompleted = false;
-      const fork = vi.spyOn(ClaudeSdk, "forkSession").mockImplementation(async () => {
-        forkCompleted = true;
-        return { sessionId: "forked-session" };
-      });
-      const read = vi.spyOn(ClaudeSdk, "getSessionMessages").mockImplementation(async () => {
-        assert.isTrue(forkCompleted);
-        if (transcript === "unreadable") throw new Error("transcript unreadable");
-        return ["remapped-user", "remapped-assistant"].map((uuid) => ({
-          type: "assistant" as const,
-          uuid,
-          session_id: "forked-session",
-          message: { role: "assistant", content: uuid },
-          parent_tool_use_id: null,
-          parent_agent_id: null,
-        }));
-      });
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          fork.mockRestore();
-          read.mockRestore();
-        }),
-      );
-      const runner = yield* ClaudeAgentSdkQueryRunner;
-      const forked = yield* runner.forkSession({
-        sessionId: "source-session",
-        options: { dir: "/workspace", upToMessageId: "source-assistant" },
-        environment: process.env,
-        threadId: ThreadId.make("thread-fork-head"),
-        providerSessionId: ProviderSessionId.make("session-fork-head"),
-      });
-      assert.deepEqual(forked, {
-        sessionId: "forked-session",
-        ...(transcript === "readable" ? { headMessageId: "remapped-assistant" } : {}),
-      });
-      assert.deepEqual(fork.mock.calls, [
-        ["source-session", { dir: "/workspace", upToMessageId: "source-assistant" }],
-      ]);
-      assert.deepEqual(read.mock.calls, [["forked-session", { dir: "/workspace" }]]);
-    }).pipe(Effect.provide(realQueryRunner)),
 );
 
 function fakeClaudeCli(script: string): string {

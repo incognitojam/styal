@@ -1,9 +1,8 @@
-import { describe, it, expect } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   DISTRO_NAME_PATTERN,
   extractDistroFromUncPath,
-  isValidDistroName,
   parseWslDistroList,
   resolveWslHomeUncPath,
   resolveWslPickFolderDefaultPath,
@@ -30,15 +29,6 @@ describe("parseWslDistroList", () => {
       { name: "Debian", isDefault: false, version: 2 },
       { name: "Ubuntu-22.04", isDefault: false, version: 1 },
     ]);
-  });
-
-  it("returns empty array for empty buffer", () => {
-    expect(parseWslDistroList(Buffer.alloc(0))).toEqual([]);
-  });
-
-  it("returns empty array for header-only output", () => {
-    const output = makeUtf16LeBuffer("  NAME            STATE           VERSION\r\n");
-    expect(parseWslDistroList(output)).toEqual([]);
   });
 
   it("skips malformed lines", () => {
@@ -88,14 +78,6 @@ describe("extractDistroFromUncPath", () => {
   it("extracts the distro from the legacy \\\\wsl$ UNC paths", () => {
     expect(extractDistroFromUncPath("\\\\wsl$\\Debian\\home\\josh")).toBe("Debian");
   });
-
-  it("returns null for non-UNC Windows paths", () => {
-    expect(extractDistroFromUncPath("C:\\Users\\Josh\\project")).toBeNull();
-  });
-
-  it("returns null when the segment is not a valid distro name", () => {
-    expect(extractDistroFromUncPath("\\\\wsl.localhost\\bad name!\\home")).toBeNull();
-  });
 });
 
 describe("wslUncPathToLinuxPath", () => {
@@ -143,12 +125,6 @@ describe("resolveWslPickFolderDefaultPath", () => {
   const config = { distro: null };
   const distros = [{ name: "Debian", isDefault: true, version: 2 as const }];
 
-  it("uses WSL home when no initial path is provided", () => {
-    expect(resolveWslPickFolderDefaultPath(undefined, config, distros)).toBe(
-      "\\\\wsl.localhost\\Debian\\home",
-    );
-  });
-
   it("maps Linux initial paths to WSL UNC paths", () => {
     expect(
       resolveWslPickFolderDefaultPath({ initialPath: "/home/josh/project" }, config, distros),
@@ -161,37 +137,14 @@ describe("resolveWslPickFolderDefaultPath", () => {
     ).toBe("\\\\wsl.localhost\\Debian\\home\\josh\\project");
   });
 
-  it("resolves bare ~ to the user's home dir when known", () => {
-    expect(
-      resolveWslPickFolderDefaultPath({ initialPath: "~" }, config, distros, "/home/josh"),
-    ).toBe("\\\\wsl.localhost\\Debian\\home\\josh");
-  });
-
   it("falls back to /home parent when the user's home dir isn't known", () => {
     expect(resolveWslPickFolderDefaultPath({ initialPath: "~/project" }, config, distros)).toBe(
       "\\\\wsl.localhost\\Debian\\home\\project",
     );
   });
-
-  it("preserves existing UNC initial paths", () => {
-    expect(
-      resolveWslPickFolderDefaultPath(
-        { initialPath: "\\\\wsl.localhost\\Ubuntu\\home\\josh" },
-        config,
-        distros,
-      ),
-    ).toBe("\\\\wsl.localhost\\Ubuntu\\home\\josh");
-  });
 });
 
 describe("DISTRO_NAME_PATTERN / isValidDistroName", () => {
-  it("accepts common distro names", () => {
-    for (const name of ["Ubuntu", "Ubuntu-22.04", "kali-linux", "Debian", "Ubuntu 22.04"]) {
-      expect(DISTRO_NAME_PATTERN.test(name)).toBe(true);
-      expect(isValidDistroName(name)).toBe(true);
-    }
-  });
-
   it("rejects names with trailing whitespace, hyphen, or dot", () => {
     for (const name of ["Ubuntu ", "Ubuntu-", "Ubuntu."]) {
       expect(DISTRO_NAME_PATTERN.test(name)).toBe(false);

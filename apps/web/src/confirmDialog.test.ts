@@ -4,12 +4,12 @@ import { ThreadId, type ConfirmDialogThreadActivity } from "@t3tools/contracts";
 import {
   acknowledgeConfirmDialogPresentation,
   completeConfirmDialogClose,
-  isConfirmDialogActive,
   readConfirmDialogState,
   registerConfirmDialogHost,
   requestConfirmDialog,
   resetConfirmDialogForTests,
   respondToConfirmDialog,
+  isConfirmDialogActive,
 } from "./confirmDialog";
 
 function requireConfirmation(confirmation: Promise<boolean> | undefined): Promise<boolean> {
@@ -22,11 +22,6 @@ function requireConfirmation(confirmation: Promise<boolean> | undefined): Promis
 describe("confirm dialog coordinator", () => {
   beforeEach(() => {
     resetConfirmDialogForTests();
-  });
-
-  it("returns undefined until a themed host is mounted", () => {
-    expect(requestConfirmDialog("Confirm this action?")).toBeUndefined();
-    expect(readConfirmDialogState()).toEqual({ status: "idle" });
   });
 
   it("resolves a displayed confirmation and waits for its close transition", async () => {

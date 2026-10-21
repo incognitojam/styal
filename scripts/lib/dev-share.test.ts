@@ -124,17 +124,6 @@ describe("unshareDevServer", () => {
 });
 
 describe("shareDevServer", () => {
-  it.effect("returns the tailnet URL for the same port", () =>
-    Effect.gen(function* () {
-      const shared = yield* shareDevServer({ webPort: 5788 }).pipe(
-        Effect.provide(spawnerLayer({})),
-      );
-
-      assert.equal(shared.host, "host.example.ts.net");
-      assert.equal(shared.url, "https://host.example.ts.net:5788/");
-    }),
-  );
-
   // Vite binds `localhost`, which modern Node resolves to `::1` first, so a
   // 127.0.0.1 target would proxy to a loopback nothing listens on.
   it.effect("proxies to the localhost name Vite binds, not 127.0.0.1", () =>

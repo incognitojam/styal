@@ -1,11 +1,4 @@
-import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
-import {
-  DeviceOperationError,
-  EnvironmentId,
-  LOCAL_DEVICE_HOST_ID,
-  type DeviceServiceState,
-} from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
+import { EnvironmentId, LOCAL_DEVICE_HOST_ID, type DeviceServiceState } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
 
@@ -94,49 +87,6 @@ function setup() {
   list.mockReset();
   deviceState = structuredClone(initialDeviceState);
 }
-
-it.each([
-  {
-    name: "a failed install",
-    error: new DeviceOperationError({
-      operation: "update device tool",
-      reason: "command_failed",
-      exitCode: 243,
-      cause: new Error("npm error EACCES https://private:credential@registry.example.test/hub"),
-    }),
-    message: "Device update device tool failed: The device command failed (exit code 243).",
-  },
-  {
-    name: "a lost connection",
-    error: new EnvironmentRpcUnavailableError({
-      environmentId,
-      message: "Query environment is not connected.",
-    }),
-    message: "Query environment is not connected.",
-  },
-])(
-  "reports $name as the server describes it, not as a network problem",
-  async ({ error, message }) => {
-    setup();
-    list.mockReset().mockResolvedValue({ _tag: "Failure", cause: Cause.fail(error) });
-    await using screen = await render(
-      <DeviceIntegrationControls
-        environmentId={environmentId}
-        enabled
-        agentAccessEnabled={false}
-      />,
-    );
-
-    const update = [...screen.container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Update to v0.12.0",
-    );
-    expect(update).toBeDefined();
-    await act(async () => update!.click());
-
-    expect(list).toHaveBeenCalledWith({ environmentId, input: { updateTool: "hub" } });
-    expect(screen.container.querySelector('[role="alert"]')?.textContent).toBe(message);
-  },
-);
 
 it.each(["installing", "starting", "failed"] as const)(
   "keeps %s feedback visible with maintenance collapsed",

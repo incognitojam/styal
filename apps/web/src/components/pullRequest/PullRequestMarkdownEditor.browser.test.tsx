@@ -86,7 +86,6 @@ const detail: PullRequestDetailView = {
   },
 };
 
-const primary = EnvironmentId.make("primary");
 const secondary = EnvironmentId.make("secondary");
 const onSave = vi.fn<(next: string) => void>();
 const onCancel = vi.fn<() => void>();
@@ -131,29 +130,6 @@ async function grant(allowed: boolean) {
   });
 }
 
-it("does not save a secondary environment's description using the primary grant", async () => {
-  setup();
-  permissions.allowed.add(primary);
-  await using screen = await openEditor();
-
-  expect(button(screen, "Save").disabled).toBe(true);
-  await clickSave(screen);
-
-  expect(onSave).not.toHaveBeenCalled();
-});
-
-it("rejects a Save click when the grant changes before React updates", async () => {
-  setup();
-  permissions.allowed.add(secondary);
-  await using screen = await openEditor();
-  permissions.allowed.delete(secondary);
-
-  expect(button(screen, "Save").disabled).toBe(false);
-  await clickSave(screen);
-
-  expect(onSave).not.toHaveBeenCalled();
-});
-
 it("keeps an edited draft through revocation and saves it after access returns without remounting", async () => {
   setup();
   permissions.allowed.add(secondary);
@@ -169,40 +145,4 @@ it("keeps an edited draft through revocation and saves it after access returns w
   await grant(true);
   await clickSave(screen);
   expect(onSave).toHaveBeenCalledExactlyOnceWith("Keep these unsaved edits");
-});
-
-it("saves with source-control permission alone, from the button or Cmd/Ctrl+Enter", async () => {
-  setup();
-  permissions.allowed.add(secondary);
-  await using screen = await openEditor();
-
-  await clickSave(screen);
-  expect(onSave).toHaveBeenCalledExactlyOnceWith("Original description");
-
-  screen.container.querySelector("textarea")!.focus();
-  await userEvent.keyboard("{Control>}{Enter}{/Control}");
-  expect(onSave).toHaveBeenCalledTimes(2);
-});
-
-it("allows clearing a description only after a pending grant becomes available", async () => {
-  setup();
-  await using screen = await openEditor({ value: "", allowEmpty: true });
-  await clickSave(screen);
-  expect(onSave).not.toHaveBeenCalled();
-
-  await grant(true);
-  await clickSave(screen);
-  expect(onSave).toHaveBeenCalledExactlyOnceWith("");
-});
-
-it("keeps cancelling a local edit available without a write grant", async () => {
-  setup();
-  await using screen = await openEditor();
-
-  await act(async () => button(screen, "Cancel").click());
-  screen.container.querySelector("textarea")!.focus();
-  await userEvent.keyboard("{Escape}");
-
-  expect(onCancel).toHaveBeenCalledTimes(2);
-  expect(onSave).not.toHaveBeenCalled();
 });

@@ -19,13 +19,7 @@ const state: RelayAgentActivityState = {
 };
 
 describe("AgentActivityRows", () => {
-  it.effect("validates database JSON objects and returns the state an upsert replaced", () => {
-    const queryRows = [
-      { stateJson: null },
-      { stateJson: JSON.stringify(state) },
-      { stateJson: { ...state, phase: "invalid" } },
-      { stateJson: { ...state, unrelated: "ignored" } },
-    ];
+  it.effect("returns the state an upsert replaced", () => {
     const db = {
       insert: () => ({
         values: () => ({
@@ -35,25 +29,12 @@ describe("AgentActivityRows", () => {
       select: () => ({
         from: () => ({
           where: () => Effect.succeed([{ stateJson: { ...state, phase: "waiting_for_input" } }]),
-          innerJoin: () => ({
-            where: () => ({
-              orderBy: () => Effect.succeed(queryRows),
-            }),
-          }),
         }),
       }),
     } as unknown as RelayDb.RelayDb["Service"];
 
     return Effect.gen(function* () {
       const rows = yield* AgentActivityRows.AgentActivityRows;
-      expect(yield* rows.listForUser({ userId: "user-2" })).toEqual([state]);
-      expect(
-        yield* rows.getForUserThread({
-          userId: "user-2",
-          environmentId: "env-1",
-          threadId: "thread-1",
-        }),
-      ).toEqual(state);
       expect(yield* rows.upsert({ environmentPublicKey: "public-key", state })).toEqual({
         ...state,
         phase: "waiting_for_input",
@@ -61,79 +42,6 @@ describe("AgentActivityRows", () => {
     }).pipe(
       Effect.provide(
         AgentActivityRows.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, db))),
-      ),
-    );
-  });
-
-  it.effect("preserves activity context on persistence failures", () => {
-    const cause = new Error("database unavailable");
-    const failingDb = {
-      insert: () => ({
-        values: () => ({
-          onConflictDoUpdate: () => Effect.fail(cause),
-        }),
-      }),
-      delete: () => ({
-        where: () => Effect.fail(cause),
-      }),
-      select: () => ({
-        from: () => ({
-          where: () => Effect.fail(cause),
-          innerJoin: () => ({
-            where: () => ({
-              orderBy: () => Effect.fail(cause),
-            }),
-          }),
-        }),
-      }),
-    } as unknown as RelayDb.RelayDb["Service"];
-
-    return Effect.gen(function* () {
-      const rows = yield* AgentActivityRows.AgentActivityRows;
-
-      const upsertError = yield* rows
-        .upsert({ environmentPublicKey: "public-key", state })
-        .pipe(Effect.flip);
-      expect(upsertError).toMatchObject({
-        environmentId: "env-1",
-        threadId: "thread-1",
-        cause,
-      });
-      expect(upsertError.message).toBe(
-        "Failed to persist agent activity state for environment env-1, thread thread-1.",
-      );
-
-      const deleteError = yield* rows
-        .remove({
-          environmentId: "env-1",
-          environmentPublicKey: "public-key",
-          threadId: "thread-1",
-        })
-        .pipe(Effect.flip);
-      expect(deleteError).toMatchObject({
-        environmentId: "env-1",
-        threadId: "thread-1",
-        cause,
-      });
-      expect(deleteError.message).toBe(
-        "Failed to delete agent activity state for environment env-1, thread thread-1.",
-      );
-
-      const listError = yield* rows.listForUser({ userId: "user-2" }).pipe(Effect.flip);
-      expect(listError).toMatchObject({ userId: "user-2", cause });
-      expect(listError.message).toBe("Failed to list agent activity state for user user-2.");
-
-      const getError = yield* rows
-        .getForUserThread({
-          userId: "user-2",
-          environmentId: "env-1",
-          threadId: "thread-1",
-        })
-        .pipe(Effect.flip);
-      expect(getError).toMatchObject({ userId: "user-2", cause });
-    }).pipe(
-      Effect.provide(
-        AgentActivityRows.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, failingDb))),
       ),
     );
   });

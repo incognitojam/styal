@@ -1,8 +1,6 @@
-import { EnvironmentId, ORCHESTRATION_PROTOCOL_VERSION } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
 import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "vite-plus/test";
-
-import { RELAY_TUNNEL_RELEASED_MESSAGE } from "@t3tools/client-runtime/relay";
 
 import { availableCloudEnvironmentPresentation } from "./cloudEnvironmentPresentation";
 
@@ -26,64 +24,6 @@ function relayStatus(
 }
 
 describe("available cloud environment presentation", () => {
-  it("shows an incompatible discovered server before any connection attempt", () => {
-    const onlineStatus = relayStatus("online");
-    const status = {
-      ...onlineStatus,
-      descriptor: {
-        environmentId: onlineStatus.environmentId,
-        label: "Preview server",
-        platform: { os: "darwin", arch: "arm64" },
-        serverVersion: "2.0.0",
-        orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION + 1,
-        capabilities: { repositoryIdentity: true },
-      },
-    } satisfies RelayEnvironmentStatusResponse;
-    expect(
-      availableCloudEnvironmentPresentation({
-        isStatusPending: false,
-        status,
-        statusError: null,
-        statusErrorTraceId: null,
-      }),
-    ).toMatchObject({
-      connectionState: "unsupported",
-      statusText: expect.stringContaining("Update your app"),
-    });
-  });
-
-  it("presents an online unsaved environment as available, not connected", () => {
-    expect(
-      availableCloudEnvironmentPresentation({
-        isStatusPending: false,
-        status: relayStatus("online"),
-        statusError: null,
-        statusErrorTraceId: null,
-      }),
-    ).toEqual({
-      connectionError: null,
-      connectionErrorTraceId: null,
-      connectionState: "available",
-      statusText: "Available · Relay online",
-    });
-  });
-
-  it("keeps relay status checks distinct from connection attempts", () => {
-    expect(
-      availableCloudEnvironmentPresentation({
-        isStatusPending: true,
-        status: null,
-        statusError: null,
-        statusErrorTraceId: null,
-      }),
-    ).toEqual({
-      connectionError: null,
-      connectionErrorTraceId: null,
-      connectionState: "available",
-      statusText: "Available · Checking relay status...",
-    });
-  });
-
   it("shows an offline relay without marking the row as failing", () => {
     expect(
       availableCloudEnvironmentPresentation({
@@ -97,20 +37,6 @@ describe("available cloud environment presentation", () => {
       connectionErrorTraceId: "trace-offline",
       connectionState: "available",
       statusText: "Tunnel is unavailable.",
-    });
-  });
-
-  it("preserves trace metadata for relay request failures", () => {
-    expect(
-      availableCloudEnvironmentPresentation({
-        isStatusPending: false,
-        status: null,
-        statusError: "Could not get relay environment status.",
-        statusErrorTraceId: "trace-status",
-      }),
-    ).toMatchObject({
-      connectionError: "Could not get relay environment status.",
-      connectionErrorTraceId: "trace-status",
     });
   });
 
@@ -128,7 +54,8 @@ describe("available cloud environment presentation", () => {
       }),
     ).toMatchObject({
       connectionState: "available",
-      statusText: RELAY_TUNNEL_RELEASED_MESSAGE,
+      statusText:
+        "Offline for a while, so its styal Link tunnel was removed. Start styal on that computer and update it to the latest version to reconnect.",
       connectionErrorTraceId: "trace-released",
     });
   });

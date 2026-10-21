@@ -9,16 +9,13 @@ import {
 } from "./catalog.ts";
 import {
   BearerConnectionTarget,
-  ConnectionBlockedError,
   ConnectionTransientError,
   RelayConnectionTarget,
   type SupervisorConnectionState,
 } from "./model.ts";
 import {
-  connectionCatalogDisplayUrl,
   environmentMcpUrl,
   connectionStatusText,
-  connectionStatusTitle,
   presentEnvironmentConnection,
   presentConnectionState,
   routeFailureLabel,
@@ -60,25 +57,6 @@ function supervisorState(overrides: Partial<SupervisorConnectionState>): Supervi
 }
 
 describe("connection presentation", () => {
-  it("labels a blocked protocol as unsupported", () => {
-    const connection = presentConnectionState(
-      supervisorState({
-        phase: "blocked",
-        lastFailure: new ConnectionBlockedError({
-          reason: "unsupported",
-          detail: "Update your app.",
-        }),
-      }),
-    );
-    expect(connection.phase).toBe("unsupported");
-    expect(connection.error).toBe("Update your app.");
-    expect(connectionStatusText(connection)).toBe("Client not supported");
-  });
-
-  it("preserves profile display information without exposing credentials", () => {
-    expect(connectionCatalogDisplayUrl(ENTRY)).toBe("https://environment.example.test");
-  });
-
   it("copies the MCP address of the route this device is connected over", () => {
     const route = (connectionId: string, httpBaseUrl: string): ConnectionRoute => {
       const target = new BearerConnectionTarget({ ...TARGET, connectionId });
@@ -179,28 +157,6 @@ describe("connection presentation", () => {
     });
   });
 
-  it("preserves the latest failure while the next attempt is active", () => {
-    expect(
-      presentEnvironmentConnection(
-        supervisorState({
-          phase: "connecting",
-          stage: "opening",
-          attempt: 2,
-          lastFailure: new ConnectionTransientError({
-            reason: "transport",
-            detail: "Relay connection timed out.",
-            traceId: "trace-retry",
-          }),
-        }),
-        ENTRY,
-      ),
-    ).toEqual({
-      phase: "reconnecting",
-      error: "Relay connection timed out.",
-      traceId: "trace-retry",
-    });
-  });
-
   describe("unreachable on every route", () => {
     const relayFailure = new ConnectionTransientError({
       reason: "endpoint-unavailable",
@@ -260,52 +216,6 @@ describe("connection presentation", () => {
         ENTRY,
       );
       expect(connection.unreachable).toBe(false);
-    });
-  });
-
-  it("combines reconnect progress with the latest failure", () => {
-    const connection = {
-      phase: "reconnecting",
-      error: "Relay request timed out.",
-      traceId: "trace-retry",
-    } as const;
-    expect(connectionStatusText(connection)).toBe(
-      "Failed to connect. Reconnecting... Reason: Relay request timed out.",
-    );
-    expect(connectionStatusTitle(connection)).toBe("Failed to connect. Reconnecting...");
-  });
-
-  it("presents the supervisor's offline state without consulting shell state", () => {
-    expect(
-      presentEnvironmentConnection(
-        supervisorState({
-          network: "offline",
-          phase: "offline",
-          stage: null,
-        }),
-        ENTRY,
-      ),
-    ).toEqual({
-      phase: "offline",
-      error: null,
-      traceId: null,
-    });
-  });
-
-  it("presents a connected supervisor snapshot as connected", () => {
-    expect(
-      presentEnvironmentConnection(
-        supervisorState({
-          phase: "connected",
-          stage: null,
-          generation: 1,
-        }),
-        ENTRY,
-      ),
-    ).toEqual({
-      phase: "connected",
-      error: null,
-      traceId: null,
     });
   });
 

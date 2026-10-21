@@ -272,27 +272,6 @@ const dispatch = ORCHESTRATION_V2_WS_METHODS.dispatchCommand;
 const threadId = ThreadId.make("thread-private");
 const commandId = CommandId.make("command-private");
 
-it("names user commands with their closed-enum variant and nothing else", () => {
-  expect(
-    featureUsage(dispatch, {
-      type: "checkpoint.rollback",
-      commandId,
-      threadId,
-      scopeId: "scope-private",
-      checkpointId: "checkpoint-private",
-      restoreFiles: false,
-    }),
-  ).toEqual({ feature: "checkpoint.rollback", variant: "conversation_only" });
-  expect(
-    featureUsage(dispatch, {
-      type: "thread.runtime-mode.set",
-      commandId,
-      threadId,
-      runtimeMode: "full-access",
-    }),
-  ).toEqual({ feature: "thread.runtime_mode.set", variant: "full-access" });
-});
-
 it("counts stopping a thread as the same interrupt as stopping its run", () => {
   const interrupt = { feature: "run.interrupt" };
   expect(

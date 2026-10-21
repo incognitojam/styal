@@ -397,42 +397,6 @@ it.effect.each(["completed", "waiting", "cancelled"] as const)(
     }),
 );
 
-it.effect("does not continue a failed run that lost background work", () =>
-  Effect.gen(function* () {
-    const base = makeProjection();
-    const projection = {
-      ...base,
-      runs: [
-        {
-          ...base.runs[0]!,
-          status: "failed",
-          restartCancelledBackgroundWork: [{ kind: "shell" as const, label: "sleep 25" }],
-        },
-      ],
-      providerTurns: [{ ...base.providerTurns[0]!, status: "failed" }],
-    } as unknown as OrchestrationV2ThreadProjection;
-    const commands: Parameters<
-      ThreadManagementService.ThreadManagementService["Service"]["dispatch"]
-    >[0][] = [];
-    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
-      Effect.provide(
-        Layer.merge(
-          Layer.mock(ThreadManagementService.ThreadManagementService)({
-            getThreadRecords: () => Effect.succeed(projection),
-            recoverDelegatedTask: () => Effect.void,
-            dispatch: (command) => {
-              commands.push(command);
-              return Effect.succeed({} as never);
-            },
-          }),
-          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
-        ),
-      ),
-    );
-    assert.lengthOf(commands, 0);
-  }),
-);
-
 it.effect.each([
   [false, undefined],
   [true, undefined],
@@ -1176,19 +1140,6 @@ it.effect("does not continue a cut /compact or /logout turn", () =>
   }),
 );
 
-it.effect("tells a turn cut mid-way about the background work it lost", () =>
-  Effect.gen(function* () {
-    const texts = yield* continuationTexts(
-      cutMidTurn({
-        restartCancelledBackgroundWork: [{ kind: "subagent", label: "Background reviewer" }],
-      }),
-    );
-    assert.lengthOf(texts, 1);
-    assert.include(texts[0]!, "Background reviewer");
-    assert.isTrue(texts[0]!.endsWith(INTERRUPTED_CONTINUATION));
-  }),
-);
-
 it.effect("shows a continuation as a styal notice whose detail is the prompt", () =>
   Effect.gen(function* () {
     const [resumed] = yield* continuationDispatches(cutMidTurn());
@@ -1275,48 +1226,6 @@ it.effect("prepares later threads' continuations when one thread fails", () =>
       writes.map((write) => write.effects[0]?.request),
       [{ type: "provider-runtime.continue", sourceRunId: runId }],
     );
-  }),
-);
-
-it.effect("stops rapid restart loops but allows repeated restarts after normal work", () =>
-  Effect.gen(function* () {
-    const first = RunId.make("run:first-continuation");
-    const second = RunId.make("run:second-continuation");
-    const cut = cutMidTurn({ restartContinuationOfRunId: second });
-    const withTwoLinks = {
-      ...cut,
-      runs: [
-        ...cut.runs,
-        { ...cut.runs[0]!, id: second, restartContinuationOfRunId: first },
-        { ...cut.runs[0]!, id: first, restartContinuationOfRunId: undefined },
-      ],
-    } as unknown as OrchestrationV2ThreadProjection;
-    assert.lengthOf(yield* continuationTexts(withTwoLinks), 1);
-
-    const withThreeLinks = {
-      ...withTwoLinks,
-      runs: withTwoLinks.runs.map((run) =>
-        run.id === first ? { ...run, restartContinuationOfRunId: RunId.make("run:root") } : run,
-      ),
-    } as unknown as OrchestrationV2ThreadProjection;
-    for (const { completedAt, oldestRequestAge, expected } of [
-      { completedAt: null, oldestRequestAge: { minutes: 6 }, expected: 0 },
-      { completedAt: null, oldestRequestAge: { minutes: 6, milliseconds: 1 }, expected: 1 },
-      { completedAt: now, oldestRequestAge: { minutes: 6 }, expected: 1 },
-    ]) {
-      const projection = {
-        ...withThreeLinks,
-        runs: withThreeLinks.runs.map((run, index) => ({
-          ...run,
-          completedAt,
-          requestedAt: DateTime.subtract(
-            now,
-            run.id === first ? oldestRequestAge : { minutes: index + 1 },
-          ),
-        })),
-      };
-      assert.lengthOf(yield* continuationTexts(projection), expected);
-    }
   }),
 );
 

@@ -175,7 +175,7 @@ export async function clearBrowserProfileData(
   ]);
 }
 
-export function browserProfileRemovalAvailable(
+function browserProfileRemovalAvailable(
   bridgeAvailable: boolean,
   environmentsReady: boolean,
   environmentCount: number,

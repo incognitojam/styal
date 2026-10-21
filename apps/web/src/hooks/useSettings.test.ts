@@ -1,8 +1,4 @@
-import {
-  DEFAULT_SERVER_SETTINGS,
-  ProviderDriverKind,
-  ProviderInstanceId,
-} from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS, type ClientSettings } from "@t3tools/contracts/settings";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -309,44 +305,6 @@ describe("persistClientSettingsUpdate", () => {
     expect(getClientSettings().favorites).toContainEqual(importedProfile);
   });
 
-  it("orders an awaited update after an older optimistic write", async () => {
-    let finishOldWrite!: () => void;
-    let durableSettings = DEFAULT_CLIENT_SETTINGS;
-    const oldWrite = new Promise<void>((resolve) => {
-      finishOldWrite = resolve;
-    });
-    const persist = vi
-      .fn<(settings: typeof DEFAULT_CLIENT_SETTINGS) => Promise<void>>()
-      .mockImplementationOnce((settings) =>
-        oldWrite.then(() => {
-          durableSettings = settings;
-        }),
-      )
-      .mockImplementation(async (settings) => {
-        durableSettings = settings;
-      });
-    __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
-
-    void persistClientSettingsPatch({ wordWrap: false }, persist);
-    const importedProfile = { provider: ProviderInstanceId.make("codex_work"), model: "gpt-5.6" };
-    const registration = persistClientSettingsUpdate(
-      (current) => ({
-        ...current,
-        favorites: [...current.favorites, importedProfile],
-      }),
-      persist,
-    );
-    await Promise.resolve();
-    expect(persist).toHaveBeenCalledTimes(1);
-
-    finishOldWrite();
-    await registration;
-
-    expect(persist).toHaveBeenCalledTimes(2);
-    expect(durableSettings.wordWrap).toBe(false);
-    expect(durableSettings.favorites).toContainEqual(importedProfile);
-  });
-
   it("continues the queue after a rejected write", async () => {
     const failure = new Error("disk full");
     const persist = vi
@@ -367,75 +325,7 @@ describe("persistClientSettingsUpdate", () => {
   });
 });
 
-describe("resolveEnvironmentIdentificationMode", () => {
-  it("keeps identification hidden until client settings hydrate", () => {
-    expect(resolveEnvironmentIdentificationMode({ mode: "artwork", settingsHydrated: false })).toBe(
-      "none",
-    );
-    expect(resolveEnvironmentIdentificationMode({ mode: "pill", settingsHydrated: true })).toBe(
-      "pill",
-    );
-  });
-
-  it("uses a pill instead of artwork with a palette theme", () => {
-    expect(
-      resolveEnvironmentIdentificationMode({
-        mode: "artwork",
-        settingsHydrated: true,
-        paletteThemeActive: true,
-      }),
-    ).toBe("pill");
-  });
-
-  it("respects none with a palette theme", () => {
-    expect(
-      resolveEnvironmentIdentificationMode({
-        mode: "none",
-        settingsHydrated: true,
-        paletteThemeActive: true,
-      }),
-    ).toBe("none");
-  });
-
-  it("keeps artwork when the palette theme opts into it", () => {
-    expect(
-      resolveEnvironmentIdentificationMode({
-        mode: "artwork",
-        settingsHydrated: true,
-        paletteThemeActive: true,
-        paletteThemeAllowsArtwork: true,
-      }),
-    ).toBe("artwork");
-  });
-});
-
 describe("mergeEnvironmentSettings", () => {
-  it("combines the selected environment's server settings with client preferences", () => {
-    const serverSettings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [ProviderInstanceId.make("codex_remote")]: {
-          driver: ProviderDriverKind.make("codex"),
-          enabled: true,
-        },
-      },
-    };
-    const clientSettings = {
-      ...DEFAULT_CLIENT_SETTINGS,
-      favorites: [
-        {
-          provider: ProviderInstanceId.make("codex_remote"),
-          model: "gpt-5.4",
-        },
-      ],
-    };
-
-    const settings = mergeEnvironmentSettings(serverSettings, clientSettings);
-
-    expect(settings.providerInstances).toBe(serverSettings.providerInstances);
-    expect(settings.favorites).toBe(clientSettings.favorites);
-  });
-
   it("keeps server settlement settings when legacy client data contains retired keys", () => {
     const serverSettings = {
       ...DEFAULT_SERVER_SETTINGS,

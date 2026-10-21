@@ -6,7 +6,6 @@ import {
   filterProjectIconNames,
   firstEmoji,
   PROJECT_EMOJIS,
-  projectIconColorClassName,
   searchProjectEmojis,
 } from "./projectIconOptions";
 
@@ -14,11 +13,6 @@ const emojiResults = (query: string) =>
   searchProjectEmojis(emojiKeywords, query).map((option) => option.emoji);
 
 describe("projectIconOptions", () => {
-  it("searches across the full Lucide set", () => {
-    expect(filterProjectIconNames("alarm clock")).toContain("alarm-clock");
-    expect(filterProjectIconNames("alarm  \tclock")).toContain("alarm-clock");
-  });
-
   it("searches emoji by name and keyword", () => {
     expect(emojiResults("alien")[0]).toBe("👽");
     expect(emojiResults("ufo")).toEqual(expect.arrayContaining(["👽", "🛸"]));
@@ -46,9 +40,5 @@ describe("projectIconOptions", () => {
     expect(firstEmoji("🇺🇸 project")).toBe("🇺🇸");
     expect(firstEmoji("1️⃣ project")).toBe("1️⃣");
     expect(firstEmoji("plain text")).toBeNull();
-  });
-
-  it("maps persisted colors to theme-aware classes", () => {
-    expect(projectIconColorClassName("violet")).toBe("text-violet-600 dark:text-violet-400");
   });
 });

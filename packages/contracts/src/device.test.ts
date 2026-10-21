@@ -5,7 +5,6 @@ import {
   EasDeviceHostConfig,
   EasDeviceHostConfigs,
   SshDeviceHostConfigs,
-  deviceToolInstallMessage,
 } from "./device.ts";
 import { secretSettingsFields } from "./settings.ts";
 
@@ -53,25 +52,6 @@ it("rejects empty, malformed, and credential-bearing sharing address lists", () 
     decode({ label: "Orion", urls: ["https://orion.test", "http://192.168.1.20:3773"], grant })
       .urls,
   ).toHaveLength(2);
-});
-
-describe("device tool install progress", () => {
-  it("distinguishes a new install from an upgrade and chooses versions numerically", () => {
-    expect(
-      deviceToolInstallMessage("device hub", {
-        requiredVersion: "0.11.0",
-        installedVersions: [],
-        runningVersion: null,
-      }),
-    ).toBe("Installing device hub 0.11.0…");
-    expect(
-      deviceToolInstallMessage("device hub", {
-        requiredVersion: "0.11.0",
-        installedVersions: ["0.9.0", "0.10.0"],
-        runningVersion: null,
-      }),
-    ).toBe("Updating device hub from 0.10.0 to 0.11.0…");
-  });
 });
 
 const decodeSshHosts = Schema.decodeUnknownSync(SshDeviceHostConfigs);

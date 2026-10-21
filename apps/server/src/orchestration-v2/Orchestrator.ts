@@ -275,10 +275,7 @@ export class OrchestratorCommandIdConflictError extends Schema.TaggedError<Orche
  * thread would report success for work that never happened there, so the
  * dispatcher rejects the reuse instead (mirrors v1's command-id conflict).
  */
-export function canReplayCommandReceipt(
-  receiptThreadId: ThreadId,
-  commandThreadId: ThreadId,
-): boolean {
+function canReplayCommandReceipt(receiptThreadId: ThreadId, commandThreadId: ThreadId): boolean {
   return receiptThreadId === commandThreadId;
 }
 
@@ -975,7 +972,7 @@ export function shouldPrepareLegacyImportHandoff(input: {
   );
 }
 
-export function appendContextHandoffId(
+function appendContextHandoffId(
   handoffIds: OrchestrationV2ProviderThread["handoffIds"],
   handoffId: OrchestrationV2ContextHandoff["id"] | null,
 ): OrchestrationV2ProviderThread["handoffIds"] {

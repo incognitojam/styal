@@ -68,7 +68,6 @@ import {
 import type { ThreadRunSummary } from "@t3tools/client-runtime/state/shell";
 import {
   resolveT3McpToolDefinition,
-  resolveT3McpToolPresentation,
   type T3McpToolPresentation,
 } from "@t3tools/shared/t3McpToolPresentation";
 import { compactDynamicToolOutput } from "@t3tools/shared/toolOutput";
@@ -717,7 +716,6 @@ function workGroupId(timelineEntryId: string): string {
 }
 
 export type TimelineToolPresentation = T3McpToolPresentation;
-export const resolveTimelineToolPresentation = resolveT3McpToolPresentation;
 
 function expandedWorkGroupRow(
   groupId: string,

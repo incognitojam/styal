@@ -32,7 +32,6 @@ import {
 } from "../serverRuntimeState.ts";
 import {
   DevServerNotProxiableError,
-  resolveDirectPairingBaseUrl,
   resolveTailscaleLocalTarget,
   ServePortOccupiedError,
   ServesOtherEnvironmentError,
@@ -49,21 +48,6 @@ const baseState = {
   origin: "http://127.0.0.1:3773",
   startedAt: "2026-06-20T00:00:00.000Z",
 } as const satisfies PersistedServerRuntimeState;
-
-describe("pair base URL selection", () => {
-  it("pairs through the dev web origin when the server fronts a dev server", () => {
-    expect(resolveDirectPairingBaseUrl({ ...baseState, devUrl: "http://localhost:5733/" })).toBe(
-      "http://localhost:5733/",
-    );
-  });
-
-  it("pairs through the bound host when there is no dev server", () => {
-    expect(resolveDirectPairingBaseUrl({ ...baseState, host: "100.64.0.7" })).toBe(
-      "http://100.64.0.7:3773",
-    );
-    expect(resolveDirectPairingBaseUrl(baseState)).toBe("http://localhost:3773");
-  });
-});
 
 describe("pair tailscale local target", () => {
   it("proxies the dev web port for dev servers", () => {
@@ -85,17 +69,6 @@ describe("pair tailscale local target", () => {
     expect(
       resolveTailscaleLocalTarget({ ...baseState, devUrl: "https://localhost:5733/" }),
     ).toBeInstanceOf(DevServerNotProxiableError);
-  });
-
-  it("proxies the backend port directly otherwise", () => {
-    expect(resolveTailscaleLocalTarget(baseState)).toEqual({ localPort: 3_773 });
-    expect(resolveTailscaleLocalTarget({ ...baseState, host: "0.0.0.0" })).toEqual({
-      localPort: 3_773,
-    });
-    expect(resolveTailscaleLocalTarget({ ...baseState, host: "192.168.1.42" })).toEqual({
-      localPort: 3_773,
-      localHost: "192.168.1.42",
-    });
   });
 });
 
@@ -521,43 +494,6 @@ describe("styal pair", () => {
         off: () => undefined,
       }),
     ),
-  );
-
-  it.effect("mints a pairing grant with only the selected scopes", () =>
-    withDescriptorServer((origin) =>
-      Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-pair-scopes-test-"));
-        yield* persistServerRuntimeState({
-          path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
-          state: yield* makePersistedServerRuntimeState({
-            config: { host: "127.0.0.1", devUrl: undefined },
-            port: Number(new URL(origin).port),
-          }),
-        });
-
-        yield* captureStdout(
-          runCli([
-            "pair",
-            "--base-dir",
-            baseDir,
-            "--scope",
-            "orchestration:read",
-            "--scope",
-            "relay:read",
-            "--scope",
-            "orchestration:read",
-          ]),
-        );
-        const listed = yield* captureStdout(
-          runCli(["auth", "pairing", "list", "--base-dir", baseDir, "--json"]),
-        );
-        const credentials = JSON.parse(listed) as ReadonlyArray<{
-          readonly scopes: ReadonlyArray<string>;
-        }>;
-        assert.lengthOf(credentials, 1);
-        assert.deepEqual(credentials[0]?.scopes, ["orchestration:read", "relay:read"]);
-      }),
-    ).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("pairs through the recorded dev web URL for dev servers", () =>

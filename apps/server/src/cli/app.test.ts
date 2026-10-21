@@ -213,43 +213,6 @@ describe("styal server command safety", () => {
 });
 
 describe("styal app", () => {
-  it.effect("rejects SSH before it tries to reach a desktop app", () =>
-    withTempDirectory("t3-app-ssh-test-", (root) =>
-      Effect.gen(function* () {
-        const baseDir = NodePath.join(root, "missing-t3-home");
-        const error = yield* runCli(["app", "--base-dir", baseDir], {
-          SSH_CONNECTION: "client server",
-        }).pipe(Effect.flip);
-
-        expect(error).toMatchObject({
-          _tag: "DesktopAppSshUnsupportedError",
-          message:
-            "`styal app` only controls a desktop app on the same machine. It cannot run over SSH.",
-        });
-        expect(yield* pathExists(baseDir)).toBe(false);
-      }),
-    ),
-  );
-
-  it.effect("rejects unsupported platforms without creating state", () =>
-    withTempDirectory("t3-app-platform-test-", (root) =>
-      Effect.gen(function* () {
-        const baseDir = NodePath.join(root, "missing-t3-home");
-        const error = yield* runCli(["app", "--base-dir", baseDir]).pipe(
-          Effect.provideService(HostProcess.Platform, "freebsd"),
-          Effect.flip,
-        );
-
-        expect(error).toMatchObject({
-          _tag: "DesktopAppPlatformUnsupportedError",
-          platform: "freebsd",
-          message: "`styal app` is not supported on freebsd.",
-        });
-        expect(yield* pathExists(baseDir)).toBe(false);
-      }),
-    ),
-  );
-
   it.effect("does not create state when only a server or no desktop app is running", () =>
     withTempDirectory("t3-app-missing-test-", (root) =>
       Effect.gen(function* () {

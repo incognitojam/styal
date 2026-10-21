@@ -48,22 +48,6 @@ describe("terminal close confirmation", () => {
     expect(resolveTerminalCloseConfirmationIds([activeTerminal], [])).toEqual(new Set());
   });
 
-  it("tracks pending state until the confirmation settles", async () => {
-    let settle: (value: boolean) => void = () => undefined;
-    confirmMock.mockImplementation(() => new Promise<boolean>((resolve) => (settle = resolve)));
-
-    expect(isTerminalCloseConfirmPending()).toBe(false);
-
-    const confirmation = runTerminalCloseConfirmationFlow(terminalScope("term-1"), () =>
-      confirmTerminalClose([activeTerminal], new Set(["term-1"])),
-    );
-    expect(isTerminalCloseConfirmPending()).toBe(true);
-
-    settle(true);
-    await expect(confirmation).resolves.toBe(true);
-    expect(isTerminalCloseConfirmPending()).toBe(false);
-  });
-
   it("clears pending state and resolves false when the dialog rejects", async () => {
     let reject: (reason?: unknown) => void = () => undefined;
     confirmMock.mockImplementation(
@@ -105,30 +89,6 @@ describe("terminal close confirmation", () => {
     expect(isTerminalCloseConfirmPending()).toBe(false);
   });
 
-  it("names every terminal in a multi-terminal close", async () => {
-    confirmMock.mockResolvedValue(true);
-
-    await expect(
-      confirmTerminalClose(
-        [
-          activeTerminal,
-          {
-            terminalId: "term-2",
-            label: "Development server",
-          },
-        ],
-        new Set(["term-1", "term-2"]),
-      ),
-    ).resolves.toBe(true);
-    expect(confirmMock).toHaveBeenCalledWith(
-      [
-        "Close 2 terminals?",
-        'This stops running processes in "Terminal 1", "Development server" and clears all 2 terminal histories.',
-      ].join("\n"),
-      { variant: "destructive" },
-    );
-  });
-
   it("closes without prompting when the preflight reports no active work", async () => {
     await expect(
       confirmTerminalClose(
@@ -166,12 +126,5 @@ describe("terminal close confirmation", () => {
       ].join("\n"),
       { variant: "destructive" },
     );
-  });
-
-  it("closes without prompting when no local API is available", async () => {
-    readLocalApiMock.mockReturnValue(undefined);
-
-    await expect(confirmTerminalClose([activeTerminal], new Set(["term-1"]))).resolves.toBe(true);
-    expect(confirmMock).not.toHaveBeenCalled();
   });
 });

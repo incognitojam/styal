@@ -208,7 +208,7 @@ import {
 } from "@t3tools/provider-core/server/subagentProjection";
 
 export const CLAUDE_PROVIDER = ProviderDriverKind.make("claudeAgent");
-export const CLAUDE_AGENT_SDK_QUERY_PROTOCOL = "claude-agent-sdk.query" as const;
+const CLAUDE_AGENT_SDK_QUERY_PROTOCOL = "claude-agent-sdk.query" as const;
 
 function claudeContextWindow(modelSelection: ModelSelection): number | null {
   return (
@@ -854,7 +854,7 @@ export function loggedClaudeQueryOptions(
   };
 }
 
-export function makeClaudeAgentSdkProtocolLogger(input: {
+function makeClaudeAgentSdkProtocolLogger(input: {
   readonly nativeEventLogger: ProviderEventLoggers.EventNdjsonLogger | undefined;
   readonly threadId: ThreadId;
   readonly providerSessionId: OrchestrationV2ProviderSession["id"];
@@ -3810,7 +3810,7 @@ export function claudeSdkUserInputAnswers(
   );
 }
 
-export function claudeTodoSteps(input: unknown): ReadonlyArray<OrchestrationV2PlanStep> {
+function claudeTodoSteps(input: unknown): ReadonlyArray<OrchestrationV2PlanStep> {
   const value =
     typeof input === "object" && input !== null && Reflect.get(input, "type") === "record"
       ? Reflect.get(input, "value")
@@ -3978,7 +3978,7 @@ function claudeTaskSteps(tasks: ClaudeTaskList): ReadonlyArray<OrchestrationV2Pl
   return [...tasks].map(([id, task]) => ({ id: `task-${id}`, ...task }));
 }
 
-export function claudeProposedPlan(input: unknown): string | null {
+function claudeProposedPlan(input: unknown): string | null {
   const value =
     typeof input === "object" && input !== null && Reflect.get(input, "type") === "record"
       ? Reflect.get(input, "value")
@@ -11102,39 +11102,3 @@ export const ClaudeAdapterV2Driver: ProviderAdapterDriver<
   defaultConfig: (): ClaudeSettings => DEFAULT_CLAUDE_SETTINGS,
   create: (input) => createClaudeAdapterV2(input, {}),
 };
-
-const makeDefaultClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2.layer")(function* () {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
-  const hostEnvironment = yield* HostProcess.Environment;
-  const idAllocator = yield* IdAllocator.IdAllocatorV2;
-  const queryRunner = yield* ClaudeAgentSdkQueryRunner;
-  const serverConfig = yield* ServerConfig.ServerConfig;
-  const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
-
-  return yield* makeClaudeAdapterV2({
-    instanceId: CLAUDE_DEFAULT_INSTANCE_ID,
-    settings: DEFAULT_CLAUDE_SETTINGS,
-    environment: hostEnvironment,
-    attachmentsDir: serverConfig.attachmentsDir,
-    fileSystem,
-    path,
-    crypto,
-    idAllocator,
-    queryRunner,
-    continuationRequests,
-  });
-});
-
-const layer: Layer.Layer<
-  ProviderAdapter.ProviderAdapterV2,
-  never,
-  | ClaudeAgentSdkQueryRunner
-  | Crypto.Crypto
-  | FileSystem.FileSystem
-  | IdAllocator.IdAllocatorV2
-  | McpProviderSessions.McpProviderSessions
-  | Path.Path
-  | ServerConfig.ServerConfig
-> = Layer.effect(ProviderAdapter.ProviderAdapterV2, makeDefaultClaudeAdapterV2());
