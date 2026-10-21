@@ -2,12 +2,14 @@ import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import {
   DESKTOP_UPDATE_RESTART_MARKER_FILE,
   DesktopUpdateChannelSchema,
+  type DesktopIdleRestartDelayBucket,
   type DesktopRuntimeInfo,
   type DesktopUpdateActionResult,
   type DesktopUpdateChannel,
   type DesktopUpdateCheckResult,
   type DesktopUpdateState,
 } from "@t3tools/contracts";
+import { idleRestartBlocked } from "@t3tools/shared/hostActivity";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -30,10 +32,12 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 import {
@@ -52,6 +56,14 @@ import {
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
 const AUTO_UPDATE_POLL_INTERVAL = "4 minutes";
 const PREPARED_INSTALL_CHECK_WAIT = Duration.seconds(90);
+const IDLE_RESTART_POLL_INTERVAL = "30 seconds";
+const IDLE_RESTART_IDLE_SECONDS = 300;
+// Measure-only: an eligible idle moment is recorded but nothing installs. Set
+// to true to install the staged update at that moment.
+const IDLE_RESTART_INSTALLS = false;
+// Holds the staged version until an idle moment is recorded, so a quit or a
+// replaced download before then is reported as "never" by the next launch.
+const IDLE_RESTART_PENDING_FILE = "update-idle-restart-pending";
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
 type NativeStageStatus = "staging" | "staged" | "failed";
@@ -287,6 +299,14 @@ function getAutoUpdateDisabledReason(args: {
   return null;
 }
 
+/** Buckets the time from an update finishing staging to the first idle moment. */
+export function idleRestartDelayBucket(
+  delayMs: number,
+): Exclude<DesktopIdleRestartDelayBucket, "installed_first" | "never"> {
+  const hours = delayMs / 3_600_000;
+  return hours < 1 ? "<1h" : hours < 8 ? "1-8h" : hours < 24 ? "8-24h" : ">24h";
+}
+
 function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean {
   return runtimeInfo.hostArch === "arm64" && runtimeInfo.appArch === "x64";
 }
@@ -302,6 +322,8 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const powerMonitor = yield* ElectronPowerMonitor.ElectronPowerMonitor;
+  const telemetry = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
@@ -676,6 +698,9 @@ export const make = Effect.gen(function* () {
           return;
         }
         yield* stageNativeUpdateLocked(version);
+        if ((yield* Ref.get(nativeStageRef))?.status === "staged") {
+          yield* startIdleRestartMeasurement(version);
+        }
       }),
     );
 
@@ -846,6 +871,121 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  // Idle restart, macOS only. A staged update installs in a few seconds, so it
+  // can install while the user is away. Today this only measures how soon such
+  // a moment comes: once per staged version, it reports the delay bucket.
+  const idleRestartRef = yield* Ref.make<
+    { readonly version: string; readonly stagedAt: number } | undefined
+  >(undefined);
+  const idleRestartReported = new Set<string>();
+  const idleRestartPendingPath = environment.path.join(
+    updateRestartMarkerDir,
+    IDLE_RESTART_PENDING_FILE,
+  );
+
+  const reportIdleRestart = (version: string, delayBucket: DesktopIdleRestartDelayBucket) =>
+    Effect.gen(function* () {
+      idleRestartReported.add(version);
+      yield* telemetry.publishFeatureUsage({
+        version: 1,
+        type: "desktopFeatureUsage",
+        feature: "desktop-update-idle-restart",
+        action: "would_restart",
+        updateVersion: version,
+        delayBucket,
+      });
+      yield* fileSystem.remove(idleRestartPendingPath, { force: true }).pipe(Effect.ignore);
+    });
+
+  const startIdleRestartMeasurement = (version: string) =>
+    Effect.gen(function* () {
+      if (idleRestartReported.has(version)) return;
+      const stagedAt = yield* Clock.currentTimeMillis;
+      // Written before the candidate is visible to the idle check, so a report
+      // cannot remove the file before this write recreates it.
+      yield* fileSystem
+        .makeDirectory(updateRestartMarkerDir, { recursive: true })
+        .pipe(
+          Effect.andThen(fileSystem.writeFileString(idleRestartPendingPath, version)),
+          Effect.ignore,
+        );
+      yield* Ref.set(idleRestartRef, { version, stagedAt });
+    });
+
+  // A staged download that is discarded before an idle moment never had one.
+  const abandonIdleRestartMeasurement = Ref.getAndSet(idleRestartRef, undefined).pipe(
+    Effect.flatMap((pending) =>
+      pending === undefined ? Effect.void : reportIdleRestart(pending.version, "never"),
+    ),
+  );
+
+  const userIsAway = powerMonitor
+    .getSystemIdleState(IDLE_RESTART_IDLE_SECONDS)
+    .pipe(Effect.map((state) => state === "idle" || state === "locked"));
+
+  // The pending update, while it is still the staged download and no update
+  // action or quit is under way.
+  const idleRestartCandidate = Effect.gen(function* () {
+    const pending = yield* Ref.get(idleRestartRef);
+    if (
+      pending === undefined ||
+      (yield* Ref.get(desktopState.quitting)) ||
+      Option.isSome(yield* activeUpdateAction)
+    ) {
+      return undefined;
+    }
+    const state = yield* Ref.get(updateStateRef);
+    const nativeStage = yield* Ref.get(nativeStageRef);
+    return state.status === "downloaded" &&
+      state.downloadedVersion === pending.version &&
+      nativeStage?.status === "staged" &&
+      nativeStage.version === pending.version
+      ? pending
+      : undefined;
+  });
+
+  // Runs when an idle restart would install the staged update.
+  const restartWhileIdle = (pending: { readonly version: string; readonly stagedAt: number }) =>
+    Effect.gen(function* () {
+      yield* Ref.set(idleRestartRef, undefined);
+      const delayMs = (yield* Clock.currentTimeMillis) - pending.stagedAt;
+      yield* reportIdleRestart(pending.version, idleRestartDelayBucket(delayMs));
+      if (IDLE_RESTART_INSTALLS) yield* installWithExpectedVersion(pending.version);
+    });
+
+  const checkIdleRestart = Effect.gen(function* () {
+    if ((yield* idleRestartCandidate) === undefined || !(yield* userIsAway)) return;
+    if (idleRestartBlocked(yield* guard.inspect)) return;
+    // The inspection takes a moment; the user or an update action may be back.
+    const pending = yield* idleRestartCandidate;
+    if (pending === undefined || !(yield* userIsAway)) return;
+    yield* restartWhileIdle(pending);
+  }).pipe(Effect.withSpan("desktop.updates.checkIdleRestart"));
+
+  const startIdleRestartChecks = Effect.gen(function* () {
+    // The previous run quit before an idle moment. On macOS a quit installs the
+    // staged update, so running that version means it installed first.
+    const unreported = yield* fileSystem.readFileString(idleRestartPendingPath).pipe(
+      Effect.map((version) => version.trim()),
+      Effect.orElseSucceed(() => ""),
+    );
+    if (unreported !== "") {
+      yield* reportIdleRestart(
+        unreported,
+        unreported === environment.appVersion ? "installed_first" : "never",
+      );
+    }
+    yield* Effect.sleep(IDLE_RESTART_POLL_INTERVAL).pipe(
+      Effect.andThen(checkIdleRestart),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) => logUpdaterWarning("idle restart check failed", { cause }),
+      ),
+      Effect.forever,
+      Effect.forkScoped,
+    );
+  });
+
   const startUpdatePollers: Effect.Effect<void, never, Scope.Scope> = Effect.gen(function* () {
     yield* Effect.sleep(AUTO_UPDATE_STARTUP_DELAY).pipe(
       Effect.andThen(checkForUpdates("startup")),
@@ -876,6 +1016,7 @@ export const make = Effect.gen(function* () {
       }),
       Effect.forkScoped,
     );
+    if (stagesNativeUpdates) yield* startIdleRestartChecks;
   }).pipe(Effect.withSpan("desktop.updates.startPollers"));
 
   const handleUpdateAvailable = Effect.fn("desktop.updates.handleUpdateAvailable")(function* (
@@ -1177,6 +1318,7 @@ export const make = Effect.gen(function* () {
               });
             }
             yield* Ref.set(nativeStageRef, undefined);
+            yield* abandonIdleRestartMeasurement;
             yield* desktopSettings
               .setUpdateChannel(nextChannel)
               .pipe(

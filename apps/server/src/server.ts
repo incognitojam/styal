@@ -44,6 +44,7 @@ import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewG
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ErrorReporting from "./telemetry/ErrorReporting.ts";
+import * as DesktopFeatureUsage from "./telemetry/DesktopFeatureUsage.ts";
 import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
@@ -756,6 +757,7 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(layerUsage.pipe(traceShutdown("usage"))),
   Layer.provideMerge(layerBackground.pipe(traceShutdown("background"))),
   Layer.provideMerge(layerResourceDiagnostics.pipe(traceShutdown("resource-diagnostics"))),
+  Layer.provideMerge(DesktopFeatureUsage.layer.pipe(Layer.provide(layerDesktopTelemetryReceiver))),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(ErrorReporting.layer),
   Layer.provideMerge(AnalyticsService.layer.pipe(traceShutdown("analytics"))),

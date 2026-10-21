@@ -221,6 +221,7 @@ export const make = Effect.gen(function* () {
           threadSettleReasonUsageVersion: 1,
           providerAnalyticsUsageVersion: 1,
           settingsSnapshotUsageVersion: 1,
+          desktopUpdateIdleRestartUsageVersion: 1,
           ...buildContext,
           clientType,
           serverOs: serverOsFromNodePlatform(hostPlatform),

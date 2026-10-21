@@ -306,10 +306,41 @@ export const DesktopUpdateStatusReport = Schema.Struct({
 });
 export type DesktopUpdateStatusReport = typeof DesktopUpdateStatusReport.Type;
 
+/**
+ * How long after an update finished staging the user first went idle with no
+ * blocking work. `installed_first` means the update installed (a quit or the
+ * restart button) before any idle moment; `never` means it was discarded or
+ * replaced before one.
+ */
+export const DesktopIdleRestartDelayBucket = Schema.Literals([
+  "<1h",
+  "1-8h",
+  "8-24h",
+  ">24h",
+  "installed_first",
+  "never",
+]);
+export type DesktopIdleRestartDelayBucket = typeof DesktopIdleRestartDelayBucket.Type;
+
+/**
+ * Desktop main -> server: a usage observation the server records as a
+ * `feature.used` event. Delivered once, to one attached backend.
+ */
+export const DesktopFeatureUsageReport = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("desktopFeatureUsage"),
+  feature: Schema.Literal("desktop-update-idle-restart"),
+  action: Schema.Literal("would_restart"),
+  updateVersion: TrimmedNonEmptyString,
+  delayBucket: DesktopIdleRestartDelayBucket,
+});
+export type DesktopFeatureUsageReport = typeof DesktopFeatureUsageReport.Type;
+
 export const DesktopHostTelemetryMessage = Schema.Union([
   DesktopHostTelemetryHello,
   DesktopHostTelemetrySnapshot,
   DesktopUpdateStatusReport,
+  DesktopFeatureUsageReport,
 ]);
 export type DesktopHostTelemetryMessage = typeof DesktopHostTelemetryMessage.Type;
 

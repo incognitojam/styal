@@ -6,6 +6,7 @@ import * as NodeStream from "@effect/platform-node/NodeStream";
 import {
   DesktopHostTelemetryMessage,
   type DesktopHostTelemetryMessage as DesktopHostTelemetryMessageValue,
+  type DesktopFeatureUsageReport,
   type DesktopHostTelemetrySnapshot,
   DesktopTelemetryControlMessage,
   type DesktopUpdateStatusReport,
@@ -19,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -196,6 +198,8 @@ export class DesktopTelemetryReceiver extends Context.Service<
       never,
       Scope.Scope
     >;
+    /** Usage observations from the desktop app, buffered for one consumer. */
+    readonly desktopFeatureUsage: Stream.Stream<DesktopFeatureUsageReport>;
   }
 >()("@styal/cli/resourceTelemetry/DesktopTelemetryReceiver") {}
 
@@ -359,6 +363,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
   const healthChanges = yield* PubSub.sliding<DesktopTelemetryReceiverHealth>(4);
   const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
   const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
+  const featureUsage = yield* Queue.unbounded<DesktopFeatureUsageReport>();
   const controlMutex = yield* Semaphore.make(1);
   const snapshotMutex = yield* Semaphore.make(1);
   const health = yield* Ref.make<DesktopTelemetryReceiverHealth>({
@@ -545,6 +550,13 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
           );
         }
 
+        if (message.type === "desktopFeatureUsage") {
+          return recordContact.pipe(
+            Effect.andThen(Queue.offer(featureUsage, message)),
+            Effect.asVoid,
+          );
+        }
+
         const sampledAt = DateTime.makeUnsafe(message.sampledAtUnixMs);
         return snapshotMutex.withPermits(1)(
           recordContact.pipe(
@@ -672,6 +684,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         changes: Stream.fromSubscription(subscription),
       };
     }),
+    desktopFeatureUsage: Stream.fromQueue(featureUsage),
   });
 });
 
@@ -721,6 +734,7 @@ export const layerTest = (
           latest: Option.none<DesktopUpdateStatusReport>(),
           changes: Stream.empty,
         }),
+      desktopFeatureUsage: Stream.empty,
       ...overrides,
     }),
   );

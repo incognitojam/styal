@@ -23,6 +23,7 @@ const layerUnusedLifecycleRuntime = Layer.mergeAll(
   ),
   Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
     confirm: () => Effect.succeed(true),
+    inspect: Effect.succeed([]),
   }),
   DesktopShutdown.layer,
   DesktopState.layer,

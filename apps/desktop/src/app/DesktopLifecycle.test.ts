@@ -106,7 +106,10 @@ const makeLifecycleLayer = (
 ) =>
   DesktopLifecycle.layer.pipe(
     Layer.provideMerge(
-      Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, { confirm: () => confirmShutdown }),
+      Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
+        confirm: () => confirmShutdown,
+        inspect: Effect.succeed([]),
+      }),
     ),
     Layer.provideMerge(
       Layer.succeed(DesktopUpdates.DesktopUpdates, {

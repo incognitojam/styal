@@ -1,19 +1,22 @@
 import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopFeatureUsageReport, DesktopUpdateState } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as PlatformError from "effect/PlatformError";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
 
 /** Shared DesktopUpdates test harness: a fully stubbed updater layer whose
@@ -60,7 +63,28 @@ export interface UpdatesHarnessOptions {
   readonly packageType?: string | undefined;
 }
 
+/** A host with nothing that blocks or needs confirming. */
+export const quietHost = {
+  activeSessions: 0,
+  continuableSessions: 0,
+  waitingSessions: 0,
+  terminalsRequiringConfirmation: 0,
+  terminalsWithUnknownActivity: 0,
+  environmentsUsingDevices: 0,
+} satisfies DesktopShutdownGuard.ActivityCheck;
+
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
+  // Idle restart inputs, changed by tests between ticks. `onInspect` runs
+  // during each activity inspection, before it returns `hosts`.
+  const idleRestart = {
+    idleState: "active" as ElectronPowerMonitor.ElectronIdleState,
+    hosts: [quietHost] as ReadonlyArray<DesktopShutdownGuard.ActivityCheck>,
+    inspections: 0,
+    onInspect: undefined as (() => void) | undefined,
+    reports: [] as DesktopFeatureUsageReport[],
+    /** Contents of the pending file that outlives the process. */
+    pendingFile: undefined as string | undefined,
+  };
   let autoInstallOnAppQuit = false;
   const installs: Array<{ isSilent: boolean; isForceRunAfter: boolean }> = [];
   let checkCount = 0;
@@ -324,35 +348,74 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   // Tracks the restart markers installs leave, so installs stay free of real
   // disk I/O that would outrun the tests' settle loops.
   const updateRestartMarkers = new Set<string>();
+  // The idle restart pending file is kept apart from the restart markers.
+  const isIdleRestartFile = (path: string) => path.endsWith("update-idle-restart-pending");
   const layerFileSystem = FileSystem.layerNoop({
     readFileString: (path) =>
       path === "/missing/resources/package-type" && options.packageType !== undefined
         ? Effect.succeed(options.packageType)
-        : Effect.fail(
-            PlatformError.systemError({
-              module: "FileSystem",
-              method: "readFileString",
-              _tag: "NotFound",
-              pathOrDescriptor: path,
-            }),
-          ),
+        : isIdleRestartFile(path) && idleRestart.pendingFile !== undefined
+          ? Effect.succeed(idleRestart.pendingFile)
+          : Effect.fail(
+              PlatformError.systemError({
+                module: "FileSystem",
+                method: "readFileString",
+                _tag: "NotFound",
+                pathOrDescriptor: path,
+              }),
+            ),
     makeDirectory: () => Effect.void,
-    writeFileString: (path) =>
+    writeFileString: (path, contents) =>
       Effect.sync(() => {
-        updateRestartMarkers.add(path);
+        if (isIdleRestartFile(path)) idleRestart.pendingFile = contents;
+        else updateRestartMarkers.add(path);
       }),
     remove: (path) =>
       Effect.sync(() => {
+        if (isIdleRestartFile(path)) idleRestart.pendingFile = undefined;
         updateRestartMarkers.delete(path);
       }),
   });
+
+  const layerPowerMonitor = Layer.succeed(ElectronPowerMonitor.ElectronPowerMonitor, {
+    isOnBatteryPower: Effect.succeed(false),
+    getSystemIdleTime: Effect.succeed(0),
+    getSystemIdleState: () => Effect.sync(() => idleRestart.idleState),
+    getCurrentThermalState: Effect.succeed("nominal"),
+    onSimpleEvent: () => Effect.void,
+    onThermalStateChange: () => Effect.void,
+    onSpeedLimitChange: () => Effect.void,
+  } satisfies ElectronPowerMonitor.ElectronPowerMonitor["Service"]);
+
+  const layerTelemetry = Layer.succeed(DesktopTelemetryPublisher.DesktopTelemetryPublisher, {
+    latest: Effect.succeedNone,
+    changes: Stream.empty,
+    encoded: Stream.empty,
+    handleControlForSource: () => Effect.void,
+    removeControlSource: () => Effect.void,
+    publishUpdateReport: () => Effect.void,
+    publishFeatureUsage: (report) =>
+      Effect.sync(() => {
+        idleRestart.reports.push(report);
+      }),
+    updateRequests: Stream.empty,
+    updateCommits: Stream.empty,
+    updateCancellations: Stream.empty,
+  } satisfies DesktopTelemetryPublisher.DesktopTelemetryPublisher["Service"]);
 
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(
       Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
         confirm: () => options.confirmShutdown ?? Effect.succeed(true),
+        inspect: Effect.sync(() => {
+          idleRestart.inspections += 1;
+          idleRestart.onInspect?.();
+          return idleRestart.hosts;
+        }),
       }),
     ),
+    Layer.provide(layerPowerMonitor),
+    Layer.provideMerge(layerTelemetry),
     Layer.provide(layerFileSystem),
     Layer.provideMerge(layerUpdater),
     Layer.provideMerge(layerWindow),
@@ -389,6 +452,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       ),
     sentStates,
     squirrel,
+    idleRestart,
     emit: harnessEmit,
   };
 }
