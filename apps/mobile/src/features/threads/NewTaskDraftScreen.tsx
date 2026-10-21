@@ -140,6 +140,7 @@ import { resolveDraftProjectSelection } from "./new-task-project-selection";
 import {
   resolveNewTaskBranchLabel,
   resolveNewTaskWorkspaceLabel,
+  resolveNewTaskWorkspaceSelection,
 } from "./new-task-context-presentation";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { selectIncomingShareAttachmentsForServer } from "../sharing/incoming-share-model";
@@ -1197,10 +1198,19 @@ export function NewTaskDraftScreen(props: {
         selectedProject.id,
       ) ?? flow.selectedModel;
     const workspaceMode = flow.workspaceMode;
-    const selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
-    const selectedWorktreePath =
-      draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
-    const startFromOrigin = draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin;
+    const workspaceSelection = resolveNewTaskWorkspaceSelection({
+      selection: draft.workspaceSelection,
+      fallback: {
+        mode: flow.workspaceMode,
+        branch: flow.selectedBranchName,
+        worktreePath: flow.selectedWorktreePath,
+      },
+      isGitRepo: flow.isGitRepo,
+    });
+    const selectedBranchName = workspaceSelection.branch;
+    const selectedWorktreePath = workspaceSelection.worktreePath;
+    const startFromOrigin =
+      flow.isGitRepo && (draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin);
     const runtimeMode = draft.runtimeMode ?? flow.runtimeMode;
     const interactionMode = resolveProviderInteractionMode(
       selectedEnvironmentServerConfig?.providers.find(
@@ -1382,7 +1392,8 @@ export function NewTaskDraftScreen(props: {
     !flow.submitting &&
     pendingPastedTextAttachmentCount === 0 &&
     !voiceInput.blocksSubmission &&
-    !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
+    // Until the repository check answers, a saved worktree selection may belong to a non-git folder.
+    !(flow.workspaceMode === "worktree" && (!flow.selectedBranchName || !flow.isGitRepoKnown));
   const openDraftDocument = (attachment: ComposerDocumentAttachment) => {
     // A draft attachment lives only in the draft. Without its key the screen would fall through
     // to a remote lookup for bytes the server has never seen.
@@ -1584,7 +1595,7 @@ export function NewTaskDraftScreen(props: {
           <ComposerInlineControl
             accessibilityHint={`Switches to ${flow.workspaceMode === "local" ? "a new worktree" : "the current checkout"}`}
             accessibilityLabel={workspaceLabel}
-            disabled={isComposerInteractionLocked || voiceInput.isBusy}
+            disabled={isComposerInteractionLocked || voiceInput.isBusy || !flow.isGitRepo}
             renderIcon={(size) => (
               <NewTaskWorkspaceIcon
                 workspaceMode={flow.workspaceMode}
@@ -1609,7 +1620,7 @@ export function NewTaskDraftScreen(props: {
           <ComposerInlineControl
             accessibilityLabel={`${flow.workspaceMode === "worktree" ? "Base branch" : "Branch"}: ${selectedBranchLabel}`}
             chevronDirection="right"
-            disabled={isComposerInteractionLocked}
+            disabled={isComposerInteractionLocked || !flow.isGitRepo}
             icon="arrow.triangle.branch"
             label={showBranchLoading ? "Loading branches…" : selectedBranchLabel}
             maxWidth={190}

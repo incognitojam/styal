@@ -14,6 +14,7 @@ import {
   resolveNewThreadEnvMode,
   resolveProjectFileBackedSetting,
   resolveProjectSettings,
+  resolveSendEnvMode,
   resolveWorktreeCleanup,
   withProjectSettingsOverrides,
 } from "./projectSettings.ts";
@@ -27,6 +28,19 @@ const styalConfig = (fields: Omit<ProjectConfig, "source" | "actions">): Project
 
 const projectId = ProjectId.make("project-a");
 const otherProjectId = ProjectId.make("project-b");
+
+describe("resolveSendEnvMode", () => {
+  it.each(["local", "worktree"] as const)(
+    "uses local for non-git projects requesting %s",
+    (mode) => {
+      expect(resolveSendEnvMode({ requestedEnvMode: mode, isGitRepo: false })).toBe("local");
+    },
+  );
+
+  it.each(["local", "worktree"] as const)("preserves %s for git repositories", (mode) => {
+    expect(resolveSendEnvMode({ requestedEnvMode: mode, isGitRepo: true })).toBe(mode);
+  });
+});
 
 describe("resolveProjectSettings", () => {
   it("keeps simulator memory preferences per project and restores inheritance", () => {

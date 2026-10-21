@@ -826,23 +826,7 @@ export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[
 
 export { readFileAsDataUrl } from "../lib/imageCompression";
 
-export function resolveSendEnvMode(input: {
-  requestedEnvMode: DraftThreadEnvMode;
-  isGitRepo: boolean;
-  worktreeNeedsFirstCommit: boolean;
-}): DraftThreadEnvMode {
-  if (!input.isGitRepo) {
-    return "local";
-  }
-  // A repository with no commits has nothing a worktree could branch from, so
-  // the thread runs in the checkout — where the agent can make that first
-  // commit itself. The stored default is untouched; the moment a commit
-  // exists, worktree mode means something again and takes effect.
-  if (input.requestedEnvMode === "worktree" && input.worktreeNeedsFirstCommit) {
-    return "local";
-  }
-  return input.requestedEnvMode;
-}
+export { resolveSendEnvMode } from "@t3tools/shared/projectSettings";
 
 export function resolveBackgroundDraftWorkspaceOptions(input: {
   envMode: DraftThreadEnvMode;
