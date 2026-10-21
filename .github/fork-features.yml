@@ -5429,6 +5429,7 @@ features:
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/settings/settingsSearch.ts
+      - apps/web/src/components/sidebar/SidebarListMarkers.tsx
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/hooks/useSidebarProjectGroups.ts
       - apps/web/src/sidebarProjectGroupUsage.ts
