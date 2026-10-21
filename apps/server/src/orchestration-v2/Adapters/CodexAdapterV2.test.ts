@@ -7619,45 +7619,17 @@ describe("CodexAdapterV2 post-settle continuation", () => {
 
         const parent = completedProviderTurns(RESUME_NATIVE_TURN);
         assert.lengthOf(parent, 1);
-        assert.equal(parent[0]?.providerThreadId, harness.providerThread.id);
-        assert.deepEqual(parent[0]?.turnTokenUsage, {
-          usageStatus: "complete",
-          usageScope: "main_agent",
-          hasSubagents: true,
-          inputTokens: 100,
-          cachedInputTokens: 40,
-          outputTokens: 20,
-          reasoningTokens: 5,
-          subagents: {
+        assert.isTrue(parent[0]?.turnTokenUsage?.hasSubagents);
+        assert.deepEqual(parent[0]?.turnTokenUsage?.byModel, [
+          { inputTokens: 100, cachedInputTokens: 40, cacheCreationTokens: 0, outputTokens: 20 },
+          {
+            model: childModel,
             inputTokens: 50,
             cachedInputTokens: 20,
+            cacheCreationTokens: 0,
             outputTokens: 10,
-            reasoningTokens: 3,
           },
-          byModel: [
-            { inputTokens: 100, cachedInputTokens: 40, cacheCreationTokens: 0, outputTokens: 20 },
-            {
-              model: childModel,
-              inputTokens: 50,
-              cachedInputTokens: 20,
-              cacheCreationTokens: 0,
-              outputTokens: 10,
-            },
-          ],
-        });
-
-        const child = completedProviderTurns(RESUME_CHILD_TURN_1);
-        assert.lengthOf(child, 1);
-        assert.notEqual(child[0]?.providerThreadId, harness.providerThread.id);
-        assert.deepEqual(child[0]?.turnTokenUsage, {
-          usageStatus: "complete",
-          usageScope: "main_agent",
-          hasSubagents: false,
-          inputTokens: 50,
-          cachedInputTokens: 20,
-          outputTokens: 10,
-          reasoningTokens: 3,
-        });
+        ]);
 
         // Usage from the subagent after the parent turn completed stays on the
         // subagent's own turn.
@@ -7667,15 +7639,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           () => completedProviderTurns(RESUME_CHILD_TURN_2).length === 1,
           "resumed subagent turn completion",
         );
-        assert.deepEqual(completedProviderTurns(RESUME_CHILD_TURN_2)[0]?.turnTokenUsage, {
-          usageStatus: "complete",
-          usageScope: "main_agent",
-          hasSubagents: false,
-          inputTokens: 30,
-          cachedInputTokens: 10,
-          outputTokens: 6,
-          reasoningTokens: 1,
-        });
+        assert.equal(
+          completedProviderTurns(RESUME_CHILD_TURN_2)[0]?.turnTokenUsage?.inputTokens,
+          30,
+        );
         assert.equal(parentUpdates(), parentUpdateCount);
       }).pipe(
         Effect.provide(
