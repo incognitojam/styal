@@ -53,6 +53,8 @@ Values are booleans, enum literals and small integers. Paths, branch prefixes, i
 
 To judge a default, filter `buildKind = release`, take each identity's latest snapshot in a window of at least a day, and compute the share of identities whose value differs from the default, per property. A high share for one value suggests a different default or a setup step; a low share means the default holds. Events carry no server ID, so when one identity runs several servers, such as a laptop and a desktop signed in to the same provider account, its latest snapshot comes from whichever server reported last. Project-level overrides are not broken down by key.
 
+[Styal Settings Defaults](https://eu.posthog.com/project/120501/dashboard/1043695) in PostHog runs this query over the last 7 days and charts how many release identities report each day. Its table lists each setting's shipped default; update that list when a default changes, or the `is_default` column will mark the wrong value.
+
 When adding a server setting, either report it here or list it with a reason in `NOT_REPORTED` in `SettingsSnapshot.test.ts`; that test fails until you choose.
 
 `browserToolsUsageVersion`, `deviceUsageVersion`, `workflowRunWatchUsageVersion` and `settingsSnapshotUsageVersion` identify server instrumentation separately. They indicate collection support, not feature availability or compatible client coverage. Keep the legacy `featureUsageVersion = 1` filter only for the existing agent-browser cohort. Do not interpret a missing event from an older client or an unavailable device host as non-use.
