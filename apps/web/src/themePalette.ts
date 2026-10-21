@@ -565,6 +565,25 @@ function solveOklchLightness(
 }
 
 /**
+ * Moves only the lightness, so a color that is too dim on `surface` keeps its
+ * hue instead of collapsing to black or white.
+ */
+export function readableThemeColorOn(color: string, surface: string, minContrast: number): string {
+  const parsedColor = parseThemeColor(color);
+  const parsedSurface = parseThemeColor(surface);
+  if (!parsedColor || !parsedSurface) return color;
+  const surfaceRgb = themeOklchToRgb(parsedSurface.color);
+  if (themeContrastRatio(themeOklchToRgb(parsedColor.color), surfaceRgb) >= minContrast) {
+    return color;
+  }
+  const direction = themeRelativeLuminance(surfaceRgb) < 0.179 ? "lighter" : "darker";
+  const solved = solveOklchLightness(parsedColor.color, surfaceRgb, minContrast, direction);
+  // Return the 8-bit color the solver measured: the unrounded OKLCH can round
+  // to a neighbor just under the target once it is stored and read back.
+  return themeRgbToHexColor(themeOklchToRgb(solved));
+}
+
+/**
  * The status colors styal shows without a theme, read from the app's own
  * tokens (red-500 / amber-500 families). Generated palettes fall back to
  * these instead of the flagship theme's, so an imported or created theme
