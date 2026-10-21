@@ -3210,6 +3210,7 @@ features:
       - apps/web/src/components/Sidebar.logic.ts
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/chat/NextUnreadChip.tsx
+      - apps/web/src/components/chat/TimelineOverlays.tsx
       - apps/web/src/components/sidebar/SidebarThreadRow.tsx
       - apps/web/src/components/sidebar/attentionStatus.tsx
       - apps/web/src/components/sidebar/nextUnreadThreadBus.ts
