@@ -30,6 +30,7 @@ import * as ProviderRegistry from "./ProviderRegistry.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import {
   makeProviderMaintenanceCapabilities,
@@ -245,6 +246,7 @@ const makeTestRunner = (
   },
   lock: Partial<ProviderInstallLock.ProviderInstallLock["Service"]> = {},
   events: Array<{ readonly event: string; readonly properties: unknown }> = [],
+  settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
 ) =>
   Effect.service(ProviderMaintenanceRunner.ProviderMaintenanceRunner).pipe(
     Effect.provide(
@@ -262,6 +264,7 @@ const makeTestRunner = (
             // Fresh per runner so a version cached by one test cannot leak into another.
             ProviderLatestVersions.layer,
             layerInstallGate(lock),
+            ServerSettings.layerTest(settings),
             Layer.succeed(
               AnalyticsService.AnalyticsService,
               AnalyticsService.AnalyticsService.of({
@@ -1621,6 +1624,73 @@ describe("provider.update.finished", () => {
       ),
     );
   });
+
+  it.effect(
+    "keeps the provider's own updater off after background installs and hands it back",
+    () => {
+      const steps: string[] = [];
+      const run = (autoUpdate: boolean, managedUpdates: boolean) =>
+        Effect.gen(function* () {
+          const { registry } = yield* makeRegistry({ ...baseProvider, version: "2.0.0" });
+          const updater = yield* makeTestRunner(
+            {
+              ...registry,
+              getProviderMaintenanceCapabilitiesForInstance: () =>
+                Effect.succeed({
+                  ...makeProviderMaintenanceCapabilities({
+                    provider: CODEX_DRIVER,
+                    packageName: "@openai/codex",
+                    updateExecutable: "/home/developer/.local/bin/claude",
+                    updateArgs: ["update"],
+                    updateLockKey: "claudeAgent-native",
+                  }),
+                  pinnedUpdate: (version) => ({
+                    command: `install ${version}`,
+                    executable: "/home/developer/.local/bin/claude",
+                    args: ["install", version],
+                    lockKey: "claudeAgent-native",
+                  }),
+                  selfUpdater: {
+                    turnOff: Effect.sync(() => void steps.push("turnOff")),
+                    handBack: Effect.sync(() => void steps.push("handBack")),
+                  },
+                }),
+            },
+            undefined,
+            {},
+            [],
+            { autoUpdateProviders: managedUpdates },
+          );
+          yield* updater.updateProvider(
+            autoUpdate
+              ? {
+                  provider: CODEX_DRIVER,
+                  targetVersion: "2.0.0",
+                  autoUpdate: { shouldStart: Effect.succeed(true) },
+                }
+              : CODEX_DRIVER,
+          );
+        });
+      return Effect.gen(function* () {
+        yield* run(true, true);
+        // A manual update while styal manages updates keeps the updater off.
+        yield* run(false, true);
+        yield* run(false, false);
+        assert.deepStrictEqual(steps, ["install 2.0.0", "turnOff", "update", "update", "handBack"]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            layerNonWindowsPlatform,
+            layerLatestVersionHttpClient("2.0.0"),
+            layerMockSpawner((_command, args) => {
+              steps.push(args.join(" "));
+              return { stdout: "installed" };
+            }),
+          ),
+        ),
+      );
+    },
+  );
 
   it.effect("records an interrupted install once", () => {
     const events: Array<RecordedEvent> = [];

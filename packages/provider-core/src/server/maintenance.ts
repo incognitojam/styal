@@ -1,4 +1,5 @@
 import type { ProviderDriverKind } from "@t3tools/contracts";
+import type * as Effect from "effect/Effect";
 
 export interface ProviderMaintenanceCapabilities {
   readonly provider: ProviderDriverKind;
@@ -27,6 +28,16 @@ export interface ProviderMaintenanceCapabilities {
    * over an active one, which hands updates to styal.
    */
   readonly selfUpdaterActive?: boolean | null;
+  /**
+   * Switches the provider's own updater, for a pinnable native install whose
+   * installer leaves it on. `turnOff` runs after a successful background
+   * install; `handBack` after a successful manual update while managed
+   * updates are off, and undoes only what `turnOff` changed. Neither fails.
+   */
+  readonly selfUpdater?: {
+    readonly turnOff: Effect.Effect<void>;
+    readonly handBack: Effect.Effect<void>;
+  };
 }
 
 export interface ProviderMaintenanceCommandAction {
