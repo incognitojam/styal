@@ -28,8 +28,8 @@ the background, records the provider type, its versions before and after, whethe
 fixed failure category, and how long it took. Instance names, installation paths, update commands,
 installer output, and error messages are not collected.
 
-Web and desktop clients also record explicit diff-order selections and when you open a
-mentioned time's explanation. The web app records when a new-build notice is visible and
+Web and desktop clients also record explicit diff-order selections, when you open a
+mentioned time's explanation, and which automatic settling rules you keep when finishing setup. The web app records when a new-build notice is visible and
 when you choose Refresh. These events use the relevant paired environment's telemetry setting.
 File paths, written times, deployment identifiers, and composer drafts are not collected.
 

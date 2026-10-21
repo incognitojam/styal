@@ -630,7 +630,7 @@ export function ImportDataView({
   setup: boolean;
   source: ImportSource | null;
   stage: LegacyImportStage;
-  /** Setup continues to Preferences after this step instead of finishing. */
+  /** Setup continues to another step after this one instead of finishing. */
   nextStep: boolean;
   checkingPreferences: boolean;
   /** Setup is completing after its last step, with nothing left to import. */

@@ -30,6 +30,7 @@ export function DataImportPanel({
   onSourceChange,
   onContinue,
   onPreferencesAvailable,
+  setupContinues = false,
 }: {
   /** Whether setup is showing this panel; focus only moves into a visible step. */
   active?: boolean;
@@ -42,6 +43,8 @@ export function DataImportPanel({
   onBack?: () => void;
   onDone?: (projectRef?: ScopedProjectRef) => Promise<boolean>;
   onBusyChange?: (busy: boolean) => void;
+  /** Setup has a later step that takes over from `onDone`, so finishing actions read as continuing. */
+  setupContinues?: boolean;
 }) {
   const { environments: allEnvironments } = useEnvironments();
   const environments = environmentIds
@@ -253,7 +256,7 @@ export function DataImportPanel({
           skipLabel={
             preferencesPending
               ? "Checking preferences…"
-              : preferencesAvailable
+              : preferencesAvailable || setupContinues
                 ? "Skip projects"
                 : "Skip for now"
           }
@@ -273,7 +276,7 @@ export function DataImportPanel({
           setup={!!onDone}
           source={source}
           stage={stage}
-          nextStep={nextStep}
+          nextStep={nextStep || setupContinues}
           checkingPreferences={!!onDone && stage === "projects" && preferencesPending}
           finishing={awaitingCompletion || finishing}
           onBack={onBack}

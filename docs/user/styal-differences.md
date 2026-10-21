@@ -264,6 +264,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Setup stays focused on new computers.** On the hosted app, first-time connection setup waits
   for live workspace data and skips Agents and Import for computers that already contain projects
   or threads. An explicit visit to `/welcome` still reopens the complete setup flow.[^setup-comparison]
+- **Choose how threads settle during setup.** A Workflow step explains settling and lets
+  you keep or turn off settling on merge and after inactivity before you reach the sidebar. T3 Code
+  setup does not mention settling as of
+  [revision 67c0fc0](https://github.com/pingdotgg/t3code/tree/67c0fc0cdaf963b103518862dd7b68a9c758ecf2),
+  checked October 20, 2026. [Welcome wizard](./welcome-wizard.md#choose-your-workflow-defaults).
 - **Import without replacing your existing setup.** Bring projects, threads, attachments, and
   supported preferences into styal while leaving the T3 Code installation intact. Existing styal
   project settings take precedence, and interrupted imports can resume without duplicating completed

@@ -2,7 +2,7 @@
 
 styal shows a setup flow when you open a new installation or connect an empty
 computer to the hosted app for the first time. Existing workspaces skip this flow. Setup has
-**Connect**, **Agents**, and **Projects** steps, plus **Preferences** when a
+**Connect**, **Agents**, **Projects**, and **Workflow** steps, plus **Preferences** when a
 selected computer has T3 Code preferences that differ from styal.
 
 ## Connect your computers
@@ -60,13 +60,11 @@ Choose **T3 Code** to migrate an existing installation, or **Claude Code / Codex
 to import CLI conversation history. Setup imports projects from one source at a
 time. Each source only checks the computers selected earlier in setup.
 
-Each step imports when you leave it. When there are preferences to review,
-**Import & continue** imports the selected projects and opens the top-level
-**Preferences** step, and **Skip projects** opens it without importing projects.
-Otherwise, **Import & finish** imports the selection and completes setup, and
-**Skip for now** finishes without importing. On Preferences, **Import & finish**
-applies the selected preferences and **Skip preferences** keeps your current
-values; projects imported in the previous step stay imported. Navigation is
+Each step imports when you leave it. **Import & continue** imports the selected
+projects and opens the next step, and **Skip projects** opens it without importing
+projects. On Preferences, **Import & continue** applies the selected preferences and
+**Skip preferences** keeps your current values; projects imported in the previous
+step stay imported. Navigation is
 disabled while an import runs. T3 Code migration
 remains available in **Settings → Import data**; CLI history import is available
 only during first setup.
@@ -135,6 +133,15 @@ This step is independent of the project source: you can import preferences after
 choosing Claude Code / Codex history, T3 Code projects, or skipping projects.
 Differing preferences are selected by default. Review the changed values and clear
 **Bring over T3 Code preferences** on any computer where you want to keep the current values.
-**Import & finish** imports your selected projects and preferences; **Finish**
-completes setup if nothing is selected. Importing projects alone does not replace
-preferences.
+Importing projects alone does not replace preferences.
+
+## Choose your workflow defaults
+
+Settling moves finished work into the **Settled** shelf at the bottom of the sidebar
+without deleting it. The **Workflow** step chooses whether threads settle on
+their own when their pull request merges, and after a few days without activity. Both
+are on by default; turn both off to settle threads only by hand. **Finish** applies
+your choice to every selected computer and completes setup.
+
+Change these later in **Settings → General**. See
+[Settle finished work](./thread-sidebar.md#settle-finished-work).

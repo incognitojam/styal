@@ -47,6 +47,7 @@ import { resolveHostedConnectionSetup } from "../../onboarding/firstRun.logic";
 import { randomUUID } from "../../lib/utils";
 import { legacyImportPendingCount } from "../../state/dataImport";
 import { OnboardingImportStep } from "./OnboardingImportStep";
+import { WorkflowStep } from "./WorkflowStep";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentShellStatuses, useProjects, useThreadShells } from "../../state/entities";
 import {
@@ -85,16 +86,23 @@ import { cn } from "../../lib/utils";
  * First-run welcome wizard. Rendered over the workspace at `/welcome` on a
  * fresh install (no completed-onboarding flag, empty workspace). Flow per the
  * onboarding overhaul spec: connection choice → sign-in/pair (remote paths) →
- * managed Codex setup or an inline CLI terminal → projects → optional preferences → main screen.
+ * managed Codex setup or an inline CLI terminal → projects → optional preferences →
+ * automatic settlement → main screen.
  * Projects and Preferences each import when the user moves past them.
  * Every step past the connection gate is skippable; the whole wizard is
  * re-runnable by clearing the flag.
  */
 
-type WizardStep = "connection" | "agents" | "projects" | "preferences";
+type WizardStep = "connection" | "agents" | "projects" | "preferences" | "workflow";
 
 const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
-const ONBOARDING_STAGES = ["Connect", "Agents", "Projects"] as const;
+const ONBOARDING_STAGE_LABELS: Record<WizardStep, string> = {
+  connection: "Connect",
+  agents: "Agents",
+  projects: "Projects",
+  preferences: "Preferences",
+  workflow: "Workflow",
+};
 
 export function WelcomeWizard({
   automaticHostedFirstRun = false,
@@ -114,6 +122,8 @@ export function WelcomeWizard({
   const { environments } = useEnvironments();
   const [selection, setSelection] = useState<ReadonlySet<EnvironmentId> | null>(null);
   const [hasPreferences, setHasPreferences] = useState(false);
+  // Where setup lands once the workflow step finishes, chosen by the import steps.
+  const [landing, setLanding] = useState<ScopedProjectRef>();
   const [setupIds, setSetupIds] = useState<readonly EnvironmentId[]>(
     resumeEnvironmentId ? [resumeEnvironmentId] : [],
   );
@@ -184,13 +194,22 @@ export function WelcomeWizard({
     setSetupIds(ids);
     setStep("agents");
   };
-  const stageIndex =
-    step === "agents" ? 1 : step === "projects" ? 2 : step === "preferences" ? 3 : 0;
+  // The workflow step only offers settlement today, so older servers without it skip the step.
+  const settlementEnvironments = environments.filter(
+    (environment) =>
+      setupIds.includes(environment.environmentId) &&
+      environment.serverConfig?.environment.capabilities.threadAutoSettlement === true,
+  );
   const importStep = step === "projects" || step === "preferences";
-  const stages =
-    hasPreferences || step === "preferences"
-      ? [...ONBOARDING_STAGES, "Preferences"]
-      : ONBOARDING_STAGES;
+  const stageSteps: readonly WizardStep[] = [
+    "connection",
+    "agents",
+    "projects",
+    ...(hasPreferences || step === "preferences" ? (["preferences"] as const) : []),
+    ...(settlementEnvironments.length > 0 ? (["workflow"] as const) : []),
+  ];
+  const stages = stageSteps.map((stageStep) => ONBOARDING_STAGE_LABELS[stageStep]);
+  const stageIndex = Math.max(0, stageSteps.indexOf(step));
   const finish = useCallback(
     (projectRef?: ScopedProjectRef, importWarning?: string, importedThreadCount = 0) => {
       if (finishingPromiseRef.current !== null) return finishingPromiseRef.current;
@@ -244,6 +263,12 @@ export function WelcomeWizard({
     },
     [completeOnboarding, onDone],
   );
+  const continueFromImport = (projectRef?: ScopedProjectRef) => {
+    if (settlementEnvironments.length === 0) return finish(projectRef);
+    setLanding(projectRef);
+    void changeStep("workflow");
+    return Promise.resolve(true);
+  };
   const continueFromConnection = () => {
     if (!automaticHostedFirstRun) {
       startSetup(connectionSetup.environmentIds);
@@ -277,8 +302,9 @@ export function WelcomeWizard({
               currentStep={stageIndex}
               isStepDisabled={(index) => isImporting || index >= stageIndex}
               onStepChange={(index) => {
-                if (isImporting || index > stageIndex) return;
-                void changeStep(index === 0 ? "connection" : index === 1 ? "agents" : "projects");
+                const target = stageSteps[index];
+                if (isImporting || index > stageIndex || target === undefined) return;
+                void changeStep(target);
               }}
             />
           </DialogHeader>
@@ -317,6 +343,11 @@ export function WelcomeWizard({
                 onTerminalSessionChange={changeTerminalSession}
                 onContinue={() => void changeStep("projects")}
               />
+            ) : step === "workflow" ? (
+              <WorkflowStep
+                environments={settlementEnvironments}
+                onContinue={() => finish(landing)}
+              />
             ) : null}
             {setupIds.length > 0 ? (
               <div hidden={!importStep} className="min-h-0">
@@ -326,7 +357,8 @@ export function WelcomeWizard({
                   environmentIds={setupIds}
                   stage={step === "preferences" ? "preferences" : "projects"}
                   setIsImporting={setIsImporting}
-                  onDone={finish}
+                  continues={settlementEnvironments.length > 0}
+                  onDone={continueFromImport}
                   onContinue={() => void changeStep("preferences")}
                   onBack={() => void changeStep("projects")}
                   onPreferencesAvailable={setHasPreferences}
