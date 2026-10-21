@@ -2927,6 +2927,7 @@ features:
       - apps/mobile/src/features/cloud/CloudAuthProvider.tsx
       - apps/web/src/cloud/managedAuth.tsx
       - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/useSystemComposerBanners.tsx
       - apps/web/src/connection/platform.ts
       - packages/client-runtime/src/authorization/service.ts
       - packages/client-runtime/src/platform/capabilities.ts
