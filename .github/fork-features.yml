@@ -2725,11 +2725,12 @@ features:
       - The existing Expand table cells and Collapse table cells controls switch between wrapped and single-line rows without retaining measured column minimum widths; collapsed cells keep full values accessible by horizontal scrolling without ellipsis truncation.
       - Tables that must overflow retain discoverable scrollbars, including dense wrapped tables whose headings cannot fit without breaking words.
     implementation_paths:
-      - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MarkdownTable.tsx
       - apps/web/src/components/files/FileMarkdownPreview.tsx
       - apps/web/src/index.css
     upstream_paths:
       - apps/web/src/components/ChatMarkdown.tsx
+      - apps/web/src/components/chat/MarkdownTable.tsx
       - apps/web/src/components/files/FileMarkdownPreview.tsx
       - apps/web/src/components/ui/scroll-area.tsx
       - apps/web/src/index.css
