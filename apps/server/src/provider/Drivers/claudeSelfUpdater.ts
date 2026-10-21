@@ -18,8 +18,8 @@ import * as Schema from "effect/Schema";
  * value the user set is never touched. The record lives in the same file, so
  * every styal server on the machine sees it and it is written in the same rename.
  */
-export const CLAUDE_UPDATER_ENV = "DISABLE_AUTOUPDATER";
-export const CLAUDE_UPDATER_OWNER_ENV = "STYAL_MANAGED_UPDATES";
+const CLAUDE_UPDATER_ENV = "DISABLE_AUTOUPDATER";
+const CLAUDE_UPDATER_OWNER_ENV = "STYAL_MANAGED_UPDATES";
 const OWNED_VALUE = "1";
 
 type JsonObject = { [key: string]: unknown };
@@ -69,7 +69,7 @@ export function claudeUpdaterActive(input: {
 }
 
 /** Settings with the updater turned off by styal, or null to leave them as they are. */
-export function withClaudeUpdaterOff(settings: JsonObject): JsonObject | null {
+function withClaudeUpdaterOff(settings: JsonObject): JsonObject | null {
   const env = settings.env ?? {};
   if (!isObject(env) || CLAUDE_UPDATER_ENV in env) return null;
   return {
@@ -82,7 +82,7 @@ export function withClaudeUpdaterOff(settings: JsonObject): JsonObject | null {
  * Settings without what `withClaudeUpdaterOff` added, or null when styal did
  * not set it. A value the user changed since is left in place.
  */
-export function withClaudeUpdaterHandedBack(settings: JsonObject): JsonObject | null {
+function withClaudeUpdaterHandedBack(settings: JsonObject): JsonObject | null {
   const env = settings.env;
   if (!isObject(env) || !(CLAUDE_UPDATER_OWNER_ENV in env)) return null;
   const { [CLAUDE_UPDATER_OWNER_ENV]: _owner, [CLAUDE_UPDATER_ENV]: updater, ...rest } = env;
