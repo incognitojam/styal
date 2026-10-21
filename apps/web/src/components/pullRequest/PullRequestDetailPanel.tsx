@@ -3,11 +3,8 @@ import {
   pullRequestMergeIntentLabel,
   resolvePullRequestMergeIntent,
 } from "@t3tools/shared/threadPullRequests";
-import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
-import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { AnimatedWidth } from "~/components/AnimatedWidth";
 import {
   scopedThreadKey,
   scopeProjectRef,
@@ -35,25 +32,10 @@ import {
 import {
   ArrowDownUpIcon,
   ArrowLeftIcon,
-  ArrowUpRightIcon,
-  BookOpenIcon,
-  CheckIcon,
-  CopyIcon,
-  ChevronDownIcon,
   FileDiffIcon,
-  FolderGit2Icon,
-  GitBranchIcon,
   GitCommitHorizontalIcon,
-  HammerIcon,
-  MessageCircleQuestionIcon,
   MessageSquareIcon,
-  LinkIcon,
-  MoreHorizontalIcon,
   PanelRightIcon,
-  PlayIcon,
-  RotateCcwIcon,
-  SparklesIcon,
-  Trash2Icon,
 } from "lucide-react";
 import {
   lazy,
@@ -71,11 +53,7 @@ import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
-import {
-  resolveShortcutCommand,
-  shortcutLabelForCommand,
-  type ShortcutMatchContext,
-} from "~/keybindings";
+import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { usePullRequestDefaultMergeMethodResolver } from "./usePullRequestActions";
 import { OFF_HEAD_PULL_REQUEST_CHECKOUT_TOAST } from "./pullRequestCheckoutToast";
@@ -104,19 +82,7 @@ import { vcsEnvironment } from "~/state/vcs";
 import { RelativeTime } from "~/components/RelativeTime";
 import { useUiStateStore } from "~/uiStateStore";
 
-import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuSeparator,
-  MenuShortcut,
-  MenuTrigger,
-} from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
@@ -128,6 +94,13 @@ import {
   PullRequestTimelineGhost,
 } from "./PullRequestGhosts";
 import { PullRequestCopyableCode } from "./PullRequestCopyableCode";
+import { PullRequestActionsMenu } from "./PullRequestActionsMenu";
+import {
+  PullRequestApproveWorkflowsButton,
+  PullRequestCheckoutMenu,
+  PullRequestPrimaryAction,
+  PullRequestResolveConflictsButton,
+} from "./PullRequestDetailActions";
 import { PullRequestBaseBranch } from "./PullRequestBaseBranch";
 import { PullRequestDetailCrumbs } from "./PullRequestDetailCrumbs";
 import { PullRequestTitleEditor } from "./PullRequestTitleEditor";
@@ -159,7 +132,6 @@ import {
   loadingPullRequestCheckoutCommand,
   isPullRequestNotFound,
   isStackedPullRequestBase,
-  pullRequestActionMenuHasGroup,
   pullRequestActionNeedsHostRefresh,
   pullRequestCheckoutCommand,
   pullRequestFindingKey,
@@ -185,10 +157,7 @@ import {
   resolvePullRequestPrimaryControl,
 } from "@t3tools/shared/pullRequestMergeControl";
 import { reportForkClientUsage } from "../../forkClientUsage";
-import {
-  resolvePickableEnvironments,
-  type PickableEnvironment,
-} from "./pullRequestProjectAssignment.logic";
+import { resolvePickableEnvironments } from "./pullRequestProjectAssignment.logic";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import {
   PullRequestActorLabel,
@@ -197,13 +166,10 @@ import {
   pullRequestChecksState,
   pullRequestReviewOutcomeToneClassName,
   resolvePullRequestState,
-  workflowApprovalMessage,
 } from "./pullRequestPresentation";
-import { PullRequestGlyph } from "./pullRequestIcons";
 import { PullRequestGuideTab } from "./PullRequestGuideTab";
 import { guideRunKey, useGuideRunStore } from "./guide/guideRunStore";
 import { useReviewGuideWriter } from "./guide/useReviewGuideWriter";
-import { useInlineActionConfirm } from "./useInlineActionConfirm";
 
 const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
   merge: "Could not merge this pull request",
@@ -268,44 +234,6 @@ const lastHandoffPromptByDraft = new Map<string, string>();
 
 const composerTargetKey = (target: ScopedThreadRef | DraftId): string =>
   typeof target === "string" ? target : scopedThreadKey(target);
-
-function ActOnEnvironmentPicker({
-  environments,
-  value,
-  onChange,
-  disabled,
-}: {
-  environments: ReadonlyArray<PickableEnvironment>;
-  value: EnvironmentId;
-  onChange: (environmentId: EnvironmentId) => void;
-  disabled: boolean;
-}) {
-  return (
-    <>
-      <MenuSeparator />
-      <MenuRadioGroup
-        value={value}
-        onValueChange={(environmentId) => onChange(environmentId as EnvironmentId)}
-      >
-        {environments.map((environment) => (
-          <MenuRadioItem
-            key={environment.environmentId}
-            value={environment.environmentId}
-            disabled={disabled}
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <EnvironmentMachineIcon
-                kind={environment.machine ?? "server"}
-                className="size-3.5 shrink-0"
-              />
-              <span className="truncate">{environment.label}</span>
-            </span>
-          </MenuRadioItem>
-        ))}
-      </MenuRadioGroup>
-    </>
-  );
-}
 
 function reportCheckoutCommandError(error: Error) {
   toastManager.add({
@@ -703,7 +631,6 @@ function PullRequestDetailPanelBody({
   const setMergeMethod = (method: PullRequestMergeMethod) => {
     setMergeMethodSelection({ pullRequestKey, method });
   };
-  const inlineConfirm = useInlineActionConfirm(pullRequestKey);
   const [handoff, setHandoff] = useState<string | null>(null);
   const {
     canWriteSourceControl,
@@ -1369,6 +1296,12 @@ function PullRequestDetailPanelBody({
     });
   };
 
+  const selectMergeMethod = (method: PullRequestMergeMethod) => {
+    setMergeMethod(method);
+    setLastSelectedMergeMethod(method);
+  };
+  const selectActingEnvironment = (next: EnvironmentId) =>
+    setActingScope({ pullRequestKey, environmentId: next });
   const allowedMergeMethods = detail
     ? detail.capabilities.mergeMethods.filter((method) => detail.mergeCapabilities[method])
     : [];
@@ -1524,132 +1457,35 @@ function PullRequestDetailPanelBody({
 
   const checkoutControl =
     context === "page" ? (
-      <Menu>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <MenuTrigger
-                disabled={handoff !== null || checkoutRoot === null}
-                render={
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    aria-label={handoff?.startsWith("checkout") ? "Checking out..." : "Check out"}
-                  >
-                    <GitBranchIcon aria-hidden className="size-3.5" />
-                    <span className="@max-[35rem]/pr-header:hidden">
-                      {handoff?.startsWith("checkout") ? "Checking out..." : "Check out"}
-                    </span>
-                    <ChevronDownIcon aria-hidden className="size-3.5 text-muted-foreground" />
-                  </Button>
-                }
-              />
-            }
-          />
-          <TooltipPopup>Check out this pull request</TooltipPopup>
-        </Tooltip>
-        <MenuPopup align="end" side="bottom">
-          <MenuItem disabled={!canPrepareWorktree} onClick={() => startCheckout("worktree")}>
-            <GitBranchIcon className="mt-1 size-3.5 shrink-0 self-start" />
-            <span className="flex min-w-0 flex-col">
-              <span>In a separate worktree</span>
-              <span className="text-xs text-muted-foreground">
-                Its own folder and thread. Nothing you have open moves.
-              </span>
-            </span>
-          </MenuItem>
-          <MenuItem disabled={!prepareThread.isAllowed} onClick={() => startCheckout("local")}>
-            <FolderGit2Icon className="mt-1 size-3.5 shrink-0 self-start" />
-            <span className="flex min-w-0 flex-col">
-              <span>In this repository</span>
-              <span className="text-xs text-muted-foreground">
-                Switches the branch you are working in, like `gh pr checkout`.
-              </span>
-            </span>
-          </MenuItem>
-          {pickableEnvironments.length > 0 ? (
-            <ActOnEnvironmentPicker
-              environments={pickableEnvironments}
-              value={actingEnvironmentId}
-              onChange={(next) => setActingScope({ pullRequestKey, environmentId: next })}
-              disabled={handoff !== null}
-            />
-          ) : null}
-        </MenuPopup>
-      </Menu>
+      <PullRequestCheckoutMenu
+        handoff={handoff}
+        checkoutRoot={checkoutRoot}
+        canPrepareWorktree={canPrepareWorktree}
+        canCheckoutHere={prepareThread.isAllowed}
+        onCheckout={startCheckout}
+        pickableEnvironments={pickableEnvironments}
+        actingEnvironmentId={actingEnvironmentId}
+        onActingEnvironmentChange={selectActingEnvironment}
+      />
     ) : null;
 
   const resolveConflictsControl = (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <span className="inline-flex shrink-0">
-            <Button
-              size="xs"
-              variant="destructive-outline"
-              disabled={handoff !== null || (attachTarget === null && checkoutRoot === null)}
-              onClick={startResolveConflicts}
-              aria-label={handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
-            >
-              <PullRequestGlyph.conflicting aria-hidden className="size-3.5" />
-              <span className="@max-[30rem]/pr-header:hidden">
-                {handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
-              </span>
-            </Button>
-          </span>
-        }
-      />
-      <TooltipPopup side="top">
-        {handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
-      </TooltipPopup>
-    </Tooltip>
+    <PullRequestResolveConflictsButton
+      handoff={handoff}
+      unavailable={attachTarget === null && checkoutRoot === null}
+      onResolve={startResolveConflicts}
+    />
   );
 
   // The same button on Summary and Checks: one press approves every run waiting on this head.
   const approveWorkflowsButton =
     workflowApprovalsRequired > 0 && !checksStale && can("approve-workflows") ? (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span className="inline-flex shrink-0">
-              <Button
-                size="xs"
-                variant="warning-outline"
-                disabled={actionPending}
-                {...inlineConfirm.props(
-                  "approve-workflows",
-                  () => void perform("approve-workflows"),
-                )}
-                aria-label={
-                  pendingAction === "approve-workflows"
-                    ? "Approving..."
-                    : inlineConfirm.isArmed("approve-workflows")
-                      ? "Confirm approve?"
-                      : "Approve workflows to run"
-                }
-              >
-                <PlayIcon aria-hidden className="size-3.5" />
-                <span className="inline-grid">
-                  <span aria-hidden className="invisible col-start-1 row-start-1">
-                    Approve workflows to run
-                  </span>
-                  <span aria-hidden className="invisible col-start-1 row-start-1">
-                    Confirm approve?
-                  </span>
-                  <span className="col-start-1 row-start-1">
-                    {pendingAction === "approve-workflows"
-                      ? "Approving..."
-                      : inlineConfirm.isArmed("approve-workflows")
-                        ? "Confirm approve?"
-                        : "Approve workflows to run"}
-                  </span>
-                </span>
-              </Button>
-            </span>
-          }
-        />
-        <TooltipPopup side="top">{workflowApprovalMessage(workflowApprovalsRequired)}</TooltipPopup>
-      </Tooltip>
+      <PullRequestApproveWorkflowsButton
+        pullRequestKey={pullRequestKey}
+        pendingAction={pendingAction}
+        perform={perform}
+        workflowApprovalsRequired={workflowApprovalsRequired}
+      />
     ) : null;
 
   if (detailQuery.isPending && !detail) {
@@ -1777,461 +1613,67 @@ function PullRequestDetailPanelBody({
                   threadRef={null}
                 />
               ) : null}
-              {mergeIntent && primaryAction !== "auto-merge-armed" ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Badge
-                        size="control"
-                        variant="info"
-                        role="img"
-                        aria-label={armedAutoMergeLabel}
-                      >
-                        <PullRequestMergeIntentIcon
-                          Icon={PullRequestGlyph.pullRequest}
-                          mergeIntent={mergeIntent ?? undefined}
-                          className={cn("size-3.5", statePresentation?.toneClassName)}
-                        />
-                        <span className="@max-[30rem]/pr-header:hidden">{armedAutoMergeLabel}</span>
-                      </Badge>
-                    }
-                  />
-                  <TooltipPopup side="top">
-                    {armedAutoMergeLabel}: the host will merge this on its own once its requirements
-                    are met
-                  </TooltipPopup>
-                </Tooltip>
-              ) : null}
-              {primaryAction === "resolve" ? (
-                resolveConflictsControl
-              ) : primaryAction === "ready" ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className="inline-flex shrink-0">
-                        <Button
-                          size="xs"
-                          variant="default"
-                          disabled={actionPending}
-                          onClick={() => void perform("ready")}
-                          aria-label="Ready for review"
-                        >
-                          <PullRequestGlyph.pullRequest aria-hidden className="size-3.5" />
-                          <span className="@max-[30rem]/pr-header:hidden">Ready for review</span>
-                        </Button>
-                      </span>
-                    }
-                  />
-                  <TooltipPopup side="top">Ready for review</TooltipPopup>
-                </Tooltip>
-              ) : primaryAction === "enable-auto-merge" ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className="inline-flex shrink-0">
-                        <Button
-                          size="xs"
-                          variant="default"
-                          disabled={actionPending}
-                          {...inlineConfirm.props(
-                            "enable-auto-merge",
-                            () => void perform("enable-auto-merge", selectedMergeMethod),
-                          )}
-                          aria-label={
-                            pendingAction === "enable-auto-merge"
-                              ? "Enabling..."
-                              : inlineConfirm.isArmed("enable-auto-merge")
-                                ? "Confirm auto-merge?"
-                                : pendingAutoMergeLabel
-                          }
-                        >
-                          {inlineConfirm.isArmed("enable-auto-merge") ? (
-                            <CheckIcon aria-hidden className="size-3.5" />
-                          ) : (
-                            <PullRequestGlyph.merged aria-hidden className="size-3.5" />
-                          )}
-                          <AnimatedWidth className="@max-[30rem]/pr-header:hidden">
-                            <span className="grid">
-                              <span aria-hidden className="invisible col-start-1 row-start-1">
-                                {pendingAutoMergeLabel}
-                              </span>
-                              <span className="col-start-1 row-start-1">
-                                {pendingAction === "enable-auto-merge"
-                                  ? "Enabling..."
-                                  : inlineConfirm.isArmed("enable-auto-merge")
-                                    ? "Confirm auto-merge?"
-                                    : pendingAutoMergeLabel}
-                              </span>
-                            </span>
-                          </AnimatedWidth>
-                        </Button>
-                      </span>
-                    }
-                  />
-                  <TooltipPopup side="top">
-                    {pendingAction === "enable-auto-merge"
-                      ? "Enabling..."
-                      : inlineConfirm.isArmed("enable-auto-merge")
-                        ? requiredBranchUpdate
-                          ? "Confirm auto-merge? This branch must be updated first; enabling auto-merge will not update it."
-                          : "Confirm auto-merge?"
-                        : pendingAutoMergeLabel}
-                  </TooltipPopup>
-                </Tooltip>
-              ) : primaryAction === "auto-merge-armed" ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Badge
-                        size="control"
-                        variant="info"
-                        role="img"
-                        aria-label={armedAutoMergeLabel}
-                      >
-                        <PullRequestMergeIntentIcon
-                          Icon={PullRequestGlyph.pullRequest}
-                          mergeIntent={mergeIntent ?? undefined}
-                          className={cn("size-3.5", statePresentation?.toneClassName)}
-                        />
-                        <span className="@max-[30rem]/pr-header:hidden">{armedAutoMergeLabel}</span>
-                      </Badge>
-                    }
-                  />
-                  <TooltipPopup side="top">
-                    {armedAutoMergeLabel}: the host will merge this on its own once its requirements
-                    are met
-                  </TooltipPopup>
-                </Tooltip>
-              ) : primaryAction === "merge" ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className="inline-flex shrink-0">
-                        <Button
-                          size="xs"
-                          variant="default"
-                          disabled={actionPending}
-                          {...inlineConfirm.props(
-                            "merge",
-                            () => void perform("merge", selectedMergeMethod),
-                          )}
-                          aria-label={
-                            pendingAction === "merge"
-                              ? "Merging..."
-                              : inlineConfirm.isArmed("merge")
-                                ? "Confirm merge?"
-                                : selectedMergeMethodLabel
-                          }
-                        >
-                          {inlineConfirm.isArmed("merge") ? (
-                            <CheckIcon aria-hidden className="size-3.5" />
-                          ) : (
-                            <PullRequestGlyph.merged aria-hidden className="size-3.5" />
-                          )}
-                          <AnimatedWidth className="@max-[30rem]/pr-header:hidden">
-                            <span className="grid">
-                              <span aria-hidden className="invisible col-start-1 row-start-1">
-                                {selectedMergeMethodLabel}
-                              </span>
-                              <span className="col-start-1 row-start-1">
-                                {pendingAction === "merge"
-                                  ? "Merging..."
-                                  : inlineConfirm.isArmed("merge")
-                                    ? "Confirm merge?"
-                                    : selectedMergeMethodLabel}
-                              </span>
-                            </span>
-                          </AnimatedWidth>
-                        </Button>
-                      </span>
-                    }
-                  />
-                  <TooltipPopup side="top">
-                    {pendingAction === "merge"
-                      ? "Merging..."
-                      : inlineConfirm.isArmed("merge")
-                        ? "Confirm merge?"
-                        : selectedMergeMethodLabel}
-                  </TooltipPopup>
-                </Tooltip>
-              ) : (primaryAction === "merged" || primaryAction === "closed") &&
-                statePresentation !== null ? (
-                <Badge size="control" variant="outline">
-                  <span className={cn("flex items-center gap-1", statePresentation.toneClassName)}>
-                    <statePresentation.Icon className="size-3.5" />
-                    {statePresentation.label}
-                  </span>
-                </Badge>
-              ) : null}
+              <PullRequestPrimaryAction
+                pullRequestKey={pullRequestKey}
+                primaryAction={primaryAction}
+                mergeIntent={mergeIntent}
+                requiredBranchUpdate={requiredBranchUpdate !== null}
+                armedAutoMergeLabel={armedAutoMergeLabel}
+                pendingAutoMergeLabel={pendingAutoMergeLabel}
+                selectedMergeMethod={selectedMergeMethod}
+                selectedMergeMethodLabel={selectedMergeMethodLabel}
+                statePresentation={statePresentation}
+                pendingAction={pendingAction}
+                perform={perform}
+                resolveConflicts={resolveConflictsControl}
+              />
               {checkoutControl}
-              <Menu>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <MenuTrigger
-                        render={
-                          <Button
-                            aria-label={
-                              refreshing ? "Refreshing pull request" : "More pull request actions"
-                            }
-                            size="icon-xs"
-                            variant="ghost-muted"
-                          />
-                        }
-                      >
-                        {refreshing ? (
-                          <RefreshIcon refreshing size="md" />
-                        ) : (
-                          <MoreHorizontalIcon className="size-4" />
-                        )}
-                      </MenuTrigger>
-                    }
-                  />
-                  <TooltipPopup>
-                    {refreshing ? "Refreshing pull request" : "More pull request actions"}
-                  </TooltipPopup>
-                </Tooltip>
-                <MenuPopup align="end" side="bottom">
-                  <PullRequestThreadLinks
-                    display="menu-item"
-                    environmentId={environmentId}
-                    reference={reference}
-                    url={detail.url}
-                    threadRef={
-                      threadRef ??
-                      (typeof composerDraftTarget === "object" ? composerDraftTarget : null)
-                    }
-                    onPickerOpenChange={setThreadPickerOpen}
-                  />
-                  <MenuItem disabled={refreshing} onClick={() => void refreshFromHost()}>
-                    <RefreshIcon size="sm" refreshing={refreshing} />
-                    Refresh
-                  </MenuItem>
-                  <MenuItem disabled={handoff !== null} onClick={askAboutPullRequest}>
-                    <MessageCircleQuestionIcon className="mt-1 size-3.5 shrink-0 self-start" />
-                    <span className="flex min-w-0 flex-col">
-                      <span>{handoff === "ask" ? "Opening..." : "Ask a question"}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {attachTarget !== null
-                          ? "Adds the pull request to this thread's composer."
-                          : "Opens a thread that knows which pull request you mean."}
-                      </span>
-                    </span>
-                  </MenuItem>
-                  <MenuItem disabled={handoff !== null} onClick={explainPullRequest}>
-                    <BookOpenIcon className="mt-1 size-3.5 shrink-0 self-start" />
-                    <span className="flex min-w-0 flex-col">
-                      <span>{handoff === "explain" ? "Opening..." : "Explain this PR"}</span>
-                      <span className="text-xs text-muted-foreground">
-                        A walk through the diff and what to read closely.
-                      </span>
-                    </span>
-                  </MenuItem>
-                  <MenuItem
-                    disabled={handoff !== null || !canFixFindings}
-                    onClick={startFixFindings}
-                  >
-                    <HammerIcon className="size-3.5" />
-                    {handoff === "findings" ? "Preparing..." : handoffLabels.fixFindings}
-                  </MenuItem>
-                  {reviewGuidesEnabled && guideWriter.canWrite ? (
-                    <MenuItem disabled={guideWriter.running} onClick={writeGuide}>
-                      <SparklesIcon className="size-3.5" />
-                      {guideWriter.running
-                        ? "Writing guide..."
-                        : guideWriter.data?.guide == null
-                          ? "Write guide"
-                          : "Rewrite guide"}
-                    </MenuItem>
-                  ) : null}
-                  {pickableEnvironments.length > 0 ? (
-                    <ActOnEnvironmentPicker
-                      environments={pickableEnvironments}
-                      value={actingEnvironmentId}
-                      onChange={(next) => setActingScope({ pullRequestKey, environmentId: next })}
-                      disabled={handoff !== null}
-                    />
-                  ) : null}
-                  <MenuSeparator />
-                  {detail.state === "open" ? (
-                    <>
-                      {showsDraftToggle ? (
-                        <MenuItem
-                          disabled={actionPending}
-                          onClick={() => void perform(detail.isDraft ? "ready" : "draft")}
-                        >
-                          {detail.isDraft ? (
-                            <PullRequestGlyph.pullRequest className="size-3.5" />
-                          ) : (
-                            <PullRequestGlyph.draft className="size-3.5" />
-                          )}
-                          {detail.isDraft ? "Ready for review" : "Convert to draft"}
-                        </MenuItem>
-                      ) : null}
-                      {showsMergeNow ? (
-                        <MenuItem
-                          closeOnClick={inlineConfirm.isArmed("merge")}
-                          aria-label={
-                            inlineConfirm.isArmed("merge") ? mergeNowConfirmLabel : mergeNowLabel
-                          }
-                          disabled={actionPending}
-                          {...inlineConfirm.props("merge", () => void mergeNowPressed())}
-                        >
-                          <PullRequestGlyph.merged className="size-3.5" />
-                          {inlineConfirm.isArmed("merge") ? mergeNowConfirmLabel : mergeNowLabel}
-                        </MenuItem>
-                      ) : null}
-                      {autoMergeArmed && can("disable-auto-merge") ? (
-                        <MenuItem
-                          disabled={actionPending}
-                          onClick={() => void perform("disable-auto-merge")}
-                        >
-                          <PullRequestGlyph.merged className="size-3.5" />
-                          Disable auto-merge
-                        </MenuItem>
-                      ) : showsAutoMerge ? (
-                        <MenuItem
-                          closeOnClick={inlineConfirm.isArmed("enable-auto-merge")}
-                          aria-label={
-                            inlineConfirm.isArmed("enable-auto-merge")
-                              ? "Confirm auto-merge?"
-                              : "Enable auto-merge"
-                          }
-                          disabled={actionPending}
-                          {...inlineConfirm.props(
-                            "enable-auto-merge",
-                            () => void perform("enable-auto-merge", selectedMergeMethod),
-                          )}
-                        >
-                          <PullRequestGlyph.merged className="size-3.5" />
-                          {inlineConfirm.isArmed("enable-auto-merge")
-                            ? "Confirm auto-merge?"
-                            : "Enable auto-merge"}
-                        </MenuItem>
-                      ) : null}
-                      {showsMergeMethods ? (
-                        <>
-                          {showsDraftToggle || showsMergeNow || showsAutoMerge ? (
-                            <MenuSeparator />
-                          ) : null}
-                          <MenuRadioGroup
-                            value={selectedMergeMethod}
-                            onValueChange={(method) => {
-                              const selectedMethod = method as PullRequestMergeMethod;
-                              setMergeMethod(selectedMethod);
-                              setLastSelectedMergeMethod(selectedMethod);
-                            }}
-                          >
-                            {allowedMergeMethods.map((method) => (
-                              <MenuRadioItem
-                                key={method}
-                                value={method}
-                                disabled={actionPending}
-                                closeOnClick
-                              >
-                                <span className="flex min-w-0 items-center gap-2">
-                                  <PullRequestGlyph.merged className="size-3.5" />
-                                  <span>{PULL_REQUEST_MERGE_METHOD_LABELS[method]}</span>
-                                </span>
-                              </MenuRadioItem>
-                            ))}
-                          </MenuRadioGroup>
-                        </>
-                      ) : null}
-                      {pullRequestActionMenuHasGroup(
-                        showsDraftToggle,
-                        showsAutoMerge || showsMergeNow,
-                        showsMergeMethods,
-                      ) ? (
-                        <MenuSeparator />
-                      ) : null}
-                    </>
-                  ) : null}
-                  <MenuItem onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}>
-                    <ArrowUpRightIcon className="size-3.5" />
-                    {openOnHostText}
-                  </MenuItem>
-                  <MenuItem onClick={() => copyReference(detail.url, "PR link")}>
-                    <LinkIcon className="size-3.5" />
-                    Copy link
-                    <MenuShortcut>
-                      {shortcutLabelForCommand(keybindings, "thread.copyReference")}
-                    </MenuShortcut>
-                  </MenuItem>
-                  <MenuItem onClick={() => copyReference(`#${reference.number}`, "PR number")}>
-                    <CopyIcon className="size-3.5" />
-                    Copy PR number
-                    <MenuShortcut>
-                      {shortcutLabelForCommand(keybindings, "pullRequest.copyNumber")}
-                    </MenuShortcut>
-                  </MenuItem>
-                  {detail.state === "open" && can("close") ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuItem
-                        closeOnClick={inlineConfirm.isArmed("close")}
-                        aria-label={
-                          inlineConfirm.isArmed("close") ? "Confirm close?" : "Close pull request"
-                        }
-                        variant="destructive"
-                        disabled={actionPending}
-                        {...inlineConfirm.props("close", () => void perform("close"))}
-                      >
-                        <PullRequestGlyph.closed className="size-3.5" />
-                        {inlineConfirm.isArmed("close") ? "Confirm close?" : "Close pull request"}
-                      </MenuItem>
-                    </>
-                  ) : detail.state === "closed" && can("reopen") ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuItem disabled={actionPending} onClick={() => void perform("reopen")}>
-                        <PullRequestGlyph.reopen className="size-3.5" />
-                        Reopen pull request
-                      </MenuItem>
-                    </>
-                  ) : detail.state === "merged" && can("revert") ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuItem
-                        closeOnClick={inlineConfirm.isArmed("revert")}
-                        aria-label={
-                          inlineConfirm.isArmed("revert") ? "Confirm revert?" : "Revert changes"
-                        }
-                        variant={inlineConfirm.isArmed("revert") ? "destructive" : "default"}
-                        disabled={actionPending}
-                        {...inlineConfirm.props("revert", () => void perform("revert"))}
-                      >
-                        <RotateCcwIcon className="size-3.5" />
-                        {inlineConfirm.isArmed("revert") ? "Confirm revert?" : "Revert changes"}
-                      </MenuItem>
-                    </>
-                  ) : null}
-                  {showsDeleteBranch ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuItem
-                        variant="destructive"
-                        disabled={actionPending || !environmentConnected}
-                        onClick={() => void confirmDeleteBranch()}
-                      >
-                        <Trash2Icon className="mt-1 size-3.5 shrink-0 self-start" />
-                        <span className="flex min-w-0 flex-col">
-                          <span>
-                            {pendingAction === "delete-branch"
-                              ? "Deleting branch..."
-                              : "Delete branch"}
-                          </span>
-                          <span className="truncate text-xs text-muted-foreground">
-                            {environmentConnected
-                              ? detail.headBranch
-                              : "Reconnect to delete this branch"}
-                          </span>
-                        </span>
-                      </MenuItem>
-                    </>
-                  ) : null}
-                </MenuPopup>
-              </Menu>
+              <PullRequestActionsMenu
+                environmentId={environmentId}
+                reference={reference}
+                pullRequestKey={pullRequestKey}
+                detail={detail}
+                linkThreadRef={
+                  threadRef ??
+                  (typeof composerDraftTarget === "object" ? composerDraftTarget : null)
+                }
+                onThreadPickerOpenChange={setThreadPickerOpen}
+                refreshing={refreshing}
+                refreshFromHost={refreshFromHost}
+                handoff={handoff}
+                attachesToComposer={attachTarget !== null}
+                askAboutPullRequest={askAboutPullRequest}
+                explainPullRequest={explainPullRequest}
+                canFixFindings={canFixFindings}
+                startFixFindings={startFixFindings}
+                handoffLabels={handoffLabels}
+                canWriteGuide={reviewGuidesEnabled && guideWriter.canWrite}
+                guideRunning={guideWriter.running}
+                guideWritten={guideWriter.data?.guide != null}
+                writeGuide={writeGuide}
+                pickableEnvironments={pickableEnvironments}
+                actingEnvironmentId={actingEnvironmentId}
+                onActingEnvironmentChange={selectActingEnvironment}
+                can={can}
+                autoMergeArmed={autoMergeArmed}
+                showsDraftToggle={showsDraftToggle}
+                showsMergeNow={showsMergeNow}
+                mergeNowLabel={mergeNowLabel}
+                mergeNowConfirmLabel={mergeNowConfirmLabel}
+                mergeNowPressed={mergeNowPressed}
+                showsAutoMerge={showsAutoMerge}
+                showsMergeMethods={showsMergeMethods}
+                allowedMergeMethods={allowedMergeMethods}
+                selectedMergeMethod={selectedMergeMethod}
+                onSelectMergeMethod={selectMergeMethod}
+                showsDeleteBranch={showsDeleteBranch}
+                environmentConnected={environmentConnected}
+                confirmDeleteBranch={confirmDeleteBranch}
+                pendingAction={pendingAction}
+                perform={perform}
+                openOnHostText={openOnHostText}
+                copyReference={copyReference}
+              />
             </TooltipProvider>
           ) : null}
           {onClose ? (
