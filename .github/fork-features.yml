@@ -2644,6 +2644,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
+      - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/shared/src/toolRowPresentation.ts
     upstream_paths:
@@ -2651,6 +2652,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
+      - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/orchestration-v2/CommandOutputQuery.test.ts
@@ -5219,6 +5221,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
+      - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/lib/projectScriptTerminal.ts
       - apps/web/src/session-logic.ts
@@ -5235,6 +5238,7 @@ features:
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts
       - apps/web/src/components/chat/TimelineWorkEntryRow.tsx
+      - apps/web/src/components/chat/TimelineWorkGroupRows.tsx
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/lib/projectScriptTerminal.ts
       - apps/web/src/session-logic.ts
