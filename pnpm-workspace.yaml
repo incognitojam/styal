@@ -369,6 +369,7 @@ patchedDependencies:
   alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
   expo-audio@58.0.9: patches/expo-audio@58.0.9.patch
   expo-network@58.0.3: patches/expo-network@58.0.3.patch
+  "@clerk/electron@0.1.1": patches/@clerk__electron@0.1.1.patch
   "@clerk/expo-native-components@0.2.0": patches/@clerk__expo-native-components@0.2.0.patch
   # Staple retries never ran: the promise-retry callback ignored `retry`. Fixed in @electron/notarize 3.x, but electron-builder pins 2.5.0.
   "@electron/notarize@2.5.0": patches/@electron__notarize@2.5.0.patch
