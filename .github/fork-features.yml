@@ -872,11 +872,14 @@ features:
       - apps/desktop/src/app/DesktopLifecycle.ts
       - apps/desktop/src/app/DesktopShutdownConfirmation.ts
       - apps/desktop/src/app/DesktopShutdownGuard.ts
+      - apps/desktop/src/electron/ElectronNativeUpdater.ts
       - apps/desktop/src/electron/ElectronUpdater.ts
       - apps/desktop/src/ipc/methods/serverExposure.ts
       - apps/desktop/src/ipc/methods/shutdownConfirmation.ts
       - apps/desktop/src/ipc/methods/wsl.ts
       - apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts
+      - apps/desktop/src/updates/DesktopIdleRestart.ts
+      - apps/desktop/src/updates/DesktopNativeUpdateStaging.ts
       - apps/desktop/src/updates/DesktopUpdates.ts
       - apps/desktop/src/updates/releaseNotes.ts
       - apps/desktop/src/updates/updateMachine.ts
@@ -913,6 +916,8 @@ features:
       - apps/desktop/src/electron/ElectronUpdater.test.ts
       - apps/desktop/src/ipc/methods/wsl.test.ts
       - apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
+      - apps/desktop/src/updates/DesktopIdleRestart.test.ts
+      - apps/desktop/src/updates/DesktopNativeUpdateStaging.test.ts
       - apps/desktop/src/updates/DesktopRemoteUpdates.test.ts
       - apps/desktop/src/updates/DesktopUpdates.test.ts
       - apps/desktop/src/updates/releaseNotes.test.ts

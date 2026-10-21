@@ -1,23 +1,21 @@
 import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import type { DesktopFeatureUsageReport, DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopUpdateState } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as PlatformError from "effect/PlatformError";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Stream from "effect/Stream";
 
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
-import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
+import { makeNativeUpdatesFakes, type NativeUpdatesFakeOptions } from "./nativeUpdatesTestFakes.ts";
 
 /** Shared DesktopUpdates test harness: a fully stubbed updater layer whose
     electron-updater events are driven by hand via `emit`. Used by
@@ -25,7 +23,7 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 
 export const flushCallbacks = Effect.yieldNow;
 
-export interface UpdatesHarnessOptions {
+export interface UpdatesHarnessOptions extends NativeUpdatesFakeOptions {
   readonly confirmShutdown?: Effect.Effect<boolean>;
   readonly installWait?: Effect.Effect<void>;
   readonly installError?: ElectronUpdater.ElectronUpdaterQuitAndInstallError;
@@ -38,23 +36,6 @@ export interface UpdatesHarnessOptions {
   readonly setDisableDifferentialDownload?: Effect.Effect<void>;
   readonly downloadUpdate?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterDownloadUpdateError>;
   readonly quitAndInstall?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>;
-  /** macOS: whether the app bundle can be staged without administrator rights.
-      Off by default, which keeps staging at quit as before. */
-  readonly stagesInBackground?: boolean;
-  /** Runs when background staging starts, before its outcome. */
-  readonly beforeNativeStageOutcome?: Effect.Effect<void>;
-  /** Where Squirrel's staging fails: before writing ShipItState.plist (a
-      download or signature failure), after it (ShipIt submission), or with
-      no update (Squirrel's empty result, reported as update-not-available
-      rather than an error). */
-  readonly nativeStageFailure?: () =>
-    | "before-request"
-    | "after-request"
-    | "not-available"
-    | undefined;
-  readonly discardNativeUpdateFailure?: "job-removal" | "request-removal";
-  /** A ShipIt job and request left by an earlier process. */
-  readonly inheritedShipItRequest?: string;
   readonly stopBackend?: Effect.Effect<void>;
   readonly startBackend?: Effect.Effect<void>;
   readonly env?: Record<string, string | undefined>;
@@ -63,57 +44,12 @@ export interface UpdatesHarnessOptions {
   readonly packageType?: string | undefined;
 }
 
-/** A host with nothing that blocks or needs confirming. */
-export const quietHost = {
-  activeSessions: 0,
-  continuableSessions: 0,
-  waitingSessions: 0,
-  terminalsRequiringConfirmation: 0,
-  terminalsWithUnknownActivity: 0,
-  environmentsUsingDevices: 0,
-} satisfies DesktopShutdownGuard.ActivityCheck;
-
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
-  // Idle restart inputs, changed by tests between ticks. `onInspect` runs
-  // during each activity inspection, before it returns `hosts`.
-  const idleRestart = {
-    idleState: "active" as ElectronPowerMonitor.ElectronIdleState,
-    hosts: [quietHost] as ReadonlyArray<DesktopShutdownGuard.ActivityCheck>,
-    inspections: 0,
-    onInspect: undefined as (() => void) | undefined,
-    reports: [] as DesktopFeatureUsageReport[],
-    /** Contents of the pending file that outlives the process. */
-    pendingFile: undefined as string | undefined,
-  };
   let autoInstallOnAppQuit = false;
   const installs: Array<{ isSilent: boolean; isForceRunAfter: boolean }> = [];
   let checkCount = 0;
   let quitAndInstallCount = 0;
   let downloadCount = 0;
-  // Squirrel.Mac (8d80880) as electron-updater 6.8.9's MacUpdater drives it.
-  // Every update-downloaded follows a setFeedURL, which creates a fresh native
-  // updater. Staging writes ShipItState.plist (`request`) and then submits the
-  // ShipIt job, once per native updater. On exit, ShipIt installs `request`.
-  // MacUpdater's `staged` flag is set by any successful staging and never
-  // reset; quitAndInstall stages first only while it is unset.
-  const squirrel = {
-    feedVersion: undefined as string | undefined,
-    feedSubmitted: false,
-    job: options.inheritedShipItRequest !== undefined,
-    request: options.inheritedShipItRequest,
-    staged: false,
-    stageCount: 0,
-    discardCount: 0,
-    installedOnExit: [] as Array<string | undefined>,
-  };
-  const stageFromFeed = () => {
-    squirrel.request = squirrel.feedVersion;
-    if (!squirrel.feedSubmitted) {
-      squirrel.feedSubmitted = true;
-      squirrel.job = true;
-    }
-    squirrel.staged = true;
-  };
   let allowDowngrade = false;
   let fullChangelog = false;
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
@@ -138,15 +74,13 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     }
   };
 
-  const harnessEmit = (eventName: string, payload?: unknown) => {
-    if (eventName === "update-downloaded") {
-      squirrel.feedVersion = (payload as { version: string }).version;
-      squirrel.feedSubmitted = false;
-    }
+  const emit = (eventName: string, payload?: unknown) => {
+    nativeFakes.onEmit(eventName, payload);
     for (const listener of listeners.get(eventName) ?? []) {
       listener(payload);
     }
   };
+  const nativeFakes = makeNativeUpdatesFakes(options, emit);
 
   const layerUpdater = Layer.succeed(ElectronUpdater.ElectronUpdater, {
     setFeedURL: (options) =>
@@ -181,8 +115,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         installs.push(flags);
         quitAndInstallCount += 1;
         installSteps.push("quitAndInstall");
-        if (!squirrel.staged) stageFromFeed();
-        squirrel.installedOnExit.push(squirrel.job ? squirrel.request : undefined);
+        nativeFakes.onQuitAndInstall();
       }).pipe(
         Effect.andThen(
           options.quitAndInstall ??
@@ -191,49 +124,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
               : (options.installWait ?? Effect.void)),
         ),
       ),
-    canStageNativeUpdateInBackground: Effect.succeed(options.stagesInBackground ?? false),
-    stageNativeUpdate: Effect.sync(() => {
-      squirrel.stageCount += 1;
-    }).pipe(
-      Effect.andThen(options.beforeNativeStageOutcome ?? Effect.void),
-      Effect.andThen(
-        Effect.suspend(() => {
-          const failure = options.nativeStageFailure?.();
-          if (failure === undefined) {
-            stageFromFeed();
-            return Effect.void;
-          }
-          if (failure === "after-request") {
-            squirrel.request = squirrel.feedVersion;
-          }
-          // MacUpdater re-emits native errors to electron-updater listeners.
-          if (failure !== "not-available") {
-            harnessEmit("error", new Error("Squirrel.Mac staging failed"));
-          }
-          return Effect.fail(
-            new ElectronUpdater.ElectronUpdaterNativeUpdateError({
-              operation: "stage",
-              cause: new Error(`staging failed ${failure}`),
-            }),
-          );
-        }),
-      ),
-    ),
-    discardNativeUpdate: Effect.suspend(() => {
-      squirrel.discardCount += 1;
-      if (options.discardNativeUpdateFailure === "job-removal") {
-        return Effect.fail(
-          new ElectronUpdater.ElectronUpdaterNativeUpdateError({
-            operation: "discard",
-            cause: new Error("launchctl remove failed"),
-          }),
-        );
-      }
-      squirrel.job = false;
-      // A request whose removal fails is left behind, which the adapter ignores.
-      if (options.discardNativeUpdateFailure !== "request-removal") squirrel.request = undefined;
-      return Effect.void;
-    }),
     on: (eventName, listener) =>
       Effect.acquireRelease(
         Effect.sync(() => {
@@ -348,74 +238,38 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   // Tracks the restart markers installs leave, so installs stay free of real
   // disk I/O that would outrun the tests' settle loops.
   const updateRestartMarkers = new Set<string>();
-  // The idle restart pending file is kept apart from the restart markers.
-  const isIdleRestartFile = (path: string) => path.endsWith("update-idle-restart-pending");
-  const layerFileSystem = FileSystem.layerNoop({
+  const fileSystem = {
     readFileString: (path) =>
       path === "/missing/resources/package-type" && options.packageType !== undefined
         ? Effect.succeed(options.packageType)
-        : isIdleRestartFile(path) && idleRestart.pendingFile !== undefined
-          ? Effect.succeed(idleRestart.pendingFile)
-          : Effect.fail(
-              PlatformError.systemError({
-                module: "FileSystem",
-                method: "readFileString",
-                _tag: "NotFound",
-                pathOrDescriptor: path,
-              }),
-            ),
+        : Effect.fail(
+            PlatformError.systemError({
+              module: "FileSystem",
+              method: "readFileString",
+              _tag: "NotFound",
+              pathOrDescriptor: path,
+            }),
+          ),
     makeDirectory: () => Effect.void,
-    writeFileString: (path, contents) =>
+    writeFileString: (path) =>
       Effect.sync(() => {
-        if (isIdleRestartFile(path)) idleRestart.pendingFile = contents;
-        else updateRestartMarkers.add(path);
+        updateRestartMarkers.add(path);
       }),
     remove: (path) =>
       Effect.sync(() => {
-        if (isIdleRestartFile(path)) idleRestart.pendingFile = undefined;
         updateRestartMarkers.delete(path);
       }),
-  });
-
-  const layerPowerMonitor = Layer.succeed(ElectronPowerMonitor.ElectronPowerMonitor, {
-    isOnBatteryPower: Effect.succeed(false),
-    getSystemIdleTime: Effect.succeed(0),
-    getSystemIdleState: () => Effect.sync(() => idleRestart.idleState),
-    getCurrentThermalState: Effect.succeed("nominal"),
-    onSimpleEvent: () => Effect.void,
-    onThermalStateChange: () => Effect.void,
-    onSpeedLimitChange: () => Effect.void,
-  } satisfies ElectronPowerMonitor.ElectronPowerMonitor["Service"]);
-
-  const layerTelemetry = Layer.succeed(DesktopTelemetryPublisher.DesktopTelemetryPublisher, {
-    latest: Effect.succeedNone,
-    changes: Stream.empty,
-    encoded: Stream.empty,
-    handleControlForSource: () => Effect.void,
-    removeControlSource: () => Effect.void,
-    publishUpdateReport: () => Effect.void,
-    publishFeatureUsage: (report) =>
-      Effect.sync(() => {
-        idleRestart.reports.push(report);
-      }),
-    updateRequests: Stream.empty,
-    updateCommits: Stream.empty,
-    updateCancellations: Stream.empty,
-  } satisfies DesktopTelemetryPublisher.DesktopTelemetryPublisher["Service"]);
+  } satisfies Partial<FileSystem.FileSystem>;
+  const layerFileSystem = FileSystem.layerNoop(nativeFakes.withIdleRestartFile(fileSystem));
 
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(
       Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
         confirm: () => options.confirmShutdown ?? Effect.succeed(true),
-        inspect: Effect.sync(() => {
-          idleRestart.inspections += 1;
-          idleRestart.onInspect?.();
-          return idleRestart.hosts;
-        }),
+        inspect: nativeFakes.inspect,
       }),
     ),
-    Layer.provide(layerPowerMonitor),
-    Layer.provideMerge(layerTelemetry),
+    Layer.provideMerge(nativeFakes.layer),
     Layer.provide(layerFileSystem),
     Layer.provideMerge(layerUpdater),
     Layer.provideMerge(layerWindow),
@@ -451,8 +305,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         0,
       ),
     sentStates,
-    squirrel,
-    idleRestart,
-    emit: harnessEmit,
+    squirrel: nativeFakes.squirrel,
+    idleRestart: nativeFakes.idleRestart,
+    emit,
   };
 }

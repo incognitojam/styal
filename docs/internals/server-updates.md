@@ -82,8 +82,9 @@ state but not the library's queued installer. Instead, after normal shutdown dra
 that still belongs to the selected track, silently and without relaunching. Any failure falls back
 to an ordinary quit.
 
-On macOS, Squirrel.Mac takes several seconds to unpack and verify an update, so desktop stages a
-download as soon as it finishes. Staging writes `~/Library/Caches/<bundle id>.ShipIt/ShipItState.plist`
+On macOS, Squirrel.Mac takes several seconds to unpack and verify an update, so
+[desktop](../../apps/desktop/src/updates/DesktopNativeUpdateStaging.ts) stages a download as soon
+as it finishes. Staging writes `~/Library/Caches/<bundle id>.ShipIt/ShipItState.plist`
 and submits the `<bundle id>.ShipIt` launchd job, which installs that request on any exit, whether or
 not the exit went through the update handoff. Staging cannot be cancelled, and Squirrel submits the
 job only once per native updater, which electron-updater replaces at each download. Desktop therefore

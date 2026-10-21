@@ -2,16 +2,13 @@ import * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import {
   DESKTOP_UPDATE_RESTART_MARKER_FILE,
   DesktopUpdateChannelSchema,
-  type DesktopIdleRestartDelayBucket,
   type DesktopRuntimeInfo,
   type DesktopUpdateActionResult,
   type DesktopUpdateChannel,
   type DesktopUpdateCheckResult,
   type DesktopUpdateState,
 } from "@t3tools/contracts";
-import { idleRestartBlocked } from "@t3tools/shared/hostActivity";
 import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -32,12 +29,12 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
-import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
-import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
+import * as DesktopIdleRestart from "./DesktopIdleRestart.ts";
+import * as DesktopNativeUpdateStaging from "./DesktopNativeUpdateStaging.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 import {
@@ -56,17 +53,8 @@ import {
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
 const AUTO_UPDATE_POLL_INTERVAL = "4 minutes";
 const PREPARED_INSTALL_CHECK_WAIT = Duration.seconds(90);
-const IDLE_RESTART_POLL_INTERVAL = "30 seconds";
-const IDLE_RESTART_IDLE_SECONDS = 300;
-// Measure-only: an eligible idle moment is recorded but nothing installs. Set
-// to true to install the staged update at that moment.
-const IDLE_RESTART_INSTALLS = false;
-// Holds the staged version until an idle moment is recorded, so a quit or a
-// replaced download before then is reported as "never" by the next launch.
-const IDLE_RESTART_PENDING_FILE = "update-idle-restart-pending";
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
-type NativeStageStatus = "staging" | "staged" | "failed";
 
 interface DesktopPreparedUpdateInstallResult extends DesktopUpdateActionResult {
   readonly failed: boolean;
@@ -164,24 +152,12 @@ export class DesktopUpdateUnexpectedActionError extends Schema.TaggedError<Deskt
   }
 }
 
-export class DesktopUpdateStagedUpdateDiscardError extends Schema.TaggedError<DesktopUpdateStagedUpdateDiscardError>()(
-  "DesktopUpdateStagedUpdateDiscardError",
-  {
-    requestedChannel: DesktopUpdateChannelSchema,
-    cause: Schema.instanceOf(ElectronUpdater.ElectronUpdaterNativeUpdateError),
-  },
-) {
-  override get message(): string {
-    return `Cannot change the desktop update channel to ${this.requestedChannel} because the update prepared for installation could not be discarded.`;
-  }
-}
-
 export type DesktopUpdateConfigureError = never;
 
 export const DesktopUpdateSetChannelError = Schema.Union([
   DesktopUpdateActionInProgressError,
   DesktopUpdateChannelPersistenceError,
-  DesktopUpdateStagedUpdateDiscardError,
+  DesktopNativeUpdateStaging.DesktopUpdateStagedUpdateDiscardError,
 ]);
 export type DesktopUpdateSetChannelError = typeof DesktopUpdateSetChannelError.Type;
 
@@ -299,14 +275,6 @@ function getAutoUpdateDisabledReason(args: {
   return null;
 }
 
-/** Buckets the time from an update finishing staging to the first idle moment. */
-export function idleRestartDelayBucket(
-  delayMs: number,
-): Exclude<DesktopIdleRestartDelayBucket, "installed_first" | "never"> {
-  const hours = delayMs / 3_600_000;
-  return hours < 1 ? "<1h" : hours < 8 ? "1-8h" : hours < 24 ? "8-24h" : ">24h";
-}
-
 function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean {
   return runtimeInfo.hostArch === "arm64" && runtimeInfo.appArch === "x64";
 }
@@ -322,31 +290,12 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
-  const powerMonitor = yield* ElectronPowerMonitor.ElectronPowerMonitor;
-  const telemetry = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
   const finishedUpdateActions = yield* PubSub.unbounded<UpdateAction>();
   const updaterConfiguredRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
-  // macOS background staging. Once Squirrel.Mac stages a download, its ShipIt
-  // job installs it whenever the app exits, so a staged update is frozen until
-  // quit: no further checks or downloads. Staging cannot be cancelled, so the
-  // lock is held until Squirrel's own terminal event; the handoff and channel
-  // changes wait for it.
-  const stagesNativeUpdates = environment.platform === "darwin";
-  const nativeStageRef = yield* Ref.make<
-    { readonly version: string; readonly status: NativeStageStatus } | undefined
-  >(undefined);
-  // The download Squirrel's native feed serves. MacUpdater sets a new feed,
-  // and with it a fresh native updater, for every download of any channel.
-  // Squirrel submits ShipIt once per native updater, so a feed is spent once
-  // a discard removes the job.
-  const nativeFeedRef = yield* Ref.make<
-    { readonly version: string; readonly spent: boolean } | undefined
-  >(undefined);
-  const nativeStageLock = yield* Semaphore.make(1);
   const updateStateRef = yield* Ref.make<DesktopUpdateState>(
     createInitialDesktopUpdateState(
       environment.appVersion,
@@ -486,15 +435,7 @@ export const make = Effect.gen(function* () {
     yield* Effect.annotateCurrentSpan({ reason });
     if (yield* Ref.get(desktopState.quitting)) return false;
     if (!(yield* Ref.get(updaterConfiguredRef))) return false;
-    // A download that is staging or staged is what the next exit installs.
-    const nativeStage = yield* Ref.get(nativeStageRef);
-    if (nativeStage !== undefined && nativeStage.status !== "failed") {
-      yield* logUpdaterInfo("skipping update check while an update is staged", {
-        reason,
-        version: nativeStage.version,
-      });
-      return false;
-    }
+    if (yield* nativeStaging.holdsChecks(reason)) return false;
 
     const state = yield* Ref.get(updateStateRef);
     if (state.status === "downloading") {
@@ -626,6 +567,24 @@ export const make = Effect.gen(function* () {
     .remove(updateRestartMarkerPath, { force: true })
     .pipe(Effect.ignore);
 
+  const idleRestart = yield* DesktopIdleRestart.make({
+    runtimeDir: updateRestartMarkerDir,
+    updateState: Ref.get(updateStateRef),
+    updateActionActive: Effect.map(activeUpdateAction, Option.isSome),
+    install: (version): Effect.Effect<unknown> => installWithExpectedVersion(version),
+  });
+  const nativeStaging = yield* DesktopNativeUpdateStaging.make({
+    enabled: environment.platform === "darwin",
+    downloadedVersion: Effect.map(Ref.get(updateStateRef), (state) => state.downloadedVersion),
+    quitting: Ref.get(desktopState.quitting),
+    updaterConfigured: Ref.get(updaterConfiguredRef),
+    clearDownload: updateState((current) =>
+      createBaseUpdateState(current.channel, current.enabled, environment),
+    ),
+    onStaged: idleRestart.start,
+    onDiscarded: idleRestart.abandon,
+  });
+
   const resetInstallAction = Effect.all(
     [
       finishUpdateAction("install"),
@@ -664,81 +623,6 @@ export const make = Effect.gen(function* () {
       Effect.ensuring(finishUpdateAction("install-recovery")),
     );
   });
-
-  const setNativeStage = (version: string, status: NativeStageStatus) =>
-    Ref.set(nativeStageRef, { version, status });
-
-  // Stages from the current native feed and waits for Squirrel's own
-  // completion or error. Callers hold nativeStageLock.
-  const stageNativeUpdateLocked = Effect.fn("desktop.updates.stageNativeUpdate")(function* (
-    version: string,
-  ) {
-    yield* setNativeStage(version, "staging");
-    const startedAt = yield* Clock.currentTimeMillis;
-    const exit = yield* electronUpdater.stageNativeUpdate.pipe(Effect.exit);
-    yield* setNativeStage(version, Exit.isSuccess(exit) ? "staged" : "failed");
-    const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt;
-    yield* Exit.isSuccess(exit)
-      ? logUpdaterInfo("staged update for installation", { version, elapsedMs })
-      : logUpdaterWarning("could not stage update", { version, elapsedMs, cause: exit.cause });
-  });
-
-  // Stages each selected-channel download once, right after electron-updater
-  // points Squirrel's feed at it. Where Squirrel would need administrator
-  // rights, staging stays at quit.
-  const stageDownloadedUpdate = (version: string) =>
-    nativeStageLock.withPermits(1)(
-      Effect.gen(function* () {
-        if (
-          (yield* Ref.get(nativeStageRef)) !== undefined ||
-          (yield* Ref.get(desktopState.quitting)) ||
-          (yield* Ref.get(updateStateRef)).downloadedVersion !== version ||
-          !(yield* electronUpdater.canStageNativeUpdateInBackground)
-        ) {
-          return;
-        }
-        yield* stageNativeUpdateLocked(version);
-        if ((yield* Ref.get(nativeStageRef))?.status === "staged") {
-          yield* startIdleRestartMeasurement(version);
-        }
-      }),
-    );
-
-  // Hands a ready download to the installer. On macOS this waits for staging
-  // in progress and installs only the staged selected-channel download. When
-  // background staging failed or was skipped, it stages now on the same native
-  // updater (today's quit-time staging), waiting for Squirrel's outcome:
-  // MacUpdater's own quitAndInstall waits only for success.
-  const handOffToInstaller = (flags: {
-    readonly isSilent: boolean;
-    readonly isForceRunAfter: boolean;
-  }) =>
-    stagesNativeUpdates
-      ? nativeStageLock.withPermits(1)(
-          Effect.gen(function* () {
-            const { downloadedVersion } = yield* Ref.get(updateStateRef);
-            const feed = yield* Ref.get(nativeFeedRef);
-            const status = (yield* Ref.get(nativeStageRef))?.status;
-            if (
-              downloadedVersion !== null &&
-              (status === undefined || status === "failed") &&
-              feed?.version === downloadedVersion &&
-              !feed.spent
-            ) {
-              yield* stageNativeUpdateLocked(downloadedVersion);
-            }
-            const nativeStage = yield* Ref.get(nativeStageRef);
-            if (nativeStage?.status !== "staged" || nativeStage.version !== downloadedVersion) {
-              return yield* new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
-                channel: null,
-                ...flags,
-                cause: new Error(`Update ${downloadedVersion} is not staged for installation.`),
-              });
-            }
-            yield* electronUpdater.quitAndInstall(flags);
-          }),
-        )
-      : electronUpdater.quitAndInstall(flags);
 
   const installDownloadedUpdate = (expectedVersion?: string) =>
     Effect.scoped(
@@ -812,7 +696,7 @@ export const make = Effect.gen(function* () {
             (instance) => instance.stop({ timeout: Duration.seconds(5) }),
             { concurrency: "unbounded" },
           );
-          yield* handOffToInstaller({
+          yield* nativeStaging.handOffToInstaller({
             isSilent: true,
             isForceRunAfter: true,
           });
@@ -871,121 +755,6 @@ export const make = Effect.gen(function* () {
     };
   });
 
-  // Idle restart, macOS only. A staged update installs in a few seconds, so it
-  // can install while the user is away. Today this only measures how soon such
-  // a moment comes: once per staged version, it reports the delay bucket.
-  const idleRestartRef = yield* Ref.make<
-    { readonly version: string; readonly stagedAt: number } | undefined
-  >(undefined);
-  const idleRestartReported = new Set<string>();
-  const idleRestartPendingPath = environment.path.join(
-    updateRestartMarkerDir,
-    IDLE_RESTART_PENDING_FILE,
-  );
-
-  const reportIdleRestart = (version: string, delayBucket: DesktopIdleRestartDelayBucket) =>
-    Effect.gen(function* () {
-      idleRestartReported.add(version);
-      yield* telemetry.publishFeatureUsage({
-        version: 1,
-        type: "desktopFeatureUsage",
-        feature: "desktop-update-idle-restart",
-        action: "would_restart",
-        updateVersion: version,
-        delayBucket,
-      });
-      yield* fileSystem.remove(idleRestartPendingPath, { force: true }).pipe(Effect.ignore);
-    });
-
-  const startIdleRestartMeasurement = (version: string) =>
-    Effect.gen(function* () {
-      if (idleRestartReported.has(version)) return;
-      const stagedAt = yield* Clock.currentTimeMillis;
-      // Written before the candidate is visible to the idle check, so a report
-      // cannot remove the file before this write recreates it.
-      yield* fileSystem
-        .makeDirectory(updateRestartMarkerDir, { recursive: true })
-        .pipe(
-          Effect.andThen(fileSystem.writeFileString(idleRestartPendingPath, version)),
-          Effect.ignore,
-        );
-      yield* Ref.set(idleRestartRef, { version, stagedAt });
-    });
-
-  // A staged download that is discarded before an idle moment never had one.
-  const abandonIdleRestartMeasurement = Ref.getAndSet(idleRestartRef, undefined).pipe(
-    Effect.flatMap((pending) =>
-      pending === undefined ? Effect.void : reportIdleRestart(pending.version, "never"),
-    ),
-  );
-
-  const userIsAway = powerMonitor
-    .getSystemIdleState(IDLE_RESTART_IDLE_SECONDS)
-    .pipe(Effect.map((state) => state === "idle" || state === "locked"));
-
-  // The pending update, while it is still the staged download and no update
-  // action or quit is under way.
-  const idleRestartCandidate = Effect.gen(function* () {
-    const pending = yield* Ref.get(idleRestartRef);
-    if (
-      pending === undefined ||
-      (yield* Ref.get(desktopState.quitting)) ||
-      Option.isSome(yield* activeUpdateAction)
-    ) {
-      return undefined;
-    }
-    const state = yield* Ref.get(updateStateRef);
-    const nativeStage = yield* Ref.get(nativeStageRef);
-    return state.status === "downloaded" &&
-      state.downloadedVersion === pending.version &&
-      nativeStage?.status === "staged" &&
-      nativeStage.version === pending.version
-      ? pending
-      : undefined;
-  });
-
-  // Runs when an idle restart would install the staged update.
-  const restartWhileIdle = (pending: { readonly version: string; readonly stagedAt: number }) =>
-    Effect.gen(function* () {
-      yield* Ref.set(idleRestartRef, undefined);
-      const delayMs = (yield* Clock.currentTimeMillis) - pending.stagedAt;
-      yield* reportIdleRestart(pending.version, idleRestartDelayBucket(delayMs));
-      if (IDLE_RESTART_INSTALLS) yield* installWithExpectedVersion(pending.version);
-    });
-
-  const checkIdleRestart = Effect.gen(function* () {
-    if ((yield* idleRestartCandidate) === undefined || !(yield* userIsAway)) return;
-    if (idleRestartBlocked(yield* guard.inspect)) return;
-    // The inspection takes a moment; the user or an update action may be back.
-    const pending = yield* idleRestartCandidate;
-    if (pending === undefined || !(yield* userIsAway)) return;
-    yield* restartWhileIdle(pending);
-  }).pipe(Effect.withSpan("desktop.updates.checkIdleRestart"));
-
-  const startIdleRestartChecks = Effect.gen(function* () {
-    // The previous run quit before an idle moment. On macOS a quit installs the
-    // staged update, so running that version means it installed first.
-    const unreported = yield* fileSystem.readFileString(idleRestartPendingPath).pipe(
-      Effect.map((version) => version.trim()),
-      Effect.orElseSucceed(() => ""),
-    );
-    if (unreported !== "") {
-      yield* reportIdleRestart(
-        unreported,
-        unreported === environment.appVersion ? "installed_first" : "never",
-      );
-    }
-    yield* Effect.sleep(IDLE_RESTART_POLL_INTERVAL).pipe(
-      Effect.andThen(checkIdleRestart),
-      Effect.catchCauseIf(
-        (cause) => !Cause.hasInterruptsOnly(cause),
-        (cause) => logUpdaterWarning("idle restart check failed", { cause }),
-      ),
-      Effect.forever,
-      Effect.forkScoped,
-    );
-  });
-
   const startUpdatePollers: Effect.Effect<void, never, Scope.Scope> = Effect.gen(function* () {
     yield* Effect.sleep(AUTO_UPDATE_STARTUP_DELAY).pipe(
       Effect.andThen(checkForUpdates("startup")),
@@ -1016,7 +785,7 @@ export const make = Effect.gen(function* () {
       }),
       Effect.forkScoped,
     );
-    if (stagesNativeUpdates) yield* startIdleRestartChecks;
+    yield* idleRestart.startChecks;
   }).pipe(Effect.withSpan("desktop.updates.startPollers"));
 
   const handleUpdateAvailable = Effect.fn("desktop.updates.handleUpdateAvailable")(function* (
@@ -1101,13 +870,7 @@ export const make = Effect.gen(function* () {
       }),
       cause,
     });
-    // MacUpdater re-emits Squirrel.Mac errors. A background staging failure
-    // only moves staging to quit time. This runs synchronously from the emit,
-    // before staging records its outcome.
-    if ((yield* Ref.get(nativeStageRef))?.status === "staging") {
-      yield* logUpdaterWarning(error.message, { errorTag: error._tag, operation: "stage" });
-      return;
-    }
+    if (yield* nativeStaging.absorbsError(error)) return;
     if (Option.isSome(activeAction) && activeAction.value === "install") {
       yield* recoverFailedInstall(error.message);
       yield* logUpdaterError(error.message, {
@@ -1174,12 +937,12 @@ export const make = Effect.gen(function* () {
     yield* decodeUpdateInfo(raw).pipe(
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateDownloaded")(function* (info) {
-          yield* Ref.set(nativeFeedRef, { version: info.version, spent: false });
+          yield* nativeStaging.recordFeed(info.version);
           const state = yield* Ref.get(updateStateRef);
           if (resolveDefaultDesktopUpdateChannel(info.version) !== state.channel) return;
           yield* setState(reduceDesktopUpdateStateOnDownloadComplete(state, info.version));
           yield* logUpdaterInfo("update downloaded", { version: info.version });
-          if (stagesNativeUpdates) yield* stageDownloadedUpdate(info.version);
+          yield* nativeStaging.stageDownloaded(info.version);
         }),
       ),
       Effect.catchCause((cause) => {
@@ -1237,7 +1000,7 @@ export const make = Effect.gen(function* () {
       yield* electronUpdater.setAutoDownload(false);
       // Installation runs only through our shutdown. On Windows and Linux this
       // flag would install from electron-updater's own quit handler, and on
-      // macOS stageDownloadedUpdate starts native staging explicitly.
+      // macOS DesktopNativeUpdateStaging starts native staging explicitly.
       yield* electronUpdater.setAutoInstallOnAppQuit(false);
       yield* applyAutoUpdaterChannel(settings.updateChannel);
       yield* electronUpdater.setDisableDifferentialDownload(
@@ -1293,45 +1056,17 @@ export const make = Effect.gen(function* () {
           return state;
         }
 
-        // Held until the old download is cleared, so it cannot start staging.
-        const enabled = yield* nativeStageLock.withPermits(1)(
-          Effect.gen(function* () {
-            // Always discard: a ShipIt job may also be left from an earlier
-            // process, such as one launchd restarted after a failed install.
-            if (stagesNativeUpdates && (yield* Ref.get(updaterConfiguredRef))) {
-              yield* electronUpdater.discardNativeUpdate.pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new DesktopUpdateStagedUpdateDiscardError({
-                      requestedChannel: nextChannel,
-                      cause,
-                    }),
-                ),
-              );
-              // The download can only install again after a new download.
-              yield* Ref.update(nativeFeedRef, (feed) => feed && { ...feed, spent: true });
-              yield* updateState((current) =>
-                createBaseUpdateState(current.channel, current.enabled, environment),
-              );
-              yield* logUpdaterInfo("discarded any staged update before channel change", {
-                channel: nextChannel,
-              });
-            }
-            yield* Ref.set(nativeStageRef, undefined);
-            yield* abandonIdleRestartMeasurement;
-            yield* desktopSettings
-              .setUpdateChannel(nextChannel)
-              .pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new DesktopUpdateChannelPersistenceError({ channel: nextChannel, cause }),
-                ),
-              );
-            const enabled = yield* shouldEnableAutoUpdates;
-            yield* setState(createBaseUpdateState(nextChannel, enabled, environment));
-            return enabled;
-          }),
-        );
+        yield* nativeStaging.discardForChannelChange(nextChannel);
+        yield* desktopSettings
+          .setUpdateChannel(nextChannel)
+          .pipe(
+            Effect.mapError(
+              (cause) => new DesktopUpdateChannelPersistenceError({ channel: nextChannel, cause }),
+            ),
+          );
+
+        const enabled = yield* shouldEnableAutoUpdates;
+        yield* setState(createBaseUpdateState(nextChannel, enabled, environment));
 
         if (!enabled || !(yield* Ref.get(updaterConfiguredRef))) {
           return yield* Ref.get(updateStateRef);
@@ -1385,16 +1120,18 @@ export const make = Effect.gen(function* () {
       ) {
         return false;
       }
-      return yield* handOffToInstaller({
-        isSilent: true,
-        isForceRunAfter: false,
-      }).pipe(
-        Effect.timeout("30 seconds"),
-        Effect.as(true),
-        Effect.catchCause((cause) =>
-          logUpdaterError("could not install update on quit", { cause }).pipe(Effect.as(false)),
-        ),
-      );
+      return yield* nativeStaging
+        .handOffToInstaller({
+          isSilent: true,
+          isForceRunAfter: false,
+        })
+        .pipe(
+          Effect.timeout("30 seconds"),
+          Effect.as(true),
+          Effect.catchCause((cause) =>
+            logUpdaterError("could not install update on quit", { cause }).pipe(Effect.as(false)),
+          ),
+        );
     }).pipe(Effect.withSpan("desktop.updates.installOnQuit")),
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
