@@ -5534,6 +5534,7 @@ features:
       - apps/server/src/sourceControl/SourceControlRepositoryService.ts
       - apps/server/src/ws.ts
       - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/CommandPalette.logic.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx
       - packages/client-runtime/src/operations/projects.ts
       - packages/contracts/src/projectClone.ts

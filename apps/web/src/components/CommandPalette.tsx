@@ -20,7 +20,6 @@ import {
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
   addProjectRemoteSourceProvider,
-  buildAddProjectRemoteSourceReadiness,
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
   type AddProjectRemoteSourceReadiness,
@@ -45,13 +44,10 @@ import {
   AuthFilesystemReadScope,
   type DesktopWslState,
   type EnvironmentId,
-  type EnvironmentMachineKind,
   type FilesystemBrowseResult,
-  type SourceControlCloneDefaultRepository,
-  type SourceControlDefaultRepositoryRemote,
   type SourceControlDiscoveryResult,
+  type SourceControlCloneDefaultRepository,
   SourceControlProviderKind,
-  type SourceControlRepositoryInfo,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   SourceControlRepositoryError,
   resolveEnvironmentMachineKind,
@@ -179,8 +175,6 @@ import {
   ADDON_ICON_CLASS,
   browseInputEndPaddingClass,
   buildBrowseGroups,
-  buildCommandPaletteProjectMetadata,
-  buildProjectActionItems,
   buildRootGroups,
   buildLinkedThreadActionItems,
   buildCommandPaletteRows,
@@ -200,6 +194,13 @@ import {
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
   createCommandPaletteSearchState,
+  type AddProjectCloneFlow,
+  type AddProjectEnvironmentOption,
+  buildPaletteRemoteSourceReadiness,
+  errorMessage,
+  getEnvironmentBrowsePlatform,
+  overlayModeForCommand,
+  remoteProjectInputPlaceholder,
   reduceCommandPaletteSearchState,
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
@@ -212,6 +213,10 @@ import {
   useProjectLookups,
   useSortedProjectGroups,
 } from "./CommandPaletteLookups";
+import {
+  buildNewThreadInProjectItems,
+  buildProjectSearchItems,
+} from "./CommandPaletteProjectItems";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import {
   APPEARANCE_OPTIONS,
@@ -226,13 +231,11 @@ import {
 import { sourceControlIcon } from "~/sourceControlPresentation";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Checkbox } from "./ui/checkbox";
-import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
 import { searchSettings, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
-import { COMMAND_PALETTE_META_ICON_CLASS, CommandPaletteMetaDot } from "./ThreadCommandSubtitle";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
 import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
@@ -245,7 +248,6 @@ import { ComposerHandleContext, useComposerHandleContext } from "../composerHand
 import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
-import type { Project } from "../types";
 import { useFocusPullRequestTab, createViewPullRequest } from "../lib/viewPullRequest";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -326,66 +328,6 @@ function defaultRepositoryChoiceItem(input: {
   };
 }
 
-function getEnvironmentBrowsePlatform(os: string | null | undefined): string {
-  if (os === "windows") {
-    return "Win32";
-  }
-  if (os === "darwin") {
-    return "MacIntel";
-  }
-  if (os === "linux") {
-    return "Linux";
-  }
-  return typeof navigator === "undefined" ? "" : navigator.platform;
-}
-
-interface AddProjectEnvironmentOption {
-  readonly environmentId: EnvironmentId;
-  readonly label: string;
-  readonly machine: EnvironmentMachineKind;
-  readonly isPrimary: boolean;
-  readonly isConnected: boolean;
-  readonly status: string;
-}
-
-type AddProjectCloneFlow =
-  | {
-      readonly step: "repository";
-      readonly environmentId: EnvironmentId;
-      readonly source: AddProjectRemoteSource;
-    }
-  /** Forks stop here to choose which repository `gh` should treat as the default. */
-  | {
-      readonly step: "default";
-      readonly environmentId: EnvironmentId;
-      readonly source: AddProjectRemoteSource;
-      readonly repositoryInput: string;
-      readonly repository: SourceControlRepositoryInfo;
-      readonly parentNameWithOwner: string;
-      readonly remoteUrl: string;
-    }
-  | {
-      readonly step: "confirm";
-      readonly environmentId: EnvironmentId;
-      readonly source: AddProjectRemoteSource;
-      readonly repositoryInput: string;
-      readonly repository: SourceControlRepositoryInfo | null;
-      readonly remoteUrl: string;
-      readonly defaultRepository?: SourceControlCloneDefaultRepository;
-    }
-  /**
-   * An existing checkout stops here when its remotes name several GitHub
-   * repositories and no default is set. Back returns to `query`, the browsed path.
-   */
-  | {
-      readonly step: "checkout-default";
-      readonly environmentId: EnvironmentId;
-      readonly cwd: string;
-      readonly query: string;
-      readonly choices: ReadonlyArray<SourceControlDefaultRepositoryRemote>;
-      readonly pending: boolean;
-    };
-
 function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: string): ReactNode {
   if (source === "url") return <LinkIcon className={className} />;
   const Icon = sourceControlIcon(sourceControlClients.get(source));
@@ -398,40 +340,6 @@ function sourceControlHostIcon(
 ): ReactNode {
   const Icon = sourceControlIcon(definition);
   return <Icon className={className} />;
-}
-
-function projectFaviconIcon(project: Project): ReactNode {
-  return <ProjectFavicon project={project} className={ITEM_ICON_CLASS} />;
-}
-
-function remoteProjectInputPlaceholder(flow: AddProjectCloneFlow | null): string | null {
-  if (!flow) return null;
-  if (flow.step === "confirm") return null;
-  if (flow.step === "default" || flow.step === "checkout-default") {
-    return "Choose the default repository";
-  }
-  if (flow.source === "url") {
-    return "Enter Git clone URL";
-  }
-  return `Enter ${addProjectRemoteSourceLabel(flow.source)} repository (${addProjectRemoteSourcePathHint(flow.source)})`;
-}
-
-function buildPaletteRemoteSourceReadiness(
-  discovery: SourceControlDiscoveryResult | null,
-): AddProjectRemoteSourceReadiness {
-  const readiness = buildAddProjectRemoteSourceReadiness(discovery);
-  return (source) => {
-    const entry = readiness(source);
-    return entry.hint === null
-      ? entry
-      : {
-          ...entry,
-          hint: entry.hint.replace(
-            "Open Source Control settings",
-            "Open Settings -> Source Control",
-          ),
-        };
-  };
 }
 
 /**
@@ -456,26 +364,6 @@ function describeGitHubIssuesUnavailable(
     );
   }
   return null;
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-  return "An error occurred.";
-}
-
-const OVERLAY_MODE_BY_COMMAND = {
-  "commandPalette.toggle": "command",
-  "filePicker.toggle": "files",
-  "projectSearch.toggle": "content",
-} as const satisfies Partial<Record<string, SearchOverlayMode>>;
-
-function overlayModeForCommand(command: string | null): SearchOverlayMode | null {
-  if (command === null) return null;
-  return command in OVERLAY_MODE_BY_COMMAND
-    ? OVERLAY_MODE_BY_COMMAND[command as keyof typeof OVERLAY_MODE_BY_COMMAND]
-    : null;
 }
 
 export function CommandPalette({ children }: { children: ReactNode }) {
@@ -1151,39 +1039,10 @@ function OpenCommandPaletteDialog(props: {
     await handleNewThread(scopeProjectRef(project.environmentId, project.id));
   };
 
-  const projectSearchItems = buildProjectActionItems({
+  const projectSearchItems = buildProjectSearchItems({
     projects: pickerProjects,
-    valuePrefix: "project",
-    searchTerms: (project) => {
-      const members = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
-        ?.memberProjects ?? [project];
-      return buildCommandPaletteProjectMetadata({
-        projects: members,
-        locationByEnvironmentId: projectEnvironmentLocationById,
-      }).searchTerms;
-    },
-    renderDescription: (project) => {
-      const members = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
-        ?.memberProjects ?? [project];
-      const metadata = buildCommandPaletteProjectMetadata({
-        projects: members,
-        locationByEnvironmentId: projectEnvironmentLocationById,
-      });
-      const location = projectEnvironmentLocationById.get(project.environmentId) ?? {
-        kind: "remote" as const,
-        label: "Remote",
-        machine: "server" as const,
-      };
-      return (
-        <ProjectSearchDescription
-          environmentLabels={metadata.environmentLabels}
-          grouped={members.length > 1}
-          location={location}
-          workspaceRoot={project.workspaceRoot}
-        />
-      );
-    },
-    icon: projectFaviconIcon,
+    projectGroupByTargetKey,
+    locationByEnvironmentId: projectEnvironmentLocationById,
     runProject: openProjectFromSearch,
   });
 
@@ -1191,42 +1050,10 @@ function OpenCommandPaletteDialog(props: {
     const isScratch = (project: CommandPaletteProject) =>
       isScratchProject(project, scratchWorkspaceRootFor(project.environmentId));
     const projectItems = enumerateCommandPaletteItems(
-      buildProjectActionItems({
+      buildNewThreadInProjectItems({
         projects: pickerProjects.filter((project) => !isScratch(project)),
-        valuePrefix: "new-thread-in",
-        searchTerms: (project) => {
-          const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-          const location = projectEnvironmentLocationById.get(project.environmentId);
-          return [
-            ...(group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ??
-              []),
-            ...(location ? [location.label] : []),
-          ];
-        },
-        renderDescription: (project) => {
-          const location = projectEnvironmentLocationById.get(project.environmentId) ?? {
-            kind: "remote",
-            label: "Remote",
-            machine: "server" as const,
-          };
-          return (
-            <span className="flex min-w-0 items-center gap-1">
-              <span className="inline-flex min-w-0 items-center gap-1">
-                {location.kind === "remote" ? (
-                  <EnvironmentMachineIcon
-                    aria-hidden
-                    kind={location.machine}
-                    className={COMMAND_PALETTE_META_ICON_CLASS}
-                  />
-                ) : null}
-                <span className="truncate">{location.label}</span>
-              </span>
-              <CommandPaletteMetaDot />
-              <span className="truncate">{project.workspaceRoot}</span>
-            </span>
-          );
-        },
-        icon: projectFaviconIcon,
+        projectGroupByTargetKey,
+        locationByEnvironmentId: projectEnvironmentLocationById,
         runProject: async (project) => {
           const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
           const contextualRefBelongsToGroup =
@@ -3744,36 +3571,4 @@ function OpenCommandPaletteDialog(props: {
       />
     </CommandPaletteContent>
   );
-}
-
-function ProjectSearchDescription(props: {
-  readonly environmentLabels: ReadonlyArray<string>;
-  readonly grouped: boolean;
-  readonly location: {
-    readonly kind: "local" | "remote";
-    readonly label: string;
-    readonly machine: EnvironmentMachineKind;
-  };
-  readonly workspaceRoot: string;
-}) {
-  if (!props.grouped) {
-    return (
-      <span className="flex min-w-0 items-center gap-1">
-        <span className="inline-flex min-w-0 items-center gap-1">
-          {props.location.kind === "remote" ? (
-            <EnvironmentMachineIcon
-              aria-hidden
-              kind={props.location.machine}
-              className={COMMAND_PALETTE_META_ICON_CLASS}
-            />
-          ) : null}
-          <span className="truncate">{props.location.label}</span>
-        </span>
-        <CommandPaletteMetaDot />
-        <span className="truncate">{props.workspaceRoot}</span>
-      </span>
-    );
-  }
-
-  return <span className="truncate">{props.environmentLabels.join(" · ")}</span>;
 }
