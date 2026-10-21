@@ -3258,7 +3258,7 @@ features:
     title: Keep submitted question answers visible outside collapsed work
     status: maintained
     prs: [839]
-    rationale: Restore the visibility behavior imported from upstream 11363 that the V2 timeline rewrite lost. At upstream 00cdceb196edf661652dee6efe983c0d40662971, answered questions still join tool groups and turn folds; upstream 21086 later kept them visible after a turn settles on web, while mobile remains fork-only. Discussion 16965 tracks discoverability; 17227 was closed pending approval for folding and user-bubble changes, while 18544 changes readability within the work log.
+    rationale: Restore the visibility behavior imported from upstream 11363 that the V2 timeline rewrite lost. At upstream 00cdceb196edf661652dee6efe983c0d40662971, answered questions still join tool groups and turn folds; upstream 21086 later kept them visible after a turn settles on web, and 21393 did the same for mobile folds and tool groups. Discussion 16965 tracks discoverability; 17227 was closed pending approval for folding and user-bubble changes, while 18544 changes readability within the work log.
     invariants:
       - Submitted question and answer history keeps its own expandable row on web, desktop, and mobile while surrounding work runs and after the turn completes.
       - Collapsing or expanding surrounding tool activity or the completed turn does not hide the question or combine it with neighboring commands.
@@ -3282,6 +3282,7 @@ features:
         - https://github.com/pingdotgg/t3code/pull/17227
         - https://github.com/pingdotgg/t3code/pull/18544
         - https://github.com/pingdotgg/t3code/pull/21086
+        - https://github.com/pingdotgg/t3code/pull/21393
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream's V2 clients keep submitted question history separate from tool groups and visible outside completed-turn folds.
 
