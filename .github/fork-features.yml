@@ -197,6 +197,7 @@ features:
       - apps/server/src/orchestration-v2/ThreadMessageIntake.ts
       - apps/web/src/components/ChatView.tsx
       - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ComposerAttachmentStrip.tsx
       - apps/web/src/components/chat/ComposerPrimaryActions.tsx
       - apps/web/src/components/chat/QueuedRunsControl.tsx
       - apps/web/src/components/chat/TimelineUserMessageRow.tsx
