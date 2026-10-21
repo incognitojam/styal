@@ -127,7 +127,7 @@ the dialog.
 ## Track subscription limits
 
 **Usage → Limits** pools every subscription account it can see per provider, so with several Codex
-or Claude accounts across your environments and hubs you read one number per window rather than a
+or Claude accounts across your enabled environments and hubs you read one number per window rather than a
 list. With one account, each window shows its allowance left and when it resets; select the bar
 or countdown to open account details. Banked reset credits appear beside the provider name.
 With several accounts, each window shows how much of the pool is left and a bar with one segment per account,
