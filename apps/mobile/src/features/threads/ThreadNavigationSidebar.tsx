@@ -649,6 +649,7 @@ function ThreadNavigationSidebarPane(
             hasUnsentDraft={item.hasUnsentDraft}
             snoozed={item.item.snoozed}
             pinned={item.item.pinned}
+            wokeAt={item.item.wokeAt}
             snoozePresetMinute={item.snoozePresetMinute ?? ""}
             snoozeWakeLabelText={item.snoozeWakeLabelText}
             timeLabel={item.timeLabel}
