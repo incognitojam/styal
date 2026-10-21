@@ -4,7 +4,11 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import type { ProviderAuthResponse, ServerProvider } from "@t3tools/contracts";
+import {
+  AuthProvidersManageScope,
+  type ProviderAuthResponse,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { redactedPlaceholder } from "@t3tools/shared/redactedText";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
@@ -26,6 +30,7 @@ import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
+import { useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAppearancePreferences } from "./appearance/AppearancePreferencesProvider";
 import { SettingsActionRow } from "./components/SettingsActionRow";
@@ -45,6 +50,7 @@ import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-en
 
 export function SettingsProviderAccountsRouteScreen() {
   const { selectedTargets } = useSettingsEnvironmentFilter();
+  const permittedEnvironments = useEnvironmentsWithScope(selectedTargets, AuthProvidersManageScope);
   const providersByEnvironment = useAtomValue(environmentPresentations.providersByEnvironmentAtom);
   const insets = useSafeAreaInsets();
   return (
@@ -62,24 +68,35 @@ export function SettingsProviderAccountsRouteScreen() {
           ) : (
             selectedTargets.map((environment) => (
               <SettingsSection key={environment.environmentId} title={environment.label}>
-                {sortProvidersForAccounts(
-                  providersByEnvironment.get(environment.environmentId) ?? [],
-                ).map((provider) =>
-                  supportsInAppSignIn(provider) ? (
-                    <ProviderAccount
-                      key={provider.instanceId}
-                      environment={environment}
-                      provider={provider}
-                    />
-                  ) : (
-                    <ExternalProviderAccount key={provider.instanceId} provider={provider} />
-                  ),
+                {!permittedEnvironments.has(environment.environmentId) ? (
+                  <View className="gap-1 p-4">
+                    <Text className="text-base text-foreground">Limited permissions</Text>
+                    <Text className="text-sm text-foreground-muted">
+                      {`This session can view ${environment.label}'s providers but can't change their settings.`}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    {sortProvidersForAccounts(
+                      providersByEnvironment.get(environment.environmentId) ?? [],
+                    ).map((provider) =>
+                      supportsInAppSignIn(provider) ? (
+                        <ProviderAccount
+                          key={provider.instanceId}
+                          environment={environment}
+                          provider={provider}
+                        />
+                      ) : (
+                        <ExternalProviderAccount key={provider.instanceId} provider={provider} />
+                      ),
+                    )}
+                    {(providersByEnvironment.get(environment.environmentId) ?? []).length === 0 ? (
+                      <Text className="p-4 text-foreground-muted">
+                        Add a provider in web or desktop Settings.
+                      </Text>
+                    ) : null}
+                  </>
                 )}
-                {(providersByEnvironment.get(environment.environmentId) ?? []).length === 0 ? (
-                  <Text className="p-4 text-foreground-muted">
-                    Add a provider in web or desktop Settings.
-                  </Text>
-                ) : null}
               </SettingsSection>
             ))
           )}
