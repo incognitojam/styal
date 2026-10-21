@@ -3150,7 +3150,6 @@ export default function ChatView(props: ChatViewProps) {
     setSetupQueueSendThreadKey,
     setOptimisticUserMessages,
     setFeedbackSubmissionsByThreadKey,
-    setMultipleModelSelections,
     setThreadError,
     setKeepFullHistory,
     anchorNewTurn,
