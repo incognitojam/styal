@@ -18,7 +18,12 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
     if (input.feature === "web-build-update-notice" && client.surface !== "web") {
       return Effect.void;
     }
-    const exposed = input.feature === "web-build-update-notice" && input.action === "notice_shown";
+    if (input.feature === "desktop-update-notice" && client.surface !== "desktop") {
+      return Effect.void;
+    }
+    const exposed =
+      (input.feature === "web-build-update-notice" || input.feature === "desktop-update-notice") &&
+      input.action === "notice_shown";
     return analytics
       .record(exposed ? "feature.exposed" : "feature.used", {
         ...input,

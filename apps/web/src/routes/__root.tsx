@@ -1,5 +1,6 @@
 import { AutoSettleNotice } from "../components/AutoSettleNotice";
 import { PermissionUpdateNotice } from "../components/PermissionUpdateNotice";
+import { DesktopUpdatedNotice } from "../components/DesktopUpdatedNotice";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
@@ -243,6 +244,7 @@ function RootRouteView() {
           <SlowRpcRequestToastCoordinator />
           <PermissionUpdateNotice />
           {primaryEnvironmentAuthenticated ? <AutoSettleNotice /> : null}
+          {isElectron ? <DesktopUpdatedNotice /> : null}
           {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
           <ProjectCloneToastCoordinator />
           <PullRequestGuideRunCoordinator />

@@ -106,6 +106,8 @@ app running; choose **Quit** to install. To apply a downloaded update right away
 select **Restart to update** in the sidebar. Update checks, download progress,
 retries, and the update track are in **Settings**. Changing the track cancels a
 pending update from the previous track.
+After an update installs, the desktop app names the version it updated to the
+next time you look at its window, with a link to that version's release notes.
 
 Before quitting or restarting, styal checks agents and terminal commands in the
 environments the desktop app hosts, including WSL and work started from other

@@ -161,3 +161,42 @@ it.effect("records allowlisted client interactions with socket attribution and n
     yield* unavailable({ feature: "mentioned-time-chips", action: "details_opened" });
   }),
 );
+
+it.effect("records the desktop update notice only from the desktop app", () =>
+  Effect.gen(function* () {
+    const events: Array<unknown> = [];
+    const analytics = {
+      record: (event: string, properties: Record<string, unknown> | undefined) =>
+        Effect.sync(() => {
+          events.push({ event, properties });
+        }),
+      flush: Effect.void,
+    };
+    const desktop = { surface: "desktop", clientAppVersion: "1.2.0" } as const;
+    const report = yield* ClientFeatureUsage.reporter(desktop).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+    );
+    for (const { event, source, action } of [
+      { action: "notice_shown", event: "feature.exposed", source: "system" },
+      { action: "release_notes_opened", event: "feature.used", source: "user" },
+    ] as const) {
+      yield* report(yield* decode({ feature: "desktop-update-notice", action, version: "1.2.0" }));
+      expect(events.at(-1)).toEqual({
+        event,
+        properties: {
+          feature: "desktop-update-notice",
+          action,
+          source,
+          forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+          ...desktop,
+        },
+      });
+    }
+    expect(isUsage({ feature: "desktop-update-notice", action: "refresh_requested" })).toBe(false);
+    const web = yield* ClientFeatureUsage.reporter({ surface: "web" }).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+    );
+    yield* web({ feature: "desktop-update-notice", action: "notice_shown" });
+    expect(events).toHaveLength(2);
+  }),
+);

@@ -1024,6 +1024,32 @@ features:
         - https://github.com/pingdotgg/t3code/pull/6562
       retire_when: Upstream performs the same ordered, bounded, and observable graceful shutdown before destroying windows and terminating the backend.
 
+  - id: desktop-update-notice
+    title: Name the version the desktop app updated to
+    status: maintained
+    prs: []
+    invariants:
+      - After the desktop app starts on a newer version than the window last recorded, one toast names that version and links to its styal release notes; it shows once per version, whichever update path installed it.
+      - The toast waits until the window is visible and focused, and the version is recorded only when it shows, so a window that stays hidden until quit announces the update on the next launch.
+      - A first run with no recorded version, a downgrade, a switch to a lower-version channel, and unparseable versions are recorded without a toast; web and mobile never show it.
+      - Shown notices emit feature.exposed and release-notes clicks emit feature.used through the primary environment from desktop surfaces only, without versions or URLs.
+    rationale: Updates install on quit or restart without a visible step, so users had no confirmation that an update landed or what it changed.
+    implementation_paths:
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/web/src/components/DesktopUpdatedNotice.tsx
+      - apps/web/src/desktopUpdatedNotice.ts
+      - apps/web/src/routes/__root.tsx
+      - packages/contracts/src/forkClientUsage.ts
+    upstream_paths:
+      - apps/web/src/routes/__root.tsx
+    tests:
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - apps/web/src/desktopUpdatedNotice.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream shows, once per version, which version the desktop app updated to after an update installs.
+
   - id: device-automation-node-mode
     title: Run desktop device automation in Node mode
     status: maintained
