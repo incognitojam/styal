@@ -4220,8 +4220,8 @@ features:
       - Web reports each bypass merge with its outcome through the owning environment; reporting never blocks the merge.
     rationale: Upstream closed its administrator merge proposal (https://github.com/pingdotgg/t3code/pull/17281) pending product approval, so blocked pull requests offer no merge to administrators who could bypass the rules.
     implementation_paths:
-      - apps/web/src/components/pullRequest/PullRequestActionsMenu.tsx
       - apps/mobile/src/features/pull-requests/PullRequestMergeControls.tsx
+      - apps/web/src/components/pullRequest/PullRequestActionsMenu.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/pullRequest.ts
@@ -4561,8 +4561,6 @@ features:
       - Lightweight host summaries, GitHub list and search results, and persisted thread snapshots carry optional merge intent without adding detail reads or interpreting unsupported fields as false; a new observation clears an older marker when intent is absent or disabled.
     rationale: Automatic merge intent helps users see which work has been handed to the host without changing thread lifecycle or treating an open pull request as merged.
     implementation_paths:
-      - apps/web/src/components/pullRequest/usePullRequestListView.ts
-      - apps/web/src/components/pullRequest/PullRequestDetailActions.tsx
       - apps/mobile/src/features/pull-requests/PullRequestListRow.tsx
       - apps/mobile/src/features/pull-requests/PullRequestMergeIntentIcon.tsx
       - apps/mobile/src/features/pull-requests/pullRequestStatus.ts
@@ -4573,10 +4571,12 @@ features:
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/RightPanelTabs.tsx
       - apps/web/src/components/ThreadStatusIndicators.tsx
+      - apps/web/src/components/pullRequest/PullRequestDetailActions.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/PullRequestLinkPreview.tsx
       - apps/web/src/components/pullRequest/PullRequestMergeIntentIcon.tsx
       - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
+      - apps/web/src/components/pullRequest/usePullRequestListView.ts
       - packages/contracts/src/threadPullRequest.ts
       - packages/shared/src/threadPullRequests.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
@@ -4683,12 +4683,12 @@ features:
       - When effective GitHub rules require a behind branch to be updated, the Checks tab explains that auto-merge will wait and offers the update methods the viewer may use; an unavailable policy read does not claim the update is optional.
       - Turning on auto-merge is offered to any viewer who may merge, and afterwards the server reads the pull request back as it does after a merge, because GitHub merges an already mergeable pull request at once; a resulting merge is published so linked threads settle.
     implementation_paths:
-      - apps/web/src/components/pullRequest/PullRequestDetailActions.tsx
-      - apps/web/src/components/pullRequest/PullRequestDetailCrumbs.tsx
       - apps/mobile/src/features/pull-requests/PullRequestMergeControls.tsx
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
+      - apps/web/src/components/pullRequest/PullRequestDetailActions.tsx
+      - apps/web/src/components/pullRequest/PullRequestDetailCrumbs.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
       - packages/shared/src/pullRequestMergeControl.ts
@@ -4735,8 +4735,8 @@ features:
       - A server listing every project it holds is still asked without a project filter, so a workspace with nothing archived sends the same requests as before.
     rationale: Archiving a project is meant to put it away everywhere; its open pull requests otherwise kept the page full of work the user had set aside.
     implementation_paths:
-      - apps/web/src/components/pullRequest/usePullRequestListView.ts
       - apps/web/src/components/pullRequest/pullRequestProjectAssignment.logic.ts
+      - apps/web/src/components/pullRequest/usePullRequestListView.ts
     upstream_paths:
       - apps/web/src/components/pullRequest/pullRequestProjectAssignment.logic.ts
       - apps/web/src/routes/_chat.pull-requests.tsx
