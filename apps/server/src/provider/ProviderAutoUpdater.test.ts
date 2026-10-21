@@ -6,8 +6,10 @@ import {
   type ServerSettings,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 
 import { ServerConfig } from "../config.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
@@ -96,10 +98,21 @@ const targets: Record<string, ProviderInstallTarget> = {
 };
 
 interface FixtureThread {
+  readonly id?: string;
   readonly providerInstanceId: string;
   readonly status: string;
+  readonly activityRunStatus?: string | null;
   readonly pendingRuntimeRequest?: unknown;
 }
+
+/** A question the agent asked at `createdAtMs` on the test clock. */
+const pendingQuestion = (createdAtMs: number) => ({
+  id: "request",
+  kind: "user_input",
+  createdAt: DateTime.makeUnsafe(createdAtMs),
+});
+
+const HOUR_MS = 60 * 60 * 1_000;
 
 interface Fixture {
   readonly settings?: Partial<ServerSettings>;
@@ -158,7 +171,12 @@ const testLayer = (input: Fixture) => {
           const threads = [
             ...(status ? [{ providerInstanceId: "codex", status }] : []),
             ...(input.otherThreads ?? []),
-          ].map((thread) => ({ pendingRuntimeRequest: null, ...thread }));
+          ].map((thread) => ({
+            id: "thread",
+            activityRunStatus: null,
+            pendingRuntimeRequest: null,
+            ...thread,
+          }));
           return { threads } as never;
         }),
     }),
@@ -247,11 +265,49 @@ describe("ProviderAutoUpdater.runPass", () => {
         {
           providerInstanceId: "codex_work",
           status: "completed",
-          pendingRuntimeRequest: { id: "request", kind: "command" },
+          pendingRuntimeRequest: { ...pendingQuestion(0), kind: "command" },
         },
       ],
       installs,
     }).pipe(Effect.tap(() => Effect.sync(() => assert.deepStrictEqual(installs, []))));
+  });
+
+  it.effect("ignores a question left pending over an hour after its run finished", () => {
+    const installs: Array<unknown> = [];
+    const leftover = (createdAtMs: number): FixtureThread => ({
+      id: "subagent-thread",
+      providerInstanceId: "codex_work",
+      status: "completed",
+      pendingRuntimeRequest: pendingQuestion(createdAtMs),
+    });
+    return Effect.gen(function* () {
+      yield* TestClock.adjust(2 * HOUR_MS);
+      yield* runPassWith({ otherThreads: [leftover(HOUR_MS + 1)], installs });
+      assert.deepStrictEqual(installs, []);
+      yield* runPassWith({ otherThreads: [leftover(HOUR_MS)], installs });
+      assert.deepStrictEqual(installs, [{ instanceId: "codex", version: "2.0.0" }]);
+    });
+  });
+
+  it.effect("waits on a pending question of any age while its run is still active", () => {
+    const installs: Array<unknown> = [];
+    return Effect.gen(function* () {
+      yield* TestClock.adjust(24 * HOUR_MS);
+      for (const thread of [
+        { status: "running", activityRunStatus: "running" },
+        { status: "waiting", activityRunStatus: "waiting" },
+        // A newer run is starting while the latest presented run is finished.
+        { status: "completed", activityRunStatus: "starting" },
+      ]) {
+        yield* runPassWith({
+          otherThreads: [
+            { providerInstanceId: "codex", ...thread, pendingRuntimeRequest: pendingQuestion(0) },
+          ],
+          installs,
+        });
+      }
+      assert.deepStrictEqual(installs, []);
+    });
   });
 
   it.effect("counts updates skipped for a busy CLI until the count is taken", () => {

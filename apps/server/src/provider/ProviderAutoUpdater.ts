@@ -10,7 +10,8 @@
  *
  * A CLI is skipped while a thread whose provider instance runs it is
  * preparing, starting, running or waiting on the user; threads on other CLIs
- * never hold it back. The runner checks again under the machine-wide install
+ * never hold it back. A question still pending an hour after its run finished
+ * no longer counts: the agent is done, and the user may never see it. The runner checks again under the machine-wide install
  * lock, where new turns on that CLI wait for the install, so a CLI is not
  * replaced under a turn. Dev servers never run it: they share the host's
  * provider CLIs with the developer's real install.
@@ -23,6 +24,7 @@ import type {
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
@@ -65,17 +67,38 @@ export function decideProviderAutoUpdate(
   return compareSemverVersions(current, testedVersion) < 0 ? testedVersion : null;
 }
 
-/** A thread whose provider process would have its CLI replaced under it. */
-function isThreadUsingProvider(
-  thread: Pick<OrchestrationV2ThreadShell, "status" | "pendingRuntimeRequest">,
-): boolean {
-  return (
-    thread.pendingRuntimeRequest !== null ||
+/**
+ * How long a question may stay pending after its run finished before it stops
+ * holding back an update. Some providers (Codex) keep working after asking, so
+ * a run can complete while its question waits unseen for hours.
+ */
+const LEFTOVER_REQUEST_AFTER_MS = 60 * 60 * 1_000;
+
+/**
+ * How a thread's provider process would be affected by replacing its CLI:
+ * "busy" while a run is active or a question is pending, "leftover" when only
+ * a question older than `LEFTOVER_REQUEST_AFTER_MS` remains after its run
+ * finished, or null when idle.
+ */
+function threadProviderUse(
+  thread: Pick<
+    OrchestrationV2ThreadShell,
+    "status" | "activityRunStatus" | "pendingRuntimeRequest"
+  >,
+  now: number,
+): "busy" | "leftover" | null {
+  const runActive =
+    (thread.activityRunStatus ?? null) !== null ||
     thread.status === "preparing" ||
     thread.status === "starting" ||
     thread.status === "running" ||
-    thread.status === "waiting"
-  );
+    thread.status === "waiting";
+  if (runActive) return "busy";
+  const request = thread.pendingRuntimeRequest;
+  if (request === null) return null;
+  return now - DateTime.toEpochMillis(request.createdAt) >= LEFTOVER_REQUEST_AFTER_MS
+    ? "leftover"
+    : "busy";
 }
 
 export interface ProviderAutoUpdater {
@@ -111,24 +134,39 @@ export const make = Effect.gen(function* () {
    * Archived threads have no provider session, so only active ones count.
    */
   const busyReason = (target: ProviderInstallTarget) =>
-    projections.getShellSnapshot({ location: "active" }).pipe(
-      NodeSqliteClient.readOnly,
-      Effect.flatMap(({ threads }) =>
-        Effect.forEach(
-          new Set(threads.filter(isThreadUsingProvider).map((thread) => thread.providerInstanceId)),
-          installGate.targetFor,
-        ),
-      ),
-      Effect.map((targets) =>
-        targets.some(
-          (candidate) =>
-            candidate !== null &&
-            candidate.lockKey === target.lockKey &&
-            candidate.packageName === target.packageName,
-        )
-          ? "a thread using this provider CLI is running or waiting"
-          : null,
-      ),
+    Effect.gen(function* () {
+      const { threads } = yield* projections
+        .getShellSnapshot({ location: "active" })
+        .pipe(NodeSqliteClient.readOnly);
+      const now = yield* Clock.currentTimeMillis;
+      const sharesCli = new Map<ProviderInstanceId, boolean>();
+      const usesTarget = Effect.fnUntraced(function* (instanceId: ProviderInstanceId) {
+        const known = sharesCli.get(instanceId);
+        if (known !== undefined) return known;
+        const candidate = yield* installGate.targetFor(instanceId);
+        const shares =
+          candidate !== null &&
+          candidate.lockKey === target.lockKey &&
+          candidate.packageName === target.packageName;
+        sharesCli.set(instanceId, shares);
+        return shares;
+      });
+      const leftovers: Array<(typeof threads)[number]> = [];
+      for (const thread of threads) {
+        const use = threadProviderUse(thread, now);
+        if (use === null || !(yield* usesTarget(thread.providerInstanceId))) continue;
+        if (use === "busy") return "a thread using this provider CLI is running or waiting";
+        leftovers.push(thread);
+      }
+      // The question text stays out of the log.
+      yield* Effect.forEach(leftovers, (thread) =>
+        Effect.logInfo("Background provider update ignores a leftover question", {
+          instanceId: thread.providerInstanceId,
+          threadId: thread.id,
+        }),
+      );
+      return null;
+    }).pipe(
       // Unknown activity counts as busy; the next pass tries again.
       Effect.catchCause(() => Effect.succeed("thread activity could not be read")),
     );
