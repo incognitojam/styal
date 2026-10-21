@@ -56,6 +56,9 @@ export function claudeUpdaterActive(input: {
   const settingsEnv = input.settings.env ?? {};
   if (!isObject(settingsEnv)) return null;
   if (disablesUpdater(settingsEnv)) return false;
+  // A value styal did not set, even one that leaves the updater on, is the
+  // user's decision: not styal's to take over.
+  if (CLAUDE_UPDATER_ENV in settingsEnv && !(CLAUDE_UPDATER_OWNER_ENV in settingsEnv)) return null;
   const config = isObject(input.config) ? input.config : {};
   if (
     config.autoUpdates === false &&

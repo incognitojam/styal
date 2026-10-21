@@ -36,8 +36,11 @@ describe("claudeUpdaterActive", () => {
     expect(active({}, {}, { ...PINNED_CONFIG, autoUpdatesProtectedForNative: false })).toBe(false);
     expect(active({ DISABLE_AUTOUPDATER: "1" })).toBe(false);
     expect(active({}, { env: { DISABLE_AUTOUPDATER: "true" } })).toBe(false);
-    // Claude reads only 1/true/yes/on as set for this one.
-    expect(active({}, { env: { DISABLE_AUTOUPDATER: "0" } })).toBe(true);
+    // Claude reads only 1/true/yes/on as set, so "0" leaves it on, but by the user's choice.
+    expect(active({}, { env: { DISABLE_AUTOUPDATER: "0" } })).toBe(null);
+    expect(active({}, { env: { DISABLE_AUTOUPDATER: "0", STYAL_MANAGED_UPDATES: "1" } })).toBe(
+      true,
+    );
     expect(active({}, { env: { DISABLE_UPDATES: "x" } })).toBe(false);
     expect(active({ CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" })).toBe(false);
     expect(active({}, { env: [] })).toBe(null);

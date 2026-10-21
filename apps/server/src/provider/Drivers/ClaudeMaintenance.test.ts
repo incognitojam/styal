@@ -103,6 +103,15 @@ it.layer(NodeServices.layer)("Claude maintenance", (it) => {
         expect(decideProviderAutoUpdate(claude, "2.1.302", off)).toBe(null);
         yield* capabilities.selfUpdater!.handBack;
         expect((yield* resolve).selfUpdaterActive).toBe(true);
+
+        // The user keeps Claude's updater on themselves: no takeover reinstall.
+        yield* fs.writeFileString(
+          settingsPath,
+          JSON.stringify({ env: { DISABLE_AUTOUPDATER: "0" } }),
+        );
+        const userOwned = (yield* resolve).selfUpdaterActive;
+        expect(userOwned).toBe(null);
+        expect(decideProviderAutoUpdate(claude, "2.1.302", userOwned)).toBe(null);
       }).pipe(Effect.scoped),
   );
 });
