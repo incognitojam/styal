@@ -19,6 +19,7 @@
   },
   "scripts": {
     "dev": "node --watch --watch-path=src --watch-path=../../packages --watch-path=package.json src/bin.ts start",
+    "dev:built": "vp run dev",
     "build:bundle": "vp pack",
     "start": "node dist/bin.mjs start",
     "typecheck": "tsc-rs --noEmit",

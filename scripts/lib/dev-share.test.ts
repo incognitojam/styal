@@ -111,6 +111,17 @@ describe("unshareDevServer", () => {
     }),
   );
 
+  it.effect("removes a built client's matching backend target", () =>
+    Effect.gen(function* () {
+      const calls: Array<ReadonlyArray<string>> = [];
+      const result = yield* unshareDevServer(5788, { port: 5787, host: "127.0.0.1" }).pipe(
+        Effect.provide(spawnerLayer({ calls, serveStatus: serveStatus("http://127.0.0.1:5787") })),
+      );
+      assert.isTrue(result.cleared);
+      assert.isTrue(calls.some((args) => args.includes("off")));
+    }),
+  );
+
   it.effect("does not remove another service's handler", () =>
     Effect.gen(function* () {
       const result = yield* unshareDevServer(5788).pipe(
