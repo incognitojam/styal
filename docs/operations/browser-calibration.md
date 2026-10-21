@@ -2,7 +2,7 @@
 
 Run `vp run --filter @t3tools/desktop test:preview-calibration` from the repository root. `.scratch/` must be ignored. The check launches an isolated, hidden Electron window with a synthetic calibration page and saves PNGs plus scalar measurements under `.scratch/preview-calibration/`.
 
-The active `fork-ci.yml` runs this check on Linux and macOS and requires both matrix entries to pass through `Fork Check`. Each run uploads the calibration images and measurements as workflow artifacts.
+`fork-ci.yml` runs this check on Linux, and `Fork Check` requires it to pass. `fork-macos.yml` runs it on macOS without gating anything, because free macOS runners are often unavailable; check its result when a change touches the macOS browser. Each run uploads the calibration images and measurements as workflow artifacts.
 
 ## Coverage
 
