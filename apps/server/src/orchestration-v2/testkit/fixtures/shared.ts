@@ -144,7 +144,6 @@ export const THREAD_MERGE_BACK_HANDOFF_PROMPT = [
   "User message:",
   "Retain the transferred fork marker for later. Respond with exactly: merge delta stored",
 ].join("\n");
-export const THREAD_MERGE_BACK_RECALL = `${THREAD_MERGE_BACK_SOURCE_MARKER}|${THREAD_MERGE_BACK_FORK_MARKER}`;
 export const THREAD_MERGE_BACK_RECALL_PROMPT =
   "Return the source marker followed by the transferred fork marker, separated by a single | character. Respond with only the markers and separator.";
 const THREAD_MERGE_BACK_SIBLINGS_SOURCE_MARKER = "merge-sibling-source-3C7K";
@@ -1400,20 +1399,6 @@ export function assertUserMessagesInclude(
         (item) => item.type === "user_message" && item.text.includes(expectedText),
       ),
       `expected user input to include ${JSON.stringify(expectedText)}`,
-    );
-  }
-}
-
-function assertUserMessagesExclude(
-  projection: OrchestrationV2ThreadProjection,
-  rejectedTexts: ReadonlyArray<string>,
-) {
-  for (const rejectedText of rejectedTexts) {
-    assert.isFalse(
-      projection.turnItems.some(
-        (item) => item.type === "user_message" && item.text.includes(rejectedText),
-      ),
-      `expected user input to exclude ${JSON.stringify(rejectedText)}`,
     );
   }
 }

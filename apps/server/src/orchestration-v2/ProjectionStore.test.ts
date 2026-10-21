@@ -1114,6 +1114,7 @@ const assertProjectScopedShells = Effect.fn("assertProjectScopedShells")(functio
 });
 
 it.layer(layerTest)("ProjectionStoreV2", (it) => {
+  // regression: #21969 keep corrupt plan JSON in the typed read error
   it.effect("returns a typed read error for malformed stored plan JSON", () =>
     Effect.gen(function* () {
       const store = yield* ProjectionStore.ProjectionStoreV2;
@@ -2420,6 +2421,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
+  // regression: #17141 shell snapshot decoding blocked other database reads
   it.effect("reads the shell snapshot first and decodes it in a separate step", () =>
     Effect.gen(function* () {
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;

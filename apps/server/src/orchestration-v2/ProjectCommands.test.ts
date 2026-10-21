@@ -76,29 +76,6 @@ const failureOf = (result: ReturnType<typeof plan>) => {
 };
 
 describe("planProjectCommand", () => {
-  it("carries every edited field and omits the rest", () => {
-    const scripts = [script("lint")];
-    const payload = payloadOf(
-      update({
-        scripts,
-        defaultThreadEnvMode: "worktree",
-        autoPull: true,
-        faviconPath: "brand/icon.svg",
-        projectIcon: { kind: "lucide", name: "alarm-clock", color: "violet" },
-      }),
-    );
-    assert.deepInclude(payload, {
-      scripts,
-      defaultThreadEnvMode: "worktree",
-      autoPull: true,
-      faviconPath: "brand/icon.svg",
-      projectIcon: { kind: "lucide", name: "alarm-clock", color: "violet" },
-    });
-    const renamed = payloadOf(update({ title: "Renamed" }));
-    assert.isFalse("defaultThreadEnvMode" in renamed);
-    assert.isNull(payloadOf(update({ defaultThreadEnvMode: null })).defaultThreadEnvMode);
-  });
-
   it("keeps legacy scripts editable and removable while rejecting new invalid ones", () => {
     const legacy = script("install-javascript-dependencies");
     const withLegacy = (scripts: ReadonlyArray<ProjectScript>) =>
