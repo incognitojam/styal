@@ -25,10 +25,9 @@ import {
   keybindingValueForCommand,
 } from "../../lib/projectScriptKeybindings";
 import {
-  buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
-  releaseClaimedRoles,
+  withSavedProjectScript,
 } from "../../projectScripts";
 import { useProjects } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
@@ -77,6 +76,8 @@ export function useProjectScriptSettings(
     transform: (current: readonly ProjectScript[]) => readonly ProjectScript[] | null,
     scriptId?: string,
     keybinding?: string | null,
+    /** Leave shortcuts alone, as when a styal.json action takes the id back. */
+    keepKeybindings = false,
   ): Promise<AtomCommandResult<void, unknown>> {
     if (savingRef.current || targets.length === 0) {
       const message = "No available machine, or another action change is saving.";
@@ -129,7 +130,7 @@ export function useProjectScriptSettings(
           },
         });
         if (result._tag === "Failure") return reportScriptFailure(result);
-        if (!isElectron) continue;
+        if (!isElectron || keepKeybindings) continue;
         const changedIds = scriptId
           ? [scriptId]
           : current
@@ -177,7 +178,15 @@ export function useProjectScriptSettings(
     }
   }
 
-  function submit(scriptId: string | null, input: NewProjectScriptInput) {
+  /**
+   * Saves a new or edited action. `fileActionIds` are the project's styal.json
+   * action ids: a new action avoids them, and editing one saves an override.
+   */
+  function submit(
+    scriptId: string | null,
+    input: NewProjectScriptInput,
+    fileActionIds: readonly string[] = [],
+  ) {
     const existingIds = [
       ...projects.flatMap((project) => project.scripts.map((script) => script.id)),
       ...targets.flatMap(({ settings, project }) =>
@@ -190,18 +199,8 @@ export function useProjectScriptSettings(
         ].map((script) => script.id),
       ),
     ];
-    const id = scriptId ?? nextProjectScriptId(input.name, existingIds);
-    const next = buildProjectScript(id, input);
-    return persist(
-      (current) => {
-        const updated = current.map((script) =>
-          script.id === id ? next : releaseClaimedRoles(script, input),
-        );
-        return scriptId === null ? [...updated, next] : updated;
-      },
-      id,
-      input.keybinding,
-    );
+    const id = scriptId ?? nextProjectScriptId(input.name, [...existingIds, ...fileActionIds]);
+    return persist((current) => withSavedProjectScript(current, id, input), id, input.keybinding);
   }
 
   return { saving, persist, submit };

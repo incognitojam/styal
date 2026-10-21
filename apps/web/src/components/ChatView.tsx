@@ -145,7 +145,9 @@ import {
   isSetupScriptOutsideWorktree,
   projectScriptCwd,
   projectScriptRuntimeEnv,
+  resolveProjectActions,
   resolveProjectScripts,
+  type ResolvedProjectAction,
 } from "@t3tools/shared/projectScripts";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { derivePendingBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
@@ -335,12 +337,13 @@ import {
   keybindingValueForCommand,
 } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
+import { useProjectRootConfig } from "../hooks/useProjectConfig";
+import { reportForkClientUsage } from "../forkClientUsage";
 import {
-  buildProjectScript,
   commandForProjectScript,
   nextProjectScriptId,
   projectScriptIdFromCommand,
-  releaseClaimedRoles,
+  withSavedProjectScript,
 } from "~/projectScripts";
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
@@ -2507,9 +2510,17 @@ export default function ChatView(props: ChatViewProps) {
     () => resolveProjectSettings(settings, activeProject?.id ?? null, activeProject ?? undefined),
     [activeProject, settings],
   );
+  // The project's saved actions, which edits persist, and every action it
+  // offers once its styal.json actions are added.
   const activeProjectScripts = useMemo(
     () => (activeProject ? resolveProjectScripts(settings, activeProject) : []),
     [activeProject, settings],
+  );
+  const activeProjectConfig = useProjectRootConfig(activeProject);
+  const activeProjectActions = useMemo(
+    () =>
+      activeProject ? resolveProjectActions(settings, activeProject, activeProjectConfig) : [],
+    [activeProject, activeProjectConfig, settings],
   );
   // A project added by cloning exists before its files do. The draft stays
   // editable throughout; only sending waits for the clone, and a failed
@@ -5095,7 +5106,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const runProjectScript = useCallback(
     async (
-      script: ProjectScript,
+      script: ProjectScript | ResolvedProjectAction,
       options?: {
         cwd?: string;
         env?: Record<string, string>;
@@ -5230,6 +5241,15 @@ export default function ChatView(props: ChatViewProps) {
         }
         return;
       }
+      // Menu and shortcut runs carry where the action came from.
+      if ("source" in script) {
+        void reportForkClientUsage(environmentId, {
+          feature: "project-actions",
+          action: "run",
+          actionSource: script.source,
+          projectFile: activeProjectConfig?.source ?? "none",
+        });
+      }
       if (script.autoOpenPreview && script.previewUrl && isPreviewSupportedInRuntime()) {
         const previewResult = await openUrlInPreview({
           threadRef: activeThreadRef,
@@ -5250,6 +5270,7 @@ export default function ChatView(props: ChatViewProps) {
     },
     [
       activeProject,
+      activeProjectConfig,
       activeThread,
       activeThreadId,
       activeThreadRef,
@@ -5438,15 +5459,12 @@ export default function ChatView(props: ChatViewProps) {
       if (!activeProject) {
         return AsyncResult.success(undefined);
       }
+      // File action ids are taken too, so a new action never silently overrides one.
       const nextId = nextProjectScriptId(
         input.name,
-        activeProjectScripts.map((script) => script.id),
+        activeProjectActions.map((script) => script.id),
       );
-      const nextScript = buildProjectScript(nextId, input);
-      const nextScripts = [
-        ...activeProjectScripts.map((script) => releaseClaimedRoles(script, input)),
-        nextScript,
-      ];
+      const nextScripts = withSavedProjectScript(activeProjectScripts, nextId, input);
 
       return persistProjectScripts({
         projectId: activeProject.id,
@@ -5457,7 +5475,7 @@ export default function ChatView(props: ChatViewProps) {
         keybindingCommand: commandForProjectScript(nextId),
       });
     },
-    [activeProject, activeProjectScripts, persistProjectScripts],
+    [activeProject, activeProjectActions, activeProjectScripts, persistProjectScripts],
   );
   const updateProjectScript = useCallback(
     async (
@@ -5467,15 +5485,13 @@ export default function ChatView(props: ChatViewProps) {
       if (!activeProject) {
         return AsyncResult.success(undefined);
       }
-      const existingScript = activeProjectScripts.find((script) => script.id === scriptId);
+      const existingScript = activeProjectActions.find((script) => script.id === scriptId);
       if (!existingScript) {
         return AsyncResult.failure(Cause.fail(new Error("Script not found.")));
       }
 
-      const updatedScript = buildProjectScript(existingScript.id, input);
-      const nextScripts = activeProjectScripts.map((script) =>
-        script.id === scriptId ? updatedScript : releaseClaimedRoles(script, input),
-      );
+      // Editing a styal.json action saves it under the same id, overriding the file's.
+      const nextScripts = withSavedProjectScript(activeProjectScripts, existingScript.id, input);
 
       return persistProjectScripts({
         projectId: activeProject.id,
@@ -5486,29 +5502,40 @@ export default function ChatView(props: ChatViewProps) {
         keybindingCommand: commandForProjectScript(scriptId),
       });
     },
-    [activeProject, activeProjectScripts, persistProjectScripts],
+    [activeProject, activeProjectActions, activeProjectScripts, persistProjectScripts],
   );
   const deleteProjectScript = useCallback(
     async (scriptId: string): Promise<AtomCommandResult<void, unknown>> => {
       if (!activeProject) {
         return AsyncResult.success(undefined);
       }
+      const deleted = activeProjectActions.find((script) => script.id === scriptId);
+      // A styal.json action lives in the file; only a saved copy can be removed.
+      if (deleted?.source === "file") {
+        return AsyncResult.failure(
+          Cause.fail(
+            new Error("This action is defined in styal.json. Edit the file to remove it."),
+          ),
+        );
+      }
       const nextScripts = activeProjectScripts.filter((script) => script.id !== scriptId);
-
-      const deletedName = activeProjectScripts.find((s) => s.id === scriptId)?.name;
+      const restoresFileAction = deleted?.source === "override";
 
       const result = await persistProjectScripts({
         projectId: activeProject.id,
         projectCwd: activeProject.workspaceRoot,
         previousScripts: activeProjectScripts,
         nextScripts,
-        keybinding: null,
+        // The styal.json action keeps the id, so it keeps the shortcut too.
+        keybinding: restoresFileAction ? undefined : null,
         keybindingCommand: commandForProjectScript(scriptId),
       });
       if (result._tag === "Success") {
         toastManager.add({
           type: "success",
-          title: `Deleted action "${deletedName ?? "Unknown"}"`,
+          title: restoresFileAction
+            ? `Using the styal.json version of "${deleted?.name ?? "Unknown"}"`
+            : `Deleted action "${deleted?.name ?? "Unknown"}"`,
         });
       } else if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -5522,7 +5549,7 @@ export default function ChatView(props: ChatViewProps) {
       }
       return result;
     },
-    [activeProject, activeProjectScripts, persistProjectScripts],
+    [activeProject, activeProjectActions, activeProjectScripts, persistProjectScripts],
   );
 
   const handleRuntimeModeChange = useCallback(
@@ -8561,7 +8588,7 @@ export default function ChatView(props: ChatViewProps) {
 
       const scriptId = projectScriptIdFromCommand(command);
       if (!scriptId || !activeProject || !canOperateTerminal) return;
-      const script = activeProjectScripts.find((entry) => entry.id === scriptId);
+      const script = activeProjectActions.find((entry) => entry.id === scriptId);
       if (!script) return;
       event.preventDefault();
       event.stopPropagation();
@@ -8592,7 +8619,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [
     activeProject,
     activeRightPanelSurface,
-    activeProjectScripts,
+    activeProjectActions,
     canReadTerminal,
     canOperateTerminal,
     addTerminalSurface,
@@ -11540,7 +11567,7 @@ export default function ChatView(props: ChatViewProps) {
     threadId: activeThread.id,
     ...(draftId ? { draftId } : {}),
     activeProjectName: activeProject?.title,
-    activeProjectScripts: activeProject ? activeProjectScripts : undefined,
+    activeProjectScripts: activeProject ? activeProjectActions : undefined,
     preferredScriptId: activeProject
       ? (lastInvokedScriptByProjectId[activeProject.id] ?? null)
       : null,

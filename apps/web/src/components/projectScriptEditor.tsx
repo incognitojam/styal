@@ -7,6 +7,7 @@ import {
   type ResolvedKeybindingsConfig,
   T3ProjectFileScript,
 } from "@t3tools/contracts";
+import type { ProjectActionSource } from "@t3tools/shared/projectScripts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -119,10 +120,15 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   keybinding: null,
 };
 
-/** What the editor dialog should open with. `scriptId: null` means "add". */
+/**
+ * What the editor dialog should open with. `scriptId: null` means "add".
+ * `source` says where an edited action comes from: saving a `file` action
+ * stores a local override, and deleting an `override` restores the file's.
+ */
 export interface ProjectScriptEditorRequest {
   scriptId: string | null;
   initial: NewProjectScriptInput;
+  source?: ProjectActionSource;
 }
 
 export function editorRequestForFileScript(
@@ -143,11 +149,12 @@ export function editorRequestForFileScript(
 }
 
 export function editorRequestForScript(
-  script: ProjectScript,
+  script: ProjectScript & { readonly source?: ProjectActionSource },
   keybindings: ResolvedKeybindingsConfig,
 ): ProjectScriptEditorRequest {
   return {
     scriptId: script.id,
+    ...(script.source === undefined ? {} : { source: script.source }),
     initial: {
       name: script.name,
       command: script.command,
@@ -207,6 +214,7 @@ export function ProjectScriptEditorDialog({
   // Keep the outgoing copy stable while DialogPopup plays its close animation.
   const displayedRequest = request ?? lastRequest;
   const isEditing = displayedRequest?.scriptId != null;
+  const source = displayedRequest?.source ?? "local";
   const isSaving = request !== null && savingRequest === request;
   const replacedSetupScript = runOnWorktreeCreate
     ? scripts.find(
@@ -364,7 +372,11 @@ export function ProjectScriptEditorDialog({
           <DialogHeader>
             <DialogTitle>{isEditing ? "Edit Action" : "Add Action"}</DialogTitle>
             <DialogDescription>
-              Actions are project-scoped commands you can run from the top bar or keybindings.
+              {source === "file"
+                ? "This action comes from the project's styal.json. Saving keeps your version in styal and uses it instead of the file's."
+                : source === "override"
+                  ? "Your saved version replaces this action from the project's styal.json."
+                  : "Actions are project-scoped commands you can run from the top bar or keybindings."}
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
@@ -495,7 +507,7 @@ export function ProjectScriptEditorDialog({
             </form>
           </DialogPanel>
           <DialogFooter variant="bare">
-            {isEditing && (
+            {isEditing && source !== "file" && (
               <Button
                 type="button"
                 variant="destructive-outline"
@@ -503,7 +515,7 @@ export function ProjectScriptEditorDialog({
                 disabled={isSaving || !canEditActions}
                 onClick={() => setDeleteConfirmOpen(true)}
               >
-                Delete
+                {source === "override" ? "Use styal.json version" : "Delete"}
               </Button>
             )}
             <Button type="button" variant="outline" onClick={close}>
@@ -516,9 +528,11 @@ export function ProjectScriptEditorDialog({
                   ? replacedSetupScript
                     ? "Save and replace setup action"
                     : "Save and run in new worktrees"
-                  : isEditing
-                    ? "Save changes"
-                    : "Save action"}
+                  : source === "file"
+                    ? "Save my version"
+                    : isEditing
+                      ? "Save changes"
+                      : "Save action"}
             </Button>
           </DialogFooter>
         </DialogPopup>
@@ -527,8 +541,16 @@ export function ProjectScriptEditorDialog({
       <AlertDialog open={deleteConfirmOpen && canEditActions} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete action "{name}"?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle>
+              {source === "override"
+                ? `Use the styal.json version of "${name}"?`
+                : `Delete action "${name}"?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {source === "override"
+                ? "Your saved version is removed and the action from the project's styal.json runs instead."
+                : "This action cannot be undone."}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
@@ -546,7 +568,7 @@ export function ProjectScriptEditorDialog({
                 onDelete(request.scriptId);
               }}
             >
-              Delete action
+              {source === "override" ? "Use styal.json version" : "Delete action"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>

@@ -31,7 +31,7 @@ import {
 import {
   projectScriptCwd,
   projectScriptRuntimeEnv,
-  resolveProjectScripts,
+  resolveProjectActions,
 } from "@t3tools/shared/projectScripts";
 import { threadUsageView, usageFigureText } from "@t3tools/shared/turnUsage";
 import { Alert, Platform, ScrollView, View } from "react-native";
@@ -42,6 +42,7 @@ import { restoredNewTaskDraftKey } from "../../state/new-task-draft-key";
 import { clearPendingThreadCreationOutcome } from "../../state/pending-thread-creation";
 import { recoverFailedThreadDraft } from "../../state/recover-failed-thread-draft";
 import { useEnvironmentQuery } from "../../state/query";
+import { useProjectRootConfig } from "../projects/useProjectRootConfig";
 import { dismissGitActionResult, useGitActionProgress } from "../../state/use-vcs-action-state";
 import { vcsEnvironment } from "../../state/vcs";
 import { EmptyState } from "../../components/EmptyState";
@@ -287,6 +288,7 @@ function ThreadRouteContent(
     selectedThreadProject,
     selectedEnvironmentConnection,
   } = useThreadSelection();
+  const { config: selectedProjectConfig } = useProjectRootConfig(selectedThreadProject ?? null);
   const canOperateThread = useEnvironmentScope(
     selectedThread?.environmentId ?? null,
     AuthOrchestrationOperateScope,
@@ -860,9 +862,10 @@ function ThreadRouteContent(
     canOperateTerminal,
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
     projectScripts: selectedThreadProject
-      ? resolveProjectScripts(
+      ? resolveProjectActions(
           routeEnvironmentRuntime?.serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS,
           selectedThreadProject,
+          selectedProjectConfig,
         )
       : [],
     terminalSessions: terminalMenuSessions,

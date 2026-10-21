@@ -1,7 +1,9 @@
+import { DEFAULT_SERVER_SETTINGS, ProjectId, type ProjectScript } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   isSetupScriptOutsideWorktree,
+  resolveProjectActions,
   projectScriptRuntimeEnv,
   withT3CodeProjectEnvironmentAliases,
 } from "./projectScripts.ts";
@@ -110,5 +112,70 @@ describe("project process environment compatibility", () => {
       STYAL_PROJECT_ROOT: "/repo",
       T3CODE_PROJECT_ROOT: "/repo",
     });
+  });
+});
+
+describe("resolveProjectActions", () => {
+  const projectId = ProjectId.make("project-1");
+  const local = (id: string, command = `run ${id}`): ProjectScript => ({
+    id,
+    name: id,
+    command,
+    icon: "play",
+    runOnWorktreeCreate: false,
+  });
+  const settingsWith = (scripts: ProjectScript[]) => ({
+    ...DEFAULT_SERVER_SETTINGS,
+    projectSettingsFolded: true,
+    projectSettingsOverrides: { [projectId]: { defaultProjectScripts: scripts } },
+  });
+  const project = { id: projectId, scripts: [] };
+
+  it("lists saved actions first, then file actions they do not override", () => {
+    const actions = resolveProjectActions(
+      settingsWith([local("lint", "vp lint --fix"), local("dev")]),
+      project,
+      {
+        actions: [
+          { id: "test", name: "Test", command: "vp test", icon: "test" },
+          { id: "lint", name: "Lint", command: "vp lint", icon: "lint" },
+        ],
+      },
+    );
+    expect(actions.map(({ id, source, command }) => ({ id, source, command }))).toEqual([
+      { id: "lint", source: "override", command: "vp lint --fix" },
+      { id: "dev", source: "local", command: "run dev" },
+      { id: "test", source: "file", command: "vp test" },
+    ]);
+  });
+
+  it("never lets a file action run on its own", () => {
+    const [setup] = resolveProjectActions(settingsWith([]), project, {
+      actions: [
+        {
+          id: "setup",
+          name: "Setup",
+          command: "vp i",
+          icon: "configure",
+          runOnWorktreeCreate: true,
+          runOnSettle: true,
+          async: false,
+        },
+      ],
+    });
+    expect(setup).toEqual({
+      id: "setup",
+      name: "Setup",
+      command: "vp i",
+      icon: "configure",
+      runOnWorktreeCreate: false,
+      source: "file",
+    });
+  });
+
+  it("is the saved list alone without a project file", () => {
+    expect(resolveProjectActions(settingsWith([local("dev")]), project, null)).toEqual([
+      { ...local("dev"), source: "local" },
+    ]);
   });
 });

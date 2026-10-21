@@ -33,27 +33,23 @@ where its working directory would be the project root: a setup command that copi
 from `T3CODE_PROJECT_ROOT` into its working directory would overwrite the checkout's own copies of
 those files.
 
-## Share actions with `t3.json`
+## Share actions with `styal.json`
 
-Add `t3.json` at the repository root to offer actions to everyone who opens the repository in T3
-Code:
+Add `styal.json` at the repository root to offer actions to everyone who opens the repository in
+styal:
 
 ```json
 {
-  "$schema": "https://t3.codes/schema/t3.json",
-  "scripts": [
+  "$schema": "https://styal.build/schema/styal.json",
+  "actions": [
     {
-      "name": "Install dependencies",
-      "command": "pnpm install",
-      "icon": "configure",
-      "runOnWorktreeCreate": true
-    },
-    {
+      "id": "dev",
       "name": "Dev server",
-      "command": "pnpm dev -- --port \"$T3CODE_WORKSPACE_PORT\"",
+      "command": "pnpm dev -- --port \"$STYAL_WORKSPACE_PORT\"",
       "icon": "play"
     },
     {
+      "id": "test",
       "name": "Test",
       "command": "pnpm test",
       "icon": "test"
@@ -63,35 +59,46 @@ Code:
 ```
 
 The `$schema` entry is optional, but enables validation and suggestions in editors that support
-JSON Schema. T3 Code also accepts comments and trailing commas in this file.
+JSON Schema. styal also accepts comments and trailing commas in this file.
 
-Each script supports these fields:
+Each action supports these fields:
 
-- `name` (required): the label shown in T3 Code.
+- `id` (optional): a stable identifier made of lowercase letters, digits and dashes, used by
+  keyboard shortcuts and local edits. It defaults to one derived from the name. Give actions an
+  `id` so renaming one does not drop its shortcut.
+- `name` (required): the label shown in styal.
 - `command` (required): the shell command to run.
 - `icon` (optional): `play`, `test`, `lint`, `configure`, `build`, `debug`, `desktop`, `database`,
   or `deploy`. The default is `play`.
-- `runOnWorktreeCreate` (optional): whether importing this script should make it the automatic
-  setup action. The default is `false`.
-- `runOnSettle` (optional): whether importing this script should make it the action that runs
-  when a thread settles. The default is `false`.
+- `runOnWorktreeCreate`, `async`, and `runOnSettle` (optional): mark the action to run when a
+  worktree is created or when a thread settles. These are not applied yet: an action from
+  `styal.json` only runs when you choose it.
 
-Scripts in `t3.json` are templates and never run directly from the checked-in file. Import one
-from the thread actions menu or from **Settings** → **Projects** → **Actions**. The **Add Action**
-form opens with the file's values filled in. Review the command and the option to run it when a
-worktree is created, then save or cancel. Importing creates a saved copy for that checkout, so
-later changes to `t3.json` do not silently change or run an
-already-imported action. Edit the saved action, or delete it and import the revised definition,
-when you want to adopt a change.
+styal reads `styal.json` from the project's own checkout, not from each thread's worktree, so every
+thread of the project offers the same actions, and a change to the file shows up without importing
+anything. Actions from the file appear in the thread actions menu and in **Settings** → **Projects**
+→ **Actions** next to the ones saved in styal, marked with `styal.json`. Review a checked-in
+command before running it: it has the same access to the environment and files as a command
+entered in a styal terminal.
 
-Review a checked-in command before importing it. Once saved, an action has the same access to the
-environment and files as a command entered in a T3 Code terminal.
+To change an action from the file for yourself, edit it in styal. styal saves your version under
+the same `id`, uses it instead of the file's, and marks it as edited. Choose **Use styal.json
+version** in its editor to remove your version again. An action that only exists in `styal.json`
+cannot be deleted in styal; remove it from the file instead.
 
-T3 Code keeps reading valid settings and scripts when another value fails validation. It ignores
-an invalid or unrecognized top-level field, ignores an invalid or unrecognized optional script
-field, and drops only a script that has an invalid or missing `name` or `command`. Malformed JSON
-and files whose root is not an object cannot be recovered and are ignored entirely. **Settings** →
-**Projects** shows a warning when any part of the file is ignored.
+styal keeps reading valid settings and actions when another value fails validation. It ignores an
+invalid or unrecognized field, and drops only an action with an invalid or missing `name` or
+`command`, or one that repeats an earlier action's `id`. Malformed JSON and files whose root is not
+an object cannot be recovered and are ignored entirely. **Settings** → **Projects** shows a warning
+when any part of the file is ignored.
+
+### Projects with a `t3.json`
+
+A repository that only has a `t3.json` from T3 Code keeps its settings, and its `scripts` can be
+imported: select one from the thread actions menu or from **Settings** → **Projects** →
+**Actions** to open the **Add Action** form with the file's values filled in, then review and save
+it. Imported actions are saved copies, so later changes to `t3.json` do not change them. Once the
+repository has a `styal.json`, styal ignores `t3.json` entirely.
 
 ## Project environment variables
 

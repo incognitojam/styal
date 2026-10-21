@@ -47,6 +47,24 @@ export function releaseClaimedRoles(
   };
 }
 
+/**
+ * The saved list after saving `input` as action `id`. A saved action with that
+ * id is replaced in place; otherwise the action is appended, which covers both
+ * a new action and a local override of a styal.json action. Either way it takes
+ * the setup and settle roles it claims from the other saved actions.
+ */
+export function withSavedProjectScript(
+  current: readonly ProjectScript[],
+  id: string,
+  input: ProjectScriptInput,
+): ProjectScript[] {
+  const next = buildProjectScript(id, input);
+  const updated = current.map((script) =>
+    script.id === id ? next : releaseClaimedRoles(script, input),
+  );
+  return current.some((script) => script.id === id) ? updated : [...updated, next];
+}
+
 /** Legacy script IDs may not support shortcuts; keep those scripts usable without one. */
 export function commandForProjectScript(scriptId: string): KeybindingCommand | null {
   const command = `script.${scriptId}.run`;

@@ -12,7 +12,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
+import { projectScriptMenuLabel, type ResolvedProjectAction } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, DownloadIcon, PlusIcon, SettingsIcon, WrenchIcon } from "lucide-react";
 import React, { useCallback, useMemo, useState } from "react";
 
@@ -65,7 +65,8 @@ interface ProjectScriptsControlProps {
   presentation?: "toolbar" | "menu";
   onRequestMenuClose?: () => void;
   environmentId: EnvironmentId;
-  scripts: ReadonlyArray<ProjectScript>;
+  /** Saved actions and the project's styal.json actions, as resolveProjectActions lists them. */
+  scripts: ReadonlyArray<ResolvedProjectAction>;
   /** Scripts declared in a legacy t3.json, offered for import. */
   fileScripts?: ReadonlyArray<T3ProjectFileScript>;
   preferredScriptId?: string | null;
@@ -131,7 +132,7 @@ export default function ProjectScriptsControl({
     setEditorRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT });
   };
 
-  const openEditDialog = (script: ProjectScript) => {
+  const openEditDialog = (script: ResolvedProjectAction) => {
     onRequestMenuClose?.();
     setActionsMenuOpen({ presentation, scripts: false, imports: false });
     setEditorRequest(editorRequestForScript(script, keybindings));
@@ -186,6 +187,11 @@ export default function ProjectScriptsControl({
           >
             <ScriptIcon icon={script.icon} className="size-4" />
             <MenuItemLabel>{projectScriptMenuLabel(script)}</MenuItemLabel>
+            {script.source !== "local" && (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {script.source === "file" ? "styal.json" : "edited"}
+              </span>
+            )}
             <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
               {shortcutLabel &&
                 (presentation === "menu" ? (

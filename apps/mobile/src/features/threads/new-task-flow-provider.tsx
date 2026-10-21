@@ -1,13 +1,9 @@
-import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
-import { useEnvironmentPresentation } from "../../state/presentation";
-import { environmentSession } from "../../state/session";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 
 import type {
   EnvironmentId,
   ModelSelection,
-  ProjectReadFileResult,
   ProviderInteractionMode,
   ProviderOptionSelection,
   RuntimeMode,
@@ -21,13 +17,10 @@ import {
   MessageId,
   repositoryGroupingKeyOf,
   resolveNewThreadRuntimeMode,
-  STYAL_PROJECT_FILE_NAME,
-  T3_PROJECT_FILE_NAME,
   ThreadId,
 } from "@t3tools/contracts";
 import { sanitizeNewRefName } from "@t3tools/shared/git";
 import { resolveNewThreadEnvMode, resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import { resolveProjectConfig } from "@t3tools/shared/projectFile";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 
@@ -52,6 +45,7 @@ import { scopedProjectKey } from "../../lib/scopedEntities";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
+import { useProjectRootConfig } from "../projects/useProjectRootConfig";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   appendComposerDraftAttachments,
@@ -496,55 +490,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // checked-in project file (styal.json, or a legacy t3.json), then the
   // built-in worktree default (which a new project with no threads yet
   // replaces with its checkout).
-  const fileAccessSession = useEnvironmentQuery(
-    selectedProject !== null && selectedProject.workspaceRoot !== ""
-      ? environmentSession.sessionStateAtom(selectedProject.environmentId)
-      : null,
-  );
-  const fileEnvironment = useEnvironmentPresentation(selectedProject?.environmentId ?? null);
-  const fileAccess = resolveFilesystemReadAccess({
-    isCatalogReady: fileEnvironment.isReady,
-    connection: fileEnvironment.presentation?.connection ?? null,
-    session: fileAccessSession.data,
-    sessionError: fileAccessSession.error,
-  });
-  const { canReadFiles } = fileAccess;
-  const fileAccessPending =
-    selectedProject !== null && selectedProject.workspaceRoot !== "" && fileAccess.isPending;
-  const canReadProjectFiles =
-    canReadFiles && selectedProject !== null && selectedProject.workspaceRoot !== "";
-  const styalProjectFileQuery = useEnvironmentQuery(
-    canReadProjectFiles
-      ? projectEnvironment.readFile({
-          environmentId: selectedProject.environmentId,
-          input: { cwd: selectedProject.workspaceRoot, relativePath: STYAL_PROJECT_FILE_NAME },
-        })
-      : null,
-  );
-  const t3ProjectFileQuery = useEnvironmentQuery(
-    canReadProjectFiles
-      ? projectEnvironment.readFile({
-          environmentId: selectedProject.environmentId,
-          input: { cwd: selectedProject.workspaceRoot, relativePath: T3_PROJECT_FILE_NAME },
-        })
-      : null,
-  );
-  const styalProjectFileData = styalProjectFileQuery.data as ProjectReadFileResult | null;
-  const t3ProjectFileData = t3ProjectFileQuery.data as ProjectReadFileResult | null;
-  const projectConfig = useMemo(() => {
-    const contents = (data: ProjectReadFileResult | null) =>
-      data === null || data.truncated ? null : data.contents;
-    return resolveProjectConfig({
-      styal: contents(styalProjectFileData),
-      t3: contents(t3ProjectFileData),
-    }).config;
-  }, [styalProjectFileData, t3ProjectFileData]);
-  // Without styal.json contents, wait for its read to settle before falling
-  // back to t3.json, so a legacy file never decides ahead of its replacement.
-  const projectConfigPending =
-    styalProjectFileData === null &&
-    (styalProjectFileQuery.isPending ||
-      (t3ProjectFileData === null && t3ProjectFileQuery.isPending));
+  const { config: projectConfig, pending: projectConfigPending } =
+    useProjectRootConfig(selectedProject);
   // Environment settings with the project's overrides and its project file
   // applied; the aggregate's own legacy fields still count until the server
   // folds them.
@@ -583,7 +530,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const defaultWorkspaceModeSettled =
     selectedProjectDraft.workspaceSelection?.mode !== undefined ||
     projectSettings.sources.defaultThreadEnvMode !== "environment" ||
-    (!projectConfigPending && !fileAccessPending);
+    !projectConfigPending;
   const requestedWorkspaceMode = canChooseWorkspace
     ? (selectedProjectDraft.workspaceSelection?.mode ?? defaultWorkspaceMode)
     : "local";

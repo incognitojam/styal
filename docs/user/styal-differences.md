@@ -103,7 +103,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   T3 Code defaults to GPT-6 Luna and switches only when the provider is turned off as of
   [revision 7ac952c](https://github.com/pingdotgg/t3code/tree/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae).
 - **New threads start in a worktree.** Both apps support isolated Git worktrees. After project,
-  environment, and `t3.json` settings, styal defaults to a worktree when the project is a Git
+  environment, and project file settings, styal defaults to a worktree when the project is a Git
   repository with a commit, and the current checkout otherwise. T3 Code defaults to the local
   checkout at this last step as of
   [revision a6ec88f](https://github.com/pingdotgg/t3code/tree/a6ec88f7a716fc421bd22c2484881c44110f9375).
@@ -121,11 +121,14 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Project instructions across providers.** Set additional instructions once for a project and use
   them across its checkouts and agent sessions with Codex, Claude, Cursor, Grok, and OpenCode.
   [Project instructions](./project-settings.md#give-agents-project-instructions).
-- **Review shared actions before importing.** Selecting an action from `t3.json` opens its command
-  for review before saving a checkout-local copy. The confirmation states when the action will run
-  in new worktrees or when threads settle, and when it replaces an existing setup or settle action. [Project actions](./project-scripts.md). Compared with
-  [T3 Code revision 079e4bc](https://github.com/pingdotgg/t3code/tree/079e4bccdcffc56c54bd69523ed77c006553ea21),
-  checked October 18, 2026, which imports file actions when selected.
+- **Shared actions live in `styal.json`.** Actions declared in a repository's `styal.json` appear
+  in every thread of the project as soon as the file changes, with stable ids for shortcuts, and
+  you can keep your own edited version of one without changing the file. They never run
+  automatically. A `t3.json` still supplies its settings, and selecting one of its scripts opens it
+  for review before saving a local copy. [Project actions](./project-scripts.md#share-actions-with-styaljson).
+  Compared with
+  [T3 Code revision 680152e](https://github.com/pingdotgg/t3code/tree/680152e27b2a961686389ca69a1557cbb2c55f08),
+  checked October 21, 2026, which reads only `t3.json` and imports its scripts as copies.
 - **Drafts that follow you.** Existing-thread draft text and model settings sync between clients
   connected to the same server. Attachments and other device-specific context stay local; drafts
   containing that context are withheld from other clients to avoid sending an incomplete message.

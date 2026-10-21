@@ -2,10 +2,10 @@ import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { EnvironmentId, type T3ProjectFileScript } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
+import { mergeProjectActions, projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { useProjectConfigState } from "../../hooks/useProjectConfig";
+import { projectConfigRoot, useProjectConfigState } from "../../hooks/useProjectConfig";
 import { useEnvironments } from "../../state/environments";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
@@ -85,12 +85,21 @@ export function ProjectActionsSettings() {
     }),
   );
 
-  // A legacy t3.json can declare actions to import; a styal.json hides it.
-  // Read it from the representative checkout; the imported action still fans out.
+  // The project file's actions are listed alongside the saved ones, and a
+  // legacy t3.json can declare actions to import; a styal.json hides it.
+  // Read it from the representative member; edits still fan out.
   const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
   const projectConfig = useProjectConfigState(
     representativeMember?.environmentId ?? EnvironmentId.make("none"),
-    representativeMember?.workspaceRoot ?? null,
+    representativeMember ? projectConfigRoot(representativeMember) : null,
+  );
+  const actions = useMemo(
+    () => mergeProjectActions(scripts, isProjectScope ? projectConfig.config : null),
+    [isProjectScope, projectConfig.config, scripts],
+  );
+  const fileActionIds = useMemo(
+    () => actions.filter((action) => action.source !== "local").map((action) => action.id),
+    [actions],
   );
   const importableScripts = useMemo(
     () =>
@@ -181,7 +190,7 @@ export function ProjectActionsSettings() {
         />
       ) : (
         <ProjectActionsList
-          scripts={scripts}
+          scripts={actions}
           keybindings={keybindings}
           disabled={saving || !canWriteSettings}
           onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
@@ -206,11 +215,20 @@ export function ProjectActionsSettings() {
           environmentId={target.environmentId}
           editScope={AuthSettingsWriteScope}
           request={request}
-          scripts={scripts}
-          onSubmit={submit}
-          onDelete={(id) =>
-            void persist((current) => current.filter((script) => script.id !== id), id, null)
-          }
+          scripts={actions}
+          onSubmit={(scriptId, input) => submit(scriptId, input, fileActionIds)}
+          onDelete={(id) => {
+            // Removing an override hands the id, and its shortcut, back to styal.json.
+            const restoresFileAction = actions.some(
+              (action) => action.id === id && action.source === "override",
+            );
+            void persist(
+              (current) => current.filter((script) => script.id !== id),
+              id,
+              null,
+              restoresFileAction,
+            );
+          }}
           onClose={() => setRequest(null)}
         />
       )}

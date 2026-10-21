@@ -79,3 +79,22 @@ export function useLegacyProjectScripts(
 ): ReadonlyArray<T3ProjectFileScript> {
   return useProjectConfigState(environmentId, cwd).legacyScripts;
 }
+
+/**
+ * The directory a project's shared configuration is read from: the
+ * registered project root, never a thread's worktree, so every thread of the
+ * project sees the same file actions. The one place to change that source.
+ */
+export function projectConfigRoot(project: { readonly workspaceRoot: string }): string {
+  return project.workspaceRoot;
+}
+
+/** The project's shared configuration, read from {@link projectConfigRoot}. */
+export function useProjectRootConfig(
+  project: { readonly environmentId: EnvironmentId; readonly workspaceRoot: string } | null,
+): ProjectConfig | null {
+  return useProjectConfigState(
+    project?.environmentId ?? ("" as EnvironmentId),
+    project && project.workspaceRoot !== "" ? projectConfigRoot(project) : null,
+  ).config;
+}

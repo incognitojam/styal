@@ -6,6 +6,8 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 
+import type { ResolvedProjectAction } from "@t3tools/shared/projectScripts";
+
 import type { DraftId } from "../../composerDraftStore";
 import { useLegacyProjectScripts } from "../../hooks/useProjectConfig";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
@@ -33,7 +35,7 @@ export interface ThreadDetailsPanelProps extends Pick<
   threadId: ThreadId;
   draftId?: DraftId;
   activeProjectName: string | undefined;
-  activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
+  activeProjectScripts: ReadonlyArray<ResolvedProjectAction> | undefined;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
