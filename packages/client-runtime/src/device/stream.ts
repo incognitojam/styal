@@ -10,6 +10,7 @@ import {
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import { createCanvasFrameSink, type DeviceFrameSink } from "./frame.ts";
+import { simulatorAvcConfig } from "./avcConfig.ts";
 import { type DeviceHubAccess, withDeviceHubQuery } from "./hubAccess.ts";
 import { createDeviceStreamStatsTracker, type DeviceStreamStats } from "./streamStats.ts";
 import type { DevicePlatform } from "@t3tools/contracts";
@@ -771,7 +772,10 @@ export function createDeviceStreamClient(
             case "description": {
               awaitingKeyframe = true;
               const configured = await configureDecoder(
-                { codec: avcCodecString(chunk.payload), description: chunk.payload },
+                {
+                  codec: avcCodecString(chunk.payload),
+                  description: simulatorAvcConfig(chunk.payload),
+                },
                 isCurrent,
               );
               if (!isCurrent()) return;
