@@ -1519,11 +1519,11 @@ features:
       - Effort pickers outside the composer, such as Settings and project defaults, keep their existing tooltip.
     rationale: Upstream's tooltip repeats the values already shown on the button and does not say what the menu holds or how to open it.
     implementation_paths:
-      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ComposerControlsBar.tsx
       - apps/web/src/components/chat/TraitsPicker.tsx
       - apps/web/src/components/chat/composerProviderState.tsx
     upstream_paths:
-      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/ComposerControlsBar.tsx
       - apps/web/src/components/chat/TraitsPicker.tsx
       - apps/web/src/components/chat/composerProviderState.tsx
     tests:
