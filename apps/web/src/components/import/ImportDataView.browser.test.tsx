@@ -4,7 +4,7 @@ import { act, fakeTimers, render } from "../../../test/render";
 import { ImportSourceView } from "./ImportDataView";
 
 it("keeps a source project's last-active age counting while the preview stays open", async () => {
-  using _timers = fakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+  using _timers = fakeTimers();
   vi.setSystemTime(new Date("2026-07-02T00:03:00Z"));
   await using screen = await render(
     <ImportSourceView

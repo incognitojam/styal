@@ -194,7 +194,7 @@ it("keeps links working on older servers and when analytics delivery fails", asy
 
 it("keeps a deployment's age counting without new deployment data", async () => {
   setup();
-  using _timers = fakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+  using _timers = fakeTimers();
   vi.setSystemTime(new Date("2026-07-02T00:03:00Z"));
   await using screen = await render(deployments());
   expect(screen.container.textContent).toContain("3m ago");

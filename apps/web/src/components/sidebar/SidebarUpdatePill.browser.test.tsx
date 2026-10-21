@@ -374,10 +374,12 @@ describe("combined sidebar update", () => {
         targetVersion: localVersion,
       }),
     );
+    expect(readConfirmDialogState().status).toBe("idle");
     await click(button("Update", dialog()!));
-    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
     // The remaining server is checked again and its terminal asks before any restart.
-    expect(readConfirmDialogState()).toMatchObject({ status: "confirming" });
+    await vi.waitFor(() =>
+      expect(readConfirmDialogState()).toMatchObject({ status: "confirming" }),
+    );
     expect(testState.updateServer).not.toHaveBeenCalled();
   });
 
@@ -588,7 +590,7 @@ describe("combined sidebar update", () => {
       );
       await using screen = await renderPill();
       await openConfirmation(screen);
-      using _timers = fakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      using _timers = fakeTimers();
       await click(button("Update", dialog()!));
 
       expect(dialog()).toBeNull();
