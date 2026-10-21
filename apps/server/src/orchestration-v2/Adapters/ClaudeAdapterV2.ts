@@ -62,6 +62,7 @@ import type {
   AskUserQuestionInput,
   WebSearchOutput,
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
+import * as NodeUtil from "node:util";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import { AgentScope } from "@t3tools/shared/AgentScope";
@@ -98,6 +99,8 @@ import {
   type OrchestrationV2TurnItem,
   type OrchestrationV2WebSearchResult,
   type ProviderApprovalDecision,
+  type ProviderApprovalFullAccessOverride,
+  type ProviderApprovalOption,
   ProviderDriverKind,
   type ProviderInstanceId,
   type ProviderRequestKind,
@@ -3007,6 +3010,45 @@ function parentToolUseIdFromSdkMessage(message: SDKMessage): string | null {
   return message.type === "assistant" || message.type === "user"
     ? message.parent_tool_use_id
     : null;
+}
+
+const CLAUDE_NO_STANDING_GRANT_OPTIONS = [
+  { decision: "decline", label: "Decline" },
+  { decision: "accept", label: "Approve" },
+] satisfies ReadonlyArray<ProviderApprovalOption>;
+
+export function claudeApprovalPresentation(input: {
+  readonly permissionMode: PermissionMode;
+  readonly prompt: string;
+  readonly callbackOptions: Pick<
+    Parameters<CanUseTool>[2],
+    "decisionReason" | "matchedAskRule" | "suppressAlwaysAllowRule"
+  >;
+}): {
+  readonly reason?: string;
+  readonly fullAccessOverride?: ProviderApprovalFullAccessOverride;
+  readonly options?: ReadonlyArray<ProviderApprovalOption>;
+} {
+  // The reason can carry terminal escapes from the CLI's own prompt renderer.
+  const reason = NodeUtil.stripVTControlCharacters(
+    input.callbackOptions.decisionReason ?? "",
+  ).trim();
+  // Bypass auto-allows everything it can, so any ask that still reaches the
+  // callback is one bypass refused. The SDK drops the CLI's decision_reason_type,
+  // leaving the matched ask rule as the only way to tell the two causes apart.
+  const fullAccessOverride: ProviderApprovalFullAccessOverride | undefined =
+    input.permissionMode !== "bypassPermissions"
+      ? undefined
+      : input.callbackOptions.matchedAskRule === undefined
+        ? "provider_check"
+        : "ask_rule";
+  return {
+    ...(reason === "" || reason === input.prompt ? {} : { reason }),
+    ...(fullAccessOverride === undefined ? {} : { fullAccessOverride }),
+    ...(input.callbackOptions.suppressAlwaysAllowRule === true
+      ? { options: CLAUDE_NO_STANDING_GRANT_OPTIONS }
+      : {}),
+  };
 }
 
 export function permissionResultFromDecision(input: {
@@ -6697,6 +6739,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly toolName?: string;
           readonly toolInput?: unknown;
           readonly prompt?: string;
+          readonly presentation?: ReturnType<typeof claudeApprovalPresentation>;
           readonly questions?: ReadonlyArray<OrchestrationV2UserInputQuestion>;
         }) {
           const createdAt = yield* DateTime.now;
@@ -6783,6 +6826,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ...(input.toolName === undefined ? {} : { toolName: input.toolName }),
                   ...(input.toolInput === undefined ? {} : { toolInput: input.toolInput }),
                   ...(input.prompt === undefined ? {} : { prompt: input.prompt }),
+                  ...input.presentation,
                 }
               : {
                   type: "user_input_request" as const,
@@ -9409,6 +9453,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             prompt,
             toolName,
             toolInput: claudeNativeToolInputValue(nativeToolInput),
+            presentation: claudeApprovalPresentation({
+              permissionMode: context.queryPolicy.permissionMode,
+              prompt,
+              callbackOptions,
+            }),
           });
           const decision = yield* Deferred.make<ProviderApprovalDecision, never>();
           yield* Ref.update(pendingRuntimeRequests, (current) => {
