@@ -1229,6 +1229,7 @@ it.effect("preserves the push failure when its effective URL cannot be read", ()
   ),
 );
 
+// regression: #19219 publishing did not explain why the first push failed
 it.effect("says the repository exists when an unclassified publish push fails", () =>
   Effect.gen(function* () {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;

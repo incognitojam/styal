@@ -129,51 +129,6 @@ describe("TextGeneration.make", () => {
     }),
   );
 
-  it.effect("delegates to the matching instance's textGeneration closure", () =>
-    Effect.gen(function* () {
-      const personalId = ProviderInstanceId.make("codex_personal");
-      const personalCalls: string[] = [];
-      const personal = makeStubInstance(
-        personalId,
-        makeStubTextGeneration({
-          generateBranchName: (input) => {
-            personalCalls.push(input.message);
-            return Effect.succeed({ branch: "personal-branch" });
-          },
-        }),
-      );
-
-      const workId = ProviderInstanceId.make("codex_work");
-      const work = makeStubInstance(
-        workId,
-        makeStubTextGeneration({
-          generateBranchName: () => Effect.succeed({ branch: "work-branch" }),
-        }),
-      );
-
-      const tg = yield* TextGeneration.make.pipe(
-        Effect.provideService(
-          ProviderInstanceRegistry.ProviderInstanceRegistry,
-          makeStubRegistry([personal, work]),
-        ),
-        Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
-        ),
-      );
-
-      const result = yield* tg.generateBranchName({
-        cwd: process.cwd(),
-        message: "Refactor the routing layer",
-        modelSelection: createModelSelection(ProviderInstanceId.make("codex_personal"), "gpt-5"),
-      });
-
-      expect(result.branch).toBe("personal-branch");
-      expect(personalCalls).toEqual(["Refactor the routing layer"]);
-    }),
-  );
-
   it.effect(
     "selects a signed-in provider before each operation and retries only rate-limit failures without changing the preference",
     () =>

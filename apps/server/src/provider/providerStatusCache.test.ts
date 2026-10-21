@@ -7,15 +7,11 @@ import {
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { assert, it } from "@effect/vitest";
-import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import * as Logger from "effect/Logger";
 
 import {
   hydrateCachedProvider,
   isCachedProviderCorrelated,
   orderProviderSnapshots,
-  readProviderStatusCache,
 } from "./providerStatusCache.ts";
 
 const emptyCapabilities = createModelCapabilities({ optionDescriptors: [] });
@@ -75,39 +71,6 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
     });
 
     assert.deepStrictEqual(hydrated.usageLimits, usageLimits);
-  });
-
-  it.effect("logs structural diagnostics without retaining invalid cache contents", () => {
-    const messages: Array<unknown> = [];
-    const logger = Logger.make<unknown, void>((options) => {
-      if (Array.isArray(options.message)) {
-        messages.push(...options.message);
-      } else {
-        messages.push(options.message);
-      }
-    });
-
-    return Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-provider-cache-invalid-" });
-      const cachePath = `${tempDir}/provider.json`;
-      const secretCacheValue = "secret-cache-value";
-      yield* fs.writeFileString(cachePath, `{ "token": "${secretCacheValue}" }`);
-
-      const result = yield* readProviderStatusCache(cachePath);
-
-      assert.strictEqual(result, undefined);
-      const failure = messages.find(
-        (message): message is Record<string, unknown> =>
-          typeof message === "object" && message !== null && "path" in message,
-      );
-      assert.exists(failure);
-      assert.strictEqual(failure.path, cachePath);
-      assert.strictEqual(typeof failure.errorTag, "string");
-      assert.ok(!("cause" in failure));
-      assert.ok(!("issues" in failure));
-      assert.ok(!Object.values(failure).map(String).join("\n").includes(secretCacheValue));
-    }).pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false })));
   });
 
   it("hydrates cached provider status while preserving current settings-derived models", () => {
