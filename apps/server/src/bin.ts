@@ -1,11 +1,6 @@
 /**
- * Thin CLI entry.
- *
- * Every ACP agent spawns `t3 acp-mcp-bridge` while opening its session, and
- * terminal-fallback agents run `t3 acp-mcp-call` per tool call, so their
- * startup sits on first-message latency. Both dispatch here before the full
- * CLI module graph (seconds of evaluation) loads. Pairing also has a small
- * entry; everything else defers to the real CLI in ./binCli.ts.
+ * ACP bridges, managed Codex token renewal, Claude history and pairing dispatch here
+ * before the full CLI module graph loads to keep their startup latency low.
  */
 import { isEntrypoint } from "./entrypoint.ts";
 
@@ -20,7 +15,10 @@ if (
   // Guard sockets before either dispatch path can load outbound-capable modules.
   const { ignoreMacosTypeOfServiceEinval } = await import("./outboundHttp.ts");
   ignoreMacosTypeOfServiceEinval();
-  if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
+  if (command === "__managed-chatgpt-token") {
+    const { runManagedChatGptTokenCli } = await import("./cli/managedChatGptToken.ts");
+    await runManagedChatGptTokenCli(process.argv.slice(3));
+  } else if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
     const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
     await runAcpMcpCliFastPath(command, process.argv.slice(3));
   } else if (command === "__claude-history") {
