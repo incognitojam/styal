@@ -361,7 +361,12 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
       <TooltipTrigger
         render={
           children === undefined ? (
-            <ContextChip kind="mention" render={link} className={MARKDOWN_FILE_LINK_CLASS_NAME} />
+            <ContextChip
+              kind="mention"
+              dir="ltr"
+              render={link}
+              className={MARKDOWN_FILE_LINK_CLASS_NAME}
+            />
           ) : (
             link
           )

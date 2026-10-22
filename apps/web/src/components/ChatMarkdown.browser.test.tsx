@@ -439,7 +439,7 @@ describe("ChatMarkdown descriptive file links", () => {
     expect(buttons).toHaveLength(1);
     expect(buttons[0]!.getAttribute("aria-haspopup")).toBe("menu");
     expect(buttons[0]!.innerHTML).toContain(
-      "Read <strong>the updated</strong> <code>docs/review.md</code> report",
+      'Read <strong>the updated</strong> <code dir="ltr">docs/review.md</code> report',
     );
     expect(copyMarkdown(container)).toContain(
       "[Read **the updated** `docs/review.md` report](/workspace/project/review.md)",
