@@ -218,9 +218,9 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
     >
       {(frame) =>
         serverTab ? (
-          // Like the native webview, the stream is view-only; the right panel takes input.
+          // Like the native webview, the page is view-only; the right panel takes input.
+          // Its control bar stays usable above the drag layer.
           <div
-            inert
             className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
             style={{ zIndex: PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX }}
           >
@@ -232,6 +232,7 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
               visible
               followSize={false}
               controlPosition="bottom"
+              viewOnly
               onViewport={setStreamViewport}
               onPopup={(popupTabId) => showPreviewPopup(threadRef, popupTabId, "floating")}
               className="size-full"
@@ -479,10 +480,12 @@ function MiniPlayerShell({
           }}
         >
           {/* The source is view-only: its full surface moves the frame, and
-              double-clicking it opens the source in the right panel. */}
+              double-clicking it opens the source in the right panel. Sources paint
+              above it at the same z-index and pass the pointer through, except for
+              their own controls. */}
           <div
             aria-hidden="true"
-            className="pointer-events-auto absolute inset-0 z-[49] touch-none cursor-grab rounded-[inherit] active:cursor-grabbing"
+            className="pointer-events-auto absolute inset-0 z-[48] touch-none cursor-grab rounded-[inherit] active:cursor-grabbing"
             onDoubleClick={onOpenInPanel}
             onPointerDown={(event) => beginGesture(event, null)}
             onPointerMove={handlePointerMove}
