@@ -5,6 +5,7 @@ import type { IncomingShareDraft } from "./incoming-share-model";
 import { IncomingShareInbox, type IncomingShareInboxDependencies } from "./incoming-share-inbox";
 import {
   EMPTY_INCOMING_SHARE_PRESENTATION_STATE,
+  incomingShareIdOfNewTaskRoutes,
   transitionIncomingSharePresentation,
 } from "./incoming-share-presentation";
 
@@ -253,5 +254,56 @@ describe("IncomingShareInbox", () => {
       }),
     ).resolves.toEqual([draft("share-other")]);
     expect([...persisted.values()]).toEqual([draft("share-other")]);
+  });
+});
+
+describe("incomingShareIdOfNewTaskRoutes", () => {
+  const home = { name: "Home" };
+  const draftWithShare = { name: "Thread", params: { draft: { incomingShareId: "share-1" } } };
+
+  it("keeps the share presented while it moves from the draft to the project picker", () => {
+    expect(incomingShareIdOfNewTaskRoutes({ routes: [home, draftWithShare] })).toEqual({
+      isSheetPresented: true,
+      shareId: "share-1",
+    });
+    expect(
+      incomingShareIdOfNewTaskRoutes({
+        routes: [home, { name: "NewTaskProject", params: { incomingShareId: "share-1" } }],
+      }),
+    ).toEqual({ isSheetPresented: true, shareId: "share-1" });
+    expect(
+      incomingShareIdOfNewTaskRoutes({
+        routes: [home, draftWithShare, { name: "NewTaskBranch" }],
+      }),
+    ).toEqual({ isSheetPresented: true, shareId: "share-1" });
+  });
+
+  it("reads a submitted draft or an unrelated thread as the flow leaving", () => {
+    expect(
+      incomingShareIdOfNewTaskRoutes({
+        routes: [home, { name: "Thread", params: { environmentId: "env-1", threadId: "t-1" } }],
+      }),
+    ).toEqual({ isSheetPresented: false, shareId: null });
+  });
+
+  it("reads a project picker left below a submitted thread as a finished flow", () => {
+    const picker = { name: "NewTaskProject", params: { incomingShareId: "share-1" } };
+    const liveThread = { name: "Thread", params: { environmentId: "env-1", threadId: "t-1" } };
+    expect(incomingShareIdOfNewTaskRoutes({ routes: [home, picker, liveThread] })).toEqual({
+      isSheetPresented: false,
+      shareId: null,
+    });
+    expect(incomingShareIdOfNewTaskRoutes({ routes: [home, draftWithShare, liveThread] })).toEqual({
+      isSheetPresented: true,
+      shareId: "share-1",
+    });
+  });
+
+  it("reports a manual new task as presented without a share", () => {
+    expect(
+      incomingShareIdOfNewTaskRoutes({
+        routes: [home, { name: "Thread", params: { draft: { requestId: "r-1" } } }],
+      }),
+    ).toEqual({ isSheetPresented: true, shareId: null });
   });
 });

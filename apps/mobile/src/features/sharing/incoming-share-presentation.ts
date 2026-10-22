@@ -1,5 +1,7 @@
+import { isDraftThreadRoute } from "../threads/thread-route-state";
+
 export interface IncomingSharePresentationState {
-  /** Share the layout last asked the new-task sheet to open. */
+  /** Share the layout last asked the new-task draft to open. */
   readonly presentedShareId: string | null;
   /** Whether the sheet was actually observed carrying `presentedShareId`. */
   readonly sheetSeen: boolean;
@@ -19,10 +21,11 @@ export const EMPTY_INCOMING_SHARE_PRESENTATION_STATE: IncomingSharePresentationS
   discardedShareId: null,
 };
 
+const NEW_TASK_PROJECT_ROUTE = "NewTaskProject";
+
 interface RouteLike {
   readonly name: string;
   readonly params?: object;
-  readonly state?: { readonly routes: ReadonlyArray<RouteLike> };
 }
 
 function incomingShareIdOfParams(params: object | undefined): string | null {
@@ -33,33 +36,42 @@ function incomingShareIdOfParams(params: object | undefined): string | null {
 }
 
 /**
- * The share id the new-task sheet is carrying, if the sheet is anywhere in the
- * root stack. Routes pushed above it (Add environment, a notification tap) do
- * not close it, so they must not read as a dismissal. Before the nested
- * navigator mounts, the id still sits in the `navigate` payload
- * (`params.params`); afterwards it lives on the nested route that owns it.
+ * The share id the new-task flow is carrying, if a draft thread or the project
+ * picker is anywhere in the root stack. Routes pushed above them (a draft
+ * picker, Add environment, a notification tap) do not close the flow, so they
+ * must not read as a dismissal. A draft without a project hands the share to
+ * the project picker, and sending the draft clears its `draft` params.
+ * Choosing a project pushes the draft above the picker, and sending it leaves
+ * the picker behind, so a picker below a live thread belongs to a finished
+ * flow; a draft below one is still open.
  */
-export function incomingShareIdOfSheetRoute(
-  state: { readonly routes: ReadonlyArray<RouteLike> },
-  sheetRouteName: string,
-): { readonly isSheetPresented: boolean; readonly shareId: string | null } {
-  const sheet = state.routes.find((route) => route.name === sheetRouteName);
-  if (!sheet) {
-    return { isSheetPresented: false, shareId: null };
+export function incomingShareIdOfNewTaskRoutes(state: {
+  readonly routes: ReadonlyArray<RouteLike>;
+}): { readonly isSheetPresented: boolean; readonly shareId: string | null } {
+  let isSheetPresented = false;
+  let belowLiveThread = false;
+  for (let index = state.routes.length - 1; index >= 0; index -= 1) {
+    const route = state.routes[index]!;
+    const isDraft = isDraftThreadRoute(route);
+    if (route.name === "Thread" && !isDraft) {
+      belowLiveThread = true;
+      continue;
+    }
+    const params = isDraft
+      ? (route.params as { readonly draft?: object } | undefined)?.draft
+      : route.name === NEW_TASK_PROJECT_ROUTE && !belowLiveThread
+        ? route.params
+        : null;
+    if (params === null) continue;
+    isSheetPresented = true;
+    const shareId = incomingShareIdOfParams(params);
+    if (shareId !== null) return { isSheetPresented, shareId };
   }
-  for (const route of sheet.state?.routes ?? []) {
-    const shareId = incomingShareIdOfParams(route.params);
-    if (shareId !== null) return { isSheetPresented: true, shareId };
-  }
-  const payload =
-    sheet.params && "params" in sheet.params && typeof sheet.params.params === "object"
-      ? (sheet.params.params as object | null)
-      : null;
-  return { isSheetPresented: true, shareId: incomingShareIdOfParams(payload ?? undefined) };
+  return { isSheetPresented, shareId: null };
 }
 
 /**
- * Decides when the pending inbox share opens the new-task sheet and when the
+ * Decides when the pending inbox share opens the new-task draft and when the
  * user has walked away from it. A share counts as dismissed only after the
  * sheet was seen carrying it and then left the stack; until then a missing
  * sheet means the navigation never landed (container not ready, another route
