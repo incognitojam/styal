@@ -3098,7 +3098,7 @@ function OpenCommandPaletteDialog(props: {
     const cloneEnvironmentLabel =
       environments.find(
         (environment) => environment.environmentId === addProjectCloneFlow.environmentId,
-      )?.label ?? "the selected server";
+      )?.label ?? "the selected environment";
     const rawDestination = (destinationPathInput ?? query).trim();
     if (
       !readEnvironmentScope(addProjectCloneFlow.environmentId, AuthSourceControlWriteScope) ||
