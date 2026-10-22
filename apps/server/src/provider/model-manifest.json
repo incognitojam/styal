@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-22T13:46:38.837Z",
+  "updatedAt": "2026-10-22T22:28:19.938Z",
   "compatibility": [
     {
       "driver": "codex",
@@ -45,7 +45,7 @@
           "styal": "0.1.1-nightly.20261021.864"
         },
         {
-          "version": "2.1.308",
+          "version": "2.1.309",
           "package": "@anthropic-ai/claude-code",
           "styal": "0.1.1-nightly.20261022.876"
         }
