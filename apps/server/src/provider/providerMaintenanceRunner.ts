@@ -38,6 +38,7 @@ import {
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import type { ProviderMaintenanceCapabilities } from "@t3tools/provider-core/server/maintenanceResolver";
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import * as ServerSettings from "../serverSettings.ts";
 import { AnalyticsService } from "../telemetry/AnalyticsService.ts";
 import {
   startProviderUpdateRecording,
@@ -327,6 +328,11 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
   const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
   const installGate = yield* ProviderInstallGate.ProviderInstallGate;
   const analytics = yield* AnalyticsService;
+  const settingsService = yield* ServerSettings.ServerSettingsService;
+  const managedUpdatesOn = settingsService.getSettings.pipe(
+    Effect.map((settings) => settings.enableProviderUpdateChecks && settings.autoUpdateProviders),
+    Effect.orElseSucceed(() => true),
+  );
   const runMaintenanceCommand = (
     update: ProviderMaintenanceCommandAction,
     onProgress: (line: string) => Effect.Effect<void>,
@@ -584,6 +590,13 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                 }),
                 updateCommandFailureReason(result),
               );
+            }
+
+            // A background install keeps the provider's own updater off; a
+            // manual update with managed updates off hands it back.
+            if (fresh.selfUpdater) {
+              if (autoUpdate) yield* fresh.selfUpdater.turnOff;
+              else if (!(yield* managedUpdatesOn)) yield* fresh.selfUpdater.handBack;
             }
 
             yield* setRunningMessage("Verifying the installed version");

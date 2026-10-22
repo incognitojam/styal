@@ -72,6 +72,12 @@ import {
   resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 import { readClaudeHistoryRetention } from "./ClaudeHistoryRetention.ts";
+import {
+  claudeSelfUpdaterActive,
+  handBackClaudeSelfUpdater,
+  turnOffClaudeSelfUpdater,
+  type ClaudeUpdaterPaths,
+} from "./claudeSelfUpdater.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
@@ -87,20 +93,31 @@ function isClaudeNativeCommandPath(commandPath: string): boolean {
   );
 }
 
-/** @public Exposed for capability tests. */
-export const CLAUDE_MAINTENANCE = makePackageManagedProviderMaintenanceResolver({
-  provider: DRIVER_KIND,
-  npmPackageName: "@anthropic-ai/claude-code",
-  nativeUpdate: {
-    args: ["update"],
-    isCommandPath: isClaudeNativeCommandPath,
-    // Moves the native install to exactly `version` without `--force`.
-    pinned: (version, context) => ({
-      executable: context.resolvedCommandPath,
-      args: ["install", version],
-    }),
-  },
-});
+/**
+ * Update ownership of the Claude executable an instance runs. A native install
+ * pins versions with `claude install <version>`; styal then turns off Claude's
+ * own updater in the instance's settings, see `claudeSelfUpdater.ts`.
+ */
+export function makeClaudeMaintenance(paths: ClaudeUpdaterPaths) {
+  return makePackageManagedProviderMaintenanceResolver({
+    provider: DRIVER_KIND,
+    npmPackageName: "@anthropic-ai/claude-code",
+    nativeUpdate: {
+      args: ["update"],
+      isCommandPath: isClaudeNativeCommandPath,
+      // Moves the native install to exactly `version` without `--force`.
+      pinned: (version, context) => ({
+        executable: context.resolvedCommandPath,
+        args: ["install", version],
+      }),
+      selfUpdaterActive: (context) => claudeSelfUpdaterActive(paths, context.env),
+      selfUpdater: (context) => ({
+        turnOff: turnOffClaudeSelfUpdater(paths, context.env),
+        handBack: handBackClaudeSelfUpdater(paths),
+      }),
+    },
+  });
+}
 
 export type ClaudeDriverEnv =
   | ClaudeAdapterV2DriverEnv
@@ -148,11 +165,20 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         enabled,
         binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
       } satisfies ClaudeSettings;
+      const configDir = yield* resolveClaudeHomePath(effectiveConfig, processEnv);
+      const accountConfigPath = yield* ClaudeResetCredits.claudeAccountConfigPath(
+        effectiveConfig.homePath.trim() || processEnv.CLAUDE_CONFIG_DIR?.trim()
+          ? configDir
+          : undefined,
+      );
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
-        resolveProviderMaintenanceCapabilitiesEffect(CLAUDE_MAINTENANCE, {
-          binaryPath: effectiveConfig.binaryPath,
-          env: processEnv,
-        }).pipe(
+        resolveProviderMaintenanceCapabilitiesEffect(
+          makeClaudeMaintenance({ configDir, accountConfigPath }),
+          {
+            binaryPath: effectiveConfig.binaryPath,
+            env: processEnv,
+          },
+        ).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),
@@ -161,12 +187,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       const continuationGroupKey = yield* makeClaudeContinuationGroupKey(
         effectiveConfig,
         processEnv,
-      );
-      const configDir = yield* resolveClaudeHomePath(effectiveConfig, processEnv);
-      const accountConfigPath = yield* ClaudeResetCredits.claudeAccountConfigPath(
-        effectiveConfig.homePath.trim() || processEnv.CLAUDE_CONFIG_DIR?.trim()
-          ? configDir
-          : undefined,
       );
       const stampIdentity = withInstanceIdentity({
         instanceId,

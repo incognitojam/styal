@@ -122,6 +122,11 @@ export interface PackageManagedProviderMaintenanceDefinition {
     readonly selfUpdaterActive?: (
       context: ProviderMaintenanceResolutionContext,
     ) => Effect.Effect<boolean | null, never, FileSystem.FileSystem | Path.Path>;
+    /** Turns off and hands back the provider's own updater; see `ProviderMaintenanceCapabilities.selfUpdater`. */
+    readonly selfUpdater?: (context: ProviderMaintenanceResolutionContext) => {
+      readonly turnOff: Effect.Effect<void, never, FileSystem.FileSystem | Path.Path>;
+      readonly handBack: Effect.Effect<void, never, FileSystem.FileSystem | Path.Path>;
+    };
   } | null;
 }
 
@@ -431,9 +436,19 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     const selfUpdaterActive = nativeUpdate.selfUpdaterActive
       ? yield* nativeUpdate.selfUpdaterActive(context)
       : undefined;
+    const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
+    const selfUpdater = nativeUpdate.selfUpdater?.(context);
     return {
       ...native,
       ...(selfUpdaterActive !== undefined ? { selfUpdaterActive } : {}),
+      ...(selfUpdater
+        ? {
+            selfUpdater: {
+              turnOff: Effect.provideContext(selfUpdater.turnOff, services),
+              handBack: Effect.provideContext(selfUpdater.handBack, services),
+            },
+          }
+        : {}),
       pinnedUpdate: (version) => {
         const action = pinned(version, context);
         return {
