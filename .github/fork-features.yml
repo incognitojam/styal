@@ -3835,7 +3835,7 @@ features:
       - The canary keeps one "Provider canary status" issue with at most one problem per provider and kind (failed, blocked, skipped) plus failed jobs. A problem clears only when a later run checks that provider again. The issue gets a comment only when a new problem appears or every problem clears, and closes when every check passes.
       - Clients show the setting only as on for environments that advertise the `providerAutoUpdates` capability.
       - Provider snapshots carry the version automatic updates would install (`compatibilityAdvisory.verifiedVersion`), from the same recent-manifest rule, and omit it when none applies.
-      - The web provider update prompt leaves out a provider on an environment with automatic updates on when that provider has a verified version, passes its health check, and its installer can pin a version, including when the newest release is not verified yet; it still appears in Settings → Providers. Other providers still get the prompt. The sidebar update-everything button leaves out the same providers; the Settings → Providers Update all button still includes them.
+      - The sidebar update-everything button leaves out a provider on an environment with automatic updates on when that provider has a verified version, passes its health check, and its installer can pin a version, including when the newest release is not verified yet; the Settings → Providers Update all button still includes it.
       - Web and mobile provider settings say when the latest release is newer than the verified version.
       - The setting is labelled styal managed updates on web, mobile and in the MCP environment preferences description. The web Providers settings page links to the provider update check and managed update rows in Settings → General, which stay in General.
     rationale: Upstream keeps provider updates user-initiated (closed issue 2993) and its open background-install pull request has no tested-version gate. styal updates providers for users by default, so every automatic install is limited to a release the canary verified. The fork borrowed that pull request's machine-wide install lock (ProviderInstallLock.ts, kept close to its source) and its turn-start gate, narrowed to the CLI being installed, but not its 15-minute client-idle window, host-wide activity rule, or detached installer, so updates still happen on busy hosts.
@@ -3861,9 +3861,7 @@ features:
       - apps/server/src/provider/providerCompatibility.ts
       - apps/server/src/provider/providerMaintenanceRunner.ts
       - apps/server/src/server.ts
-      - apps/web/src/components/ProviderUpdateLaunchNotification.environments.ts
       - apps/web/src/components/ProviderUpdateLaunchNotification.logic.ts
-      - apps/web/src/components/ProviderUpdatePrimaryNotification.tsx
       - apps/web/src/components/ProviderUpdatesAction.tsx
       - apps/web/src/components/settings/ProviderSettingsPanel.tsx
       - apps/web/src/components/settings/SettingsPanels.tsx
