@@ -9,6 +9,7 @@ import {
   ProviderInstanceId,
   resolveProviderInstanceEnabled,
   ServerSettings,
+  ServerSettingsPatch,
   UsageLimitSourceId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -210,6 +211,51 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       );
       assert.equal(persisted.responseStreamingMode, "turn");
       assert.deepEqual(persisted.projectSettingsOverrides, settings.projectSettingsOverrides);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("moves an idle compaction mode saved in the legacy switch to its own field", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.writeFileString(config.settingsPath, `{ "compactIdleThreads": "off" }`);
+
+      const settings = yield* service.getSettings;
+      // Shipped clients decode the switch as a boolean and drop the config otherwise.
+      assert.strictEqual(settings.compactIdleThreads, false);
+      assert.equal(settings.idleCompaction, "off");
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("tells clients it reads idle compaction modes before any settings are saved", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const settings = yield* service.getSettings;
+      assert.equal(settings.idleCompaction, "onReturn");
+      assert.strictEqual(settings.compactIdleThreads, false);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("an older client's on/off switch sets the mode and still decodes the result", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const patch = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettingsPatch))(
+        `{ "compactIdleThreads": true }`,
+      );
+      const settings = yield* service.updateSettings(patch);
+      assert.equal(settings.idleCompaction, "beforeCacheExpires");
+
+      // The settings schema of a client from before idle compaction modes.
+      const OlderClientServerSettings = Schema.Struct({
+        ...ServerSettings.fields,
+        compactIdleThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+      });
+      const encoded = yield* Schema.encodeEffect(Schema.toCodecJson(ServerSettings))(settings);
+      const olderClientView = yield* Schema.decodeUnknownEffect(
+        Schema.toCodecJson(OlderClientServerSettings),
+      )(encoded);
+      assert.strictEqual(olderClientView.compactIdleThreads, true);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 

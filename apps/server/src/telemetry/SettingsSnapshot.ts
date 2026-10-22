@@ -12,7 +12,11 @@
  * Client settings such as the send shortcut or sidebar sorting live on each
  * device, not on the server, so they are not part of this snapshot.
  */
-import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  globalIdleCompaction,
+  type ServerSettings,
+} from "@t3tools/contracts";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -56,7 +60,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     sidebarAutoSettleKeepPullRequests: settings.sidebarAutoSettleKeepPullRequests,
     snoozeLimitedThreads: settings.snoozeLimitedThreads,
     autoResumeLimitedThreads: settings.autoResumeLimitedThreads,
-    compactIdleThreads: settings.compactIdleThreads,
+    idleCompaction: globalIdleCompaction(settings),
     // Source control writing
     branchNamingMode: settings.branchNamingMode,
     branchNamePrefixCustomized:

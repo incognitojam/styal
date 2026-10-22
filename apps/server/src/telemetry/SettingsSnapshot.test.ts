@@ -27,7 +27,7 @@ const defaultSnapshot = {
   sidebarAutoSettleKeepPullRequests: false,
   snoozeLimitedThreads: false,
   autoResumeLimitedThreads: false,
-  compactIdleThreads: "onReturn",
+  idleCompaction: "onReturn",
   branchNamingMode: "static",
   branchNamePrefixCustomized: false,
   textGenerationModelCustomized: false,
@@ -233,6 +233,7 @@ const NOT_REPORTED: Record<string, string> = {
   usageLimitSources: "account records",
   usagePriceOverrides: "per-model records",
   usageModelAliases: "per-model records",
+  compactIdleThreads: "legacy switch, reported as idleCompaction",
 };
 
 it.effect("reads every server setting that is not deliberately left out", () => {
