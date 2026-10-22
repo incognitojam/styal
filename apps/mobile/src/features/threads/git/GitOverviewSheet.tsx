@@ -315,7 +315,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
           <ListRow
             icon="arrow.triangle.branch"
             label="Default repository"
-            description={`${defaultRepositoryLabel} — where pull requests and issues go`}
+            description={`${defaultRepositoryLabel}: where pull requests and issues go`}
             disabled={busy || !isRepo}
             onPress={() =>
               navigation.navigate("GitDefaultRepository", {

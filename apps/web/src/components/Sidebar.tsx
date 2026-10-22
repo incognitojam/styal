@@ -1250,7 +1250,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 ? {
                     children: members.map((member, index) => ({
                       id: `copy-path:${index}`,
-                      label: `${member.environmentLabel ?? "Environment"} — ${member.workspaceRoot}`,
+                      label: `${member.environmentLabel ?? "Environment"}: ${member.workspaceRoot}`,
                     })),
                   }
                 : {}),

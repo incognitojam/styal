@@ -1115,8 +1115,7 @@ function PullRequestCodeTab({
                 />
               </TooltipTrigger>
               <TooltipPopup side="bottom">
-                The host withheld part of this diff — a binary file, or a change too large to
-                inline.
+                The host withheld part of this diff: a binary file, or a change too large to inline.
               </TooltipPopup>
             </Tooltip>
           ) : null}

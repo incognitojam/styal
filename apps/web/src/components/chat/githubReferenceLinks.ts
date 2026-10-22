@@ -101,7 +101,7 @@ export function missingGithubReferenceTitle(
   label: string,
 ): string | undefined {
   return resolution.status === "missing"
-    ? `Could not find ${label} — it may be private or deleted.`
+    ? `Could not find ${label}. It may be private or deleted.`
     : undefined;
 }
 

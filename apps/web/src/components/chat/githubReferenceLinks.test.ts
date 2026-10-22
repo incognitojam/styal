@@ -48,7 +48,7 @@ describe("githubReferenceHref", () => {
 describe("missingGithubReferenceTitle", () => {
   it("explains only the reference the host said is not there", () => {
     expect(missingGithubReferenceTitle({ status: "missing" }, "#6039")).toBe(
-      "Could not find #6039 — it may be private or deleted.",
+      "Could not find #6039. It may be private or deleted.",
     );
     expect(missingGithubReferenceTitle({ status: "unresolved" }, "#6039")).toBeUndefined();
   });

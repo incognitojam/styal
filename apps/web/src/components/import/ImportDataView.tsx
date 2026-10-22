@@ -567,7 +567,7 @@ export function ImportPreferencesView({
                   )}
                 >
                   <span className="sr-only">Now: </span>
-                  {current?.value ?? "—"}
+                  {current?.value ?? "-"}
                 </dd>
                 <dd
                   className={cn(
