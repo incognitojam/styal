@@ -6281,7 +6281,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         ? "text-secondary-label"
         : "text-foreground/80";
   const threadLabel = isReasoning ? null : threadReadLabel(previewText, threadTarget);
-  const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview]
+  const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview ?? setupActionStatus]
     .filter(Boolean)
     .join(": ");
   const accessibleDisplayText = showFailedIndicator
@@ -6326,7 +6326,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         <div className="min-w-0 flex-1 overflow-hidden">
           <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
             <span
-              className={cn(answerPreview ? "min-w-0" : "min-w-0 flex-1", "truncate", headingClass)}
+              className={cn(
+                answerPreview || setupActionStatus ? "min-w-0" : "min-w-0 flex-1",
+                "truncate",
+                headingClass,
+              )}
             >
               {isReasoning && !expanded ? (
                 <ReactMarkdown
@@ -6350,6 +6354,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                 previewText
               )}
             </span>
+            {setupActionStatus ? (
+              <span className="min-w-0 truncate text-muted-foreground">{setupActionStatus}</span>
+            ) : null}
             {answerPreview ? (
               <span
                 className={cn(
@@ -6386,9 +6393,6 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                 <MinusIcon aria-hidden className="size-3 opacity-70" />
               )}
             </span>
-          ) : null}
-          {setupActionStatus ? (
-            <span className="shrink-0 text-2xs text-muted-foreground">{setupActionStatus}</span>
           ) : null}
           {awaitingApproval &&
           ctx.onReviewFileAction &&
