@@ -2159,6 +2159,36 @@ it.layer(Layer.fresh(layerTest))("native pricing migration", (it) => {
           (yield* projections.getThreadShell(threadId))?.tokenUsage,
           afterRollback.threadTokenUsage,
         );
+        // A turn that ended without usable usage is unpriced, not free.
+        yield* ingestor.ingestNormalized({
+          threadId,
+          providerSessionId,
+          providerInstanceId: modelSelection.instanceId,
+          analyticsContext: { modelSelection },
+          event: {
+            type: "provider_turn.updated",
+            driver: CODEX_DRIVER,
+            providerTurn: {
+              ...providerTurn,
+              id: nextTurnId,
+              nodeId: nextNodeId,
+              ordinal: 2,
+              status: "interrupted",
+              turnTokenUsage: {
+                usageScope: "main_agent",
+                usageStatus: "unavailable",
+                hasSubagents: false,
+              },
+            },
+          },
+        });
+        const interrupted = (yield* projections.getThreadProjection(threadId)).providerTurns.find(
+          (turn) => turn.id === nextTurnId,
+        )!;
+        assert.equal(priceCalls, 3);
+        assert.isUndefined(interrupted.turnTokenUsage?.costUsd);
+        assert.equal(interrupted.threadTokenUsage?.costUsd, 123.456);
+        assert.equal(interrupted.threadTokenUsage?.pricedTurns, 2);
       }),
   );
 });
