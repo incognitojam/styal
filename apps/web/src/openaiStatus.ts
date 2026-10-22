@@ -59,6 +59,7 @@ const OPENAI_IGNORED_COMPONENTS = [
 const OPENAI_IGNORED_INCIDENT_PATTERNS = [
   /^Degraded Performance of Dots on Enterprise\.?$/i,
   /^Delayed support responses\.?$/i,
+  /^New Ad Accounts failing to provision admins\.?$/i,
   /^Delayed Costs data in the Compliance API\.?$/i,
   /^Support available via email\.?$/i,
   /^Elevated errors in ChatGPT Space Pages\.?$/i,

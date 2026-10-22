@@ -310,6 +310,7 @@ describe("OpenAI status notice", () => {
     "Overbilling for OpenAI-hosted containers in the Agent API",
     "Delayed support responses",
     "Support available via email",
+    "New Ad Accounts failing to provision admins",
   ])("ignores the unrelated componentless incident %j", (name) => {
     expect(
       resolveOpenAIStatusNotice(
