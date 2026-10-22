@@ -24,7 +24,8 @@ name: Mobile EAS Production
 #      reaches the previous major's store binaries over the air. When native
 #      drift means no binary could install the update,
 #      it is skipped and flagged in the job summary instead of published
-#      into the void.
+#      into the void, and an open "mobile-ota-blocked" issue says so until
+#      every platform publishes again.
 # workflow_dispatch remains as a manual override for both modes (e.g. to
 # retry an errored build or force an OTA).
 # Manual v2-preview builds keep the production app identity and disable OTA.
@@ -121,6 +122,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      issues: write
     env:
       APP_VARIANT: production
       EXPO_OWNER: ${{ vars.EXPO_OWNER }}
@@ -348,7 +350,8 @@ jobs:
       # apps/mobile/.eas/.env/, but loadRepoEnv only reads the repository
       # root's env files, so pass the path explicitly. Without it the Android
       # hash never matches a build and Android OTAs are always skipped.
-      - name: Publish fingerprint-gated OTA
+      - id: ota
+        name: Publish fingerprint-gated OTA
         if: steps.expo-token.outputs.present == 'true' && github.event_name == 'push'
         working-directory: apps/mobile
         env:
@@ -356,6 +359,7 @@ jobs:
           T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/apps/mobile/.eas/.env/T3CODE_ANDROID_GOOGLE_SERVICES_FILE
         run: |
           message="$(git log -1 --pretty=%s | head -c 120) ($(git rev-parse --short=9 HEAD))"
+          skipped=()
           for platform in ios android; do
             # eas-cli prints an environment-loaded notice to stdout before the
             # JSON even with --json, so discard everything before the document.
@@ -371,8 +375,46 @@ jobs:
               echo ":white_check_mark: $platform: OTA published to production (fingerprint \`$hash\`)" >> "$GITHUB_STEP_SUMMARY"
             else
               echo ":warning: $platform: no finished production build matches fingerprint \`$hash\` — OTA skipped; JS changes reach $platform only once a matching build ships" >> "$GITHUB_STEP_SUMMARY"
+              skipped+=("$platform \`$hash\`")
             fi
           done
+          {
+            echo "skipped<<EOF"
+            if [ "${#skipped[@]}" -gt 0 ]; then printf '%s\n' "${skipped[@]}"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # One open issue stands for "main cannot send OTA updates". It opens on the
+      # first skipped OTA, later skips edit its body without notifying anyone, and
+      # it closes once every platform publishes again.
+      - name: Update the OTA blocked issue
+        if: steps.ota.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SKIPPED: ${{ steps.ota.outputs.skipped }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Mobile OTA updates are blocked by native changes"
+          issue="$(gh issue list --state open --label mobile-ota-blocked --json number --jq '.[0].number // empty')"
+          commit="$(git rev-parse --short=9 HEAD)"
+          if [ -z "$SKIPPED" ]; then
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --comment "OTA updates published for iOS and Android again from $commit ($RUN_URL)."
+            fi
+            exit 0
+          fi
+          fingerprints="$(printf '%s\n' "$SKIPPED" | sed 's/^/- /')"
+          body="$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
+            "Main's native fingerprint matches no finished production build, so Mobile EAS Production skips the OTA update on every push for the platforms below. Installed apps receive no JavaScript changes until a matching build ships." \
+            "$fingerprints" \
+            "Latest skipped run: $RUN_URL at $commit." \
+            "To ship a matching build, bump \`version\` in \`apps/mobile/app.config.ts\`; merging the bump to main starts production builds for both platforms. Right after a bump this stays open until those builds finish. It closes when an OTA update publishes for every platform again.")"
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body "$body"
+          else
+            gh label create mobile-ota-blocked --color FBCA04 --description "Main cannot send mobile OTA updates" 2>/dev/null || true
+            gh issue create --title "$title" --label mobile-ota-blocked --body "$body"
+          fi
 
       - name: Propagate distribution build failure
         if: steps.distribution_builds.outcome == 'failure'
