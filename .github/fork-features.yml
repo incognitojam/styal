@@ -2945,6 +2945,7 @@ features:
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/BrowserSurfaceSlot.tsx
       - apps/web/src/browser/HostedBrowserWebview.tsx
+      - apps/web/src/browser/ServerBrowserSurface.tsx
       - apps/web/src/browser/browserSurfaceStore.ts
       - apps/web/src/browser/hostedBrowserWebviewStyle.ts
       - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
@@ -2954,6 +2955,7 @@ features:
       - apps/desktop/src/preview/Manager.ts
       - apps/web/src/browser/ElectronBrowserHost.tsx
       - apps/web/src/browser/HostedBrowserWebview.tsx
+      - apps/web/src/browser/ServerBrowserSurface.tsx
       - apps/web/src/components/RightPanelTabs.tsx
       - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
       - apps/web/src/components/preview/usePreviewBridge.ts
