@@ -30,7 +30,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
   return {
     // New threads
     defaultRuntimeMode: settings.defaultRuntimeMode,
-    // null inherits the repository's t3.json, then "local".
+    // null inherits the repository's styal.json or legacy t3.json, then "local".
     defaultThreadEnvMode: settings.defaultThreadEnvMode ?? null,
     defaultModelSelectionSet: settings.defaultModelSelection !== null,
     responseStreamingMode: settings.responseStreamingMode,

@@ -2,10 +2,10 @@ import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { EnvironmentId, type T3ProjectFileScript } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
+import { mergeProjectActions, projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { useT3ProjectFileState } from "../../hooks/useT3ProjectFileScripts";
+import { projectConfigRoot, useProjectConfigState } from "../../hooks/useProjectConfig";
 import { useEnvironments } from "../../state/environments";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
@@ -85,16 +85,25 @@ export function ProjectActionsSettings() {
     }),
   );
 
-  // A project's t3.json can declare actions to import. Read it from the
-  // representative checkout; the imported action still fans out.
+  // The project file's actions are listed alongside the saved ones, and a
+  // legacy t3.json can declare actions to import; a styal.json hides it.
+  // Read it from the representative member; edits still fan out.
   const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
-  const t3File = useT3ProjectFileState(
+  const projectConfig = useProjectConfigState(
     representativeMember?.environmentId ?? EnvironmentId.make("none"),
-    representativeMember?.workspaceRoot ?? null,
+    representativeMember ? projectConfigRoot(representativeMember) : null,
+  );
+  const actions = useMemo(
+    () => mergeProjectActions(scripts, isProjectScope ? projectConfig.config : null),
+    [isProjectScope, projectConfig.config, scripts],
+  );
+  const fileActionIds = useMemo(
+    () => actions.filter((action) => action.source !== "local").map((action) => action.id),
+    [actions],
   );
   const importableScripts = useMemo(
     () =>
-      t3File.scripts.filter(
+      projectConfig.legacyScripts.filter(
         (fileScript) =>
           !scripts.some(
             (script) =>
@@ -102,7 +111,7 @@ export function ProjectActionsSettings() {
               script.name.toLowerCase() === fileScript.name.toLowerCase(),
           ),
       ),
-    [scripts, t3File.scripts],
+    [scripts, projectConfig.legacyScripts],
   );
   const importFileScript = useCallback((fileScript: T3ProjectFileScript) => {
     setRequest(editorRequestForFileScript(fileScript));
@@ -181,22 +190,22 @@ export function ProjectActionsSettings() {
         />
       ) : (
         <ProjectActionsList
-          scripts={scripts}
+          scripts={actions}
           keybindings={keybindings}
           disabled={saving || !canWriteSettings}
           onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
         />
       )}
-      {t3File.status === "invalid" ? (
+      {projectConfig.status === "invalid" ? (
         <SettingsRow
-          title="t3.json is invalid"
-          description="A t3.json exists in this checkout but its JSON is malformed or its root is not an object, so the file cannot be read."
+          title={`${projectConfig.source} is invalid`}
+          description={`A ${projectConfig.source} exists in this checkout but its JSON is malformed or its root is not an object, so the file cannot be read.`}
           className="text-warning"
         />
       ) : null}
-      {t3File.status === "partial" ? (
+      {projectConfig.status === "partial" ? (
         <SettingsRow
-          title="Some t3.json values were ignored"
+          title={`Some ${projectConfig.source} values were ignored`}
           description="Invalid or unrecognized fields and actions were skipped. Valid project settings and actions remain available."
           className="text-warning"
         />
@@ -206,11 +215,20 @@ export function ProjectActionsSettings() {
           environmentId={target.environmentId}
           editScope={AuthSettingsWriteScope}
           request={request}
-          scripts={scripts}
-          onSubmit={submit}
-          onDelete={(id) =>
-            void persist((current) => current.filter((script) => script.id !== id), id, null)
-          }
+          scripts={actions}
+          onSubmit={(scriptId, input) => submit(scriptId, input, fileActionIds)}
+          onDelete={(id) => {
+            // Removing an override hands the id, and its shortcut, back to styal.json.
+            const restoresFileAction = actions.some(
+              (action) => action.id === id && action.source === "override",
+            );
+            void persist(
+              (current) => current.filter((script) => script.id !== id),
+              id,
+              null,
+              restoresFileAction,
+            );
+          }}
           onClose={() => setRequest(null)}
         />
       )}

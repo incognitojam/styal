@@ -1,4 +1,11 @@
-import type { ProjectId, ProjectScript, ServerSettings } from "@t3tools/contracts";
+import {
+  MAX_SCRIPT_ID_LENGTH,
+  type ProjectConfig,
+  type ProjectConfigAction,
+  type ProjectId,
+  type ProjectScript,
+  type ServerSettings,
+} from "@t3tools/contracts";
 
 type ProjectScriptSettings = Pick<
   ServerSettings,
@@ -24,6 +31,62 @@ export function resolveProjectScripts(
   const legacy = settings.projectScriptOverrides[project.id];
   if (legacy === null) return settings.defaultProjectScripts;
   return legacy ?? (project.scripts.length > 0 ? project.scripts : settings.defaultProjectScripts);
+}
+
+/**
+ * Where an action in the menu comes from:
+ * - `local`: saved in styal for this project or environment.
+ * - `file`: declared in the project's styal.json and read live from it.
+ * - `override`: saved locally under the id of a styal.json action, replacing it.
+ */
+export type ProjectActionSource = "local" | "file" | "override";
+
+export type ResolvedProjectAction = ProjectScript & { readonly source: ProjectActionSource };
+
+/**
+ * Every action the project offers: its saved actions in their own order, then
+ * the styal.json actions no saved action overrides. `config` must come from
+ * the project root, not a thread's worktree, so every thread of a project
+ * sees the same file actions.
+ *
+ * File actions never run on their own here: `runOnWorktreeCreate` and
+ * `runOnSettle` from the file only take effect once their command has been
+ * approved, so a resolved file action carries neither.
+ */
+export function resolveProjectActions(
+  settings: ProjectScriptSettings,
+  project: { id: ProjectId; scripts: readonly ProjectScript[] },
+  config: Pick<ProjectConfig, "actions"> | null,
+): readonly ResolvedProjectAction[] {
+  return mergeProjectActions(resolveProjectScripts(settings, project), config);
+}
+
+/** `resolveProjectActions` for a caller that already holds the saved list. */
+export function mergeProjectActions(
+  saved: readonly ProjectScript[],
+  config: Pick<ProjectConfig, "actions"> | null,
+): readonly ResolvedProjectAction[] {
+  const fileActions = config?.actions ?? [];
+  const fileIds = new Set(fileActions.map((action) => action.id));
+  const savedIds = new Set(saved.map((script) => script.id));
+  return [
+    ...saved.map((script) => ({
+      ...script,
+      source: fileIds.has(script.id) ? ("override" as const) : ("local" as const),
+    })),
+    ...fileActions.filter((action) => !savedIds.has(action.id)).map(fileProjectAction),
+  ];
+}
+
+function fileProjectAction(action: ProjectConfigAction): ResolvedProjectAction {
+  return {
+    id: action.id,
+    name: action.name,
+    command: action.command,
+    icon: action.icon,
+    runOnWorktreeCreate: false,
+    source: "file",
+  };
 }
 
 export function projectScriptsInheritDefaults(
@@ -142,4 +205,38 @@ export function projectScriptMenuLabel(
 
 export function settleProjectScript(scripts: readonly ProjectScript[]): ProjectScript | null {
   return scripts.find((script) => script.runOnSettle === true) ?? null;
+}
+
+function normalizeScriptId(value: string): string {
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (cleaned.length === 0) {
+    return "script";
+  }
+  if (cleaned.length <= MAX_SCRIPT_ID_LENGTH) {
+    return cleaned;
+  }
+  return cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(/-+$/g, "") || "script";
+}
+
+/** A keybinding-safe id derived from `name` that none of `existingIds` uses. */
+export function nextProjectScriptId(name: string, existingIds: Iterable<string>): string {
+  const taken = new Set(Array.from(existingIds));
+  const baseId = normalizeScriptId(name);
+  if (!taken.has(baseId)) return baseId;
+
+  // Every suffix gives a distinct id, so this ends within taken.size + 1 tries.
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${baseId}-${suffix}`;
+    const safeCandidate =
+      candidate.length <= MAX_SCRIPT_ID_LENGTH
+        ? candidate
+        : `${baseId.slice(0, Math.max(1, MAX_SCRIPT_ID_LENGTH - String(suffix).length - 1))}-${suffix}`;
+    if (!taken.has(safeCandidate)) {
+      return safeCandidate;
+    }
+  }
 }

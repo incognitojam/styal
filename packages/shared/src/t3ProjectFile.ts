@@ -8,6 +8,12 @@ import {
   T3_PROJECT_FILE_SCHEMA_URL,
 } from "@t3tools/contracts";
 
+import {
+  hasUnknownKeys,
+  makeFieldValidators,
+  pickValidFields,
+  type JsonRecord,
+} from "./projectFileRecovery.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 
 /**
@@ -22,43 +28,13 @@ const decodeJsonObject = Schema.decodeUnknownExit(Schema.Record(Schema.String, S
 const decodeJsonArray = Schema.decodeUnknownExit(Schema.Array(Schema.Unknown));
 const decodeLenientJson = Schema.decodeExit(fromLenientJson(Schema.Unknown));
 
+const PROJECT_FILE_FIELDS = makeFieldValidators(T3ProjectFile.fields);
+const PROJECT_FILE_SCRIPT_FIELDS = makeFieldValidators(T3ProjectFileScript.fields);
+
 export type T3ProjectFileParseResult =
   | { readonly status: "valid"; readonly file: T3ProjectFile }
   | { readonly status: "partial"; readonly file: T3ProjectFile }
   | { readonly status: "invalid"; readonly file: null };
-
-type JsonRecord = Readonly<Record<string, unknown>>;
-type FieldValidators = ReadonlyMap<string, (value: unknown) => boolean>;
-
-/**
- * One validator per field of a struct schema, keyed by field name. Recovery
- * and unknown-key detection read their keys from here, so a field added to
- * the contract is recovered without touching this file.
- */
-function makeFieldValidators(fields: {
-  readonly [key: string]: Schema.Top & { readonly DecodingServices: never };
-}): FieldValidators {
-  return new Map(
-    Object.entries(fields).map(([key, field]) => {
-      const decode = Schema.decodeUnknownExit(Schema.Struct({ [key]: field }));
-      return [key, (value: unknown) => Exit.isSuccess(decode({ [key]: value }))];
-    }),
-  );
-}
-
-const PROJECT_FILE_FIELDS = makeFieldValidators(T3ProjectFile.fields);
-const PROJECT_FILE_SCRIPT_FIELDS = makeFieldValidators(T3ProjectFileScript.fields);
-
-/** The known fields of `record` that are valid on their own, still encoded. */
-function pickValidFields(record: JsonRecord, validators: FieldValidators): Record<string, unknown> {
-  const picked: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(record)) {
-    if (validators.get(key)?.(value) === true) {
-      picked[key] = value;
-    }
-  }
-  return picked;
-}
 
 /** A script without its invalid optional fields, or null when a required field is invalid. */
 function recoverScript(input: unknown): JsonRecord | null {
@@ -97,10 +73,6 @@ function recoverProjectFile(record: JsonRecord): T3ProjectFile {
   // cross-field rules, so this decode only applies the field transformations.
   const decoded = decodeT3ProjectFileValue(candidate);
   return Exit.isSuccess(decoded) ? decoded.value : {};
-}
-
-function hasUnknownKeys(record: JsonRecord, knownKeys: FieldValidators): boolean {
-  return Object.keys(record).some((key) => !knownKeys.has(key));
 }
 
 function hasUnknownProjectFileKeys(record: JsonRecord): boolean {

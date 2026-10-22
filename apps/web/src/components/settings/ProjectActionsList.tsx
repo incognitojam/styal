@@ -1,4 +1,5 @@
-import type { ProjectScript, ResolvedKeybindingsConfig } from "@t3tools/contracts";
+import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
+import type { ResolvedProjectAction } from "@t3tools/shared/projectScripts";
 import { SettingsIcon } from "lucide-react";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { commandForProjectScript } from "../../projectScripts";
@@ -12,10 +13,10 @@ export function ProjectActionsList({
   disabled,
   onEdit,
 }: {
-  scripts: readonly ProjectScript[];
+  scripts: readonly ResolvedProjectAction[];
   keybindings: ResolvedKeybindingsConfig;
   disabled: boolean;
-  onEdit: (script: ProjectScript) => void;
+  onEdit: (script: ResolvedProjectAction) => void;
 }) {
   if (scripts.length === 0)
     return (
@@ -41,6 +42,11 @@ export function ProjectActionsList({
             {script.runOnSettle ? (
               <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-2xs font-normal text-muted-foreground">
                 on settle
+              </span>
+            ) : null}
+            {script.source !== "local" ? (
+              <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-2xs font-normal text-muted-foreground">
+                {script.source === "file" ? "styal.json" : "edited from styal.json"}
               </span>
             ) : null}
           </span>

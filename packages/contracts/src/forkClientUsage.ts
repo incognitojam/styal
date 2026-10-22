@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 5;
+export const FORK_CLIENT_USAGE_VERSION = 6;
 
 export const WebBuildUpdateUsageAction = Schema.Literals(["notice_shown", "refresh_requested"]);
 export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
@@ -44,6 +44,14 @@ export const ForkClientUsageInput = Schema.Union([
   Schema.Struct({
     feature: Schema.Literal("desktop-update-notice"),
     action: Schema.Literals(["notice_shown", "release_notes_opened"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("project-actions"),
+    action: Schema.Literal("run"),
+    /** Where the action came from: saved in styal, the project's styal.json, or a local edit of one. */
+    actionSource: Schema.Literals(["local", "file", "override"]),
+    /** The project file in effect at the project root, so adoption of styal.json and t3.json shows. */
+    projectFile: Schema.Literals(["styal.json", "t3.json", "none"]),
   }),
 ]);
 export type ForkClientUsageInput = typeof ForkClientUsageInput.Type;

@@ -99,7 +99,7 @@ vi.mock("~/state/queries", () => ({
 }));
 
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
-import { useT3ProjectFileState } from "~/hooks/useT3ProjectFileScripts";
+import { useProjectConfigState } from "~/hooks/useProjectConfig";
 import { useProjectEntriesQuery, useProjectFileQuery } from "./projectFilesQueryState";
 
 const environmentId = EnvironmentId.make("environment-1");
@@ -134,6 +134,25 @@ async function flushEffects(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
 }
+
+// Reads resolve to `legacy` for t3.json and fail as missing for styal.json, so
+// the config comes from the legacy file.
+const legacyFileOnly =
+  (legacy: unknown) =>
+  ({ input }: { readonly input: { readonly relativePath: string } }) =>
+    input.relativePath === "t3.json"
+      ? legacy
+      : Atom.make(AsyncResult.failure(Cause.fail(new Error("not found"))));
+
+const legacyConfigState = (config: {
+  readonly defaultThreadEnvMode: string;
+  readonly scripts: ReadonlyArray<unknown>;
+}) => ({
+  status: "valid",
+  source: "t3.json",
+  config: { source: "t3.json", defaultThreadEnvMode: config.defaultThreadEnvMode, actions: [] },
+  legacyScripts: config.scripts,
+});
 
 describe("project query refresh", () => {
   beforeEach(() => {
@@ -171,7 +190,7 @@ describe("project query refresh", () => {
     }
   });
 
-  it("keeps t3.json and the file tree loading until the file grant arrives", () => {
+  it("keeps the project config and the file tree loading until the file grant arrives", () => {
     authorizationMocks.sessionAtom = Atom.make(AsyncResult.initial());
     const registry = AtomRegistry.make();
     atomHooks.registry = registry;
@@ -179,8 +198,8 @@ describe("project query refresh", () => {
       defaultThreadEnvMode: "worktree",
       scripts: [{ name: "Test", command: "vp test" }],
     };
-    projectMocks.readFile.mockReturnValue(
-      Atom.make(AsyncResult.success(file(JSON.stringify(config)))),
+    projectMocks.readFile.mockImplementation(
+      legacyFileOnly(Atom.make(AsyncResult.success(file(JSON.stringify(config))))),
     );
     projectMocks.listEntries.mockReturnValue(
       Atom.make(AsyncResult.success(projectEntries(["t3.json"]))),
@@ -197,18 +216,14 @@ describe("project query refresh", () => {
         error: null,
         isPending: true,
       });
-      expect(useT3ProjectFileState(environmentId, "/repo").status).toBe("loading");
+      expect(useProjectConfigState(environmentId, "/repo").status).toBe("loading");
       expect(projectMocks.readFile).not.toHaveBeenCalled();
       expect(projectMocks.listEntries).not.toHaveBeenCalled();
 
       authorizationMocks.sessionAtom = Atom.make(
         AsyncResult.success({ authenticated: true, scopes: [AuthFilesystemReadScope] }),
       );
-      expect(useT3ProjectFileState(environmentId, "/repo")).toEqual({
-        status: "valid",
-        file: config,
-        scripts: config.scripts,
-      });
+      expect(useProjectConfigState(environmentId, "/repo")).toEqual(legacyConfigState(config));
       expect(useProjectEntriesQuery(environmentId, "/repo")).toMatchObject({
         data: projectEntries(["t3.json"]),
         error: null,
@@ -220,8 +235,45 @@ describe("project query refresh", () => {
     }
   });
 
+  it("prefers styal.json over a legacy t3.json and offers no legacy scripts", () => {
+    authorizationMocks.sessionAtom = Atom.make(
+      AsyncResult.success({ authenticated: true, scopes: [AuthFilesystemReadScope] }),
+    );
+    const registry = AtomRegistry.make();
+    atomHooks.registry = registry;
+    projectMocks.readFile.mockImplementation(
+      ({ input }: { readonly input: { readonly relativePath: string } }) =>
+        Atom.make(
+          AsyncResult.success(
+            file(
+              JSON.stringify(
+                input.relativePath === "styal.json"
+                  ? { defaultThreadEnvMode: "local" }
+                  : {
+                      defaultThreadEnvMode: "worktree",
+                      scripts: [{ name: "Old", command: "make" }],
+                    },
+              ),
+            ),
+          ),
+        ),
+    );
+    projectMocks.optimisticFile.mockReturnValue(Atom.make(null));
+    try {
+      expect(useProjectConfigState(environmentId, "/repo")).toEqual({
+        status: "valid",
+        source: "styal.json",
+        config: { source: "styal.json", defaultThreadEnvMode: "local", actions: [] },
+        legacyScripts: [],
+      });
+    } finally {
+      registry.dispose();
+      atomHooks.registry = null;
+    }
+  });
+
   it.each(["connected", "offline"] as const)(
-    "preserves cached t3.json defaults and scripts during a granted refresh while %s",
+    "preserves cached project defaults and legacy scripts during a granted refresh while %s",
     (phase) => {
       authorizationMocks.phase = phase;
       authorizationMocks.sessionAtom = Atom.make(
@@ -236,8 +288,10 @@ describe("project query refresh", () => {
         defaultThreadEnvMode: "worktree",
         scripts: [{ name: "Test", command: "vp test" }],
       };
-      projectMocks.readFile.mockReturnValue(
-        Atom.make(AsyncResult.success(file(JSON.stringify(config)), { waiting: true })),
+      projectMocks.readFile.mockImplementation(
+        legacyFileOnly(
+          Atom.make(AsyncResult.success(file(JSON.stringify(config)), { waiting: true })),
+        ),
       );
       projectMocks.optimisticFile.mockReturnValue(Atom.make(null));
       try {
@@ -245,11 +299,7 @@ describe("project query refresh", () => {
           error: null,
           isPending: true,
         });
-        expect(useT3ProjectFileState(environmentId, "/repo")).toEqual({
-          status: "valid",
-          file: config,
-          scripts: config.scripts,
-        });
+        expect(useProjectConfigState(environmentId, "/repo")).toEqual(legacyConfigState(config));
       } finally {
         registry.dispose();
         atomHooks.registry = null;
@@ -302,7 +352,7 @@ describe("project query refresh", () => {
         error: null,
         isPending: false,
       });
-      expect(useT3ProjectFileState(environmentId, null).status).toBe("missing");
+      expect(useProjectConfigState(environmentId, null).status).toBe("missing");
       expect(projectMocks.readFile).not.toHaveBeenCalled();
     } finally {
       registry.dispose();

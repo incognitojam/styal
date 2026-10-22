@@ -8,7 +8,7 @@ import {
   type ProjectScopedServerSettingKey,
   type ProjectSettingsOverrides,
   ServerSettings,
-  type T3ProjectFile,
+  type ProjectConfig,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
@@ -88,9 +88,10 @@ export interface ScopedSettingsTarget {
 export function resolveScopedSettingsTargets(
   scope: ResolvedSettingsScope,
   connectedEnvironments: readonly ScopedSettingsEnvironment[],
-  // Each member's decoded t3.json, keyed by physical project key, once read.
-  // A member absent here has no file tier yet; null is a missing or invalid file.
-  projectFiles?: ReadonlyMap<string, T3ProjectFile | null>,
+  // Each member's project configuration (styal.json, or a legacy t3.json),
+  // keyed by physical project key, once read. A member absent here has no
+  // file tier yet; null is a missing or invalid file.
+  projectFiles?: ReadonlyMap<string, ProjectConfig | null>,
 ): readonly ScopedSettingsTarget[] {
   const byId = new Map(
     connectedEnvironments.map((environment) => [environment.environmentId, environment]),
@@ -153,13 +154,8 @@ export function scopedSettingsSource(
   const scoped = keys.filter(isProjectScopedSettingKey);
   if (scoped.length === 0 || targets.length === 0) return "environment";
   const sources = new Set(targets.flatMap((target) => scoped.map((key) => target.sources[key])));
-  return sources.size > 1
-    ? "mixed"
-    : sources.has("project")
-      ? "project"
-      : sources.has("t3.json")
-        ? "t3.json"
-        : "environment";
+  const [only] = sources;
+  return sources.size > 1 ? "mixed" : (only ?? "environment");
 }
 
 interface ScopedServerWrite {

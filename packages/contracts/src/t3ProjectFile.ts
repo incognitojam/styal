@@ -3,9 +3,8 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
 import { ProjectScriptIcon } from "./project.ts";
-import type { ProjectScopedServerSettingKey, ServerSettings } from "./settings.ts";
 
-/** File name of the checked-in T3 project file, resolved at the workspace root. */
+/** File name of the legacy T3 Code project file, read only when there is no `styal.json`. */
 export const T3_PROJECT_FILE_NAME = "t3.json";
 
 /** Public URL of the published JSON Schema for {@link T3ProjectFile}. */
@@ -100,43 +99,3 @@ export const T3ProjectFile = Schema.Struct({
     "Checked-in project configuration for styal (t3.json at the repository root). See https://t3.codes for documentation.",
 });
 export type T3ProjectFile = typeof T3ProjectFile.Type;
-
-/**
- * Settings a repository can also declare in t3.json. A key here must be
- * nullable on `ServerSettings` (null means inherit) so both the project
- * override and the environment value can defer to the file; `field` names
- * the t3.json field carrying the same value and `builtIn` is what applies
- * when every tier is unset. `resolveProjectSettings` walks project override,
- * environment value, file, built-in, so listing a key here is the whole
- * change for a new file-backed setting.
- */
-export const PROJECT_FILE_BACKED_SETTINGS = {
-  // Clients use the current checkout when the project is not a Git repo or
-  // has no commit to branch from, without changing this inherited default.
-  defaultThreadEnvMode: { field: "defaultThreadEnvMode", builtIn: "worktree" },
-  worktreeSubmodules: { field: "worktreeSubmodules", builtIn: "recursive" },
-} as const satisfies {
-  // `providerInstances` is scoped per project but overrides field by field
-  // rather than replacing a whole `ServerSettings` value (see its doc comment
-  // in settings.ts), so it cannot be file-backed and is excluded here.
-  readonly [K in ProjectScopedServerSettingKey & keyof ServerSettings]?: {
-    readonly field: {
-      readonly [F in keyof T3ProjectFile]: T3ProjectFile[F] extends
-        | Exclude<ServerSettings[K], null>
-        | undefined
-        ? F
-        : never;
-    }[keyof T3ProjectFile];
-    readonly builtIn: Exclude<ServerSettings[K], null>;
-  };
-};
-export type ProjectFileBackedSettingKey = keyof typeof PROJECT_FILE_BACKED_SETTINGS;
-
-/**
- * `ServerSettings` with every file-backed key resolved to a concrete value.
- * What `resolveProjectSettings(...).settings` produces once a t3.json (or
- * its absence) has been accounted for.
- */
-export type ResolvedServerSettings = Omit<ServerSettings, ProjectFileBackedSettingKey> & {
-  readonly [K in ProjectFileBackedSettingKey]: Exclude<ServerSettings[K], null>;
-};

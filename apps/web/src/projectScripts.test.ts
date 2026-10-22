@@ -16,6 +16,7 @@ import {
   primaryProjectScript,
   projectScriptIdFromCommand,
   releaseClaimedRoles,
+  withSavedProjectScript,
 } from "./projectScripts";
 
 describe("projectScripts helpers", () => {
@@ -204,5 +205,46 @@ describe("projectScripts helpers", () => {
         worktreePath: null,
       }),
     ).toBe("/repo");
+  });
+});
+
+describe("withSavedProjectScript", () => {
+  const input = {
+    name: "Lint",
+    command: "vp lint --fix",
+    icon: "lint" as const,
+    runOnWorktreeCreate: false,
+    waitForSetup: false,
+    runOnSettle: false,
+  };
+  const saved = (id: string, extra: Partial<ReturnType<typeof buildProjectScript>> = {}) => ({
+    ...buildProjectScript(id, { ...input, name: id, command: `run ${id}` }),
+    ...extra,
+  });
+
+  it("replaces a saved action in place", () => {
+    expect(
+      withSavedProjectScript([saved("dev"), saved("lint"), saved("test")], "lint", input).map(
+        (script) => script.command,
+      ),
+    ).toEqual(["run dev", "vp lint --fix", "run test"]);
+  });
+
+  it("appends an action that is not saved yet, such as an override of a styal.json action", () => {
+    const next = withSavedProjectScript([saved("dev")], "lint", input);
+    expect(next.map((script) => script.id)).toEqual(["dev", "lint"]);
+    expect(next[1]).toEqual(buildProjectScript("lint", input));
+  });
+
+  it("takes the setup role from the saved action that held it", () => {
+    const next = withSavedProjectScript(
+      [saved("setup", { runOnWorktreeCreate: true })],
+      "install",
+      { ...input, runOnWorktreeCreate: true },
+    );
+    expect(next.map(({ id, runOnWorktreeCreate }) => ({ id, runOnWorktreeCreate }))).toEqual([
+      { id: "setup", runOnWorktreeCreate: false },
+      { id: "install", runOnWorktreeCreate: true },
+    ]);
   });
 });

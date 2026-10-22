@@ -1,5 +1,10 @@
-import { T3_PROJECT_FILE_NAME, type T3ProjectFile } from "@t3tools/contracts";
-import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
+import {
+  STYAL_PROJECT_FILE_NAME,
+  T3_PROJECT_FILE_NAME,
+  type EnvironmentId,
+  type ProjectConfig,
+} from "@t3tools/contracts";
+import { resolveProjectConfig } from "@t3tools/shared/projectFile";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -13,9 +18,10 @@ import { resolveSettingsScope, type SettingsScopeSearch } from "./settingsScope"
 import { selectSingleEnvironmentScope } from "./settingsScopeAxis";
 
 /**
- * Each member's decoded t3.json, so file-backed settings show the file as a
- * layer in the inheritance chain. A member is only present once its read has
- * settled; the query atom caches per (environment, cwd).
+ * Each member's project configuration (styal.json, or a legacy t3.json), so
+ * file-backed settings show the file as a layer in the inheritance chain. A
+ * member is only present once both reads have settled; the query atoms
+ * cache per (environment, cwd).
  */
 function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
   const members = scope.kind === "project" || scope.kind === "checkout" ? scope.members : [];
@@ -23,29 +29,35 @@ function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
     useMemo(
       () =>
         Atom.make((get) => {
-          const files = new Map<string, T3ProjectFile | null>();
-          for (const member of members) {
-            const result = get(
-              getProjectFileQueryAtom(
-                member.environmentId,
-                member.workspaceRoot,
-                T3_PROJECT_FILE_NAME,
-              ),
-            );
-            if (result.waiting) continue;
+          // Contents of one root file, null when missing or truncated, or
+          // undefined while its read is still waiting.
+          const readContents = (
+            environmentId: EnvironmentId,
+            workspaceRoot: string,
+            relativePath: string,
+          ): string | null | undefined => {
+            const result = get(getProjectFileQueryAtom(environmentId, workspaceRoot, relativePath));
+            if (result.waiting) return undefined;
             // A pending in-app save overlays the query, like useProjectFileQuery.
             const data =
-              get(
-                optimisticFileAtom(
-                  member.environmentId,
-                  member.workspaceRoot,
-                  T3_PROJECT_FILE_NAME,
-                ),
-              )?.data ?? Option.getOrNull(AsyncResult.value(result));
-            files.set(
-              member.physicalProjectKey,
-              data === null || data.truncated ? null : parseT3ProjectFile(data.contents),
+              get(optimisticFileAtom(environmentId, workspaceRoot, relativePath))?.data ??
+              Option.getOrNull(AsyncResult.value(result));
+            return data === null || data.truncated ? null : data.contents;
+          };
+          const files = new Map<string, ProjectConfig | null>();
+          for (const member of members) {
+            const styal = readContents(
+              member.environmentId,
+              member.workspaceRoot,
+              STYAL_PROJECT_FILE_NAME,
             );
+            const t3 = readContents(
+              member.environmentId,
+              member.workspaceRoot,
+              T3_PROJECT_FILE_NAME,
+            );
+            if (styal === undefined || t3 === undefined) continue;
+            files.set(member.physicalProjectKey, resolveProjectConfig({ styal, t3 }).config);
           }
           return files;
         }),
