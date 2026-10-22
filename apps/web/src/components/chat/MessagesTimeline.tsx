@@ -5827,14 +5827,14 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
       </pre>
     ) : null;
 
-  if (pending || awaitingApproval) {
+  // An action waiting for approval has nothing to show beyond its command.
+  if (awaitingApproval) return commandBlock;
+  if (pending) {
     return (
       <>
         {commandBlock}
         <pre className="font-mono text-2xs leading-relaxed text-muted-foreground">
-          {awaitingApproval
-            ? "Runs once you approve this command."
-            : "Output will be available when the command finishes."}
+          Output will be available when the command finishes.
         </pre>
       </>
     );
@@ -6156,6 +6156,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           label: `Setup action ${workEntry.toolLifecycleStatus}`,
         }
       : null;
+  // Finished setup rows show a status mark; the others name their state.
+  const setupActionStatus = !isSetupActionRow
+    ? null
+    : awaitingApproval && ctx.awaitingFileActionIds.has(awaitingApproval.actionId)
+      ? "Waiting for approval"
+      : workEntry.toolLifecycleStatus === "inProgress"
+        ? "Running"
+        : null;
   const isReasoning = workEntry.itemType === "reasoning";
   // The question is the row's identity: a generic "User input submitted"
   // label buries what was asked, so lead with the question text (even over a
@@ -6379,11 +6387,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               )}
             </span>
           ) : null}
+          {setupActionStatus ? (
+            <span className="shrink-0 text-2xs text-muted-foreground">{setupActionStatus}</span>
+          ) : null}
           {awaitingApproval &&
           ctx.onReviewFileAction &&
           ctx.awaitingFileActionIds.has(awaitingApproval.actionId) ? (
             <InlineButton
-              aria-label={`Review ${workEntry.label}`}
+              aria-label={`Review ${workEntry.setupScriptName ?? workEntry.label}`}
               onClick={(event) => {
                 event.stopPropagation();
                 ctx.onReviewFileAction?.(awaitingApproval);

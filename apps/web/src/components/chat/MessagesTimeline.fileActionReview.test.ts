@@ -90,15 +90,19 @@ describe("setup row titles", () => {
     return workEntryDisplayLabel(entry.entry, "/worktrees/feature");
   };
 
-  it("names the action and its state rather than repeating the command", () => {
-    expect(rowTitle(setupRow("idle", true))).toBe("Install needs approval");
-    expect(rowTitle(setupRow("running", false))).toBe("Install running");
-    expect(rowTitle(setupRow("completed", false))).toBe("Install completed");
-    expect(rowTitle(setupRow("failed", false))).toBe("Install failed");
-    expect(rowTitle(setupRow("interrupted", false))).toBe("Install stopped");
+  it("labels the row with the action's name rather than its command, in every state", () => {
+    for (const [status, awaiting] of [
+      ["idle", true],
+      ["running", false],
+      ["completed", false],
+      ["failed", false],
+      ["interrupted", false],
+    ] as const) {
+      expect(rowTitle(setupRow(status, awaiting))).toBe("Install");
+    }
   });
 
-  it("keeps the command as the title of an ordinary command row", () => {
+  it("keeps the command as the label of an ordinary command row", () => {
     const { setupScript: _setupScript, ...command } = setupRow("completed", false);
     expect(rowTitle({ ...command, title: null })).toBe("./scripts/setup.sh");
   });
