@@ -135,7 +135,9 @@ provider or paste a Git URL, then choose where to save it. GitHub repositories c
 to use SSH, choose **Git URL** and paste the SSH clone URL. The project opens right away while the
 clone runs in the background: you can write your first prompt, and sending waits until the files
 are in place. A toast tracks progress and lets you cancel; if the clone fails, retry it from the
-toast or from the banner above the composer.
+toast or from the banner above the composer. When the host refuses the machine's SSH key, styal
+clones over HTTPS with Git's credentials for that host instead, and the project's remote uses the
+HTTPS URL.
 
 For a local Git repository without a remote, **Publish Repository** creates a hosted repository,
 adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;

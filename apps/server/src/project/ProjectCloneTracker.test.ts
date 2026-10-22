@@ -138,6 +138,51 @@ describe("ProjectCloneTracker", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect.each([undefined, "auto"] as const)(
+    "uses the successful HTTPS transport for parent wiring with protocol %s",
+    (protocol) => {
+      const cloned = Deferred.makeUnsafe<void>();
+      const harness = makeHarness({
+        clone: (input) =>
+          Effect.succeed({
+            cwd: input.destinationPath,
+            remoteUrl: "https://github.com/octocat/t3code.git",
+            repository: null,
+          }),
+      });
+      return Effect.gen(function* () {
+        const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+        yield* tracker.start(
+          { ...startInput, protocol },
+          { ...harness.hooks, onCloned: () => Deferred.succeed(cloned, undefined) },
+        );
+        yield* Deferred.await(cloned);
+        expect(harness.wiredForks[0]?.protocol).toBe("https");
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect("preserves SSH-only clone requests without enabling an HTTPS retry", () => {
+    const completed = Deferred.makeUnsafe<void>();
+    let requestedProtocol: string | undefined;
+    const harness = makeHarness({
+      clone: (input) =>
+        Effect.sync(() => {
+          requestedProtocol = input.protocol;
+          return { cwd: input.destinationPath, remoteUrl: input.remoteUrl ?? "", repository: null };
+        }),
+    });
+    return Effect.gen(function* () {
+      const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      yield* tracker.start(
+        { ...startInput, protocol: "ssh" },
+        { ...harness.hooks, onCloned: () => Deferred.succeed(completed, undefined) },
+      );
+      yield* Deferred.await(completed);
+      expect(requestedProtocol).toBe("ssh");
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("flags a clone stalled when git goes quiet and clears it when git speaks", () => {
     const release = Deferred.makeUnsafe<void>();
     const resumed = Deferred.makeUnsafe<void>();

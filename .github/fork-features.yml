@@ -5503,6 +5503,7 @@ features:
     status: maintained
     prs: [123]
     invariants:
+      - Parent-remote wiring follows the successful clone transport, including HTTPS fallback with automatic protocol selection; background clones preserve explicit protocol requests.
       - Cloning a GitHub fork offers a default repository choice, keeps the fork as `origin`, and adds and fetches the parent as `upstream` without changing non-fork clone behavior, whether the clone blocks or runs in the background.
       - Adding an existing folder on web, desktop, or mobile asks for the default repository only when its remotes point at more than one distinct GitHub repository and no default is set, offers each repository once, and lets the user decide later without writing a default.
       - T3 Code and the GitHub CLI share the selected default through `remote.<name>.gh-resolved`, web and mobile allow that choice to be inspected, changed, or cleared after adding the project, and a change applies to the project's repository identity without waiting for the identity cache.

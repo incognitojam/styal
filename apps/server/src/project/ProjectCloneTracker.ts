@@ -225,7 +225,11 @@ export const make = Effect.gen(function* () {
     const pulses = yield* Queue.sliding<void>(1);
     yield* watchForStall(projectId, pulses).pipe(Effect.forkScoped);
     return yield* repositories.cloneRepository(
-      { remoteUrl: tracked.input.cloneUrl, destinationPath: tracked.input.destinationPath },
+      {
+        remoteUrl: tracked.input.cloneUrl,
+        destinationPath: tracked.input.destinationPath,
+        protocol: tracked.input.protocol,
+      },
       {
         onProgress: (update) =>
           Queue.offer(pulses, undefined).pipe(Effect.andThen(progress(projectId, update))),
@@ -252,13 +256,18 @@ export const make = Effect.gen(function* () {
       ),
       // A fork's parent is wired up after the clone is marked done, so it
       // cannot hold up sending or turn a finished checkout into a failure.
-      Effect.flatMap(() =>
+      Effect.flatMap((result) =>
         repositories.wireClonedFork({
           cwd: tracked.input.destinationPath,
           provider: tracked.input.provider,
           repository: tracked.input.repository,
           cloneUrl: tracked.input.cloneUrl,
-          protocol: tracked.input.protocol,
+          // The result URL is redacted; only its scheme is needed to preserve HTTPS fallback.
+          protocol:
+            (tracked.input.protocol === undefined || tracked.input.protocol === "auto") &&
+            result.remoteUrl.startsWith("https://")
+              ? "https"
+              : tracked.input.protocol,
           defaultRepository: tracked.input.defaultRepository,
         }),
       ),
