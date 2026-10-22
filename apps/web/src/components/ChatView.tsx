@@ -3154,7 +3154,7 @@ export default function ChatView(props: ChatViewProps) {
           size="xs"
           variant="ghost"
           disabled={disconnectingEnvironment}
-          title="Hide this server's threads. Switch it on again in Connections."
+          title="Hide this environment's threads. Switch it on again in Connections."
           onClick={() =>
             void handleDisconnectActiveEnvironment(activeEnvironmentUnavailableState.environmentId)
           }

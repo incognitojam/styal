@@ -2075,7 +2075,7 @@ function PullRequestsRouteView() {
   // The same shape the host pills take, so the two groups read as one control. Each server
   // wears the machine it runs on.
   const serverMenuOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
-    { value: "", label: "All servers", Icon: LayersIcon },
+    { value: "", label: "All environments", Icon: LayersIcon },
     ...capableEnvironments.map((environment) => ({
       value: environment.environmentId,
       label: environment.label,
