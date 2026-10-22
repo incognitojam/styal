@@ -5812,8 +5812,10 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
   const { workEntry, showCommand } = props;
   const { activeThreadEnvironmentId, threadRef } = use(TimelineRowCtx);
   const pending = workEntry.toolLifecycleStatus === "inProgress";
+  // An action waiting for approval never ran, so it has no output to fetch.
+  const awaitingApproval = fileActionReviewRequestOf(workEntry.structuredPayload) !== null;
   const query = useCommandOutput({
-    environmentId: pending ? null : activeThreadEnvironmentId,
+    environmentId: pending || awaitingApproval ? null : activeThreadEnvironmentId,
     threadId: threadRef?.threadId ?? null,
     activityId: EventId.make(workEntry.id),
   });
@@ -5825,12 +5827,14 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
       </pre>
     ) : null;
 
-  if (pending) {
+  if (pending || awaitingApproval) {
     return (
       <>
         {commandBlock}
         <pre className="font-mono text-2xs leading-relaxed text-muted-foreground">
-          Output will be available when the command finishes.
+          {awaitingApproval
+            ? "Runs once you approve this command."
+            : "Output will be available when the command finishes."}
         </pre>
       </>
     );
