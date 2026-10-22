@@ -444,12 +444,12 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
           sessions.issue({
             subject: "desktop-bootstrap",
             method: "bearer-access-token",
-            replaceActiveForSameClient: true,
+            replaceActiveForSubjectAndMethod: true,
           }),
           sessions.issue({
             subject: "desktop-bootstrap",
             method: "bearer-access-token",
-            replaceActiveForSameClient: true,
+            replaceActiveForSubjectAndMethod: true,
           }),
         ],
         { concurrency: "unbounded" },
@@ -492,7 +492,7 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
         .issue({
           subject: "desktop-bootstrap",
           method: "bearer-access-token",
-          replaceActiveForSameClient: true,
+          replaceActiveForSubjectAndMethod: true,
         })
         .pipe(Effect.flip);
 

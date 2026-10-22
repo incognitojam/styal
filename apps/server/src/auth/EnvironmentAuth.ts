@@ -932,7 +932,7 @@ export const make = Effect.gen(function* () {
                 // its session, including stale entries left by older versions.
                 // The label scopes this to one desktop client, so the
                 // shutdown check cannot revoke the window's session.
-                replaceActiveForSameClient: grant.method === "desktop-bootstrap",
+                replaceActiveForSubjectAndMethod: grant.method === "desktop-bootstrap",
                 client: {
                   ...requestMetadata,
                   ...(grant.label ? { label: grant.label } : {}),
