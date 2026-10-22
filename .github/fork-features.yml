@@ -3139,6 +3139,7 @@ features:
       - Malformed JSON and non-object project files remain invalid; invalid individual fields are omitted while valid sibling fields and scripts remain available to clients and the server.
       - Invalid optional action values fall back to defaults, while actions missing required fields are dropped.
       - Unknown keys and invalid values produce a partial-file warning without discarding valid configuration.
+      - Recovery and unknown-key detection derive from the project-file contract, so every declared top-level and action field, including ones added later, survives an invalid sibling and a fully valid file is reported as valid.
     implementation_paths:
       - apps/server/src/project/T3ProjectFileLoader.ts
       - apps/web/src/components/settings/ProjectSettingsPanel.tsx

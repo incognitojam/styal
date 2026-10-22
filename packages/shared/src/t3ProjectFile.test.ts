@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
+import { T3ProjectFile, T3ProjectFileScript } from "@t3tools/contracts";
+
 import {
   buildT3ProjectFileJsonSchema,
   parseT3ProjectFile,
@@ -192,4 +194,91 @@ describe("parseT3ProjectFile", () => {
       file: { scripts: [{ name: "Setup", command: "pnpm install" }] },
     });
   });
+});
+
+describe("parseT3ProjectFileResult field recovery", () => {
+  // Sets every schema field to a valid non-default value, so a field the
+  // recovery path forgets shows up as missing output.
+  const validScript = {
+    name: "Setup",
+    command: "pnpm install",
+    icon: "configure",
+    runOnWorktreeCreate: true,
+    runOnSettle: true,
+    async: false,
+  } as const satisfies Required<T3ProjectFileScript>;
+  const siblingScript = { name: "Dev", command: "pnpm dev" } as const;
+  const validFile = {
+    $schema: "https://t3.codes/schema/t3.json",
+    iconPath: "assets/logo.svg",
+    defaultThreadEnvMode: "local",
+    worktreeSubmodules: "none",
+    scripts: [validScript, siblingScript],
+  } as const satisfies Required<T3ProjectFile>;
+
+  const invalidTopLevelValues = {
+    $schema: 42,
+    iconPath: "   ",
+    defaultThreadEnvMode: "spaceship",
+    worktreeSubmodules: "sometimes",
+    scripts: "pnpm dev",
+  } satisfies Record<keyof T3ProjectFile, unknown>;
+  const invalidScriptValues = {
+    name: "",
+    command: 42,
+    icon: "spaceship",
+    runOnWorktreeCreate: "yes",
+    runOnSettle: "yes",
+    async: "no",
+  } satisfies Record<keyof T3ProjectFileScript, unknown>;
+  const requiredScriptFields: ReadonlySet<string> = new Set(["name", "command"]);
+
+  const omit = <T extends object>(value: T, key: string) =>
+    Object.fromEntries(Object.entries(value).filter(([entryKey]) => entryKey !== key));
+
+  it("covers every field of the project file schema", () => {
+    expect(Object.keys(validFile).sort()).toEqual(Object.keys(T3ProjectFile.fields).sort());
+    expect(Object.keys(invalidTopLevelValues).sort()).toEqual(
+      Object.keys(T3ProjectFile.fields).sort(),
+    );
+    expect(Object.keys(validScript).sort()).toEqual(Object.keys(T3ProjectFileScript.fields).sort());
+    expect(Object.keys(invalidScriptValues).sort()).toEqual(
+      Object.keys(T3ProjectFileScript.fields).sort(),
+    );
+  });
+
+  it("reports a file with every field set as valid", () => {
+    expect(parseT3ProjectFileResult(JSON.stringify(validFile))).toEqual({
+      status: "valid",
+      file: validFile,
+    });
+  });
+
+  it.each(Object.entries(invalidTopLevelValues))(
+    "keeps every other field when top-level %s is invalid",
+    (key, invalidValue) => {
+      expect(
+        parseT3ProjectFileResult(JSON.stringify({ ...validFile, [key]: invalidValue })),
+      ).toEqual({ status: "partial", file: omit(validFile, key) });
+    },
+  );
+
+  it.each(Object.entries(invalidScriptValues))(
+    "keeps every other field when script %s is invalid",
+    (key, invalidValue) => {
+      const contents = JSON.stringify({
+        ...validFile,
+        scripts: [{ ...validScript, [key]: invalidValue }, siblingScript],
+      });
+      // A required field drops only its script; an optional one drops only itself.
+      const recoveredScripts = requiredScriptFields.has(key)
+        ? [siblingScript]
+        : [omit(validScript, key), siblingScript];
+
+      expect(parseT3ProjectFileResult(contents)).toEqual({
+        status: "partial",
+        file: { ...validFile, scripts: recoveredScripts },
+      });
+    },
+  );
 });
