@@ -149,7 +149,7 @@ jobs:
       - name: Build executable on its native architecture
         env:
           STYAL_RELEASE_BUILD: "1"
-          VP_NODE_VERSION: "26.8.2"
+          VP_NODE_VERSION: "26.12.1"
           POSTHOG_SOURCEMAPS_API_KEY: ${{ secrets.POSTHOG_SOURCEMAPS_API_KEY }}
           POSTHOG_SOURCEMAPS_PROJECT_ID: ${{ vars.POSTHOG_SOURCEMAPS_PROJECT_ID }}
         run: node apps/server/scripts/cli.ts build-exe --verbose
@@ -195,7 +195,7 @@ jobs:
       - name: Build archive and verify extracted runtime
         shell: bash
         env:
-          VP_NODE_VERSION: "26.8.2"
+          VP_NODE_VERSION: "26.12.1"
           RELEASE_VERSION: ${{ inputs.version }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}

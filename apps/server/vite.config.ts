@@ -3,6 +3,7 @@ import { defineConfig, mergeConfig } from "vite-plus";
 
 import baseConfig from "../../vite.config.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
+import rootPackageJson from "../../package.json" with { type: "json" };
 import packageJson from "./package.json" with { type: "json" };
 import { posthogSourcemapPlugins } from "./scripts/posthogSourcemaps.ts";
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
@@ -29,6 +30,12 @@ if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
 }
 
 const packExecutable = process.env.STYAL_PACK_EXE === "1";
+const cliNodeVersion = rootPackageJson.engines.node;
+if (packExecutable && process.versions.node !== cliNodeVersion) {
+  throw new Error(
+    `Native CLI executables must be built with Node ${cliNodeVersion}; running ${process.versions.node}.`,
+  );
+}
 
 // The root config's `projects` route repo-root runs to package configs,
 // including this one. Inheriting them would make this config a container.

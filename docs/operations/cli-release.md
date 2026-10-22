@@ -93,12 +93,12 @@ To verify a local Linux x64 archive (with `.scratch/` ignored):
 
 ```sh
 vp run --filter ./apps/server build
-VP_NODE_VERSION=26.8.2 node apps/server/scripts/cli.ts build-exe --verbose
+VP_NODE_VERSION=26.12.1 node apps/server/scripts/cli.ts build-exe --verbose
 cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
 mkdir -p .scratch/cli-resource-monitor/linux-x64
 cp native/resource-monitor/target/release/styal-resource-monitor .scratch/cli-resource-monitor/linux-x64/
-VP_NODE_VERSION=26.8.2 node scripts/build-cli-archive.ts --platform linux --arch x64 --version <version> --resource-monitor-dir .scratch/cli-resource-monitor --output-dir .scratch/cli-archives
-VP_NODE_VERSION=26.8.2 node scripts/smoke-cli-archive.mjs .scratch/cli-archives/styal-<version>-linux-x64.tar.gz <version>
+VP_NODE_VERSION=26.12.1 node scripts/build-cli-archive.ts --platform linux --arch x64 --version <version> --resource-monitor-dir .scratch/cli-resource-monitor --output-dir .scratch/cli-archives
+VP_NODE_VERSION=26.12.1 node scripts/smoke-cli-archive.mjs .scratch/cli-archives/styal-<version>-linux-x64.tar.gz <version>
 ```
 
 Use the version compiled into the executable. Release workflows align package
