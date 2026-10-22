@@ -55,6 +55,7 @@ function layerLifecycle(relaunchReasons: Array<string>, accepted = true) {
     Layer.provideMerge(
       Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
         confirm: () => Effect.succeed(true),
+        inspect: Effect.succeed([]),
       }),
     ),
   );

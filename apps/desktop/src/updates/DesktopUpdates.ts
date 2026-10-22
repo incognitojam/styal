@@ -33,6 +33,8 @@ import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as DesktopIdleRestart from "./DesktopIdleRestart.ts";
+import * as DesktopNativeUpdateStaging from "./DesktopNativeUpdateStaging.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 import {
@@ -155,6 +157,7 @@ export type DesktopUpdateConfigureError = never;
 export const DesktopUpdateSetChannelError = Schema.Union([
   DesktopUpdateActionInProgressError,
   DesktopUpdateChannelPersistenceError,
+  DesktopNativeUpdateStaging.DesktopUpdateStagedUpdateDiscardError,
 ]);
 export type DesktopUpdateSetChannelError = typeof DesktopUpdateSetChannelError.Type;
 
@@ -432,6 +435,7 @@ export const make = Effect.gen(function* () {
     yield* Effect.annotateCurrentSpan({ reason });
     if (yield* Ref.get(desktopState.quitting)) return false;
     if (!(yield* Ref.get(updaterConfiguredRef))) return false;
+    if (yield* nativeStaging.holdsChecks(reason)) return false;
 
     const state = yield* Ref.get(updateStateRef);
     if (state.status === "downloading") {
@@ -563,6 +567,24 @@ export const make = Effect.gen(function* () {
     .remove(updateRestartMarkerPath, { force: true })
     .pipe(Effect.ignore);
 
+  const idleRestart = yield* DesktopIdleRestart.make({
+    runtimeDir: updateRestartMarkerDir,
+    updateState: Ref.get(updateStateRef),
+    updateActionActive: Effect.map(activeUpdateAction, Option.isSome),
+    install: (version): Effect.Effect<unknown> => installWithExpectedVersion(version),
+  });
+  const nativeStaging = yield* DesktopNativeUpdateStaging.make({
+    enabled: environment.platform === "darwin",
+    downloadedVersion: Effect.map(Ref.get(updateStateRef), (state) => state.downloadedVersion),
+    quitting: Ref.get(desktopState.quitting),
+    updaterConfigured: Ref.get(updaterConfiguredRef),
+    clearDownload: updateState((current) =>
+      createBaseUpdateState(current.channel, current.enabled, environment),
+    ),
+    onStaged: idleRestart.start,
+    onDiscarded: idleRestart.abandon,
+  });
+
   const resetInstallAction = Effect.all(
     [
       finishUpdateAction("install"),
@@ -674,7 +696,7 @@ export const make = Effect.gen(function* () {
             (instance) => instance.stop({ timeout: Duration.seconds(5) }),
             { concurrency: "unbounded" },
           );
-          yield* electronUpdater.quitAndInstall({
+          yield* nativeStaging.handOffToInstaller({
             isSilent: true,
             isForceRunAfter: true,
           });
@@ -763,6 +785,7 @@ export const make = Effect.gen(function* () {
       }),
       Effect.forkScoped,
     );
+    yield* idleRestart.startChecks;
   }).pipe(Effect.withSpan("desktop.updates.startPollers"));
 
   const handleUpdateAvailable = Effect.fn("desktop.updates.handleUpdateAvailable")(function* (
@@ -847,6 +870,7 @@ export const make = Effect.gen(function* () {
       }),
       cause,
     });
+    if (yield* nativeStaging.absorbsError(error)) return;
     if (Option.isSome(activeAction) && activeAction.value === "install") {
       yield* recoverFailedInstall(error.message);
       yield* logUpdaterError(error.message, {
@@ -913,10 +937,12 @@ export const make = Effect.gen(function* () {
     yield* decodeUpdateInfo(raw).pipe(
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateDownloaded")(function* (info) {
+          yield* nativeStaging.recordFeed(info.version);
           const state = yield* Ref.get(updateStateRef);
           if (resolveDefaultDesktopUpdateChannel(info.version) !== state.channel) return;
           yield* setState(reduceDesktopUpdateStateOnDownloadComplete(state, info.version));
           yield* logUpdaterInfo("update downloaded", { version: info.version });
+          yield* nativeStaging.stageDownloaded(info.version);
         }),
       ),
       Effect.catchCause((cause) => {
@@ -972,8 +998,9 @@ export const make = Effect.gen(function* () {
       yield* Ref.set(updaterConfiguredRef, true);
 
       yield* electronUpdater.setAutoDownload(false);
-      // Stage only in electron-updater until shutdown. Native macOS staging cannot
-      // be cancelled by switching this flag off after a channel change.
+      // Installation runs only through our shutdown. On Windows and Linux this
+      // flag would install from electron-updater's own quit handler, and on
+      // macOS DesktopNativeUpdateStaging starts native staging explicitly.
       yield* electronUpdater.setAutoInstallOnAppQuit(false);
       yield* applyAutoUpdaterChannel(settings.updateChannel);
       yield* electronUpdater.setDisableDifferentialDownload(
@@ -1029,6 +1056,7 @@ export const make = Effect.gen(function* () {
           return state;
         }
 
+        yield* nativeStaging.discardForChannelChange(nextChannel);
         yield* desktopSettings
           .setUpdateChannel(nextChannel)
           .pipe(
@@ -1092,8 +1120,8 @@ export const make = Effect.gen(function* () {
       ) {
         return false;
       }
-      return yield* electronUpdater
-        .quitAndInstall({
+      return yield* nativeStaging
+        .handOffToInstaller({
           isSilent: true,
           isForceRunAfter: false,
         })

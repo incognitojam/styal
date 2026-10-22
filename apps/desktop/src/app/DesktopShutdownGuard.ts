@@ -43,6 +43,8 @@ export class DesktopShutdownGuard extends Context.Service<
   DesktopShutdownGuard,
   {
     readonly confirm: (action: ShutdownAction, title?: string) => Effect.Effect<boolean>;
+    /** Activity of every owned backend; null for a host that could not be checked. */
+    readonly inspect: Effect.Effect<ReadonlyArray<ActivityCheck>>;
   }
 >()("@t3tools/desktop/app/DesktopShutdownGuard") {}
 
@@ -52,72 +54,76 @@ const make = Effect.gen(function* () {
   const dialog = yield* DesktopShutdownConfirmation.DesktopShutdownConfirmation;
   const tokens = new Map<string, { credential: string; bearer: string; expiresAt: number }>();
   let pending = false;
+  const inspect = Effect.gen(function* () {
+    const instances = yield* pool.list;
+    return yield* Effect.forEach(
+      instances,
+      (instance) =>
+        Effect.gen(function* () {
+          const snapshot = yield* instance.snapshot;
+          if (!snapshot.desiredRunning && Option.isNone(snapshot.activePid)) {
+            return {
+              activeSessions: 0,
+              continuableSessions: 0,
+              waitingSessions: 0,
+              terminalsRequiringConfirmation: 0,
+              terminalsWithUnknownActivity: 0,
+              environmentsUsingDevices: 0,
+            };
+          }
+          const option = yield* instance.currentConfig;
+          if (Option.isNone(option)) return null;
+          const config = option.value;
+          const credential = config.bootstrap.desktopBootstrapToken;
+          if (!credential) return null;
+          const key = config.httpBaseUrl.href;
+          let token = tokens.get(key);
+          const now = yield* Clock.currentTimeMillis;
+          if (!token || token.credential !== credential || token.expiresAt <= now) {
+            const session = yield* bootstrapRemoteBearerSession({
+              httpBaseUrl: key,
+              credential,
+              clientMetadata: { label: "Desktop shutdown check", deviceType: "desktop" },
+            }).pipe(Effect.provideService(HttpClient.HttpClient, http));
+            token = {
+              credential,
+              bearer: session.access_token,
+              expiresAt: now + Math.max(0, session.expires_in - 5) * 1000,
+            };
+            tokens.set(key, token);
+          }
+          const response = yield* http.execute(
+            HttpClientRequest.get(new URL("/api/environment/activity", key).href).pipe(
+              HttpClientRequest.bearerToken(token.bearer),
+            ),
+          );
+          if (response.status !== 200) {
+            tokens.delete(key);
+            return null;
+          }
+          const activity = yield* response.json.pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(HostActivity)),
+          );
+          return {
+            ...activity,
+            ...(instances.length > 1 ? { hostLabel: yield* instance.label } : {}),
+          };
+        }).pipe(
+          Effect.timeout("3 seconds"),
+          Effect.catchCause(() => Effect.succeed(null)),
+        ),
+      { concurrency: "unbounded" },
+    );
+  });
   return DesktopShutdownGuard.of({
+    inspect,
     confirm: (action, title) =>
       Effect.gen(function* () {
         if (pending) return false;
         if (action === "quit" && (yield* dialog.consumeQuitOverride)) return true;
         pending = true;
         return yield* Effect.gen(function* () {
-          const instances = yield* pool.list;
-          const checks = yield* Effect.forEach(
-            instances,
-            (instance) =>
-              Effect.gen(function* () {
-                const snapshot = yield* instance.snapshot;
-                if (!snapshot.desiredRunning && Option.isNone(snapshot.activePid)) {
-                  return {
-                    activeSessions: 0,
-                    continuableSessions: 0,
-                    waitingSessions: 0,
-                    terminalsRequiringConfirmation: 0,
-                    terminalsWithUnknownActivity: 0,
-                    environmentsUsingDevices: 0,
-                  };
-                }
-                const option = yield* instance.currentConfig;
-                if (Option.isNone(option)) return null;
-                const config = option.value;
-                const credential = config.bootstrap.desktopBootstrapToken;
-                if (!credential) return null;
-                const key = config.httpBaseUrl.href;
-                let token = tokens.get(key);
-                const now = yield* Clock.currentTimeMillis;
-                if (!token || token.credential !== credential || token.expiresAt <= now) {
-                  const session = yield* bootstrapRemoteBearerSession({
-                    httpBaseUrl: key,
-                    credential,
-                    clientMetadata: { label: "Desktop shutdown check", deviceType: "desktop" },
-                  }).pipe(Effect.provideService(HttpClient.HttpClient, http));
-                  token = {
-                    credential,
-                    bearer: session.access_token,
-                    expiresAt: now + Math.max(0, session.expires_in - 5) * 1000,
-                  };
-                  tokens.set(key, token);
-                }
-                const response = yield* http.execute(
-                  HttpClientRequest.get(new URL("/api/environment/activity", key).href).pipe(
-                    HttpClientRequest.bearerToken(token.bearer),
-                  ),
-                );
-                if (response.status !== 200) {
-                  tokens.delete(key);
-                  return null;
-                }
-                const activity = yield* response.json.pipe(
-                  Effect.flatMap(Schema.decodeUnknownEffect(HostActivity)),
-                );
-                return {
-                  ...activity,
-                  ...(instances.length > 1 ? { hostLabel: yield* instance.label } : {}),
-                };
-              }).pipe(
-                Effect.timeout("3 seconds"),
-                Effect.catchCause(() => Effect.succeed(null)),
-              ),
-            { concurrency: "unbounded" },
-          );
+          const checks = yield* inspect;
           const confirmation = shutdownConfirmation(checks, action, title);
           if (confirmation === null) return true;
           return yield* dialog.request(

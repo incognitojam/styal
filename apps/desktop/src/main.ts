@@ -32,6 +32,7 @@ import * as ElectronProtocol from "./electron/ElectronProtocol.ts";
 import * as ElectronSafeStorage from "./electron/ElectronSafeStorage.ts";
 import * as ElectronShell from "./electron/ElectronShell.ts";
 import * as ElectronTheme from "./electron/ElectronTheme.ts";
+import * as ElectronNativeUpdater from "./electron/ElectronNativeUpdater.ts";
 import * as ElectronUpdater from "./electron/ElectronUpdater.ts";
 import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
@@ -135,6 +136,7 @@ const layerElectron = Layer.mergeAll(
   ElectronShell.layer,
   ElectronTheme.layer,
   ElectronUpdater.layer,
+  ElectronNativeUpdater.layer,
   ElectronWindow.layer,
   DesktopIpc.layer(Electron.ipcMain),
 );

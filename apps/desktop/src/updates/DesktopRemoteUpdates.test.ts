@@ -63,6 +63,7 @@ function runRemoteUpdatesTest(
           Effect.sync(() => {
             reports.push(report);
           }),
+        publishFeatureUsage: () => Effect.void,
         updateRequests: Stream.fromQueue(requests),
         updateCommits: Stream.fromQueue(commits),
         updateCancellations: Stream.fromQueue(cancellations),

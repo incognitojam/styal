@@ -77,11 +77,25 @@ cannot ask an old server to fetch `t3@<styal-version>`.
 ## Desktop updates on quit
 
 electron-updater's `autoInstallOnAppQuit` stays off. Switching update tracks resets styal's ready
-state but not the library's queued installer, and on macOS the flag hands the download to Squirrel,
-after which it cannot be cancelled. Instead, after normal shutdown drains backend cleanup,
+state but not the library's queued installer. Instead, after normal shutdown drains backend cleanup,
 [`DesktopUpdates`](../../apps/desktop/src/updates/DesktopUpdates.ts) installs only a ready download
 that still belongs to the selected track, silently and without relaunching. Any failure falls back
 to an ordinary quit.
+
+On macOS, Squirrel.Mac takes several seconds to unpack and verify an update, so
+[desktop](../../apps/desktop/src/updates/DesktopNativeUpdateStaging.ts) stages a download as soon
+as it finishes. Staging writes `~/Library/Caches/<bundle id>.ShipIt/ShipItState.plist`
+and submits the `<bundle id>.ShipIt` launchd job, which installs that request on any exit, whether or
+not the exit went through the update handoff. Staging cannot be cancelled, and Squirrel submits the
+job only once per native updater, which electron-updater replaces at each download. Desktop therefore
+keeps this simple: a staged update is frozen until quit, a track switch removes the user launchd job
+(verified with `launchctl print`) and clears the download, and staging is skipped when Squirrel would
+need administrator rights, which would put the job in the system domain. Every track switch runs
+the discard, since a job can outlive the process that submitted it. When background staging failed
+or was skipped, the handoff stages on the same native updater itself and waits for Squirrel's
+outcome rather than calling MacUpdater's `quitAndInstall` unstaged: that waits only for success, and
+after a discard its "already staged" flag, which never resets, makes it quit without staging. A
+system-domain job left by an earlier administrator-rights install is not discarded.
 
 macOS reads `autoRunAppAfterInstall` rather than the `quitAndInstall` arguments, so the
 [Electron adapter](../../apps/desktop/src/electron/ElectronUpdater.ts) sets it for both paths.

@@ -489,6 +489,64 @@ describe("DesktopTelemetryPublisher", () => {
       }).pipe(Effect.provide(layer));
     }),
   );
+  it.effect("sends a usage report queued before any backend attaches to one backend", () =>
+    Effect.gen(function* () {
+      const layerPower = Layer.succeed(
+        ElectronPowerMonitor.ElectronPowerMonitor,
+        ElectronPowerMonitor.ElectronPowerMonitor.of({
+          isOnBatteryPower: Effect.succeed(false),
+          getSystemIdleTime: Effect.succeed(0),
+          getSystemIdleState: () => Effect.succeed("active"),
+          getCurrentThermalState: Effect.succeed("nominal"),
+          onSimpleEvent: () => Effect.void,
+          onThermalStateChange: () => Effect.void,
+          onSpeedLimitChange: () => Effect.void,
+        }),
+      );
+      const layer = DesktopTelemetryPublisher.layer.pipe(
+        Layer.provide(Layer.mergeAll(layerElectronApp([]), layerPower, layerHistory)),
+      );
+
+      yield* Effect.gen(function* () {
+        const publisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
+        yield* publisher.publishFeatureUsage({
+          version: 1,
+          type: "desktopFeatureUsage",
+          feature: "desktop-update-idle-restart",
+          action: "would_restart",
+          updateVersion: "1.2.4",
+          delayBucket: "never",
+        });
+        const decoder = new TextDecoder();
+        const decodeMessage = Schema.decodeUnknownEffect(
+          Schema.fromJsonString(DesktopHostTelemetryMessage),
+        );
+        const usage = (encoded: Stream.Stream<Uint8Array>) =>
+          encoded.pipe(
+            Stream.mapEffect((bytes) => decodeMessage(decoder.decode(bytes).trim())),
+            Stream.filter((message) => message.type === "desktopFeatureUsage"),
+          );
+        const first = yield* usage(publisher.encoded).pipe(Stream.runHead);
+        assert.deepEqual(Option.getOrThrow(first), {
+          version: 1,
+          type: "desktopFeatureUsage",
+          feature: "desktop-update-idle-restart",
+          action: "would_restart",
+          updateVersion: "1.2.4",
+          delayBucket: "never",
+        });
+
+        // A backend that attaches later does not receive it again.
+        const later = yield* usage(publisher.encoded).pipe(
+          Stream.runHead,
+          Effect.timeoutOption("1 second"),
+          Effect.forkChild,
+        );
+        yield* TestClock.adjust("1 second");
+        assert.isTrue(Option.isNone(yield* Fiber.join(later)));
+      }).pipe(Effect.provide(layer));
+    }),
+  );
 });
 
 describe("DesktopRendererHistory", () => {

@@ -1,6 +1,7 @@
 import {
   DesktopHostTelemetryMessage,
   type DesktopHostTelemetrySnapshot,
+  type DesktopFeatureUsageReport,
   type DesktopTelemetryControlMessage,
   type DesktopTelemetryCancelDesktopUpdate,
   type DesktopTelemetryCommitDesktopUpdate,
@@ -73,6 +74,9 @@ export class DesktopTelemetryPublisher extends Context.Service<
         to backends that attach later (including the one spawned after a
         relaunch). */
     readonly publishUpdateReport: (report: DesktopUpdateStatusReport) => Effect.Effect<void>;
+    /** Queues a usage observation until one attached backend takes it, so
+        an observation made before any backend attaches is still sent once. */
+    readonly publishFeatureUsage: (report: DesktopFeatureUsageReport) => Effect.Effect<void>;
     /** Update requests received over the control channel. Single consumer. */
     readonly updateRequests: Stream.Stream<DesktopTelemetryRequestDesktopUpdate>;
     readonly updateCommits: Stream.Stream<DesktopTelemetryCommitDesktopUpdate>;
@@ -176,6 +180,7 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
   const sequence = yield* Ref.make(0);
   const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
   const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
+  const featureUsageQueue = yield* Queue.unbounded<DesktopFeatureUsageReport>();
   const updateRequestQueue = yield* Queue.unbounded<DesktopTelemetryRequestDesktopUpdate>();
   const updateCommitQueue = yield* Queue.unbounded<DesktopTelemetryCommitDesktopUpdate>();
   const updateCancellationQueue = yield* Queue.unbounded<DesktopTelemetryCancelDesktopUpdate>();
@@ -403,7 +408,11 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
       type: "desktopTelemetryHello",
       electronPid: process.pid,
     } as const),
-    Stream.merge(snapshots, updateReports),
+    Stream.merge(
+      Stream.merge(snapshots, updateReports),
+      // A queue, not a PubSub: each observation goes to one backend.
+      Stream.fromQueue(featureUsageQueue),
+    ),
   ).pipe(Stream.map((message) => textEncoder.encode(`${encodeMessage(message)}\n`)));
 
   const publishUpdateReport: DesktopTelemetryPublisher["Service"]["publishUpdateReport"] = (
@@ -421,6 +430,7 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
     handleControlForSource,
     removeControlSource,
     publishUpdateReport,
+    publishFeatureUsage: (report) => Queue.offer(featureUsageQueue, report).pipe(Effect.asVoid),
     updateRequests: Stream.fromQueue(updateRequestQueue),
     updateCommits: Stream.fromQueue(updateCommitQueue),
     updateCancellations: Stream.fromQueue(updateCancellationQueue),

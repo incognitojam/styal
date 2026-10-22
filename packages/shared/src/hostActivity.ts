@@ -133,6 +133,27 @@ export function describeHostActivity(
   };
 }
 
+/**
+ * Whether host activity rules out restarting to install an update while the
+ * user is away. Every host must have been checked. A waiting session is an
+ * approval, a question, or an unclassified wait; providers cannot restore any
+ * of them after a restart, so each one blocks. So does a running turn that
+ * thread continuation will not resume, a provider install, and devices shared
+ * with other environments. Turns that will resume and terminal commands do
+ * not block.
+ */
+export function idleRestartBlocked(checks: ReadonlyArray<HostActivityCheck | null>): boolean {
+  if (checks.length === 0) return true;
+  return checks.some(
+    (check) =>
+      check === null ||
+      check.waitingSessions > 0 ||
+      check.activeSessions > check.continuableSessions ||
+      (check.providerInstalls ?? 0) > 0 ||
+      check.environmentsUsingDevices > 0,
+  );
+}
+
 type Reason = HostActivityThread["reasons"][number];
 
 export type HostActivityTone = "warning" | "info" | "secondary";

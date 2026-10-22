@@ -15,6 +15,7 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
+import { makeNativeUpdatesFakes, type NativeUpdatesFakeOptions } from "./nativeUpdatesTestFakes.ts";
 
 /** Shared DesktopUpdates test harness: a fully stubbed updater layer whose
     electron-updater events are driven by hand via `emit`. Used by
@@ -22,7 +23,7 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 
 export const flushCallbacks = Effect.yieldNow;
 
-export interface UpdatesHarnessOptions {
+export interface UpdatesHarnessOptions extends NativeUpdatesFakeOptions {
   readonly confirmShutdown?: Effect.Effect<boolean>;
   readonly installWait?: Effect.Effect<void>;
   readonly installError?: ElectronUpdater.ElectronUpdaterQuitAndInstallError;
@@ -73,6 +74,14 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     }
   };
 
+  const emit = (eventName: string, payload?: unknown) => {
+    nativeFakes.onEmit(eventName, payload);
+    for (const listener of listeners.get(eventName) ?? []) {
+      listener(payload);
+    }
+  };
+  const nativeFakes = makeNativeUpdatesFakes(options, emit);
+
   const layerUpdater = Layer.succeed(ElectronUpdater.ElectronUpdater, {
     setFeedURL: (options) =>
       Effect.sync(() => {
@@ -106,6 +115,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         installs.push(flags);
         quitAndInstallCount += 1;
         installSteps.push("quitAndInstall");
+        nativeFakes.onQuitAndInstall();
       }).pipe(
         Effect.andThen(
           options.quitAndInstall ??
@@ -228,7 +238,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   // Tracks the restart markers installs leave, so installs stay free of real
   // disk I/O that would outrun the tests' settle loops.
   const updateRestartMarkers = new Set<string>();
-  const layerFileSystem = FileSystem.layerNoop({
+  const fileSystem = {
     readFileString: (path) =>
       path === "/missing/resources/package-type" && options.packageType !== undefined
         ? Effect.succeed(options.packageType)
@@ -249,14 +259,17 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       Effect.sync(() => {
         updateRestartMarkers.delete(path);
       }),
-  });
+  } satisfies Partial<FileSystem.FileSystem>;
+  const layerFileSystem = FileSystem.layerNoop(nativeFakes.withIdleRestartFile(fileSystem));
 
   const layer = DesktopUpdates.layer.pipe(
     Layer.provideMerge(
       Layer.succeed(DesktopShutdownGuard.DesktopShutdownGuard, {
         confirm: () => options.confirmShutdown ?? Effect.succeed(true),
+        inspect: nativeFakes.inspect,
       }),
     ),
+    Layer.provideMerge(nativeFakes.layer),
     Layer.provide(layerFileSystem),
     Layer.provideMerge(layerUpdater),
     Layer.provideMerge(layerWindow),
@@ -292,10 +305,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         0,
       ),
     sentStates,
-    emit: (eventName: string, payload?: unknown) => {
-      for (const listener of listeners.get(eventName) ?? []) {
-        listener(payload);
-      }
-    },
+    squirrel: nativeFakes.squirrel,
+    idleRestart: nativeFakes.idleRestart,
+    emit,
   };
 }

@@ -864,21 +864,29 @@ features:
       - Downloaded updates install on normal app quit; the sidebar offers a plain restart arrow without a completion checkmark, using the theme update surface and foreground once an installer is ready, while Settings presents automatic checks and downloads as status and reserves download actions for failure retries.
       - A downloaded update remains visible in the sidebar during rechecks, with restart temporarily disabled and release notes retained until the check settles.
       - A late native window-close event cannot bypass cleanup and the selected-channel installer handoff after scoped lifecycle listeners are removed.
-      - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit, including on macOS where native staging waits until shutdown.
+      - Changing update channels clears installation eligibility; only a ready download from the selected channel may install on quit.
+      - On macOS a selected-channel download is staged with Squirrel.Mac once, right after it downloads, when the app can be replaced without administrator rights; a staged update is then frozen, with no further checks or downloads, and quit installs it only if it is still the selected-channel download. A failed background staging, or an app that needs administrator rights, stages at quit or restart as before, and a restart whose staging fails or finds no update recovers instead of waiting. Every channel change waits for staging, removes any user ShipIt job, including one left by an earlier process, and clears the download, and fails without changing channels if the job cannot be removed; after that, an update installs only once a new download stages.
       - Remote desktop updates reuse the automatic-download reservation and recover failed installations without bypassing local manual-restart confirmation or install-on-quit behavior.
+      - On macOS, while a background-staged selected-channel update waits, the app checks every 30 seconds whether an idle restart could install it - system idle for five minutes or screen locked, no update action or quit under way, and every owned backend checked with no waiting approval or question, running turn that thread continuation will not resume, provider install, or other environment using its devices; resumable turns and terminal commands do not hold it back. It is measure-only - it never installs or shows anything - and reports once per staged version the delay since staging (under 1, 1-8, 8-24 or over 24 hours) at the first such moment, "installed_first" when a quit or the restart button installed it before one, or "never" when a channel change discards it or the app quits without installing it; the quit cases are reported on the next launch.
     implementation_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts
       - apps/desktop/src/app/DesktopShutdownConfirmation.ts
       - apps/desktop/src/app/DesktopShutdownGuard.ts
+      - apps/desktop/src/electron/ElectronNativeUpdater.ts
       - apps/desktop/src/electron/ElectronUpdater.ts
       - apps/desktop/src/ipc/methods/serverExposure.ts
       - apps/desktop/src/ipc/methods/shutdownConfirmation.ts
       - apps/desktop/src/ipc/methods/wsl.ts
+      - apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts
+      - apps/desktop/src/updates/DesktopIdleRestart.ts
+      - apps/desktop/src/updates/DesktopNativeUpdateStaging.ts
       - apps/desktop/src/updates/DesktopUpdates.ts
       - apps/desktop/src/updates/releaseNotes.ts
       - apps/desktop/src/updates/updateMachine.ts
       - apps/server/src/auth/PairingGrantStore.ts
       - apps/server/src/environment/HostActivity.ts
+      - apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.ts
+      - apps/server/src/telemetry/DesktopFeatureUsage.ts
       - apps/web/src/AppRoot.tsx
       - apps/web/src/components/ConfirmDialogHost.tsx
       - apps/web/src/components/HostActivityThreadList.tsx
@@ -891,6 +899,7 @@ features:
       - apps/web/src/confirmDialog.ts
       - packages/contracts/src/environmentHttp.ts
       - packages/contracts/src/ipc.ts
+      - packages/contracts/src/resourceTelemetry.ts
       - packages/shared/src/hostActivity.ts
     upstream_paths:
       - apps/desktop/src/updates/DesktopUpdates.ts
@@ -906,6 +915,9 @@ features:
       - apps/desktop/src/backend/DesktopServerExposure.test.ts
       - apps/desktop/src/electron/ElectronUpdater.test.ts
       - apps/desktop/src/ipc/methods/wsl.test.ts
+      - apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts
+      - apps/desktop/src/updates/DesktopIdleRestart.test.ts
+      - apps/desktop/src/updates/DesktopNativeUpdateStaging.test.ts
       - apps/desktop/src/updates/DesktopRemoteUpdates.test.ts
       - apps/desktop/src/updates/DesktopUpdates.test.ts
       - apps/desktop/src/updates/releaseNotes.test.ts
@@ -914,6 +926,7 @@ features:
       - apps/server/src/auth/EnvironmentAuth.test.ts
       - apps/server/src/auth/PairingGrantStore.test.ts
       - apps/server/src/environment/HostActivity.test.ts
+      - apps/server/src/telemetry/DesktopFeatureUsage.test.ts
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ServerUpdateAction.logic.test.ts
       - apps/web/src/components/ServerUpdateAction.test.tsx
