@@ -930,6 +930,8 @@ export const make = Effect.gen(function* () {
                   : {}),
                 // Desktop restarts forget the previous bearer token. Replace
                 // its session, including stale entries left by older versions.
+                // The label scopes this to one desktop client, so the
+                // shutdown check cannot revoke the window's session.
                 replaceActiveForSubjectAndMethod: grant.method === "desktop-bootstrap",
                 client: {
                   ...requestMetadata,

@@ -856,7 +856,7 @@ features:
     prs: [110, 128, 358, 390, 754, 758, 851]
     invariants:
       - Nightly release previews retain curated highlights and footer filtering while showing newest entries with counts and links to styal releases.
-      - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry.
+      - Desktop activity authentication remains available for the host process lifetime, including the first quit after days of uptime and renewal after bearer expiry. Signing in for an activity check never revokes the desktop window's session.
       - In-app shutdown dialogs appear only for active or unknown work and list affected thread titles under their project icons/names and host labels, with threads that continue after the restart in their own section and a badge per turn, input, approval, or background-work reason from the same snapshot as the counts; older servers retain counts and explicitly report unavailable details, and a reason the client does not recognize is dropped rather than failing the check. Terminal activity is counted and inspection warnings appear only for activity that could not be checked.
       - Manual desktop quits and restarts check every owned backend; active or unknown host activity requires confirmation, and cancellation preserves windows and downloaded updates.
       - Shutdown confirmation has one renderer-wide host, including on recovery screens; cancelling an update restart dismisses the request without reopening it. Failed presentation alone arms a subsequent Quit override that preserves cleanup, cannot be consumed by restart actions, and clears when the renderer recovers or displays a dialog.
@@ -883,6 +883,7 @@ features:
       - apps/desktop/src/updates/DesktopUpdates.ts
       - apps/desktop/src/updates/releaseNotes.ts
       - apps/desktop/src/updates/updateMachine.ts
+      - apps/server/src/auth/EnvironmentAuth.ts
       - apps/server/src/auth/PairingGrantStore.ts
       - apps/server/src/environment/HostActivity.ts
       - apps/server/src/resourceTelemetry/DesktopTelemetryReceiver.ts

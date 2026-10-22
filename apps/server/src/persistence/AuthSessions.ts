@@ -283,7 +283,7 @@ export const make = Effect.gen(function* () {
         SET revoked_at = ${revokedAt}
         WHERE ${
           replaceSessionId === undefined
-            ? sql`subject = ${session.subject}`
+            ? sql`subject = ${session.subject} AND client_label IS ${session.client.label}`
             : sql`session_id = ${replaceSessionId}`
         }
           AND method = ${session.method}
