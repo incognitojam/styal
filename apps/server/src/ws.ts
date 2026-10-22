@@ -563,16 +563,24 @@ const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
-type WsRpc = RpcGroup.Rpcs<typeof WsRpcGroup>;
-const isPullRequestRpc = (tag: string) => tag.startsWith("pullRequests.");
-// The pull request RPCs and the rest, so each handler group's requirements are
-// inferred separately (see layerWsRpc).
-const WsPullRequestRpcGroup = RpcGroup.make(
-  ...[...WsRpcGroup.requests.values()].filter((rpc) => isPullRequestRpc(rpc._tag)),
-) as unknown as RpcGroup.RpcGroup<Extract<WsRpc, { readonly _tag: `pullRequests.${string}` }>>;
-const WsCoreRpcGroup = RpcGroup.make(
-  ...[...WsRpcGroup.requests.values()].filter((rpc) => !isPullRequestRpc(rpc._tag)),
-) as unknown as RpcGroup.RpcGroup<Exclude<WsRpc, { readonly _tag: `pullRequests.${string}` }>>;
+
+// RpcGroup.toLayer derives each handler's requirements by scanning every RPC in
+// the group, so its type cost grows with handlers × RPCs. Near 200 methods that
+// crosses TypeScript's instantiation limit and the layer's requirements degrade to
+// `any`, so the handlers are registered as two disjoint, smaller groups.
+type ServerWsRpc = RpcGroup.Rpcs<typeof ServerWsRpcGroup>;
+const SPLIT_WS_RPC_PREFIXES = ["server", "pullRequests", "provider", "orchestration"] as const;
+type SplitWsRpc = Extract<
+  ServerWsRpc,
+  { readonly _tag: `${(typeof SPLIT_WS_RPC_PREFIXES)[number]}.${string}` }
+>;
+const isSplitWsRpc = (rpc: ServerWsRpc): rpc is SplitWsRpc =>
+  SPLIT_WS_RPC_PREFIXES.some((prefix) => rpc._tag.startsWith(`${prefix}.`));
+const isOtherWsRpc = (rpc: ServerWsRpc): rpc is Exclude<ServerWsRpc, SplitWsRpc> =>
+  !isSplitWsRpc(rpc);
+const serverWsRpcs = Array.from(ServerWsRpcGroup.requests.values());
+const SplitWsRpcGroup = RpcGroup.make(...serverWsRpcs.filter(isSplitWsRpc));
+const OtherWsRpcGroup = RpcGroup.make(...serverWsRpcs.filter(isOtherWsRpc));
 // When a resuming client's cursor is more than this many events behind the
 // current head, skip the per-event catch-up replay and send a fresh shell
 // snapshot instead. Replaying each intervening event costs a shell refetch;
@@ -1261,9 +1269,6 @@ export const layerWsRpc = (
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  // Handlers are keyed by RPC tag, so groups without middleware build the same
-  // handlers. Inferring the requirements of every handler at once exceeds
-  // TypeScript's instantiation limit, so they are built in two groups.
   Layer.effectContext(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
@@ -1919,7 +1924,7 @@ export const layerWsRpc = (
         return result;
       });
 
-      const coreHandlers = WsCoreRpcGroup.of({
+      const handlers = ServerWsRpcGroup.of({
         [WS_METHODS.serverPreviewLegacyImport]: (_input) => legacyImportPreview.preview,
         [WS_METHODS.serverImportLegacyData]: (input) => legacyImport.importData(input),
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
@@ -3211,8 +3216,6 @@ export const layerWsRpc = (
               Stream.concat(Stream.make(latest), changes),
             ),
           ),
-      });
-      const pullRequestHandlers = WsPullRequestRpcGroup.of({
         [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
         [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
         [WS_METHODS.pullRequestsRoutingIdentity]: (input) => pullRequests.routingIdentity(input),
@@ -3309,9 +3312,12 @@ export const layerWsRpc = (
         [WS_METHODS.pullRequestsReviewWorkflowRun]: (input) =>
           observeWorkflowRunReviews(input.state, workflowRunWatch.review(input)),
       });
+      const splitHandlers: Pick<typeof handlers, SplitWsRpc["_tag"]> = handlers;
+      const otherHandlers: Pick<typeof handlers, Exclude<ServerWsRpc, SplitWsRpc>["_tag"]> =
+        handlers;
       return Context.merge(
-        yield* WsCoreRpcGroup.toHandlers(coreHandlers),
-        yield* WsPullRequestRpcGroup.toHandlers(pullRequestHandlers),
+        yield* SplitWsRpcGroup.toHandlers(splitHandlers),
+        yield* OtherWsRpcGroup.toHandlers(otherHandlers),
       );
     }),
   );
