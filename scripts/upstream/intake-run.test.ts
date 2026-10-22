@@ -4,7 +4,9 @@ import {
   autoStopReasons,
   batchLength,
   describeNativeFingerprint,
+  describeShippedNativeRuntime,
   nativeFingerprintVerdict,
+  newestAndroidReleaseTag,
   namesUpstreamProduct,
   draftAdaptationNote,
   intakeCommitMessage,
@@ -493,6 +495,46 @@ describe("describeNativeFingerprint", () => {
     assert.match(
       describeNativeFingerprint({ error: "base install failed" }),
       /not compared \(base install failed\)/u,
+    );
+  });
+});
+
+describe("newestAndroidReleaseTag", () => {
+  it("picks the highest versionCode, not the last or highest version", () => {
+    const lsRemote = [
+      `${"a".repeat(40)}\trefs/tags/android-2.2.0-24`,
+      `${"b".repeat(40)}\trefs/tags/android-10.0.0-9`,
+      `${"c".repeat(40)}\trefs/tags/android-2.1.0-23`,
+      `${"d".repeat(40)}\trefs/tags/android-2.2.0-24^{}`,
+      `${"e".repeat(40)}\trefs/tags/v2.2.0`,
+    ].join("\n");
+    assert.strictEqual(newestAndroidReleaseTag(lsRemote), "android-2.2.0-24");
+    assert.isUndefined(newestAndroidReleaseTag(""));
+  });
+});
+
+describe("describeShippedNativeRuntime", () => {
+  const shipped = { tag: "android-2.2.0-24", runtimeVersion: "a".repeat(40) };
+
+  it("says OTA updates reach installed apps when the batch matches the release", () => {
+    assert.match(describeShippedNativeRuntime(shipped, "a".repeat(40)), /reach the latest/u);
+  });
+
+  it("asks for a version bump when main no longer matches the release", () => {
+    const description = describeShippedNativeRuntime(shipped, "b".repeat(40));
+    assert.match(description, /\(bbbbbbbbbb\) differs from android-2\.2\.0-24's \(aaaaaaaaaa\)/u);
+    assert.match(description, /even if this batch did not move it/u);
+    assert.match(description, /Bump the app version/u);
+  });
+
+  it("asks for a manual comparison when either side is missing", () => {
+    assert.match(
+      describeShippedNativeRuntime({ error: "no Android release found" }, "a".repeat(40)),
+      /not compared \(no Android release found\)/u,
+    );
+    assert.match(
+      describeShippedNativeRuntime(shipped, { error: "android fingerprint failed" }),
+      /not compared \(android fingerprint failed\)\. Compare main with android-2\.2\.0-24/u,
     );
   });
 });
