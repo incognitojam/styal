@@ -4,7 +4,7 @@ Unsent text, attachments, and composer settings stay on the device where you wri
 survive reloads and app restarts, but other clients connected to the same environment do not see
 them.
 
-On mobile, swipe left on a new-task draft in the thread list and choose **Discard**. A full swipe
+On mobile, swipe left on a new-task draft in the thread list and choose **Delete**. A full swipe
 also asks for confirmation. You can also discard a draft from its long-press menu.
 
 On mobile, submitted messages stay visible at the bottom of the conversation with a **Pending**
