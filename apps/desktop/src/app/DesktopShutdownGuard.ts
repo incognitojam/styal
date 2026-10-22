@@ -1,5 +1,6 @@
 import { HostActivity } from "@t3tools/contracts";
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
+import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
 import { describeHostActivity, hostActivityQuestion } from "@t3tools/shared/hostActivity";
 import type { HostActivityCheck } from "@t3tools/shared/hostActivity";
 import * as Clock from "effect/Clock";
@@ -74,7 +75,10 @@ const make = Effect.gen(function* () {
           const option = yield* instance.currentConfig;
           if (Option.isNone(option)) return null;
           const config = option.value;
-          const credential = config.bootstrap.desktopBootstrapToken;
+          // A backend launched with the desktop secret only accepts the
+          // current window's token; the one in its launch config expires.
+          const secret = config.bootstrap.desktopBootstrapSecret;
+          const credential = secret ?? config.bootstrap.desktopBootstrapToken;
           if (!credential) return null;
           const key = config.httpBaseUrl.href;
           let token = tokens.get(key);
@@ -82,7 +86,8 @@ const make = Effect.gen(function* () {
           if (!token || token.credential !== credential || token.expiresAt <= now) {
             const session = yield* bootstrapRemoteBearerSession({
               httpBaseUrl: key,
-              credential,
+              credential:
+                secret === undefined ? credential : currentDesktopBootstrapToken(secret, now),
               clientMetadata: { label: "Desktop shutdown check", deviceType: "desktop" },
             }).pipe(Effect.provideService(HttpClient.HttpClient, http));
             token = {
