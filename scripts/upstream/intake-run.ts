@@ -1915,6 +1915,7 @@ function nativeFingerprints(root: string, env: NodeJS.ProcessEnv) {
 function compareNativeFingerprints(
   cwd: string,
   base: string,
+  head: ReturnType<typeof nativeFingerprints>,
   env: NodeJS.ProcessEnv,
 ): NativeFingerprintComparison {
   const directory = NodePath.join(
@@ -1922,7 +1923,6 @@ function compareNativeFingerprints(
     "intake-fingerprint",
   );
   try {
-    const head = nativeFingerprints(cwd, env);
     run(cwd, "git", ["worktree", "remove", "--force", directory]);
     NodeFS.rmSync(directory, { recursive: true, force: true });
     git(cwd, ["worktree", "add", "-q", "--detach", directory, base]);
@@ -1951,11 +1951,76 @@ function nativeFingerprintComparison(
   cwd: string,
   base: string,
   changed: ReadonlyArray<string>,
+  head: ReturnType<typeof nativeFingerprints> | { readonly error: string },
   env: NodeJS.ProcessEnv,
 ): NativeFingerprintComparison {
-  return touchesNativeFingerprint(changed)
-    ? compareNativeFingerprints(cwd, base, env)
-    : "inputs unchanged";
+  if (!touchesNativeFingerprint(changed)) return "inputs unchanged";
+  return "error" in head ? head : compareNativeFingerprints(cwd, base, head, env);
+}
+
+/**
+ * The newest Android release and the runtime version it was built with. Both platforms build
+ * from the same app version together, and only Android publishes its runtime, so it stands in
+ * for what installed apps run. An OTA update from main reaches them only while main's
+ * fingerprint equals it, whatever the batch itself changed.
+ */
+export type ShippedNativeRuntime =
+  | { readonly tag: string; readonly runtimeVersion: string }
+  | { readonly error: string };
+
+const ANDROID_RELEASE_TAG = /^[0-9a-f]+\trefs\/tags\/(android-\d+(?:\.\d+)*-(\d+))$/u;
+
+/** Picks the release with the highest versionCode from `git ls-remote --tags` output. */
+export function newestAndroidReleaseTag(lsRemote: string): string | undefined {
+  let newest: { readonly tag: string; readonly versionCode: number } | undefined;
+  for (const line of lsRemote.split("\n")) {
+    const match = ANDROID_RELEASE_TAG.exec(line.trim());
+    if (!match) continue;
+    const versionCode = Number(match[2]);
+    if (!newest || versionCode > newest.versionCode) newest = { tag: match[1]!, versionCode };
+  }
+  return newest?.tag;
+}
+
+function shippedNativeRuntime(cwd: string): ShippedNativeRuntime {
+  const tags = run(cwd, "git", ["ls-remote", "--tags", "origin", "refs/tags/android-*"]);
+  if (tags.status !== 0) return { error: `listing release tags failed: ${tags.stderr.trim()}` };
+  const tag = newestAndroidReleaseTag(tags.stdout);
+  if (!tag) return { error: "no Android release found" };
+  // .github/scripts/publish-android-release.sh attaches this manifest to every release.
+  const manifest = run(cwd, "curl", [
+    "-fsSL",
+    "--max-time",
+    "30",
+    `https://github.com/incognitojam/styal/releases/download/${tag}/android-update.json`,
+  ]);
+  if (manifest.status !== 0) {
+    return { error: `reading ${tag}'s android-update.json failed: ${manifest.stderr.trim()}` };
+  }
+  try {
+    const { runtimeVersion } = JSON.parse(manifest.stdout) as { runtimeVersion?: unknown };
+    if (typeof runtimeVersion === "string" && runtimeVersion.length > 0) {
+      return { tag, runtimeVersion };
+    }
+  } catch {}
+  return { error: `${tag}'s android-update.json has no runtime version` };
+}
+
+/** Whether OTA updates from main reach installed apps once the batch is promoted. */
+export function describeShippedNativeRuntime(
+  shipped: ShippedNativeRuntime,
+  headAndroid: string | { readonly error: string },
+): string {
+  if ("error" in shipped) {
+    return `Installed apps: not compared (${shipped.error}). Compare main with the latest production build by hand.`;
+  }
+  if (typeof headAndroid !== "string") {
+    return `Installed apps: not compared (${headAndroid.error}). Compare main with ${shipped.tag} by hand.`;
+  }
+  if (headAndroid === shipped.runtimeVersion) {
+    return `Installed apps: the batch matches ${shipped.tag}'s fingerprint, so OTA updates from main reach the latest production build.`;
+  }
+  return `Installed apps: the batch's Android fingerprint (${headAndroid.slice(0, 10)}) differs from ${shipped.tag}'s (${shipped.runtimeVersion.slice(0, 10)}), so after promotion OTA updates from main do not reach installed apps, even if this batch did not move it. Bump the app version in apps/mobile/app.config.ts so Mobile EAS Production builds both platforms.`;
 }
 
 /** `unknown` when the comparison failed; promotion treats it like `moved`. */
@@ -2391,13 +2456,17 @@ function main() {
     case "fingerprint": {
       const base = flag("--base") ?? "origin/main";
       const changed = lines(git(cwd, ["diff", "--name-only", "--no-renames", `${base}...HEAD`]));
-      const comparison = nativeFingerprintComparison(
-        cwd,
-        base,
-        changed,
-        verificationEnvironment(process.env),
-      );
-      const report = describeNativeFingerprint(comparison);
+      const env = verificationEnvironment(process.env);
+      let head: ReturnType<typeof nativeFingerprints> | { readonly error: string };
+      try {
+        head = nativeFingerprints(cwd, env);
+      } catch (error) {
+        head = { error: error instanceof Error ? error.message : String(error) };
+      }
+      const comparison = nativeFingerprintComparison(cwd, base, changed, head, env);
+      const headAndroid =
+        "error" in head ? head : head.find((entry) => entry.platform === "android")!.hash;
+      const report = `${describeNativeFingerprint(comparison)}\n\n${describeShippedNativeRuntime(shippedNativeRuntime(cwd), headAndroid)}`;
       // Fork CI uploads this for the promotion workflow, which reads the verdict.
       process.stdout.write(
         process.argv.includes("--json")
