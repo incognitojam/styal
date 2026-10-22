@@ -189,6 +189,7 @@ import type {
   ComposerContextRecord,
   KnownComposerContextRecord,
 } from "@t3tools/contracts";
+import { Badge } from "../ui/badge";
 import { Button, InlineButton } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
@@ -6355,7 +6356,13 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               )}
             </span>
             {setupActionStatus ? (
-              <span className="min-w-0 truncate text-muted-foreground">{setupActionStatus}</span>
+              <Badge
+                variant={setupActionStatus === "Running" ? "info" : "warning"}
+                size="sm"
+                className="self-center"
+              >
+                {setupActionStatus}
+              </Badge>
             ) : null}
             {answerPreview ? (
               <span
