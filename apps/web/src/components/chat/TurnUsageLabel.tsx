@@ -1,8 +1,4 @@
-import type {
-  ClientSettings,
-  OrchestrationV2ThreadProjection,
-  ServerProvider,
-} from "@t3tools/contracts";
+import type { ClientSettings, ServerProvider } from "@t3tools/contracts";
 import {
   deriveProjectionTurnUsage,
   EMPTY_TURN_USAGE,
@@ -27,7 +23,7 @@ const selectUsageFigure = (settings: ClientSettings) => settings.turnUsageFigure
  * timeline's shared row context does not change on every streamed activity.
  */
 export function useTurnUsage(
-  projection: OrchestrationV2ThreadProjection | null | undefined,
+  projection: Parameters<typeof deriveProjectionTurnUsage>[0] | null | undefined,
   enabled: boolean,
 ): TurnUsageByTurn {
   const [previous, setPrevious] = useState(EMPTY_TURN_USAGE);

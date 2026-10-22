@@ -94,12 +94,21 @@ export function deriveActiveWorkStartedAt(
  * message update. Restart recovery stamps the interrupted run cancelled at
  * startup, so that terminal time includes the outage and is ignored.
  */
+/**
+ * A thread structure drops `updatedAt` from streamed assistant and reasoning
+ * items; their run's assistant message still records when the text last moved.
+ */
+export type RecordedWorkTurnItem = Pick<
+  OrchestrationV2TurnItem,
+  "runId" | "type" | "completedAt"
+> & {
+  readonly updatedAt?: OrchestrationV2TurnItem["updatedAt"];
+};
+
 export function orchestrationV2RunRecordedWorkEndMs(
   run: Pick<OrchestrationV2Run, "id" | "requestedAt" | "completedAt" | "status">,
   projection: {
-    readonly turnItems: ReadonlyArray<
-      Pick<OrchestrationV2TurnItem, "runId" | "type" | "completedAt" | "updatedAt">
-    >;
+    readonly turnItems: ReadonlyArray<RecordedWorkTurnItem>;
     readonly messages?: ReadonlyArray<
       Pick<OrchestrationV2ConversationMessage, "runId" | "role" | "updatedAt">
     >;
@@ -115,7 +124,8 @@ export function orchestrationV2RunRecordedWorkEndMs(
       item.type === "system_notice"
     )
       continue;
-    end = Math.max(end, DateTime.toEpochMillis(item.completedAt ?? item.updatedAt));
+    const recordedAt = item.completedAt ?? item.updatedAt;
+    if (recordedAt !== undefined) end = Math.max(end, DateTime.toEpochMillis(recordedAt));
   }
   for (const message of projection.messages ?? []) {
     if (message.runId === run.id && message.role === "assistant") {

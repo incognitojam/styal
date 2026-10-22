@@ -35,7 +35,10 @@ import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { formatTokens } from "@t3tools/shared/usageFormat";
-import { orchestrationV2RunRecordedWorkEndMs } from "@t3tools/shared/orchestrationTiming";
+import {
+  orchestrationV2RunRecordedWorkEndMs,
+  type RecordedWorkTurnItem,
+} from "@t3tools/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 import { classifyToolActivity } from "@t3tools/shared/toolActivity";
 import { toolOutputIndicatesFailure } from "@t3tools/shared/toolOutput";
@@ -79,9 +82,7 @@ export function continuedResponseWorkStartedAt(input: {
         | "workStartedAt"
       >
     >;
-    readonly turnItems: ReadonlyArray<
-      Pick<OrchestrationV2TurnItem, "runId" | "type" | "completedAt" | "updatedAt">
-    >;
+    readonly turnItems: ReadonlyArray<RecordedWorkTurnItem>;
     readonly messages?: ReadonlyArray<
       Pick<OrchestrationV2ConversationMessage, "runId" | "role" | "updatedAt">
     >;

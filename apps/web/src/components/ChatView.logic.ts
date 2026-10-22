@@ -15,6 +15,7 @@ import { getProviderModelCapabilities } from "../providerModels";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import type {
   EnvironmentThread,
+  ThreadStructure,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import {
@@ -31,7 +32,6 @@ import {
   type MessageId,
   type ModelSelection,
   type OrchestrationMessageContext,
-  type OrchestrationV2ProjectedTurnItem,
   type PreviewAnnotationPayload,
   type ProviderInteractionMode,
   ProviderDriverKind,
@@ -109,6 +109,7 @@ import {
 } from "../providerInstances";
 
 type ThreadProjection = EnvironmentThread["projection"];
+type ThreadStructureRow = ThreadStructure["visibleTurnItems"][number];
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "styal:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
@@ -1228,7 +1229,7 @@ export function createLocalDispatchSnapshot(
  * turn items avoids dropping steer rows in that gap.
  */
 export function deriveCommittedServerUserMessageIds(
-  visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
+  visibleTurnItems: ReadonlyArray<ThreadStructureRow>,
 ): ReadonlySet<ChatMessage["id"]> {
   return new Set(
     visibleTurnItems.flatMap((row) =>
@@ -1659,14 +1660,18 @@ export function sendTitleFallbackLabels(snapshot: ComposerSendSnapshot) {
   ];
 }
 
-/** A thread shell built from its loaded detail, for direct links that hydrate the detail first. */
+/**
+ * A thread shell built from its loaded detail, for direct links that hydrate the detail first.
+ * `updatedAt` is passed live: the thread structure leaves it out.
+ */
 export function presentThreadShellFromProjection(
   environmentId: EnvironmentId,
   threadId: ThreadId,
-  projection: ThreadProjection,
+  projection: ThreadStructure,
+  updatedAt: ThreadProjection["updatedAt"],
 ) {
   const latestRun = deriveLatestThreadRun(projection);
-  const runtime = deriveThreadRuntime(projection);
+  const runtime = deriveThreadRuntime({ ...projection, updatedAt });
   const pendingRuntimeRequest =
     projection.runtimeRequests.findLast((request) => request.status === "pending") ?? null;
   // Direct links can hydrate detail before the thread enters the shell index.
@@ -1696,7 +1701,7 @@ export function presentThreadShellFromProjection(
         )?.goal ?? null,
       itemCount: projection.turnItems.length,
       visibleItemCount: projection.visibleTurnItems.length,
-      updatedAt: projection.updatedAt,
+      updatedAt,
     }),
     latestRun,
     runtime,
@@ -1704,7 +1709,7 @@ export function presentThreadShellFromProjection(
 }
 
 /** Background work the provider still runs after the latest run ended. */
-export function deriveThreadPendingBackgroundTasks(projection: ThreadProjection | null) {
+export function deriveThreadPendingBackgroundTasks(projection: ThreadStructure | null) {
   if (projection === null) return [];
   const sessionError =
     projection.providerSessions.findLast(
@@ -1731,7 +1736,7 @@ export function deriveThreadPendingBackgroundTasks(projection: ThreadProjection 
  * active provider thread, plus 0 for the thread start. Empty without a live provider session
  * on the thread's selected instance.
  */
-export function deriveAvailableRevertTurnCounts(projection: ThreadProjection | null) {
+export function deriveAvailableRevertTurnCounts(projection: ThreadStructure | null) {
   const available = new Set<number>();
   const providerThread = projection?.providerThreads.find(
     (candidate) => candidate.id === projection.thread.activeProviderThreadId,
@@ -1774,7 +1779,7 @@ export function deriveAvailableRevertTurnCounts(projection: ThreadProjection | n
  * without reporting the paths it touched.
  */
 export function deriveWorkspaceMutationId(
-  visibleTurnItems: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
+  visibleTurnItems: ReadonlyArray<ThreadStructureRow>,
   latestCheckpointCompletedAt: string | null,
 ) {
   let itemId: string | null = null;
