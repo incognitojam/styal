@@ -40,9 +40,7 @@ export function HostActivityThreadList({
               ) : null}
               <div className="space-y-5">
                 {host.sections.map((section) => {
-                  const heading = section.continues
-                    ? "Continues after restart"
-                    : "Will be interrupted";
+                  const heading = section.continues ? "Will continue" : "Will be interrupted";
                   return (
                     <section aria-label={heading} key={heading}>
                       {labelSections ? (

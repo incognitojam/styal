@@ -329,6 +329,45 @@ describe("shutdown confirmation copy", () => {
       },
     );
   });
+  it("lists threads that continue apart from interrupted ones", () => {
+    const thread = (id: string, continuable: boolean) => ({
+      threadId: ThreadId.make(id),
+      title: id,
+      reasons: ["running" as const],
+      continuable,
+    });
+    const confirmation = Guard.shutdownConfirmation(
+      [
+        {
+          ...idle,
+          activeSessions: 2,
+          continuableSessions: 1,
+          threads: [thread("resumes", true), thread("stops", false)],
+        },
+      ],
+      "restart",
+    );
+    assert.strictEqual(
+      confirmation?.detail,
+      "1 thread will be interrupted.\n1 thread will continue after the restart. Make sure you're ready before continuing.",
+    );
+    assert.deepEqual(
+      confirmation?.threadActivity?.map((item) => item.continuesAfterRestart),
+      [true, false],
+    );
+  });
+  it("drops the warning when every thread continues, and says when for quit", () => {
+    const check = { ...idle, activeSessions: 1, continuableSessions: 1, threads: [] };
+    assert.deepEqual(Guard.shutdownConfirmation([check], "quit"), {
+      message: "Quit with running work?",
+      detail: "1 thread will continue when styal next starts.",
+      confirmLabel: "Quit",
+    });
+    assert.strictEqual(
+      Guard.shutdownConfirmation([check], "restart")?.detail,
+      "1 thread will continue after the restart.",
+    );
+  });
   it("asks about waiting threads in the title", () => {
     assert.deepEqual(Guard.shutdownConfirmation([{ ...idle, waitingSessions: 1 }], "restart"), {
       message: "Restart with waiting threads?",

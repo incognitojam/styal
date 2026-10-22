@@ -29,6 +29,7 @@ describe("describeHostActivity", () => {
       concern: null,
       lines: [],
       incomplete: false,
+      interrupts: false,
       threadActivity: [],
     });
   });
@@ -51,8 +52,18 @@ describe("describeHostActivity", () => {
         "Thread names and activity reasons are unavailable from this server.",
       ],
       incomplete: false,
+      interrupts: true,
       threadActivity: [],
     });
+  });
+
+  it("does not report interruption when every active thread continues", () => {
+    const result = describeHostActivity(
+      [{ ...idle, activeSessions: 1, continuableSessions: 1, threads: [] }],
+      { ...options, continueRunningThreads: true, continuesWhen: "when styal next starts" },
+    );
+    expect(result.lines).toEqual(["1 thread will continue when styal next starts."]);
+    expect(result.interrupts).toBe(false);
   });
 
   it("reports waiting threads as their own concern", () => {
@@ -72,6 +83,7 @@ describe("describeHostActivity", () => {
         "Thread names and activity reasons are unavailable from this server.",
       ],
       incomplete: false,
+      interrupts: true,
       threadActivity: [],
     });
     expect(describeHostActivity(checks, options).lines).toEqual([
@@ -86,6 +98,7 @@ describe("describeHostActivity", () => {
       concern: "running",
       lines: ["Devices in use by other environments will be disconnected."],
       incomplete: false,
+      interrupts: true,
       threadActivity: [],
     });
   });
@@ -95,6 +108,7 @@ describe("describeHostActivity", () => {
       concern: "running",
       lines: ["A provider update is installing and will be interrupted."],
       incomplete: false,
+      interrupts: true,
       threadActivity: [],
     });
     expect(
@@ -118,6 +132,7 @@ describe("describeHostActivity", () => {
       concern: "unchecked",
       lines: ["Could not check 1 terminal session for running commands."],
       incomplete: true,
+      interrupts: true,
       threadActivity: [],
     });
   });
@@ -128,6 +143,7 @@ describe("describeHostActivity", () => {
         concern: "unchecked",
         lines: ["Some hosts could not be checked."],
         incomplete: true,
+        interrupts: true,
         threadActivity: [],
       });
     }

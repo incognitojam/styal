@@ -21,8 +21,12 @@ export function shutdownConfirmation(
   action: ShutdownAction,
   title?: string,
 ) {
-  const { concern, lines, incomplete, threadActivity } = describeHostActivity(checks, {
+  // The server resolves each project's continuation setting into `continuable`,
+  // and every shutdown, including quit, saves those threads to resume on next start.
+  const { concern, lines, incomplete, interrupts, threadActivity } = describeHostActivity(checks, {
     uncheckedHostsLine: "Could not check every local environment for running work.",
+    continueRunningThreads: true,
+    continuesWhen: action === "quit" ? "when styal next starts" : "after the restart",
   });
   if (concern === null) return null;
   const detail = incomplete
@@ -34,7 +38,9 @@ export function shutdownConfirmation(
     : lines;
   return {
     message: title ?? `${action === "quit" ? "Quit" : "Restart"}${hostActivityQuestion[concern]}`,
-    detail: `${detail.join("\n")} Make sure you're ready before continuing.`,
+    detail: interrupts
+      ? `${detail.join("\n")} Make sure you're ready before continuing.`
+      : detail.join("\n"),
     confirmLabel: action === "quit" ? "Quit" : "Restart",
     ...(threadActivity.length ? { threadActivity } : {}),
   };
