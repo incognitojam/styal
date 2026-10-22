@@ -7,8 +7,8 @@ name: Intake landing hold
 # event is fixed by the next one or by dispatching this workflow.
 on:
   pull_request_target:
+    # Every base branch: the upper layers of a stack target another pull request's branch.
     types: [opened, reopened, synchronize]
-    branches: [main]
   workflow_run:
     workflows: ["Fork CI", "Promote upstream intake"]
     types: [requested, completed]

@@ -5,8 +5,10 @@
  * an intake candidate is landing. A candidate lands by fast-forwarding main to the exact SHA Fork
  * CI tested, so any merge in the meantime makes it rebase and test again. Main's required checks
  * include this status: it is pending on pull requests while an intake branch runs Fork CI or
- * waits for promotion, and success otherwise, so auto-merge lands them once the hold lifts. The
- * candidate itself gets success, because promotion pushes it to main. See
+ * waits for promotion, and success otherwise, so auto-merge lands them once the hold lifts. Every
+ * open pull request gets it, not only those into main: each layer of a stack is checked against
+ * main's rules, because merging the stack lands it on main. The candidate itself gets success,
+ * because promotion pushes it to main. See
  * docs/operations/upstream-tracking.md.
  *
  *   landing-hold.ts [--dry-run]
@@ -98,7 +100,7 @@ export interface CommitStatus {
   readonly target_url?: string;
 }
 
-/** The status a pull request into main gets while `holding` candidates are landing. */
+/** The status an open pull request gets while `holding` candidates are landing. */
 export function pullRequestStatus(holding: ReadonlyArray<HoldingCandidate>): CommitStatus {
   const first = holding[0];
   if (!first) return { state: "success", description: "No upstream intake is landing" };
@@ -125,7 +127,7 @@ interface OpenPullRequest {
 
 const OPEN_PULL_REQUESTS = `query($owner: String!, $name: String!, $context: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: OPEN, baseRefName: "main", first: 100, after: $endCursor) {
+    pullRequests(states: OPEN, first: 100, after: $endCursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number
@@ -136,7 +138,7 @@ const OPEN_PULL_REQUESTS = `query($owner: String!, $name: String!, $context: Str
   }
 }`;
 
-/** Open pull requests into main with the hold status their head commit has now. */
+/** Open pull requests with the hold status their head commit has now. */
 function openPullRequests(repository: string): ReadonlyArray<OpenPullRequest> {
   const [owner, name] = repository.split("/");
   const output = gh([
@@ -276,7 +278,7 @@ function main() {
   });
   if (values.help) {
     console.log(
-      "Usage: node scripts/upstream/landing-hold.ts [--dry-run]\nSets the Intake landing hold status on open pull requests into main and on landing intake candidates. --dry-run prints the decision without writing statuses.",
+      "Usage: node scripts/upstream/landing-hold.ts [--dry-run]\nSets the Intake landing hold status on open pull requests and on landing intake candidates. --dry-run prints the decision without writing statuses.",
     );
     return;
   }
