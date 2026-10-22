@@ -4,6 +4,23 @@ import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 
+const CLAUDE_GROUP_WATCH_SCRIPT = [
+  "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
+  'exec "$@" 3<&-',
+].join("\n");
+
+// The watcher stops the CLI group when its server-owned pipe closes, including on server death.
+export const spawnClaudeProcessGroup: SpawnClaudeChild = (command, args, options) =>
+  NodeChildProcess.spawn(
+    "/bin/sh",
+    ["-c", CLAUDE_GROUP_WATCH_SCRIPT, "t3-claude", command, ...args],
+    {
+      ...options,
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
+      detached: true,
+    },
+  );
+
 /** Enough of the end of stderr to hold a stack trace or a login error. */
 const STDERR_TAIL_LIMIT = 4096;
 
@@ -62,7 +79,8 @@ export function makeClaudeProcessSpawner(input?: {
   readonly handle: ClaudeProcessHandle;
   readonly spawnClaudeCodeProcess: (options: SpawnOptions) => SpawnedProcess;
 } {
-  const spawn = input?.spawn ?? NodeChildProcess.spawn;
+  const spawn =
+    input?.spawn ?? (input?.processGroup ? spawnClaudeProcessGroup : NodeChildProcess.spawn);
   const observer = input?.observer;
   let child: NodeChildProcess.ChildProcess | undefined;
   let exited: ClaudeProcessExit | undefined;
