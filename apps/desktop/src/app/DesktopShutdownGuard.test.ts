@@ -212,8 +212,8 @@ describe("DesktopShutdownGuard", () => {
         })),
       );
       assert.equal(h.exchanges(), 2);
-      // The bearer has expired by the next window, so renewal needs that window's token.
-      yield* TestClock.adjust(DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS);
+      // Two windows on, the bearer has expired and the first token is no longer accepted.
+      yield* TestClock.adjust(DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS * 2);
       assert.isTrue(yield* guard.confirm("quit"));
       assert.equal(h.exchanges(), 4);
     }).pipe(Effect.provide(h.layer));
