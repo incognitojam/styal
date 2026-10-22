@@ -2,8 +2,12 @@ import { ProjectId, ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { WorkLogEntry } from "../../session-logic";
-import { fileActionReviewRequestOf, workEntryIsVisibleInGroup } from "./MessagesTimeline.logic";
+import { deriveTimelineEntriesFromVisibleTurnItems, type WorkLogEntry } from "../../session-logic";
+import {
+  fileActionReviewRequestOf,
+  workEntryDisplayLabel,
+  workEntryIsVisibleInGroup,
+} from "./MessagesTimeline.logic";
 
 type CommandItem = Extract<OrchestrationV2TurnItem, { type: "command_execution" }>;
 const now = DateTime.makeUnsafe("2026-10-21T12:00:00.000Z");
@@ -65,5 +69,41 @@ describe("workEntryIsVisibleInGroup for setup rows awaiting approval", () => {
 
   it("keeps a row that asks for approval visible though nothing runs", () => {
     expect(workEntryIsVisibleInGroup(entry(true))).toBe(true);
+  });
+});
+
+describe("setup row titles", () => {
+  const rowTitle = (item: CommandItem) => {
+    const [entry] = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: [
+        {
+          item,
+          position: 0,
+          visibility: "local",
+          sourceThreadId: item.threadId,
+          sourceItemId: item.id,
+        },
+      ],
+      optimisticMessages: [],
+    });
+    if (entry?.kind !== "work") throw new Error("Expected a work row");
+    return workEntryDisplayLabel(entry.entry, "/worktrees/feature");
+  };
+
+  it("labels the row with the action's name rather than its command, in every state", () => {
+    for (const [status, awaiting] of [
+      ["idle", true],
+      ["running", false],
+      ["completed", false],
+      ["failed", false],
+      ["interrupted", false],
+    ] as const) {
+      expect(rowTitle(setupRow(status, awaiting))).toBe("Install");
+    }
+  });
+
+  it("keeps the command as the label of an ordinary command row", () => {
+    const { setupScript: _setupScript, ...command } = setupRow("completed", false);
+    expect(rowTitle({ ...command, title: null })).toBe("./scripts/setup.sh");
   });
 });

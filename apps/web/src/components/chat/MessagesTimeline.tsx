@@ -189,6 +189,7 @@ import type {
   ComposerContextRecord,
   KnownComposerContextRecord,
 } from "@t3tools/contracts";
+import { Badge } from "../ui/badge";
 import { Button, InlineButton } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
@@ -5812,8 +5813,10 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
   const { workEntry, showCommand } = props;
   const { activeThreadEnvironmentId, threadRef } = use(TimelineRowCtx);
   const pending = workEntry.toolLifecycleStatus === "inProgress";
+  // An action waiting for approval never ran, so it has no output to fetch.
+  const awaitingApproval = fileActionReviewRequestOf(workEntry.structuredPayload) !== null;
   const query = useCommandOutput({
-    environmentId: pending ? null : activeThreadEnvironmentId,
+    environmentId: pending || awaitingApproval ? null : activeThreadEnvironmentId,
     threadId: threadRef?.threadId ?? null,
     activityId: EventId.make(workEntry.id),
   });
@@ -5825,6 +5828,8 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
       </pre>
     ) : null;
 
+  // An action waiting for approval has nothing to show beyond its command.
+  if (awaitingApproval) return commandBlock;
   if (pending) {
     return (
       <>
@@ -6152,6 +6157,14 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           label: `Setup action ${workEntry.toolLifecycleStatus}`,
         }
       : null;
+  // Finished setup rows show a status mark; the others name their state.
+  const setupActionStatus = !isSetupActionRow
+    ? null
+    : awaitingApproval && ctx.awaitingFileActionIds.has(awaitingApproval.actionId)
+      ? "Waiting for approval"
+      : workEntry.toolLifecycleStatus === "inProgress"
+        ? "Running"
+        : null;
   const isReasoning = workEntry.itemType === "reasoning";
   // The question is the row's identity: a generic "User input submitted"
   // label buries what was asked, so lead with the question text (even over a
@@ -6269,7 +6282,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         ? "text-secondary-label"
         : "text-foreground/80";
   const threadLabel = isReasoning ? null : threadReadLabel(previewText, threadTarget);
-  const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview]
+  const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview ?? setupActionStatus]
     .filter(Boolean)
     .join(": ");
   const accessibleDisplayText = showFailedIndicator
@@ -6314,7 +6327,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         <div className="min-w-0 flex-1 overflow-hidden">
           <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
             <span
-              className={cn(answerPreview ? "min-w-0" : "min-w-0 flex-1", "truncate", headingClass)}
+              className={cn(
+                answerPreview || setupActionStatus ? "min-w-0" : "min-w-0 flex-1",
+                "truncate",
+                headingClass,
+              )}
             >
               {isReasoning && !expanded ? (
                 <ReactMarkdown
@@ -6338,6 +6355,15 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                 previewText
               )}
             </span>
+            {setupActionStatus ? (
+              <Badge
+                variant={setupActionStatus === "Running" ? "info" : "warning"}
+                size="sm"
+                className="self-center"
+              >
+                {setupActionStatus}
+              </Badge>
+            ) : null}
             {answerPreview ? (
               <span
                 className={cn(
@@ -6379,7 +6405,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           ctx.onReviewFileAction &&
           ctx.awaitingFileActionIds.has(awaitingApproval.actionId) ? (
             <InlineButton
-              aria-label={`Review ${workEntry.label}`}
+              aria-label={`Review ${workEntry.setupScriptName ?? workEntry.label}`}
               onClick={(event) => {
                 event.stopPropagation();
                 ctx.onReviewFileAction?.(awaitingApproval);

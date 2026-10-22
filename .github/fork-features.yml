@@ -4330,7 +4330,7 @@ features:
       - A terminal opened locally survives server session-list reconciliation until the server reports it, so focus stays on it rather than falling back to a setup session.
       - Opening the terminal on a thread whose only sessions are retained setup or settle terminals starts an interactive shell instead of focusing the finite session.
       - Worktree-creation setup actions never run against a project root; server, web, and mobile refuse the run and explain why before a script can overwrite files it meant to copy or link.
-      - Web and mobile work logs identify the configured setup or settle action and truthfully distinguish requested, running, completed, failed, and stopped states.
+      - Web and mobile work log rows are titled with the configured setup or settle action's name, not its command, and truthfully distinguish requested, waiting for approval, running, completed, failed, and stopped states.
       - Setup and settle terminal output remains inspectable after exit, and later toolbar actions start on the first click without reusing the finite session.
       - The settle action runs as one finite command in a single settle terminal per thread, restarted in place by later settlements; a settlement during a running settle action starts nothing, and a thread whose worktree is the project checkout skips it without a work-log row.
     rationale: Setup runs as the terminal's own process, so the exit code is exact on every shell and setup cannot hang on a sentinel. That finite session is what makes the titled, retained setup terminal and the per-run work log possible. Upstream's settle action is built into its sentinel runner, so the fork runs it on the same process runner.
@@ -4366,6 +4366,7 @@ features:
       - apps/server/src/terminal/Manager.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/components/ThreadTerminalDrawer.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.fileActionReview.test.ts
       - apps/web/src/components/chat/MessagesTimeline.test.tsx
       - apps/web/src/session-logic.test.ts
       - packages/shared/src/projectScripts.test.ts

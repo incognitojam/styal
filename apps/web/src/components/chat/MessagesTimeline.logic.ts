@@ -140,6 +140,11 @@ function workEntryReadPaths(entry: WorkLogEntry, workspaceRoot: string | undefin
 
 export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
   if (entry.itemType === "system_notice") return entry.label;
+  // A setup or settle action reads by its name; the row shows its state on
+  // the right and its command when expanded.
+  if (entry.sourceActivityKind?.startsWith("setup-script.")) {
+    return entry.setupScriptName ?? entry.label;
+  }
   if (entry.itemType === "reasoning" || entry.tone === "thinking") {
     const thought = entry.detail?.trim().replace(/\s+/g, " ");
     return thought || entry.label;

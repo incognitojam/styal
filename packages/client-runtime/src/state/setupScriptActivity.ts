@@ -16,7 +16,11 @@ function setupScriptActivityState(item: CommandItem): SetupScriptState {
   return "failed";
 }
 
+/** The action's name, for rows that show its state separately. */
+export function setupScriptActionName(item: CommandItem): string {
+  return item.setupScript?.scriptName.trim() || item.title || "Setup script";
+}
+
 export function setupScriptActivityLabel(item: CommandItem): string {
-  const name = item.setupScript?.scriptName.trim() || item.title || "Setup script";
-  return `${name} ${setupScriptActivityState(item)}`;
+  return `${setupScriptActionName(item)} ${setupScriptActivityState(item)}`;
 }

@@ -1,4 +1,5 @@
 import {
+  setupScriptActionName,
   setupScriptActivityLabel,
   setupScriptAwaitingApproval,
 } from "@t3tools/client-runtime/state/setup-script-activity";
@@ -96,6 +97,8 @@ export interface WorkLogEntry {
   readonly toolInput?: unknown;
   readonly exitCode?: number;
   readonly setupScriptIcon?: import("@t3tools/contracts").ProjectScriptIcon;
+  /** A setup or settle action's name; the row shows its state separately. */
+  readonly setupScriptName?: string;
   readonly fileChangeStat?: import("@t3tools/shared/toolActivity").ToolFileChangeLineStat;
   readonly requestKind?: string;
   readonly itemType?: OrchestrationV2TurnItem["type"];
@@ -482,6 +485,7 @@ function projectedWorkEntry(row: OrchestrationV2ProjectedTurnItem): WorkLogEntry
         ...(item.setupScript
           ? {
               sourceActivityKind: `setup-script.${item.status}`,
+              setupScriptName: setupScriptActionName(item),
               ...(item.setupScript.scriptIcon === undefined
                 ? {}
                 : { setupScriptIcon: item.setupScript.scriptIcon }),
