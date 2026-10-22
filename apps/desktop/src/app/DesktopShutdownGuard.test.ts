@@ -1,5 +1,10 @@
 import { assert, describe, it } from "@effect/vitest";
 import { ThreadId, type ConfirmDialogThreadActivity, type HostActivity } from "@t3tools/contracts";
+import {
+  DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
+  isValidDesktopBootstrapToken,
+} from "@t3tools/shared/desktopBootstrapToken";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -26,6 +31,7 @@ function harness(
     stopped?: boolean;
     quitOverride?: boolean;
     status?: number;
+    secret?: string;
   } = {},
 ) {
   const messages: string[] = [];
@@ -66,6 +72,7 @@ function harness(
             t3Home: "/synthetic/state",
             host: "127.0.0.1",
             desktopBootstrapToken: "synthetic-bootstrap",
+            ...(options.secret ? { desktopBootstrapSecret: options.secret } : {}),
             tailscaleServeEnabled: false,
             tailscaleServePort: 443,
           },
@@ -87,6 +94,15 @@ function harness(
         const auth = request.url.endsWith("/oauth/token");
         if (auth) exchanges++;
         else checks++;
+        if (auth && options.secret) {
+          const body =
+            request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
+          const credential = new URLSearchParams(body).get("subject_token") ?? "";
+          const now = yield* Clock.currentTimeMillis;
+          if (!isValidDesktopBootstrapToken(options.secret, credential, now)) {
+            return HttpClientResponse.fromWeb(request, Response.json({}, { status: 401 }));
+          }
+        }
         const body = auth
           ? {
               access_token: "synthetic-bearer",
@@ -183,6 +199,26 @@ describe("DesktopShutdownGuard", () => {
       assert.equal(h.exchanges(), 2);
     }).pipe(Effect.provide(h.layer));
   });
+  it.effect("signs in with the current rotating token long after launch", () => {
+    const h = harness({ secret: "synthetic-secret" });
+    return Effect.gen(function* () {
+      const guard = yield* Guard.DesktopShutdownGuard;
+      yield* TestClock.setTime(DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS * 2 + 1);
+      assert.deepEqual(
+        yield* guard.inspect,
+        [idle, idle].map((activity, index) => ({
+          ...activity,
+          hostLabel: index === 0 ? "primary" : "wsl",
+        })),
+      );
+      assert.equal(h.exchanges(), 2);
+      // Two windows on, the bearer has expired and the first token is no longer accepted.
+      yield* TestClock.adjust(DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS * 2);
+      assert.isTrue(yield* guard.confirm("quit"));
+      assert.equal(h.exchanges(), 4);
+    }).pipe(Effect.provide(h.layer));
+  });
+
   it.effect("allows explicit confirmation for waiting agents and terminal work", () => {
     const h = harness({
       activity: () =>
