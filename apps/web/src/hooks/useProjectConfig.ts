@@ -27,6 +27,8 @@ export interface ProjectConfigState {
   config: ProjectConfig | null;
   /** A legacy t3.json's scripts, which styal never runs but offers to import. */
   legacyScripts: ReadonlyArray<T3ProjectFileScript>;
+  /** A legacy t3.json's raw contents while it is the file in effect, for migrating it. */
+  legacyContents: string | null;
 }
 
 const contentsOf = (query: ReturnType<typeof useProjectFileQuery>) =>
@@ -56,7 +58,13 @@ export function useProjectConfigState(
   const isPending = styal === null && (styalQuery.isPending || (t3 === null && t3Query.isPending));
   return useMemo(() => {
     if (isPending) {
-      return { status: "loading", source: null, config: null, legacyScripts: NO_SCRIPTS };
+      return {
+        status: "loading",
+        source: null,
+        config: null,
+        legacyScripts: NO_SCRIPTS,
+        legacyContents: null,
+      };
     }
     const state = resolveProjectConfig({ styal, t3 });
     return {
@@ -64,6 +72,7 @@ export function useProjectConfigState(
       source: state.status === "missing" ? null : state.source,
       config: state.config,
       legacyScripts: state.legacyScripts.length === 0 ? NO_SCRIPTS : state.legacyScripts,
+      legacyContents: state.status !== "missing" && state.source === "t3.json" ? t3 : null,
     };
   }, [isPending, styal, t3]);
 }

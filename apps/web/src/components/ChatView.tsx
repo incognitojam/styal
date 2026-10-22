@@ -487,6 +487,8 @@ import {
 } from "./chat/PanelLayoutControls";
 import { expandedImageKey, type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ThreadDetailsPanel, type ThreadDetailsPanelProps } from "./chat/ThreadDetailsPanel";
+import { FileActionApprovalDialog } from "./FileActionApprovalDialog";
+import type { FileActionReviewRequest } from "./chat/MessagesTimeline.logic";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import {
   type EnvironmentOption,
@@ -5296,6 +5298,32 @@ export default function ChatView(props: ChatViewProps) {
   useLayoutEffect(() => {
     runProjectScriptRef.current = runProjectScript;
   }, [runProjectScript]);
+  // A styal.json setup action waiting for approval, reviewed from the work
+  // log; approving runs it in the worktree it was meant for.
+  const [fileActionReview, setFileActionReview] = useState<FileActionReviewRequest | null>(null);
+  const onReviewFileAction = useMemo(
+    () =>
+      activeProject && hasTerminalWriteAccess()
+        ? (request: FileActionReviewRequest) => setFileActionReview(request)
+        : null,
+    [activeProject, hasTerminalWriteAccess],
+  );
+  // Once approved, the work-log row for an action stops offering Review.
+  const awaitingFileActionIds = useMemo(
+    () =>
+      new Set(
+        activeProjectActions
+          .filter((action) => action.awaitingApproval !== undefined)
+          .map((action) => action.id),
+      ),
+    [activeProjectActions],
+  );
+  const runReviewedFileAction = useCallback(() => {
+    const request = fileActionReview;
+    const action = activeProjectActions.find((candidate) => candidate.id === request?.actionId);
+    if (!request || !action) return;
+    void runProjectScriptRef.current(action, { worktreePath: request.worktreePath });
+  }, [activeProjectActions, fileActionReview]);
   const runShellCommand = useCallback((command: string) => {
     void runProjectScriptRef.current(
       {
@@ -11850,6 +11878,7 @@ export default function ChatView(props: ChatViewProps) {
                   : { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation })}
                 {...(draftId ? { onWorktreeSetupWorkLocally } : {})}
                 {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
+                {...(onReviewFileAction ? { onReviewFileAction, awaitingFileActionIds } : {})}
                 isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
                 footer={paintOnlyDisplayedTimeline ? null : threadStatusLine}
                 listRef={legendListRef}
@@ -12322,6 +12351,21 @@ export default function ChatView(props: ChatViewProps) {
             </AlertDialog>
 
             <ThreadDetailsPanel {...threadDetailsPanelProps} />
+
+            <FileActionApprovalDialog
+              target={
+                fileActionReview
+                  ? {
+                      environmentId: activeThread.environmentId,
+                      projectId: fileActionReview.projectId,
+                      actionId: fileActionReview.actionId,
+                    }
+                  : null
+              }
+              approveLabel="Approve & run"
+              onApproved={runReviewedFileAction}
+              onClose={() => setFileActionReview(null)}
+            />
 
             {pullRequestDialogState ? (
               <PullRequestThreadDialog

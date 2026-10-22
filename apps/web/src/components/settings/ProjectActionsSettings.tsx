@@ -2,11 +2,20 @@ import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { EnvironmentId, type T3ProjectFileScript } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { mergeProjectActions, projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
+import { projectFileApprovalKey } from "@t3tools/shared/projectFileApprovals";
+import {
+  mergeProjectActions,
+  projectScriptMenuLabel,
+  type ResolvedProjectAction,
+} from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { projectConfigRoot, useProjectConfigState } from "../../hooks/useProjectConfig";
 import { useEnvironments } from "../../state/environments";
+import {
+  FileActionApprovalDialog,
+  type FileActionApprovalTarget,
+} from "../FileActionApprovalDialog";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForFileScript,
@@ -26,6 +35,7 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { ProjectActionsList } from "./ProjectActionsList";
+import { ProjectFileMigrationRow } from "./ProjectFileMigrationRow";
 import { useProjectScriptSettings } from "./useProjectScriptSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -93,10 +103,17 @@ export function ProjectActionsSettings() {
     representativeMember?.environmentId ?? EnvironmentId.make("none"),
     representativeMember ? projectConfigRoot(representativeMember) : null,
   );
+  const approvals = representativeMember
+    ? representativeConfig?.settings.projectFileActionApprovals[
+        projectFileApprovalKey(representativeMember)
+      ]
+    : undefined;
   const actions = useMemo(
-    () => mergeProjectActions(scripts, isProjectScope ? projectConfig.config : null),
-    [isProjectScope, projectConfig.config, scripts],
+    () =>
+      mergeProjectActions(scripts, isProjectScope ? projectConfig.config : null, approvals ?? {}),
+    [approvals, isProjectScope, projectConfig.config, scripts],
   );
+  const [reviewing, setReviewing] = useState<FileActionApprovalTarget | null>(null);
   const fileActionIds = useMemo(
     () => actions.filter((action) => action.source !== "local").map((action) => action.id),
     [actions],
@@ -194,6 +211,16 @@ export function ProjectActionsSettings() {
           keybindings={keybindings}
           disabled={saving || !canWriteSettings}
           onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
+          {...(representativeMember
+            ? {
+                onReview: (script: ResolvedProjectAction) =>
+                  setReviewing({
+                    environmentId: representativeMember.environmentId,
+                    projectId: representativeMember.id,
+                    actionId: script.id,
+                  }),
+              }
+            : {})}
         />
       )}
       {projectConfig.status === "invalid" ? (
@@ -210,6 +237,14 @@ export function ProjectActionsSettings() {
           className="text-warning"
         />
       ) : null}
+      {isProjectScope && representativeMember && projectConfig.legacyContents !== null ? (
+        <ProjectFileMigrationRow
+          environmentId={representativeMember.environmentId}
+          projectRoot={projectConfigRoot(representativeMember)}
+          legacyContents={projectConfig.legacyContents}
+        />
+      ) : null}
+      <FileActionApprovalDialog target={reviewing} onClose={() => setReviewing(null)} />
       {target && (
         <ProjectScriptEditorDialog
           environmentId={target.environmentId}

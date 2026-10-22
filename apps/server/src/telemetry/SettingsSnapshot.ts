@@ -44,6 +44,9 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     projectsWithOverrides: Object.values(settings.projectSettingsOverrides).filter(
       (overrides) => Object.keys(overrides).length > 0,
     ).length,
+    repositoriesWithApprovedFileActions: Object.values(settings.projectFileActionApprovals).filter(
+      (approvals) => Object.keys(approvals).length > 0,
+    ).length,
     // Thread settlement and limits
     sidebarAutoSettleOnMerge: settings.sidebarAutoSettleOnMerge,
     sidebarAutoSettleAfterDays:

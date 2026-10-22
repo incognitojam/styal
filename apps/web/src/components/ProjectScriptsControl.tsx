@@ -189,7 +189,11 @@ export default function ProjectScriptsControl({
             <MenuItemLabel>{projectScriptMenuLabel(script)}</MenuItemLabel>
             {script.source !== "local" && (
               <span className="shrink-0 text-xs text-muted-foreground">
-                {script.source === "file" ? "styal.json" : "edited"}
+                {script.source === "file"
+                  ? script.awaitingApproval
+                    ? "styal.json · needs approval"
+                    : "styal.json"
+                  : "edited"}
               </span>
             )}
             <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">

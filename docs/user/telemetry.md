@@ -15,6 +15,8 @@ Hardware tools and the hardware lease controls in Settings and the thread header
 operation, its outcome, and for an agent's device call the action's access tier. Device names,
 addresses, action names, arguments, responses and uploaded files are not collected, and calls
 scripts make through a lease's proxy are not recorded.
+Reviewing, approving and revoking a `styal.json` action that runs on its own records which of the
+three it was and its outcome. Projects, action names, commands and file paths are not collected.
 Agent workflow run watches record whether each watch or unwatch call started, stopped, or
 found a run already finished, and how each watch ended: the run's conclusion, a failure to read
 it, or being stopped, with how many minutes it was watched. Repositories, run links, and workflow

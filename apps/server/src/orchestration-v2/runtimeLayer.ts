@@ -11,6 +11,8 @@ import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "../project/AgentSessionScanner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ProjectConfigLoader from "../project/ProjectConfigLoader.ts";
+import * as ProjectFileActionApprovals from "../project/ProjectFileActionApprovals.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as CheckpointCaptureService from "./CheckpointCaptureService.ts";
@@ -252,7 +254,13 @@ const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImp
     ),
   ),
 );
+/** Approvals for styal.json actions; the setup runner reads automatic actions through it. */
+const layerProjectFileActionApprovals = ProjectFileActionApprovals.layer.pipe(
+  Layer.provide(layerProjectService),
+  Layer.provide(ProjectConfigLoader.layer),
+);
 export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe(
+  Layer.provideMerge(layerProjectFileActionApprovals),
   Layer.provide(layerProjectService),
   Layer.provide(layerEventSinkProvided),
   Layer.provide(TurnItemPositionStore.layer),

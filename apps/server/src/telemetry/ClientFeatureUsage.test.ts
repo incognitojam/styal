@@ -1,8 +1,9 @@
 import { expect, it } from "@effect/vitest";
-import { FORK_CLIENT_USAGE_VERSION, ForkClientUsageInput } from "@t3tools/contracts";
+import { FORK_CLIENT_USAGE_VERSION, ForkClientUsageInput, ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import * as ProjectFileActionApprovals from "../project/ProjectFileActionApprovals.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as ClientFeatureUsage from "./ClientFeatureUsage.ts";
 
@@ -210,4 +211,48 @@ it.effect("records the desktop update notice only from the desktop app", () =>
     yield* web({ feature: "desktop-update-notice", action: "notice_shown" });
     expect(events).toHaveLength(2);
   }),
+);
+
+it.effect(
+  "observes approving and revoking styal.json actions once each, only from a user surface",
+  () =>
+    Effect.gen(function* () {
+      const events: Array<{ event: string; properties: Record<string, unknown> | undefined }> = [];
+      const analytics = {
+        record: (event: string, properties: Record<string, unknown> | undefined) =>
+          Effect.sync(() => {
+            events.push({ event, properties });
+          }),
+        flush: Effect.void,
+      };
+      const review = {
+        actionId: "setup",
+        name: "Setup",
+        command: "./scripts/setup.sh",
+        roles: ["setup" as const],
+        approved: null,
+        hint: { kind: "none" as const },
+      };
+      const service = ProjectFileActionApprovals.ProjectFileActionApprovals.of({
+        automationConfig: () => Effect.succeed(null),
+        review: () => Effect.succeed(review),
+        setApproved: () => Effect.succeed(review),
+      });
+      const wrap = (surface?: "web") =>
+        ClientFeatureUsage.projectFileApprovals(surface ? { surface } : {}).pipe(
+          Effect.provideService(ProjectFileActionApprovals.ProjectFileActionApprovals, service),
+          Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+        );
+      const input = { projectId: ProjectId.make("project-1"), actionId: "setup" };
+      const observed = yield* wrap("web");
+      yield* observed.setApproved({ ...input, approved: true });
+      yield* observed.setApproved({ ...input, approved: false });
+      const relayed = yield* wrap();
+      yield* relayed.setApproved({ ...input, approved: true });
+      expect(events.map((entry) => entry.properties?.action)).toEqual(["approve", "revoke"]);
+      for (const entry of events) {
+        expect(JSON.stringify(entry)).not.toContain("setup.sh");
+        expect(JSON.stringify(entry)).not.toContain("project-1");
+      }
+    }),
 );

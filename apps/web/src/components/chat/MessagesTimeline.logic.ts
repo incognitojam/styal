@@ -56,6 +56,8 @@ import {
   type MessageId,
   type WorktreeSetupSnapshot,
   type OrchestrationV2ProjectedTurnItem,
+  type OrchestrationV2TurnItem,
+  type ProjectId,
   type RunAttemptId,
   RunId,
   type ThreadId,
@@ -292,6 +294,8 @@ export function workEntryIsVisibleInGroup(
         entry.sourceActivityKind === "task.progress")) ||
     // A stopped call is an outcome ("Stopped sleep"), not an empty row.
     entry.toolLifecycleStatus === "stopped" ||
+    // An action waiting for approval asks the user to act, though nothing runs.
+    fileActionReviewRequestOf(entry.structuredPayload) !== null ||
     !workEntryIndicatesToolNeutralStatus(entry)
   );
 }
@@ -2751,4 +2755,25 @@ export function shouldCollapseUserMessage(text: string): boolean {
     visible.length > MAX_COLLAPSED_USER_MESSAGE_LENGTH ||
     visible.split("\n").length > MAX_COLLAPSED_USER_MESSAGE_LINES
   );
+}
+
+/** A styal.json setup action that waits for approval, as the work log offers to review it. */
+export interface FileActionReviewRequest {
+  readonly projectId: ProjectId;
+  readonly actionId: string;
+  readonly worktreePath: string;
+}
+
+/** The review a setup row offers, when it is waiting for its command to be approved. */
+export function fileActionReviewRequestOf(
+  item: OrchestrationV2TurnItem | undefined,
+): FileActionReviewRequest | null {
+  if (item?.type !== "command_execution" || item.status !== "idle") return null;
+  const awaiting = item.setupScript?.awaitingApproval;
+  if (!item.setupScript || !awaiting) return null;
+  return {
+    projectId: awaiting.projectId,
+    actionId: awaiting.actionId,
+    worktreePath: item.setupScript.worktreePath,
+  };
 }

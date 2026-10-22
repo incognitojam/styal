@@ -4712,27 +4712,42 @@ features:
       - Every styal.json action has an id; missing ids derive from the name and a later duplicate of an explicit id is dropped.
       - styal.json actions are read live from the registered project root, never a thread worktree, and listed after saved actions in every client's actions menu, shortcuts and project settings.
       - A saved action with a styal.json action's id overrides it; removing the override restores the file's action and keeps its shortcut, and a file-only action cannot be deleted in styal.
-      - styal.json actions never run on worktree creation or settle until their command is approved.
+      - styal.json actions never run on worktree creation or settle until the user approves their exact command; any change to the command, or a newly declared role, voids the approval until approved again.
+      - Approval stores the command the server reads from the project root, never one a client sends, and only user clients with settings access can approve or revoke; agent tools cannot.
+      - Approvals are keyed by the repository (a fork's own remote first) plus the project's path inside it, falling back to the project without a known repository.
+      - An unapproved automatic file action leaves a waiting work-log row that offers review, with no running indicator; approving from it runs the action in that worktree.
+      - The approval review warns that it covers the command, not the files it runs, naming those files or package.json script when it can.
       - Running an action reports only whether it was saved, from styal.json, or an override.
+      - Writing styal.json from a legacy t3.json carries its settings over and turns its scripts into actions with derived ids; the t3.json is left for the user to delete.
     implementation_paths:
       - apps/marketing/src/pages/schema/styal.json.ts
       - apps/mobile/src/features/projects/useProjectRootConfig.ts
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/new-task-flow-provider.tsx
+      - apps/mobile/src/lib/threadActivity.ts
       - apps/server/src/project/ProjectConfigLoader.ts
+      - apps/server/src/project/ProjectFileActionApprovals.ts
+      - apps/server/src/project/ProjectSetupScriptRunner.ts
       - apps/server/src/vcs/GitVcsDriverCore.ts
       - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/FileActionApprovalDialog.tsx
       - apps/web/src/components/ProjectScriptsControl.tsx
+      - apps/web/src/components/chat/MessagesTimeline.tsx
       - apps/web/src/components/projectScriptEditor.tsx
       - apps/web/src/components/settings/ProjectActionsList.tsx
       - apps/web/src/components/settings/ProjectActionsSettings.tsx
+      - apps/web/src/components/settings/ProjectFileMigrationRow.tsx
       - apps/web/src/components/settings/SettingsScopeContext.tsx
       - apps/web/src/components/settings/useProjectScriptSettings.ts
       - apps/web/src/hooks/useProjectConfig.ts
       - apps/web/src/lib/projectConfigDefaults.ts
+      - packages/client-runtime/src/state/projectFileActions.ts
+      - packages/client-runtime/src/state/setupScriptActivity.ts
       - packages/contracts/src/forkClientUsage.ts
+      - packages/contracts/src/projectFileApprovals.ts
       - packages/contracts/src/styalProjectFile.ts
       - packages/shared/src/projectFile.ts
+      - packages/shared/src/projectFileApprovals.ts
       - packages/shared/src/projectScripts.ts
       - packages/shared/src/projectSettings.ts
     upstream_paths:
@@ -4740,16 +4755,20 @@ features:
       - packages/shared/src/t3ProjectFile.ts
     tests:
       - apps/server/src/project/ProjectConfigLoader.test.ts
+      - apps/server/src/project/ProjectSetupScriptRunner.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/vcs/GitVcsDriverCore.test.ts
+      - apps/web/src/components/chat/MessagesTimeline.fileActionReview.test.ts
+      - packages/client-runtime/src/state/projectFileActions.test.ts
+      - packages/client-runtime/src/state/setupScriptActivity.test.ts
       - packages/shared/src/projectFile.test.ts
+      - packages/shared/src/projectFileApprovals.test.ts
       - packages/shared/src/projectScripts.test.ts
       - packages/shared/src/projectSettings.test.ts
     upstream:
       status: unassessed
       tracking: []
       retire_when: Upstream reads a project file under a name and schema styal can share.
-
   - id: terminal-scroll-on-input
     title: Return the terminal to the live screen when the user types
     status: maintained

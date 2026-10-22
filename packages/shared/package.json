@@ -176,6 +176,10 @@
       "types": "./src/projectSettings.ts",
       "import": "./src/projectSettings.ts"
     },
+    "./projectFileApprovals": {
+      "types": "./src/projectFileApprovals.ts",
+      "import": "./src/projectFileApprovals.ts"
+    },
     "./projectFile": {
       "types": "./src/projectFile.ts",
       "import": "./src/projectFile.ts"

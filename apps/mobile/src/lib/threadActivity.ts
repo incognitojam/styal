@@ -3,7 +3,10 @@ import { type ToolFileChangeLineStat } from "@t3tools/shared/toolActivity";
 import { workEntryReviewFindings } from "@t3tools/client-runtime/work-log/presentation";
 import type { ReviewFindingsReport } from "@t3tools/shared/reviewFindings";
 import * as Schema from "effect/Schema";
-import { setupScriptActivityLabel } from "@t3tools/client-runtime/state/setup-script-activity";
+import {
+  setupScriptActivityLabel,
+  setupScriptAwaitingApproval,
+} from "@t3tools/client-runtime/state/setup-script-activity";
 import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
@@ -546,6 +549,8 @@ function itemStatus(item: OrchestrationV2TurnItem): ThreadFeedActivity["status"]
 }
 
 function itemLifecycleStatus(item: OrchestrationV2TurnItem): WorkLogToolLifecycleStatus {
+  // Nothing runs while a setup action waits for approval, so no spinner.
+  if (item.type === "command_execution" && setupScriptAwaitingApproval(item)) return "idle";
   switch (item.status) {
     case "pending":
     case "running":
@@ -670,7 +675,12 @@ function itemSummary(
   if (item.type === "notification") return item.summary;
   if (item.type === "system_notice") return item.message;
   if (item.type === "compaction") return contextCompactionLabel(item);
-  if (item.type === "command_execution" && item.setupScript) return setupScriptActivityLabel(item);
+  if (item.type === "command_execution" && item.setupScript) {
+    // Approving needs settings access, which the phone does not offer.
+    return setupScriptAwaitingApproval(item)
+      ? `${setupScriptActivityLabel(item)} on desktop or web`
+      : setupScriptActivityLabel(item);
+  }
   const title =
     (item.type === "dynamic_tool" ? dynamicToolTitle(item.toolName, item.input) : undefined) ??
     item.title?.trim();

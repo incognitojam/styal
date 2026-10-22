@@ -220,3 +220,27 @@ export function buildStyalProjectFileJsonSchema(): Record<string, unknown> {
   }
   return jsonSchema;
 }
+
+/**
+ * The `styal.json` text that carries a legacy `t3.json` over: its settings
+ * and icon as they are, and its scripts as actions with stable ids. Fields
+ * the t3.json could not keep are left out, like they are when it is read.
+ * Actions that ask to run on their own still need approval once migrated.
+ */
+export function styalProjectFileFromT3(contents: string): string | null {
+  const parsed = parseT3ProjectFileResult(contents);
+  if (parsed.file === null) return null;
+  const { $schema: _schema, scripts, ...settings } = parsed.file;
+  const taken = new Set<string>();
+  const actions = (scripts ?? []).map((script) => {
+    const id = nextProjectScriptId(script.name, taken);
+    taken.add(id);
+    return { id, ...script };
+  });
+  const file: StyalProjectFile = {
+    $schema: STYAL_PROJECT_FILE_SCHEMA_URL,
+    ...settings,
+    ...(actions.length === 0 ? {} : { actions }),
+  };
+  return `${JSON.stringify(file, null, 2)}\n`;
+}

@@ -1,4 +1,4 @@
-import { assert, it, vi } from "@effect/vitest";
+import { assert, describe, it, vi } from "@effect/vitest";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,6 +12,7 @@ import * as TurnItemPositions from "../orchestration-v2/TurnItemPositionStore.ts
 import * as LegacyImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ProjectFileActionApprovals from "./ProjectFileActionApprovals.ts";
 import * as ProjectService from "./ProjectService.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
 
@@ -82,6 +83,9 @@ it.effect(
       importer,
       Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedSome(project) }),
       Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
+      Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({
+        automationConfig: () => Effect.succeed(null),
+      }),
       ServerSettings.layerTest(),
     );
     const runner = ProjectSetupScriptRunner.layer.pipe(Layer.provide(dependencies));
@@ -263,6 +267,9 @@ it.effect(
       importer,
       Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedSome(project) }),
       Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
+      Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({
+        automationConfig: () => Effect.succeed(null),
+      }),
       ServerSettings.layerTest(),
     );
     const runner = ProjectSetupScriptRunner.layer.pipe(Layer.provide(dependencies));
@@ -332,3 +339,157 @@ it.effect(
     }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
   },
 );
+
+describe("styal.json setup actions", () => {
+  const fileSetup = {
+    id: "file-setup",
+    name: "Bootstrap",
+    command: "./scripts/bootstrap.sh",
+    icon: "configure" as const,
+    runOnWorktreeCreate: true,
+  };
+  const approval = {
+    command: fileSetup.command,
+    roles: ["setup" as const],
+    approvedAt: "2026-10-21T00:00:00.000Z",
+  };
+
+  const runWith = (options: {
+    readonly suffix: string;
+    readonly localScripts: ReadonlyArray<{
+      id: string;
+      name: string;
+      command: string;
+      icon: "configure";
+      runOnWorktreeCreate: boolean;
+    }>;
+    readonly approved: boolean;
+  }) => {
+    const openCommand = vi.fn(
+      (input: Parameters<TerminalManager.TerminalManager["Service"]["openCommand"]>[0]) =>
+        Effect.succeed({
+          threadId: input.threadId,
+          terminalId: input.terminalId,
+          cwd: input.cwd,
+          worktreePath: input.worktreePath ?? null,
+          status: "running" as const,
+          pid: 123,
+          history: "",
+          exitCode: null,
+          exitSignal: null,
+          label: "Shell",
+          updatedAt: "2026-06-20T00:00:00.000Z",
+        }),
+    );
+    const subscribe: TerminalManager.TerminalManager["Service"]["subscribe"] = () =>
+      Effect.succeed(() => {});
+    const projectId = ProjectId.make(`project:file-${options.suffix}`);
+    const threadId = ThreadId.make(`thread:file-${options.suffix}`);
+    const project = {
+      id: projectId,
+      title: "Project",
+      workspaceRoot: "/synthetic/repo",
+      repositoryIdentity: null,
+      faviconPath: null,
+      defaultModelSelection: null,
+      scripts: options.localScripts,
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      deletedAt: null,
+    };
+    const dependencies = Layer.mergeAll(
+      stores,
+      sink,
+      importer,
+      Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedSome(project) }),
+      Layer.mock(TerminalManager.TerminalManager)({ openCommand, subscribe }),
+      Layer.mock(ProjectFileActionApprovals.ProjectFileActionApprovals)({
+        automationConfig: () => Effect.succeed({ source: "styal.json", actions: [fileSetup] }),
+      }),
+      ServerSettings.layerTest(
+        options.approved
+          ? {
+              projectFileActionApprovals: {
+                [`project:${projectId}`]: { [fileSetup.id]: approval },
+              },
+            }
+          : {},
+      ),
+    );
+    const runner = ProjectSetupScriptRunner.layer.pipe(Layer.provide(dependencies));
+    return Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+      VALUES (${projectId}, 'File', '/synthetic/repo', '[]', ${project.createdAt}, ${project.updatedAt})`;
+      yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, runtime_mode, interaction_mode, created_at, updated_at)
+      VALUES (${threadId}, ${projectId}, 'File', 'full-access', 'default', ${project.createdAt}, ${project.updatedAt})`;
+      yield* (yield* LegacyImporter.LegacyV1ThreadImporter).reconcileShells;
+      const service = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const result = yield* service.runForThread({
+        threadId,
+        projectId,
+        worktreePath: "/synthetic/repo-worktree",
+      });
+      const rows = (yield* projections.getThreadProjection(threadId)).turnItems.filter(
+        (item) => item.type === "command_execution",
+      );
+      return { result, rows, openCommand, projectId };
+    }).pipe(Effect.provide(Layer.mergeAll(dependencies, runner)));
+  };
+
+  it.effect("waits for approval instead of running an unapproved file action", () =>
+    Effect.gen(function* () {
+      const { result, rows, openCommand, projectId } = yield* runWith({
+        suffix: "unapproved",
+        localScripts: [],
+        approved: false,
+      });
+      assert.deepEqual(result, {
+        status: "awaiting-approval",
+        scriptId: "file-setup",
+        scriptName: "Bootstrap",
+      });
+      assert.equal(openCommand.mock.calls.length, 0);
+      const [row] = rows;
+      assert.equal(rows.length, 1);
+      assert.equal(row?.status, "idle");
+      assert.deepEqual(row?.type === "command_execution" && row.setupScript?.awaitingApproval, {
+        projectId,
+        actionId: "file-setup",
+      });
+    }),
+  );
+
+  it.effect("runs a file action whose exact command was approved", () =>
+    Effect.gen(function* () {
+      const { result, openCommand } = yield* runWith({
+        suffix: "approved",
+        localScripts: [],
+        approved: true,
+      });
+      assert.equal(result.status, "started");
+      assert.equal(openCommand.mock.calls[0]?.[0].command, "./scripts/bootstrap.sh");
+    }),
+  );
+
+  it.effect("prefers a saved setup action over an approved file one", () =>
+    Effect.gen(function* () {
+      const { result, openCommand } = yield* runWith({
+        suffix: "local",
+        localScripts: [
+          {
+            id: "setup",
+            name: "Install dependencies",
+            command: "vp install",
+            icon: "configure",
+            runOnWorktreeCreate: true,
+          },
+        ],
+        approved: true,
+      });
+      assert.equal(result.status, "started");
+      assert.equal(openCommand.mock.calls[0]?.[0].command, "vp install");
+    }),
+  );
+});

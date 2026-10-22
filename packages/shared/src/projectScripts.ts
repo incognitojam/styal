@@ -2,10 +2,19 @@ import {
   MAX_SCRIPT_ID_LENGTH,
   type ProjectConfig,
   type ProjectConfigAction,
+  type ProjectFileActionApproval,
+  type ProjectFileActionRole,
   type ProjectId,
   type ProjectScript,
+  type RepositoryIdentity,
   type ServerSettings,
 } from "@t3tools/contracts";
+
+import {
+  approvedFileActionRoles,
+  declaredFileActionRoles,
+  projectFileApprovalKey,
+} from "./projectFileApprovals.ts";
 
 type ProjectScriptSettings = Pick<
   ServerSettings,
@@ -41,7 +50,14 @@ export function resolveProjectScripts(
  */
 export type ProjectActionSource = "local" | "file" | "override";
 
-export type ResolvedProjectAction = ProjectScript & { readonly source: ProjectActionSource };
+export type ResolvedProjectAction = ProjectScript & {
+  readonly source: ProjectActionSource;
+  /**
+   * Automatic roles a file action declares but may not run in yet, because
+   * its exact command has not been approved. Absent when there are none.
+   */
+  readonly awaitingApproval?: readonly ProjectFileActionRole[];
+};
 
 /**
  * Every action the project offers: its saved actions in their own order, then
@@ -49,22 +65,32 @@ export type ResolvedProjectAction = ProjectScript & { readonly source: ProjectAc
  * the project root, not a thread's worktree, so every thread of a project
  * sees the same file actions.
  *
- * File actions never run on their own here: `runOnWorktreeCreate` and
- * `runOnSettle` from the file only take effect once their command has been
- * approved, so a resolved file action carries neither.
+ * A file action only runs on worktree creation or on settle once the user
+ * has approved its exact command for that role; until then it runs only
+ * when started by hand and lists the roles it is `awaitingApproval` for.
  */
 export function resolveProjectActions(
-  settings: ProjectScriptSettings,
-  project: { id: ProjectId; scripts: readonly ProjectScript[] },
+  settings: ProjectScriptSettings & Pick<ServerSettings, "projectFileActionApprovals">,
+  project: {
+    id: ProjectId;
+    scripts: readonly ProjectScript[];
+    workspaceRoot: string;
+    repositoryIdentity?: RepositoryIdentity | null | undefined;
+  },
   config: Pick<ProjectConfig, "actions"> | null,
 ): readonly ResolvedProjectAction[] {
-  return mergeProjectActions(resolveProjectScripts(settings, project), config);
+  return mergeProjectActions(
+    resolveProjectScripts(settings, project),
+    config,
+    settings.projectFileActionApprovals[projectFileApprovalKey(project)] ?? {},
+  );
 }
 
-/** `resolveProjectActions` for a caller that already holds the saved list. */
+/** `resolveProjectActions` for a caller that already holds the saved list and approvals. */
 export function mergeProjectActions(
   saved: readonly ProjectScript[],
   config: Pick<ProjectConfig, "actions"> | null,
+  approvals: Readonly<Record<string, ProjectFileActionApproval>>,
 ): readonly ResolvedProjectAction[] {
   const fileActions = config?.actions ?? [];
   const fileIds = new Set(fileActions.map((action) => action.id));
@@ -74,18 +100,29 @@ export function mergeProjectActions(
       ...script,
       source: fileIds.has(script.id) ? ("override" as const) : ("local" as const),
     })),
-    ...fileActions.filter((action) => !savedIds.has(action.id)).map(fileProjectAction),
+    ...fileActions
+      .filter((action) => !savedIds.has(action.id))
+      .map((action) => fileProjectAction(action, approvals[action.id])),
   ];
 }
 
-function fileProjectAction(action: ProjectConfigAction): ResolvedProjectAction {
+function fileProjectAction(
+  action: ProjectConfigAction,
+  approval: ProjectFileActionApproval | undefined,
+): ResolvedProjectAction {
+  const approved = approvedFileActionRoles(action, approval);
+  const awaiting = declaredFileActionRoles(action).filter((role) => !approved.includes(role));
+  const setup = approved.includes("setup");
   return {
     id: action.id,
     name: action.name,
     command: action.command,
     icon: action.icon,
-    runOnWorktreeCreate: false,
+    runOnWorktreeCreate: setup,
+    ...(approved.includes("settle") ? { runOnSettle: true } : {}),
+    ...(setup && action.async === false ? { async: false } : {}),
     source: "file",
+    ...(awaiting.length > 0 ? { awaitingApproval: awaiting } : {}),
   };
 }
 

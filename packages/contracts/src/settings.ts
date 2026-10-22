@@ -1,6 +1,7 @@
 import { EnvironmentDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import { DeviceIdleShutdownMinutes, DeviceIdleShutdownSetting } from "./deviceIdleShutdown.ts";
 import { HardwareDeviceConfigs } from "./hardware.ts";
+import { ProjectFileActionApprovals } from "./projectFileApprovals.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -1270,6 +1271,15 @@ export const ServerSettings = Schema.Struct({
   enableAgentHardwareAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Network devices on this environment; definitions live in project repositories. */
   hardwareDevices: HardwareDeviceConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  /**
+   * Commands the user approved for styal.json actions that run on their own.
+   * Written by `projects.fileActionApprovalSet`, which reads the command from
+   * the project root itself. Agent tools cannot write it, so an agent that
+   * edits styal.json cannot approve its own command.
+   */
+  projectFileActionApprovals: ProjectFileActionApprovals.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
@@ -1646,6 +1656,7 @@ export const ServerSettingsPatch = Schema.Struct({
   projectSettingsOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(ProjectSettingsOverrides)),
   ),
+  projectFileActionApprovals: Schema.optionalKey(ProjectFileActionApprovals),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),

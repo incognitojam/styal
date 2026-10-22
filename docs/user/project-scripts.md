@@ -70,9 +70,11 @@ Each action supports these fields:
 - `command` (required): the shell command to run.
 - `icon` (optional): `play`, `test`, `lint`, `configure`, `build`, `debug`, `desktop`, `database`,
   or `deploy`. The default is `play`.
-- `runOnWorktreeCreate`, `async`, and `runOnSettle` (optional): mark the action to run when a
-  worktree is created or when a thread settles. These are not applied yet: an action from
-  `styal.json` only runs when you choose it.
+- `runOnWorktreeCreate` and `runOnSettle` (optional): run the action automatically after a
+  worktree is created for a new thread, or each time a thread with its own worktree settles. These
+  take effect only once you approve the command, as described below.
+- `async` (optional): only for `runOnWorktreeCreate` actions. `false` holds the agent until the
+  action exits.
 
 styal reads `styal.json` from the project's own checkout, not from each thread's worktree, so every
 thread of the project offers the same actions, and a change to the file shows up without importing
@@ -92,6 +94,25 @@ invalid or unrecognized field, and drops only an action with an invalid or missi
 an object cannot be recovered and are ignored entirely. **Settings** → **Projects** shows a warning
 when any part of the file is ignored.
 
+### Approve actions that run automatically
+
+An action from `styal.json` never runs on its own until you approve its exact command. Until then,
+a new worktree or a settling thread shows the action as needing approval in the thread's work log,
+and **Settings** → **Projects** → **Actions** marks it **Needs approval to run automatically**.
+Choose **Review** in either place to see the command and approve it; approving from the work log
+also runs it in that thread's worktree. Actions saved in styal run automatically without
+approval, and one saved as the setup or settle action takes that role before a file action does.
+
+Approval covers the command text, not the files it runs. If the command is `./scripts/setup.sh`,
+later changes to that script run without asking again, and the review names such files when styal
+can tell. Any change to the command itself in `styal.json`, or a new automatic role, needs your
+approval again; meanwhile the action only runs when you choose it.
+
+Approvals belong to the repository, so every checkout of it on the environment shares them. Only
+you can approve: agents cannot, even when they edit `styal.json`. To take an approval back, choose
+**Review** next to the action in **Settings** → **Projects** → **Actions** and then **Revoke
+approval**.
+
 ### Projects with a `t3.json`
 
 A repository that only has a `t3.json` from T3 Code keeps its settings, and its `scripts` can be
@@ -99,6 +120,11 @@ imported: select one from the thread actions menu or from **Settings** → **Pro
 **Actions** to open the **Add Action** form with the file's values filled in, then review and save
 it. Imported actions are saved copies, so later changes to `t3.json` do not change them. Once the
 repository has a `styal.json`, styal ignores `t3.json` entirely.
+
+To move the repository over, choose **Write styal.json** in **Settings** → **Projects** →
+**Actions**. styal writes a `styal.json` at the project root with the `t3.json` settings and its
+scripts as shared actions, each with an `id`. Commit it and delete `t3.json`. Actions that run on
+their own still wait for your approval.
 
 ## Project environment variables
 
