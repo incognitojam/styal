@@ -113,7 +113,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 
 - Before you push, run `vp run check:changed`. It runs CI's fast checks for changed files: format, lint, knip, typecheck of affected packages and dependents, and tests beside changes. CI still runs the full test suites.
 - While you iterate, run `vp test run <files>`. For big files, add `-t "<name>"`.
-- Do not use `npx tsc`. Use `vp run typecheck`; it uses tsc-rs, which is 3x faster.
+- Use `vp run typecheck`, not `npx tsc`; it caches per package. Both run tsc-rs (`typescript` is the `@tsc-rs/typescript` drop-in).
 - Run `node -e` snippets from `apps/server` or the owning package. `effect` does not resolve from the repo root.
 - `git diff --check` is a formatting sanity check, not a test or behavioral check. Do not cite it as proof that behavior works.
 - Test meaningful logic or observable behavior. Do not render components to static markup to assert props or attributes, or add tests that merely assert callback wiring or mirror the implementation.
