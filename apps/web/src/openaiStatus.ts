@@ -32,6 +32,7 @@ const OPENAI_IGNORED_COMPONENTS = [
   "Connectors/Apps",
   "Conversations",
   "Deep Research",
+  "dots",
   "Embeddings",
   "FedRAMP",
   "File uploads",
@@ -56,6 +57,7 @@ const OPENAI_IGNORED_COMPONENTS = [
  * the same product or workflow still surfaces.
  */
 const OPENAI_IGNORED_INCIDENT_PATTERNS = [
+  /^Degraded Performance of Dots on Enterprise\.?$/i,
   /^Delayed support responses\.?$/i,
   /^Delayed Costs data in the Compliance API\.?$/i,
   /^Support available via email\.?$/i,

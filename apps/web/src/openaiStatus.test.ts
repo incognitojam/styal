@@ -224,6 +224,7 @@ describe("OpenAI status notice", () => {
     ["ChatGPT Work", "Elevated errors in ChatGPT Work"],
     ["ChatGPT Space Pages", "Elevated errors in ChatGPT Space Pages"],
     ["Compliance API", "Delayed Costs data in the Compliance API"],
+    ["dots", "Degraded Performance of Dots on Enterprise"],
   ])("%s incidents", (surface, incidentName) => {
     it.each([undefined, []])("ignores a componentless incident (%j)", (components) => {
       expect(
