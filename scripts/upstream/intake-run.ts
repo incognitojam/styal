@@ -1231,7 +1231,7 @@ function autoBatch(
 }
 
 /**
- * Pushes an intake candidate, holds open pull requests into main while it lands, and waits for
+ * Pushes an intake candidate, holds open pull requests while it lands, and waits for
  * Fork CI, after which promotion starts by itself.
  */
 function pushCandidate(cwd: string, branch: string): boolean {
