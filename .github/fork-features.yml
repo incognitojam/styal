@@ -2938,7 +2938,7 @@ features:
     invariants:
       - Fitted previews apply logical viewport dimensions through device metrics while preserving sharp presentation scaling and a working DevTools fallback. Presentation accounts for independent desktop window and page zoom, including zoom changes, so the requested CSS viewport fits its visible and captured surface.
       - Hiding, reopening, or moving a preview preserves its owning surface and viewport state. Fitted screenshots the user takes capture the displayed surface rather than tiling it, and annotation crops are given in logical page coordinates and mapped into that surface. Agent input and captures on a desktop tab follow upstream's server-driven browser, which does not map them through the fitted scale.
-      - Floating browser and device previews remain visible but do not send pointer or keyboard input to their page or device; dragging anywhere on the view-only surface moves the frame, double-clicking it opens that source in the right panel, and its frame controls remain usable.
+      - Floating browser and device previews remain visible but do not send pointer or keyboard input to their page or device; dragging anywhere on the view-only surface moves the frame, double-clicking it opens that source in the right panel, and its frame controls and the server browser's take and release control button remain usable.
     implementation_paths:
       - .github/workflows/fork-ci.yml
       - apps/desktop/scripts/test-preview-calibration.mjs

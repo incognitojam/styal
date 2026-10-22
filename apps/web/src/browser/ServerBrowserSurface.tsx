@@ -151,6 +151,8 @@ export function ServerBrowserSurface(props: {
   readonly followSize?: boolean;
   /** Floating previews reserve the top edge for their existing hover controls. */
   readonly controlPosition?: "top" | "bottom";
+  /** The page ignores pointer and keyboard input while the control bar stays usable. */
+  readonly viewOnly?: boolean;
   readonly onFirstFrame?: () => void;
   readonly onViewport?: (viewport: PreviewStreamViewport) => void;
   readonly onControl?: (control: PreviewStreamControl | null) => void;
@@ -166,6 +168,7 @@ export function ServerBrowserSurface(props: {
     visible,
     followSize = true,
     controlPosition = "top",
+    viewOnly = false,
     onFirstFrame,
     onViewport,
     onControl,
@@ -742,7 +745,7 @@ export function ServerBrowserSurface(props: {
     >
       <div
         className={cn(
-          "visible relative z-20 flex shrink-0 items-center justify-between gap-2 border-border bg-background px-2 py-1",
+          "pointer-events-auto visible relative z-20 flex shrink-0 items-center justify-between gap-2 border-border bg-background px-2 py-1",
           controlPosition === "bottom" ? "order-last border-t" : "border-b",
         )}
       >
@@ -762,7 +765,10 @@ export function ServerBrowserSurface(props: {
           </Button>
         ) : null}
       </div>
-      <div className="relative min-h-0 flex-1">
+      <div
+        inert={viewOnly}
+        className={cn("relative min-h-0 flex-1", viewOnly && "pointer-events-none")}
+      >
         <canvas
           ref={canvasRef}
           className="block size-full touch-none object-contain"
