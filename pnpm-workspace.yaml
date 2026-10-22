@@ -44,10 +44,10 @@ catalog:
   "@effect/tsgo": 0.51.1
   "@effect/vitest": 4.0.4
   "@electron-webauthn/macos": 1.3.1
-  "@legendapp/list": 3.3.5
+  "@legendapp/list": "catalog:"
   "@noble/curves": 1.9.1
   "@noble/hashes": 1.8.0
-  "@pierre/diffs": 1.5.2
+  "@pierre/diffs": "catalog:"
   "@posthog/core": 1.57.4
   "@posthog/rollup-plugin": 1.6.1
   "@tailwindcss/node": 4.3.3
@@ -196,6 +196,28 @@ minimumReleaseAgeExclude:
   - "@muse-code/sdk@1.4.6"
 
 overrides:
+  # Pin every patched package, including transitive dependencies, so lockfile-free
+  # release installs cannot drift past the patch. Update these with patchedDependencies.
+  # Catalog packages pin through the catalog; @clerk/expo, @effect/vitest,
+  # @expo/metro-config and expo-modules-core are pinned below.
+  alchemy: 2.0.0-beta.83
+  expo-glass-effect: 58.0.3
+  expo-blur: 58.0.3
+  expo-audio: 58.0.4
+  "@electron/notarize": 2.5.0
+  expo-sharing: 58.0.13
+  expo-widgets: 58.0.11
+  "@ff-labs/fff-node": 0.11.0
+  "@legendapp/list": 3.3.5
+  "@pierre/diffs": 1.5.2
+  "@react-native-ai/apple": 0.12.0
+  "@react-native-menu/menu": 2.0.0
+  "@react-navigation/native-stack": 7.17.6
+  dbus-next: 0.10.2
+  node-pty: 1.2.0-beta.15
+  react-native-gesture-handler: 3.2.1
+  react-native-keyboard-controller: 1.22.6
+  react-native-webview: 14.0.1
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "1.8.0"
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
