@@ -20,6 +20,7 @@ import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
 import { tailwindPlugins } from "./vite/tailwind";
 import { buildMetadataPlugin } from "./vite/buildMetadata";
+import { projectFileSchemaPlugin } from "./vite/projectFileSchema";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -178,6 +179,7 @@ export default defineConfig(() => {
     assetsInclude: ["**/*.wasm"],
     plugins: [
       buildMetadataPlugin(configuredAppBuildId),
+      projectFileSchemaPlugin(),
       devCompressionPlugin(),
       thirdPartyLicensesPlugin({
         bundleName: "web",
