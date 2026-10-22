@@ -543,6 +543,38 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
     ),
   );
 
+  it.effect("keeps the desktop window session when the shutdown check signs in", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const exchange = (label: string) =>
+        serverAuth.exchangeBootstrapCredentialForAccessToken("desktop-bootstrap-token", undefined, {
+          ...requestMetadata,
+          label,
+        });
+      const window = yield* exchange("styal Desktop");
+      const firstCheck = yield* exchange("Desktop shutdown check");
+      const secondCheck = yield* exchange("Desktop shutdown check");
+
+      const windowSession = yield* serverAuth.authenticateHttpRequest(
+        makeBearerRequest(window.access_token),
+      );
+      const firstCheckError = yield* serverAuth
+        .authenticateHttpRequest(makeBearerRequest(firstCheck.access_token))
+        .pipe(Effect.flip);
+      const secondCheckSession = yield* serverAuth.authenticateHttpRequest(
+        makeBearerRequest(secondCheck.access_token),
+      );
+
+      expect(windowSession.subject).toBe("desktop-bootstrap");
+      expect(firstCheckError._tag).toBe("ServerAuthInvalidCredentialError");
+      expect((yield* serverAuth.listSessions()).map((entry) => entry.sessionId)).toEqual(
+        expect.arrayContaining([windowSession.sessionId, secondCheckSession.sessionId]),
+      );
+    }).pipe(
+      Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
+    ),
+  );
+
   it.effect("keeps user-issued administrative pairing links manageable", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;

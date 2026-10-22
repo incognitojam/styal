@@ -379,10 +379,10 @@ export class SessionStore extends Context.Service<
       readonly proofKeyThumbprint?: string;
       readonly runtimeModeCeiling?: RuntimeMode;
       /**
-       * Atomically revoke active sessions with the same subject and method
-       * before storing this session.
+       * Atomically revoke active sessions with the same subject, method and
+       * client label before storing this session.
        */
-      readonly replaceActiveForSubjectAndMethod?: boolean;
+      readonly replaceActiveForSameClient?: boolean;
       /** Replace only this session, of the same method, in the issuance transaction. */
       readonly replaceSessionId?: AuthSessionId;
     }) => Effect.Effect<IssuedSession, SessionCredentialInternalError>;
@@ -714,7 +714,7 @@ export const make = Effect.gen(function* () {
         expiresAt,
       } satisfies AuthSessions.CreateAuthSessionInput;
       const replacedSessionIds = yield* (
-        input?.replaceSessionId !== undefined || input?.replaceActiveForSubjectAndMethod
+        input?.replaceSessionId !== undefined || input?.replaceActiveForSameClient
           ? authSessions.createReplacingActive({
               session: sessionRecord,
               revokedAt: issuedAt,
