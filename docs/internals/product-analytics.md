@@ -59,16 +59,6 @@ A send whose response was lost is repeated, so rare duplicates are possible.
 Byte counts are payload sizes before WebSocket compression, and text frames count
 UTF-16 code units.
 
-`provider.turn.sent` counts accepted provider submissions, including steering an
-active turn. It excludes rejected or interrupted submissions, native compaction,
-and unsolicited provider turns. Server-originated submissions, such as scheduled
-tasks, restart continuations and delegated-result deliveries, also count as sends.
-`hasInput` describes submitted text after context is added, not whether a user
-typed text. Model and mode attribution follows the live
-provider thread, so simultaneous threads on a shared session remain separate.
-`providerSendUsageVersion = 1`, attached to all events, identifies servers with
-this instrumentation; the V2 migration left a collection gap before it returned.
-
 Provider send and completion counts need not match. Providers can emit synthetic
 turns without a send request. Collection is best effort, with no scan or backfill
 of provider history.

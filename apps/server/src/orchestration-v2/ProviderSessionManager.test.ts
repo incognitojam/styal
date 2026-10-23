@@ -3,7 +3,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import {
-  ChatAttachmentId,
   EnvironmentId,
   type ModelSelection,
   type OrchestrationV2AppThread,
@@ -19,7 +18,6 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -31,12 +29,9 @@ import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { HttpServer } from "effect/http";
-import * as HttpClient from "effect/http/HttpClient";
-import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -47,7 +42,6 @@ import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
-import * as ServerConfig from "../config.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
@@ -344,9 +338,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     /** False models a runtime whose background tasks can outlive its process. */
     readonly backgroundTasksEndWithProcess?: boolean;
     readonly hangSessionScopeClose?: boolean;
-    readonly startTurn?: Effect.Effect<void, ProviderAdapter.ProviderAdapterV2Error>;
-    readonly steerTurn?: Effect.Effect<void, ProviderAdapter.ProviderAdapterV2Error>;
-    readonly compactThread?: Effect.Effect<void>;
+    readonly startTurn?: Effect.Effect<void>;
     readonly beforeUnload?: Effect.Effect<void>;
     /** Registers the process's closeCount finalizer before `beforeOpen` runs. */
     readonly spawnBeforeOpen?: boolean;
@@ -445,10 +437,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
               resumeCount: current.resumeCount + 1,
             })).pipe(Effect.as(threadInput.providerThread)),
           startTurn: () => options.startTurn ?? Effect.void,
-          steerTurn: () => options.steerTurn ?? Effect.void,
-          ...(options.compactThread === undefined
-            ? {}
-            : { compactThread: () => options.compactThread! }),
+          steerTurn: () => Effect.void,
           interruptTurn: () =>
             Ref.update(state, (current) => ({
               ...current,
@@ -502,9 +491,7 @@ function layerTest(input: {
   readonly hasPendingBackgroundWorkForThread?: Effect.Effect<boolean>;
   readonly backgroundTasksEndWithProcess?: boolean;
   readonly hangSessionScopeClose?: boolean;
-  readonly startTurn?: Effect.Effect<void, ProviderAdapter.ProviderAdapterV2Error>;
-  readonly steerTurn?: Effect.Effect<void, ProviderAdapter.ProviderAdapterV2Error>;
-  readonly compactThread?: Effect.Effect<void>;
+  readonly startTurn?: Effect.Effect<void>;
   readonly beforeUnload?: Effect.Effect<void>;
   readonly spawnBeforeOpen?: boolean;
   readonly scopeCloseReached?: Deferred.Deferred<void>;
@@ -541,8 +528,6 @@ function layerTest(input: {
         ? {}
         : { hangSessionScopeClose: input.hangSessionScopeClose }),
       ...(input.startTurn === undefined ? {} : { startTurn: input.startTurn }),
-      ...(input.steerTurn === undefined ? {} : { steerTurn: input.steerTurn }),
-      ...(input.compactThread === undefined ? {} : { compactThread: input.compactThread }),
       ...(input.beforeUnload === undefined ? {} : { beforeUnload: input.beforeUnload }),
       ...(input.spawnBeforeOpen === undefined ? {} : { spawnBeforeOpen: input.spawnBeforeOpen }),
       ...(input.scopeCloseReached === undefined
@@ -577,8 +562,8 @@ function layerTest(input: {
     }).pipe(
       Layer.provide(
         Layer.mergeAll(
-          input.analyticsLayer ?? AnalyticsService.AnalyticsService.layerTest,
           layerRegistry.pipe(Layer.provideMerge(McpProviderSessions.layer)),
+          ...(input.analyticsLayer === undefined ? [] : [input.analyticsLayer]),
           layerConfiguredEventSink,
           IdAllocator.layer,
           layerProviderEventIngestorTest,
@@ -977,544 +962,10 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
   }),
 );
 
-const prepareSend = Effect.fnUntraced(function* (
-  suffix: string,
-  selection: ModelSelection = modelSelection,
-  policy: ProviderAdapter.ProviderAdapterV2RuntimePolicy = runtimePolicy,
-  sharedSessionId?: ProviderSessionId,
-) {
-  const eventSink = yield* EventSink.EventSinkV2;
-  const idAllocator = yield* IdAllocator.IdAllocatorV2;
-  const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-  const projections = yield* ProjectionStore.ProjectionStoreV2;
-  const now = yield* DateTime.now;
-  const threadId = ThreadId.make(`thread:send-analytics:${suffix}`);
-  const providerSessionId =
-    sharedSessionId ??
-    (yield* idAllocator.allocate.providerSession({
-      providerInstanceId: selection.instanceId,
-      threadId,
-    }));
-  yield* eventSink.write({
-    events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
-  });
-  const runtime = yield* manager.open({
-    threadId,
-    providerSessionId,
-    modelSelection: selection,
-    runtimePolicy: policy,
-  });
-  const runId = idAllocator.derive.run({ threadId, ordinal: 1 });
-  const input = {
-    appThread: yield* projections.getThread(threadId),
-    threadId,
-    runId,
-    runOrdinal: 1,
-    providerTurnOrdinal: 1,
-    attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
-    rootNodeId: idAllocator.derive.rootNode({ runId }),
-    providerThread: makeProviderThread({
-      idAllocator,
-      threadId,
-      providerSessionId,
-      now,
-      nativeThreadId: `native:${suffix}`,
-    }),
-    message: {
-      createdBy: "user",
-      creationSource: "web",
-      messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
-      text: "Synthetic prompt whose content must stay local.",
-      attachments: [
-        {
-          type: "file",
-          id: ChatAttachmentId.make("send-analytics-file"),
-          name: "synthetic-note.txt",
-          mimeType: "text/plain",
-          sizeBytes: 4,
-        },
-      ],
-    },
-    modelSelection: selection,
-    runtimePolicy: policy,
-  } satisfies ProviderAdapter.ProviderAdapterV2TurnInput;
-  return { runtime, input, providerSessionId };
-});
-
-function recordingAnalytics(
-  events: Array<{
-    event: string;
-    properties: Readonly<Record<string, unknown>> | undefined;
-  }>,
-) {
-  return Layer.succeed(AnalyticsService.AnalyticsService, {
-    record: (event, properties) => Effect.sync(() => void events.push({ event, properties })),
-    flush: Effect.void,
-  });
-}
-
-it.effect(
-  "send analytics wait for acceptance and ignore compaction and background completions",
-  () =>
-    Effect.gen(function* () {
-      const state = yield* Ref.make(emptyState);
-      const entered = yield* Deferred.make<void>();
-      const accepted = yield* Deferred.make<void>();
-      const events: Array<{
-        event: string;
-        properties: Readonly<Record<string, unknown>> | undefined;
-      }> = [];
-      let compactions = 0;
-      yield* Effect.gen(function* () {
-        const { runtime, input, providerSessionId } = yield* prepareSend("accepted");
-        assert.isEmpty(events);
-        const sending = yield* runtime.startTurn(input).pipe(Effect.forkChild);
-        yield* Deferred.await(entered);
-        assert.isEmpty(events);
-        yield* Deferred.succeed(accepted, undefined);
-        yield* Fiber.join(sending);
-        assert.deepEqual(events, [
-          {
-            event: "provider.turn.sent",
-            properties: {
-              provider: "codex",
-              model: modelSelection.model,
-              runtimeMode: "full-access",
-              interactionMode: "default",
-              attachmentCount: 1,
-              hasInput: true,
-            },
-          },
-        ]);
-        yield* runtime.compactThread!(input);
-        assert.equal(compactions, 1);
-        const subscription = yield* runtime.subscribeEvents!;
-        const received = yield* subscription.events.pipe(Stream.runHead, Effect.forkChild);
-        const queue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!;
-        const idAllocator = yield* IdAllocator.IdAllocatorV2;
-        yield* Queue.offer(queue, {
-          type: "turn.terminal",
-          driver: CODEX_DRIVER,
-          providerThreadId: input.providerThread.id,
-          providerTurnId: idAllocator.derive.providerTurn({
-            driver: CODEX_DRIVER,
-            nativeTurnId: "background",
-          }),
-          runOrdinal: 2,
-          status: "completed",
-          failure: null,
-          threadDisposition: "reusable",
-        });
-        yield* Fiber.join(received);
-        assert.lengthOf(events, 1);
-      }).pipe(
-        Effect.provide(
-          layerTest({
-            state,
-            idleTimeoutMs: 60_000,
-            analyticsLayer: recordingAnalytics(events),
-            startTurn: Deferred.succeed(entered, undefined).pipe(
-              Effect.andThen(Deferred.await(accepted)),
-            ),
-            compactThread: Effect.sync(() => {
-              compactions += 1;
-            }),
-          }),
-        ),
-      );
-    }),
-);
-
-it.effect("send analytics attribute steering to its own thread on a shared session", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const events: Array<{
-      event: string;
-      properties: Readonly<Record<string, unknown>> | undefined;
-    }> = [];
-    yield* Effect.gen(function* () {
-      const first = yield* prepareSend(
-        "first",
-        { ...modelSelection, model: "model-alpha" },
-        {
-          ...runtimePolicy,
-          runtimeMode: "auto",
-          interactionMode: "plan",
-        },
-      );
-      yield* first.runtime.startTurn(first.input);
-      const second = yield* prepareSend(
-        "second",
-        { ...modelSelection, model: "model-beta" },
-        runtimePolicy,
-        first.providerSessionId,
-      );
-      yield* second.runtime.startTurn(second.input);
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      yield* first.runtime.steerTurn({
-        threadId: first.input.threadId,
-        runId: first.input.runId,
-        providerThread: first.input.providerThread,
-        providerTurnId: idAllocator.derive.providerTurn({
-          driver: CODEX_DRIVER,
-          nativeTurnId: "first",
-        }),
-        message: { ...first.input.message, text: "   ", attachments: [] },
-      });
-      assert.deepEqual(
-        events.map(({ properties }) => properties),
-        [
-          {
-            provider: "codex",
-            model: "model-alpha",
-            runtimeMode: "auto",
-            interactionMode: "plan",
-            attachmentCount: 1,
-            hasInput: true,
-          },
-          {
-            provider: "codex",
-            model: "model-beta",
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            attachmentCount: 1,
-            hasInput: true,
-          },
-          {
-            provider: "codex",
-            model: "model-alpha",
-            runtimeMode: "auto",
-            interactionMode: "plan",
-            attachmentCount: 0,
-            hasInput: false,
-          },
-        ],
-      );
-    }).pipe(
-      Effect.provide(
-        layerTest({ state, idleTimeoutMs: 60_000, analyticsLayer: recordingAnalytics(events) }),
-      ),
-    );
-  }),
-);
-
-it.effect("send analytics keep a newer run's steering attribution after an old terminal", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const events: Array<{
-      event: string;
-      properties: Readonly<Record<string, unknown>> | undefined;
-    }> = [];
-    yield* Effect.gen(function* () {
-      const { runtime, input, providerSessionId } = yield* prepareSend("late-terminal");
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      yield* runtime.startTurn(input);
-      const runId = idAllocator.derive.run({ threadId: input.threadId, ordinal: 2 });
-      const next = {
-        ...input,
-        runId,
-        runOrdinal: 2,
-        providerTurnOrdinal: 2,
-        attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
-        rootNodeId: idAllocator.derive.rootNode({ runId }),
-        modelSelection: { ...modelSelection, model: "model-newer" },
-        runtimePolicy: { ...runtimePolicy, runtimeMode: "auto" as const },
-      };
-      yield* runtime.startTurn(next);
-      const subscription = yield* runtime.subscribeEvents!;
-      const received = yield* subscription.events.pipe(Stream.runHead, Effect.forkChild);
-      const providerTurnId = idAllocator.derive.providerTurn({
-        driver: CODEX_DRIVER,
-        nativeTurnId: "older-turn",
-      });
-      yield* Queue.offer((yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!, {
-        type: "turn.terminal",
-        driver: CODEX_DRIVER,
-        providerThreadId: input.providerThread.id,
-        providerTurnId,
-        runOrdinal: 1,
-        status: "completed",
-        failure: null,
-        threadDisposition: "reusable",
-      });
-      yield* Fiber.join(received);
-      yield* runtime.steerTurn({
-        threadId: input.threadId,
-        runId,
-        providerThread: input.providerThread,
-        providerTurnId: idAllocator.derive.providerTurn({
-          driver: CODEX_DRIVER,
-          nativeTurnId: "newer-turn",
-        }),
-        message: input.message,
-      });
-      assert.lengthOf(events, 3);
-      assert.deepEqual(events[2]?.properties, {
-        provider: "codex",
-        model: "model-newer",
-        runtimeMode: "auto",
-        interactionMode: "default",
-        attachmentCount: 1,
-        hasInput: true,
-      });
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          state,
-          idleTimeoutMs: 60_000,
-          analyticsLayer: recordingAnalytics(events),
-        }),
-      ),
-    );
-  }),
-);
-
-it.effect.each(["rejected", "interrupted"] as const)(
-  "send analytics exclude %s starts and steering",
-  (outcome) =>
-    Effect.gen(function* () {
-      const state = yield* Ref.make(emptyState);
-      const entered = yield* Queue.unbounded<void>();
-      const events: Array<{
-        event: string;
-        properties: Readonly<Record<string, unknown>> | undefined;
-      }> = [];
-      const rejected = unimplemented("synthetic rejected submission");
-      const submission =
-        outcome === "rejected"
-          ? rejected
-          : Queue.offer(entered, undefined).pipe(Effect.andThen(Effect.never));
-      yield* Effect.gen(function* () {
-        const { runtime, input } = yield* prepareSend(outcome);
-        const idAllocator = yield* IdAllocator.IdAllocatorV2;
-        const operations = [
-          runtime.startTurn(input),
-          runtime.steerTurn({
-            threadId: input.threadId,
-            runId: input.runId,
-            providerThread: input.providerThread,
-            providerTurnId: idAllocator.derive.providerTurn({
-              driver: CODEX_DRIVER,
-              nativeTurnId: outcome,
-            }),
-            message: input.message,
-          }),
-        ];
-        for (const operation of operations) {
-          if (outcome === "rejected") {
-            assert.isTrue(Exit.isFailure(yield* Effect.exit(operation)));
-          } else {
-            const sending = yield* operation.pipe(Effect.forkChild);
-            yield* Queue.take(entered);
-            yield* Fiber.interrupt(sending);
-          }
-        }
-        assert.isEmpty(events);
-      }).pipe(
-        Effect.provide(
-          layerTest({
-            state,
-            idleTimeoutMs: 60_000,
-            analyticsLayer: recordingAnalytics(events),
-            startTurn: submission,
-            steerTurn: submission,
-          }),
-        ),
-      );
-    }),
-);
-
-it.effect("interrupting send analytics preserves the accepted turn and steering attribution", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const reporting = yield* Deferred.make<void>();
-    const events: Array<{
-      event: string;
-      properties: Readonly<Record<string, unknown>> | undefined;
-    }> = [];
-    let reports = 0;
-    yield* Effect.gen(function* () {
-      const { runtime, input, providerSessionId } = yield* prepareSend("analytics-interruption");
-      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const sending = yield* runtime.startTurn(input).pipe(Effect.forkChild);
-      yield* Deferred.await(reporting);
-      yield* Fiber.interrupt(sending);
-      yield* TestClock.adjust("2 seconds");
-      assert.isTrue(yield* manager.isLive(providerSessionId));
-      const providerTurnId = idAllocator.derive.providerTurn({
-        driver: CODEX_DRIVER,
-        nativeTurnId: "accepted-before-analytics",
-      });
-      yield* runtime.steerTurn({
-        threadId: input.threadId,
-        runId: input.runId,
-        providerThread: input.providerThread,
-        providerTurnId,
-        message: input.message,
-      });
-      assert.lengthOf(events, 1);
-      assert.deepEqual(events[0]?.properties, {
-        provider: "codex",
-        model: modelSelection.model,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        attachmentCount: 1,
-        hasInput: true,
-      });
-      const subscription = yield* runtime.subscribeEvents!;
-      const received = yield* subscription.events.pipe(Stream.runHead, Effect.forkChild);
-      yield* Queue.offer((yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!, {
-        type: "turn.terminal",
-        driver: CODEX_DRIVER,
-        providerThreadId: input.providerThread.id,
-        providerTurnId,
-        runOrdinal: input.runOrdinal,
-        status: "completed",
-        failure: null,
-        threadDisposition: "reusable",
-      });
-      yield* Fiber.join(received);
-      yield* TestClock.adjust("2 seconds");
-      assert.isFalse(yield* manager.isLive(providerSessionId));
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          state,
-          idleTimeoutMs: 1000,
-          analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
-            record: (event, properties) =>
-              Effect.suspend(() =>
-                reports++ === 0
-                  ? Deferred.succeed(reporting, undefined).pipe(Effect.andThen(Effect.never))
-                  : Effect.sync(() => void events.push({ event, properties })),
-              ),
-            flush: Effect.void,
-          }),
-        }),
-      ),
-    );
-  }),
-);
-
-it.effect("send analytics failures leave accepted sends successful", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    let reports = 0;
-    yield* Effect.gen(function* () {
-      const { runtime, input } = yield* prepareSend("analytics-failure");
-      yield* runtime.startTurn(input);
-      assert.equal(reports, 1);
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          state,
-          idleTimeoutMs: 60_000,
-          analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
-            record: () =>
-              Effect.sync(() => {
-                reports += 1;
-              }).pipe(Effect.andThen(Effect.die("synthetic analytics failure"))),
-            flush: Effect.void,
-          }),
-        }),
-      ),
-    );
-  }),
-);
-
-it.effect.each([true, false])("send analytics delivery respects telemetry enabled=%s", (enabled) =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const batches: Array<{
-      event: string;
-      properties: Readonly<Record<string, unknown>>;
-    }> = [];
-    const sentBatch = Schema.fromJsonString(
-      Schema.Struct({
-        batch: Schema.Array(
-          Schema.Struct({
-            event: Schema.String,
-            properties: Schema.Record(Schema.String, Schema.Unknown),
-          }),
-        ),
-      }),
-    );
-    const analyticsLayer = AnalyticsService.layer.pipe(
-      Layer.provide(
-        ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "styal-send-analytics-" }),
-      ),
-      Layer.provide(
-        ConfigProvider.layer(
-          ConfigProvider.fromUnknown({
-            T3CODE_TELEMETRY_ENABLED: enabled,
-            T3CODE_POSTHOG_KEY: "phc_synthetic_send_test",
-            T3CODE_POSTHOG_HOST: "https://analytics.invalid",
-          }),
-        ),
-      ),
-      Layer.provide(
-        Layer.succeed(
-          HttpClient.HttpClient,
-          HttpClient.make((request) =>
-            Effect.gen(function* () {
-              assert.equal(request.url, "https://analytics.invalid/batch/");
-              assert.equal(request.body._tag, "Uint8Array");
-              if (request.body._tag === "Uint8Array") {
-                const payload = yield* Schema.decodeEffect(sentBatch)(
-                  new TextDecoder().decode(request.body.body),
-                ).pipe(Effect.orDie);
-                batches.push(...payload.batch);
-              }
-              return HttpClientResponse.fromWeb(request, new Response("{}", { status: 200 }));
-            }),
-          ),
-        ),
-      ),
-      Layer.provide(NodeServices.layer),
-    );
-    yield* Effect.gen(function* () {
-      const { runtime, input } = yield* prepareSend("delivery");
-      yield* runtime.startTurn(input);
-      yield* (yield* AnalyticsService.AnalyticsService).flush;
-      assert.lengthOf(batches, enabled ? 1 : 0);
-      if (enabled) {
-        assert.equal(batches[0]?.event, "provider.turn.sent");
-        assert.include(batches[0]?.properties, {
-          provider: "codex",
-          model: modelSelection.model,
-          providerSendUsageVersion: 1,
-          subscriptionSharing: true,
-        });
-        const payload = JSON.stringify(batches);
-        assert.notInclude(payload, input.message.text);
-        assert.notInclude(payload, input.message.attachments[0]!.name);
-        assert.notInclude(payload, input.threadId);
-      }
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          state,
-          idleTimeoutMs: 60_000,
-          analyticsLayer: analyticsLayer.pipe(Layer.orDie),
-          serverSettingsLayer: ServerSettings.layerTest({
-            providerInstances: {
-              [modelSelection.instanceId]: {
-                driver: CODEX_DRIVER,
-                enabled: true,
-                config: { setupMode: "managed" },
-              },
-            },
-          }),
-        }).pipe(Layer.provideMerge(analyticsLayer)),
-      ),
-    );
-  }),
-);
-
 it.effect("ProviderSessionManagerV2 records provider session and turn metrics", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
+    const sends: Array<Readonly<Record<string, unknown>> | undefined> = [];
     const effect = Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -1538,7 +989,7 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
         modelSelection,
         runtimePolicy,
       });
-      yield* runtime.startTurn({
+      const input = {
         appThread: (yield* projectionStore.getThreadProjection(threadId)).thread,
         threadId,
         runId,
@@ -1556,6 +1007,14 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
         },
         modelSelection,
         runtimePolicy,
+      } satisfies ProviderAdapter.ProviderAdapterV2TurnInput;
+      yield* runtime.startTurn(input);
+      yield* runtime.steerTurn({
+        ...input,
+        providerTurnId: idAllocator.derive.providerTurn({
+          driver: CODEX_DRIVER,
+          nativeTurnId: "steer",
+        }),
       });
       yield* runtime.interruptTurn({
         providerThread,
@@ -1565,6 +1024,17 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
         }),
       });
       yield* manager.close(providerSessionId);
+      assert.deepEqual(
+        sends,
+        [0, 1].map(() => ({
+          provider: "codex",
+          model: modelSelection.model,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          attachmentCount: 0,
+          hasInput: true,
+        })),
+      );
 
       const snapshots = yield* Metric.snapshot;
       const has = (id: string, attributes: Readonly<Record<string, string>>) =>
@@ -1609,7 +1079,20 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
     });
 
     yield* effect.pipe(
-      Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 60_000,
+          analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
+            record: (event, properties) =>
+              Effect.sync(() => {
+                assert.equal(event, "provider.turn.sent");
+                sends.push(properties);
+              }),
+            flush: Effect.void,
+          }),
+        }),
+      ),
       // A private registry keeps other tests' provider metrics out of the assertions.
       Effect.provideService(Metric.MetricRegistry, new Map()),
     );
@@ -1890,10 +1373,13 @@ it.effect("ProviderSessionManagerV2 cleans up an interrupted open whose scope cl
   }),
 );
 
-it.effect("ProviderSessionManagerV2 releases an idle session whose turn start was stopped", () =>
+it.effect.each([false, true])("turn stays busy after acceptance=%s", (telemetry) =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
     const startTurnReached = yield* Deferred.make<void>();
+    const blocked = Deferred.succeed(startTurnReached, undefined).pipe(
+      Effect.andThen(Effect.never),
+    );
     yield* Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -1938,21 +1424,22 @@ it.effect("ProviderSessionManagerV2 releases an idle session whose turn start wa
         .pipe(Effect.forkChild);
       yield* Deferred.await(startTurnReached);
 
-      // Stop lands while the provider is still accepting the turn. No terminal
-      // event follows, so the session must count itself idle again.
+      // Only an unaccepted start may clear its busy state on interruption.
       yield* Fiber.interrupt(starting);
       yield* TestClock.adjust("2 seconds");
       yield* Effect.yieldNow;
-      assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
-      assert.equal((yield* Ref.get(state)).closeCount, 1);
+      assert.equal(yield* manager.isLive(providerSessionId), telemetry);
+      assert.equal((yield* Ref.get(state)).closeCount, telemetry ? 0 : 1);
     }).pipe(
       Effect.provide(
         layerTest({
           state,
           idleTimeoutMs: 1000,
-          startTurn: Deferred.succeed(startTurnReached, undefined).pipe(
-            Effect.andThen(Effect.never),
-          ),
+          startTurn: telemetry ? Effect.void : blocked,
+          analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
+            record: () => blocked,
+            flush: Effect.void,
+          }),
         }),
       ),
     );

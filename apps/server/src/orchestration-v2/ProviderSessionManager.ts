@@ -252,9 +252,7 @@ interface IdleThreadUnload {
 interface ProviderSendContext {
   readonly runId: RunId;
   readonly runOrdinal: number;
-  readonly model: string;
-  readonly runtimeMode: ProviderAdapter.ProviderAdapterV2RuntimePolicy["runtimeMode"];
-  readonly interactionMode: ProviderAdapter.ProviderAdapterV2RuntimePolicy["interactionMode"];
+  readonly properties: Readonly<Record<string, string>>;
 }
 
 type ProviderSessionEventSignal =
@@ -344,7 +342,6 @@ export const layerWithOptions = (
   ProviderSessionManagerV2,
   never,
   | EventSink.EventSinkV2
-  | AnalyticsService.AnalyticsService
   | FileSystem.FileSystem
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
@@ -357,7 +354,7 @@ export const layerWithOptions = (
     ProviderSessionManagerV2,
     Effect.gen(function* () {
       const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
-      const analytics = yield* AnalyticsService.AnalyticsService;
+      const analytics = yield* Effect.serviceOption(AnalyticsService.AnalyticsService);
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -1887,11 +1884,9 @@ export const layerWithOptions = (
           context: ProviderSendContext | undefined,
         ) =>
           Effect.gen(function* () {
-            const settings = Option.isSome(serverSettings)
-              ? yield* serverSettings.value.getSettings.pipe(Effect.option)
-              : Option.none();
-            const instance = Option.isSome(settings)
-              ? settings.value.providerInstances[runtime.instanceId]
+            if (Option.isNone(analytics)) return;
+            const instance = Option.isSome(serverSettings)
+              ? (yield* serverSettings.value.getSettings).providerInstances[runtime.instanceId]
               : undefined;
             const subscriptionSharing =
               runtime.driver === "codex" &&
@@ -1900,15 +1895,9 @@ export const layerWithOptions = (
               instance.config !== null &&
               "setupMode" in instance.config &&
               instance.config.setupMode === "managed";
-            yield* analytics.record("provider.turn.sent", {
+            yield* analytics.value.record("provider.turn.sent", {
               provider: runtime.driver,
-              ...(context === undefined
-                ? {}
-                : {
-                    model: context.model,
-                    runtimeMode: context.runtimeMode,
-                    interactionMode: context.interactionMode,
-                  }),
+              ...context?.properties,
               ...(subscriptionSharing ? { subscriptionSharing: true } : {}),
               attachmentCount: message.attachments.length,
               hasInput: message.text.trim().length > 0,
@@ -2022,14 +2011,14 @@ export const layerWithOptions = (
               ),
             ),
           startTurn: (input) => {
-            // Keep only attribution, scoped to the live provider thread:
-            // a shared session can run different models and modes at once.
             const context = {
               runId: input.runId,
               runOrdinal: input.runOrdinal,
-              model: input.modelSelection.model,
-              runtimeMode: input.runtimePolicy.runtimeMode,
-              interactionMode: input.runtimePolicy.interactionMode,
+              properties: {
+                model: input.modelSelection.model,
+                runtimeMode: input.runtimePolicy.runtimeMode,
+                interactionMode: input.runtimePolicy.interactionMode,
+              },
             };
             return observeActivity(
               providerSessionId,
@@ -2061,12 +2050,10 @@ export const layerWithOptions = (
                     ),
                   ),
                   () =>
-                    Effect.suspend(() => {
-                      sendContexts.set(input.providerThread.id, context);
-                      return runtime
-                        .startTurn(input)
-                        .pipe(turnMetrics("send", input.modelSelection.model));
-                    }),
+                    Effect.sync(() => sendContexts.set(input.providerThread.id, context)).pipe(
+                      Effect.andThen(() => runtime.startTurn(input)),
+                      turnMetrics("send", input.modelSelection.model),
+                    ),
                   (_, exit) =>
                     Exit.isFailure(exit)
                       ? observeActivity(
