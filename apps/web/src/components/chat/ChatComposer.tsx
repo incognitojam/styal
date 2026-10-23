@@ -7988,6 +7988,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       <TurnUsageLabel
                         view={threadUsage}
                         subject="Thread usage"
+                        short={isComposerFooterCompact}
                         {...(threadUsageKey !== undefined ? { meterKey: threadUsageKey } : {})}
                       />
                     </span>

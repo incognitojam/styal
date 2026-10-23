@@ -326,6 +326,8 @@ function subagentTokens(usage: TurnTokenUsage): number {
 export interface TurnUsageView {
   /** The token total shown beside the turn's timestamp or in the composer. */
   readonly headline: string;
+  /** The same total without its unit, for where the label is short of room. */
+  readonly tokens: string;
   /** The estimated API cost, when known, for those who lead with cost. */
   readonly costUsd: number | null;
   readonly rows: ReadonlyArray<{ readonly label: string; readonly value: string }>;
@@ -383,8 +385,10 @@ function usageView(
   // What these tokens would cost at API rates; subscriptions bill separately.
   if (costUsd !== undefined) rows.push({ label: "Est. API cost", value: formatCost(costUsd) });
 
+  const tokens = formatTokens(input + output);
   return {
-    headline: `${formatTokens(input + output)} tokens`,
+    headline: `${tokens} tokens`,
+    tokens,
     costUsd: costUsd ?? null,
     rows,
     notes,
@@ -476,10 +480,16 @@ export function usageFigureShown(view: TurnUsageView, figure: TurnUsageFigure): 
   return figure === "cost" && view.costUsd !== null ? "cost" : "tokens";
 }
 
-export function usageFigureText(view: TurnUsageView, figure: TurnUsageFigure): string {
-  return view.costUsd !== null && usageFigureShown(view, figure) === "cost"
-    ? formatCost(view.costUsd)
-    : view.headline;
+/** The figure as text; `short` drops the token unit where room is tight. */
+export function usageFigureText(
+  view: TurnUsageView,
+  figure: TurnUsageFigure,
+  short = false,
+): string {
+  if (view.costUsd !== null && usageFigureShown(view, figure) === "cost") {
+    return formatCost(view.costUsd);
+  }
+  return short ? view.tokens : view.headline;
 }
 
 export function turnUsageView(usage: TurnTokenUsage): TurnUsageView {
