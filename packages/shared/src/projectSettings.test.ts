@@ -85,12 +85,15 @@ describe("resolveProjectSettings", () => {
   });
 
   it("keeps the environment text generation model when the override's provider is disabled", () => {
-    // The fork's environment default runs on Claude, so the override uses another provider.
-    const disabledSelection = createModelSelection(ProviderInstanceId.make("codex"), "gpt-6-luna");
+    // The environment default runs on Codex, so the override uses another provider.
+    const disabledSelection = createModelSelection(
+      ProviderInstanceId.make("claudeAgent"),
+      "claude-haiku-5-5",
+    );
     const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       providerInstances: {
-        [ProviderInstanceId.make("codex")]: {
-          driver: ProviderDriverKind.make("codex"),
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
           enabled: false,
         },
       },

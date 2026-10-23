@@ -95,7 +95,7 @@ function canProviderGenerateText(provider: ServerProvider): boolean {
 }
 
 /** Drivers preferred for text generation, ahead of other providers in registry order. */
-const TEXT_GENERATION_DRIVER_PREFERENCE: ReadonlyArray<string> = ["claudeAgent", "codex"];
+const TEXT_GENERATION_DRIVER_PREFERENCE: ReadonlyArray<string> = ["codex", "claudeAgent"];
 
 function textGenerationPreferenceRank(provider: ServerProvider): number {
   const rank = TEXT_GENERATION_DRIVER_PREFERENCE.indexOf(provider.driver);
@@ -111,7 +111,7 @@ const TEXT_GENERATION_EFFORT_OPTION_BY_DRIVER: Readonly<Record<string, string>> 
 /**
  * The text generation selection to run, decided from provider status before any
  * call is made. Keeps the selection while its provider is usable; otherwise picks
- * the first usable provider, Claude then Codex then the rest, with that
+ * the first usable provider, Codex then Claude then the rest, with that
  * provider's text generation default. The server excludes instances already
  * tried after rate-limit failures; when none remain, returns the saved selection.
  */

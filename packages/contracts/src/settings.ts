@@ -26,7 +26,7 @@ import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./env
 import { KeybindingShortcut } from "./keybindings.ts";
 import {
   CustomModelSetting,
-  DEFAULT_CLAUDE_TEXT_GENERATION_MODEL,
+  DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
   ProviderOptionSelections,
 } from "./model.ts";
@@ -1388,12 +1388,12 @@ export const ServerSettings = Schema.Struct({
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
       Effect.succeed({
-        // Another signed-in provider runs it while Claude is unavailable; see resolveTextGenerationModelSelection.
-        instanceId: ProviderInstanceId.make("claudeAgent"),
-        model: DEFAULT_CLAUDE_TEXT_GENERATION_MODEL,
+        // Another signed-in provider runs it while Codex is unavailable; see resolveTextGenerationModelSelection.
+        instanceId: ProviderInstanceId.make("codex"),
+        model: DEFAULT_TEXT_GENERATION_MODEL,
         options: [
           {
-            id: "effort",
+            id: "reasoningEffort",
             value: DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
           },
         ],

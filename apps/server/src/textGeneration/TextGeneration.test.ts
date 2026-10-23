@@ -385,19 +385,19 @@ describe("TextGeneration.make", () => {
       label: "exhausted limits",
       signedIn: true,
       lastDetail: "Rate limit reached",
-      expected: ["codex", "claudeAgent", "codex-secondary"],
+      expected: ["codex", "codex-secondary", "claudeAgent"],
     },
     {
       label: "ordinary fallback failure",
       signedIn: true,
       lastDetail: "Invalid output",
-      expected: ["codex", "claudeAgent"],
+      expected: ["codex", "codex-secondary"],
     },
     {
       label: "unavailable original",
       signedIn: false,
       lastDetail: "Rate limit reached",
-      expected: ["claudeAgent", "codex-secondary"],
+      expected: ["codex-secondary", "claudeAgent"],
     },
   ])("stops on $label and preserves the last error", ({ signedIn, lastDetail, expected }) =>
     Effect.gen(function* () {
