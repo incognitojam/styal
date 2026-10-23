@@ -116,10 +116,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     const targetVersion = checkedRelease?.targetVersion;
     if (disabled || !targetVersion || !capabilities || !supportsEnvironmentUpdate(capabilities))
       return;
-    const continueRunningThreads = Boolean(
-      capabilities.serverUpdateThreadContinuation &&
-      config?.settings.continueThreadsAfterServerUpdate,
-    );
+    // The server applies each project's continuation setting to its activity report.
+    const continueRunningThreads = capabilities.threadRestartContinuation === true;
     void run("server", async () => {
       const activity = await readHostActivity({ environmentId, input: {} });
       const confirmed = await requestServerUpdateConfirmation(

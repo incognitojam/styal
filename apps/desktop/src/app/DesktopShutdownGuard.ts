@@ -15,17 +15,25 @@ import * as DesktopShutdownConfirmation from "./DesktopShutdownConfirmation.ts";
 
 export type ShutdownAction = "quit" | "restart";
 export type ActivityCheck = HostActivityCheck | null;
+export type ShutdownOptions = {
+  readonly title?: string;
+  /**
+   * The same backends start again afterwards, so threads the server reports as
+   * continuable resume. False for restarts that turn off or replace a backend.
+   */
+  readonly continueThreads?: boolean;
+};
 
 export function shutdownConfirmation(
   checks: ReadonlyArray<ActivityCheck>,
   action: ShutdownAction,
-  title?: string,
+  { title, continueThreads = true }: ShutdownOptions = {},
 ) {
-  // The server resolves each project's continuation setting into `continuable`,
-  // and every shutdown, including quit, saves those threads to resume on next start.
+  // The server resolves each project's continuation setting into `continuable`
+  // and saves those threads when it shuts down, so they resume when it next starts.
   const { concern, lines, incomplete, interrupts, threadActivity } = describeHostActivity(checks, {
     uncheckedHostsLine: "Could not check every local environment for running work.",
-    continueRunningThreads: true,
+    continueRunningThreads: continueThreads,
     continuesWhen: action === "quit" ? "when styal next starts" : "after the restart",
   });
   if (concern === null) return null;
@@ -49,7 +57,7 @@ export function shutdownConfirmation(
 export class DesktopShutdownGuard extends Context.Service<
   DesktopShutdownGuard,
   {
-    readonly confirm: (action: ShutdownAction, title?: string) => Effect.Effect<boolean>;
+    readonly confirm: (action: ShutdownAction, options?: ShutdownOptions) => Effect.Effect<boolean>;
     /** Activity of every owned backend; null for a host that could not be checked. */
     readonly inspect: Effect.Effect<ReadonlyArray<ActivityCheck>>;
   }
@@ -128,14 +136,14 @@ const make = Effect.gen(function* () {
   });
   return DesktopShutdownGuard.of({
     inspect,
-    confirm: (action, title) =>
+    confirm: (action, options) =>
       Effect.gen(function* () {
         if (pending) return false;
         if (action === "quit" && (yield* dialog.consumeQuitOverride)) return true;
         pending = true;
         return yield* Effect.gen(function* () {
           const checks = yield* inspect;
-          const confirmation = shutdownConfirmation(checks, action, title);
+          const confirmation = shutdownConfirmation(checks, action, options);
           if (confirmation === null) return true;
           return yield* dialog.request(
             `${confirmation.message}\n\n${confirmation.detail}`,

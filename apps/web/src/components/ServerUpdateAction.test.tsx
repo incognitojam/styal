@@ -19,19 +19,12 @@ const testState = vi.hoisted(() => ({
   hostActivity: vi.fn(),
   toast: vi.fn(),
   copy: vi.fn(),
-  continueThreadsAfterServerUpdate: false,
   session: null as AsyncResult.AsyncResult<AuthSessionState, Error> | null,
   sessionAtom: Symbol("session"),
 }));
 
 vi.mock("~/hooks/useCopyToClipboard", () => ({
   useCopyToClipboard: () => ({ copyToClipboard: testState.copy }),
-}));
-vi.mock("~/hooks/useSettings", () => ({
-  useEnvironmentSettings: (
-    _environmentId: EnvironmentId,
-    selector: (settings: { continueThreadsAfterServerUpdate: boolean }) => unknown,
-  ) => selector({ continueThreadsAfterServerUpdate: testState.continueThreadsAfterServerUpdate }),
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => testState.session }));
 vi.mock("~/rpc/atomRegistry", () => ({
@@ -118,7 +111,6 @@ describe("ServerUpdateAction", () => {
     resetConfirmDialogForTests();
     testState.toast.mockReset();
     testState.copy.mockReset();
-    testState.continueThreadsAfterServerUpdate = false;
     testState.session = AsyncResult.success(currentSession);
   });
 
@@ -396,7 +388,7 @@ describe("ServerUpdateAction", () => {
     expect(testState.updateServer).not.toHaveBeenCalled();
   });
 
-  it("leaves thread continuation off by default", async () => {
+  it("does not request continuation from a server without it", async () => {
     testState.updateServer.mockResolvedValue(
       AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
     );
@@ -404,7 +396,6 @@ describe("ServerUpdateAction", () => {
       environmentId: "env-test" as EnvironmentId,
       serverLabel: "Test server",
       selfUpdate: "boot-service",
-      threadContinuation: true,
       targetVersion: "0.0.31",
     }) as ActionElement;
 
@@ -417,11 +408,10 @@ describe("ServerUpdateAction", () => {
     });
   });
 
-  it("applies the saved thread continuation preference automatically", async () => {
+  it("requests continuation from a server that supports it", async () => {
     testState.updateServer.mockResolvedValue(
       AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
     );
-    testState.continueThreadsAfterServerUpdate = true;
     const action = ServerUpdateAction({
       environmentId: "env-test" as EnvironmentId,
       serverLabel: "Test server",
@@ -449,15 +439,13 @@ describe("ServerUpdatesAction", () => {
       selfUpdate: "boot-service",
       targetVersion: "0.0.31",
       threadContinuation: true,
-      continueThreadsAfterServerUpdate: true,
     },
     {
       environmentId: "batch-b" as EnvironmentId,
       serverLabel: "Office",
       selfUpdate: "respawn",
       targetVersion: "0.0.31",
-      threadContinuation: true,
-      continueThreadsAfterServerUpdate: false,
+      threadContinuation: false,
     },
     {
       environmentId: "batch-c" as EnvironmentId,
@@ -491,7 +479,7 @@ describe("ServerUpdatesAction", () => {
     vi.unstubAllGlobals();
   });
 
-  it("updates both supported machines with their own continuation preference and skips the manual machine", async () => {
+  it("updates both supported machines with their own continuation support and skips the manual machine", async () => {
     testState.updateServer.mockResolvedValue(success);
     const button = await mount();
     await act(async () => {

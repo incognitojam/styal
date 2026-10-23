@@ -68,8 +68,6 @@ export function useAutoBalanceUpdateBanner(
         installation: environment.serverConfig?.environment.capabilities.serverInstallation,
         desktopAppUpdate,
         threadContinuation: supportsServerUpdateThreadContinuation(environment.serverConfig),
-        continueThreadsAfterServerUpdate:
-          environment.serverConfig?.settings.continueThreadsAfterServerUpdate ?? false,
         targetVersion: state.status === "idle" ? mismatch!.clientVersion : state.targetVersion,
         connected: environment.connection.phase === "connected",
         remoteUpdate: canUpdateFromApp({ selfUpdate, desktopAppUpdate }),

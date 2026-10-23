@@ -792,7 +792,9 @@ export const make = Effect.gen(function* () {
 
         if (
           expectedVersion === undefined &&
-          !(yield* guard.confirm("restart", "Install the downloaded update and restart styal?"))
+          !(yield* guard.confirm("restart", {
+            title: "Install the downloaded update and restart styal?",
+          }))
         ) {
           yield* finishUpdateAction("install");
           return { accepted: false, completed: false, failed: false };

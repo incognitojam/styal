@@ -18,7 +18,6 @@ import { type ComponentProps, useRef, useState } from "react";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -64,10 +63,10 @@ export interface ServerUpdateTarget {
   /** The desktop app supervising this server accepts remote update
       requests (capabilities.desktopAppUpdate). */
   readonly desktopAppUpdate?: boolean;
-  /** The server can durably continue running provider turns after updating. */
+  /** The server continues opted-in running turns after updating and reports
+      which threads will continue, applying each project's setting. */
   readonly threadContinuation?: boolean;
   readonly targetVersion: string;
-  readonly continueThreadsAfterServerUpdate?: boolean;
 }
 
 type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
@@ -88,7 +87,7 @@ export function canUpdateFromApp(
 }
 
 function continuesRunningThreads(target: ServerUpdateTarget): boolean {
-  return Boolean(target.threadContinuation && target.continueThreadsAfterServerUpdate);
+  return target.threadContinuation === true;
 }
 
 /** What one server's update did. "skipped" covers a missing permission, an
@@ -316,13 +315,9 @@ export function ServerUpdateAction({
   size = "xs",
   className,
   appearance = "button",
-}: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
+}: ServerUpdateTarget & UpdateButtonProps) {
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
-  const continueThreadsAfterServerUpdate = useEnvironmentSettings(
-    environmentId,
-    (settings) => settings.continueThreadsAfterServerUpdate,
-  );
   const update = useServerUpdates();
   const { copyToClipboard } = useCopyToClipboard<{ description: string }>({
     target: "command",
@@ -351,7 +346,6 @@ export function ServerUpdateAction({
         desktopAppUpdate,
         threadContinuation,
         targetVersion,
-        continueThreadsAfterServerUpdate,
       },
     ]);
 
