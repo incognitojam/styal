@@ -1,8 +1,10 @@
 import { ClerkProvider, getClerkInstance, useAuth, useClerk } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
+import { useAtomValue } from "@effect/atom-react";
 import {
   ManagedRelay,
   managedRelayAuthLoadAtom,
+  type ManagedRelaySession,
   setManagedRelaySession,
 } from "@t3tools/client-runtime/relay";
 import {
@@ -23,9 +25,8 @@ import {
   restoreCloudComposerDrafts,
 } from "../../state/use-composer-drafts";
 import {
-  releaseAgentAwarenessRelayTokenProvider,
-  setAgentAwarenessRelayTokenProvider,
-  unregisterAgentAwarenessDeviceForCurrentUser,
+  releaseAgentAwarenessRelayCredential,
+  setAgentAwarenessRelayCredential,
 } from "../agent-awareness/remoteRegistration";
 import {
   limitClerkRequestDuration,
@@ -33,8 +34,20 @@ import {
   retryFailedClerkLoads,
 } from "./clerkLoadRecovery";
 import { clearConnectOnboardingRequest, requestConnectOnboarding } from "./connectOnboarding";
-import { resolveCloudPublicConfig, resolveRelayClerkTokenOptions } from "./publicConfig";
+import {
+  hasLegacyClerkConfig,
+  resolveCloudPublicConfig,
+  resolveRelayClerkTokenOptions,
+} from "./publicConfig";
 import { removeCloudEnvironments } from "./cloud-drafts";
+import {
+  adoptClerkSession,
+  failClerkAdoption,
+  finishClerkAdoptionSignedOut,
+  restoreRelaySession,
+  setLegacyClerkSignOut,
+} from "./relaySession";
+import { publishRelaySignIn, relaySignInAtom } from "./relaySessionStore";
 
 // Keep the wrapper stable: Clerk uses the cache identity to track native sync.
 const cloudTokenCache = tokenCache ? recoverableClerkTokenCache(tokenCache) : undefined;
@@ -47,47 +60,32 @@ function resetManagedRelayTokenCache() {
   );
 }
 
-/** Credential cleanup must finish even when preserving local drafts fails. */
+/**
+ * Credential cleanup must finish even when preserving local drafts fails. The
+ * device's relay registration is removed by sign-out itself, before the
+ * session ends.
+ */
 export async function cleanUpCloudRelayAccount(
   removeEnvironments: () => Promise<void>,
-  previousTokenProvider: (() => Promise<string | null>) | null,
 ): Promise<void> {
   try {
     await removeEnvironments();
   } finally {
-    const results = await Promise.all([
-      resetManagedRelayTokenCache(),
-      ...(previousTokenProvider
-        ? [
-            settleAsyncResult(() =>
-              runtime.runPromiseExit(
-                unregisterAgentAwarenessDeviceForCurrentUser(previousTokenProvider),
-              ),
-            ),
-          ]
-        : []),
-    ]);
-    for (const result of results) {
-      reportAtomCommandResult(result, { label: "cloud account cleanup" });
-    }
+    reportAtomCommandResult(await resetManagedRelayTokenCache(), {
+      label: "cloud account cleanup",
+    });
   }
 }
 
 export function deactivateCloudRelayAccount(): void {
-  setAgentAwarenessRelayTokenProvider(null);
+  setAgentAwarenessRelayCredential(null);
   setManagedRelaySession(appAtomRegistry, null);
   appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
 }
 
-export function activateCloudRelayAccount(
-  accountId: string,
-  tokenProvider: () => Promise<string | null>,
-): void {
-  setAgentAwarenessRelayTokenProvider(tokenProvider, accountId);
-  setManagedRelaySession(appAtomRegistry, {
-    accountId,
-    readClerkToken: tokenProvider,
-  });
+export function activateCloudRelayAccount(session: ManagedRelaySession): void {
+  setAgentAwarenessRelayCredential(session.credential);
+  setManagedRelaySession(appAtomRegistry, session);
   appAtomRegistry.set(managedRelayAuthLoadAtom, "loaded");
 }
 
@@ -103,35 +101,77 @@ function ClerkLoadRecovery() {
           });
           return () => subscription.remove();
         },
-        // Stays "failed" through retries until a load activates or clears the session.
-        () => appAtomRegistry.set(managedRelayAuthLoadAtom, "failed"),
+        // Only matters while an older Clerk sign-in may still need moving.
+        failClerkAdoption,
       ),
     [clerk],
   );
   return null;
 }
 
+/**
+ * Moves a device that is still signed in with Clerk to a relay session for
+ * the same account, once, then signs Clerk out so a later styal Link sign-out
+ * stays signed out. Mounted only while the build still has Clerk settings.
+ */
+function LegacyClerkSessionAdoption() {
+  const clerk = useClerk();
+  const { getToken, isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
+  const signIn = useAtomValue(relaySignInAtom);
+  const attemptingRef = useRef(false);
+  const leftoverSignOutRef = useRef(false);
+
+  useEffect(() => {
+    setLegacyClerkSignOut(() => clerk.signOut());
+    return () => setLegacyClerkSignOut(null);
+  }, [clerk]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (signIn.status === "ready") {
+      // An earlier move whose Clerk sign-out did not finish.
+      if (isSignedIn && signIn.session !== null && !leftoverSignOutRef.current) {
+        leftoverSignOutRef.current = true;
+        void clerk.signOut().catch(() => undefined);
+      }
+      return;
+    }
+    if (signIn.status !== "adopting") return;
+    if (!isSignedIn) {
+      void finishClerkAdoptionSignedOut();
+      return;
+    }
+    if (attemptingRef.current) return;
+    attemptingRef.current = true;
+    void adoptClerkSession(() => getToken(resolveRelayClerkTokenOptions())).finally(() => {
+      attemptingRef.current = false;
+    });
+  }, [clerk, getToken, isLoaded, isSignedIn, signIn]);
+
+  return null;
+}
+
 function CloudAuthBridge(props: { readonly children: ReactNode }) {
-  const { getToken, isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const signIn = useAtomValue(relaySignInAtom);
+  const isLoaded = signIn.status === "ready";
+  const session = signIn.status === "ready" ? signIn.session : null;
   const removeRelayEnvironments = useAtomCommand(removeCloudEnvironments, {
     reportFailure: false,
     reportDefect: false,
   });
-  const previousTokenProviderRef = useRef<{
-    readonly userId: string;
-    readonly provider: () => Promise<string | null>;
-  } | null>(null);
   const observedAccountRef = useRef<string | null | undefined>(undefined);
   const accountTransitionRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    // Loading, moving a Clerk sign-in, or a failed load is not a sign-out:
+    // leave the current state alone until the sign-in is known.
     if (!isLoaded) {
       return;
     }
 
     const previousObservedAccount = observedAccountRef.current;
-    const nextAccount = isSignedIn && userId ? userId : null;
+    const nextAccount = session?.accountId ?? null;
     observedAccountRef.current = nextAccount;
 
     // Every sign-in or account switch that completes during this session (a
@@ -147,46 +187,36 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
       clearConnectOnboardingRequest();
     }
 
-    const cleanUpAccount = async (
-      previous: {
-        readonly userId: string;
-        readonly provider: () => Promise<string | null>;
-      } | null,
-      accountId: string | null,
-    ) => {
+    const cleanUpAccount = async (accountId: string | null) => {
       await cleanUpCloudRelayAccount(async () => {
         const removal = await removeRelayEnvironments(accountId);
         if (removal._tag !== "Success") throw squashAtomCommandFailure(removal);
-      }, previous?.provider ?? null);
+      });
     };
-    const queueAccountCleanup = (previous: typeof previousTokenProviderRef.current) => {
+    const queueAccountCleanup = () => {
       const previousTransition = accountTransitionRef.current ?? Promise.resolve();
       accountTransitionRef.current = previousTransition
         .catch(() => {})
-        .then(() => cleanUpAccount(previous, previousObservedAccount ?? null));
+        .then(() => cleanUpAccount(previousObservedAccount ?? null));
       return accountTransitionRef.current;
     };
 
-    if (!isSignedIn || !userId) {
-      const previous = previousTokenProviderRef.current;
-      previousTokenProviderRef.current = null;
+    if (session === null) {
       deactivateCloudRelayAccount();
       if (previousObservedAccount !== null) {
-        void settlePromise(() => queueAccountCleanup(previous)).then((result) => {
+        void settlePromise(() => queueAccountCleanup()).then((result) => {
           reportAtomCommandResult(result, { label: "cloud account cleanup" });
         });
       }
       return;
     }
 
-    const previous = previousTokenProviderRef.current;
-    const tokenProvider = () => getToken(resolveRelayClerkTokenOptions());
+    const userId = session.accountId;
     const activateSession = () => {
       if (cancelled) {
         return;
       }
-      previousTokenProviderRef.current = { userId, provider: tokenProvider };
-      activateCloudRelayAccount(userId, tokenProvider);
+      activateCloudRelayAccount(session);
       if (isAccountTransition) {
         requestConnectOnboarding(userId);
       }
@@ -197,7 +227,7 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
         if (cancelled) return;
         const storedAccount = await getComposerCloudAccountId();
         if (storedAccount !== null && storedAccount !== userId) {
-          await cleanUpAccount(null, storedAccount);
+          await cleanUpAccount(storedAccount);
         }
         if (cancelled) return;
         await restoreCloudComposerDrafts(userId);
@@ -218,9 +248,8 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
       previousObservedAccount !== null &&
       previousObservedAccount !== userId
     ) {
-      previousTokenProviderRef.current = null;
       deactivateCloudRelayAccount();
-      activateAfterTransition(queueAccountCleanup(previous));
+      activateAfterTransition(queueAccountCleanup());
     } else {
       // A failed disk write can be retried. The persisted account check above
       // still requires cleanup before activating a different account.
@@ -230,15 +259,14 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [getToken, isLoaded, isSignedIn, removeRelayEnvironments, userId]);
+  }, [isLoaded, removeRelayEnvironments, session]);
 
   useEffect(
     () => () => {
-      previousTokenProviderRef.current = null;
       // Unmounting is not a sign-out: the user is usually still signed in, so
-      // detach the provider without ending lock-screen activities or wiping the
-      // persisted registration (a remount reuses both).
-      releaseAgentAwarenessRelayTokenProvider();
+      // detach the credential without ending lock-screen activities or wiping
+      // the persisted registration (a remount reuses both).
+      releaseAgentAwarenessRelayCredential();
       setManagedRelaySession(appAtomRegistry, null);
     },
     [],
@@ -249,25 +277,41 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
 
 export function CloudAuthProvider(props: { readonly children: ReactNode }) {
   const config = resolveCloudPublicConfig();
-  const publishableKey = config.clerk.publishableKey;
   const relayUrl = config.relay.url;
+  const publishableKey = hasLegacyClerkConfig(config) ? config.clerk.publishableKey : null;
 
   useEffect(() => {
-    if (!publishableKey || !relayUrl) {
+    if (!relayUrl) {
       deactivateCloudRelayAccount();
+      publishRelaySignIn(null);
+      return;
     }
-  }, [publishableKey, relayUrl]);
+    void restoreRelaySession();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && appAtomRegistry.get(relaySignInAtom).status === "failed") {
+        void restoreRelaySession();
+      }
+    });
+    return () => subscription.remove();
+  }, [relayUrl]);
 
-  if (!publishableKey || !relayUrl) {
+  if (!relayUrl) {
     return props.children;
   }
 
-  limitClerkRequestDuration(getClerkInstance({ publishableKey }));
+  if (publishableKey) {
+    limitClerkRequestDuration(getClerkInstance({ publishableKey }));
+  }
 
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={cloudTokenCache}>
-      <ClerkLoadRecovery />
+    <>
+      {publishableKey ? (
+        <ClerkProvider publishableKey={publishableKey} tokenCache={cloudTokenCache}>
+          <ClerkLoadRecovery />
+          <LegacyClerkSessionAdoption />
+        </ClerkProvider>
+      ) : null}
       <CloudAuthBridge>{props.children}</CloudAuthBridge>
-    </ClerkProvider>
+    </>
   );
 }

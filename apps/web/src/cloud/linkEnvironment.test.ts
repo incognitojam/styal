@@ -141,6 +141,27 @@ function bodyText(body: BodyInit | null | undefined): string {
   return body instanceof Uint8Array ? new TextDecoder().decode(body) : String(body ?? "");
 }
 
+/**
+ * Answers the relay's access-token refresh itself, so `fetchMock` sees only the
+ * environment and link requests the tests assert on.
+ */
+function withRelayAccessToken(
+  fetchMock: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+) {
+  return (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).endsWith("/v1/auth/token")
+      ? Promise.resolve(
+          Response.json({
+            access_token: "relay-access-token",
+            token_type: "DPoP",
+            expires_in: 1_800,
+            scope: "environment:connect environment:status account",
+            user: { id: "account-1", email: "someone@example.com" },
+          }),
+        )
+      : fetchMock(input, init);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
@@ -167,7 +188,7 @@ describe("web cloud link environment client", () => {
           publishAgentActivity: false,
         }),
       );
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
 
       const state = yield* withServices(readPrimaryCloudLinkState({ target: TARGET }));
 
@@ -199,7 +220,7 @@ describe("web cloud link environment client", () => {
           publishAgentActivity: false,
         }),
       );
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
       vi.stubGlobal("window", {
         location: { origin: "t3code://app" },
         desktopBridge: {
@@ -227,7 +248,7 @@ describe("web cloud link environment client", () => {
           publishAgentActivity: true,
         }),
       );
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
 
       const state = yield* withServices(
         updatePrimaryCloudPreferences({
@@ -277,12 +298,12 @@ describe("web cloud link environment client", () => {
         .mockResolvedValueOnce(
           Response.json({ ok: true, endpointRuntimeStatus: { status: "configured" } }),
         );
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
 
       yield* withServices(
         linkPrimaryEnvironmentToCloud({
           target: TARGET,
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_account-1" },
         }),
       );
 
@@ -330,12 +351,12 @@ describe("web cloud link environment client", () => {
         .mockResolvedValueOnce(
           Response.json({ ok: true, endpointRuntimeStatus: { status: "disabled" } }),
         );
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
 
       yield* withServices(
         linkPrimaryEnvironmentToCloud({
           target: TARGET,
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_account-1" },
           mode: "publish_only",
         }),
       );
@@ -356,7 +377,7 @@ describe("web cloud link environment client", () => {
       yield* withServices(
         linkPrimaryEnvironmentToCloud({
           target: TARGET,
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_account-1" },
         }),
         {
           status: { status: "available", version: "2026.6.0" },
@@ -376,12 +397,12 @@ describe("web cloud link environment client", () => {
           Response.json({ ok: true, endpointRuntimeStatus: { status: "disabled" } }),
         )
         .mockResolvedValueOnce(Response.json({ ok: true }));
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", withRelayAccessToken(fetchMock));
 
       yield* withServices(
         unlinkPrimaryEnvironmentFromCloud({
           target: TARGET,
-          clerkToken: "clerk-token",
+          credential: { accountId: "account-1", refreshToken: "styal_rt_account-1" },
         }),
       );
 

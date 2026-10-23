@@ -226,6 +226,17 @@ const SettingsContentStack = createV5SheetStackNavigator({
         title: "Settings",
       },
     }),
+    SettingsAuth: createNativeStackScreen({
+      screen: SettingsAuthRouteScreen,
+      linking: "auth",
+      options: { title: "styal Account" },
+    }),
+    SettingsWaitlist: createNativeStackScreen({
+      // Keep the old deep link working after the Connect GA launch.
+      screen: SettingsAuthRouteScreen,
+      linking: "waitlist",
+      options: { title: "styal Account" },
+    }),
     SettingsEnvironments: createNativeStackScreen({
       screen: SettingsEnvironmentsRouteScreen,
       linking: "environments",
@@ -441,7 +452,7 @@ const SettingsContentStack = createV5SheetStackNavigator({
 });
 
 // The outer stack never owns visible chrome. Settings routes render inside a
-// nested stack whose native header remains mounted, while Clerk owns auth chrome.
+// nested stack whose native header remains mounted.
 // Keeping bar visibility invariant avoids iOS 26's headerless-to-headered jump.
 const SettingsSheetStack = createV5SheetStackNavigator({
   initialRouteName: "SettingsContent",
@@ -458,15 +469,6 @@ const SettingsSheetStack = createV5SheetStackNavigator({
           <ScheduledTaskEditorProvider>{children}</ScheduledTaskEditorProvider>
         </SettingsEnvironmentFilterProvider>
       ),
-    }),
-    SettingsAuth: createNativeStackScreen({
-      screen: SettingsAuthRouteScreen,
-      linking: "auth",
-    }),
-    SettingsWaitlist: createNativeStackScreen({
-      // Keep the old deep link working after the Connect GA launch.
-      screen: SettingsAuthRouteScreen,
-      linking: "waitlist",
     }),
   },
 });

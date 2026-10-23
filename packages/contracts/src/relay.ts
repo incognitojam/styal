@@ -823,9 +823,8 @@ export const RelayDpopAccessTokenScope = Schema.Literals([
 ]);
 export type RelayDpopAccessTokenScope = typeof RelayDpopAccessTokenScope.Type;
 
-export const RelayDpopTokenExchangeGrantType =
-  "urn:ietf:params:oauth:grant-type:token-exchange" as const;
-export const RelayJwtSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt" as const;
+const RelayDpopTokenExchangeGrantType = "urn:ietf:params:oauth:grant-type:token-exchange" as const;
+const RelayJwtSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt" as const;
 export const RelayAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
 export const RelayPublicClientId = Schema.Literals(["t3-mobile", "t3-web", "t3-cli"]);
 export type RelayPublicClientId = typeof RelayPublicClientId.Type;
@@ -1249,7 +1248,7 @@ const RelayEmailSignInErrors = [
   RelayInternalError,
 ] as const;
 
-const RelayStartEmailSignInEndpoint = HttpApiEndpoint.post(
+export const RelayStartEmailSignInEndpoint = HttpApiEndpoint.post(
   "startEmailSignIn",
   "/v1/auth/email/start",
   {
@@ -1265,7 +1264,7 @@ const RelayStartEmailSignInEndpoint = HttpApiEndpoint.post(
     "Sends a eight-digit code to the address. The response is the same whether or not an account exists. Only the DPoP key that requested the code can redeem it.",
   );
 
-const RelayVerifyEmailSignInEndpoint = HttpApiEndpoint.post(
+export const RelayVerifyEmailSignInEndpoint = HttpApiEndpoint.post(
   "verifyEmailSignIn",
   "/v1/auth/email/verify",
   {
@@ -1281,7 +1280,7 @@ const RelayVerifyEmailSignInEndpoint = HttpApiEndpoint.post(
     "Signs in, creating the account on first sign-in, and returns a session credential bound to the proof key plus an access token.",
   );
 
-const RelayExchangeClerkSessionEndpoint = HttpApiEndpoint.post(
+export const RelayExchangeClerkSessionEndpoint = HttpApiEndpoint.post(
   "exchangeClerkSession",
   "/v1/auth/clerk-exchange",
   {
@@ -1297,14 +1296,18 @@ const RelayExchangeClerkSessionEndpoint = HttpApiEndpoint.post(
     "Migration path for clients signed in with Clerk. Keeps the Clerk user id as the account id.",
   );
 
-const RelayRefreshAuthTokenEndpoint = HttpApiEndpoint.post("refreshAuthToken", "/v1/auth/token", {
-  headers: RelayDpopProofRequestHeaders,
-  payload: RelayAuthTokenRequest,
-  success: RelayAuthTokenResponse,
-  error: RelayAuthAndInternalErrors,
-}).annotate(OpenApi.Summary, "Issue an access token for a session");
+export const RelayRefreshAuthTokenEndpoint = HttpApiEndpoint.post(
+  "refreshAuthToken",
+  "/v1/auth/token",
+  {
+    headers: RelayDpopProofRequestHeaders,
+    payload: RelayAuthTokenRequest,
+    success: RelayAuthTokenResponse,
+    error: RelayAuthAndInternalErrors,
+  },
+).annotate(OpenApi.Summary, "Issue an access token for a session");
 
-const RelaySignOutEndpoint = HttpApiEndpoint.post("signOut", "/v1/auth/sign-out", {
+export const RelaySignOutEndpoint = HttpApiEndpoint.post("signOut", "/v1/auth/sign-out", {
   headers: RelayDpopProofRequestHeaders,
   payload: RelayAuthSignOutRequest,
   success: RelayOkResponse,
@@ -1405,7 +1408,7 @@ const RelayClientGroup = HttpApiGroup.make("client")
   .annotate(OpenApi.Description, "Cloud-user environment links and registered devices.")
   .middleware(RelayClientAuth);
 
-export const RelayExchangeDpopAccessTokenEndpoint = HttpApiEndpoint.post(
+const RelayExchangeDpopAccessTokenEndpoint = HttpApiEndpoint.post(
   "exchangeDpopAccessToken",
   "/v1/client/dpop-token",
   {

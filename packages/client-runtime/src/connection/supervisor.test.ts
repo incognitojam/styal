@@ -394,6 +394,14 @@ const makeRelayAuthorization = Effect.fn("TestRelayAuthorization.make")(function
   const unused = () => Effect.die("Unexpected relay operation.");
   const relay = ManagedRelay.ManagedRelayClient.of({
     relayUrl: "https://relay.example.test",
+    startEmailSignIn: () => Effect.die("unused"),
+    verifyEmailSignIn: () => Effect.die("unused"),
+    exchangeClerkSession: () => Effect.die("unused"),
+    signOut: () => Effect.die("unused"),
+    getAccount: () => Effect.die("unused"),
+    listSessions: () => Effect.die("unused"),
+    revokeSession: () => Effect.die("unused"),
+    deleteAccount: () => Effect.die("unused"),
     listEnvironments: unused,
     listDevices: unused,
     createEnvironmentLinkChallenge: unused,
@@ -419,7 +427,7 @@ const makeRelayAuthorization = Effect.fn("TestRelayAuthorization.make")(function
         Layer.succeed(ManagedRelay.ManagedRelayClient, relay),
         Layer.succeed(ClientCapabilities.CloudSession, {
           identity: Effect.succeedSome({ accountId: "test-account" }),
-          clerkToken: Effect.succeed("clerk-token"),
+          credential: Effect.succeed({ accountId: "test-account", refreshToken: "styal_rt_test" }),
           missingSession: Effect.fail(
             new ConnectionBlockedError({ reason: "authentication", detail: "Signed out." }),
           ),

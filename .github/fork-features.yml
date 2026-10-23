@@ -3968,10 +3968,21 @@ features:
       - Accounts imported from Clerk keep their Clerk user id. During transition, email sign-in rechecks imported email ownership and resolves unmapped verified addresses through Clerk, while exchange refreshes the email mapping. Clerk outages fail as upstream_unavailable instead of splitting accounts or rejecting credentials. A relay without a Clerk secret keeps stored email mappings as they are and makes no Clerk lookups, so removing Clerk later does not split imported accounts.
       - The account endpoints accept either a Clerk bearer token or a relay DPoP access token with the account scope. DPoP authentication does not call Clerk. Deleting an imported account tears down its environments, then deletes its Clerk identity when Clerk is configured (404 counts as success; outages are retryable upstream_unavailable), then deletes relay data, so a failure at any step leaves the account and its sessions able to retry.
       - Email sign-in stays off until a sender is configured, and production refuses log delivery and fixed test codes.
+      - Web, desktop, and mobile sign in with the emailed code; web and desktop keep the session next to the browser's DPoP key.
+      - A client still signed in with Clerk moves to a relay session once without asking, then signs Clerk out so a later styal Link sign-out stays signed out.
+      - A session the relay reports as ended signs the client out; a network failure does not.
       - Account deletion retries teardown for active links, revoked links, and outstanding allocations, clearing held-hook inboxes before removing allocation records. Teardown failure preserves cleanup state and account sessions for retry. Deletion queues Live Activity ends before removing registrations and removes activity content only for environment/key pairs with no other active account owner; signed removal ends remain deliverable after SQL removal without recreating account records. Deletion takes session row locks before device and Live Activity rows, the same order as registration and session revocation.
       - Exported traces never carry database driver detail (bound parameters, failing rows, driver messages), so auth persistence failures do not export email addresses; spans keep the query text, SQL state and constraint name.
     rationale: Clerk ends sessions after a fixed maximum lifetime (seven days by default), which signed styal Link users out of every client regardless of activity. Owning the session in the relay lets sessions last while they are used and gives later account features, such as sharing with another account by email, an account table to build on.
     implementation_paths:
+      - apps/mobile/src/features/cloud/relayKeychain.ts
+      - apps/mobile/src/features/cloud/relaySession.ts
+      - apps/mobile/src/features/cloud/relaySessionStore.ts
+      - apps/web/src/cloud/legacyClerkSession.tsx
+      - apps/web/src/cloud/relaySession.ts
+      - apps/web/src/cloud/relaySessionStore.ts
+      - apps/web/src/components/relay-auth/RelayAccountDialog.tsx
+      - apps/web/src/components/relay-auth/RelayEmailSignInForm.tsx
       - infra/relay/scripts/import-clerk-users.ts
       - infra/relay/src/Runtime.ts
       - infra/relay/src/agentActivity/LiveActivityCleanup.ts
@@ -3985,14 +3996,19 @@ features:
       - infra/relay/src/auth/clerkImport.ts
       - infra/relay/src/pruneExpiredState.ts
     upstream_paths:
+      - apps/web/src/cloud/managedAuth.tsx
       - infra/relay/src/Config.ts
       - infra/relay/src/auth/RelayTokens.ts
       - infra/relay/src/http/Api.ts
       - infra/relay/src/observability.ts
       - infra/relay/src/persistence/schema.ts
       - infra/relay/src/worker.ts
+      - packages/client-runtime/src/relay/managedRelay.ts
+      - packages/client-runtime/src/relay/managedRelayState.ts
       - packages/contracts/src/relay.ts
     tests:
+      - apps/mobile/src/features/cloud/relaySessionStore.test.ts
+      - apps/web/src/components/relay-auth/RelayEmailSignInForm.logic.test.ts
       - infra/relay/src/Config.test.ts
       - infra/relay/src/Runtime.test.ts
       - infra/relay/src/agentActivity/ApnsDeliveries.test.ts
@@ -4004,6 +4020,7 @@ features:
       - infra/relay/src/http/AuthApi.test.ts
       - infra/relay/src/observability.postgres.test.ts
       - infra/relay/src/pruneExpiredState.test.ts
+      - packages/client-runtime/src/relay/managedRelay.test.ts
       - packages/contracts/src/relay.test.ts
     upstream:
       status: unassessed

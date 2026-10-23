@@ -738,7 +738,7 @@ const PreviewPanel = lazy(() =>
 );
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const T3ConnectSignInButton = lazy(() =>
-  import("./clerk/T3ConnectSidebarSignIn").then((module) => ({
+  import("./relay-auth/T3ConnectSidebarSignIn").then((module) => ({
     default: module.T3ConnectSignInButton,
   })),
 );
@@ -3175,13 +3175,13 @@ export default function ChatView(props: ChatViewProps) {
       (environmentReconnecting && (updateRunning || !reconnectWarningGraceElapsed));
     if (activeEnvironmentUnavailableState && unavailableConnection && !suppressUnavailableBanner) {
       if (activeEnvironmentUnavailableState.missingCloudSession === "failed") {
-        // Clerk loads once per page, so only a reload retries it.
+        // The saved sign-in is read once per page, so only a reload retries it.
         items.push({
           id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
           variant: "warning",
           icon: <WifiOffIcon />,
-          title: "Can't reach styal Link sign-in",
-          description: `Check your connection, then reload to reach ${activeEnvironmentUnavailableState.label}.`,
+          title: "Couldn't read your styal Link sign-in",
+          description: `Reload to try again and reach ${activeEnvironmentUnavailableState.label}.`,
           actions: (
             <>
               <Button size="xs" variant="ghost" onClick={() => window.location.reload()}>

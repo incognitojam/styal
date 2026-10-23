@@ -17,7 +17,6 @@ import { DPOP_UNKNOWN_HINT } from "./errorPresentation.ts";
 import * as ManagedRelay from "./managedRelay.ts";
 import {
   createManagedRelayQueryManager,
-  createManagedRelaySession,
   deregisterManagedRelayEnvironment,
   managedRelayAccountChanges,
   type ManagedRelayQueryEvent,
@@ -67,6 +66,14 @@ function resetRegistry() {
 function createClient(overrides?: Partial<ManagedRelay.ManagedRelayClient["Service"]>) {
   return ManagedRelay.ManagedRelayClient.of({
     relayUrl: "https://relay.example.test",
+    startEmailSignIn: () => Effect.die("unused"),
+    verifyEmailSignIn: () => Effect.die("unused"),
+    exchangeClerkSession: () => Effect.die("unused"),
+    signOut: () => Effect.die("unused"),
+    getAccount: () => Effect.die("unused"),
+    listSessions: () => Effect.die("unused"),
+    revokeSession: () => Effect.die("unused"),
+    deleteAccount: () => Effect.die("unused"),
     listEnvironments: () => Effect.succeed([environment]),
     listDevices: () => Effect.succeed([device]),
     createEnvironmentLinkChallenge: () => Effect.die("unused"),
@@ -101,23 +108,22 @@ function createManager(
   });
 }
 
-function setSession() {
-  setManagedRelaySession(registry, {
-    accountId: "account-1",
-    readClerkToken: () => Promise.resolve("clerk-token"),
-  });
+function session(accountId: string, refreshToken = `styal_rt_${accountId}`) {
+  return {
+    accountId,
+    email: `${accountId}@example.com`,
+    credential: { accountId, refreshToken },
+  };
 }
 
-function clerkToken(expiresAtSeconds: number): string {
-  const encode = (value: unknown) =>
-    btoa(JSON.stringify(value)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
-  return `${encode({ alg: "none" })}.${encode({ exp: expiresAtSeconds })}.signature`;
+function setSession() {
+  setManagedRelaySession(registry, session("account-1"));
 }
 
 describe("createManagedRelayQueryManager", () => {
   afterEach(resetRegistry);
 
-  it.effect("deregisters an environment through the current Clerk session", () =>
+  it.effect("deregisters an environment through the current session", () =>
     Effect.gen(function* () {
       const unlinkEnvironment = vi.fn(() => Effect.succeed({ ok: true }));
       setSession();
@@ -130,7 +136,7 @@ describe("createManagedRelayQueryManager", () => {
       );
 
       expect(unlinkEnvironment).toHaveBeenCalledWith({
-        clerkToken: "clerk-token",
+        credential: { accountId: "account-1", refreshToken: "styal_rt_account-1" },
         environmentId: environment.environmentId,
       });
     }),
@@ -154,89 +160,24 @@ describe("createManagedRelayQueryManager", () => {
     }),
   );
 
-  it.effect("deduplicates concurrent Clerk token reads and reuses the token until JWT expiry", () =>
-    Effect.gen(function* () {
-      const token = clerkToken(4_102_444_800);
-      let resolveToken!: (value: string) => void;
-      const readClerkToken = vi.fn(
-        () =>
-          new Promise<string>((resolve) => {
-            resolveToken = resolve;
-          }),
+  it("keeps the session object when the same sign-in is published again", () => {
+    {
+      setManagedRelaySession(registry, session("account-1"));
+      const first = registry.get(managedRelaySessionAtom);
+      setManagedRelaySession(registry, session("account-1"));
+      expect(registry.get(managedRelaySessionAtom)).toBe(first);
+
+      setManagedRelaySession(registry, session("account-1", "styal_rt_new_session"));
+      expect(registry.get(managedRelaySessionAtom)).not.toBe(first);
+      expect(registry.get(managedRelaySessionAtom)?.credential.refreshToken).toBe(
+        "styal_rt_new_session",
       );
-      const session = createManagedRelaySession({
-        accountId: "account-1",
-        readClerkToken,
-      });
-
-      const readsFiber = yield* Effect.all([session.readClerkToken(), session.readClerkToken()], {
-        concurrency: "unbounded",
-      }).pipe(Effect.forkChild);
-      yield* Effect.yieldNow;
-      expect(readClerkToken).toHaveBeenCalledTimes(1);
-
-      resolveToken(token);
-      expect(yield* Fiber.join(readsFiber)).toEqual([token, token]);
-      expect(yield* session.readClerkToken()).toBe(token);
-      expect(readClerkToken).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it.effect("updates the token provider without replacing a same-account session", () =>
-    Effect.gen(function* () {
-      const firstRead = vi.fn(() => Promise.resolve<string | null>(null));
-      setManagedRelaySession(registry, {
-        accountId: "account-1",
-        readClerkToken: firstRead,
-      });
-      const firstSession = registry.get(managedRelaySessionAtom);
-      expect(firstSession).not.toBeNull();
-      expect(yield* firstSession!.readClerkToken()).toBeNull();
-
-      const secondRead = vi.fn(() => Promise.resolve<string | null>("refreshed-token"));
-      setManagedRelaySession(registry, {
-        accountId: "account-1",
-        readClerkToken: secondRead,
-      });
-
-      expect(registry.get(managedRelaySessionAtom)).toBe(firstSession);
-      expect(yield* firstSession!.readClerkToken()).toBe("refreshed-token");
-      expect(firstRead).toHaveBeenCalledTimes(1);
-      expect(secondRead).toHaveBeenCalledTimes(1);
-    }),
-  );
-
-  it.effect("does not pin a refreshed session to an older pending token read", () =>
-    Effect.gen(function* () {
-      let resolveFirst!: (token: string) => void;
-      setManagedRelaySession(registry, {
-        accountId: "account-1",
-        readClerkToken: () =>
-          new Promise<string>((resolve) => {
-            resolveFirst = resolve;
-          }),
-      });
-      const session = registry.get(managedRelaySessionAtom);
-      const firstRead = yield* session!.readClerkToken().pipe(Effect.forkChild);
-      yield* Effect.yieldNow;
-
-      setManagedRelaySession(registry, {
-        accountId: "account-1",
-        readClerkToken: () => Promise.resolve("refreshed-token"),
-      });
-
-      expect(yield* session!.readClerkToken()).toBe("refreshed-token");
-      resolveFirst("older-token");
-      expect(yield* Fiber.join(firstRead)).toBe("older-token");
-    }),
-  );
+    }
+  });
 
   it.effect("emits credential changes only when the managed relay account changes", () =>
     Effect.gen(function* () {
-      setManagedRelaySession(registry, {
-        accountId: "account-1",
-        readClerkToken: () => Promise.resolve("first-token"),
-      });
+      setManagedRelaySession(registry, session("account-1"));
       const changes = yield* managedRelayAccountChanges(registry).pipe(
         Stream.take(2),
         Stream.runCollect,
@@ -250,74 +191,13 @@ describe("createManagedRelayQueryManager", () => {
         }),
       );
 
-      setManagedRelaySession(registry, {
-        accountId: "account-1",
-        readClerkToken: () => Promise.resolve("refreshed-token"),
-      });
-      setManagedRelaySession(registry, {
-        accountId: "account-2",
-        readClerkToken: () => Promise.resolve("second-token"),
-      });
+      setManagedRelaySession(registry, session("account-1", "styal_rt_second_device"));
+      setManagedRelaySession(registry, session("account-2"));
       setManagedRelaySession(registry, null);
 
       expect(Array.from(yield* Fiber.join(changes))).toEqual(["account-2", null]);
     }),
   );
-
-  it("shares one Clerk token read across concurrent relay list and status queries", async () => {
-    const secondEnvironment = {
-      ...environment,
-      environmentId: EnvironmentId.make("environment-2"),
-      label: "Second environment",
-      endpoint: {
-        ...environment.endpoint,
-        httpBaseUrl: "https://environment-2.example.test",
-        wsBaseUrl: "wss://environment-2.example.test",
-      },
-    } satisfies RelayClientEnvironmentRecord;
-    const token = clerkToken(4_102_444_800);
-    const readClerkToken = vi.fn(() => Promise.resolve(token));
-    const manager = createManager({
-      listEnvironments: () => Effect.succeed([environment, secondEnvironment]),
-      getEnvironmentStatus: ({ environmentId }) => {
-        const current =
-          environmentId === environment.environmentId ? environment : secondEnvironment;
-        return Effect.succeed({
-          environmentId: current.environmentId,
-          endpoint: current.endpoint,
-          status: "online" as const,
-          checkedAt: "2026-06-01T00:00:00.000Z",
-        });
-      },
-    });
-    setManagedRelaySession(registry, {
-      accountId: "account-1",
-      readClerkToken,
-    });
-
-    const environmentsAtom = manager.environmentsAtom("account-1");
-    const firstStatusAtom = manager.environmentStatusAtom({
-      accountId: "account-1",
-      environment,
-    });
-    const secondStatusAtom = manager.environmentStatusAtom({
-      accountId: "account-1",
-      environment: secondEnvironment,
-    });
-    registry.get(environmentsAtom);
-    registry.get(firstStatusAtom);
-    registry.get(secondStatusAtom);
-
-    await vi.waitFor(() => {
-      expect(readManagedRelaySnapshotState(registry.get(firstStatusAtom)).data?.status).toBe(
-        "online",
-      );
-      expect(readManagedRelaySnapshotState(registry.get(secondStatusAtom)).data?.status).toBe(
-        "online",
-      );
-    });
-    expect(readClerkToken).toHaveBeenCalledTimes(1);
-  });
 
   it("keeps environment snapshots cached and refreshes them explicitly", async () => {
     const listEnvironments = vi.fn(() => Effect.succeed([environment]));
@@ -360,7 +240,7 @@ describe("createManagedRelayQueryManager", () => {
 
     expect(onQueryEvent).toHaveBeenCalledWith({
       operation: "environment-status",
-      stage: "clerk-token",
+      stage: "session",
       phase: "start",
       accountId: "account-1",
       environmentId: environment.environmentId,

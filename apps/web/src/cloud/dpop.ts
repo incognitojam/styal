@@ -84,24 +84,83 @@ export function readStoredBrowserDpopKey(): Effect.Effect<BrowserDpopKey | null,
   );
 }
 
+/**
+ * Stores a new key unless another tab stored one first; either way returns the
+ * key now stored. Two tabs creating keys at once must agree on one, because a
+ * saved relay session only works with the key it was created with.
+ */
 export function writeStoredBrowserDpopKey(
   key: BrowserDpopKey,
-): Effect.Effect<void, BrowserDpopError> {
+): Effect.Effect<BrowserDpopKey, BrowserDpopError> {
   if (typeof indexedDB === "undefined") {
-    return Effect.void;
+    return Effect.succeed(key);
   }
   return Effect.acquireUseRelease(
     openDpopDatabase(),
     (database) =>
       Effect.callback<void, BrowserDpopError>((resume) => {
         const transaction = database.transaction(DPOP_KEY_STORE_NAME, "readwrite");
-        transaction.addEventListener("error", () =>
+        transaction.addEventListener("error", (event) => {
+          if (
+            event.defaultPrevented &&
+            (event.target as IDBRequest).error?.name === "ConstraintError"
+          )
+            return;
+          resume(
+            Effect.fail(dpopError("Could not write DPoP key.", transaction.error ?? undefined)),
+          );
+        });
+        transaction.addEventListener("abort", () =>
           resume(
             Effect.fail(dpopError("Could not write DPoP key.", transaction.error ?? undefined)),
           ),
         );
         transaction.addEventListener("complete", () => resume(Effect.void));
-        transaction.objectStore(DPOP_KEY_STORE_NAME).put(key, DPOP_KEY_ID);
+        const request = transaction.objectStore(DPOP_KEY_STORE_NAME).add(key, DPOP_KEY_ID);
+        // An existing key is not an error: keep it and read it back below.
+        request.addEventListener("error", (event) => {
+          if (request.error?.name === "ConstraintError") {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        });
+      }),
+    (database) => Effect.sync(() => database.close()),
+  ).pipe(
+    Effect.andThen(readStoredBrowserDpopKey()),
+    Effect.map((stored) => stored ?? key),
+  );
+}
+
+/** Runs synchronous IndexedDB requests together and returns only after commit. */
+export function cloudAuthTransaction<A>(
+  mode: IDBTransactionMode,
+  run: (store: IDBObjectStore, result: (value: A) => void) => void,
+): Effect.Effect<A, BrowserDpopError> {
+  if (typeof indexedDB === "undefined") {
+    return Effect.fail(dpopError("styal Link sign-in storage is unavailable."));
+  }
+  return Effect.acquireUseRelease(
+    openDpopDatabase(),
+    (database) =>
+      Effect.callback<A, BrowserDpopError>((resume) => {
+        const transaction = database.transaction(DPOP_KEY_STORE_NAME, mode);
+        let result: A;
+        const fail = () =>
+          resume(
+            Effect.fail(
+              dpopError(
+                "Could not access styal Link sign-in storage.",
+                transaction.error ?? undefined,
+              ),
+            ),
+          );
+        transaction.addEventListener("error", fail);
+        transaction.addEventListener("abort", fail);
+        transaction.addEventListener("complete", () => resume(Effect.succeed(result)));
+        run(transaction.objectStore(DPOP_KEY_STORE_NAME), (value) => {
+          result = value;
+        });
       }),
     (database) => Effect.sync(() => database.close()),
   );

@@ -13,7 +13,11 @@ const testState = vi.hoisted(() => ({
   scopes: new Set<string>(),
   snapshot: null as EnvironmentCloudLinkStateResult | null,
   renderedSnapshot: null as EnvironmentCloudLinkStateResult | null,
-  getToken: vi.fn<() => Promise<string | null>>(),
+  session: null as {
+    readonly accountId: string;
+    readonly email: string | null;
+    readonly credential: { readonly accountId: string; readonly refreshToken: string };
+  } | null,
   link: vi.fn(),
   unlink: vi.fn(),
   preferences: vi.fn(),
@@ -22,9 +26,7 @@ const testState = vi.hoisted(() => ({
   toast: vi.fn(),
 }));
 
-vi.mock("@clerk/react", () => ({
-  useAuth: () => ({ getToken: testState.getToken, isSignedIn: true }),
-}));
+vi.mock("@effect/atom-react", () => ({ useAtomValue: () => testState.session }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: testState.toast } }));
 vi.mock("../state/relay", () => ({
   relayEnvironmentDiscovery: { refresh: testState.refreshDiscovery },
@@ -48,9 +50,10 @@ vi.mock("./primaryCloudLinkState", () => ({
     refresh: testState.refreshLink,
   }),
 }));
-vi.mock("./publicConfig", () => ({ resolveRelayClerkTokenOptions: () => ({}) }));
 
 import { useCloudLinkController, type CloudLinkDesiredState } from "./useCloudLinkController";
+
+const SESSION_CREDENTIAL = { accountId: "account-1", refreshToken: "styal_rt_account-1" };
 
 const target = {
   environmentId: EnvironmentId.make("primary"),
@@ -105,7 +108,11 @@ beforeEach(() => {
   testState.scopes = new Set([AuthRelayReadScope, AuthRelayWriteScope]);
   testState.snapshot = linkedState;
   testState.renderedSnapshot = linkedState;
-  testState.getToken.mockReset().mockResolvedValue("clerk-token");
+  testState.session = {
+    accountId: "account-1",
+    email: "someone@example.com",
+    credential: SESSION_CREDENTIAL,
+  };
   for (const command of [
     testState.link,
     testState.unlink,
@@ -134,7 +141,6 @@ describe("useCloudLinkController", () => {
       testState.scopes.delete(scope);
 
       expect(await reconcile({ managedTunnel: true, publish: true })).toBe(false);
-      expect(testState.getToken).not.toHaveBeenCalled();
       expectNoMutations();
     },
   );
@@ -144,43 +150,12 @@ describe("useCloudLinkController", () => {
     await mountController();
 
     expect(await reconcile({ managedTunnel: false, publish: true })).toBe(false);
-    expect(testState.getToken).not.toHaveBeenCalled();
-    expectNoMutations();
-  });
-
-  it.each([AuthRelayReadScope, AuthRelayWriteScope])(
-    "rechecks %s after requesting the cloud token",
-    async (scope) => {
-      await mountController();
-      testState.getToken.mockImplementationOnce(async () => {
-        testState.scopes.delete(scope);
-        return "clerk-token";
-      });
-
-      expect(await reconcile({ managedTunnel: false, publish: false })).toBe(false);
-      expectNoMutations();
-    },
-  );
-
-  it("stops if the link-state read fails while requesting the cloud token", async () => {
-    await mountController();
-    testState.getToken.mockImplementationOnce(async () => {
-      testState.snapshot = null;
-      return "clerk-token";
-    });
-
-    expect(await reconcile({ managedTunnel: true, publish: true })).toBe(false);
     expectNoMutations();
   });
 
   it("uses the latest linked mode to change publishing without replacing the tunnel", async () => {
-    testState.snapshot = { ...linkedState, linked: false, managedTunnelActive: false };
-    testState.renderedSnapshot = testState.snapshot;
+    testState.renderedSnapshot = { ...linkedState, linked: false, managedTunnelActive: false };
     await mountController();
-    testState.getToken.mockImplementationOnce(async () => {
-      testState.snapshot = linkedState;
-      return "clerk-token";
-    });
 
     expect(await reconcile({ managedTunnel: true, publish: true })).toBe(true);
     expect(testState.link).not.toHaveBeenCalled();
@@ -204,27 +179,32 @@ describe("useCloudLinkController", () => {
     expect(testState.refreshLink).toHaveBeenCalledOnce();
   });
 
-  it("still lets an authorized user unlink when the cloud token is unavailable", async () => {
+  it("still lets an authorized user unlink while signed out of styal Link", async () => {
+    testState.session = null;
     await mountController();
-    testState.getToken.mockRejectedValueOnce(new Error("Cloud sign-in unavailable"));
 
     expect(await reconcile({ managedTunnel: false, publish: false })).toBe(true);
-    expect(testState.unlink).toHaveBeenCalledExactlyOnceWith({ target, clerkToken: null });
+    expect(testState.unlink).toHaveBeenCalledExactlyOnceWith({ target, credential: null });
     expect(testState.link).not.toHaveBeenCalled();
     expect(testState.preferences).not.toHaveBeenCalled();
   });
 
-  it("unlinks if the link-state read fails while requesting the cloud token", async () => {
+  it("links with the signed-in session and refuses to link while signed out", async () => {
+    testState.snapshot = { ...linkedState, linked: false, managedTunnelActive: false };
+    testState.renderedSnapshot = testState.snapshot;
     await mountController();
-    testState.getToken.mockImplementationOnce(async () => {
-      testState.snapshot = null;
-      throw new Error("Cloud sign-in unavailable");
+
+    expect(await reconcile({ managedTunnel: true, publish: false })).toBe(true);
+    expect(testState.link).toHaveBeenCalledExactlyOnceWith({
+      target,
+      credential: SESSION_CREDENTIAL,
+      mode: "managed",
     });
 
-    expect(await reconcile({ managedTunnel: false, publish: false })).toBe(true);
-    expect(testState.unlink).toHaveBeenCalledExactlyOnceWith({ target, clerkToken: null });
+    testState.link.mockClear();
+    testState.session = null;
+    await mountController();
+    expect(await reconcile({ managedTunnel: true, publish: false })).toBe(false);
     expect(testState.link).not.toHaveBeenCalled();
-    expect(testState.preferences).not.toHaveBeenCalled();
-    expect(testState.refreshLink).toHaveBeenCalledOnce();
   });
 });

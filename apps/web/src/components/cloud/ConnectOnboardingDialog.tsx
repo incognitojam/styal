@@ -1,11 +1,5 @@
-import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
-import {
-  AuthAdministrativeScopes,
-  AuthRelayReadScope,
-  AuthRelayWriteScope,
-  type AuthSessionState,
-} from "@t3tools/contracts";
+import { AuthRelayReadScope, AuthRelayWriteScope, type AuthSessionState } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 
@@ -13,8 +7,10 @@ import {
   CONNECT_ONBOARDING_OPT_OUT_STORAGE_KEY,
   ConnectOnboardingOptOutSchema,
   EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE,
+  interactiveRelaySignInAtom,
 } from "~/cloud/connectOnboarding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { useRelayAccount } from "~/cloud/useRelayAccount";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
@@ -33,12 +29,12 @@ import { WizardSteps, WizardPopup, WizardHeader, WizardPanel, WizardFooter } fro
 
 /**
  * Post-sign-in onboarding wizard for styal Link. Opens on every in-session
- * sign-in — sign-out removes the connected relay environments, so each new
+ * interactive sign-in — sign-out removes the connected relay environments, so each new
  * session starts with no devices to reach. It first prompts to publish this
  * environment (managed tunnel + agent activity, both defaulting on) when the
  * current session is authorized to manage the relay link, then lists the
  * account's styal Link environments so every device can be connected right
- * away. A cold load with a restored session does not count as a sign-in.
+ * away. Restoration and silent Clerk adoption do not request setup.
  */
 export function ConnectOnboardingDialog() {
   if (!hasCloudPublicConfig()) return null;
@@ -51,9 +47,8 @@ type OnboardingStep = "publish" | "devices";
 const EMPTY_SESSION_STATE_ATOM = Atom.make(AsyncResult.initial<AuthSessionState>());
 
 function ConfiguredConnectOnboardingDialog() {
-  // Mirrors ManagedRelayAuthProvider: a pending Clerk session must not read as
-  // signed-out, or its later activation would look like a fresh sign-in.
-  const { isLoaded, isSignedIn, userId } = useAuth({ treatPendingAsSignedOut: false });
+  const { isSignedIn, accountId: userId } = useRelayAccount();
+  const interactiveSignIn = useAtomValue(interactiveRelaySignInAtom);
   const [optOutState, setOptOutState] = useLocalStorage(
     CONNECT_ONBOARDING_OPT_OUT_STORAGE_KEY,
     EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE,
@@ -91,7 +86,7 @@ function ConfiguredConnectOnboardingDialog() {
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const prefilledFromLinkStateRef = useRef(false);
-  const observedAccountRef = useRef<string | null | undefined>(undefined);
+  const observedSignInRef = useRef(interactiveSignIn);
 
   useEffect(() => {
     if (step === "publish" && sessionScopesKnown && !showPublishStep && !isApplying) {
@@ -101,23 +96,14 @@ function ConfiguredConnectOnboardingDialog() {
 
   const optOutAccounts = optOutState.optOutAccounts;
 
-  // Every sign-in or account switch that completes during this session
-  // requests the wizard — account transitions clear the connected relay
-  // environments, so each new session starts with no devices to reach. A cold
-  // load observes undefined → account and must not re-prompt.
+  // Only an interactive sign-in while this dialog is mounted requests setup.
+  // Restores, silent Clerk adoption, and sign-ins in /welcome do not prompt.
   useEffect(() => {
-    if (!isLoaded) return;
-    // A loaded-but-incomplete snapshot (signed in, user id not yet populated)
-    // must not be recorded as signed-out — the next render would then look
-    // like a fresh sign-in on a cold load.
-    if (isSignedIn && !userId) return;
-    const previousAccount = observedAccountRef.current;
-    const nextAccount = isSignedIn && userId ? userId : null;
-    observedAccountRef.current = nextAccount;
-    if (previousAccount !== undefined && previousAccount !== nextAccount && nextAccount !== null) {
-      setRequestedAccount(nextAccount);
-    }
-  }, [isLoaded, isSignedIn, userId]);
+    if (interactiveSignIn === observedSignInRef.current) return;
+    observedSignInRef.current = interactiveSignIn;
+    if (interactiveSignIn !== null && isSignedIn && userId === interactiveSignIn.accountId)
+      setRequestedAccount(userId);
+  }, [interactiveSignIn, isSignedIn, userId]);
 
   // A manageable session implies a primary environment, so when the scopes
   // allow publishing, wait for the connection target too — otherwise the

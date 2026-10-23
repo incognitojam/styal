@@ -6,6 +6,7 @@ import { vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as SecureStore from "expo-secure-store";
 import { verifyDpopProof } from "@t3tools/shared/dpop";
 
 import { createDpopProof, generateDpopProofKeyPair, loadOrCreateDpopProofKeyPair } from "./dpop";
@@ -33,11 +34,12 @@ vi.mock("expo-crypto", () => ({
 
 const secureStore = new Map<string, string>();
 vi.mock("expo-secure-store", () => ({
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "after-first-unlock-this-device-only",
   getItemAsync: (key: string) => Promise.resolve(secureStore.get(key) ?? null),
-  setItemAsync: (key: string, value: string) => {
+  setItemAsync: vi.fn((key: string, value: string) => {
     secureStore.set(key, value);
     return Promise.resolve();
-  },
+  }),
 }));
 
 function proofIat(proof: string): number {
@@ -82,6 +84,12 @@ describe("mobile DPoP", () => {
 
       expect(second.thumbprint).toBe(first.thumbprint);
       expect(second.privateJwk).toEqual(first.privateJwk);
+      // Live Activity token reports can need the key while the phone is locked.
+      expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+        "styal.cloud.dpop-proof-key",
+        expect.any(String),
+        { keychainAccessible: "after-first-unlock-this-device-only" },
+      );
     }).pipe(Effect.provide(Dpop.layer)),
   );
 
@@ -101,7 +109,7 @@ describe("mobile DPoP", () => {
       const connect = yield* createDpopProof({
         method: "POST",
         url: "https://relay.example.test/v1/environments/env-1/connect",
-        accessToken: "clerk-token",
+        accessToken: "relay-access-token",
         proofKey,
       });
       const bootstrap = yield* createDpopProof({
@@ -118,7 +126,7 @@ describe("mobile DPoP", () => {
           method: "POST",
           url: "https://relay.example.test/v1/environments/env-1/connect",
           expectedThumbprint: proofKey.thumbprint,
-          expectedAccessToken: "clerk-token",
+          expectedAccessToken: "relay-access-token",
           nowEpochSeconds: proofIat(connect.proof),
         }),
       ).toMatchObject({ ok: true, thumbprint: proofKey.thumbprint });
@@ -140,7 +148,7 @@ describe("mobile DPoP", () => {
       const proof = yield* createDpopProof({
         method: "POST",
         url: "https://relay.example.test/v1/environments/env-1/connect?debug=1#ignored",
-        accessToken: "clerk-token",
+        accessToken: "relay-access-token",
         proofKey,
       });
 
@@ -153,7 +161,7 @@ describe("mobile DPoP", () => {
           method: "POST",
           url: "https://relay.example.test/v1/environments/env-1/connect?debug=1#ignored",
           expectedThumbprint: proofKey.thumbprint,
-          expectedAccessToken: "clerk-token",
+          expectedAccessToken: "relay-access-token",
           nowEpochSeconds: proofIat(proof.proof),
         }),
       ).toMatchObject({ ok: true });

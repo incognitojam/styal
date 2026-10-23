@@ -24,6 +24,7 @@ import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { KeybindingsConfigWarning } from "../components/KeybindingsConfigWarning";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
+import { RelayAuthDialogs } from "../components/relay-auth/RelayAuthDialogs";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { DiscordPresenceSync } from "../components/desktop/DiscordPresenceSync";
@@ -183,6 +184,7 @@ function RootRouteView() {
           <GlassAppearanceSync />
           <FontAppearanceSync />
           <ProviderAuthCallbackCoordinator />
+          <RelayAuthDialogs />
           <CustomSnoozeDialogHost />
           <CommandPalette>
             <AppSidebarLayout>
@@ -235,6 +237,7 @@ function RootRouteView() {
           {isElectron ? <RunningThreadKeepAlive /> : null}
           <RelayClientInstallDialog />
           <ConnectOnboardingDialog />
+          <RelayAuthDialogs />
           <SshPasswordPromptDialog />
           <DiscordPresenceSync />
           <SnapShotCoordinator />

@@ -1,6 +1,5 @@
 import * as Exit from "effect/Exit";
 import { runtime } from "../../lib/runtime";
-import { unregisterAgentAwarenessDeviceForCurrentUser } from "../agent-awareness/remoteRegistration";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -10,11 +9,26 @@ import {
   activateCloudRelayAccount,
   deactivateCloudRelayAccount,
 } from "./CloudAuthProvider";
-import { setAgentAwarenessRelayTokenProvider } from "../agent-awareness/remoteRegistration";
+import { setAgentAwarenessRelayCredential } from "../agent-awareness/remoteRegistration";
 
 vi.mock("@clerk/expo", () => ({
   ClerkProvider: vi.fn(),
+  getClerkInstance: vi.fn(),
   useAuth: vi.fn(),
+  useClerk: vi.fn(),
+}));
+
+vi.mock("./relaySessionStore", () => ({
+  publishRelaySignIn: vi.fn(),
+  relaySignInAtom: {},
+}));
+
+vi.mock("./relaySession", () => ({
+  adoptClerkSession: vi.fn(),
+  failClerkAdoption: vi.fn(),
+  finishClerkAdoptionSignedOut: vi.fn(),
+  restoreRelaySession: vi.fn(),
+  setLegacyClerkSignOut: vi.fn(),
 }));
 
 vi.mock("react-native", () => ({
@@ -48,12 +62,13 @@ vi.mock("./publicConfig", () => ({
     clerk: { publishableKey: null },
     relay: { url: null },
   })),
+  hasLegacyClerkConfig: vi.fn(() => false),
   resolveRelayClerkTokenOptions: vi.fn(),
 }));
 
 vi.mock("../agent-awareness/remoteRegistration", () => ({
-  setAgentAwarenessRelayTokenProvider: vi.fn(),
-  unregisterAgentAwarenessDeviceForCurrentUser: vi.fn(),
+  releaseAgentAwarenessRelayCredential: vi.fn(),
+  setAgentAwarenessRelayCredential: vi.fn(),
 }));
 
 afterEach(() => {
@@ -61,32 +76,34 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const session = {
+  accountId: "account-1",
+  email: "someone@example.com",
+  credential: { accountId: "account-1", refreshToken: "styal_rt_session_secret" },
+};
+
 describe("CloudAuthProvider relay account isolation", () => {
-  it("clears cached credentials and device registration even if the draft archive fails", async () => {
+  it("resets cached relay access tokens even if the draft archive fails", async () => {
     vi.mocked(runtime.runPromiseExit).mockResolvedValue(Exit.succeed(undefined));
-    const previousTokenProvider = async () => "synthetic-token";
     const archiveError = new Error("Draft archive is unreadable");
     await expect(
       cleanUpCloudRelayAccount(async () => {
         throw archiveError;
-      }, previousTokenProvider),
+      }),
     ).rejects.toBe(archiveError);
-    expect(unregisterAgentAwarenessDeviceForCurrentUser).toHaveBeenCalledWith(
-      previousTokenProvider,
-    );
-    expect(runtime.runPromiseExit).toHaveBeenCalledTimes(2);
+    expect(runtime.runPromiseExit).toHaveBeenCalledTimes(1);
   });
 
-  it("clears relay and agent-awareness credentials before cleanup can fail", async () => {
-    const tokenProvider = async () => "account-1-token";
-    activateCloudRelayAccount("account-1", tokenProvider);
-    expect(appAtomRegistry.get(managedRelaySessionAtom)?.accountId).toBe("account-1");
+  it("publishes the session to relay requests and device registration, and clears both", () => {
+    activateCloudRelayAccount(session);
+    expect(appAtomRegistry.get(managedRelaySessionAtom)).toEqual(session);
+    expect(vi.mocked(setAgentAwarenessRelayCredential)).toHaveBeenLastCalledWith(
+      session.credential,
+    );
 
     deactivateCloudRelayAccount();
-    const cleanup = Promise.reject(new Error("Persistence removal failed.")).catch(() => undefined);
 
     expect(appAtomRegistry.get(managedRelaySessionAtom)).toBeNull();
-    expect(vi.mocked(setAgentAwarenessRelayTokenProvider)).toHaveBeenLastCalledWith(null);
-    await cleanup;
+    expect(vi.mocked(setAgentAwarenessRelayCredential)).toHaveBeenLastCalledWith(null);
   });
 });

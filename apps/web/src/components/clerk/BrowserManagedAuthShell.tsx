@@ -1,7 +1,8 @@
 import { ClerkProvider } from "@clerk/react";
 import type { ReactNode } from "react";
 
-import { ManagedRelayAuthProvider } from "../../cloud/managedAuth";
+import { LegacyClerkSessionAdoption } from "../../cloud/legacyClerkSession";
+import { isLegacyCliConnectRoute } from "../../cloud/connectCliAuth";
 import { clerkAppearance } from "./clerkAppearance";
 
 /**
@@ -19,7 +20,8 @@ export default function BrowserManagedAuthShell({
 }) {
   return (
     <ClerkProvider appearance={clerkAppearance} publishableKey={publishableKey}>
-      <ManagedRelayAuthProvider>{children}</ManagedRelayAuthProvider>
+      {isLegacyCliConnectRoute() ? null : <LegacyClerkSessionAdoption />}
+      {children}
     </ClerkProvider>
   );
 }

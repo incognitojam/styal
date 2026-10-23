@@ -9,6 +9,7 @@ import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 
 import type { ConnectionAttemptError } from "../connection/model.ts";
+import type { ManagedRelayCredential } from "../relay/managedRelay.ts";
 
 export interface PreparedSshEnvironment {
   readonly bootstrap: DesktopSshEnvironmentBootstrap;
@@ -20,7 +21,7 @@ export interface ProvisionedSshEnvironment extends PreparedSshEnvironment {
   readonly label: string;
 }
 
-/** Stable for one signed-in session, including same-account token refreshes. */
+/** Stable for one signed-in session, including access token refreshes. */
 export interface CloudSessionIdentity {
   readonly accountId: string;
 }
@@ -29,7 +30,7 @@ export class CloudSession extends Context.Service<
   CloudSession,
   {
     readonly identity: Effect.Effect<Option.Option<CloudSessionIdentity>>;
-    readonly clerkToken: Effect.Effect<string, ConnectionAttemptError>;
+    readonly credential: Effect.Effect<ManagedRelayCredential, ConnectionAttemptError>;
     /** Why there is no identity: the sign-in is still loading, unreachable, or signed out. */
     readonly missingSession: Effect.Effect<never, ConnectionAttemptError>;
   }

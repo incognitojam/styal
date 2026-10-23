@@ -2,7 +2,6 @@ import type {
   RelayClientEnvironmentRecord,
   RelayEnvironmentStatusResponse,
 } from "@t3tools/contracts/relay";
-import { decodeRelayJwt } from "@t3tools/shared/relayJwt";
 import {
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
@@ -92,16 +91,6 @@ function validateStatus(
   return Effect.succeed(status);
 }
 
-function relayAccountId(clerkToken: string): Option.Option<string> {
-  try {
-    return Option.fromNullishOr(decodeRelayJwt(clerkToken).sub).pipe(
-      Option.filter((subject) => subject.length > 0),
-    );
-  } catch {
-    return Option.none();
-  }
-}
-
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
   const relay = yield* ManagedRelay.ManagedRelayClient;
@@ -150,12 +139,12 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
 
   const refreshStatus = Effect.fn("RelayEnvironmentDiscovery.refreshStatus")(function* (
     generation: number,
-    clerkToken: string,
+    credential: ManagedRelay.ManagedRelayCredential,
     environment: RelayClientEnvironmentRecord,
   ) {
     const result = yield* relay
       .getEnvironmentStatus({
-        clerkToken,
+        credential,
         scopes: [RelayEnvironmentStatusScope, RelayEnvironmentConnectScope],
         environmentId: environment.environmentId,
       })
@@ -228,7 +217,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
       // clean empty list. Only the session-level "no credentials" error is
       // benign — relay-side auth failures (expired/invalid tokens) happen
       // after this point and must surface as errors.
-      const tokenResult = yield* Effect.result(session.clerkToken);
+      const tokenResult = yield* Effect.result(session.credential);
       if (tokenResult._tag === "Failure") {
         const failure = tokenResult.failure;
         if (failure._tag === "ConnectionBlockedError" && failure.reason === "authentication") {
@@ -243,23 +232,20 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
         }
         return yield* failure;
       }
-      const clerkToken = tokenResult.success;
+      const credential = tokenResult.success;
       if ((yield* Ref.get(accountGeneration)) !== generation) {
         return;
       }
-      const accountId = relayAccountId(clerkToken);
+      const accountId = Option.some(credential.accountId);
       const previousAccountId = yield* Ref.get(activeAccountId);
-      if (
-        Option.isSome(previousAccountId) &&
-        (!Option.isSome(accountId) || previousAccountId.value !== accountId.value)
-      ) {
+      if (Option.isSome(previousAccountId) && previousAccountId.value !== credential.accountId) {
         generation = yield* Ref.updateAndGet(accountGeneration, (current) => current + 1);
         yield* Ref.set(refreshGeneration, generation);
       }
       yield* Ref.set(activeAccountId, accountId);
 
       const environments = yield* relay
-        .listEnvironments({ clerkToken })
+        .listEnvironments({ credential })
         .pipe(Effect.mapError(mapManagedRelayError));
       if ((yield* Ref.get(accountGeneration)) !== generation) {
         return;
@@ -280,7 +266,7 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
 
       yield* Effect.forEach(
         environments,
-        (environment) => refreshStatus(generation, clerkToken, environment),
+        (environment) => refreshStatus(generation, credential, environment),
         {
           concurrency: "unbounded",
           discard: true,

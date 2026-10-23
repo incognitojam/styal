@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   CloudPublicConfigMissingError,
+  hasLegacyClerkConfig,
   hasTracingPublicConfig,
   resolveCloudPublicConfig,
   resolveRelayClerkTokenOptions,
@@ -124,6 +125,19 @@ describe("resolveCloudPublicConfig", () => {
             tracesDataset: "mobile-traces",
             tracesToken: "public-ingest-token",
           },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("needs Clerk settings only to move an older Clerk sign-in", () => {
+    const relayOnly = resolveCloudPublicConfig({ relay: { url: "https://relay.example.test" } });
+    expect(hasLegacyClerkConfig(relayOnly)).toBe(false);
+    expect(
+      hasLegacyClerkConfig(
+        resolveCloudPublicConfig({
+          clerk: { publishableKey: "pk_test_example", jwtTemplate: "t3-relay" },
+          relay: { url: "https://relay.example.test" },
         }),
       ),
     ).toBe(true);

@@ -1,8 +1,9 @@
+import { Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 
 /**
  * Accounts that opted out of the post-sign-in styal Link onboarding wizard
- * ("Don't show this again"). The wizard otherwise shows on every sign-in,
+ * ("Don't show this again"). The wizard otherwise shows on interactive sign-in,
  * since sign-out clears the connected environments.
  */
 export const CONNECT_ONBOARDING_OPT_OUT_STORAGE_KEY = "styal:connect-onboarding-opt-out:v1";
@@ -16,3 +17,6 @@ export type ConnectOnboardingOptOutState = typeof ConnectOnboardingOptOutSchema.
 export const EMPTY_CONNECT_ONBOARDING_OPT_OUT_STATE: ConnectOnboardingOptOutState = {
   optOutAccounts: [],
 };
+
+/** Emitted only after an interactive sign-in commits in this tab. */
+export const interactiveRelaySignInAtom = Atom.make<{ readonly accountId: string } | null>(null);
