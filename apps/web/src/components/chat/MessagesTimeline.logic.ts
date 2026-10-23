@@ -805,6 +805,8 @@ const TURN_FOLD_ACTIVITY_ORDER: ReadonlyArray<TurnFoldActivityKind> = [
 ];
 
 function turnFoldActivityKind(entry: WorkLogEntry): TurnFoldActivityKind | null {
+  // Reasoning shares tool-group presentation, but is not a tool invocation.
+  if (entry.itemType === "reasoning") return null;
   if (workEntryMemoryFileKind(entry)) return "memory";
   if (entry.requestKind === "command") return "terminal";
   if (entry.requestKind === "file-read") return "file-read";
