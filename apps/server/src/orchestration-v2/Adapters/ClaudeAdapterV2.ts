@@ -1012,6 +1012,7 @@ export const layerQueryRunner: Layer.Layer<
           );
           const runtimeContext = yield* Effect.context<never>();
           const runFork = Effect.runForkWith(runtimeContext);
+          let stopScope: (() => void) | undefined;
           const claudeProcess = makeClaudeProcessSpawner({
             // Windows has no process groups.
             processGroup: platform !== "win32",
@@ -1023,6 +1024,7 @@ export const layerQueryRunner: Layer.Layer<
                 runFork(Effect.logDebug("claude.cli.stderr", { threadId: input.threadId, text }));
               },
               onExit: ({ pid, code, signal, stderrTail }) => {
+                stopScope?.();
                 runFork(
                   Effect.logInfo("claude.cli.exited", {
                     threadId: input.threadId,
@@ -1057,6 +1059,8 @@ export const layerQueryRunner: Layer.Layer<
                   threadId: input.threadId,
                   env: queryOptions.env,
                 });
+          const unit = launch?.unit;
+          stopScope = unit === undefined ? undefined : () => void runFork(agentScope.stop(unit));
           const options =
             launch === undefined || launch.args.length === 0
               ? queryOptions
