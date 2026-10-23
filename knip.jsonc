@@ -34,7 +34,9 @@
       ],
       "ignoreDependencies": ["esbuild"],
       // The `@styal/cli` npm package's files: copied into the package, never imported.
-      "ignore": ["npm-launcher/**"],
+      // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a
+      // knip run beside it in check:changed must not report.
+      "ignore": ["npm-launcher/**", ".knip-test-*/**"],
     },
     "e2e": {
       "entry": [
