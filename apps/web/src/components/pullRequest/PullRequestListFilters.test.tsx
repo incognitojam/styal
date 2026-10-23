@@ -24,6 +24,7 @@ function menu(overrides: Partial<Parameters<typeof PullRequestFiltersMenu>[0]>) 
     serverOptions: [],
     onServer: () => undefined,
     projects: [],
+    optionScope: [],
     projectId: undefined,
     projectEnvironmentId: undefined,
     unavailable: new Map(),
