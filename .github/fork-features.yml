@@ -3915,7 +3915,7 @@ features:
   - id: pull-request-required-checks
     title: Separate pull request checks and show merge readiness
     status: maintained
-    prs: [138, 151, 159, 185, 209, 495]
+    prs: [138, 151, 159, 185, 209, 495, 984]
     invariants:
       - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
       - Check rows share one set of columns, so the Required badge, status and link mark line up whatever each row's status says or whether it has a link.
