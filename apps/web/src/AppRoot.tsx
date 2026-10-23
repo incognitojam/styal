@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 
 import { BrowserProfileReporter } from "./browser/BrowserProfileReporter";
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
+import { ClientSettingsSnapshotReporter } from "./components/ClientSettingsSnapshotReporter";
 import { ThreadVisitBaselineObserver } from "./components/ThreadVisitBaselineObserver";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
 import { WebBuildUpdateProvider } from "./components/WebBuildUpdateProvider";
@@ -24,6 +25,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
         <ThreadVisitBaselineObserver />
         <ElectronBrowserHost />
         <BrowserProfileReporter />
+        <ClientSettingsSnapshotReporter />
         <QuitHoldOverlay />
         <ConfirmDialogHost />
       </WebBuildUpdateProvider>

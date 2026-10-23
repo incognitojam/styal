@@ -38,6 +38,11 @@ counts. Paths, branch prefixes, instructions, model choices, and per-project set
 collected; for those it reports only whether they were changed or how many projects have their own
 settings.
 
+Web and desktop apps also report their own settings once a day, such as the send shortcut, follow-up
+behavior, sidebar grouping and sorting, sounds, font sizes and browser defaults. Font names, browser
+profile names, and your projects are not collected; the app reports only whether you changed a font,
+how many browser profiles you added, and whether you have dragged projects into your own order.
+
 Web and desktop clients also record explicit diff-order selections, when you open a
 mentioned time's explanation, which automatic settling rules you keep when finishing setup, when
 you change the sidebar's project filter or start a thread while it is applied, whether a project
