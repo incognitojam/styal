@@ -21,8 +21,9 @@ import {
 
 /**
  * The remote half of the sidebar update button: outdated providers on every
- * connected machine, and servers behind the version this client runs or is
- * about to install (`localUpdateVersion`). Servers that install from npm appear
+ * connected machine, except those styal managed updates installs, and servers
+ * behind the version this client runs or is about to install
+ * (`localUpdateVersion`). Servers that install from npm appear
  * only once npm confirms that version. `run` performs the whole pass, including
  * this app's own download and install when given.
  */
@@ -59,7 +60,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     ? behindServers
     : behindServers.filter((server) => server.selfUpdate === "desktop-managed");
   const restarts = collectRestartingMachines(machines, servers, localUpdateVersion !== null);
-  const providers = useProviderUpdates();
+  // Settings still offers a manual update for providers styal manages.
+  const providers = useProviderUpdates({ leaveManagedUpdates: true });
   // The fork's server update checks each host for running work first and asks
   // only when something would be interrupted.
   const updateServers = useServerUpdates();
