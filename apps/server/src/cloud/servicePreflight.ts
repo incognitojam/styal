@@ -23,7 +23,12 @@ export function runServicePreflight(input: {
     return {
       status: "blocked",
       version,
-      reason: `This release requires the styal executable service launcher (protocol ${SERVICE_LAUNCHER_PROTOCOL}). On the server machine, run: npx @styal/cli@${version} service update`,
+      reason: [
+        `The installed service launcher speaks protocol ${input.launcherProtocol}, but styal@${version} requires protocol ${SERVICE_LAUNCHER_PROTOCOL}.`,
+        `On the server machine, run: npx @styal/cli@${version} service update`,
+        `Check that \`styal --version\` prints ${version} and that \`which -a styal\` lists no older styal first.`,
+        "Updating the desktop app does not update this CLI, and `styal service update` only repairs the service with whichever CLI runs it.",
+      ].join(" "),
     };
   }
 

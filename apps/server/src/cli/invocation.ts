@@ -68,7 +68,7 @@ const GLOBAL_PACKAGE_ENTRY = new RegExp(
  * only when its package is this exact version: a different `styal` run from
  * an agent's shell must not claim to be the npm install.
  */
-const resolveEntryPath = Effect.gen(function* () {
+export const resolveEntryPath = Effect.gen(function* () {
   const npmLauncher = (yield* HostProcess.Environment).T3CODE_NPM_LAUNCHER_PATH?.trim();
   if (npmLauncher) {
     const fs = yield* FileSystem.FileSystem;
