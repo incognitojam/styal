@@ -366,7 +366,9 @@ export function PullRequestChecksTab({
                 ) : (
                   <span />
                 )}
-                <span className="text-muted-foreground">{pullRequestCheckStatusLabel(check)}</span>
+                <span className="text-center text-muted-foreground">
+                  {pullRequestCheckStatusLabel(check)}
+                </span>
               </>
             );
             return (
