@@ -19,7 +19,9 @@ Each action has:
 - An option to run in a thread's worktree each time the thread settles, for example to delete
   build output. See [Settle finished work](./thread-sidebar.md#settle-finished-work).
 
-Actions are saved for one checkout, not for every checkout in its project group. Saved actions are
+Actions are saved for one checkout, not for every checkout in its project group. When a project has
+several checkouts, **Actions** lists each checkout's actions separately: **Add action** next to a
+checkout adds to that checkout only, and **Add to all** adds to every checkout. Saved actions are
 available to connected clients, including mobile. On mobile, open a thread's terminal menu to run
 one.
 
