@@ -16,7 +16,7 @@ import * as DesktopTelemetryPublisher from "./DesktopTelemetryPublisher.ts";
 const { logInfo } = DesktopObservability.makeComponentLogger("desktop-launch");
 
 /** Saved in the runtime folder when an update restart hands off to the installer. */
-export const DESKTOP_UPDATE_RESTART_TIMING_FILE = "update-restart-timing.json";
+const DESKTOP_UPDATE_RESTART_TIMING_FILE = "update-restart-timing.json";
 const UpdateRestartTiming = Schema.fromJsonString(
   Schema.Struct({
     toVersion: Schema.String,
