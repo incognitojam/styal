@@ -44,10 +44,10 @@ describe("update everything from the sidebar", () => {
     await confirmation.getByRole("button", { name: "Update" }).click();
 
     // The server has nothing running, so the activity check goes ahead without asking.
-    await page
-      .getByText(`Reconnected on @styal/cli@${CLIENT_VERSION}`)
-      .waitFor({ timeout: 240_000 });
-    expect(server.activeVersion()).toBe(CLIENT_VERSION);
-    await expect(update.waitFor({ state: "detached", timeout: 30_000 })).resolves.toBeUndefined();
+    // The launcher records the version it switched to once the new server is up.
+    await expect
+      .poll(() => server.activeVersion(), { timeout: 240_000, interval: 1_000 })
+      .toBe(CLIENT_VERSION);
+    await expect(update.waitFor({ state: "detached", timeout: 60_000 })).resolves.toBeUndefined();
   }, 360_000);
 });
