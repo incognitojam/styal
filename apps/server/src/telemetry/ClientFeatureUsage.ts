@@ -22,6 +22,19 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
     if (input.feature === "desktop-update-notice" && client.surface !== "desktop") {
       return Effect.void;
     }
+    const attribution = {
+      forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+      surface: client.surface,
+      ...(client.clientOs ? { clientOs: client.clientOs } : {}),
+      ...(client.clientAppVersion ? { clientAppVersion: client.clientAppVersion } : {}),
+    };
+    // A preference snapshot is not usage; keep it off feature.used dashboards.
+    if (input.feature === "client-settings") {
+      const { feature: _feature, action: _action, ...settings } = input;
+      return analytics
+        .record("client.settings.snapshot", { ...settings, ...attribution })
+        .pipe(Effect.ignoreCause);
+    }
     const exposed =
       (input.feature === "web-build-update-notice" || input.feature === "desktop-update-notice") &&
       input.action === "notice_shown";
@@ -29,10 +42,7 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
       .record(exposed ? "feature.exposed" : "feature.used", {
         ...input,
         source: exposed ? "system" : "user",
-        forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
-        surface: client.surface,
-        ...(client.clientOs ? { clientOs: client.clientOs } : {}),
-        ...(client.clientAppVersion ? { clientAppVersion: client.clientAppVersion } : {}),
+        ...attribution,
       })
       .pipe(Effect.ignoreCause);
   };

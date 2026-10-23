@@ -59,7 +59,7 @@ Servers with `settingsSnapshotUsageVersion = 1` send one `settings.snapshot` eve
 - Usage: `cursorKeychainUsageEnabled`.
 - `backgroundActivityProfile` (`balanced`, `performance`, `battery-saver`, `custom`).
 
-Values are booleans, enum literals and small integers. Paths, branch prefixes, instructions, model and instance IDs, and the contents of per-project settings are never sent; they appear only as `...Customized`, `...Set` or a count. Provider update settings are covered by `provider.inventory`. Client preferences such as the send shortcut, follow-up behavior and sidebar sorting are stored on each device rather than on the server, so this event does not cover them.
+Values are booleans, enum literals and small integers. Paths, branch prefixes, instructions, model and instance IDs, and the contents of per-project settings are never sent; they appear only as `...Customized`, `...Set` or a count. Provider update settings are covered by `provider.inventory`. Client preferences such as the send shortcut, follow-up behavior and sidebar sorting are stored on each device; `client.settings.snapshot` below reports them.
 
 To judge a default, filter `buildKind = release`, take each identity's latest snapshot in a window of at least a day, and compute the share of identities whose value differs from the default, per property. A high share for one value suggests a different default or a setup step; a low share means the default holds. Events carry no server ID, so when one identity runs several servers, such as a laptop and a desktop signed in to the same provider account, its latest snapshot comes from whichever server reported last. Project-level overrides are not broken down by key.
 
@@ -78,6 +78,21 @@ For the existing agent-browser adoption chart, count distinct reporting identiti
 This estimates adoption among active reporting identities, not every user. Telemetry opt-outs are absent, the identity may represent an account or an installation, and some active environments have no compatible desktop browser host. A low rate is evidence to investigate availability and discoverability before removing a feature. Track failed attempts separately from successful adoption; an unavailable feature can have demand without successful uses.
 
 For reliability, include every action and outcome, then break down failures and p50/p95 `durationMs` by action and server version. Browser snapshot outcomes include saving a requested screenshot, and recording-stop outcomes include transferring its artifact. Internal status requests for tool icons do not emit additional usage events.
+
+## Client settings snapshot
+
+Web and desktop clients with `forkClientUsageVersion >= 7` send one `client.settings.snapshot` event per device per day. It is not a `feature.used` event. The client reports through its primary environment, or on hosted web through the first paired environment that accepts the vocabulary, and starts the next day only after that server accepts the report. Windows on one device share the day through local storage; a report that fails, for example before the socket reconnects, is retried a minute later. Events carry the reporting server's identity plus `surface`, `clientOs` and `clientAppVersion`. Mobile does not report.
+
+- Composer and conversation: `sendShortcut`, `followUpBehavior`, `composerRichTextEnabled`, `composerCollapseOnScroll`, `persistComposerContextStrip`, `proactivePanelsEnabled`, `showSkillsInSlashMenu`, `planModeEnabled`, `contextWindowMeterEnabled`, `turnUsageEnabled`, `turnUsageFigure`, `chatWidth`, `wordWrap`, `timestampFormat`, `loadBalancingEnabled`.
+- Sidebar: `legacySidebarEnabled`, `sidebarWorkingShelfEnabled`, `sidebarThreadGrouping`, `sidebarProjectGroupingMode`, `sidebarProjectGroupingOverrideCount`, `sidebarProjectSortOrder`, `sidebarManualProjectOrderSaved` (the device has dragged projects into an order; the order is kept even while another sort is selected), `sidebarThreadSortOrder`, `sidebarThreadTimestampMode`, `sidebarThreadPreviewCount`, `confirmThreadArchive`, `confirmThreadDelete`, `confirmThreadUnpin`.
+- Notifications: `notificationMode`, `inAppNotificationsEnabled`, `completionSound`, `inputSound`, `approvalSound`, `claudeStatusAlertsEnabled`, `openaiStatusAlertsEnabled`, `githubStatusAlertsEnabled`.
+- Appearance and diffs: `appearanceContrast`, `glassOpacity`, `panelAnimationDurationMs`, `environmentIdentificationMode`, the four `fontSize...` values, `fontFamily{Sans,Composer,Code,Terminal}Customized`, `fontSmoothing`, `diffColorScheme`, `diffLayout`, `diffFilesCollapsed`, `diffIgnoreWhitespace`.
+- Browser: `browserLinkTarget`, `browserAutoShowFloatingPreview`, `browserDefaultViewport` (`fill`, `freeform`, `preset`), `browserDefaultZoomFactor`, `browserDefaultAppearance`, `browserProfileCount`, `browserDefaultProfileCustomized`, `browserRecordingFrameRate`, `browserRecordingShowKeyPresses`, `browserRecordingShowMousePresses`.
+- Desktop app (web clients report the stored value too; filter `surface = desktop`): `confirmQuit`, `discordRichPresence`, `snapShotEnabled`, `snapShotShortcutCustomized`, `snapShotIncludeAccessibility`, `snapShotPlaySound`, `snapShotSound`, `snapShotFlash`, `snapShotAnimations`.
+
+Font names, profile names and IDs, project keys, grouping overrides, load-balancing weights and per-repository merge choices are never sent. Judge defaults with the same latest-per-identity query as `settings.snapshot`; one identity can have several devices, so the latest report stands for the device that reported last. Split by `surface` when a setting means different things on web and desktop. [Styal Settings Defaults](https://eu.posthog.com/project/120501/dashboard/1043695) has a table for it, split by surface; update its defaults list when a client default changes.
+
+When adding a client setting, either report it here or list it with a reason in `NOT_REPORTED` in `apps/web/src/clientSettingsSnapshot.test.ts`; that test fails until you choose.
 
 ## Measure a fork feature
 

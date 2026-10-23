@@ -4272,29 +4272,38 @@ features:
       retire_when: Upstream keeps settings scope pickers visible and usable while scrolling without losing responsive wrapping or scope recovery.
 
   - id: settings-snapshot-telemetry
-    title: Report server preference values to see which defaults people change
+    title: Report server and device preference values to see which defaults people change
     status: maintained
     prs: [938]
     rationale: Maintainers decide which opinionated defaults to keep, change, or move into setup from how many installations change them.
     invariants:
       - Each server records one settings.snapshot event two minutes after startup and then daily, through the shared analytics identity, queue and telemetry opt-out, with settingsSnapshotUsageVersion marking reporting servers.
       - Every allowlisted key is sent on every report, at its default or not, as a boolean, enum literal, small integer or null. Paths, names, prefixes, instructions, model and instance ids, cost figures and record contents are never sent; record and free-text settings appear only as a count or a customized flag.
-      - Client settings stored on each device are not reported.
       - Every server setting is either reported or listed with a reason as deliberately left out, so new settings cannot be skipped silently.
+      - Web and desktop clients report their device settings at most once a day through the primary environment, or the first paired environment on hosted web, as client.settings.snapshot with forkClientUsageVersion 7 or later. The day restarts only when a server accepts the report, and windows on one device share it.
+      - The device report sends whether a manual project order is saved, never project keys, and every client setting is either reported or listed with a reason as deliberately left out.
     implementation_paths:
       - apps/server/src/server.ts
       - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/server/src/telemetry/SettingsSnapshot.ts
+      - apps/web/src/AppRoot.tsx
+      - apps/web/src/clientSettingsSnapshot.ts
+      - apps/web/src/components/ClientSettingsSnapshotReporter.tsx
+      - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/server/src/server.ts
       - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/web/src/AppRoot.tsx
     tests:
       - apps/server/src/telemetry/AnalyticsService.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/server/src/telemetry/SettingsSnapshot.test.ts
+      - apps/web/src/clientSettingsSnapshot.test.ts
     upstream:
       status: unassessed
       tracking: []
-      retire_when: Upstream reports which server settings differ from their defaults with structural values only.
+      retire_when: Upstream reports which server and client settings differ from their defaults with structural values only.
 
   - id: settled-shelf-auto-collapse
     title: Close the settled shelf once the user moves on

@@ -289,3 +289,117 @@ it.effect("observes workflow approvals once each, only from a user surface", () 
     ]);
   }),
 );
+
+it.effect(
+  "records a client settings snapshot as its own event without project or profile content",
+  () =>
+    Effect.gen(function* () {
+      const events: Array<{ event: string; properties: Record<string, unknown> | undefined }> = [];
+      const analytics = {
+        record: (event: string, properties?: Record<string, unknown>) =>
+          Effect.sync(() => {
+            events.push({ event, properties });
+          }),
+        flush: Effect.void,
+      };
+      const report = yield* ClientFeatureUsage.reporter({ surface: "desktop" }).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+      const snapshot = {
+        feature: "client-settings",
+        action: "snapshot",
+        sendShortcut: "mod-enter",
+        followUpBehavior: "queue",
+        composerRichTextEnabled: true,
+        composerCollapseOnScroll: true,
+        persistComposerContextStrip: false,
+        proactivePanelsEnabled: true,
+        showSkillsInSlashMenu: true,
+        planModeEnabled: false,
+        contextWindowMeterEnabled: false,
+        turnUsageEnabled: true,
+        turnUsageFigure: "tokens",
+        chatWidth: "comfortable",
+        wordWrap: true,
+        timestampFormat: "locale",
+        loadBalancingEnabled: false,
+        legacySidebarEnabled: false,
+        sidebarWorkingShelfEnabled: true,
+        sidebarThreadGrouping: "project",
+        sidebarProjectGroupingMode: "repository",
+        sidebarProjectGroupingOverrideCount: 2,
+        sidebarProjectSortOrder: "manual",
+        sidebarManualProjectOrderSaved: true,
+        sidebarThreadSortOrder: "updated_at",
+        sidebarThreadTimestampMode: "last_prompted",
+        sidebarThreadPreviewCount: 6,
+        confirmThreadArchive: false,
+        confirmThreadDelete: true,
+        confirmThreadUnpin: false,
+        notificationMode: "sound",
+        inAppNotificationsEnabled: false,
+        completionSound: "t3-completion",
+        inputSound: "t3-input",
+        approvalSound: "t3-input",
+        claudeStatusAlertsEnabled: true,
+        openaiStatusAlertsEnabled: true,
+        githubStatusAlertsEnabled: true,
+        appearanceContrast: 100,
+        glassOpacity: 80,
+        panelAnimationDurationMs: 0,
+        environmentIdentificationMode: "artwork",
+        fontSizeInterface: 14,
+        fontSizePrompt: 14,
+        fontSizeCode: 13,
+        fontSizeTerminal: 13,
+        fontFamilySansCustomized: false,
+        fontFamilyComposerCustomized: false,
+        fontFamilyCodeCustomized: true,
+        fontFamilyTerminalCustomized: false,
+        fontSmoothing: true,
+        diffColorScheme: "red-green",
+        diffLayout: "stacked",
+        diffFilesCollapsed: true,
+        diffIgnoreWhitespace: true,
+        browserLinkTarget: "system",
+        browserAutoShowFloatingPreview: true,
+        browserDefaultViewport: "fill",
+        browserDefaultZoomFactor: 1,
+        browserDefaultAppearance: "system",
+        browserProfileCount: 1,
+        browserDefaultProfileCustomized: false,
+        browserRecordingFrameRate: 30,
+        browserRecordingShowKeyPresses: false,
+        browserRecordingShowMousePresses: false,
+        confirmQuit: "hold",
+        discordRichPresence: false,
+        snapShotEnabled: false,
+        snapShotShortcutCustomized: false,
+        snapShotIncludeAccessibility: true,
+        snapShotPlaySound: true,
+        snapShotSound: "soft-pop",
+        snapShotFlash: true,
+        snapShotAnimations: true,
+      } as const;
+      yield* report(
+        yield* decode({
+          ...snapshot,
+          projectOrder: ["synthetic-project-key"],
+          fontFamilyCode: "Synthetic Mono",
+        }),
+      );
+
+      const { feature: _feature, action: _action, ...settings } = snapshot;
+      expect(events).toEqual([
+        {
+          event: "client.settings.snapshot",
+          properties: {
+            ...settings,
+            forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+            surface: "desktop",
+          },
+        },
+      ]);
+      expect(isUsage({ ...snapshot, sidebarThreadGrouping: "synthetic-project-key" })).toBe(false);
+    }),
+);
