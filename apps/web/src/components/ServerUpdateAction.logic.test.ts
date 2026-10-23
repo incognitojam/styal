@@ -106,6 +106,21 @@ describe("serverUpdateConfirmation", () => {
     );
   });
 
+  it("names a machine-labelled server from a batch update as a server", () => {
+    // Batch updates label each target with the machine name alone.
+    expect(confirmation({ serverLabel: "build-box", activity: null })).toBe(
+      [
+        "Update the build-box server?",
+        "Could not check the build-box server for running work.",
+        "Running threads and terminals may be interrupted.",
+      ].join("\n"),
+    );
+    expect(confirmation({ serverLabel: "build-box", desktopApp: true })?.split("\n")[0]).toBe(
+      "Update the styal desktop app that runs the build-box server?",
+    );
+    expect(serverUpdateQuestion([host({ serverLabel: "server" })])).toBe("Update the server?");
+  });
+
   it("always asks before relaunching a remote desktop app", () => {
     expect(confirmation({ desktopApp: true })).toBe(
       "Update the styal desktop app that runs the Lab server?\nIt will close and relaunch on that machine.",

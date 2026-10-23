@@ -13,6 +13,15 @@ function labels(hosts: ReadonlyArray<Pick<ServerUpdateHost, "serverLabel">>): st
   return hosts.map((host) => host.serverLabel).join(", ");
 }
 
+/**
+ * The server named in a sentence such as "Update the build-box server?". Single
+ * update buttons pass a label like "build-box server" or "server"; batch updates
+ * pass the machine name, which reads as "build-box server" here.
+ */
+function serverNoun(label: string): string {
+  return /(^|\s)server$/iu.test(label) ? label : `${label} server`;
+}
+
 /** Names the action consistently before and after checking running work. */
 export function serverUpdateQuestion(
   hosts: ReadonlyArray<Pick<ServerUpdateHost, "serverLabel" | "desktopApp">>,
@@ -22,12 +31,12 @@ export function serverUpdateQuestion(
   const desktopApps = hosts.filter((host) => host.desktopApp);
   if (desktopApps.length > 0) {
     return single
-      ? `Update the styal desktop app that runs the ${single.serverLabel}?`
+      ? `Update the styal desktop app that runs the ${serverNoun(single.serverLabel)}?`
       : desktopApps.length < hosts.length
         ? `Update the servers on ${labels(hosts)}?`
         : `Update the styal desktop apps on ${labels(desktopApps)}?`;
   }
-  const target = single ? single.serverLabel : `servers on ${labels(hosts)}`;
+  const target = single ? serverNoun(single.serverLabel) : `servers on ${labels(hosts)}`;
   return `Update the ${target}${concern === null ? "?" : hostActivityQuestion[concern]}`;
 }
 
@@ -50,7 +59,7 @@ export function serverUpdateConfirmation(hosts: ReadonlyArray<ServerUpdateHost>)
     ),
     {
       uncheckedHostsLine: single
-        ? `Could not check the ${single.serverLabel} for running work.`
+        ? `Could not check the ${serverNoun(single.serverLabel)} for running work.`
         : `Could not check ${labels(unchecked)} for running work.`,
     },
   );
