@@ -161,6 +161,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   update methods. [Code review](./source-control.md#review-and-merge).
   Compared with [T3 Code revision a493946](https://github.com/pingdotgg/t3code/tree/a493946bb42ab16e1d18285dac3e9e4603651330),
   checked September 23, 2026.
+- **Workflows waiting for approval on release pull requests.** T3 Code shows and approves fork
+  workflows waiting for a maintainer. styal also finds runs GitHub holds on pull requests a
+  workflow opened with `GITHUB_TOKEN`, such as Changesets release pull requests, offers
+  **Approve workflows to run** for them, and wakes a watching agent when runs wait for approval.
+  [Review and merge](./source-control.md#review-and-merge).
+  Compared with [T3 Code revision 60b35a1](https://github.com/pingdotgg/t3code/tree/60b35a1ee02d717009ff4a3de34de285db9e8a60),
+  checked October 22, 2026, which looks for waiting runs on fork pull requests only.
 - **Agents wait for CI outside pull requests.** T3 Code agents can already watch a pull request and
   wake when its checks finish. styal agents can also watch a single GitHub Actions run, such as CI
   after a merge, a deploy, or a workflow they started, and wake once it completes with the jobs that

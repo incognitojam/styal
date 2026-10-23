@@ -340,6 +340,12 @@ describe("gitHubViewerPermissions", () => {
       expect(detail.requiresUpToDateBranch).toBe(true);
       expect(detail.checks).toEqual([
         {
+          name: "Workflow approval status",
+          status: "action-required",
+          description: "GitHub could not determine whether workflows are awaiting approval.",
+          url: null,
+        },
+        {
           name: "build",
           status: "success",
           description: null,
@@ -352,12 +358,6 @@ describe("gitHubViewerPermissions", () => {
           description: "Waiting for status to be reported",
           url: null,
           required: true,
-        },
-        {
-          name: "Workflow approval status",
-          status: "action-required",
-          description: "GitHub could not determine whether workflows are awaiting approval.",
-          url: null,
         },
       ]);
       for (const fingerprint of ["broad", "restricted", "broad"]) {
@@ -466,7 +466,14 @@ describe("gitHubViewerPermissions", () => {
         yield* readChecks({ cwd: "/w", repository: "acme/web", host: "github.com", number: 7 }),
       ).toEqual({ state: detail.state, checks: detail.checks });
       expect(detail.workflowApprovalsRequired).toBe(1);
+      // The run waiting for approval comes first, above the checks it holds back.
       expect(detail.checks).toEqual([
+        {
+          name: "contributor tests",
+          status: "action-required",
+          description: "A maintainer must approve this workflow before it can run.",
+          url: "https://github.com/acme/web/actions/runs/123",
+        },
         {
           name: "manual gate",
           status: "action-required",
@@ -478,12 +485,6 @@ describe("gitHubViewerPermissions", () => {
           status: "success",
           description: null,
           url: null,
-        },
-        {
-          name: "contributor tests",
-          status: "action-required",
-          description: "A maintainer must approve this workflow before it can run.",
-          url: "https://github.com/acme/web/actions/runs/123",
         },
       ]);
     }).pipe(
@@ -636,6 +637,7 @@ describe("core detail author avatars", () => {
         Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
           getPullRequestDetail: () =>
             Effect.succeed({ ...openDetail, author, isCrossRepository: false }),
+          listWorkflowRunsRequiringApproval: () => Effect.succeed([]),
           getRequiredChecks: () => Effect.succeed([]),
           getBranchPolicy: () => Effect.succeed({ requiredChecks: [], allowedMergeMethods: null }),
         }),
@@ -680,44 +682,78 @@ it.effect(
     }),
 );
 
-it.effect("does not classify same-repository gates as fork workflow approvals", () =>
-  Effect.gen(function* () {
-    const provider = yield* make;
-    const detail = yield* provider.getChangeRequest({
-      cwd: "/w",
-      repository: "acme/web",
-      host: "github.com",
-      number: 7,
+describe("same-repository workflow approvals", () => {
+  const sameRepository = (
+    listWorkflowRunsRequiringApproval: GitHubPullRequestApi.GitHubPullRequestApi["Service"]["listWorkflowRunsRequiringApproval"],
+  ) =>
+    Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
+      revalidateChecks: (_input, read) => read,
+      getRequiredChecks: () => Effect.succeed([]),
+      getBranchPolicy: () =>
+        Effect.succeed({
+          requiredChecks: [],
+          requiresUpToDateBranch: false,
+          allowedMergeMethods: null,
+        }),
+      getPullRequestDetail: () => Effect.succeed({ ...openDetail, isCrossRepository: false }),
+      listWorkflowRunsRequiringApproval,
     });
 
-    expect(detail.workflowApprovalsRequired).toBe(0);
-    expect(detail.checks).toEqual([]);
-  }).pipe(
-    Effect.provide(
-      Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
-        revalidateChecks: (_input, read) => read,
-        getRequiredChecks: () => Effect.succeed([]),
-        getBranchPolicy: () =>
-          Effect.succeed({
-            requiredChecks: [],
-            requiresUpToDateBranch: false,
-            allowedMergeMethods: null,
-          }),
-        getPullRequestDetail: () => Effect.succeed({ ...openDetail, isCrossRepository: false }),
-        listWorkflowRunsRequiringApproval: () =>
-          Effect.die("same-repository pull requests must not probe fork workflow approvals"),
-        getViewerAccess: () =>
-          Effect.succeed({
-            canWrite: true,
-            canTriage: true,
-            canUpdate: true,
-            didAuthor: false,
-            mergeCapabilities: { merge: true, squash: true, rebase: true },
-          }),
-      }),
+  it.effect("reports runs a workflow's own push left waiting for a maintainer", () =>
+    Effect.gen(function* () {
+      const provider = yield* make;
+      const reference = { cwd: "/w", repository: "acme/web", host: "github.com", number: 7 };
+      const detail = yield* provider.getChangeRequest(reference);
+      const checks = yield* provider.getChangeRequestChecks!(reference);
+
+      expect(detail.workflowApprovalsRequired).toBe(1);
+      const waiting = {
+        name: "CI",
+        status: "action-required",
+        description: "A maintainer must approve this workflow before it can run.",
+        url: "https://example.com/runs/123",
+      };
+      expect(detail.checks).toEqual([waiting]);
+      expect(checks.checks).toEqual([waiting]);
+    }).pipe(
+      Effect.provide(
+        sameRepository((input) =>
+          input.isCrossRepository
+            ? Effect.die("a same-repository head is read as one")
+            : Effect.succeed([{ id: 123, name: "CI", url: "https://example.com/runs/123" }]),
+        ),
+      ),
     ),
-  ),
-);
+  );
+
+  it.effect("says nothing when the Actions runs cannot be read", () =>
+    Effect.gen(function* () {
+      const provider = yield* make;
+      const detail = yield* provider.getChangeRequest({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "github.com",
+        number: 7,
+      });
+
+      // A credential without Actions access must not mark every pull request it reads.
+      expect(detail.workflowApprovalsRequired).toBeUndefined();
+      expect(detail.checks).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        sameRepository(() =>
+          Effect.fail(
+            new GitHubPullRequestApi.GitHubPullRequestReadError({
+              cwd: "/w",
+              operation: "listWorkflowRunsRequiringApproval",
+              cause: new Error("Resource not accessible by personal access token"),
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
+});
 
 it.effect("keeps an unsafe workflow approval scope visible as unknown", () =>
   Effect.gen(function* () {

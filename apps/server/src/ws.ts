@@ -1377,6 +1377,8 @@ const layerWsRpc = (
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
       const fileActionApprovals =
         yield* ClientFeatureUsage.projectFileApprovals(clientAnalyticsProps);
+      const observeWorkflowApprovals =
+        yield* ClientFeatureUsage.workflowApprovals(clientAnalyticsProps);
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
@@ -3277,7 +3279,12 @@ const layerWsRpc = (
         [WS_METHODS.pullRequestsSetFilesViewed]: (input) =>
           withPullRequestViewer(input, pullRequests.setFilesViewed(input)),
         [WS_METHODS.pullRequestsRunAction]: (input) =>
-          withPullRequestViewer(input, pullRequests.runAction(input)).pipe(
+          withPullRequestViewer(
+            input,
+            input.action === "approve-workflows"
+              ? observeWorkflowApprovals(pullRequests.runAction(input))
+              : pullRequests.runAction(input),
+          ).pipe(
             Effect.tap(() =>
               resolvePullRequestSyncKey(input).pipe(
                 Effect.flatMap((key) =>

@@ -7,7 +7,7 @@ import * as Redacted from "effect/Redacted";
 import type { PullRequestCheck } from "@t3tools/contracts";
 
 import * as GitHubApi from "./GitHubApi.ts";
-import { KnownWorkflowRuns, makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
+import { makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -19,14 +19,13 @@ const credential = {
 };
 
 it.effect(
-  "reuses unchanged checks and catches reruns, later pages, fork approvals, pushes and account changes",
+  "reuses unchanged checks and catches reruns, later pages, pushes and account changes",
   () =>
     Effect.gen(function* () {
       let sha = "a".repeat(40);
       let changed = "";
       let reads = 0;
       const requests: string[] = [];
-      const known: Array<unknown> = [];
       const revalidate = yield* makeChecksRevalidator.pipe(
         Effect.provide(
           Layer.mock(GitHubApi.GitHubApi)({
@@ -37,7 +36,6 @@ it.effect(
                 const modified =
                   ifNoneMatch === undefined || (path.includes(changed) && changed !== "");
                 const next = path.includes("check-runs") && path.endsWith("page=1");
-                const runs = path.includes("/actions/runs");
                 return {
                   status: modified ? 200 : 304,
                   headers: modified
@@ -50,13 +48,7 @@ it.effect(
                     ? ""
                     : head
                       ? encodeJson({ head: { sha, repo: { id: 2 } }, base: { repo: { id: 1 } } })
-                      : runs
-                        ? encodeJson({
-                            workflow_runs: [
-                              { id: 9, status: "completed", conclusion: "action_required" },
-                            ],
-                          })
-                        : "{}",
+                      : "{}",
                   truncated: false,
                   invalidUtf8: false,
                 };
@@ -64,8 +56,7 @@ it.effect(
           }),
         ),
       );
-      const read = Effect.gen(function* () {
-        known.push(yield* KnownWorkflowRuns);
+      const read = Effect.sync(() => {
         reads++;
         return {
           state: "open" as const,
@@ -82,32 +73,22 @@ it.effect(
         );
       yield* poll();
       expect(reads).toBe(1);
-      // The fork's runs were just confirmed, so the read is handed them instead of listing them.
-      expect(known[0]).toEqual({
-        headSha: sha,
-        runs: [{ id: 9, status: "completed", conclusion: "action_required" }],
-      });
       requests.length = 0;
       yield* poll();
       expect(reads).toBe(1);
-      expect(requests).toHaveLength(5);
-      for (const endpoint of [
-        "check-runs?filter=all&per_page=100&page=2",
-        "/status",
-        "/actions/runs",
-        "/pulls/1",
-      ]) {
+      expect(requests).toHaveLength(4);
+      for (const endpoint of ["check-runs?filter=all&per_page=100&page=2", "/status", "/pulls/1"]) {
         changed = endpoint;
         yield* poll();
         changed = "";
         yield* poll();
       }
-      expect(reads).toBe(5);
+      expect(reads).toBe(4);
       sha = "b".repeat(40);
       changed = "/pulls/1";
       requests.length = 0;
       yield* poll();
-      expect(reads).toBe(6);
+      expect(reads).toBe(5);
       expect(
         requests
           .filter((endpoint) => endpoint.includes("/commits/"))
@@ -115,10 +96,10 @@ it.effect(
       ).toBe(true);
       changed = "";
       yield* poll({ ...credential, credentialFingerprint: "two" });
-      expect(reads).toBe(7);
+      expect(reads).toBe(6);
       yield* TestClock.adjust("5 minutes");
       yield* poll();
-      expect(reads).toBe(8);
+      expect(reads).toBe(7);
     }),
 );
 

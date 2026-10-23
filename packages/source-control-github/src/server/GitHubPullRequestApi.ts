@@ -1,5 +1,5 @@
 import { removeAgentCredits } from "@t3tools/source-control-core/server/mergeMessage";
-import { KnownWorkflowRuns, makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
+import { makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -70,7 +70,8 @@ import {
   pullRequestSummaryGraphQlQuery,
   PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
   PULL_REQUEST_HEADS_GRAPHQL_QUERY,
-  decodeWorkflowRunsJson,
+  decodeWorkflowApprovalSuitesJson,
+  WORKFLOW_APPROVAL_SUITES_GRAPHQL_QUERY,
   pullRequestCoreGraphQlQuery,
   type GitHubPullRequestCore,
   type GitHubPullRequestSummary,
@@ -125,7 +126,6 @@ import {
   type GitHubBranchRulePolicy,
   type GitHubPullRequestActivity,
   type GitHubPullRequestActivityPage,
-  type GitHubWorkflowRunPage,
   type GitHubPullRequestHead,
   type GitHubPullRequestListItem,
   type GitHubPullRequestSearchItem,
@@ -648,7 +648,7 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly headSha: string;
       readonly headBranch: string;
       readonly headRepositoryOwner: string;
-      readonly isCrossRepository: true;
+      readonly isCrossRepository: boolean;
     }) => Effect.Effect<ReadonlyArray<GitHubWorkflowRunApproval>, GitHubPullRequestApiError>;
 
     /**
@@ -1726,8 +1726,6 @@ export const make = Effect.gen(function* () {
   };
 
   const workflowApprovalLimit = 1_000;
-  const workflowApprovalReadError = (cwd: string, cause: unknown) =>
-    readError(cwd, "listWorkflowRunsRequiringApproval", cause);
 
   /**
    * Every open pull request whose head branch carries this name, up to one past the limit.
@@ -1762,10 +1760,7 @@ export const make = Effect.gen(function* () {
       return { heads: pages.flatMap((page) => page.heads), truncated };
     });
 
-  /**
-   * The runs waiting on a maintainer for this exact head, up to one past the limit. `head_sha` is
-   * what scopes them; `head_branch` is checked as well, the way `gh run list --branch` did.
-   */
+  /** The runs waiting on a maintainer for this exact head, up to one past the limit. */
   const listActionRequiredRuns = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -1774,43 +1769,51 @@ export const make = Effect.gen(function* () {
     readonly headBranch: string;
   }) =>
     Effect.gen(function* () {
-      // The checks revalidator may have just confirmed every run of this head as current.
-      const known = yield* KnownWorkflowRuns;
-      if (known !== null && known.headSha === input.headSha) {
-        return known.runs.flatMap((run) =>
-          // A run waiting on a maintainer reports `completed` with an `action_required`
-          // conclusion; the `status=action_required` query matches either.
-          (run.conclusion === "action_required" || run.status === "action_required") &&
-          run.head_branch === input.headBranch
-            ? [
-                {
-                  id: run.id,
-                  name: run.name?.trim() || `Workflow run ${run.id}`,
-                  url: run.html_url?.trim() || null,
-                },
-              ]
-            : [],
-        );
-      }
       const { owner, name } = parseRepositorySelector(input.repository);
-      const runs: GitHubWorkflowRunApproval[] = [];
-      for (let page = 1; runs.length <= workflowApprovalLimit; page++) {
-        const read: GitHubWorkflowRunPage = yield* restRead({
-          cwd: input.cwd,
-          host: input.host,
-          operation: "listWorkflowRunsRequiringApproval",
-          path: `repos/${owner}/${name}/actions/runs?head_sha=${encodeURIComponent(input.headSha)}&branch=${encodeURIComponent(input.headBranch)}&event=pull_request&status=action_required&per_page=100&page=${page}`,
-          decode: decodeWorkflowRunsJson,
-        }).pipe(Effect.mapError((error) => workflowApprovalReadError(input.cwd, error)));
-        runs.push(...read.runs);
-        if (read.rawCount < 100) break;
-      }
-      return runs;
+      const { pages } = yield* readGraphQlPages(
+        (after) =>
+          graphqlRead({
+            cwd: input.cwd,
+            host: input.host,
+            operation: "listWorkflowRunsRequiringApproval",
+            allowReserve: true,
+            variables: { owner, name, oid: input.headSha, after },
+            query: WORKFLOW_APPROVAL_SUITES_GRAPHQL_QUERY,
+            decode: (raw) => decodeWorkflowApprovalSuitesJson(raw, input.headBranch),
+          }),
+        {
+          nextCursor: (page) => page.nextCursor,
+          until: (pages) =>
+            pages.reduce((total, page) => total + page.runs.length, 0) > workflowApprovalLimit,
+        },
+      );
+      return pages.flatMap((page) => page.runs);
     });
 
+  /**
+   * A fork's runs are matched to this pull request through its head branch name, which another
+   * fork can share, so the head must name this pull request alone. A same-repository head is the
+   * repository's own branch: its runs are this head's runs, whichever pull request shows them.
+   */
   const listWorkflowRunsRequiringApproval: GitHubPullRequestApi["Service"]["listWorkflowRunsRequiringApproval"] =
-    (input) =>
-      Effect.all(
+    (input) => {
+      const runs = listActionRequiredRuns(input).pipe(
+        Effect.flatMap((runs) =>
+          runs.length > workflowApprovalLimit
+            ? Effect.fail(
+                new GitHubWorkflowApprovalRefusedError({
+                  cwd: input.cwd,
+                  number: input.number,
+                  reason: "run-list-truncated",
+                  observedCount: runs.length,
+                  limit: workflowApprovalLimit,
+                }),
+              )
+            : Effect.succeed(runs),
+        ),
+      );
+      if (!input.isCrossRepository) return runs;
+      return Effect.all(
         [
           listHeadsByBranch(input).pipe(
             Effect.flatMap(
@@ -1854,24 +1857,11 @@ export const make = Effect.gen(function* () {
               },
             ),
           ),
-          listActionRequiredRuns(input).pipe(
-            Effect.flatMap((runs) =>
-              runs.length > workflowApprovalLimit
-                ? Effect.fail(
-                    new GitHubWorkflowApprovalRefusedError({
-                      cwd: input.cwd,
-                      number: input.number,
-                      reason: "run-list-truncated",
-                      observedCount: runs.length,
-                      limit: workflowApprovalLimit,
-                    }),
-                  )
-                : Effect.succeed(runs),
-            ),
-          ),
+          runs,
         ],
         { concurrency: 2 },
-      ).pipe(Effect.map(([, runs]) => runs));
+      ).pipe(Effect.map(([, approvals]) => approvals));
+    };
 
   /** One pull request's summary, through the same aliased query the batch uses. */
   const viewPullRequestSummary = (input: PullRequestSummaryRead) => {
@@ -2845,7 +2835,6 @@ export const make = Effect.gen(function* () {
         const { owner, name } = parseRepositorySelector(input.repository);
         return getPullRequestDetail(input).pipe(
           Effect.flatMap((detail) => {
-            if (detail.isCrossRepository !== true) return Effect.void;
             if (detail.headSha == null || detail.headRepositoryOwner == null) {
               return Effect.fail(
                 new GitHubWorkflowApprovalHeadUnavailableError({
@@ -2857,12 +2846,39 @@ export const make = Effect.gen(function* () {
             const expectedHeadSha = detail.headSha;
             const expectedHeadBranch = detail.headBranch;
             const expectedHeadRepositoryOwner = detail.headRepositoryOwner;
+            const isCrossRepository = detail.isCrossRepository === true;
+            const approve = (runId: number) =>
+              api.rest({
+                host: input.host,
+                operation: "approveWorkflowRun",
+                method: "POST",
+                path: `repos/${owner}/${name}/actions/runs/${runId}/approve`,
+              });
+            // GitHub documents `approve` for fork runs only. A run that a workflow's GITHUB_TOKEN
+            // created on the repository's own branch is started the way github.com's button
+            // starts it: as a new attempt of the same run.
+            const start = (runId: number) =>
+              isCrossRepository
+                ? approve(runId)
+                : approve(runId).pipe(
+                    Effect.catchTags({
+                      GitHubApiResponseError: (error) =>
+                        error.status === 403 || error.status === 422
+                          ? api.rest({
+                              host: input.host,
+                              operation: "rerunWorkflowRun",
+                              method: "POST",
+                              path: `repos/${owner}/${name}/actions/runs/${runId}/rerun`,
+                            })
+                          : Effect.fail(error),
+                    }),
+                  );
             return listWorkflowRunsRequiringApproval({
               ...input,
               headSha: expectedHeadSha,
               headBranch: expectedHeadBranch,
               headRepositoryOwner: expectedHeadRepositoryOwner,
-              isCrossRepository: true,
+              isCrossRepository,
             }).pipe(
               Effect.flatMap((runs) =>
                 Effect.forEach(
@@ -2879,7 +2895,7 @@ export const make = Effect.gen(function* () {
                           );
                         }
                         if (
-                          current.isCrossRepository !== true ||
+                          (current.isCrossRepository === true) !== isCrossRepository ||
                           current.headSha !== expectedHeadSha ||
                           current.headBranch !== expectedHeadBranch ||
                           current.headRepositoryOwner.toLowerCase() !==
@@ -2897,19 +2913,12 @@ export const make = Effect.gen(function* () {
                           headSha: current.headSha,
                           headBranch: current.headBranch,
                           headRepositoryOwner: current.headRepositoryOwner,
-                          isCrossRepository: true,
+                          isCrossRepository,
                         });
                       }),
                       Effect.flatMap((currentRuns) =>
                         currentRuns.some((current) => current.id === run.id)
-                          ? api
-                              .rest({
-                                host: input.host,
-                                operation: "approveWorkflowRun",
-                                method: "POST",
-                                path: `repos/${owner}/${name}/actions/runs/${run.id}/approve`,
-                              })
-                              .pipe(Effect.asVoid)
+                          ? start(run.id).pipe(Effect.asVoid)
                           : Effect.void,
                       ),
                     ),

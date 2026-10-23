@@ -52,6 +52,11 @@ type FeatureUsage =
       readonly source: "user";
     }
   | {
+      readonly feature: "workflow-approvals";
+      readonly action: "approve";
+      readonly source: "user";
+    }
+  | {
       readonly feature: "workflow-run-watch";
       readonly action: "watch" | "unwatch";
       readonly source: "agent";

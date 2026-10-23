@@ -16,6 +16,7 @@ const SNIPPET_LENGTH = 200;
 
 export type PullRequestWatchChange =
   | { readonly kind: "checks-failed"; readonly failed: ReadonlyArray<PullRequestCheck> }
+  | { readonly kind: "approval-required"; readonly runs: ReadonlyArray<PullRequestCheck> }
   | { readonly kind: "checks-passed"; readonly count: number; readonly required: boolean }
   | { readonly kind: "remarks"; readonly remarks: ReadonlyArray<PullRequestComment> }
   | { readonly kind: "conflicting" };
@@ -32,6 +33,12 @@ export interface PullRequestWatchReport {
 // "action-required" is a finished check that needs someone, so the agent hears about it.
 const isFailedCheck = (check: PullRequestCheck) =>
   check.status === "failure" || check.status === "cancelled" || check.status === "action-required";
+// A workflow run GitHub holds until someone with write access approves it. It never starts on its
+// own, so it is told apart from a failure.
+const isAwaitingApproval = (check: PullRequestCheck) =>
+  check.status === "action-required" &&
+  check.url !== null &&
+  /\/actions\/runs\/\d+(?:\/|$)/u.test(check.url);
 // Named outright: an "expected" row is a required check that has not reported yet, so neither it
 // nor any status added later can count as passed by default.
 const isPassedCheck = (check: PullRequestCheck) =>
@@ -61,7 +68,10 @@ export function evaluatePullRequestWatch(
   if (detail.checks.length > 0) {
     const failed = detail.checks.filter(isFailedCheck);
     const newlyFailed = failed.filter((check) => !failedChecks.includes(check.name));
-    if (newlyFailed.length > 0) changes.push({ kind: "checks-failed", failed: newlyFailed });
+    const newlyAwaiting = newlyFailed.filter(isAwaitingApproval);
+    const newlyBroken = newlyFailed.filter((check) => !isAwaitingApproval(check));
+    if (newlyBroken.length > 0) changes.push({ kind: "checks-failed", failed: newlyBroken });
+    if (newlyAwaiting.length > 0) changes.push({ kind: "approval-required", runs: newlyAwaiting });
     // A check that runs again leaves the list, so a rerun that fails again is reported.
     failedChecks = failed.map((check) => check.name);
 
@@ -157,6 +167,12 @@ function changeLines(
             `  - ${check.name}${check.status === "failure" ? "" : ` (${check.status})`}${check.url ? ` ${check.url}` : ""}`,
         ),
       ];
+    case "approval-required":
+      return [
+        `- Workflows waiting for approval${context.commit}. They will not start until someone with write access approves them:`,
+        ...listed(change.runs, (check) => `  - ${check.name}${check.url ? ` ${check.url}` : ""}`),
+        "  Approving runs this pull request's code on the repository's runners. Ask the user to approve them unless they told you to.",
+      ];
     case "checks-passed":
       return [
         `- All ${change.count} ${change.required ? "required " : ""}${change.count === 1 ? "check" : "checks"} passed${context.commit}.`,
@@ -178,6 +194,7 @@ function changeLines(
 
 const SUMMARY: Record<PullRequestWatchChange["kind"], string> = {
   "checks-failed": "checks failed",
+  "approval-required": "workflows awaiting approval",
   "checks-passed": "checks passed",
   remarks: "new comments",
   conflicting: "merge conflict",

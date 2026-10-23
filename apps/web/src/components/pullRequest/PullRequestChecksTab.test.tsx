@@ -103,6 +103,25 @@ describe("PullRequestChecksTab", () => {
     expect(text).not.toContain("Ready to merge");
   });
 
+  it("names a workflow run waiting for approval above the jobs, not as one of them", () => {
+    const waiting = check({
+      name: "CI",
+      status: "action-required",
+      url: "https://github.com/acme/web/actions/runs/42",
+    });
+    const text = render({
+      checks: [waiting, check({ name: "changeset", status: "expected", required: true })],
+      workflowApprovalAction: "Approve workflows to run",
+    });
+
+    expect(text).toContain("1 workflow awaiting approval");
+    expect(text).toContain("until someone with write access approves");
+    expect(text).toContain("Approve workflows to run");
+    // The run is named once, in the notice, and is not also drawn as an "Awaiting approval" row.
+    expect(text).not.toContain("Awaiting approval");
+    expect(text).toContain("changeset");
+  });
+
   it("shows a required check that has not reported as waiting, not running", () => {
     const text = render({
       checks: [

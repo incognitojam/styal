@@ -202,7 +202,14 @@ Press **Escape** before releasing to cancel. Failed closes stay in the list so y
 
 GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding. Commits pushed
 after auto-merge is on are merged too, unless the host turns auto-merge off. GitHub also supports
-approving waiting fork workflows and opening a revert pull request for a merged change.
+approving waiting workflows and opening a revert pull request for a merged change.
+
+GitHub holds some workflow runs until someone with write access approves them: runs from fork
+pull requests, depending on the repository's settings, and runs on a pull request that a workflow
+opened or updated with `GITHUB_TOKEN`, such as a Changesets or release-please release pull request.
+The pull request panel names these as awaiting approval and offers **Approve workflows to run**.
+Auto-merge does not start them. A watched pull request wakes its agent when runs wait for
+approval; the agent asks you to approve them unless you told it to.
 
 GitHub sharing is off by default. In Settings → Connections → GitHub sharing (Environments on mobile), choose
 **Read PRs** or **Read and act** for each environment you trust to share GitHub access.

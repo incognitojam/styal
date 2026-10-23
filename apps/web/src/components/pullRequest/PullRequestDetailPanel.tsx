@@ -247,6 +247,9 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
 const UPDATE_BRANCH_REBASE_FAILURE_HINT =
   "The host refused it. A rebase stops at the first commit that does not apply cleanly; updating with a merge commit may still work.";
 
+/** How long after approving workflows to read the host again, once GitHub has created their checks. */
+const APPROVAL_FOLLOW_UP_MS = 10_000;
+
 const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "summary", label: "Summary" },
   { value: "checks", label: "Checks" },
@@ -954,6 +957,17 @@ function PullRequestDetailPanelBody({
       setIsInvalidating(false);
     }
   }, [refreshDetailFromHost]);
+  // Approving answers before GitHub has created the runs' checks, so the read that follows the
+  // action still shows them as not reported. One more host read a little later shows them
+  // started instead of leaving it to the next live refresh, which can be minutes away.
+  const [approvalFollowUp, setApprovalFollowUp] = useState(0);
+  const refreshFromHostRef = useRef(refreshFromHost);
+  refreshFromHostRef.current = refreshFromHost;
+  useEffect(() => {
+    if (approvalFollowUp === 0) return;
+    const timer = setTimeout(() => void refreshFromHostRef.current(), APPROVAL_FOLLOW_UP_MS);
+    return () => clearTimeout(timer);
+  }, [approvalFollowUp]);
   // A refresh asked for by the page: the detail, and through the token below, the diff with it.
   const appliedForcedToken = useRef(forcedRefreshToken);
   useEffect(() => {
@@ -1080,6 +1094,7 @@ function PullRequestDetailPanelBody({
     // no longer what anyone is looking at.
     if (pullRequestActionNeedsHostRefresh(action)) {
       void refreshFromHost();
+      if (action === "approve-workflows") setApprovalFollowUp((count) => count + 1);
     } else {
       refreshDetail();
     }
@@ -1797,6 +1812,56 @@ function PullRequestDetailPanelBody({
       </TooltipPopup>
     </Tooltip>
   );
+
+  // The same button on Summary and Checks: one press approves every run waiting on this head.
+  const approveWorkflowsButton =
+    workflowApprovalsRequired > 0 && !checksStale && can("approve-workflows") ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span className="inline-flex shrink-0">
+              <Button
+                size="xs"
+                variant="warning-outline"
+                disabled={actionPending}
+                {...inlineConfirm.props(
+                  "approve-workflows",
+                  () => void perform("approve-workflows"),
+                )}
+                aria-label={
+                  pendingAction === "approve-workflows"
+                    ? "Approving..."
+                    : inlineConfirm.isArmed("approve-workflows")
+                      ? "Confirm approve?"
+                      : "Approve workflows to run"
+                }
+              >
+                <PlayIcon aria-hidden className="size-3.5" />
+                <span className="inline-grid">
+                  <span aria-hidden className="invisible col-start-1 row-start-1">
+                    Approve workflows to run
+                  </span>
+                  <span aria-hidden className="invisible col-start-1 row-start-1">
+                    Confirm approve?
+                  </span>
+                  <span className="col-start-1 row-start-1">
+                    {pendingAction === "approve-workflows"
+                      ? "Approving..."
+                      : inlineConfirm.isArmed("approve-workflows")
+                        ? "Confirm approve?"
+                        : "Approve workflows to run"}
+                  </span>
+                </span>
+              </Button>
+            </span>
+          }
+        />
+        <TooltipPopup side="top" className="max-w-72 whitespace-normal">
+          Starts the runs GitHub is holding. They run this pull request's code on this repository's
+          runners.
+        </TooltipPopup>
+      </Tooltip>
+    ) : null;
 
   // The list already has the pull request's identity and summary. Keep them on screen
   // and let the richer detail read replace the remaining placeholders in place.
@@ -2820,56 +2885,7 @@ function PullRequestDetailPanelBody({
           >
             {tab === "summary" ? (
               <span className="ml-auto inline-flex shrink-0 items-center gap-2">
-                {workflowApprovalsRequired > 0 && !checksStale && can("approve-workflows") ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span className="inline-flex shrink-0">
-                          <Button
-                            size="xs"
-                            variant="warning-outline"
-                            disabled={actionPending}
-                            {...inlineConfirm.props(
-                              "approve-workflows",
-                              () => void perform("approve-workflows"),
-                            )}
-                            aria-label={
-                              pendingAction === "approve-workflows"
-                                ? "Approving..."
-                                : inlineConfirm.isArmed("approve-workflows")
-                                  ? "Confirm approve?"
-                                  : "Approve workflows to run"
-                            }
-                          >
-                            <PlayIcon aria-hidden className="size-3.5" />
-                            <span className="inline-grid">
-                              <span aria-hidden className="invisible col-start-1 row-start-1">
-                                Approve workflows to run
-                              </span>
-                              <span aria-hidden className="invisible col-start-1 row-start-1">
-                                Confirm approve?
-                              </span>
-                              <span className="col-start-1 row-start-1">
-                                {pendingAction === "approve-workflows"
-                                  ? "Approving..."
-                                  : inlineConfirm.isArmed("approve-workflows")
-                                    ? "Confirm approve?"
-                                    : "Approve workflows to run"}
-                              </span>
-                            </span>
-                          </Button>
-                        </span>
-                      }
-                    />
-                    <TooltipPopup side="top">
-                      {pendingAction === "approve-workflows"
-                        ? "Approving..."
-                        : inlineConfirm.isArmed("approve-workflows")
-                          ? "Confirm approve?"
-                          : "Approve workflows to run"}
-                    </TooltipPopup>
-                  </Tooltip>
-                ) : null}
+                {approveWorkflowsButton}
                 <PullRequestChecksNavButton
                   checks={detail.checks}
                   isDraft={detail.isDraft}
@@ -3034,6 +3050,7 @@ function PullRequestDetailPanelBody({
                   isDraft={detail.isDraft}
                   mergeReadiness={detail.mergeReadiness}
                   requiredBranchUpdate={requiredBranchUpdate}
+                  workflowApprovalAction={approveWorkflowsButton}
                   actionPending={actionPending}
                   onUpdateBranch={(method) => void perform("update-branch", undefined, method)}
                   pendingFinding={handoff}

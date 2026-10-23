@@ -237,7 +237,8 @@ const CHECK_STATUS_PRESENTATION = {
   { label: string; Icon: typeof CircleCheckIcon | typeof Spinner; toneClassName: string }
 >;
 
-function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">): boolean {
+/** An Actions run GitHub holds until someone with write access approves it, rather than a job. */
+export function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">): boolean {
   return (
     check.status === "action-required" &&
     check.url !== null &&

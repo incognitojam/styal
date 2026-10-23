@@ -18,7 +18,6 @@ import * as GitHubQuota from "./GitHubQuota.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as GitHubPullRequestApi from "./GitHubPullRequestApi.ts";
-import { KnownWorkflowRuns } from "./gitHubConditionalChecks.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -431,13 +430,34 @@ const heads = (numbers: ReadonlyArray<number>) => ({
   },
 });
 
-const workflowRuns = (ids: ReadonlyArray<number>) => ({
-  workflow_runs: ids.map((id) => ({
-    id,
-    name: id === 10 ? "build" : `run ${id}`,
-    html_url: `https://example.com/${id}`,
-  })),
+/** The head commit's check suites, one Actions run waiting on a maintainer in each. */
+const workflowRuns = (
+  ids: ReadonlyArray<number>,
+  headBranch = "feat/page",
+  endCursor: string | null = null,
+) => ({
+  data: {
+    repository: {
+      object: {
+        checkSuites: {
+          pageInfo: { hasNextPage: endCursor !== null, endCursor },
+          nodes: ids.map((id) => ({
+            conclusion: "ACTION_REQUIRED",
+            branch: { name: headBranch },
+            workflowRun: {
+              databaseId: id,
+              url: `https://example.com/${id}`,
+              event: "pull_request",
+              workflow: { name: id === 10 ? "build" : `run ${id}` },
+            },
+          })),
+        },
+      },
+    },
+  },
 });
+
+const CHECK_SUITES_QUERY = "checkSuites(first: 100";
 
 /** Answers the reads an approval makes: the detail, the heads, the runs; approvals return nothing. */
 function workflowApprovalRoutes(
@@ -449,12 +469,12 @@ function workflowApprovalRoutes(
     Effect.sync(() =>
       output(
         call.kind === "rest"
-          ? call.path.endsWith("/approve")
-            ? ""
-            : encodeJson(runsAnswer)
-          : call.query.includes("headRefName: $head")
-            ? encodeJson(headsAnswer)
-            : encodeJson(detail()),
+          ? ""
+          : call.query.includes(CHECK_SUITES_QUERY)
+            ? encodeJson(runsAnswer)
+            : call.query.includes("headRefName: $head")
+              ? encodeJson(headsAnswer)
+              : encodeJson(detail()),
       ),
     ),
   );
@@ -2591,40 +2611,59 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
-  it.effect("does not approve action-required runs for a same-repository pull request", () =>
-    Effect.gen(function* () {
-      mockedExecute.mockReturnValueOnce(
-        Effect.succeed(
-          output(
-            encodeJson(
-              coreResponse({
-                number: 7,
-                title: "Pull request 7",
-                url: "https://github.com/acme/web/pull/7",
-                headRefName: "feat/page",
-                headRefOid: "abc123",
-                isCrossRepository: false,
-                headRepositoryOwner: { login: "acme" },
-                baseRefName: "main",
-                createdAt: "2026-07-01T00:00:00Z",
-                updatedAt: "2026-07-02T00:00:00Z",
-              }),
-            ),
-          ),
-        ),
-      );
-      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+  it.effect(
+    "starts runs a workflow's own push left waiting on a same-repository pull request",
+    () =>
+      Effect.gen(function* () {
+        const sameRepositoryDetail = () =>
+          coreResponse({
+            headRefName: "changeset-release/main",
+            headRefOid: "abc123",
+            isCrossRepository: false,
+            headRepositoryOwner: { login: "acme" },
+          });
+        mockedExecute.mockImplementation((call) =>
+          call.kind === "rest" && call.path.endsWith("/10/approve")
+            ? Effect.fail(
+                new GitHubApi.GitHubApiResponseError({
+                  host: "github.com",
+                  operation: "approveWorkflowRun",
+                  status: 403,
+                }),
+              )
+            : Effect.sync(() =>
+                output(
+                  call.kind === "rest"
+                    ? ""
+                    : call.query.includes(CHECK_SUITES_QUERY)
+                      ? encodeJson(workflowRuns([10, 11], "changeset-release/main"))
+                      : encodeJson(sameRepositoryDetail()),
+                ),
+              ),
+        );
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
 
-      yield* cli.runPullRequestAction({
-        cwd: "/w",
-        repository: "acme/web",
-        host: "github.com",
-        number: 7,
-        action: "approve-workflows",
-      });
+        yield* cli.runPullRequestAction({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          action: "approve-workflows",
+        });
 
-      expect(mockedExecute).toHaveBeenCalledTimes(1);
-    }),
+        // The repository's own branch needs no check that the head names this pull request alone.
+        expect(variablesOf("headRefName: $head")).toEqual([]);
+        // GitHub refused to approve run 10 as a fork run, so it was started as a new attempt.
+        expect(
+          restCallsTo("actions/runs/")
+            .filter((call) => call.method === "POST")
+            .map((call) => call.path),
+        ).toEqual([
+          "repos/acme/web/actions/runs/10/approve",
+          "repos/acme/web/actions/runs/10/rerun",
+          "repos/acme/web/actions/runs/11/approve",
+        ]);
+      }),
   );
 
   it.effect("finds and approves every workflow waiting on a maintainer", () =>
@@ -2647,52 +2686,18 @@ layer("GitHubPullRequestApi.layer", (it) => {
         head: "feat/page",
         after: null,
       });
-      expect(restCallsTo("actions/runs?")[0]?.path).toBe(
-        "repos/acme/web/actions/runs?head_sha=abc123&branch=feat%2Fpage&event=pull_request&status=action_required&per_page=100&page=1",
-      );
+      expect(variablesOf(CHECK_SUITES_QUERY)[0]).toEqual({
+        owner: "acme",
+        name: "web",
+        oid: "abc123",
+        after: null,
+      });
       // Each run is approved only after the head is read again and still lists it.
       expect(restCallsTo("/approve").map((call) => [call.method, call.path])).toEqual([
         ["POST", "repos/acme/web/actions/runs/10/approve"],
         ["POST", "repos/acme/web/actions/runs/11/approve"],
       ]);
-      assert.strictEqual(restCallsTo("actions/runs?").length, 3);
-    }),
-  );
-
-  it.effect("counts revalidated runs that wait on a maintainer as GitHub reports them", () =>
-    Effect.gen(function* () {
-      workflowApprovalRoutes(() => crossRepositoryDetail(), heads([7]), workflowRuns([]));
-      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
-
-      const runs = yield* cli
-        .listWorkflowRunsRequiringApproval({
-          cwd: "/w",
-          repository: "acme/web",
-          host: "github.com",
-          number: 7,
-          headSha: "abc123",
-          headBranch: "feat/page",
-          headRepositoryOwner: "octocat",
-          isCrossRepository: true,
-        })
-        .pipe(
-          Effect.provideService(KnownWorkflowRuns, {
-            headSha: "abc123",
-            runs: [
-              // Live shape: waiting on approval is completed + action_required.
-              {
-                id: 10,
-                status: "completed",
-                conclusion: "action_required",
-                head_branch: "feat/page",
-              },
-              { id: 11, status: "completed", conclusion: "success", head_branch: "feat/page" },
-            ],
-          }),
-        );
-
-      expect(runs.map((run) => run.id)).toEqual([10]);
-      assert.strictEqual(restCallsTo("actions/runs?").length, 0);
+      assert.strictEqual(variablesOf(CHECK_SUITES_QUERY).length, 3);
     }),
   );
 
@@ -2730,7 +2735,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
       const headsStarted = yield* Deferred.make<void>();
       const runsStarted = yield* Deferred.make<void>();
       mockedExecute.mockImplementation((call) =>
-        call.kind === "graphql"
+        call.kind === "graphql" && call.query.includes("headRefName: $head")
           ? Deferred.succeed(headsStarted, undefined).pipe(
               Effect.andThen(Deferred.await(runsStarted)),
               Effect.as(output(encodeJson(heads([7])))),
@@ -2864,12 +2869,18 @@ layer("GitHubPullRequestApi.layer", (it) => {
     Effect.gen(function* () {
       let runPages = 0;
       mockedExecute.mockImplementation((call) => {
-        if (call.kind === "graphql") return Effect.succeed(output(encodeJson(heads([7]))));
+        if (call.kind === "graphql" && call.query.includes("headRefName: $head")) {
+          return Effect.succeed(output(encodeJson(heads([7]))));
+        }
         const page = runPages++;
         return Effect.succeed(
           output(
             encodeJson(
-              workflowRuns(Array.from({ length: 100 }, (_, index) => page * 100 + index + 1)),
+              workflowRuns(
+                Array.from({ length: 100 }, (_, index) => page * 100 + index + 1),
+                "feat/page",
+                `page-${page + 1}`,
+              ),
             ),
           ),
         );
