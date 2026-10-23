@@ -3817,7 +3817,7 @@ features:
   - id: pull-request-merge-intent-badges
     title: Show automatic merge intent on pull request status icons
     status: maintained
-    prs: [853]
+    prs: [853, 1004]
     invariants:
       - Sidebar, composer, linked pull request panels, pull request lists, detail headers, web tabs and hover previews retain the pull request state glyph and color while a filled corner dot marks enabled auto-merge or confirmed merge-queue membership on web, desktop and mobile where applicable.
       - A stack or linked count gets the dot only when every remaining open pull request has automatic merge requested; an unknown snapshot or an unarmed draft keeps the aggregate unmarked.
@@ -3825,20 +3825,20 @@ features:
       - Lightweight host summaries, GitHub list and search results, and persisted thread snapshots carry optional merge intent without adding detail reads or interpreting unsupported fields as false; a new observation clears an older marker when intent is absent or disabled.
     rationale: Automatic merge intent helps users see which work has been handed to the host without changing thread lifecycle or treating an open pull request as merged.
     implementation_paths:
-      - apps/mobile/src/features/threads/git/GitOverviewSheet.tsx
-      - apps/mobile/src/features/pull-requests/PullRequestMergeIntentIcon.tsx
       - apps/mobile/src/features/pull-requests/PullRequestListRow.tsx
+      - apps/mobile/src/features/pull-requests/PullRequestMergeIntentIcon.tsx
       - apps/mobile/src/features/pull-requests/pullRequestStatus.ts
+      - apps/mobile/src/features/threads/git/GitOverviewSheet.tsx
       - apps/mobile/src/features/threads/thread-list-v2-items.tsx
       - apps/mobile/src/state/thread-pr-presentation.ts
       - apps/server/src/orchestration-v2/PullRequestSyncReactor.ts
       - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/RightPanelTabs.tsx
       - apps/web/src/components/ThreadStatusIndicators.tsx
-      - apps/web/src/components/pullRequest/PullRequestMergeIntentIcon.tsx
-      - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/PullRequestLinkPreview.tsx
-      - apps/web/src/components/RightPanelTabs.tsx
+      - apps/web/src/components/pullRequest/PullRequestMergeIntentIcon.tsx
+      - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
       - packages/contracts/src/threadPullRequest.ts
       - packages/shared/src/threadPullRequests.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
@@ -3849,9 +3849,9 @@ features:
       - packages/shared/src/threadPullRequests.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
     tests:
-      - apps/mobile/src/state/use-thread-pr.test.ts
-      - apps/mobile/src/features/pull-requests/pullRequestStatus.test.ts
       - apps/mobile/src/features/pull-requests/pullRequestList.test.ts
+      - apps/mobile/src/features/pull-requests/pullRequestStatus.test.ts
+      - apps/mobile/src/state/use-thread-pr.test.ts
       - apps/server/src/orchestration-v2/PullRequestSyncReactor.test.ts
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/web/src/components/ThreadStatusIndicators.test.ts
