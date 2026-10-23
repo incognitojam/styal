@@ -652,14 +652,50 @@ const RawDetailSchema = Schema.Struct({
 });
 
 /** `GET /repos/{owner}/{repo}/actions/runs`, one page of it. */
-const RawWorkflowRunsSchema = Schema.Struct({
-  workflow_runs: Schema.Array(
-    Schema.Struct({
-      id: Schema.Int,
-      name: Schema.optional(Schema.NullOr(Schema.String)),
-      html_url: Schema.optional(Schema.NullOr(Schema.String)),
-    }),
-  ),
+const RawWorkflowApprovalSuitesSchema = Schema.Struct({
+  data: Schema.Struct({
+    repository: Schema.NullOr(
+      Schema.Struct({
+        object: Schema.NullOr(
+          Schema.Struct({
+            checkSuites: Schema.optional(
+              Schema.NullOr(
+                Schema.Struct({
+                  pageInfo: Schema.optional(RawPageInfoSchemaFields()),
+                  nodes: Schema.Array(
+                    Schema.NullOr(
+                      Schema.Struct({
+                        conclusion: Schema.optional(Schema.NullOr(Schema.String)),
+                        branch: Schema.optional(
+                          Schema.NullOr(Schema.Struct({ name: Schema.String })),
+                        ),
+                        workflowRun: Schema.optional(
+                          Schema.NullOr(
+                            Schema.Struct({
+                              databaseId: Schema.optional(Schema.NullOr(Schema.Int)),
+                              url: Schema.optional(Schema.NullOr(Schema.String)),
+                              event: Schema.optional(Schema.NullOr(Schema.String)),
+                              workflow: Schema.optional(
+                                Schema.NullOr(
+                                  Schema.Struct({
+                                    name: Schema.optional(Schema.NullOr(Schema.String)),
+                                  }),
+                                ),
+                              ),
+                            }),
+                          ),
+                        ),
+                      }),
+                    ),
+                  ),
+                }),
+              ),
+            ),
+          }),
+        ),
+      }),
+    ),
+  }),
 });
 
 const RawPullRequestHeadsSchema = Schema.Struct({
@@ -2149,7 +2185,7 @@ const decodeSearch = decodeJsonResult(RawSearchSchema);
 const decodeSearchItem = Schema.decodeUnknownExit(RawSearchItemSchema);
 const decodeStats = decodeJsonResult(RawStatsSchema);
 const decodeDetail = decodeJsonResult(RawDetailSchema);
-const decodeWorkflowRuns = decodeJsonResult(RawWorkflowRunsSchema);
+const decodeWorkflowApprovalSuites = decodeJsonResult(RawWorkflowApprovalSuitesSchema);
 const decodePullRequestHeads = decodeJsonResult(RawPullRequestHeadsSchema);
 const decodeActivity = decodeJsonResult(RawActivitySchema);
 const decodeRepositoryPullRequests = decodeJsonResult(RawRepositoryPullRequestsSchema);
@@ -2801,23 +2837,60 @@ export function decodePullRequestDetailJson(
 
 export interface GitHubWorkflowRunPage {
   readonly runs: ReadonlyArray<GitHubWorkflowRunApproval>;
-  /** Runs on the page, counted before decoding, which is what decides whether to page on. */
-  readonly rawCount: number;
+  readonly nextCursor: string | null;
 }
 
-/** One page of `actions/runs`. */
-export function decodeWorkflowRunsJson(
+/**
+ * The head commit's check suites, through which its Actions runs are read. GitHub's run listing
+ * filtered by `head_sha`, `status` or `branch` answers inconsistently, sometimes without a run
+ * it listed a moment before, while a commit's own check suites answer the same each time.
+ */
+export const WORKFLOW_APPROVAL_SUITES_GRAPHQL_QUERY = `query($owner: String!, $name: String!, $oid: GitObjectID!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) {
+      ... on Commit {
+        checkSuites(first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            conclusion
+            branch { name }
+            workflowRun { databaseId url event workflow { name } }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/**
+ * One page of the head commit's check suites, keeping the `pull_request` workflow runs on
+ * `headBranch` that wait for a maintainer, which GitHub reports as an `ACTION_REQUIRED` conclusion.
+ */
+export function decodeWorkflowApprovalSuitesJson(
   raw: string,
+  headBranch: string,
 ): Result.Result<GitHubWorkflowRunPage, DecodeFailure> {
-  const decoded = decodeWorkflowRuns(raw);
+  const decoded = decodeWorkflowApprovalSuites(raw);
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
+  const connection = decoded.success.data.repository?.object?.checkSuites;
   return Result.succeed({
-    runs: decoded.success.workflow_runs.map((run) => ({
-      id: run.id,
-      name: trimmed(run.name) ?? `Workflow run ${run.id}`,
-      url: trimmed(run.html_url),
-    })),
-    rawCount: decoded.success.workflow_runs.length,
+    runs: (connection?.nodes ?? []).flatMap((suite) => {
+      const run = suite?.workflowRun;
+      const id = run?.databaseId;
+      return suite?.conclusion === "ACTION_REQUIRED" &&
+        run?.event === "pull_request" &&
+        typeof id === "number" &&
+        (suite.branch == null || suite.branch.name === headBranch)
+        ? [
+            {
+              id,
+              name: trimmed(run.workflow?.name) ?? `Workflow run ${id}`,
+              url: trimmed(run.url),
+            },
+          ]
+        : [];
+    }),
+    nextCursor: nextCursorOf(connection?.pageInfo),
   });
 }
 

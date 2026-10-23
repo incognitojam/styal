@@ -162,3 +162,18 @@ export const projectFileApprovals = Effect.fnUntraced(function* (
       observe(input.approved ? "approve" : "revoke", service.setApproved(input)),
   });
 });
+
+/** Observe the user starting Actions runs a pull request's head left waiting for approval. */
+export const workflowApprovals = Effect.fnUntraced(function* (
+  client: FeatureUsage.ClientDimensions,
+) {
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    client.surface
+      ? FeatureUsage.observe(
+          { feature: "workflow-approvals", action: "approve", source: "user" },
+          effect,
+          client,
+        ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics))
+      : effect;
+});

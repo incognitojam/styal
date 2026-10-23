@@ -31,7 +31,7 @@ import {
   decodeReviewThreadsJson,
   decodeViewerPermissionsJson,
   markRequiredChecks,
-  decodeWorkflowRunsJson,
+  decodeWorkflowApprovalSuitesJson,
   reviewThreadConversation,
   REVIEW_THREADS_GRAPHQL_QUERY,
   pullRequestCoreGraphQlQuery,
@@ -374,22 +374,51 @@ describe("pull request detail decoding", () => {
     expect(detail.checksState).toBe("pending");
   });
 
-  it("decodes workflow runs that can be approved", () => {
+  it("keeps only the head branch's pull_request runs that wait for approval", () => {
+    const suite = (id: number, overrides: Record<string, unknown> = {}) => ({
+      conclusion: "ACTION_REQUIRED",
+      branch: { name: "feat/page" },
+      workflowRun: {
+        databaseId: id,
+        url: `https://example.com/${id}`,
+        event: "pull_request",
+        workflow: { name: `run ${id}` },
+      },
+      ...overrides,
+    });
     expect(
       expectSuccess(
-        decodeWorkflowRunsJson(
+        decodeWorkflowApprovalSuitesJson(
           JSON.stringify({
-            workflow_runs: [
-              { id: 10, name: "contributor tests", html_url: "https://example.com/10" },
-              { id: 11, name: null, html_url: null },
-            ],
+            data: {
+              repository: {
+                object: {
+                  checkSuites: {
+                    pageInfo: { hasNextPage: true, endCursor: "next" },
+                    nodes: [
+                      suite(10),
+                      // A fork's suite can carry no branch; the head commit still scopes it.
+                      suite(11, { branch: null }),
+                      suite(12, { conclusion: "SUCCESS" }),
+                      suite(13, { branch: { name: "other" } }),
+                      // Another app's suite has no workflow run to approve.
+                      { conclusion: "ACTION_REQUIRED", branch: null, workflowRun: null },
+                    ],
+                  },
+                },
+              },
+            },
           }),
+          "feat/page",
         ),
-      ).runs,
-    ).toEqual([
-      { id: 10, name: "contributor tests", url: "https://example.com/10" },
-      { id: 11, name: "Workflow run 11", url: null },
-    ]);
+      ),
+    ).toEqual({
+      runs: [
+        { id: 10, name: "run 10", url: "https://example.com/10" },
+        { id: 11, name: "run 11", url: "https://example.com/11" },
+      ],
+      nextCursor: "next",
+    });
   });
 
   it("reads an auto-merge request and strategy, its null as off and its absence as neither", () => {

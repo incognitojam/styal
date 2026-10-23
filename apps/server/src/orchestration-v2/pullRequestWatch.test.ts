@@ -311,4 +311,42 @@ describe("pullRequestWatchMessage", () => {
       summary: "#12: checks failed, new comments",
     });
   });
+
+  it("tells the agent which workflows wait for approval, apart from failures", () => {
+    const waiting: PullRequestCheck = {
+      name: "CI",
+      status: "action-required",
+      description: "A maintainer must approve this workflow before it can run.",
+      url: "https://github.com/o/r/actions/runs/123",
+    };
+    const report = evaluatePullRequestWatch(
+      watch(),
+      detail({ checks: [waiting, check("Changeset", "expected")] }),
+      noRemarks,
+    );
+    assert.deepEqual(report.changes, [{ kind: "approval-required", runs: [waiting] }]);
+    // Told once: the same run still waiting on the next pass is not news.
+    assert.deepEqual(
+      evaluatePullRequestWatch(report.next, detail({ checks: [waiting] }), noRemarks).changes,
+      [],
+    );
+
+    const message = pullRequestWatchMessage({
+      number: 12,
+      url: "https://github.com/o/r/pull/12",
+      baseBranch: "main",
+      headSha: report.next.headSha,
+      report,
+    });
+    assert.include(
+      message.text,
+      "- Workflows waiting for approval on aaaaaaa. They will not start until someone with write access approves them:\n  - CI https://github.com/o/r/actions/runs/123",
+    );
+    assert.notInclude(message.text, "Checks failed");
+    assert.deepEqual(message.notification, {
+      source: { kind: "monitor" },
+      outcome: "updated",
+      summary: "#12: workflows awaiting approval",
+    });
+  });
 });

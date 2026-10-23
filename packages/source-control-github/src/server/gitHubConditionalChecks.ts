@@ -1,8 +1,6 @@
 import * as Clock from "effect/Clock";
 import * as Cache from "effect/Cache";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { PositiveInt, type PullRequestChecks } from "@t3tools/contracts";
@@ -21,31 +19,6 @@ const HeadSchema = Schema.Struct({
   base: Schema.Struct({ repo: Schema.Struct({ id: PositiveInt }) }),
 });
 const decodeHead = Schema.decodeUnknownEffect(Schema.fromJsonString(HeadSchema));
-
-const WorkflowRunSchema = Schema.Struct({
-  id: Schema.Int,
-  name: Schema.optional(Schema.NullOr(Schema.String)),
-  html_url: Schema.optional(Schema.NullOr(Schema.String)),
-  status: Schema.optional(Schema.NullOr(Schema.String)),
-  conclusion: Schema.optional(Schema.NullOr(Schema.String)),
-  head_branch: Schema.optional(Schema.NullOr(Schema.String)),
-});
-const decodeWorkflowRuns = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Struct({ workflow_runs: Schema.Array(WorkflowRunSchema) })),
-);
-
-export type KnownWorkflowRun = typeof WorkflowRunSchema.Type;
-
-/**
- * Every `pull_request` workflow run of one head, as the revalidator just confirmed them against
- * GitHub. A read running under it filters these rather than asking for the runs again.
- */
-export const KnownWorkflowRuns = Context.Reference<{
-  readonly headSha: string;
-  readonly runs: ReadonlyArray<KnownWorkflowRun>;
-} | null>("@t3tools/source-control-github/server/gitHubConditionalChecks/KnownWorkflowRuns", {
-  defaultValue: () => null,
-});
 
 type Validator = { etag: string | undefined; next: boolean; body: string };
 
@@ -142,43 +115,22 @@ export const makeChecksRevalidator = Effect.gen(function* () {
           if ((yield* get(`${root}/pulls/${input.number}`, true)) === null) return yield* read;
           const head = entry.head;
           if (head === null) return yield* fail(200);
-          const runsEndpoint =
-            head.head.repo?.id !== head.base.repo.id
-              ? `${root}/actions/runs?head_sha=${head.head.sha}&event=pull_request`
-              : null;
           const endpoints = [
             `${root}/commits/${head.head.sha}/check-runs?filter=all`,
             `${root}/commits/${head.head.sha}/status`,
-            ...(runsEndpoint === null ? [] : [runsEndpoint]),
           ];
-          const runPages: Array<string> = [];
           for (const endpoint of endpoints) {
             for (let page = 1; ; page++) {
               if (page > 100) return yield* fail(200);
               const paged = `${endpoint}${endpoint.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
               const next = yield* get(paged);
               if (next === null) return yield* read;
-              if (endpoint === runsEndpoint) runPages.push(paged);
               if (!next) break;
             }
           }
           const now = yield* Clock.currentTimeMillis;
           if (entry.value !== null && now - entry.readAt < 5 * 60_000) return entry.value;
-          // Every page of the head's runs was just confirmed current, so the read filters them
-          // rather than listing the runs a second time.
-          const pages = runPages.map((endpoint) =>
-            decodeWorkflowRuns(entry.validators.get(endpoint)?.body ?? ""),
-          );
-          const known =
-            runsEndpoint !== null && pages.every(Option.isSome)
-              ? {
-                  headSha: head.head.sha,
-                  runs: pages.flatMap((page) =>
-                    Option.isSome(page) ? page.value.workflow_runs : [],
-                  ),
-                }
-              : null;
-          const fresh = yield* read.pipe(Effect.provideService(KnownWorkflowRuns, known));
+          const fresh = yield* read;
           const value = {
             state: fresh.state,
             checks: fresh.checks,

@@ -256,3 +256,36 @@ it.effect(
       }
     }),
 );
+
+it.effect("observes workflow approvals once each, only from a user surface", () =>
+  Effect.gen(function* () {
+    const events: Array<{ event: string; properties: Record<string, unknown> | undefined }> = [];
+    const analytics = {
+      record: (event: string, properties: Record<string, unknown> | undefined) =>
+        Effect.sync(() => {
+          events.push({ event, properties });
+        }),
+      flush: Effect.void,
+    };
+    const wrap = (surface?: "desktop") =>
+      ClientFeatureUsage.workflowApprovals(surface ? { surface } : {}).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+    const observed = yield* wrap("desktop");
+    yield* observed(Effect.void);
+    yield* Effect.flip(observed(Effect.fail("refused")));
+    const relayed = yield* wrap();
+    yield* relayed(Effect.void);
+    expect(
+      events.map((entry) => [
+        entry.properties?.feature,
+        entry.properties?.action,
+        entry.properties?.source,
+        entry.properties?.outcome,
+      ]),
+    ).toEqual([
+      ["workflow-approvals", "approve", "user", "success"],
+      ["workflow-approvals", "approve", "user", "failure"],
+    ]);
+  }),
+);

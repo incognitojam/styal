@@ -5226,6 +5226,47 @@ features:
         - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
       retire_when: Upstream detects new static web deployments from the page's origin and offers a manual refresh independently of desktop and paired-server updates.
 
+  - id: workflow-approvals-same-repository
+    title: Surface and approve GitHub workflow runs waiting on same-repository pull requests
+    status: maintained
+    prs: []
+    invariants:
+      - GitHub pull request detail and checks list Actions runs on the head that wait for approval (`action_required`) for same-repository pull requests as well as forks, as action-required checks with `workflowApprovalsRequired`.
+      - Waiting runs are read from the head commit's check suites over GraphQL (`ACTION_REQUIRED` suites with a `pull_request` workflow run), because GitHub's REST run listing filtered by `head_sha`, `status`, `branch` or `check_suite_id` answers inconsistently. The checks revalidator no longer lists runs.
+      - A same-repository head needs no check that it names one pull request, so its runs cost one GraphQL read. When that read fails, nothing is shown; a fork keeps its "Workflow approval status" unknown row.
+      - Approving a same-repository run calls GitHub's approve endpoint and, when GitHub refuses it with 403 or 422, re-runs the run, after confirming the head has not moved.
+      - A watched pull request wakes its agent once when workflow runs wait for approval, naming them apart from failed checks and telling the agent to leave approval to the user unless told otherwise.
+      - Runs waiting for approval are listed before the other checks, above the required checks they hold back.
+      - Each approval pressed in a client that reports its surface records one `workflow-approvals` feature.used event with its outcome and no repository, pull request or workflow names.
+    rationale: GitHub creates runs for pull requests that a workflow's GITHUB_TOKEN opens or updates, such as Changesets release pull requests, in an approval-required state. Without this the panel reads "waiting" forever and watched agents never wake.
+    implementation_paths:
+      - apps/mobile/src/features/pull-requests/pullRequestStatus.ts
+      - apps/server/src/orchestration-v2/pullRequestWatch.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/server/src/telemetry/FeatureUsage.ts
+      - apps/server/src/ws.ts
+      - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
+      - packages/source-control-github/src/server/GitHubPullRequestApi.ts
+      - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
+      - packages/source-control-github/src/server/gitHubConditionalChecks.ts
+    upstream_paths:
+      - apps/server/src/ws.ts
+      - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
+      - packages/source-control-github/src/server/GitHubPullRequestApi.ts
+      - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
+      - packages/source-control-github/src/server/gitHubConditionalChecks.ts
+    tests:
+      - apps/server/src/orchestration-v2/pullRequestWatch.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - apps/web/src/components/pullRequest/PullRequestChecksTab.test.tsx
+      - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
+      - packages/source-control-github/src/server/GitHubPullRequestProvider.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/9188
+      retire_when: Upstream detects and approves approval-required workflow runs on same-repository pull requests, not only forks.
+
   - id: workflow-run-watch
     title: Wake agents when a watched CI workflow run completes
     status: maintained
