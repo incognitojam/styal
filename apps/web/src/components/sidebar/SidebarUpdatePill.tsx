@@ -162,10 +162,8 @@ function SidebarUpdateControl() {
   const releaseNotesPopupRef = useRef<HTMLDivElement>(null);
   const releaseNotesTriggerId = useId();
   const showUpdateDetails = showsLocalUpdate && !showsEverything;
-  const showReleaseNotesPopover = shouldUseSidebarUpdateReleaseNotesPopover(
-    showUpdateDetails,
-    state,
-  );
+  const showReleaseNotesPopover =
+    !isRunningEverything && shouldUseSidebarUpdateReleaseNotesPopover(showsLocalUpdate, state);
   useEffect(() => {
     if (!showReleaseNotesPopover) {
       releaseNotesPopoverHandle.close();
