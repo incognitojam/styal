@@ -3367,7 +3367,7 @@ features:
   - id: provider-send-analytics
     title: Preserve provider send analytics through orchestration V2
     status: maintained
-    prs: []
+    prs: [1003]
     invariants:
       - Each successful provider prompt submission or steering delivery records provider.turn.sent after acceptance, including server-originated scheduled messages, restart continuations, and delegated results; rejected and interrupted sends, native compaction, and unsolicited provider turns do not record sends.
       - Send properties contain the provider, known model and modes, managed Codex subscription-sharing flag, attachment count, and presence of input, without prompts, attachment names, or conversation identifiers. Steering attribution stays scoped to its live provider thread and run in shared sessions.
