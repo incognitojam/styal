@@ -7,6 +7,7 @@ import * as Stream from "effect/Stream";
 import type * as DesktopShutdownGuard from "../app/DesktopShutdownGuard.ts";
 import * as ElectronNativeUpdater from "../electron/ElectronNativeUpdater.ts";
 import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
+import * as DesktopLaunchTiming from "../telemetry/DesktopLaunchTiming.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 
 /** Fakes for macOS background staging and idle restart measurement, wired
@@ -164,7 +165,12 @@ export function makeNativeUpdatesFakes(
   return {
     squirrel,
     idleRestart,
-    layer: Layer.mergeAll(layerNativeUpdater, layerPowerMonitor, layerTelemetry),
+    layer: Layer.mergeAll(
+      layerNativeUpdater,
+      layerPowerMonitor,
+      layerTelemetry,
+      DesktopLaunchTiming.layerNoop,
+    ),
     inspect: Effect.sync(() => {
       idleRestart.inspections += 1;
       idleRestart.onInspect?.();

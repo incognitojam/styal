@@ -323,17 +323,47 @@ export const DesktopIdleRestartDelayBucket = Schema.Literals([
 export type DesktopIdleRestartDelayBucket = typeof DesktopIdleRestartDelayBucket.Type;
 
 /**
- * Desktop main -> server: a usage observation the server records as a
- * `feature.used` event. Delivered once, to one attached backend.
+ * How long one desktop launch took to become usable, in milliseconds from the
+ * process start. After an update restart, `update` adds the time the old
+ * process took to stop its backends and the time from handing off to the
+ * installer until the new process started.
  */
-export const DesktopFeatureUsageReport = Schema.Struct({
+export const DesktopLaunchTimingReport = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("desktopFeatureUsage"),
-  feature: Schema.Literal("desktop-update-idle-restart"),
-  action: Schema.Literal("would_restart"),
-  updateVersion: TrimmedNonEmptyString,
-  delayBucket: DesktopIdleRestartDelayBucket,
+  feature: Schema.Literal("desktop-launch"),
+  action: Schema.Literal("launched"),
+  platform: Schema.Literals(["darwin", "win32", "linux"]),
+  // Null when the local environment is off, so no backend starts.
+  backendReadyMs: Schema.NullOr(NonNegativeInt),
+  windowShownMs: NonNegativeInt,
+  update: Schema.optionalKey(
+    Schema.Struct({
+      stopMs: NonNegativeInt,
+      relaunchMs: NonNegativeInt,
+      // macOS: the update was staged when it downloaded, not at the restart.
+      stagedInBackground: Schema.Boolean,
+    }),
+  ),
 });
+export type DesktopLaunchTimingReport = typeof DesktopLaunchTimingReport.Type;
+
+/**
+ * Desktop main -> server: an observation the server records as an analytics
+ * event, `feature.used` for idle restart and `desktop.launched` for launch
+ * timing. Delivered once, to one attached backend.
+ */
+export const DesktopFeatureUsageReport = Schema.Union([
+  Schema.Struct({
+    version: Schema.Literal(1),
+    type: Schema.Literal("desktopFeatureUsage"),
+    feature: Schema.Literal("desktop-update-idle-restart"),
+    action: Schema.Literal("would_restart"),
+    updateVersion: TrimmedNonEmptyString,
+    delayBucket: DesktopIdleRestartDelayBucket,
+  }),
+  DesktopLaunchTimingReport,
+]);
 export type DesktopFeatureUsageReport = typeof DesktopFeatureUsageReport.Type;
 
 export const DesktopHostTelemetryMessage = Schema.Union([

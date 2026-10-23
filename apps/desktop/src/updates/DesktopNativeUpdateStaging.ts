@@ -94,6 +94,13 @@ export const make = Effect.fn("desktop.updates.makeNativeUpdateStaging")(functio
         return true;
       }),
 
+    /** Whether a download is already staged, which before a handoff means
+        it staged in the background rather than at the restart. */
+    stagedInBackground: Effect.map(
+      Ref.get(nativeStageRef),
+      (nativeStage) => nativeStage?.status === "staged",
+    ),
+
     /** MacUpdater re-emits Squirrel.Mac errors. A background staging failure
         only moves staging to quit time, so the caller ignores the error. This
         runs synchronously from the emit, before staging records its outcome. */

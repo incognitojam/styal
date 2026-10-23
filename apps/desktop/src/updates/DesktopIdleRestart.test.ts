@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import type { DesktopFeatureUsageReport, DesktopIdleRestartDelayBucket } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -14,7 +15,10 @@ import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("idle restart measurement", () => {
   const tick = TestClock.adjust("30 seconds").pipe(Effect.andThen(flushCallbacks));
-  const report = (delayBucket: string, updateVersion = "1.2.4") => ({
+  const report = (
+    delayBucket: DesktopIdleRestartDelayBucket,
+    updateVersion = "1.2.4",
+  ): DesktopFeatureUsageReport => ({
     version: 1,
     type: "desktopFeatureUsage",
     feature: "desktop-update-idle-restart",
