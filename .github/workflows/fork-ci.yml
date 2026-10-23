@@ -416,12 +416,28 @@ jobs:
       - name: Setup test dependencies
         uses: ./.github/actions/setup-deps
 
-      # The server-hosted browser's tests launch Playwright's headless Chromium.
-      # Skipped until the server depends on playwright-core.
+      # Cache the pinned browser and skip apt unless shared libraries are missing.
+      - name: Resolve Playwright version
+        id: playwright_version
+        run: echo "version=$(node -p "require('./apps/server/node_modules/playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        id: chromium_cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright_version.outputs.version }}
+
       - name: Install Chromium for server browser integration tests
+        if: steps.chromium_cache.outputs.cache-hit != 'true'
+        run: node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium
+
+      - name: Install missing Chromium system dependencies
         run: |
-          if [ -f apps/server/node_modules/playwright-core/cli.js ]; then
-            node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+          browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+          test -n "$browser"
+          if ldd "$browser" | grep '=> not found'; then
+            node apps/server/node_modules/playwright-core/cli.js install-deps chromium
           fi
 
       - name: Test server
