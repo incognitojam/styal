@@ -19,7 +19,9 @@ Each action has:
 - An option to run in a thread's worktree each time the thread settles, for example to delete
   build output. See [Settle finished work](./thread-sidebar.md#settle-finished-work).
 
-Actions are saved for one checkout, not for every checkout in its project group. Saved actions are
+Actions are saved for one checkout, not for every checkout in its project group. When a project has
+several checkouts, **Actions** lists each checkout's actions separately: **Add action** next to a
+checkout adds to that checkout only, and **Add to all** adds to every checkout. Saved actions are
 available to connected clients, including mobile. On mobile, open a thread's terminal menu to run
 one.
 
@@ -121,10 +123,11 @@ imported: select one from the thread actions menu or from **Settings** → **Pro
 it. Imported actions are saved copies, so later changes to `t3.json` do not change them. Once the
 repository has a `styal.json`, styal ignores `t3.json` entirely.
 
-To move the repository over, choose **Write styal.json** in **Settings** → **Projects** →
+To move the repository over, choose **Create styal.json** in **Settings** → **Projects** →
 **Actions**. styal writes a `styal.json` at the project root with the `t3.json` settings and its
-scripts as shared actions, each with an `id`. Commit it and delete `t3.json`. Actions that run on
-their own still wait for your approval.
+scripts as shared actions, each with an `id`. styal does not commit it or remove `t3.json`: review
+the file, commit it, then delete `t3.json`. Actions that run on their own still wait for your
+approval.
 
 ## Project environment variables
 

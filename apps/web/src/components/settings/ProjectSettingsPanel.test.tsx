@@ -167,7 +167,16 @@ vi.mock("../ui/tooltip", () => ({
   TooltipPopup: "span",
   TooltipTrigger: ({ render }: { render: ReactNode }) => render,
 }));
+vi.mock("./EnvironmentRow", () => ({
+  EnvironmentRow: ({ children, detail }: { children?: ReactNode; detail?: ReactNode }) => (
+    <div>
+      {children}
+      {detail}
+    </div>
+  ),
+}));
 vi.mock("./settingsLayout", () => ({
+  ForkFeatureBadge: () => null,
   SETTINGS_PICKER_TRIGGER_CLASSNAME: "",
   SettingsPageContainer: "div",
   SettingsSection: ({
@@ -223,7 +232,10 @@ const environments = [primaryId, remoteId].map((environmentId) => ({
   environmentId,
   label: environmentId,
   connection: { phase: "connected" },
-  serverConfig: { keybindings: DEFAULT_RESOLVED_KEYBINDINGS },
+  serverConfig: {
+    keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+    environment: { platform: { machine: "server" } },
+  },
 }));
 const session = (scopes: ReadonlyArray<AuthEnvironmentScope>): AuthSessionState => ({
   authenticated: true,

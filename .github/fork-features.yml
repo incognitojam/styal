@@ -4734,6 +4734,7 @@ features:
       - Running an action reports only whether it was saved, from styal.json, or an override.
       - The JSON schema that styal.json's $schema names is built from the contract into the hosted web app; https://styal.build/schema/* redirects to it.
       - Writing styal.json from a legacy t3.json carries its settings over and turns its scripts into actions with derived ids; the t3.json is left for the user to delete.
+      - With several checkouts selected, project settings list each checkout's actions under its own environment row, from its saved list and its own styal.json, instead of hiding them; edits, approvals and styal.json writes in a group apply to that checkout only, and adding from the section header adds to every checkout.
     implementation_paths:
       - apps/mobile/src/features/projects/useProjectRootConfig.ts
       - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
