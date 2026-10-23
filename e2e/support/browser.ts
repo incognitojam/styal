@@ -80,3 +80,17 @@ export async function runPaletteItem(
   await highlighted.first().waitFor({ timeout: 30_000 });
   await page.keyboard.press("Enter");
 }
+
+/**
+ * Pairs another environment with the app through Settings → Connections → Add environment,
+ * and waits until Connections lists it as connected.
+ */
+export async function addEnvironment(page: Page, pairingUrl: string): Promise<void> {
+  await page.goto(new URL("/settings/connections", page.url()).href);
+  await page.getByRole("button", { name: "Add environment" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add Environment" });
+  // A full pairing URL fills both the host and the pairing code.
+  await dialog.getByRole("textbox", { name: "Host" }).fill(pairingUrl);
+  await dialog.getByRole("button", { name: "Add environment" }).click();
+  await page.getByText(`${new URL(pairingUrl).origin}/ · Connected`).waitFor({ timeout: 60_000 });
+}

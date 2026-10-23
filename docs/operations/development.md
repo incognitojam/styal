@@ -159,6 +159,23 @@ is printed. CI runs the suite as the `E2E` shard of `Fork Test (Workspace)` and 
 directories as the `e2e-state` artifact. Upstream intakes that break a covered fork flow fail
 there.
 
+Tests under `e2e/tests/network/` need npm and GitHub releases, such as a published `@styal/cli`
+server running under its own service launcher and updating itself. They run only with
+`E2E_NETWORK=1`. The update test takes the client and server versions from the environment, and
+the web client must be built as the client version:
+
+```sh
+client=$(npm view @styal/cli dist-tags.nightly)
+server=0.1.1-nightly.20261023.881   # a published nightly older than $client
+APP_VERSION=$client vp run --filter @t3tools/web build
+E2E_CLIENT_VERSION=$client E2E_PREVIOUS_SERVER_VERSION=$server \
+  vp run --filter @t3tools/e2e test:e2e:network
+```
+
+The **Fork E2E (network)** workflow runs them daily and on intake pushes, with the newest nightly
+as the client and the nightly before it as the server. Its result does not gate merges or
+promotion; failed runs upload the `e2e-network-state` artifact.
+
 ## Desktop artifacts
 
 Local artifact builds are unsigned by default and write to `release/`:

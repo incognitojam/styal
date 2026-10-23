@@ -204,7 +204,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
 /** Host variables a server needs that carry no identity or credentials. */
 const INHERITED_VARIABLES = ["PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "USER", "TMPDIR"];
 
-function isolatedEnv(home: string, bin: string): NodeJS.ProcessEnv {
+export function isolatedEnv(home: string, bin: string): NodeJS.ProcessEnv {
   const inherited = Object.fromEntries(
     INHERITED_VARIABLES.flatMap((name) => {
       const value = process.env[name];
@@ -250,7 +250,7 @@ function readJsonLines<T>(path: string): ReadonlyArray<T> {
     .map((line) => JSON.parse(line) as T);
 }
 
-function freePort(): Promise<number> {
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = NodeNet.createServer();
     probe.once("error", reject);
@@ -265,7 +265,7 @@ function freePort(): Promise<number> {
   });
 }
 
-async function waitFor<T>(description: string, read: () => T | undefined): Promise<T> {
+export async function waitFor<T>(description: string, read: () => T | undefined): Promise<T> {
   const deadline = Date.now() + 90_000;
   for (;;) {
     const value = read();
