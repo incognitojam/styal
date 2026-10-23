@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-23T07:45:17.381Z",
+  "updatedAt": "2026-10-23T10:46:40.411Z",
   "compatibility": [
     {
       "driver": "codex",
@@ -96,11 +96,6 @@
       "recommendedRange": ">=2.0.18",
       "autoUpdates": [
         {
-          "version": "2.0.32",
-          "package": "@opencode/cli",
-          "styal": "0.1.1-nightly.20261017.782"
-        },
-        {
           "version": "2.1.2",
           "package": "@opencode/cli",
           "styal": "0.1.1-nightly.20261020.846"
@@ -109,6 +104,11 @@
           "version": "2.1.3",
           "package": "@opencode/cli",
           "styal": "0.1.1-nightly.20261022.876"
+        },
+        {
+          "version": "2.1.4",
+          "package": "@opencode/cli",
+          "styal": "0.1.1-nightly.20261023.881"
         }
       ],
       "ranges": [
