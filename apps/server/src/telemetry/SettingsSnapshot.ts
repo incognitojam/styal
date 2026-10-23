@@ -69,6 +69,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
       settings.textGenerationModelSelection,
       DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
     ),
+    threadTitleInstructionsCustomized: settings.threadTitleInstructions !== "",
     sourceControlWriterModelSet: settings.sourceControlWriterModelSelection !== null,
     sourceControlWritingStyleMode: settings.sourceControlWritingStyle.mode,
     followChangeRequestTemplates: settings.sourceControlWritingStyle.followChangeRequestTemplates,
