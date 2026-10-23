@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   assignProjectsToEnvironments,
+  assignPullRequestQueries,
   resolvePickableEnvironments,
   type AssignableProject,
 } from "./pullRequestProjectAssignment.logic";
@@ -255,5 +256,61 @@ describe("where a pull request can be acted on", () => {
       workspaceRoot: "/srv/env-1/a1-wt",
       label: "Server env-1",
     });
+  });
+});
+
+describe("pull request queries", () => {
+  const archived = (base: ReturnType<typeof project>) => ({
+    ...base,
+    archivedAt: "2026-10-23T00:00:00.000Z",
+  });
+
+  it("asks a server without a project filter when it lists every project", () => {
+    expect(
+      assignPullRequestQueries(
+        [
+          project("a1", "env-1", "github.com/acme/app"),
+          project("b1", "env-1", "github.com/acme/tools"),
+        ],
+        envs("env-1"),
+      ),
+    ).toEqual([{ environmentId: "env-1" }]);
+  });
+
+  it("leaves archived projects out of the listing", () => {
+    expect(
+      assignPullRequestQueries(
+        [
+          project("a1", "env-1", "github.com/acme/app"),
+          archived(project("b1", "env-1", "github.com/acme/tools")),
+        ],
+        envs("env-1"),
+      ),
+    ).toEqual([{ environmentId: "env-1", projectIds: ["a1"] }]);
+  });
+
+  it("does not ask a server whose projects are all archived", () => {
+    expect(
+      assignPullRequestQueries(
+        [
+          project("a1", "env-1", "github.com/acme/app"),
+          archived(project("b2", "env-2", "github.com/acme/tools")),
+        ],
+        envs("env-1", "env-2"),
+      ),
+    ).toEqual([{ environmentId: "env-1" }]);
+  });
+
+  it("lists a repository from another server when one copy is archived", () => {
+    expect(
+      assignPullRequestQueries(
+        [
+          archived(project("a1", "env-1", "github.com/acme/app")),
+          project("b1", "env-1", "github.com/acme/tools"),
+          project("a2", "env-2", "github.com/acme/app"),
+        ],
+        envs("env-1", "env-2"),
+      ),
+    ).toEqual([{ environmentId: "env-1", projectIds: ["b1"] }, { environmentId: "env-2" }]);
   });
 });

@@ -194,11 +194,12 @@ working. Current logs, message attachments, and browser profiles are kept.
 
 **Settings → Projects** lists every project on every connected machine. Pin the ones you use
 most: pinned projects come first in every project picker, in the order you drag them to. You can
-also pin from the sidebar's project filter, or with **Pin project** in the command palette
-(`Cmd/Ctrl+K`).
+also pin from the sidebar's project filter, with **Pin project** in the command palette
+(`Cmd/Ctrl+K`), or, with [threads grouped by project](./thread-sidebar.md#group-threads-by-project),
+by dragging a project's header.
 
-Archive a project you are done with. It leaves the project pickers, and its threads leave the
-sidebar and the command palette. Nothing is deleted, and threads keep their state. Find it under
+Archive a project you are done with. It leaves the project pickers, its threads leave the
+sidebar and the command palette, and its pull requests leave the **Pull requests** page. Nothing is deleted, and threads keep their state. Find it under
 **Archived** in **Settings → Projects** and choose **Unarchive** to bring everything back.
 
 Pin and archive apply to the project on every machine, so every machine with the project must

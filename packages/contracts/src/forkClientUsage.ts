@@ -163,6 +163,12 @@ export const ForkClientUsageInput = Schema.Union([
     action: Schema.Literal("thread_started"),
   }),
   Schema.Struct({
+    feature: Schema.Literal("sidebar-project-groups"),
+    /** `reordered` moves an unpinned project; the others change its pin or archive state. */
+    action: Schema.Literals(["reordered", "pinned", "unpinned", "pins_reordered", "archived"]),
+    entryPoint: Schema.Literals(["header_drag", "header_menu"]),
+  }),
+  Schema.Struct({
     feature: Schema.Literal("desktop-update-notice"),
     action: Schema.Literals(["notice_shown", "release_notes_opened"]),
   }),

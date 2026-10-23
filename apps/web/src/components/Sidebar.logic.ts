@@ -164,6 +164,8 @@ export type SidebarListMarker =
   | "settled-placeholder"
   /** The boundary between pinned and active rows. */
   | "pinned-divider"
+  /** With project grouping, the boundary below the pinned projects' groups. */
+  | "pinned-projects-divider"
   | "working-header"
   | "snoozed-header"
   | "settled-header";
@@ -216,15 +218,17 @@ function clusterSidebarItemsByGroup<T>(
   ];
 }
 
-/** Group placement follows new/reopened threads or the saved project order.
- * Manual thread keys only affect rows within a project, including during an
- * optimistic drop before those keys have arrived from the server. */
+/** Group placement follows new/reopened threads or the saved project order,
+ * after pinned projects in their pin order. Manual thread keys only affect
+ * rows within a project, including during an optimistic drop before those
+ * keys have arrived from the server. */
 export function groupActiveThreadsForSidebar<
   T extends Parameters<typeof sortActiveThreadsByOrderKey>[0][number],
 >(
   orderedThreads: readonly T[],
   groupOf: (thread: T) => string,
   savedGroupOrder: readonly string[] = [],
+  pinnedGroupOrder: readonly string[] = [],
 ): T[] {
   const recentGroups = sortActiveThreadsByOrderKey(
     orderedThreads.map((thread) => ({
@@ -235,12 +239,16 @@ export function groupActiveThreadsForSidebar<
       group: groupOf(thread),
     })),
   );
+  const pinnedGroups = new Set(pinnedGroupOrder);
   const savedGroups = new Set(savedGroupOrder);
   const groupOrder = [
+    ...pinnedGroupOrder,
     ...new Set(
-      recentGroups.map((thread) => thread.group).filter((group) => !savedGroups.has(group)),
+      recentGroups
+        .map((thread) => thread.group)
+        .filter((group) => !savedGroups.has(group) && !pinnedGroups.has(group)),
     ),
-    ...savedGroupOrder,
+    ...savedGroupOrder.filter((group) => !pinnedGroups.has(group)),
   ];
   return clusterSidebarItemsByGroup(orderedThreads, groupOf, groupOrder);
 }
@@ -343,23 +351,42 @@ export function resolveSidebarDropTarget(
   };
 }
 
+/** Where a dropped project header leaves the projects: their new order, of
+    which the first `pinnedCount` sit above the pinned projects divider. */
+export type SidebarProjectDrop = {
+  readonly order: readonly string[];
+  readonly pinnedCount: number;
+};
+
+const PINNED_PROJECTS_DIVIDER = sidebarMarkerId("pinned-projects-divider");
+
 /** The project order after dropping the header of `activeGroup` on `overId`,
     or null when the drop is outside the grouped active rows. Headers move
-    whole projects; the pointer's slot picks the neighbor, like arrayMove. */
+    whole projects; the pointer's slot picks the neighbor, like arrayMove.
+    The pinned projects divider takes a slot too, so dropping on it moves the
+    project across it. */
 export function resolveSidebarProjectDrop(
   items: readonly SidebarListItem[],
   activeGroup: string,
   overId: string,
-): readonly string[] | null {
-  const groupOrder = sidebarProjectGroupOrder(items);
-  const from = groupOrder.indexOf(activeGroup);
+): SidebarProjectDrop | null {
+  const sequence = items.flatMap((item) =>
+    item.kind === "project-header"
+      ? [item.group]
+      : item.kind === "marker" && item.marker === "pinned-projects-divider"
+        ? [PINNED_PROJECTS_DIVIDER]
+        : [],
+  );
+  const from = sequence.indexOf(activeGroup);
   const overIndex = items.findIndex((item) => sidebarListItemId(item) === overId);
   const over = items[overIndex];
   if (from === -1 || over === undefined) return null;
   let to: number;
-  if (over.kind === "project-header") to = groupOrder.indexOf(over.group);
+  if (over.kind === "project-header") to = sequence.indexOf(over.group);
   else if (over.kind === "thread" && over.section === "active" && over.group !== undefined)
-    to = groupOrder.indexOf(over.group);
+    to = sequence.indexOf(over.group);
+  else if (over.kind === "marker" && over.marker === "pinned-projects-divider")
+    to = sequence.indexOf(PINNED_PROJECTS_DIVIDER);
   else if (
     over.kind === "marker" &&
     (over.marker === "pinned-divider" || over.marker === "active-placeholder")
@@ -367,9 +394,13 @@ export function resolveSidebarProjectDrop(
     to = 0;
   else return null;
   if (to === -1) return null;
-  const next = groupOrder.filter((group) => group !== activeGroup);
+  const next = sequence.filter((group) => group !== activeGroup);
   next.splice(to, 0, activeGroup);
-  return next;
+  const divider = next.indexOf(PINNED_PROJECTS_DIVIDER);
+  return {
+    order: next.filter((group) => group !== PINNED_PROJECTS_DIVIDER),
+    pinnedCount: Math.max(divider, 0),
+  };
 }
 
 export type SidebarThreadDropPlan =

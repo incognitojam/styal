@@ -99,7 +99,7 @@ import {
   type PullRequestListSort,
   writePullRequestListPreferences,
 } from "../components/pullRequest/pullRequestListPreferences";
-import { assignProjectsToEnvironments } from "../components/pullRequest/pullRequestProjectAssignment.logic";
+import { assignPullRequestQueries } from "../components/pullRequest/pullRequestProjectAssignment.logic";
 import { pullRequestFilterProjects } from "../components/pullRequest/pullRequestProjectFilter.logic";
 import { environmentMachineIcon } from "../components/EnvironmentMachineIcon";
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
@@ -456,7 +456,13 @@ function PullRequestsRouteView() {
     [projects, scopedEnvironmentId, scopedProjectId],
   );
   const scopedProjects = useMemo(
-    () => pullRequestFilterProjects(projects, environmentLabels, scopedProject),
+    () =>
+      pullRequestFilterProjects(
+        // Archived projects are not filter choices; a link to one still opens its scope.
+        projects.filter((project) => project.archivedAt == null || project === scopedProject),
+        environmentLabels,
+        scopedProject,
+      ),
     [environmentLabels, projects, scopedProject],
   );
 
@@ -679,10 +685,8 @@ function PullRequestsRouteView() {
     [environmentIds, projects, projectsKnown, scopedProject, scopedProjectId],
   );
   /**
-   * Which projects each server is asked about. Two servers holding the same repository would both
-   * list the same pull requests, so each repository is listed by one of them — the first, which is
-   * where the page's actions land — and the others are asked only for what is theirs alone. A
-   * server left with nothing of its own is not read at all.
+   * Which projects each server is asked about (see `assignPullRequestQueries`). The first server
+   * lists a shared repository, since that is where the page's actions land.
    *
    * Left alone while the projects are still arriving, and while the scope is a single project:
    * that path deliberately asks both servers holding an ambiguous id.
@@ -691,25 +695,10 @@ function PullRequestsRouteView() {
     readonly environmentId: EnvironmentId;
     readonly projectIds?: ReadonlyArray<ProjectId>;
   }> => {
-    const plain = queryEnvironmentIds.map((environmentId) => ({ environmentId }));
-    if (!projectsKnown || scopedProjectId !== undefined) return plain;
-    const assignment = assignProjectsToEnvironments(
-      projects,
-      queryEnvironmentIds,
-      queryEnvironmentIds[0],
-    );
-    const totals = new Map<EnvironmentId, number>();
-    for (const project of projects) {
-      totals.set(project.environmentId, (totals.get(project.environmentId) ?? 0) + 1);
+    if (!projectsKnown || scopedProjectId !== undefined) {
+      return queryEnvironmentIds.map((environmentId) => ({ environmentId }));
     }
-    return queryEnvironmentIds.flatMap((environmentId) => {
-      const projectIds = assignment.get(environmentId);
-      if (projectIds === undefined) return [];
-      // It lists everything it holds anyway, so the filter is left off and a one-server workspace
-      // asks exactly the question it asked before.
-      if (projectIds.length === (totals.get(environmentId) ?? 0)) return [{ environmentId }];
-      return [{ environmentId, projectIds }];
-    });
+    return assignPullRequestQueries(projects, queryEnvironmentIds);
   }, [projects, projectsKnown, queryEnvironmentIds, scopedProjectId]);
   // Part of the scope, since a different split is a different question and its answers must not
   // be filed under the same page state.
