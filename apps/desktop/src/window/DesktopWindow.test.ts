@@ -44,6 +44,7 @@ import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as DesktopDiscordPresence from "../discord/DesktopDiscordPresence.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
+import * as DesktopLaunchTiming from "../telemetry/DesktopLaunchTiming.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
@@ -317,6 +318,7 @@ function layerTest(input: {
           shutdown: Effect.void,
         }),
         makeDesktopEnvironmentLayer(input.platform),
+        DesktopLaunchTiming.layerNoop,
         layerDesktopAppSettings,
         layerDesktopClientSettings,
         layerDesktopServerExposure,
@@ -447,6 +449,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
             shutdown: Effect.void,
           }),
           layerDesktopEnvironment,
+          DesktopLaunchTiming.layerNoop,
           DesktopAppSettings.layerTest(),
           layerDesktopClientSettings,
           layerDesktopServerExposure,

@@ -69,6 +69,7 @@ import * as DesktopState from "./app/DesktopState.ts";
 import * as DesktopLegacyLocalStorage from "./app/DesktopLegacyLocalStorage.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopRendererHistory from "./telemetry/DesktopRendererHistory.ts";
+import * as DesktopLaunchTiming from "./telemetry/DesktopLaunchTiming.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
 import * as BrowserImport from "./preview/BrowserImport/BrowserImport.ts";
 import * as LinuxBrowserSecret from "./preview/BrowserImport/LinuxBrowserSecret.ts";
@@ -153,6 +154,7 @@ const layerDesktopFoundation = Layer.mergeAll(
   DesktopAssets.layer,
   DesktopObservability.layer,
   DesktopRendererHistory.layer,
+  DesktopLaunchTiming.layer,
 ).pipe(Layer.provideMerge(layerDesktopEnvironment));
 
 const layerDesktopSsh = layerDesktopSshEnvironment.pipe(
@@ -214,6 +216,7 @@ const layerDesktopLocalEnvironmentAuth = DesktopLocalEnvironmentAuth.layer.pipe(
 
 const layerDesktopApplication = Layer.mergeAll(
   DesktopLifecycle.layer,
+  DesktopLaunchTiming.layerReporter,
   layerDesktopAppActivation,
   DesktopWebLinks.layer,
   DesktopApplicationMenu.layer,

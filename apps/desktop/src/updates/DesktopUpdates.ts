@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { errorTag } from "@t3tools/shared/observability";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -34,6 +35,7 @@ import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as DesktopLaunchTiming from "../telemetry/DesktopLaunchTiming.ts";
 import * as DesktopIdleRestart from "./DesktopIdleRestart.ts";
 import * as DesktopNativeUpdateStaging from "./DesktopNativeUpdateStaging.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
@@ -357,6 +359,7 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const launchTiming = yield* DesktopLaunchTiming.DesktopLaunchTiming;
 
   const appUpdateYmlConfigRef = yield* Ref.make<Option.Option<AppUpdateYmlConfig>>(Option.none());
   const activeUpdateActionRef = yield* Ref.make<Option.Option<UpdateAction>>(Option.none());
@@ -798,6 +801,7 @@ export const make = Effect.gen(function* () {
           return { accepted: false, completed: false, failed: false };
         }
         yield* Ref.set(desktopState.quitting, true);
+        const restartRequestedAt = yield* Clock.currentTimeMillis;
 
         return yield* Effect.gen(function* () {
           yield* writeUpdateRestartMarker;
@@ -816,6 +820,13 @@ export const make = Effect.gen(function* () {
             (instance) => instance.stop({ timeout: Duration.seconds(5) }),
             { concurrency: "unbounded" },
           );
+          if (downloadedVersion !== null) {
+            yield* launchTiming.recordUpdateRestart({
+              toVersion: downloadedVersion,
+              requestedAt: restartRequestedAt,
+              stagedInBackground: yield* nativeStaging.stagedInBackground,
+            });
+          }
           yield* nativeStaging.handOffToInstaller({
             isSilent: true,
             isForceRunAfter: true,

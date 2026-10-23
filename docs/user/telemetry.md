@@ -56,6 +56,8 @@ Each automatic thread settlement records its rule (a merged or closed pull reque
 
 On macOS, the desktop app records how long after an update was ready the computer first sat idle or locked with no threads waiting on you, as a rough range, so we can learn whether installing updates while you are away would work. It does not record when you were idle, what you were doing, or any thread details.
 
+Each time the desktop app starts, it records how long its local server and window took to become ready. After an update restart it also records how long the old version took to close and the new one to start, so we can tell whether update restarts are quick enough to go unnoticed. These durations are the only details recorded.
+
 Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
 
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
