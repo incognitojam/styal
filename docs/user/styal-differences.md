@@ -96,8 +96,8 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   defaults to GPT-6-Astra as of
   [revision 2cbc24f](https://github.com/pingdotgg/t3code/tree/2cbc24fcae2b5649d7b60b68da72053a37fa82d5).
 - **Text generation uses a provider you're signed in to.** Thread titles, branch names, and commit
-  and pull request text default to Claude Haiku 5.5. When the chosen provider is signed out or not
-  installed, styal uses Claude Haiku 5.5, then GPT-6 Luna, then another signed-in provider, and
+  and pull request text default to GPT-6 Luna. When the chosen provider is signed out or not
+  installed, styal uses GPT-6 Luna, then Claude Haiku 5.5, then another signed-in provider, and
   **Settings** shows the initial model choice. If a generation request hits a rate or usage limit, styal
   tries another usable provider in the same order without changing your saved model preference.
   T3 Code defaults to GPT-6 Luna and switches only when the provider is turned off as of

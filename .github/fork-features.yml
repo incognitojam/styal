@@ -4812,8 +4812,8 @@ features:
     status: maintained
     prs: [732, 823, 845]
     invariants:
-      - Text generation defaults to Claude Haiku 5.5 at low effort.
-      - Thread titles, branch names, and commit and pull request text run on the selected text generation model while its provider is enabled, installed, and signed in; otherwise they run on the first usable provider in the order Claude, Codex, then the rest, with that provider's text generation default.
+      - Text generation defaults to GPT-6 Luna at low effort, matching upstream.
+      - Thread titles, branch names, and commit and pull request text run on the selected text generation model while its provider is enabled, installed, and signed in; otherwise they run on the first usable provider in the order Codex, Claude, then the rest, with that provider's text generation default.
       - The choice is made from the last provider status check before the request; a provider not yet checked counts as usable.
       - Rate-limit and usage-limit failures retry on another usable provider in the same preference order, at most once per instance per request. Other failures and cancellation stop immediately; exhausting providers preserves the last failure.
       - Claude session and weekly limit rejections trigger fallback whether reported as plain text or a failed CLI JSON result; HTTP 429 is read only from the failed result, never from echoed prompts or successful output.
