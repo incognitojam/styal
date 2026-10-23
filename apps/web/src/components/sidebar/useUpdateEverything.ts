@@ -12,7 +12,12 @@ import { serverEnvironment } from "~/state/server";
 import { environmentSession } from "~/state/session";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
-import { canUpdateServer, type ServerUpdateOutcome, useServerUpdates } from "../ServerUpdateAction";
+import {
+  canUpdateServer,
+  type ServerUpdateOutcome,
+  useServerUpdateCheck,
+  useServerUpdates,
+} from "../ServerUpdateAction";
 import {
   closeFinishedUpdateRun,
   collectRestartingMachines,
@@ -96,11 +101,14 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
         reason: `@styal/cli@${targetVersion} is not on npm yet`,
       })),
   ];
-  const restarts = collectRestartingMachines(machines, servers, localUpdateVersion !== null);
+  // The servers this app hosts restart with it. The dialog counts their running
+  // threads; the running-work check covers the servers the run updates.
+  const restarts = collectRestartingMachines(machines, [], localUpdateVersion !== null);
   // Settings still offers a manual update for providers styal manages.
   const providers = useProviderUpdates({ leaveManagedUpdates: true });
-  // The fork's server update checks each host for running work first and asks
-  // only when something would be interrupted.
+  // The fork checks each server for running work when the confirmation opens,
+  // so the server step does not ask again.
+  const checkServers = useServerUpdateCheck();
   const updateServers = useServerUpdates();
 
   const { summary, lines } = describeUpdateEverything({
@@ -121,8 +129,10 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     summary,
     /** One line per machine, for the confirmation. */
     lines,
-    /** The servers this run restarts, which stops their running threads. */
+    /** The servers this app hosts, which restart when it installs. */
     restarts,
+    /** What updating the servers would interrupt, for the confirmation. */
+    checkServers: () => checkServers(servers),
     /** Behind machines the run leaves alone, with the reason. */
     skipped,
     /** Runs the pass. `installLocal` resolves true when this app is relaunching.
@@ -213,9 +223,9 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             );
             return outcomes;
           },
-          // One batch, so the fork's running-work check confirms every server
-          // at once. Each server still settles on its own, so the pass can stop
-          // waiting for a server once it restarts into its update.
+          // One batch the confirmation already checked for running work. Each
+          // server still settles on its own, so the pass can stop waiting for a
+          // server once it restarts into its update.
           updateServers: async () => {
             type FinishedServer = { label: string; outcome: ServerUpdateOutcome };
             const settlers = new Map<
@@ -233,6 +243,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             );
             updateServers(servers, {
               quiet: true,
+              confirmed: true,
               onSettled: (server, serverOutcome) => {
                 settleUpdateRunMachine(
                   server.environmentId,

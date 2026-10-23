@@ -138,6 +138,9 @@ function SidebarUpdateControl() {
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
+  // The fork's running-work check for the servers a run updates; null while it runs.
+  const [serverCheck, setServerCheck] = useState<ReadonlyArray<string> | null>([]);
+  const serverCheckRequest = useRef(0);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
   // Remote servers follow this app to the version it is about to install.
@@ -181,14 +184,26 @@ function SidebarUpdateControl() {
   const handleAction = useCallback(async () => {
     if (isInteractionDisabled) return;
     if (runsEverything) {
+      const request = ++serverCheckRequest.current;
+      setServerCheck(null);
       setIsConfirmingEverything(true);
+      void everything.checkServers().then(
+        (lines) => {
+          if (serverCheckRequest.current === request) setServerCheck(lines);
+        },
+        () => {
+          if (serverCheckRequest.current === request) {
+            setServerCheck(["Could not check the servers for running work."]);
+          }
+        },
+      );
       return;
     }
     const bridge = window.desktopBridge;
     if (!bridge || !state || action !== "install") return;
     setIsActionPending(true);
     void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
-  }, [action, isInteractionDisabled, runsEverything, state]);
+  }, [action, everything, isInteractionDisabled, runsEverything, state]);
 
   const runEverything = useCallback(async () => {
     const bridge = window.desktopBridge;
@@ -229,6 +244,7 @@ function SidebarUpdateControl() {
       lines={everything.lines}
       restarts={everything.restarts}
       skipped={everything.skipped}
+      serverCheck={serverCheck}
       onConfirm={() => void runEverything()}
     />
   );

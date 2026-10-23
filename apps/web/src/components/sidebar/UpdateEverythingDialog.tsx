@@ -36,6 +36,8 @@ const runningThreadCountAtom = Atom.family((environmentIds: string) =>
   ).pipe(Atom.withLabel(`update-everything-running-threads:${environmentIds}`)),
 );
 
+const NO_SERVER_CHECK: ReadonlyArray<string> = [];
+
 interface UpdateEverythingDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -44,6 +46,8 @@ interface UpdateEverythingDialogProps {
   readonly restarts: ReadonlyArray<RestartingMachine>;
   /** Behind machines the run leaves alone. */
   readonly skipped: ReadonlyArray<SkippedMachine>;
+  /** What updating the servers would interrupt; null while the fork's check runs. */
+  readonly serverCheck?: ReadonlyArray<string> | null;
   readonly onConfirm: () => void;
 }
 
@@ -74,6 +78,7 @@ function UpdateEverythingDialogContent({
   lines,
   restarts,
   skipped,
+  serverCheck = NO_SERVER_CHECK,
   onConfirm,
 }: Omit<UpdateEverythingDialogProps, "open" | "onOpenChange">) {
   const stopped = useAtomValue(
@@ -111,6 +116,11 @@ function UpdateEverythingDialogContent({
                 : `${threads} will be interrupted. ${continuing} can resume after the restart.`}
           </p>
         ) : null}
+        {serverCheck === null ? (
+          <p className="pt-2 text-sm">Checking for running work…</p>
+        ) : serverCheck.length > 0 ? (
+          <p className="whitespace-pre-line pt-2 text-sm">{serverCheck.join("\n")}</p>
+        ) : null}
         {skipped.length > 0 ? (
           <p className="whitespace-pre-line pt-2 text-sm">
             {skipped.map((machine) => `Skips ${machine.label}: ${machine.reason}`).join("\n")}
@@ -119,7 +129,9 @@ function UpdateEverythingDialogContent({
       </AlertDialogHeader>
       <AlertDialogFooter>
         <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-        <Button onClick={onConfirm}>Update</Button>
+        <Button disabled={serverCheck === null} onClick={onConfirm}>
+          Update
+        </Button>
       </AlertDialogFooter>
     </>
   );

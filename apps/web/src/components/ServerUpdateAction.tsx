@@ -97,6 +97,52 @@ export type ServerUpdateOutcome =
   | { readonly status: "updated" | "skipped" }
   | { readonly status: "failed"; readonly message: string };
 
+function serverUpdateHost(target: ServerUpdateTarget) {
+  return {
+    serverLabel: target.serverLabel,
+    desktopApp: target.selfUpdate === "desktop-managed",
+    continueRunningThreads: continuesRunningThreads(target),
+  };
+}
+
+function useReadHostActivity() {
+  return useAtomCommand(serverEnvironment.hostActivity, { reportFailure: false });
+}
+
+/** Reads each server's running work and describes what its update would interrupt. */
+async function checkServerUpdateHosts(
+  readHostActivity: ReturnType<typeof useReadHostActivity>,
+  targets: ReadonlyArray<ServerUpdateTarget>,
+) {
+  const activities = await Promise.all(
+    targets.map(async ({ environmentId }) => {
+      const activity = await readHostActivity({ environmentId, input: {} });
+      return activity._tag === "Success" ? activity.value : null;
+    }),
+  );
+  return serverUpdateConfirmation(
+    targets.map((target, index) => ({
+      ...serverUpdateHost(target),
+      activity: activities[index] ?? null,
+    })),
+  );
+}
+
+/**
+ * Checks servers for running work ahead of a confirmation the caller shows
+ * itself, then passes `confirmed` to `useServerUpdates`. Resolves to the lines
+ * describing what the updates would interrupt; none when nothing would be.
+ */
+export function useServerUpdateCheck() {
+  const readHostActivity = useReadHostActivity();
+  return async (targets: ReadonlyArray<ServerUpdateTarget>): Promise<ReadonlyArray<string>> => {
+    if (targets.length === 0) return [];
+    const confirmation = await checkServerUpdateHosts(readHostActivity, targets);
+    // The first line repeats the question the caller's own confirmation asks.
+    return confirmation?.message.split("\n").slice(1) ?? [];
+  };
+}
+
 /**
  * Updates servers after one confirmation covering all of them. Servers with an
  * update already in flight are skipped. Each server toasts its own result unless
@@ -105,9 +151,7 @@ export type ServerUpdateOutcome =
  */
 export function useServerUpdates() {
   const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
-  const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, {
-    reportFailure: false,
-  });
+  const readHostActivity = useReadHostActivity();
   const updateOne = async (
     target: ServerUpdateTarget,
     quiet: boolean,
@@ -154,9 +198,12 @@ export function useServerUpdates() {
     targets: ReadonlyArray<ServerUpdateTarget>,
     {
       quiet = false,
+      confirmed = false,
       onSettled,
     }: {
       readonly quiet?: boolean;
+      /** The caller already confirmed, after showing `useServerUpdateCheck`'s result. */
+      readonly confirmed?: boolean;
       readonly onSettled?: (target: ServerUpdateTarget, outcome: ServerUpdateOutcome) => void;
     } = {},
   ): Promise<ReadonlyArray<{ target: ServerUpdateTarget; outcome: ServerUpdateOutcome }>> => {
@@ -175,37 +222,21 @@ export function useServerUpdates() {
     const unclaimed = targets.filter((target) => !claimed.includes(target));
     if (claimed.length === 0) return skipAll(unclaimed);
     for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
-    const hosts = claimed.map((target) => ({
-      serverLabel: target.serverLabel,
-      desktopApp: target.selfUpdate === "desktop-managed",
-      continueRunningThreads: continuesRunningThreads(target),
-    }));
     try {
-      // This is the only confirmation in the flow; the remote machines restart
-      // without asking anyone there, so work started from any client counts.
-      const prepare = async () => {
-        const activities = await Promise.all(
-          claimed.map(async ({ environmentId }) => {
-            const activity = await readHostActivity({ environmentId, input: {} });
-            return activity._tag === "Success" ? activity.value : null;
-          }),
+      if (!confirmed) {
+        // The remote machines restart without asking anyone there, so work
+        // started from any client counts.
+        const prepare = () => checkServerUpdateHosts(readHostActivity, claimed);
+        const confirmation = requestConfirmDialog(
+          `${serverUpdateQuestion(claimed.map(serverUpdateHost))}\nChecking for running work…`,
+          { confirmLabel: "Update" },
+          { prepare },
         );
-        return serverUpdateConfirmation(
-          hosts.map((host, index) => ({
-            ...host,
-            activity: activities[index] ?? null,
-          })),
-        );
-      };
-      const confirmation = requestConfirmDialog(
-        `${serverUpdateQuestion(hosts)}\nChecking for running work…`,
-        { confirmLabel: "Update" },
-        { prepare },
-      );
-      // No themed host mounted (undefined) means proceed: the click itself
-      // was the request.
-      if (confirmation === undefined) await prepare();
-      else if (!(await confirmation)) return skipAll(targets);
+        // No themed host mounted (undefined) means proceed: the click itself
+        // was the request.
+        if (confirmation === undefined) await prepare();
+        else if (!(await confirmation)) return skipAll(targets);
+      }
       const updated = await Promise.all(
         claimed.map(async (target) => settle(target, await updateOne(target, quiet))),
       );

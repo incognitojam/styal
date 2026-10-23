@@ -43,7 +43,7 @@ describe("update everything from the sidebar", () => {
     await confirmation.getByText(`server to ${CLIENT_VERSION}`).waitFor();
     await confirmation.getByRole("button", { name: "Update" }).click();
 
-    // The server has nothing running, so the activity check goes ahead without asking.
+    // The confirmation checks the server for running work first; Update waits for it.
     // The launcher records the version it switched to once the new server is up.
     await expect
       .poll(() => server.activeVersion(), { timeout: 240_000, interval: 1_000 })
