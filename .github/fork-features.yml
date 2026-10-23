@@ -4810,7 +4810,7 @@ features:
   - id: text-generation-provider-preference
     title: Pick a signed-in provider for text generation
     status: maintained
-    prs: [732, 823, 845]
+    prs: [732, 823, 845, 997]
     invariants:
       - Text generation defaults to GPT-6 Luna at low effort, matching upstream.
       - Thread titles, branch names, and commit and pull request text run on the selected text generation model while its provider is enabled, installed, and signed in; otherwise they run on the first usable provider in the order Codex, Claude, then the rest, with that provider's text generation default.
