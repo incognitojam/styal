@@ -49,6 +49,25 @@ describe("diffFileTier", () => {
     expect(diffFileTier("tests/helpers/app.ts")).toBe("test");
   });
 
+  it("recognises test naming outside JavaScript", () => {
+    expect(diffFileTier("Tests/AppTests/RuleRepairTests.swift")).toBe("test");
+    expect(diffFileTier("Sources/AppUITests/LaunchFlow.swift")).toBe("test");
+    expect(diffFileTier("src/main/java/com/example/ParserTest.java")).toBe("test");
+    expect(diffFileTier("internal/parser/parser_test.go")).toBe("test");
+    expect(diffFileTier("pkg/test_parser.py")).toBe("test");
+    expect(diffFileTier("pkg/parser_test.py")).toBe("test");
+    expect(diffFileTier("lib/parser_spec.rb")).toBe("test");
+    expect(diffFileTier("Test/Parser.cs")).toBe("test");
+  });
+
+  it("keeps source that only resembles a test name", () => {
+    expect(diffFileTier("Sources/App/Latest.swift")).toBe("source");
+    expect(diffFileTier("Sources/App/ABTest.swift")).toBe("source");
+    expect(diffFileTier("docs/api_spec.yaml")).toBe("source");
+    expect(diffFileTier("src/test_utils.ts")).toBe("source");
+    expect(diffFileTier("Sources/Contests/Bracket.swift")).toBe("source");
+  });
+
   it("counts fixtures and test harnesses as tests", () => {
     expect(diffFileTier("src/orchestration/testkit/fixtures/plan/codex_transcript.ndjson")).toBe(
       "test",
@@ -226,6 +245,30 @@ describe("orderDiffFiles", () => {
       "src/adapters/CodexAdapter.ts",
       "src/adapters/CodexAdapter.test.ts",
       "src/testkit/fixtures/plan/transcript.ndjson",
+    ]);
+  });
+
+  it("pairs Swift, Go and Python tests with the source they cover", () => {
+    expect(
+      order([
+        file("Tests/AppTests/RuleRepairTests.swift"),
+        file("Tests/AppTests/DiscoveryTests.swift"),
+        file("Sources/App/RuleRepair.swift"),
+        file("Sources/App/Discovery.swift"),
+        file("pkg/test_zeta.py"),
+        file("pkg/zeta.py"),
+        file("cmd/alpha_test.go"),
+        file("cmd/alpha.go"),
+      ]),
+    ).toEqual([
+      "cmd/alpha.go",
+      "pkg/zeta.py",
+      "Sources/App/Discovery.swift",
+      "Sources/App/RuleRepair.swift",
+      "cmd/alpha_test.go",
+      "pkg/test_zeta.py",
+      "Tests/AppTests/DiscoveryTests.swift",
+      "Tests/AppTests/RuleRepairTests.swift",
     ]);
   });
 

@@ -26,6 +26,12 @@ const TEST_DIRECTORIES = new Set([
   "testdata",
   "testkit",
 ]);
+// Test file names across languages: `app.test.ts`, Go's `app_test.go`, pytest's `test_app.py`,
+// RSpec's `app_spec.rb`, and xUnit-style `AppTests.swift` or `AppTest.java`.
+const TEST_FILE_NAME =
+  /\.(?:test|spec)\.|^test_.+\.py$|_test\.(?:go|py|rs|rb|exs|dart|c|cc|cpp|h|hpp)$|_spec\.rb$|[a-z0-9](?:Tests?|Spec)\.(?:swift|java|kt|kts|scala|cs|m|mm)$/;
+// Xcode and Swift Package Manager name a test target after the module it tests: `AppTests`.
+const TEST_TARGET_DIRECTORY = /[a-z0-9](?:UI)?Tests$/;
 // drizzle-kit's migration bookkeeping. The SQL migrations beside it stay source: they are what runs.
 const DRIZZLE_META_FILE = /^(?:_journal|\d+_snapshot)\.json$/;
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
@@ -52,8 +58,13 @@ export function diffFileTier(path: string, generatedPaths?: ReadonlySet<string>)
     return "generated";
   }
   if (
-    /\.(?:test|spec)\./.test(name) ||
-    segments.slice(0, -1).some((segment) => TEST_DIRECTORIES.has(segment))
+    TEST_FILE_NAME.test(name) ||
+    segments
+      .slice(0, -1)
+      .some(
+        (segment) =>
+          TEST_DIRECTORIES.has(segment.toLowerCase()) || TEST_TARGET_DIRECTORY.test(segment),
+      )
   ) {
     return "test";
   }
@@ -197,9 +208,17 @@ function orderByImports(
   return ordered;
 }
 
-/** The implementation a test names: `foo.test.ts` and `__tests__/foo.ts` both point at `foo`. */
+/**
+ * The implementation a test names: `foo.test.ts`, `__tests__/foo.ts`, `foo_test.go`,
+ * `test_foo.py` and `FooTests.swift` all point at their source's base name.
+ */
 function testedBaseName(path: string): string {
-  return (path.split("/").at(-1) ?? "").replace(/\.(?:test|spec)\..*$/, "").replace(/\.[^.]+$/, "");
+  return (path.split("/").at(-1) ?? "")
+    .replace(/\.(?:test|spec)\..*$/, "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/^test_(?=.)/, "")
+    .replace(/(?<=.)_(?:test|spec)$/, "")
+    .replace(/(?<=[a-z0-9])(?:Tests?|Spec)$/, "");
 }
 
 /** How a caller's file shape maps onto the ordering: its diff path and its patch's changed lines. */
