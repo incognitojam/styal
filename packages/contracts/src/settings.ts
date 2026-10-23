@@ -584,6 +584,10 @@ export const ClientSettingsSchema = Schema.Struct({
 );
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
+/**
+ * When a client default changes, update the defaults list on the Styal Settings
+ * Defaults dashboard; see docs/operations/feature-usage.md#client-settings-snapshot.
+ */
 export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({});
 
 // ── Server Settings (server-authoritative) ────────────────────
@@ -1456,6 +1460,10 @@ export const ServerSettings = Schema.Struct({
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
+/**
+ * When a server default changes, update the defaults list on the Styal Settings
+ * Defaults dashboard; see docs/operations/feature-usage.md#settings-snapshot.
+ */
 export const DEFAULT_SERVER_SETTINGS: ServerSettings = Schema.decodeSync(ServerSettings)({});
 
 /**
