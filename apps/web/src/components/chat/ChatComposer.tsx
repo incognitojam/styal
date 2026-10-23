@@ -7949,11 +7949,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
-                  {threadUsage && !isComposerResting ? (
+                  {threadUsage ? (
                     <span className="text-muted-foreground/70">
                       <TurnUsageLabel
                         view={threadUsage}
                         subject="Thread usage"
+                        short={isComposerResting || isComposerFooterCompact}
                         {...(threadUsageKey !== undefined ? { meterKey: threadUsageKey } : {})}
                       />
                     </span>

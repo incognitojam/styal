@@ -101,28 +101,30 @@ function MeterText({ text, meterKey }: { text: string; meterKey: string }) {
 /**
  * The turn or thread figure in its surroundings' colour, tokens or cost as the
  * user chose; the breakdown opens on hover. With `meterKey`, a changing figure
- * rolls like a meter.
+ * rolls like a meter. `short` drops the token unit where room is tight.
  */
 export function TurnUsageLabel({
   view,
   subject = "Turn usage",
   meterKey,
+  short = false,
 }: {
   view: TurnUsageView;
   /** Names the figure for screen readers. */
   subject?: string;
   /** Identifies what the figure counts, e.g. the thread; see `MeterText`. */
   meterKey?: string;
+  short?: boolean;
 }) {
   const figure = useClientSettings(selectUsageFigure);
-  const text = usageFigureText(view, figure);
+  const text = usageFigureText(view, figure, short);
   return (
     <Popover>
       <PopoverTrigger
         openOnHover
         delay={150}
         closeDelay={0}
-        aria-label={`${subject}: ${text}`}
+        aria-label={`${subject}: ${usageFigureText(view, figure)}`}
         render={
           <button
             type="button"
@@ -131,8 +133,11 @@ export function TurnUsageLabel({
         }
       >
         {meterKey !== undefined ? (
-          // Changing between tokens and cost is not a reading changing.
-          <MeterText text={text} meterKey={`${meterKey}:${usageFigureShown(view, figure)}`} />
+          // Changing between tokens and cost, or to the short form, is not a reading changing.
+          <MeterText
+            text={text}
+            meterKey={`${meterKey}:${usageFigureShown(view, figure)}:${short}`}
+          />
         ) : (
           text
         )}

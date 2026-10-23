@@ -289,6 +289,7 @@ describe("turnUsageView", () => {
 
     expect(view).toEqual({
       headline: "1.26M tokens",
+      tokens: "1.26M",
       costUsd: null,
       rows: [
         { label: "Input", value: "1.20M (50% cached)" },
@@ -302,6 +303,7 @@ describe("turnUsageView", () => {
   it("leads with total tokens and details the cached share and reasoning", () => {
     expect(turnUsageView(usage)).toEqual({
       headline: "1.05M tokens",
+      tokens: "1.05M",
       costUsd: null,
       rows: [
         { label: "Input", value: "1M (60% cached)" },
@@ -354,6 +356,8 @@ describe("usageFigureText", () => {
 
     expect(usageFigureText(priced, "cost")).toBe("$0.84");
     expect(usageFigureText(priced, "tokens")).toBe("1.05M tokens");
+    expect(usageFigureText(priced, "tokens", true)).toBe("1.05M");
+    expect(usageFigureText(priced, "cost", true)).toBe("$0.84");
     expect(usageFigureText(turnUsageView(usage), "cost")).toBe("1.05M tokens");
     expect(
       usageFigureText(threadUsageView({ ...threadTotal, costUsd: 0, pricedTurns: 0 }), "cost"),
@@ -435,6 +439,7 @@ describe("threadUsageView", () => {
   it("shows the same breakdown as a turn and stays quiet when every turn counts", () => {
     expect(threadUsageView(threadTotal)).toEqual({
       headline: "3.12M tokens",
+      tokens: "3.12M",
       costUsd: null,
       rows: [
         { label: "Input", value: "3M (67% cached)" },
