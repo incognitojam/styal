@@ -3968,8 +3968,10 @@ features:
       - Accounts imported from Clerk keep their Clerk user id. During transition, email sign-in rechecks imported email ownership and resolves unmapped verified addresses through Clerk, while exchange refreshes the email mapping. Clerk outages fail as upstream_unavailable instead of splitting accounts or rejecting credentials. A relay without a Clerk secret keeps stored email mappings as they are and makes no Clerk lookups, so removing Clerk later does not split imported accounts.
       - The account endpoints accept either a Clerk bearer token or a relay DPoP access token with the account scope. DPoP authentication does not call Clerk. Deleting an imported account tears down its environments, then deletes its Clerk identity when Clerk is configured (404 counts as success; outages are retryable upstream_unavailable), then deletes relay data, so a failure at any step leaves the account and its sessions able to retry.
       - Email sign-in stays off until a sender is configured, and production refuses log delivery and fixed test codes.
-      - Web, desktop, and mobile sign in with the emailed code; web and desktop keep the session next to the browser's DPoP key.
-      - A client still signed in with Clerk moves to a relay session once without asking, then signs Clerk out so a later styal Link sign-out stays signed out.
+      - Web, desktop, mobile, and the CLI sign in with the emailed code; web and desktop keep the session next to the browser's DPoP key, and the CLI asks for the code in the terminal, including over SSH.
+      - Web, desktop, and mobile exchange a stored Clerk sign-in once for a relay session, then sign Clerk out locally so a later styal Link sign-out stays signed out.
+      - CLI adoption and credential updates use a cross-process lease. Startup skips absent credentials and retries only transient failures, including a busy lease; it forgets a rejected Clerk token only after a definitive grant rejection. Successful adoption or email verification retains cloud-cli-oauth-token for older processes until logout and writes cloud-cli-clerk-adopted so it is never adopted again.
+      - CLI login offers email sign-in after permanent credential recovery failures, keeps prompting after temporary verify or resend failures, and treats a stored session for another relay as signed out. The CLI uses packages/shared/src/dpopProof.ts to sign proofs and sends authorization only to the session's relay origin. Email sign-in replaces upstream's CLI OAuth flow (apps/server/src/cloud/CliTokenManager.ts and cliAuthHtml.ts, deleted here), so intake must not restore those files.
       - A session the relay reports as ended signs the client out; a network failure does not.
       - Account deletion retries teardown for active links, revoked links, and outstanding allocations, clearing held-hook inboxes before removing allocation records. Teardown failure preserves cleanup state and account sessions for retry. Deletion queues Live Activity ends before removing registrations and removes activity content only for environment/key pairs with no other active account owner; signed removal ends remain deliverable after SQL removal without recreating account records. Deletion takes session row locks before device and Live Activity rows, the same order as registration and session revocation.
       - Exported traces never carry database driver detail (bound parameters, failing rows, driver messages), so auth persistence failures do not export email addresses; spans keep the query text, SQL state and constraint name.
@@ -3978,6 +3980,7 @@ features:
       - apps/mobile/src/features/cloud/relayKeychain.ts
       - apps/mobile/src/features/cloud/relaySession.ts
       - apps/mobile/src/features/cloud/relaySessionStore.ts
+      - apps/server/src/cloud/CliSession.ts
       - apps/web/src/cloud/legacyClerkSession.tsx
       - apps/web/src/cloud/relaySession.ts
       - apps/web/src/cloud/relaySessionStore.ts
@@ -3995,7 +3998,13 @@ features:
       - infra/relay/src/auth/EmailSignInCodes.ts
       - infra/relay/src/auth/clerkImport.ts
       - infra/relay/src/pruneExpiredState.ts
+      - packages/shared/src/dpopProof.ts
     upstream_paths:
+      - apps/server/src/auth/ServerSecretStore.ts
+      - apps/server/src/cli/connect.ts
+      - apps/server/src/cloud/CloudLink.ts
+      - apps/server/src/cloud/publicConfig.ts
+      - apps/server/src/server.ts
       - apps/web/src/cloud/managedAuth.tsx
       - infra/relay/src/Config.ts
       - infra/relay/src/auth/RelayTokens.ts
@@ -4008,6 +4017,8 @@ features:
       - packages/contracts/src/relay.ts
     tests:
       - apps/mobile/src/features/cloud/relaySessionStore.test.ts
+      - apps/server/src/cli/connect.test.ts
+      - apps/server/src/cloud/CliSession.test.ts
       - apps/web/src/components/relay-auth/RelayEmailSignInForm.logic.test.ts
       - infra/relay/src/Config.test.ts
       - infra/relay/src/Runtime.test.ts

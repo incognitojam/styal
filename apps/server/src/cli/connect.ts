@@ -4,12 +4,12 @@ import {
   type RelayClientInstallProgressEvent,
   type RelayClientInstallProgressStage,
 } from "@t3tools/contracts";
-import { RelayOkResponse } from "@t3tools/contracts/relay";
+import { RelayOkResponse, RelaySignInCode, RelaySignInEmail } from "@t3tools/contracts/relay";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import * as Cause from "effect/Cause";
-import * as Config from "effect/Config";
+import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
 import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
@@ -28,7 +28,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as BootService from "../cloud/bootService.ts";
 import * as CliState from "../cloud/CliState.ts";
-import * as CliTokenManager from "../cloud/CliTokenManager.ts";
+import * as CliSession from "../cloud/CliSession.ts";
 import { filterRelayResponse } from "../cloud/relayResponse.ts";
 import {
   CLOUD_LINKED_USER_ID,
@@ -40,7 +40,6 @@ import { relayUrlConfig } from "../cloud/publicConfig.ts";
 import * as RelayTracing from "../cloud/relayTracing.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import * as ExternalLauncher from "../process/externalLauncher.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { resolveCliCommand } from "./invocation.ts";
@@ -52,80 +51,162 @@ const jsonFlag = Flag.Boolean("json").pipe(
   Flag.withDefault(false),
 );
 
-const isCloudCliTokenManagerError = Schema.is(CliTokenManager.CloudCliTokenManagerError);
-
-const headlessFlag = Flag.Boolean("headless").pipe(
-  Flag.withDescription("Authorize without a local browser using the OAuth device flow."),
-  Flag.withDefault(false),
+const emailFlag = Flag.String("email").pipe(
+  Flag.withDescription("Email address to sign in with. You are asked for it when omitted."),
+  Flag.optional,
 );
 
-/**
- * Inside an SSH session there is no local browser to complete the loopback
- * OAuth callback, so the device authorization grant is the only flow that
- * can work.
- */
-export const headlessSessionConfig = Config.all({
-  sshConnection: Config.String("SSH_CONNECTION").pipe(Config.option),
-  sshTty: Config.String("SSH_TTY").pipe(Config.option),
-}).pipe(
-  Config.map(({ sshConnection, sshTty }) => Option.isSome(sshConnection) || Option.isSome(sshTty)),
-);
+// Kept for one release so scripts that pass it keep working; sign-in now
+// happens in the terminal everywhere.
+const headlessFlag = Flag.Boolean("headless").pipe(Flag.withDefault(false), Flag.withHidden);
 
-const showDeviceAuthorizationPrompt = (prompt: CliTokenManager.DeviceAuthorizationPrompt) =>
-  Console.log(formatDeviceAuthorizationPrompt(prompt));
-
-function formatDeviceAuthorizationPrompt(
-  prompt: CliTokenManager.DeviceAuthorizationPrompt,
-): string {
-  const minutes = Math.max(1, Math.round(Duration.toMinutes(prompt.expiresIn)));
-  return [
-    "Headless authorization",
-    "Open this URL on a device with a browser:",
-    `  ${prompt.verificationUriComplete ?? prompt.verificationUri}`,
-    "",
-    `Confirm this code when asked: ${prompt.userCode}`,
-    "",
-    `Waiting for approval (expires in ${minutes} min). Press Ctrl+C to cancel.`,
-  ].join("\n");
+export class CloudCliInteractiveTerminalRequiredError extends Schema.TaggedError<CloudCliInteractiveTerminalRequiredError>()(
+  "CloudCliInteractiveTerminalRequiredError",
+  {},
+) {
+  override get message(): string {
+    return "Signing in to styal Link asks for a code from your email. Run `styal link login` in an interactive terminal.";
+  }
 }
 
-/** Returns the connected account identity, if the flow could determine one. */
-const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
-  readonly headless: boolean;
+export class CloudCliInvalidEmailError extends Schema.TaggedError<CloudCliInvalidEmailError>()(
+  "CloudCliInvalidEmailError",
+  { email: Schema.String },
+) {
+  override get message(): string {
+    return `${this.email} is not an email address.`;
+  }
+}
+
+const isRelaySignInEmail = Schema.is(RelaySignInEmail);
+const isRelaySignInCode = Schema.is(RelaySignInCode);
+
+function normalizeSignInCode(value: string): string {
+  return value.replace(/[\s-]/g, "");
+}
+
+const promptSignInEmail = Prompt.run(
+  Prompt.String({
+    message: "Email",
+    validate: (value) =>
+      isRelaySignInEmail(value.trim())
+        ? Effect.succeed(value.trim())
+        : Effect.fail("Enter an email address."),
+  }),
+);
+
+const promptSignInCode = Prompt.run(
+  Prompt.String({
+    message: 'Code (or "r" to resend)',
+    validate: (value) => {
+      const trimmed = value.trim();
+      if (trimmed.toLowerCase() === "r") return Effect.succeed("r");
+      const code = normalizeSignInCode(trimmed);
+      return isRelaySignInCode(code)
+        ? Effect.succeed(code)
+        : Effect.fail('Enter the 8-digit code, or "r" to send a new one.');
+    },
+  }),
+);
+
+function codeLifetime(expiresAt: string, nowEpochMs: number): string {
+  const minutes = Math.round((Date.parse(expiresAt) - nowEpochMs) / 60_000);
+  return Number.isFinite(minutes) && minutes >= 1
+    ? ` It expires in ${minutes} minute${minutes === 1 ? "" : "s"}.`
+    : "";
+}
+
+/**
+ * Emails a sign-in code and reads it back from the terminal. A wrong code is
+ * asked for again; "r" sends a new code once the relay's resend delay passed.
+ */
+export const runEmailSignIn = Effect.fn("cloud.cli.run_email_sign_in")(function* <E, R>(input: {
+  readonly session: CliSession.CloudCliSession["Service"];
+  readonly email: string;
+  readonly promptCode: Effect.Effect<string, E, R>;
 }) {
-  const tokens = yield* CliTokenManager.CloudCliTokenManager;
-  const useOutOfBandOAuth = options.headless || (yield* headlessSessionConfig);
-  if (!useOutOfBandOAuth) {
-    const authorization = yield* tokens.get;
-    if (authorization._tag === "Authorized") {
-      return authorization.token.identity ?? null;
+  const { session, email } = input;
+  let resendAvailableAtEpochMs = 0;
+  const sendCode = Effect.fn("cloud.cli.send_sign_in_code")(function* (resend: boolean) {
+    const started = yield* session.startEmailSignIn(email);
+    const now = yield* Clock.currentTimeMillis;
+    resendAvailableAtEpochMs = now + started.resendAfterSeconds * 1_000;
+    yield* Console.log(
+      `${resend ? "Sent a new 8-digit code" : "Sent an 8-digit code"} to ${email}.${codeLifetime(started.expiresAt, now)}`,
+    );
+  });
+  yield* sendCode(false);
+  while (true) {
+    const answer = yield* input.promptCode;
+    if (answer === "r") {
+      const now = yield* Clock.currentTimeMillis;
+      if (now < resendAvailableAtEpochMs) {
+        const seconds = Math.ceil((resendAvailableAtEpochMs - now) / 1_000);
+        yield* Console.log(`You can request a new code in ${seconds} seconds.`);
+        continue;
+      }
+      yield* sendCode(true).pipe(
+        Effect.catchTags({
+          CloudCliSignInRateLimitedError: (error) => Console.log(error.message),
+          CloudCliEmailSignInUnavailableError: (error) => Console.log(error.message),
+          CloudCliRelayUnavailableError: (error) => Console.log(error.message),
+        }),
+      );
+      continue;
     }
-    yield* Console.log("\nHeadless mode enabled. A new authorization link is ready below.");
+    const verified = yield* session.verifyEmailSignIn({ email, code: answer }).pipe(
+      Effect.asSome,
+      Effect.catchTags({
+        CloudCliSignInCodeError: (error) =>
+          Console.log(
+            error.reason === "incorrect"
+              ? `${error.message} Try again, or enter "r" to send a new code.`
+              : `${error.message} Enter "r" to send a new code.`,
+          ).pipe(Effect.as(Option.none())),
+        CloudCliSignInRateLimitedError: (error) =>
+          Console.log(error.message).pipe(Effect.as(Option.none())),
+        CloudCliRelayUnavailableError: (error) =>
+          Console.log(error.message).pipe(Effect.as(Option.none())),
+      }),
+    );
+    if (Option.isSome(verified)) {
+      return verified.value;
+    }
   }
-  // A stored credential whose refresh fails (revoked, expired grant) must
-  // fall through to a fresh device authorization, not dead-end the command.
-  const existing = yield* tokens.getExisting.pipe(
-    Effect.catchTags({
-      CloudCliCredentialRefreshError: () =>
-        Console.log(
-          "The stored styal Link credential could not be refreshed; signing in again.",
-        ).pipe(Effect.as(Option.none())),
-    }),
-  );
-  if (Option.isSome(existing)) {
-    return existing.value.identity ?? null;
-  }
-  const { token, identity } = yield* CliTokenManager.deviceAuthorizationLogin(
-    showDeviceAuthorizationPrompt,
-  ).pipe(
-    Effect.mapError((cause) =>
-      isCloudCliTokenManagerError(cause)
-        ? cause
-        : new CliTokenManager.CloudCliAuthorizationError({ cause }),
+});
+
+/** Returns the signed-in account, signing in first when no session is stored. */
+export const authorizeCli = Effect.fn("cloud.cli.authorize")(function* (options: {
+  readonly email: Option.Option<string>;
+}) {
+  const session = yield* CliSession.CloudCliSession;
+  const existing = yield* session.currentIdentity.pipe(
+    Effect.catchIf(
+      (error) => !CliSession.canRetryCredentialRecovery(error),
+      (error) => Console.log(error.message).pipe(Effect.as(Option.none())),
     ),
   );
-  yield* tokens.store(token);
-  return identity;
+  if (Option.isSome(existing)) {
+    if (
+      Option.isSome(options.email) &&
+      options.email.value.trim().toLowerCase() !== existing.value.email?.toLowerCase()
+    ) {
+      yield* Console.warn(
+        "The requested email does not match the stored styal Link account. Run `styal link logout`, then sign in with the other email.",
+      );
+    }
+    return existing.value;
+  }
+  if (!process.stdin.isTTY) {
+    return yield* new CloudCliInteractiveTerminalRequiredError();
+  }
+  const email = Option.isSome(options.email)
+    ? options.email.value.trim()
+    : yield* promptSignInEmail;
+  if (!isRelaySignInEmail(email)) {
+    return yield* new CloudCliInvalidEmailError({ email });
+  }
+  return yield* runEmailSignIn({ session, email, promptCode: promptSignInCode });
 });
 
 function bytesToString(value: Uint8Array): string {
@@ -139,6 +220,7 @@ function stringToBytes(value: string): Uint8Array {
 interface CloudCliStatus {
   readonly desired: boolean;
   readonly authenticated: boolean;
+  readonly email: string | null;
   readonly linked: boolean;
   readonly cloudUserId: string | null;
   readonly relayUrl: string | null;
@@ -182,7 +264,7 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
       ? "pending server startup"
       : "not provisioned";
   const nextStep = !status.authenticated
-    ? "Run `styal link` to authorize and enable styal Link."
+    ? "Run `styal link` to sign in and enable styal Link."
     : !status.desired
       ? "Run `styal link` to enable styal Link."
       : !status.linked
@@ -192,7 +274,7 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
   return [
     "styal Link",
     `  Exposure: ${status.desired ? "enabled" : "disabled"}`,
-    `  Authorization: ${status.authenticated ? "stored credential" : "missing"}`,
+    `  Account: ${status.authenticated ? (status.email ?? "signed in") : "signed out"}`,
     `  Environment link: ${provisioned}`,
     `  Relay: ${status.relayUrl ?? "not provisioned"}`,
     `  Publish agent activity: ${status.publishAgentActivity ? "enabled" : "disabled"}`,
@@ -322,20 +404,19 @@ const logCloudDisconnectFailure = (
   );
 
 const unlinkRelayEnvironment = Effect.fn("cloud.cli.unlink_relay_environment")(function* () {
-  const tokens = yield* CliTokenManager.CloudCliTokenManager;
-  const token = yield* tokens.getExisting;
-  if (Option.isNone(token)) {
-    return { status: "not-authenticated" } satisfies RelayUnlinkResult;
-  }
-
+  const session = yield* CliSession.CloudCliSession;
   const environment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const environmentId = yield* environment.getEnvironmentId;
   const relayUrl = yield* relayUrlConfig;
+  const unlinkUrl = `${relayUrl}/v1/client/environment-links/${encodeURIComponent(environmentId)}`;
+  const authorization = yield* session.authorize("DELETE", unlinkUrl);
+  if (Option.isNone(authorization)) {
+    return { status: "not-authenticated" } satisfies RelayUnlinkResult;
+  }
+
   const httpClient = yield* HttpClient.HttpClient;
-  const response = yield* HttpClientRequest.delete(
-    `${relayUrl}/v1/client/environment-links/${encodeURIComponent(environmentId)}`,
-  ).pipe(
-    HttpClientRequest.bearerToken(token.value.accessToken),
+  const response = yield* HttpClientRequest.delete(unlinkUrl).pipe(
+    HttpClientRequest.setHeaders({ ...authorization.value }),
     httpClient.execute,
     Effect.flatMap(filterRelayResponse),
     Effect.flatMap(HttpClientResponse.schemaBodyJson(RelayOkResponse)),
@@ -390,10 +471,9 @@ const disconnectCloud = Effect.fn("cloud.cli.disconnect")(function* (options: {
   const relayResult = yield* Effect.exit(unlinkRelayEnvironment());
   yield* CliState.clearPersistedCloudLink;
 
-  if (options.clearAuthorization) {
-    const tokens = yield* CliTokenManager.CloudCliTokenManager;
-    yield* tokens.clear;
-  }
+  const signOut = options.clearAuthorization
+    ? Option.some(yield* (yield* CliSession.CloudCliSession).signOut)
+    : Option.none<CliSession.CloudCliSignOutResult>();
 
   yield* reportCloudDisconnectResults({
     clearAuthorization: options.clearAuthorization,
@@ -401,9 +481,14 @@ const disconnectCloud = Effect.fn("cloud.cli.disconnect")(function* (options: {
     relayResult,
   });
 
-  if (options.clearAuthorization) {
+  if (Option.isSome(signOut)) {
+    if (signOut.value === "revoke-failed") {
+      yield* Console.warn(
+        "Could not end the styal Link session at the relay. It was removed from this machine; remove it from your signed-in devices when the relay is reachable.",
+      );
+    }
     yield* Console.log(
-      "Signed out of styal Link locally.\nThe background service is managed separately with `styal service`.",
+      "Signed out of styal Link.\nThe background service is managed separately with `styal service`.",
     );
   }
 });
@@ -414,7 +499,7 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
     A,
     E,
     | ServerSecretStore.ServerSecretStore
-    | CliTokenManager.CloudCliTokenManager
+    | CliSession.CloudCliSession
     | RelayClient.RelayClient
     | EnvironmentAuth.EnvironmentAuth
     | BootService.BootService
@@ -434,10 +519,7 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
   const minimumLogLevel = options?.quietLogs ? "Error" : config.logLevel;
   const layerRuntime = Layer.mergeAll(
     ServerSecretStore.layer,
-    CliTokenManager.layer.pipe(
-      Layer.provide(ServerSecretStore.layer),
-      Layer.provide(ExternalLauncher.layer),
-    ),
+    CliSession.layer.pipe(Layer.provide(ServerSecretStore.layer)),
     RelayClient.layerCloudflared({ baseDir: config.baseDir }),
     EnvironmentAuth.layerRuntime,
     CliService.layer(config),
@@ -450,14 +532,15 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
   return yield* run.pipe(Effect.provide(layerRuntime));
 });
 
-const connectedAs = (identity: string | null): string => (identity ? ` as ${identity}` : "");
+const connectedAs = (identity: CliSession.CloudCliIdentity): string =>
+  identity.email ? ` as ${identity.email}` : "";
 
 function formatRelayClientReady(version: string): string {
   return `✓ Relay client ready · cloudflared ${version}`;
 }
 
 const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(function* (options: {
-  readonly headless: boolean;
+  readonly email: Option.Option<string>;
   readonly publishOnly?: boolean;
 }) {
   const publishOnly = options.publishOnly ?? false;
@@ -486,9 +569,10 @@ const linkEnvironmentForConnect = Effect.fn("cloud.cli.link_environment")(functi
 
 const connectLoginCommand = Command.make("login", {
   ...projectLocationFlags,
+  email: emailFlag,
   headless: headlessFlag,
 }).pipe(
-  Command.withDescription("Authorize the styal Link CLI without enabling remote access."),
+  Command.withDescription("Sign in to styal Link without enabling remote access."),
   Command.withHandler((flags) =>
     runCloudCommand(
       flags,
@@ -503,6 +587,7 @@ const connectLoginCommand = Command.make("login", {
 
 const connectLinkCommand = Command.make("link", {
   ...projectLocationFlags,
+  email: emailFlag,
   headless: headlessFlag,
   publishOnly: Flag.Boolean("publish-only").pipe(
     Flag.withDescription(
@@ -543,22 +628,31 @@ const connectStatusCommand = Command.make("status", {
       Effect.gen(function* () {
         const secrets = yield* ServerSecretStore.ServerSecretStore;
         const relayClient = yield* RelayClient.RelayClient;
-        const tokens = yield* CliTokenManager.CloudCliTokenManager;
-        const [desired, authenticated, cloudUserId, relayUrl, publishAgentActivity, executable] =
-          yield* Effect.all(
-            [
-              CliState.readCliDesiredCloudLink,
-              tokens.hasCredential,
-              secrets.get(CLOUD_LINKED_USER_ID),
-              secrets.get(RELAY_URL_SECRET),
-              secrets.get(PUBLISH_AGENT_ACTIVITY_SECRET),
-              relayClient.resolve,
-            ],
-            { concurrency: "unbounded" },
-          );
+        const session = yield* CliSession.CloudCliSession;
+        const [
+          desired,
+          authenticated,
+          identity,
+          cloudUserId,
+          relayUrl,
+          publishAgentActivity,
+          executable,
+        ] = yield* Effect.all(
+          [
+            CliState.readCliDesiredCloudLink,
+            session.hasCredential,
+            session.storedIdentity,
+            secrets.get(CLOUD_LINKED_USER_ID),
+            secrets.get(RELAY_URL_SECRET),
+            secrets.get(PUBLISH_AGENT_ACTIVITY_SECRET),
+            relayClient.resolve,
+          ],
+          { concurrency: "unbounded" },
+        );
         const status: CloudCliStatus = {
           desired,
           authenticated,
+          email: Option.isSome(identity) ? identity.value.email : null,
           linked: Option.isSome(cloudUserId),
           cloudUserId: Option.isSome(cloudUserId) ? bytesToString(cloudUserId.value) : null,
           relayUrl: Option.isSome(relayUrl) ? bytesToString(relayUrl.value) : null,
@@ -591,7 +685,7 @@ const connectPublishCommand = Command.make("publish", {
       flags,
       Effect.gen(function* () {
         const secrets = yield* ServerSecretStore.ServerSecretStore;
-        const tokens = yield* CliTokenManager.CloudCliTokenManager;
+        const session = yield* CliSession.CloudCliSession;
         const enabled = !flags.disable;
         yield* secrets.set(
           PUBLISH_AGENT_ACTIVITY_SECRET,
@@ -621,7 +715,7 @@ const connectPublishCommand = Command.make("publish", {
         // Establish a tunnel-free publish-only link automatically so signing in
         // is all it takes — the mobile client can still reach the environment
         // out of band without styal Link.
-        if (!(yield* tokens.hasCredential)) {
+        if (!(yield* session.hasCredential)) {
           yield* Console.log(
             "Run `styal link login` first so this environment can be authorized to publish.",
           );
@@ -666,11 +760,13 @@ const connectLogoutCommand = Command.make("logout", {
 
 const linkCommandFlags = {
   ...projectLocationFlags,
+  email: emailFlag,
   headless: headlessFlag,
 } as const;
 
 const runLinkOnboarding = (flags: {
   readonly baseDir: Option.Option<string>;
+  readonly email: Option.Option<string>;
   readonly headless: boolean;
 }) =>
   runCloudCommand(
@@ -681,9 +777,8 @@ const runLinkOnboarding = (flags: {
       if (!linked) {
         return;
       }
-      // Show which account was linked so an unexpected identity (an
-      // authorization code for a different account) is visible before the
-      // machine is brought online.
+      // Show which account was linked so an unexpected identity is visible
+      // before the machine is brought online.
       yield* Console.log(`✓ Authorized${connectedAs(linked.identity)}`);
 
       // Authorization is stored. If service setup fails, preserve it and
