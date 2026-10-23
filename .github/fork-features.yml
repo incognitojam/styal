@@ -3364,6 +3364,30 @@ features:
       tracking:
         - https://github.com/pingdotgg/t3code/commit/42da166d131017335a1158d0b379dd68b8985796
       retire_when: Upstream shows provider-owned session cleanup rules with their source per instance and links to them from Usage.
+  - id: provider-send-analytics
+    title: Preserve provider send analytics through orchestration V2
+    status: maintained
+    prs: []
+    invariants:
+      - Each successful provider prompt submission or steering delivery records provider.turn.sent after acceptance, including server-originated scheduled messages, restart continuations, and delegated results; rejected and interrupted sends, native compaction, and unsolicited provider turns do not record sends.
+      - Send properties contain the provider, known model and modes, managed Codex subscription-sharing flag, attachment count, and presence of input, without prompts, attachment names, or conversation identifiers. Steering attribution stays scoped to its live provider thread and run in shared sessions.
+      - Delivery uses the existing telemetry identity, queue, opt-out, and retry deduplication; analytics failures never fail a successful send. All events carry providerSendUsageVersion so rollout coverage is measurable without treating old servers as inactive.
+    rationale: The V2 migration deleted the legacy send emitter while retaining completion telemetry, leaving existing provider and model send charts empty. Completion counts include autonomous provider turns and cannot replace sends without changing the metric.
+    implementation_paths:
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+    upstream_paths:
+      - apps/server/src/orchestration-v2/ProviderSessionManager.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+    tests:
+      - apps/server/src/orchestration-v2/ProviderSessionManager.test.ts
+      - apps/server/src/telemetry/AnalyticsService.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/171f8d880f2874f968ba1facc818f2d8b2074f6f
+      retire_when: Upstream records accepted starts and steering through provider.turn.sent with equivalent attribution, privacy, and failure behavior.
+
   - id: provider-server-settings-isolation
     title: Keep the server's own settings out of agent processes
     status: maintained

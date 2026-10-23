@@ -39,6 +39,7 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
 import * as ProviderTurnStartServiceTestkit from "./ProviderTurnStartService.testkit.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -133,6 +134,7 @@ const layerTest = Layer.mergeAll(RuntimeLayer.layer, RuntimeLayer.layerEventSink
     }),
   ),
   Layer.provide(McpSessionRegistryTestkit.layer),
+  Layer.provide(AnalyticsService.AnalyticsService.layerTest),
   Layer.provide(McpProviderSessions.layer),
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStoreTest),

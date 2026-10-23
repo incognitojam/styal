@@ -67,6 +67,7 @@ import * as EffectWorker from "./EffectWorker.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderTurnStartServiceTestkit from "./ProviderTurnStartService.testkit.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
@@ -207,6 +208,7 @@ const layerProviderInstanceRegistry = ProviderInstanceRegistryHydration.layer.pi
   ),
 );
 const layerOrchestration = RuntimeLayer.layer.pipe(
+  Layer.provide(AnalyticsService.AnalyticsService.layerTest),
   Layer.provide(ProviderTurnStartServiceTestkit.layer),
   Layer.provide(layerMcpRegistry),
   Layer.provide(SqlitePersistence.layerMemory),

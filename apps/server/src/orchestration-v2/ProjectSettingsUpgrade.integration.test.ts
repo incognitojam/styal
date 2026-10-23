@@ -27,6 +27,7 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
 
 const projectId = ProjectId.make("project:upgrade");
@@ -137,7 +138,10 @@ const layerRuntime = (dbPath: string) => {
     ),
   );
   return Layer.mergeAll(
-    RuntimeLayer.layer.pipe(Layer.provide(RuntimeLayer.layerProjectService)),
+    RuntimeLayer.layer.pipe(
+      Layer.provide(AnalyticsService.AnalyticsService.layerTest),
+      Layer.provide(RuntimeLayer.layerProjectService),
+    ),
     RuntimeLayer.layerProjectService,
   ).pipe(
     Layer.provide(

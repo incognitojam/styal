@@ -222,6 +222,7 @@ export const make = Effect.gen(function* () {
           workflowRunWatchUsageVersion: 1,
           threadSettleReasonUsageVersion: 1,
           providerAnalyticsUsageVersion: 1,
+          providerSendUsageVersion: 1,
           settingsSnapshotUsageVersion: 1,
           desktopUpdateIdleRestartUsageVersion: 1,
           ...buildContext,

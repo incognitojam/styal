@@ -39,6 +39,7 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderTurnStartServiceTestkit from "./ProviderTurnStartService.testkit.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
 import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts";
 
@@ -135,6 +136,7 @@ const layerProviderInstanceRegistry = ProviderInstanceRegistryHydration.layer.pi
 );
 
 const layerLive = RuntimeLayer.layer.pipe(
+  Layer.provide(AnalyticsService.AnalyticsService.layerTest),
   Layer.provide(McpSessionRegistryTestkit.layer),
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerCheckpointStore),

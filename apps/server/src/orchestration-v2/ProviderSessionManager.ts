@@ -9,6 +9,7 @@ import {
   OrchestrationV2RuntimeRequest,
   ProviderInstanceId,
   ProviderSessionId,
+  type RunId,
   ThreadId,
   type ProviderThreadId,
 } from "@t3tools/contracts";
@@ -44,6 +45,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ServerSettings from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -228,6 +230,7 @@ interface LiveSessionEntry {
    * only clear itself and the session is idle when the set is empty.
    */
   readonly busyTurns: ReadonlySet<string>;
+  readonly sendContexts: Map<ProviderThreadId, ProviderSendContext>;
   readonly lastActivityAtMs: number;
   readonly idleFiber: Fiber.Fiber<void, never> | null;
   /** Set when idle release is deferred for pending background work; bounds total deferral. */
@@ -244,6 +247,14 @@ interface IdleThreadUnload {
   readonly providerThread: OrchestrationV2ProviderThread;
   readonly generation: number;
   readonly fiber: Fiber.Fiber<void, never> | null;
+}
+
+interface ProviderSendContext {
+  readonly runId: RunId;
+  readonly runOrdinal: number;
+  readonly model: string;
+  readonly runtimeMode: ProviderAdapter.ProviderAdapterV2RuntimePolicy["runtimeMode"];
+  readonly interactionMode: ProviderAdapter.ProviderAdapterV2RuntimePolicy["interactionMode"];
 }
 
 type ProviderSessionEventSignal =
@@ -333,6 +344,7 @@ export const layerWithOptions = (
   ProviderSessionManagerV2,
   never,
   | EventSink.EventSinkV2
+  | AnalyticsService.AnalyticsService
   | FileSystem.FileSystem
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
@@ -345,6 +357,7 @@ export const layerWithOptions = (
     ProviderSessionManagerV2,
     Effect.gen(function* () {
       const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
+      const analytics = yield* AnalyticsService.AnalyticsService;
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -1610,6 +1623,9 @@ export const layerWithOptions = (
               }
               const busyTurns = new Set(entry.busyTurns);
               busyTurns.delete(busyTurnKey(providerThreadId, runOrdinal));
+              if (entry.sendContexts.get(providerThreadId)?.runOrdinal === runOrdinal) {
+                entry.sendContexts.delete(providerThreadId);
+              }
               const updated = new Map(current);
               updated.set(key, {
                 ...entry,
@@ -1850,6 +1866,7 @@ export const layerWithOptions = (
         eventSubscribers: Ref.Ref<
           ReadonlyMap<number, Queue.Queue<ProviderSessionEventSignal, Cause.Done>>
         >,
+        sendContexts: Map<ProviderThreadId, ProviderSendContext>,
       ): ProviderAdapter.ProviderAdapterV2SessionRuntime => {
         const providerSessionId = runtime.providerSessionId;
         const subscribeEvents = makeEventSubscription(eventSubscribers);
@@ -1865,6 +1882,38 @@ export const layerWithOptions = (
               modelFamily: normalizeModelMetricLabel(model),
             },
           });
+        const recordSent = (
+          message: ProviderAdapter.ProviderAdapterV2TurnMessage,
+          context: ProviderSendContext | undefined,
+        ) =>
+          Effect.gen(function* () {
+            const settings = Option.isSome(serverSettings)
+              ? yield* serverSettings.value.getSettings.pipe(Effect.option)
+              : Option.none();
+            const instance = Option.isSome(settings)
+              ? settings.value.providerInstances[runtime.instanceId]
+              : undefined;
+            const subscriptionSharing =
+              runtime.driver === "codex" &&
+              instance?.driver === "codex" &&
+              typeof instance.config === "object" &&
+              instance.config !== null &&
+              "setupMode" in instance.config &&
+              instance.config.setupMode === "managed";
+            yield* analytics.record("provider.turn.sent", {
+              provider: runtime.driver,
+              ...(context === undefined
+                ? {}
+                : {
+                    model: context.model,
+                    runtimeMode: context.runtimeMode,
+                    interactionMode: context.interactionMode,
+                  }),
+              ...(subscriptionSharing ? { subscriptionSharing: true } : {}),
+              attachmentCount: message.attachments.length,
+              hasInput: message.text.trim().length > 0,
+            });
+          }).pipe(Effect.ignoreCause);
         return {
           ...runtime,
           subscribeEvents,
@@ -2003,7 +2052,22 @@ export const layerWithOptions = (
                     ),
                   ),
                   () =>
-                    runtime.startTurn(input).pipe(turnMetrics("send", input.modelSelection.model)),
+                    Effect.suspend(() => {
+                      // Keep only attribution, scoped to the live provider thread:
+                      // a shared session can run different models and modes at once.
+                      const context = {
+                        runId: input.runId,
+                        runOrdinal: input.runOrdinal,
+                        model: input.modelSelection.model,
+                        runtimeMode: input.runtimePolicy.runtimeMode,
+                        interactionMode: input.runtimePolicy.interactionMode,
+                      };
+                      sendContexts.set(input.providerThread.id, context);
+                      return runtime.startTurn(input).pipe(
+                        turnMetrics("send", input.modelSelection.model),
+                        Effect.tap(() => recordSent(input.message, context)),
+                      );
+                    }),
                   (_, exit) =>
                     Exit.isFailure(exit)
                       ? observeActivity(
@@ -2016,7 +2080,20 @@ export const layerWithOptions = (
             ),
           steerTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
-              Effect.andThen(runtime.steerTurn(input).pipe(turnMetrics("steer"))),
+              Effect.andThen(
+                Effect.suspend(() => {
+                  const context = sendContexts.get(input.providerThread.id);
+                  return runtime.steerTurn(input).pipe(
+                    turnMetrics("steer"),
+                    Effect.tap(() =>
+                      recordSent(
+                        input.message,
+                        context?.runId === input.runId ? context : undefined,
+                      ),
+                    ),
+                  );
+                }),
+              ),
             ),
           interruptTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
@@ -2333,7 +2410,8 @@ export const layerWithOptions = (
               const eventSubscribers = yield* Ref.make<
                 ReadonlyMap<number, Queue.Queue<ProviderSessionEventSignal, Cause.Done>>
               >(new Map());
-              const exposedRuntime = decorateRuntime(runtime, eventSubscribers);
+              const sendContexts = new Map<ProviderThreadId, ProviderSendContext>();
+              const exposedRuntime = decorateRuntime(runtime, eventSubscribers, sendContexts);
               const now = yield* Clock.currentTimeMillis;
               const entry: LiveSessionEntry = {
                 attachedThreadIds: new Set([input.threadId]),
@@ -2352,6 +2430,7 @@ export const layerWithOptions = (
                 scope: sessionScope,
                 idleGeneration: 0,
                 busyTurns: new Set(),
+                sendContexts,
                 lastActivityAtMs: now,
                 idleFiber: null,
                 pinnedSinceMs: null,

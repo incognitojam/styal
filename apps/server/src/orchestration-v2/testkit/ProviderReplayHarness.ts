@@ -42,6 +42,7 @@ import * as ProviderContinuationService from "../ProviderContinuationService.ts"
 import * as ProviderEventIngestor from "../ProviderEventIngestor.ts";
 import * as ProviderRuntimeRecoveryService from "../ProviderRuntimeRecoveryService.ts";
 import * as ProviderSessionManager from "../ProviderSessionManager.ts";
+import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as ProviderSwitchService from "../ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "../ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "../ProviderTurnStartService.ts";
@@ -369,6 +370,7 @@ export function layerWithRegistry<Error>(
   }).pipe(
     Layer.provide(
       Layer.mergeAll(
+        AnalyticsService.AnalyticsService.layerTest,
         layerProvidedRegistry,
         layerEventSinkProvided,
         IdAllocator.layer,
