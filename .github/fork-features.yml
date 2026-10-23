@@ -5229,7 +5229,7 @@ features:
   - id: workflow-approvals-same-repository
     title: Surface and approve GitHub workflow runs waiting on same-repository pull requests
     status: maintained
-    prs: []
+    prs: [986]
     invariants:
       - GitHub pull request detail and checks list Actions runs on the head that wait for approval (`action_required`) for same-repository pull requests as well as forks, as action-required checks with `workflowApprovalsRequired`.
       - Waiting runs are read from the head commit's check suites over GraphQL (`ACTION_REQUIRED` suites with a `pull_request` workflow run), because GitHub's REST run listing filtered by `head_sha`, `status`, `branch` or `check_suite_id` answers inconsistently. The checks revalidator no longer lists runs.
