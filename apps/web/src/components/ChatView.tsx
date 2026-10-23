@@ -534,7 +534,7 @@ import {
   latestProviderTurnTokenUsage,
 } from "../lib/contextWindow";
 import { EMPTY_TURN_SUMMARIES, threadUsageView } from "@t3tools/shared/turnUsage";
-import { useTurnSummaries, useTurnUsage } from "./chat/TurnUsageLabel";
+import { TurnUsageLabel, useTurnSummaries, useTurnUsage } from "./chat/TurnUsageLabel";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_EASING,
@@ -12302,6 +12302,16 @@ export default function ChatView(props: ChatViewProps) {
                                 ref={setRestingComposerControlsHost}
                                 className="min-w-0 flex-1"
                               />
+                              {threadUsage ? (
+                                <div className="flex shrink-0 items-center px-1 text-muted-foreground/70">
+                                  <TurnUsageLabel
+                                    view={threadUsage}
+                                    subject="Thread usage"
+                                    meterKey={routeThreadKey}
+                                    short
+                                  />
+                                </div>
+                              ) : null}
                             </ComposerSurface.ContextStrip>
                           ) : null}
                           {mountComposerContextStrip && (
