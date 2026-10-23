@@ -81,13 +81,14 @@ Claude Code's and OpenCode's own prices where they report one, otherwise the sam
 subscription charges. A turn keeps the price it was recorded with, so changing a custom price
 affects only later turns. Turns on a model with no known price show no cost.
 
-The composer shows the thread's total beside the branch picker, or beside the model on mobile, with
-the same breakdown. For Claude Code, Codex, and OpenCode, the total moves while a turn runs and
-settles on the turn's own figure when it finishes; until then, a Claude Code turn counts only its main
-agent. Other providers update the total when a turn finishes. When some turns reported no usage, such
-as Cursor or Grok turns, the breakdown says how many turns it includes, and likewise when only some
-turns have a cost. The thread's total also shows when you hover a thread in the sidebar, and at the
-top of a thread's menu when you long-press it on mobile.
+The composer shows the thread's total beside the branch picker, with the same breakdown. On mobile,
+the total follows the project and environment under the thread title. For Claude Code, Codex, and
+OpenCode, the total moves while a turn runs and settles on the turn's own figure when it finishes;
+until then, a Claude Code turn counts only its main agent. Other providers update the total when a
+turn finishes. When some turns reported no usage, such as Cursor or Grok turns, the breakdown says
+how many turns it includes, and likewise when only some turns have a cost. The thread's total also
+shows when you hover a thread in the sidebar, and at the top of a thread's menu when you long-press
+it on mobile.
 
 To lead with the estimated cost instead of tokens, set **Settings → General → Show usage as** to
 **Est. API cost**, or turn on **Show cost** in **Settings → Thread behavior** on mobile. Turns
