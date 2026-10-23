@@ -2167,6 +2167,21 @@ describe("groupActiveThreadsForSidebar", () => {
     ]);
   });
 
+  it("leads with pinned projects in their pin order", () => {
+    expect(ids(groupActiveThreadsForSidebar(threads, group, ["C", "A"], ["B"]))).toEqual([
+      "b1",
+      "c1",
+      "a1",
+      "a2",
+    ]);
+    expect(ids(groupActiveThreadsForSidebar(threads, group, [], ["C", "A"]))).toEqual([
+      "c1",
+      "a1",
+      "a2",
+      "b1",
+    ]);
+  });
+
   it("still promotes a project when a thread is created or reopened", () => {
     for (const fields of [
       { createdAt: "2026-10-01T10:04:00Z" },
@@ -2270,7 +2285,8 @@ describe("resolveSidebarProjectDrop", () => {
     { kind: "marker", marker: "settled-header" },
     row("s1", "settled", "A"),
   ];
-  const drop = (group: string, overId: string) => resolveSidebarProjectDrop(items, group, overId);
+  const drop = (group: string, overId: string) =>
+    resolveSidebarProjectDrop(items, group, overId)?.order ?? null;
 
   it("moves a project to the slot of the project under the pointer", () => {
     expect(drop("A", "c1")).toEqual(["B", "C", "A"]);
@@ -2283,6 +2299,45 @@ describe("resolveSidebarProjectDrop", () => {
     expect(drop("A", "p1")).toBeNull();
     expect(drop("A", "s1")).toBeNull();
     expect(drop("A", sidebarMarkerId("settled-header"))).toBeNull();
+  });
+
+  describe("across the pinned projects divider", () => {
+    // A is pinned; B and C are not.
+    const withPins: readonly SidebarListItem[] = [
+      { kind: "marker", marker: "pinned-header" },
+      { kind: "marker", marker: "pinned-divider" },
+      { kind: "marker", marker: "active-placeholder" },
+      header("A"),
+      row("a1", "active", "A"),
+      { kind: "marker", marker: "pinned-projects-divider" },
+      header("B"),
+      row("b1", "active", "B"),
+      header("C"),
+      row("c1", "active", "C"),
+      { kind: "marker", marker: "settled-header" },
+    ];
+    const pinDrop = (group: string, overId: string) =>
+      resolveSidebarProjectDrop(withPins, group, overId);
+    const divider = sidebarMarkerId("pinned-projects-divider");
+
+    it("pins a project dropped on the divider from below, after the pinned projects", () => {
+      expect(pinDrop("B", divider)).toEqual({ order: ["A", "B", "C"], pinnedCount: 2 });
+    });
+
+    it("unpins a project dropped on the divider from above, before the other projects", () => {
+      expect(pinDrop("A", divider)).toEqual({ order: ["A", "B", "C"], pinnedCount: 0 });
+    });
+
+    it("pins a project dropped among the pinned projects", () => {
+      expect(pinDrop("C", sidebarListItemId(header("A")))).toEqual({
+        order: ["C", "A", "B"],
+        pinnedCount: 2,
+      });
+    });
+
+    it("keeps pins when unpinned projects trade places", () => {
+      expect(pinDrop("B", "c1")).toEqual({ order: ["A", "C", "B"], pinnedCount: 1 });
+    });
   });
 });
 

@@ -1,5 +1,6 @@
 import type {
   EnvironmentId,
+  ProjectId,
   PullRequestListEntry,
   PullRequestListInput,
   PullRequestListResult,
@@ -28,6 +29,26 @@ export function withoutScratchProjectScope(
   )
     ? { ...controls, projectId: undefined, projectEnvironmentId: undefined }
     : controls;
+}
+
+/**
+ * Which of a server's projects its pull request listing covers. Archived projects are left
+ * out, so a server listing all of its projects is asked without a filter, and a server whose
+ * projects are all archived is not asked (`null`).
+ */
+export function pullRequestListProjectScope(
+  projects: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly environmentId: EnvironmentId;
+    readonly archivedAt?: string | null | undefined;
+  }>,
+  environmentId: EnvironmentId,
+): { readonly projectIds?: ReadonlyArray<ProjectId> } | null {
+  const own = projects.filter((project) => project.environmentId === environmentId);
+  const listed = own.filter((project) => project.archivedAt == null);
+  if (listed.length === own.length) return {};
+  if (listed.length === 0) return null;
+  return { projectIds: listed.map((project) => project.id) };
 }
 
 export function pullRequestListKey(

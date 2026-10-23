@@ -30,7 +30,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 7;
+export const FORK_CLIENT_USAGE_VERSION = 8;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -160,6 +160,12 @@ export const ForkClientUsageInput = Schema.Union([
   Schema.Struct({
     feature: Schema.Literal("sidebar-project-filter"),
     action: Schema.Literal("thread_started"),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("sidebar-project-groups"),
+    /** `reordered` moves an unpinned project; the others change its pin or archive state. */
+    action: Schema.Literals(["reordered", "pinned", "unpinned", "pins_reordered", "archived"]),
+    entryPoint: Schema.Literals(["header_drag", "header_menu"]),
   }),
   Schema.Struct({
     feature: Schema.Literal("desktop-update-notice"),

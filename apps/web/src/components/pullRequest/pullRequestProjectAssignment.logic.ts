@@ -63,6 +63,35 @@ export function assignProjectsToEnvironments(
   return assignment;
 }
 
+/**
+ * Which projects each server is asked about. Each repository is listed by one server, a server
+ * left with nothing to list is not asked, and a server listing all of its projects is asked
+ * without a project filter. Archived projects are left out, so their pull requests are not listed.
+ */
+export function assignPullRequestQueries(
+  projects: ReadonlyArray<AssignableProject & { readonly archivedAt?: string | null | undefined }>,
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyArray<{
+  readonly environmentId: EnvironmentId;
+  readonly projectIds?: ReadonlyArray<ProjectId>;
+}> {
+  const assignment = assignProjectsToEnvironments(
+    projects.filter((project) => project.archivedAt == null),
+    environmentIds,
+    environmentIds[0],
+  );
+  const totals = new Map<EnvironmentId, number>();
+  for (const project of projects) {
+    totals.set(project.environmentId, (totals.get(project.environmentId) ?? 0) + 1);
+  }
+  return environmentIds.flatMap((environmentId) => {
+    const projectIds = assignment.get(environmentId);
+    if (projectIds === undefined) return [];
+    if (projectIds.length === (totals.get(environmentId) ?? 0)) return [{ environmentId }];
+    return [{ environmentId, projectIds }];
+  });
+}
+
 /** A copy of the repository the reader could act on, named by the server holding it. */
 export interface PickableEnvironment {
   readonly environmentId: EnvironmentId;

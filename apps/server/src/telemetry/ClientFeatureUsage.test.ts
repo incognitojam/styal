@@ -135,6 +135,13 @@ it.effect("records allowlisted client interactions with socket attribution and n
         event: "feature.used",
         source: "user",
       },
+      {
+        feature: "sidebar-project-groups",
+        action: "pinned",
+        entryPoint: "header_drag",
+        event: "feature.used",
+        source: "user",
+      },
     ]) {
       yield* report(yield* decode({ ...input, content: "Synthetic content", path: "/private" }));
       expect(events.at(-1)).toEqual({ event, properties: { ...input, ...properties, source } });
@@ -143,6 +150,7 @@ it.effect("records allowlisted client interactions with socket attribution and n
     expect(isUsage({ feature: "mentioned-time-chips", action: "notice_shown" })).toBe(false);
     expect(isUsage({ feature: "setup-thread-settlement", action: "continued" })).toBe(false);
     expect(isUsage({ feature: "sidebar-project-filter", action: "filter_set" })).toBe(false);
+    expect(isUsage({ feature: "sidebar-project-groups", action: "archived" })).toBe(false);
     expect(isUsage({ feature: "project-actions", action: "run", actionSource: "t3.json" })).toBe(
       false,
     );
@@ -153,8 +161,8 @@ it.effect("records allowlisted client interactions with socket attribution and n
       yield* otherReport({ feature: "web-build-update-notice", action: "refresh_requested" });
       yield* otherReport({ feature: "mentioned-time-chips", action: "details_opened" });
     }
-    expect(events).toHaveLength(10);
-    expect(events[9]).toEqual({
+    expect(events).toHaveLength(11);
+    expect(events[10]).toEqual({
       event: "feature.used",
       properties: {
         feature: "mentioned-time-chips",

@@ -3958,6 +3958,29 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9188
       retire_when: Upstream provides a dedicated checks view with repository-policy-aware required checks and equivalent merge or auto-merge guidance in pull request details.
 
+  - id: pull-requests-page-archived-projects
+    title: Leave archived projects off the Pull Requests page
+    status: maintained
+    prs: []
+    invariants:
+      - The Pull Requests page lists no pull requests from archived projects and does not offer them as project filter choices. A link scoped to an archived project still opens that scope.
+      - A server whose projects are all archived is not asked for pull requests. A repository with an archived checkout on one machine and an active one on another is still listed once, from the active checkout.
+      - A server listing every project it holds is still asked without a project filter, so a workspace with nothing archived sends the same requests as before.
+    rationale: Archiving a project is meant to put it away everywhere; its open pull requests otherwise kept the page full of work the user had set aside.
+    implementation_paths:
+      - apps/web/src/components/pullRequest/pullRequestProjectAssignment.logic.ts
+      - apps/web/src/routes/_chat.pull-requests.tsx
+    upstream_paths:
+      - apps/web/src/components/pullRequest/pullRequestProjectAssignment.logic.ts
+      - apps/web/src/routes/_chat.pull-requests.tsx
+    tests:
+      - apps/web/src/components/pullRequest/pullRequestProjectAssignment.logic.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/15990
+      retire_when: Upstream hides archived projects' pull requests on its Pull Requests page.
+
   - id: restart-stopped-tool-calls
     title: Show tool calls a server restart killed as stopped
     status: review-needed
@@ -4526,7 +4549,9 @@ features:
       - One-line grouped rows retain the title, pull request badge or terminal status, status/time and hover actions, and trailing machine/provider icons, using existing thread branch data without additional WebSocket payloads or git status lookups.
       - A dragged thread reorders only within its own project and never moves a project, including the first reorder that assigns manual thread keys and the optimistic placement while those writes arrive. Dragging a project header moves the whole project, and that order persists in the client's manual project order.
       - Projects without a saved position follow their newest created or reopened active thread independently of manual thread keys.
-      - Group headers open project actions on right-click or the keyboard context-menu shortcut to start a thread in that project, toggle its filter, copy a checkout path, or open Project Settings. New threads preserve the current environment when it belongs to the group; grouped paths are selectable per checkout.
+      - Pinned projects lead the grouped Active and Working lists in their shared pin order, ahead of the saved project order, and their headers show a pin icon. A zero-height divider follows the pinned projects' groups and shows a "Pinned projects above" label only while a header is dragged. Dropping a header above it pins the project at that slot, dropping it below unpins it, and moving it among pinned projects saves the pin order through the shared project write hook; pinned projects without active threads keep their place relative to the pinned projects around the drop. The new placement shows at once and holds until the projects match it or the write fails.
+      - Group headers open project actions on right-click or the keyboard context-menu shortcut to start a thread in that project, toggle its filter, pin or unpin it, archive it, copy a checkout path, or open Project Settings. Pin and archive appear only when every machine with the project supports project organization. New threads preserve the current environment when it belongs to the group; grouped paths are selectable per checkout.
+      - Header reorders, pins, unpins, pin reorders and archives emit bounded `sidebar-project-groups` client-usage events with the entry point (header drag or header menu) through the primary environment, after the write succeeds, never with project names or keys.
     rationale: With several projects active, a flat list makes the user read each card's project label to see which threads belong together. The fork retains thread details under opt-in project headers, omitting the empty branch line when an entire group is branchless, whereas upstream's closed proposal collapsed groups into title-only lists.
     implementation_paths:
       - apps/web/src/components/Sidebar.drag.ts
@@ -4535,6 +4560,8 @@ features:
       - apps/web/src/components/settings/SettingsPanels.tsx
       - apps/web/src/components/settings/settingsSearch.ts
       - apps/web/src/hooks/useSidebarProjectGroups.ts
+      - apps/web/src/sidebarProjectGroupUsage.ts
+      - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/settings.ts
     upstream_paths:
       - apps/web/src/components/Sidebar.drag.ts
@@ -4545,6 +4572,7 @@ features:
       - apps/web/src/hooks/useSidebarProjectGroups.ts
       - packages/contracts/src/settings.ts
     tests:
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/Sidebar.drag.test.ts
       - apps/web/src/components/Sidebar.logic.test.ts
     upstream:

@@ -41,7 +41,9 @@ function layout(
         ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
         : item.kind === "project-header" || item.kind === "working-project-header"
           ? 24 * scale
-          : item.marker === "pinned-header" || item.marker === "pinned-divider"
+          : item.marker === "pinned-header" ||
+              item.marker === "pinned-divider" ||
+              item.marker === "pinned-projects-divider"
             ? 0
             : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
     const rect = { top, height, bottom: top + height, left: 0, right: 260, width: 260 };
@@ -359,6 +361,60 @@ describe("project header collision detection", () => {
     const aMid = (rectOf(id("A")).top + rectOf("a2").bottom) / 2;
     expect(target("C", aMid - 5)).toBe(id("A"));
     expect(target("C", aMid + 5)).toBe(id("B"));
+  });
+
+  describe("with pinned projects", () => {
+    // A is pinned. The divider's 24px label opens below it while dragging.
+    const pinnedItems = [
+      pinnedHeader,
+      divider,
+      header("A"),
+      row("a1", "A"),
+      marker("pinned-projects-divider"),
+      header("B"),
+      row("b1", "B"),
+      header("C"),
+      row("c1", "C"),
+      settledHeader,
+    ];
+    const pinnedRects = layout(pinnedItems, "a1", "a1", 1, 60).rects;
+    const pinnedTarget = (group: string, centerY: number) => {
+      const index = pinnedItems.findIndex((item) => sidebarListItemId(item) === id(group));
+      const collisionRect = { ...pinnedRects[index]!, top: centerY - 12, bottom: centerY + 12 };
+      return createSidebarProjectCollisionDetection(
+        pinnedItems,
+        group,
+        24,
+      )({
+        active: { id: id(group) },
+        collisionRect,
+        droppableRects: new Map(
+          pinnedItems.map((item, itemIndex) => [sidebarListItemId(item), pinnedRects[itemIndex]!]),
+        ),
+        droppableContainers: [],
+        pointerCoordinates: null,
+      } as unknown as Parameters<CollisionDetection>[0])[0]?.id;
+    };
+    const dividerTop =
+      pinnedRects[
+        pinnedItems.findIndex(
+          (item) => item.kind === "marker" && item.marker === "pinned-projects-divider",
+        )
+      ]!.top;
+
+    it("takes the divider's slot just above its label midpoint", () => {
+      // B is lifted; nothing above the divider moves.
+      expect(pinnedTarget("B", dividerTop + 12 - 3)).toBe(
+        sidebarMarkerId("pinned-projects-divider"),
+      );
+      expect(pinnedTarget("B", dividerTop + 12 + 3)).toBe(id("B"));
+    });
+
+    it("places a project among the pinned projects by their midpoints", () => {
+      const aMid = (pinnedRects[2]!.top + pinnedRects[3]!.bottom) / 2;
+      expect(pinnedTarget("C", aMid - 5)).toBe(id("A"));
+      expect(pinnedTarget("C", aMid + 5)).toBe(sidebarMarkerId("pinned-projects-divider"));
+    });
   });
 });
 

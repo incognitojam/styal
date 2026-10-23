@@ -165,8 +165,13 @@ While grouping is on, dragging a thread reorders it only within its own project.
 project's header to move the project and all its threads. The project order is saved on
 this device and does not sync to your other devices.
 
-Right-click a project header for **New thread**, project filtering, **Copy project
-path**, and **Project settings**. If a project spans several checkouts, choose
+[Pinned projects](./project-settings.md#pin-and-archive-projects) come first, marked with a
+pin. While you drag a header, a **Pinned projects above** line marks where they end: drop a
+project above it to pin it, or below it to unpin it. The order of pinned projects syncs to your
+other devices and project pickers.
+
+Right-click a project header for **New thread**, project filtering, **Pin project**,
+**Archive project**, **Copy project path**, and **Project settings**. If a project spans several checkouts, choose
 which path to copy. **Show all projects** clears an active project filter.
 
 ## Settle finished work

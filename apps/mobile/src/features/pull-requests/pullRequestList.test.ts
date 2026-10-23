@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   EnvironmentId,
+  ProjectId,
   SourceControlProviderKind,
   type PullRequestListEntry,
   type PullRequestListResult,
@@ -12,6 +13,7 @@ import {
   mergePullRequestListEntries,
   mergeEnvironmentPullRequestPages,
   nextPullRequestListInput,
+  pullRequestListProjectScope,
   pullRequestListFacets,
   pullRequestListHead,
   pullRequestListReviewStatus,
@@ -408,5 +410,42 @@ describe("withoutScratchProjectScope", () => {
       projectEnvironmentId: "env-b",
     };
     expect(withoutScratchProjectScope(elsewhere, projects)).toBe(elsewhere);
+  });
+});
+
+describe("pullRequestListProjectScope", () => {
+  const environment = EnvironmentId.make("env-1");
+  const project = (id: string, archivedAt: string | null = null, environmentId = environment) => ({
+    id: ProjectId.make(id),
+    environmentId,
+    archivedAt,
+  });
+
+  it("asks without a project filter when nothing on the server is archived", () => {
+    expect(
+      pullRequestListProjectScope(
+        [
+          project("a"),
+          project("b"),
+          project("c", "2026-10-23T00:00:00.000Z", EnvironmentId.make("env-2")),
+        ],
+        environment,
+      ),
+    ).toEqual({});
+  });
+
+  it("lists only the server's projects that are not archived", () => {
+    expect(
+      pullRequestListProjectScope(
+        [project("a"), project("b", "2026-10-23T00:00:00.000Z")],
+        environment,
+      ),
+    ).toEqual({ projectIds: ["a"] });
+  });
+
+  it("skips a server whose projects are all archived", () => {
+    expect(
+      pullRequestListProjectScope([project("b", "2026-10-23T00:00:00.000Z")], environment),
+    ).toBeNull();
   });
 });

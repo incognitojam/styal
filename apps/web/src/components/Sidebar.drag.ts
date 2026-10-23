@@ -34,21 +34,40 @@ export function restrictBelowSidebarLabel(
 /** Place a lifted project header among the other projects. Its rows
  * collapse while it is lifted, so rest rects no longer match what is drawn:
  * compare the header's center with the other projects' midpoints as drawn
- * without the lifted project, and name the header whose slot it takes. */
+ * without the lifted project, and name the header whose slot it takes. The
+ * pinned projects divider takes a slot of its own, and its label pushes the
+ * projects below it down while dragging. `labelHeight` is the unscaled label
+ * space; headers are 32px unscaled. */
 export function createSidebarProjectCollisionDetection(
   items: readonly SidebarListItem[],
   activeGroup: string,
+  labelHeight = 0,
 ): CollisionDetection {
   return (args) => {
-    const blocks: { group: string; top: number; bottom: number }[] = [];
+    const liftedRect = args.droppableRects.get(
+      sidebarListItemId({ kind: "project-header", group: activeGroup }),
+    );
+    const scaledLabel = labelHeight * ((liftedRect?.height ?? 32) / 32);
+    const blocks: { id: string; group?: string; top: number; bottom: number }[] = [];
+    let belowDivider = false;
     for (const item of items) {
-      const rect = args.droppableRects.get(sidebarListItemId(item));
+      const id = sidebarListItemId(item);
+      const rect = args.droppableRects.get(id);
       if (!rect) continue;
+      const offset = belowDivider ? scaledLabel : 0;
       if (item.kind === "project-header") {
-        blocks.push({ group: item.group, top: rect.top, bottom: rect.bottom });
+        blocks.push({
+          id,
+          group: item.group,
+          top: rect.top + offset,
+          bottom: rect.bottom + offset,
+        });
+      } else if (item.kind === "marker" && item.marker === "pinned-projects-divider") {
+        blocks.push({ id, top: rect.top, bottom: rect.top + scaledLabel });
+        belowDivider = true;
       } else if (item.kind === "thread" && item.section === "active") {
         const block = blocks.at(-1);
-        if (block && item.group === block.group) block.bottom = rect.bottom;
+        if (block && item.group === block.group) block.bottom = rect.bottom + offset;
       }
     }
     const lifted = blocks.find((block) => block.group === activeGroup);
@@ -63,8 +82,8 @@ export function createSidebarProjectCollisionDetection(
       if (center > (block.top + block.bottom) / 2 - shift) slot += 1;
     }
     // resolveSidebarProjectDrop moves the lifted project into the slot of
-    // the header it is dropped on.
-    return [{ id: sidebarListItemId({ kind: "project-header", group: blocks[slot]!.group }) }];
+    // the header, or the divider, it is dropped on.
+    return [{ id: blocks[slot]!.id }];
   };
 }
 
@@ -201,25 +220,34 @@ export function createSidebarSortingStrategy(input: {
     active: Extract<SidebarListItem, { kind: "project-header" }>,
   ) {
     const over = items[overIndex] ?? active;
-    const order = resolveSidebarProjectDrop(items, active.group, sidebarListItemId(over));
-    if (!order || !rects[0]) return [];
+    const drop = resolveSidebarProjectDrop(items, active.group, sidebarListItemId(over));
+    if (!drop || !rects[0]) return [];
     const rowsByGroup = new Map<string, SidebarListItem[]>();
     const before: SidebarListItem[] = [];
     const after: SidebarListItem[] = [];
+    let divider: SidebarListItem | undefined;
     for (const item of items) {
       if (item.kind === "project-header") rowsByGroup.set(item.group, []);
+      else if (item.kind === "marker" && item.marker === "pinned-projects-divider") divider = item;
       else if (item.kind === "thread" && item.section === "active" && item.group !== undefined)
         rowsByGroup.get(item.group)?.push(item);
       else (rowsByGroup.size === 0 ? before : after).push(item);
     }
+    const blocks = drop.order.map((group): SidebarListItem[] => [
+      { kind: "project-header", group },
+      ...(group === active.group ? [] : (rowsByGroup.get(group) ?? [])),
+    ]);
     const projected = [
       ...before,
-      ...order.flatMap((group): SidebarListItem[] => [
-        { kind: "project-header", group },
-        ...(group === active.group ? [] : (rowsByGroup.get(group) ?? [])),
-      ]),
+      ...blocks.slice(0, drop.pinnedCount).flat(),
+      ...(divider ? [divider] : []),
+      ...blocks.slice(drop.pinnedCount).flat(),
       ...after,
     ];
+    // The divider is zero height at rest; its label opens while dragging,
+    // scaled like the 32px header.
+    const labelHeight =
+      (input.boundaryLabelHeight ?? 0) * ((rects[activeIndex]?.height ?? 32) / 32);
     const result = items.map(() => hidden);
     let top = rects[0].top;
     for (const item of projected) {
@@ -227,7 +255,7 @@ export function createSidebarSortingStrategy(input: {
       const rect = index === undefined ? undefined : rects[index];
       if (index === undefined || !rect) continue;
       result[index] = { ...stationary, y: top - rect.top };
-      top += rect.height + 1;
+      top += (item === divider ? labelHeight : rect.height) + 1;
     }
     result[activeIndex] = stationary;
     return result;

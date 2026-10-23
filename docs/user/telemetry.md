@@ -45,7 +45,8 @@ how many browser profiles you added, and whether you have dragged projects into 
 
 Web and desktop clients also record explicit diff-order selections, when you open a
 mentioned time's explanation, which automatic settling rules you keep when finishing setup, when
-you change the sidebar's project filter or start a thread while it is applied, whether a project
+you change the sidebar's project filter or start a thread while it is applied, when you reorder,
+pin, unpin, or archive a project from its header in the grouped sidebar, whether a project
 action you run is saved in styal or comes from the project's `styal.json`, and whether the project
 has a `styal.json`, a `t3.json` or neither. The web app records when a new-build notice is visible and
 when you choose Refresh. The desktop app records when its notice

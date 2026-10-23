@@ -30,6 +30,7 @@ import { usePullRequestListActions } from "./usePullRequestListActions";
 import {
   filterPullRequestList,
   pullRequestListFacets,
+  pullRequestListProjectScope,
   pullRequestListRowsAreEqual,
   scopedPullRequestListKey as pullRequestKey,
   type EnvironmentPullRequestListEntry,
@@ -121,18 +122,27 @@ export function PullRequestsScreen(
               environment.environmentId === controls.projectEnvironmentId),
         )
         .sort((left, right) => left.environmentId.localeCompare(right.environmentId))
-        .map((environment) => ({
-          environmentId: environment.environmentId,
-          input: {
-            state: controls.state,
-            involvement: controls.involvement,
-            filters: controls.filters,
-            limit: PR_LIST_PAGE_SIZE,
-            ...(controls.projectId ? { projectId: ProjectId.make(controls.projectId) } : {}),
-            ...(query ? { query } : {}),
-          },
-        })),
-    [environments, environmentId, configs, controls, query],
+        .flatMap((environment) => {
+          // A chosen project is listed even when archived; otherwise archived projects are left out.
+          const scope = controls.projectId
+            ? { projectId: ProjectId.make(controls.projectId) }
+            : pullRequestListProjectScope(allProjects, environment.environmentId);
+          if (scope === null) return [];
+          return [
+            {
+              environmentId: environment.environmentId,
+              input: {
+                state: controls.state,
+                involvement: controls.involvement,
+                filters: controls.filters,
+                limit: PR_LIST_PAGE_SIZE,
+                ...scope,
+                ...(query ? { query } : {}),
+              },
+            },
+          ];
+        }),
+    [allProjects, environments, environmentId, configs, controls, query],
   );
   const result = usePullRequestList(targets);
   const connectedTargets = targets.filter((target) =>
@@ -183,7 +193,9 @@ export function PullRequestsScreen(
   }
   const projects = allProjects.filter(
     (project) =>
-      !project.isScratch && (environmentId === null || project.environmentId === environmentId),
+      !project.isScratch &&
+      (environmentId === null || project.environmentId === environmentId) &&
+      (project.archivedAt == null || project.id === controls.projectId),
   );
   const renderPullRequest = useCallback(
     ({ item }: { readonly item: EnvironmentPullRequestListEntry }) => (

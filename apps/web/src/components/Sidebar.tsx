@@ -149,6 +149,8 @@ import {
 import { useUiStateStore } from "../uiStateStore";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import { setSidebarProjectFilterFromUser } from "../sidebarProjectFilterUsage";
+import { reportSidebarProjectGroupUsage } from "../sidebarProjectGroupUsage";
+import { sortPinnedProjectsFirst } from "@t3tools/client-runtime/state/project-organization";
 import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
@@ -799,7 +801,7 @@ type SidebarSweepAction = "settle" | "unsettle" | "unsnooze";
 const SIDEBAR_DRAG_LABEL_HEIGHT = 24;
 
 function SidebarDragBoundary(props: {
-  marker: "pinned-header" | "pinned-divider";
+  marker: "pinned-header" | "pinned-divider" | "pinned-projects-divider";
   label: string;
   visible: boolean;
   isDropTarget: boolean;
@@ -879,6 +881,7 @@ function SidebarProjectGroupHeader(props: {
   group: string;
   project: ProjectFaviconProject | null;
   label: string;
+  pinned: boolean;
   draggable: boolean;
   onContextMenu: (group: string, position: { x: number; y: number }) => void;
 }) {
@@ -928,6 +931,9 @@ function SidebarProjectGroupHeader(props: {
           <ProjectFavicon project={props.project} className="size-4 shrink-0" />
         ) : null}
         <span className="min-w-0 truncate">{props.label}</span>
+        {props.pinned ? (
+          <PinIcon aria-label="Pinned" className="size-3 shrink-0 text-muted-foreground" />
+        ) : null}
       </div>
     </li>
   );
@@ -2770,7 +2776,33 @@ export default function Sidebar() {
       ),
     [sortedProjectGroups],
   );
-  const { canOrganize: canOrganizeProject, setPinned: setProjectPinned } = useProjectGroupActions();
+  const {
+    canOrganize: canOrganizeProject,
+    setPinned: setProjectPinned,
+    reorderPinned: reorderPinnedProjects,
+    setArchived: setProjectArchived,
+  } = useProjectGroupActions();
+  // Pinned projects lead the grouped list in their pin order. A pin change
+  // dropped in the list shows at once and holds until the projects match it.
+  const [pendingPinnedProjectKeys, setPendingPinnedProjectKeys] = useState<
+    readonly string[] | null
+  >(null);
+  const savedPinnedProjectKeys = useMemo(
+    () =>
+      sortPinnedProjectsFirst(projectGroups).flatMap((group) =>
+        group.pinnedAt == null ? [] : [group.projectKey],
+      ),
+    [projectGroups],
+  );
+  const pinnedProjectGroupKeys = pendingPinnedProjectKeys ?? savedPinnedProjectKeys;
+  useEffect(() => {
+    if (
+      pendingPinnedProjectKeys !== null &&
+      pendingPinnedProjectKeys.join("\0") === savedPinnedProjectKeys.join("\0")
+    ) {
+      setPendingPinnedProjectKeys(null);
+    }
+  }, [pendingPinnedProjectKeys, savedPinnedProjectKeys]);
   const projectGroupsRef = useRef(projectGroups);
   projectGroupsRef.current = projectGroups;
   // Threads on non-primary environments (T3 Connect, hosted) resolve their
@@ -3026,6 +3058,7 @@ export default function Sidebar() {
           projectGroupByLogicalKey.get(groupKey) ?? projectGroupByKey.get(groupKey);
         if (!api || !projectGroup) return;
         const isFiltered = projectScopeKey === projectGroup.projectKey;
+        const isPinned = projectGroup.pinnedAt != null;
         const members = projectGroup.memberProjects;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
@@ -3035,6 +3068,16 @@ export default function Sidebar() {
                 id: "filter-project",
                 label: isFiltered ? "Show all projects" : `Filter by ${projectGroup.displayName}`,
               },
+              ...(canOrganizeProject(projectGroup)
+                ? [
+                    {
+                      id: "pin-project",
+                      label: isPinned ? "Unpin project" : "Pin project",
+                      separatorBefore: true,
+                    },
+                    { id: "archive-project", label: "Archive project" },
+                  ]
+                : []),
               {
                 id: "copy-path",
                 label: "Copy project path",
@@ -3059,6 +3102,16 @@ export default function Sidebar() {
             isFiltered ? null : projectGroup.projectKey,
             "project_menu",
           );
+        } else if (clicked.value === "pin-project") {
+          const result = await setProjectPinned(projectGroup, !isPinned, projectGroupsRef.current);
+          if (result._tag === "Success") {
+            void reportSidebarProjectGroupUsage(isPinned ? "unpinned" : "pinned", "header_menu");
+          }
+        } else if (clicked.value === "archive-project") {
+          const result = await setProjectArchived(projectGroup, true);
+          if (result._tag === "Success") {
+            void reportSidebarProjectGroupUsage("archived", "header_menu");
+          }
         } else if (clicked.value === "project-settings") {
           openProjectSettings(projectGroup);
         } else if (clicked.value === "new-thread") {
@@ -3092,12 +3145,15 @@ export default function Sidebar() {
       })();
     },
     [
+      canOrganizeProject,
       copyPathToClipboard,
       newThreadContext,
       openProjectSettings,
       projectGroupByKey,
       projectGroupByLogicalKey,
       projectScopeKey,
+      setProjectArchived,
+      setProjectPinned,
     ],
   );
   // Anchor for the scope popup: the header search field, not its icon trigger.
@@ -3251,6 +3307,7 @@ export default function Sidebar() {
             optimisticActive,
             threadProjectGroup,
             orderedProjectGroupKeys,
+            pinnedProjectGroupKeys,
           )
         : optimisticActive,
       // Newest send first; finishing and waking again do not move a row.
@@ -3258,6 +3315,7 @@ export default function Sidebar() {
       // a send never reorders the headers.
       workingThreads: groupThreadsByProject
         ? groupWorkingThreadsForSidebar(sortWorkingThreadsBySend(working), threadProjectGroup, [
+            ...pinnedProjectGroupKeys,
             ...orderedProjectGroupKeys,
             ...unsortedProjectGroups.map((group) => group.projectKey),
           ])
@@ -3277,6 +3335,7 @@ export default function Sidebar() {
     nowMinute,
     optimisticDrop,
     orderedProjectGroupKeys,
+    pinnedProjectGroupKeys,
     scopedProjectKeys,
     serverConfigs,
     snoozeWakeTick,
@@ -4229,12 +4288,23 @@ export default function Sidebar() {
     const activeRows = rowsOf(activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
     let activeGroup: string | undefined;
+    // Grouped projects: the divider follows the pinned projects' rows, so
+    // dropping a header above it pins the project.
+    const pinnedGroups = new Set(pinnedProjectGroupKeys);
+    let pinnedDividerPlaced = false;
     for (const row of activeRows) {
       if (row.kind === "thread" && row.group !== undefined && row.group !== activeGroup) {
+        if (!pinnedDividerPlaced && !pinnedGroups.has(row.group)) {
+          items.push({ kind: "marker", marker: "pinned-projects-divider" });
+          pinnedDividerPlaced = true;
+        }
         activeGroup = row.group;
         items.push({ kind: "project-header", group: row.group });
       }
       items.push(row);
+    }
+    if (activeGroup !== undefined && !pinnedDividerPlaced) {
+      items.push({ kind: "marker", marker: "pinned-projects-divider" });
     }
     if (workingThreads.length > 0) {
       items.push({ kind: "marker", marker: "working-header" });
@@ -4259,6 +4329,7 @@ export default function Sidebar() {
   }, [
     activeThreads,
     groupThreadsByProject,
+    pinnedProjectGroupKeys,
     pinnedThreads,
     renderedSettledThreads,
     settledThreads.length,
@@ -4440,7 +4511,11 @@ export default function Sidebar() {
   const dragLabelHeight = dragState?.labelHeight;
   const dndCollisionDetection = useMemo(() => {
     if (draggedProjectGroup !== null) {
-      return createSidebarProjectCollisionDetection(sidebarListItems, draggedProjectGroup);
+      return createSidebarProjectCollisionDetection(
+        sidebarListItems,
+        draggedProjectGroup,
+        SIDEBAR_DRAG_LABEL_HEIGHT,
+      );
     }
     if (draggedThreadKey === undefined || draggedFromSection === undefined)
       return createSidebarCollisionDetection(() => true);
@@ -4494,13 +4569,15 @@ export default function Sidebar() {
     workingShelfEnabled,
   ]);
   // Save the new project order: every rendered project in its dropped
-  // position, then the rest in their saved order.
+  // position, then the rest in their saved order. Crossing the pinned
+  // projects divider pins or unpins the project, and moving it among the
+  // pinned projects saves the pin order, which every device shares.
   const handleProjectHeaderDragEnd = useCallback(
     (group: string, overId: string) => {
-      const order = resolveSidebarProjectDrop(sidebarListItems, group, overId);
-      if (order === null) return;
+      const drop = resolveSidebarProjectDrop(sidebarListItems, group, overId);
+      if (drop === null) return;
       const nextOrder = new Set([
-        ...order.flatMap(
+        ...drop.order.flatMap(
           (key) =>
             projectGroupByLogicalKey
               .get(key)
@@ -4509,8 +4586,60 @@ export default function Sidebar() {
         ...orderedProjects.map(getProjectOrderKey),
       ]);
       useUiStateStore.setState({ projectOrder: [...nextOrder] });
+
+      const projectGroup = projectGroupByLogicalKey.get(group);
+      if (!projectGroup) return;
+      const wasPinned = pinnedProjectGroupKeys.includes(group);
+      const renderedPinned = drop.order.slice(0, drop.pinnedCount);
+      const index = renderedPinned.indexOf(group);
+      if (index === -1) {
+        if (!wasPinned) {
+          void reportSidebarProjectGroupUsage("reordered", "header_drag");
+          return;
+        }
+        setPendingPinnedProjectKeys(pinnedProjectGroupKeys.filter((key) => key !== group));
+        void setProjectPinned(projectGroup, false, projectGroups).then((result) => {
+          if (result._tag === "Failure") setPendingPinnedProjectKeys(null);
+          else void reportSidebarProjectGroupUsage("unpinned", "header_drag");
+        });
+        return;
+      }
+      // Pinned projects without active threads have no header, so place the
+      // project next to the rendered pinned project it was dropped beside.
+      const nextPinned = pinnedProjectGroupKeys.filter((key) => key !== group);
+      const previous = renderedPinned[index - 1];
+      const following = renderedPinned[index + 1];
+      const at =
+        previous !== undefined
+          ? nextPinned.indexOf(previous) + 1
+          : following !== undefined
+            ? Math.max(nextPinned.indexOf(following), 0)
+            : 0;
+      nextPinned.splice(at, 0, group);
+      if (wasPinned && nextPinned.join("\0") === pinnedProjectGroupKeys.join("\0")) return;
+      const orderedGroups = nextPinned.flatMap((key) => {
+        const pinnedGroup = projectGroupByLogicalKey.get(key);
+        return pinnedGroup ? [pinnedGroup] : [];
+      });
+      setPendingPinnedProjectKeys(nextPinned);
+      void reorderPinnedProjects(orderedGroups, group).then((result) => {
+        if (result._tag === "Failure") setPendingPinnedProjectKeys(null);
+        else
+          void reportSidebarProjectGroupUsage(
+            wasPinned ? "pins_reordered" : "pinned",
+            "header_drag",
+          );
+      });
     },
-    [orderedProjects, projectGroupByLogicalKey, sidebarListItems],
+    [
+      orderedProjects,
+      pinnedProjectGroupKeys,
+      projectGroupByLogicalKey,
+      projectGroups,
+      reorderPinnedProjects,
+      setProjectPinned,
+      sidebarListItems,
+    ],
   );
   const handleThreadDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -6036,6 +6165,10 @@ export default function Sidebar() {
                               group={item.group}
                               project={group ?? null}
                               label={group?.displayName ?? "Unknown project"}
+                              pinned={
+                                item.kind === "project-header" &&
+                                pinnedProjectGroupKeys.includes(item.group)
+                              }
                               draggable={item.kind === "project-header" && optimisticDrop === null}
                               onContextMenu={handleProjectGroupContextMenu}
                             />,
@@ -6062,6 +6195,17 @@ export default function Sidebar() {
                                 label="Active"
                                 visible={from !== null}
                                 isDropTarget={dragTargetSection === "active"}
+                              />,
+                            );
+                            break;
+                          case "pinned-projects-divider":
+                            items.push(
+                              <SidebarDragBoundary
+                                key="pinned-projects-divider"
+                                marker="pinned-projects-divider"
+                                label="Pinned projects above"
+                                visible={draggedProjectGroup !== null}
+                                isDropTarget={false}
                               />,
                             );
                             break;

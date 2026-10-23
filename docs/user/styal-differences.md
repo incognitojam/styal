@@ -225,6 +225,14 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   shown without rearranging threads. Compared with
   [T3 Code revision d2c9281](https://github.com/pingdotgg/t3code/tree/d2c9281b8112dc3b2991642c4bdb985e4b08b9bb),
   which shows the last user message without this choice. [Working with threads](./thread-sidebar.md).
+- **Pin and archive projects.** Pinned projects come first in project pickers, and archiving a
+  project hides it and its threads without deleting anything. With threads grouped by project,
+  dragging a header above or below the pinned projects pins or unpins it, and archived projects'
+  pull requests leave the **Pull requests** page. T3 Code has this only as an open pull request
+  ([#15990](https://github.com/pingdotgg/t3code/pull/15990)), without the grouped sidebar or
+  Pull requests page behavior, as of
+  [October 23, 2026](https://github.com/pingdotgg/t3code/tree/66ee628e0875b2b735b199f42e6151e347833637).
+  [Pin and archive projects](./project-settings.md#pin-and-archive-projects).
 - **Threads grouped by project.** An optional setting lists active threads under a header for
   each project, and dragging a header reorders projects. Compared with
   [T3 Code revision 5cc99e1](https://github.com/pingdotgg/t3code/tree/5cc99e1c23980d7995a13c47f969b47cb68ed1be),

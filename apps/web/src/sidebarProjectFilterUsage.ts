@@ -13,7 +13,12 @@ type FilterEntryPoint = Extract<
  * The reporting modules load on first use so thread actions stay free of the
  * connection layer.
  */
-async function report(input: Extract<ForkClientUsageInput, { feature: "sidebar-project-filter" }>) {
+export async function reportSidebarUsage(
+  input: Extract<
+    ForkClientUsageInput,
+    { feature: "sidebar-project-filter" | "sidebar-project-groups" }
+  >,
+) {
   try {
     const [{ reportForkClientUsage }, { appAtomRegistry }, { primaryEnvironmentIdAtom }] =
       await Promise.all([
@@ -23,7 +28,7 @@ async function report(input: Extract<ForkClientUsageInput, { feature: "sidebar-p
       ]);
     await reportForkClientUsage(appAtomRegistry.get(primaryEnvironmentIdAtom), input);
   } catch {
-    // Reporting must never affect the filter or thread creation.
+    // Reporting must never affect the sidebar or thread creation.
   }
 }
 
@@ -35,7 +40,7 @@ export function setSidebarProjectFilterFromUser(
   const store = useUiStateStore.getState();
   if (store.sidebarProjectScopeKey === projectKey) return;
   store.setSidebarProjectScopeKey(projectKey);
-  return report({
+  return reportSidebarUsage({
     feature: "sidebar-project-filter",
     action: projectKey === null ? "filter_cleared" : "filter_set",
     entryPoint,
@@ -45,5 +50,5 @@ export function setSidebarProjectFilterFromUser(
 /** Count a new-thread action taken while the filter is on. */
 export function reportNewThreadWhileFiltered() {
   if (useUiStateStore.getState().sidebarProjectScopeKey === null) return;
-  return report({ feature: "sidebar-project-filter", action: "thread_started" });
+  return reportSidebarUsage({ feature: "sidebar-project-filter", action: "thread_started" });
 }
