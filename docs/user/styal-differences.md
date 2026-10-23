@@ -95,13 +95,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   available, then GPT-6-Sol, GPT-6-Astra or an older model offered by the installed CLI. T3 Code
   defaults to GPT-6-Astra as of
   [revision 2cbc24f](https://github.com/pingdotgg/t3code/tree/2cbc24fcae2b5649d7b60b68da72053a37fa82d5).
-- **Text generation uses a provider you're signed in to.** Thread titles, branch names, and commit
-  and pull request text default to GPT-6 Luna. When the chosen provider is signed out or not
-  installed, styal uses GPT-6 Luna, then Claude Haiku 5.5, then another signed-in provider, and
-  **Settings** shows the initial model choice. If a generation request hits a rate or usage limit, styal
-  tries another usable provider in the same order without changing your saved model preference.
-  T3 Code defaults to GPT-6 Luna and switches only when the provider is turned off as of
-  [revision 7ac952c](https://github.com/pingdotgg/t3code/tree/7ac952c630ef8a60d14ca8f6a0c7adce33db4bae).
+- **Text generation switches to a provider you're signed in to.** When the provider chosen for
+  thread titles, branch names, and commit and pull request text is signed out or not installed,
+  styal uses GPT-6 Luna, then Claude Haiku 5.5, then another signed-in provider, and **Settings**
+  shows the model that will run. If a request hits a rate or usage limit, styal tries the next usable
+  provider in the same order without changing your saved model preference. T3 Code switches only
+  when the provider is turned off as of
+  [revision e340aae](https://github.com/pingdotgg/t3code/tree/e340aaeeb98bc6ac623c2e70ac8eca8bcbddfe1b).
 - **New threads start in a worktree.** Both apps support isolated Git worktrees. After project,
   environment, and project file settings, styal defaults to a worktree when the project is a Git
   repository with a commit, and the current checkout otherwise. T3 Code defaults to the local
