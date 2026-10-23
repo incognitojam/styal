@@ -3918,6 +3918,7 @@ features:
     prs: [138, 151, 159, 185, 209, 495]
     invariants:
       - Pull request checks have a dedicated tab that distinguishes host-required checks from optional jobs and represents required checks that have not reported yet.
+      - Check rows share one set of columns, so the Required badge, status and link mark line up whatever each row's status says or whether it has a link.
       - A watched pull request reports its required checks as passed only once each has finished green; a required check that has not reported yet holds the news back.
       - The summary and primary action lead with GitHub merge readiness, offering auto-merge when requirements block an otherwise mergeable pull request, including when its branch is behind the base, if GitHub permits it. Check health remains supporting context.
       - When effective GitHub rules require a behind branch to be updated, the Checks tab explains that auto-merge will wait and offers the update methods the viewer may use; an unavailable policy read does not claim the update is optional.

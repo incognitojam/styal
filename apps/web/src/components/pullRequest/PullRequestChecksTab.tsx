@@ -344,7 +344,9 @@ export function PullRequestChecksTab({
           </p>
         </div>
       ) : (
-        <ul className="space-y-0.5 px-4 py-3">
+        // One grid for the whole list, which every row joins as a subgrid: the Required badge,
+        // the status and the link mark line up in columns whatever each row's status says.
+        <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] gap-x-2 gap-y-0.5 px-4 py-3">
           {checks.map((check) => {
             const finding = { kind: "check", check } as const;
             const failing = isFailing(check);
@@ -352,25 +354,25 @@ export function PullRequestChecksTab({
             const occurrence = keyOccurrences.get(keyBase) ?? 0;
             keyOccurrences.set(keyBase, occurrence + 1);
             const rowClassName =
-              "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs";
+              "col-span-5 grid min-w-0 grid-cols-subgrid items-center rounded-md px-2 py-1.5 text-left text-xs";
             const body = (
               <>
                 <PullRequestCheckStatusIcon status={check.status} />
                 <span className="min-w-0 flex-1 truncate">{check.name}</span>
                 {check.required === true ? (
-                  <Badge size="sm" variant="warning">
+                  <Badge size="sm" variant="warning" className="justify-self-start">
                     Required
                   </Badge>
-                ) : null}
-                <span className="shrink-0 text-muted-foreground">
-                  {pullRequestCheckStatusLabel(check)}
-                </span>
+                ) : (
+                  <span />
+                )}
+                <span className="text-muted-foreground">{pullRequestCheckStatusLabel(check)}</span>
               </>
             );
             return (
               <li
                 key={`${keyBase}:${occurrence}`}
-                className="group flex items-center gap-1 rounded-md pr-1 hover:bg-accent/60"
+                className="group col-span-full grid grid-cols-subgrid items-center rounded-md pr-1 hover:bg-accent/60"
               >
                 {check.url === null ? (
                   // Nothing to open, so nothing to press: a row the host gave no link for stays
@@ -378,6 +380,7 @@ export function PullRequestChecksTab({
                   <Tooltip>
                     <TooltipTrigger render={<div className={rowClassName} />}>
                       {body}
+                      <span />
                     </TooltipTrigger>
                     <TooltipPopup>{check.description ?? check.name}</TooltipPopup>
                   </Tooltip>
