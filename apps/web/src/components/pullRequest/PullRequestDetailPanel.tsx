@@ -191,6 +191,7 @@ import {
   pullRequestChecksState,
   pullRequestReviewOutcomeToneClassName,
   resolvePullRequestState,
+  workflowApprovalMessage,
 } from "./pullRequestPresentation";
 import { PullRequestGlyph } from "./pullRequestIcons";
 import { PullRequestGuideTab } from "./PullRequestGuideTab";
@@ -1856,10 +1857,7 @@ function PullRequestDetailPanelBody({
             </span>
           }
         />
-        <TooltipPopup side="top" className="max-w-72 whitespace-normal">
-          Starts the runs GitHub is holding. They run this pull request's code on this repository's
-          runners.
-        </TooltipPopup>
+        <TooltipPopup side="top">{workflowApprovalMessage(workflowApprovalsRequired)}</TooltipPopup>
       </Tooltip>
     ) : null;
 

@@ -237,6 +237,13 @@ const CHECK_STATUS_PRESENTATION = {
   { label: string; Icon: typeof CircleCheckIcon | typeof Spinner; toneClassName: string }
 >;
 
+/** GitHub's sentence for runs held for approval, which its merge box and approve button use. */
+export function workflowApprovalMessage(count: number): string {
+  return count === 1
+    ? "This workflow requires approval from a maintainer."
+    : "These workflows require approval from a maintainer.";
+}
+
 /** An Actions run GitHub holds until someone with write access approves it, rather than a job. */
 export function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">): boolean {
   return (
