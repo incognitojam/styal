@@ -1374,6 +1374,8 @@ function PullRequestsRouteView() {
           {
             state: entry.state,
             isDraft: entry.isDraft,
+            autoMergeEnabled: entry.autoMergeEnabled,
+            inMergeQueue: entry.inMergeQueue,
           },
         ]),
       ),

@@ -5,6 +5,10 @@ import type {
   PullRequestListEntry,
 } from "@t3tools/contracts";
 import type { AppSymbolName } from "../../components/AppSymbol";
+import {
+  pullRequestMergeIntentLabel,
+  resolvePullRequestMergeIntent,
+} from "@t3tools/shared/threadPullRequests";
 
 const STATES = {
   open: {
@@ -40,8 +44,18 @@ const STATES = {
   { label: string; icon: AppSymbolName; tint: string; text: string; background: string }
 >;
 
-export function pullRequestStatus(pr: Pick<PullRequestListEntry, "state" | "isDraft">) {
-  return STATES[pr.isDraft && pr.state === "open" ? "draft" : pr.state];
+export function pullRequestStatus(
+  pr: Pick<PullRequestListEntry, "state" | "isDraft" | "autoMergeEnabled" | "inMergeQueue">,
+) {
+  const state = STATES[pr.isDraft && pr.state === "open" ? "draft" : pr.state];
+  const mergeIntent = resolvePullRequestMergeIntent(pr);
+  return {
+    ...state,
+    mergeIntent: mergeIntent ?? undefined,
+    accessibleLabel: mergeIntent
+      ? `${state.label} · ${pullRequestMergeIntentLabel(mergeIntent)}`
+      : state.label,
+  };
 }
 
 export function checkStatus(check: PullRequestCheck) {

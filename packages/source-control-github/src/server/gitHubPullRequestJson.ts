@@ -320,7 +320,15 @@ export function decodeBranchProtectionRequiredChecksJson(
   });
 }
 
+const RawMergeIntentSchema = Schema.Struct({
+  isInMergeQueue: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  autoMergeRequest: Schema.optional(
+    Schema.NullOr(Schema.Struct({ mergeMethod: Schema.optional(Schema.NullOr(Schema.String)) })),
+  ),
+});
+
 const RawListItemSchema = Schema.Struct({
+  ...RawMergeIntentSchema.fields,
   number: Schema.Int,
   title: Schema.String,
   url: Schema.String,
@@ -365,6 +373,7 @@ const RawStackMembershipSchema = Schema.Struct({
  */
 const RawSearchItemSchema = Schema.Struct({
   ...RawStackMembershipSchema.fields,
+  ...RawMergeIntentSchema.fields,
   number: Schema.Int,
   title: Schema.String,
   url: Schema.String,
@@ -654,11 +663,6 @@ const RawDetailSchema = Schema.Struct({
   body: Schema.optional(Schema.String),
   changedFiles: Schema.optional(Schema.Int),
   closedAt: Schema.optional(Schema.NullOr(Schema.String)),
-  isInMergeQueue: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  /** The standing instruction and strategy GitHub will use once requirements are met. */
-  autoMergeRequest: Schema.optional(
-    Schema.NullOr(Schema.Struct({ mergeMethod: Schema.optional(Schema.NullOr(Schema.String)) })),
-  ),
   /** GitHub's repository-policy-aware verdict, separate from conflict-only `mergeable`. */
   mergeStateStatus: Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -1287,13 +1291,14 @@ export function pullRequestSearchGraphQlQuery(
   rows: number,
   includeStacks = false,
   includeStats = false,
+  includeMergeQueue = false,
 ): string {
   return `query($q: String!, $after: String) {
   search(query: $q, type: ISSUE, first: ${pageRows(rows)}, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes {
       ... on PullRequest {
-        ${pullRequestRowSelection(includeStacks, includeStats)}
+        ${pullRequestRowSelection(includeStacks, includeStats, includeMergeQueue)}
       }
     }
   }
@@ -1304,12 +1309,16 @@ export function pullRequestSearchGraphQlQuery(
  * A repository's pull requests without search, newest created first: the order `gh pr list` lists
  * in when it does not search, for a repository GitHub's search index does not cover.
  */
-export function pullRequestListGraphQlQuery(rows: number, includeStacks = false): string {
+export function pullRequestListGraphQlQuery(
+  rows: number,
+  includeStacks = false,
+  includeMergeQueue = false,
+): string {
   return `query($owner: String!, $name: String!, $states: [PullRequestState!], $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(first: ${pageRows(rows)}, after: $after, states: $states, orderBy: { field: CREATED_AT, direction: DESC }) {
       pageInfo { hasNextPage endCursor }
-      nodes { ${pullRequestRowSelection(includeStacks, true)} }
+      nodes { ${pullRequestRowSelection(includeStacks, true, includeMergeQueue)} }
     }
   }
 }`;
@@ -1320,7 +1329,11 @@ function pageRows(rows: number): number {
 }
 
 /** One listing row, the same whether it came from a search or from a repository's own list. */
-function pullRequestRowSelection(includeStacks: boolean, includeStats: boolean): string {
+function pullRequestRowSelection(
+  includeStacks: boolean,
+  includeStats: boolean,
+  includeMergeQueue: boolean,
+): string {
   return `${includeStacks ? "stack { number size baseRefName } stackEntry { position }" : ""}
         number
         title
@@ -1330,6 +1343,8 @@ function pullRequestRowSelection(includeStacks: boolean, includeStats: boolean):
         baseRefName
         state
         isDraft
+        autoMergeRequest { mergeMethod }
+        ${includeMergeQueue ? "isInMergeQueue" : ""}
         mergeable
         reviewDecision
         latestReviews(first: 20) { nodes { state author { login } } }
@@ -1658,6 +1673,9 @@ export function buildReviewSubmission(input: {
 }
 
 export interface GitHubPullRequestListItem {
+  /** Missing when the host did not answer, which is distinct from disabled. */
+  readonly autoMergeEnabled?: boolean;
+  readonly inMergeQueue?: boolean;
   readonly stack?: PullRequestStackMembership;
   /** The author's node id, kept so a batch can resolve the avatar the listing does not carry. */
   readonly authorId: string | null;
@@ -1700,9 +1718,6 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly deploymentsTruncated?: boolean;
   /** Absent where GitHub did not report its repository-policy-aware verdict. */
   readonly mergeReadiness?: PullRequestMergeReadiness;
-  /** Absent where `gh` did not answer for auto-merge at all, which is not the same as off. */
-  readonly autoMergeEnabled?: boolean;
-  readonly inMergeQueue?: boolean;
   /** Absent where auto-merge is off or GitHub did not report the stored strategy. */
   readonly autoMergeMethod?: PullRequestMergeMethod;
 }
@@ -2175,6 +2190,11 @@ function toCommits(
 
 function toListItem(raw: Schema.Schema.Type<typeof RawListItemSchema>): GitHubPullRequestListItem {
   return {
+    ...(raw.isInMergeQueue == null ? {} : { inMergeQueue: raw.isInMergeQueue }),
+    // Null explicitly disables auto-merge; an omitted field leaves its state unknown.
+    ...(raw.autoMergeRequest === undefined
+      ? {}
+      : { autoMergeEnabled: raw.autoMergeRequest !== null }),
     authorId: trimmed(raw.author?.id),
     number: raw.number,
     title: raw.title,
@@ -2215,12 +2235,6 @@ function toDetail(raw: Schema.Schema.Type<typeof RawDetailSchema>): GitHubPullRe
     ...(raw.mergeStateStatus === undefined
       ? {}
       : { mergeReadiness: toMergeReadiness(raw.mergeStateStatus) }),
-    ...(raw.isInMergeQueue == null ? {} : { inMergeQueue: raw.isInMergeQueue }),
-    // A JSON null is GitHub saying "nobody armed this"; a missing key is GitHub not saying, and
-    // the difference survives here rather than being flattened into false.
-    ...(raw.autoMergeRequest === undefined
-      ? {}
-      : { autoMergeEnabled: raw.autoMergeRequest !== null }),
     ...(autoMergeMethod === undefined ? {} : { autoMergeMethod }),
   };
 }
@@ -2529,8 +2543,6 @@ export function pullRequestSummaryGraphQlQuery(isGitHubDotCom = false): string {
 }
 
 const RawSummarySchema = Schema.Struct({
-  isInMergeQueue: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  autoMergeRequest: RawDetailSchema.fields.autoMergeRequest,
   ...RawSearchItemSchema.fields,
   changedFiles: Schema.optional(Schema.NullOr(Schema.Int)),
   additions: Schema.optional(Schema.NullOr(Schema.Int)),

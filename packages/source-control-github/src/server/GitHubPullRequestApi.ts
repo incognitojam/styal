@@ -2219,7 +2219,12 @@ export const make = Effect.gen(function* () {
                 operation: "listPullRequests",
                 // The reader's own words are in the query.
                 variables: { q: query, after },
-                query: pullRequestSearchGraphQlQuery(rows, false, true),
+                query: pullRequestSearchGraphQlQuery(
+                  rows,
+                  false,
+                  true,
+                  input.host === "github.com",
+                ),
                 decode: decodePullRequestSearchJson,
               })
             : graphqlRead({
@@ -2227,7 +2232,7 @@ export const make = Effect.gen(function* () {
                 host: input.host,
                 operation: "listPullRequests",
                 variables: { owner, name, states: LIST_STATES[input.state], after },
-                query: pullRequestListGraphQlQuery(rows),
+                query: pullRequestListGraphQlQuery(rows, false, input.host === "github.com"),
                 decode: decodePullRequestListJson,
               }),
         ).pipe(
@@ -2343,7 +2348,12 @@ export const make = Effect.gen(function* () {
         host: input.host,
         operation: "searchPullRequests",
         variables: { q: query, after: null },
-        query: pullRequestSearchGraphQlQuery(rows, input.host === "github.com"),
+        query: pullRequestSearchGraphQlQuery(
+          rows,
+          input.host === "github.com",
+          false,
+          input.host === "github.com",
+        ),
         decode: decodePullRequestSearchJson,
       }).pipe(
         Effect.map((batch) => ({

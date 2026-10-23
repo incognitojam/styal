@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
@@ -65,7 +66,7 @@ export const PullRequestListRow = memo(
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: props.selected, busy: props.busy }}
-            accessibilityLabel={`Pull request ${item.number}, ${item.title}, ${status.label}, by ${item.author?.login ?? "unknown author"}${review ? `, ${review.accessibleLabel}` : ""}${item.checksState ? `, checks ${item.checksState}` : ""}${item.stack ? `, stack ${item.stack.position} of ${item.stack.size}` : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}, ${item.additions} additions, ${item.deletions} deletions`}
+            accessibilityLabel={`Pull request ${item.number}, ${item.title}, ${status.accessibleLabel}, by ${item.author?.login ?? "unknown author"}${review ? `, ${review.accessibleLabel}` : ""}${item.checksState ? `, checks ${item.checksState}` : ""}${item.stack ? `, stack ${item.stack.position} of ${item.stack.size}` : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}, ${item.additions} additions, ${item.deletions} deletions`}
             accessibilityHint="Double tap to open. Touch and hold for quick actions."
             onPress={() => props.onSelect(item)}
             disabled={props.busy}
@@ -80,7 +81,12 @@ export const PullRequestListRow = memo(
             )}
           >
             <View className={props.sidebar ? "pt-0.5" : "pt-2.5"}>
-              <SymbolView name={status.icon} size={20} tintColorClassName={status.tint} />
+              <PullRequestMergeIntentIcon
+                name={status.icon}
+                size={20}
+                tintColorClassName={status.tint}
+                mergeIntent={status.mergeIntent}
+              />
             </View>
             <View
               className={cn(

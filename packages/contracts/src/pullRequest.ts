@@ -538,6 +538,9 @@ export const PullRequestStackMembership = Schema.Struct({
 export type PullRequestStackMembership = typeof PullRequestStackMembership.Type;
 
 export const PullRequestListEntry = Schema.Struct({
+  /** Absent when the host does not report automatic merge intent in its listing. */
+  autoMergeEnabled: Schema.optional(Schema.Boolean),
+  inMergeQueue: Schema.optional(Schema.Boolean),
   stack: Schema.optional(PullRequestStackMembership),
   provider: SourceControlProviderKind,
   /**

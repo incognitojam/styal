@@ -1,4 +1,9 @@
 import { Spinner } from "~/components/ui/spinner";
+import {
+  pullRequestMergeIntentLabel,
+  resolvePullRequestMergeIntent,
+} from "@t3tools/shared/threadPullRequests";
+import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import type {
   PullRequestActor,
   PullRequestCheck,
@@ -154,25 +159,40 @@ export function resolvePullRequestConflict(input: {
 export function PullRequestStateGlyph({
   state,
   isDraft,
+  autoMergeEnabled,
+  inMergeQueue,
   className,
 }: {
   state: PullRequestState;
   isDraft: boolean;
+  autoMergeEnabled?: boolean | undefined;
+  inMergeQueue?: boolean | undefined;
   className?: string;
 }) {
   const presentation = resolvePullRequestState({ state, isDraft });
+  const mergeIntent = resolvePullRequestMergeIntent({
+    state,
+    isDraft,
+    autoMergeEnabled,
+    inMergeQueue,
+  });
+  const label = mergeIntent
+    ? `${presentation.label} · ${pullRequestMergeIntentLabel(mergeIntent)}`
+    : presentation.label;
   return (
     <Tooltip>
       {/* The list row is itself a button, so the trigger stays a span: an interactive one would
           nest a control inside that button and steal the row's click target. */}
-      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-        <presentation.Icon
-          role="img"
-          aria-label={presentation.label}
-          className={cn("size-4 shrink-0", presentation.toneClassName, className)}
+      <TooltipTrigger
+        render={<span role="img" aria-label={label} className="inline-flex shrink-0" />}
+      >
+        <PullRequestMergeIntentIcon
+          Icon={presentation.Icon}
+          mergeIntent={mergeIntent ?? undefined}
+          className={cn("size-4", presentation.toneClassName, className)}
         />
       </TooltipTrigger>
-      <TooltipPopup>{presentation.label}</TooltipPopup>
+      <TooltipPopup>{label}</TooltipPopup>
     </Tooltip>
   );
 }

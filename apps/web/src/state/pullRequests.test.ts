@@ -6,6 +6,7 @@ import {
   newestPullRequestObservation,
   newestPullRequestSummary,
   threadPullRequestLinkToSummary,
+  pullRequestListEntryToSummary,
 } from "./pullRequests";
 
 function summary(overrides: Partial<PullRequestSummary> = {}): PullRequestSummary {
@@ -34,6 +35,38 @@ const observed = (value: PullRequestSummary, observedAt: number) => ({
 });
 
 describe("pull request summary cache", () => {
+  it("keeps automatic merge intent from list rows and replaces it when a later read clears it", () => {
+    const entry = {
+      ...summary(),
+      projectTitle: "Demo",
+      host: "github.com",
+      isDraft: false,
+      mergeability: "mergeable" as const,
+      additions: 0,
+      deletions: 0,
+      createdAt: "2026-09-10T00:00:00Z",
+      labels: [],
+      viewerReviewRequested: false,
+      stack: undefined,
+      author: null,
+      reviewDecision: undefined,
+      checksState: undefined,
+      autoMergeEnabled: true,
+      inMergeQueue: true,
+    };
+    const armed = pullRequestListEntryToSummary(entry);
+    expect(armed).toMatchObject({ autoMergeEnabled: true, inMergeQueue: true });
+    const cleared = pullRequestListEntryToSummary({
+      ...entry,
+      autoMergeEnabled: false,
+      inMergeQueue: false,
+      observedAt: 300,
+    });
+    expect(
+      newestPullRequestObservation(observed(armed, 100), observed(cleared, 300))?.summary,
+    ).toMatchObject({ autoMergeEnabled: false, inMergeQueue: false });
+  });
+
   it("orders same-dated snapshots by the server's read time, not by arrival", () => {
     const stale = observed(summary({ observedAt: 200 }), 500);
     const held = observed(

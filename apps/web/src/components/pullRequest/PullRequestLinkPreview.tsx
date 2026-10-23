@@ -2,6 +2,11 @@ import type { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, PullRequestRef } from "@t3tools/contracts";
 import {
+  pullRequestMergeIntentLabel,
+  resolvePullRequestMergeIntent,
+} from "@t3tools/shared/threadPullRequests";
+import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
+import {
   cloneElement,
   useRef,
   useState,
@@ -92,6 +97,7 @@ export function PullRequestLinkPreview({
       ? null
       : resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft });
   const authorLabel = detail?.author === null ? "ghost" : (detail?.author.login ?? null);
+  const mergeIntent = detail ? resolvePullRequestMergeIntent(detail) : null;
 
   return (
     <PreviewCard open={open} onOpenChange={setOpen} actionsRef={previewActionsRef}>
@@ -122,8 +128,13 @@ export function PullRequestLinkPreview({
                   <span aria-hidden>·</span>
                   {state === null ? null : (
                     <span className="inline-flex shrink-0 items-center gap-1">
-                      <state.Icon aria-hidden className={`size-3 ${state.toneClassName}`} />
+                      <PullRequestMergeIntentIcon
+                        Icon={state.Icon}
+                        mergeIntent={mergeIntent ?? undefined}
+                        className={state.toneClassName}
+                      />
                       {state.label}
+                      {mergeIntent ? ` · ${pullRequestMergeIntentLabel(mergeIntent)}` : null}
                     </span>
                   )}
                 </div>

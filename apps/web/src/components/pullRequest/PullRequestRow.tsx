@@ -147,6 +147,8 @@ function PullRequestRowImpl({
         <PullRequestRowGlyph
           state={entry.state}
           isDraft={entry.isDraft}
+          autoMergeEnabled={entry.autoMergeEnabled}
+          inMergeQueue={entry.inMergeQueue}
           mergeability={entry.mergeability}
           baseBranch={entry.baseBranch}
           // On the title line rather than between the lines, as main aligns it.

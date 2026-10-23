@@ -4,7 +4,10 @@ import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities
 import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
+  resolvePullRequestMergeIntent,
+  pullRequestMergeIntentLabel,
 } from "@t3tools/shared/threadPullRequests";
+import { PullRequestMergeIntentIcon } from "./pullRequest/PullRequestMergeIntentIcon";
 import type {
   ContextMenuItem,
   EnvironmentId,
@@ -156,6 +159,8 @@ interface RightPanelTabsProps {
 }
 
 export interface PullRequestTabStatus {
+  autoMergeEnabled?: boolean | undefined;
+  inMergeQueue?: boolean | undefined;
   projectId: string;
   repository: string;
   number: number;
@@ -163,7 +168,10 @@ export interface PullRequestTabStatus {
   isDraft: boolean;
 }
 
-export type PullRequestTabStatusSeed = Pick<PullRequestTabStatus, "state" | "isDraft">;
+export type PullRequestTabStatusSeed = Pick<
+  PullRequestTabStatus,
+  "state" | "isDraft" | "autoMergeEnabled" | "inMergeQueue"
+>;
 
 export function shouldOpenDefaultBrowserProfileFromMenuClick(
   pointerType: string | undefined,
@@ -808,7 +816,19 @@ function PullRequestSurfaceIcon({
     state: status.state,
     isDraft: status.isDraft ?? detail?.isDraft ?? seed?.isDraft ?? false,
   });
-  return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
+  const mergeIntent = resolvePullRequestMergeIntent(status);
+  return (
+    <span
+      role="img"
+      aria-label={`${presentation.label}${mergeIntent ? ` · ${pullRequestMergeIntentLabel(mergeIntent)}` : ""}`}
+    >
+      <PullRequestMergeIntentIcon
+        Icon={presentation.Icon}
+        mergeIntent={mergeIntent ?? undefined}
+        className={presentation.toneClassName}
+      />
+    </span>
+  );
 }
 
 /**

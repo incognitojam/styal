@@ -86,6 +86,8 @@ export function pullRequestListEntryToSummary(entry: PullRequestListEntry): Pull
     url: entry.url,
     state: entry.state,
     isDraft: entry.isDraft,
+    ...(entry.autoMergeEnabled === undefined ? {} : { autoMergeEnabled: entry.autoMergeEnabled }),
+    ...(entry.inMergeQueue === undefined ? {} : { inMergeQueue: entry.inMergeQueue }),
     headBranch: entry.headBranch,
     baseBranch: entry.baseBranch,
     updatedAt: entry.updatedAt,

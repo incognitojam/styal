@@ -37,6 +37,7 @@ import {
   pullRequestCoreGraphQlQuery,
   pullRequestSummaryGraphQlQuery,
   pullRequestSearchGraphQlQuery,
+  pullRequestListGraphQlQuery,
 } from "./gitHubPullRequestJson.ts";
 
 /**
@@ -196,6 +197,56 @@ describe("pull request list decoding", () => {
     );
     expect(batch.items).toHaveLength(1);
     expect(batch.rawCount).toBe(2);
+  });
+});
+
+describe("pull request listing merge intent", () => {
+  it("carries enabled, disabled and unknown intent through repository lists and host searches", () => {
+    const raw = JSON.parse(
+      listJson([
+        { autoMergeRequest: { mergeMethod: "SQUASH" }, isInMergeQueue: false },
+        { autoMergeRequest: null, isInMergeQueue: true },
+        { autoMergeRequest: null, isInMergeQueue: false },
+        {},
+      ]),
+    );
+    const nodes = raw.data.repository.pullRequests.nodes;
+    const search = JSON.stringify({
+      data: {
+        search: {
+          nodes: nodes.map((node: Record<string, unknown>) => ({
+            ...node,
+            repository: { nameWithOwner: "example/demo" },
+          })),
+          pageInfo: { hasNextPage: false },
+        },
+      },
+    });
+    for (const decoded of [
+      decodePullRequestListJson(JSON.stringify(raw)),
+      decodePullRequestSearchJson(search),
+    ]) {
+      expect(
+        expectSuccess(decoded).items.map(({ autoMergeEnabled, inMergeQueue }) => ({
+          autoMergeEnabled,
+          inMergeQueue,
+        })),
+      ).toEqual([
+        { autoMergeEnabled: true, inMergeQueue: false },
+        { autoMergeEnabled: false, inMergeQueue: true },
+        { autoMergeEnabled: false, inMergeQueue: false },
+        { autoMergeEnabled: undefined, inMergeQueue: undefined },
+      ]);
+    }
+  });
+
+  it("reads intent in the existing row query, reserving queue membership for github.com", () => {
+    for (const query of [pullRequestSearchGraphQlQuery(20), pullRequestListGraphQlQuery(20)]) {
+      expect(query).toContain("autoMergeRequest { mergeMethod }");
+      expect(query).not.toContain("isInMergeQueue");
+    }
+    expect(pullRequestSearchGraphQlQuery(20, false, false, true)).toContain("isInMergeQueue");
+    expect(pullRequestListGraphQlQuery(20, false, true)).toContain("isInMergeQueue");
   });
 });
 

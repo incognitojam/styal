@@ -46,6 +46,7 @@ import { pullRequestReviewKey } from "./pullRequestReviewDrafts";
 import { type PullRequestDetail, type PullRequestListEntry } from "@t3tools/contracts";
 import { PullRequestOverviewLoading } from "./PullRequestOverviewLoading";
 import { pullRequestStatus } from "./pullRequestStatus";
+import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -180,8 +181,16 @@ function PullRequestIdentity(props: {
         {"capabilities" in pr ? (
           <PullRequestStatusMenu pr={pr} params={props.params} />
         ) : (
-          <View className="min-h-8 flex-row items-center gap-1.5">
-            <SymbolView name={status.icon} size={14} tintColorClassName={status.tint} />
+          <View
+            className="min-h-8 flex-row items-center gap-1.5"
+            accessibilityLabel={status.accessibleLabel}
+          >
+            <PullRequestMergeIntentIcon
+              name={status.icon}
+              size={14}
+              tintColorClassName={status.tint}
+              mergeIntent={status.mergeIntent}
+            />
             <Text className={`text-xs font-t3-medium ${status.text}`}>{status.label}</Text>
           </View>
         )}

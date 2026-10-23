@@ -1242,6 +1242,10 @@ export const make = Effect.gen(function* () {
     const viewer = input.viewer.toLowerCase();
     return {
       ...(input.item.stack === undefined ? {} : { stack: input.item.stack }),
+      ...(input.item.autoMergeEnabled === undefined
+        ? {}
+        : { autoMergeEnabled: input.item.autoMergeEnabled }),
+      ...(input.item.inMergeQueue === undefined ? {} : { inMergeQueue: input.item.inMergeQueue }),
       provider: input.project.api.kind,
       host: input.project.host,
       projectId: input.project.project.id,

@@ -1,5 +1,5 @@
 import { SymbolView } from "../../../components/AppSymbol";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { AppText as Text } from "../../../components/AppText";
 import { MaterialButton } from "../../../components/MaterialButton";
@@ -84,6 +84,7 @@ export function MetaCard(props: { readonly label: string; readonly value: string
 
 export function SheetListRow(props: {
   readonly icon: ComponentProps<typeof SymbolView>["name"];
+  readonly leading?: ReactNode;
   readonly title: string;
   readonly subtitle?: string | null;
   readonly disabled?: boolean;
@@ -96,12 +97,14 @@ export function SheetListRow(props: {
       onPress={props.onPress}
     >
       <View className="items-center justify-center android:size-6 ios:bg-subtle ios:h-9 ios:w-9 ios:rounded-full">
-        <SymbolView
-          name={props.icon}
-          size={Platform.OS === "android" ? 24 : 16}
-          tintColorClassName="accent-icon"
-          type="monochrome"
-        />
+        {props.leading ?? (
+          <SymbolView
+            name={props.icon}
+            size={Platform.OS === "android" ? 24 : 16}
+            tintColorClassName="accent-icon"
+            type="monochrome"
+          />
+        )}
       </View>
       <View className="flex-1 gap-0.5">
         <Text className="text-foreground text-base android:font-t3-medium ios:font-t3-bold">

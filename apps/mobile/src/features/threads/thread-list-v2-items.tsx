@@ -52,7 +52,7 @@ import {
   resolveThreadListV2SwipeActions,
   type ThreadListV2Status,
 } from "./threadListV2";
-import { PullRequestMergeIntentIcon } from "./pull-request-merge-intent-icon";
+import { PullRequestMergeIntentIcon } from "../pull-requests/PullRequestMergeIntentIcon";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { UnsentDraftIcon } from "./unsent-draft-icon";
 import { shouldRecedeThreadRow } from "./thread-row-emphasis";

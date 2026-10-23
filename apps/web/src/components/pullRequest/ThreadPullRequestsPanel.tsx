@@ -152,6 +152,8 @@ function LinkRow({
         <PullRequestRowGlyph
           state={snapshot.state}
           isDraft={snapshot.isDraft}
+          autoMergeEnabled={snapshot.autoMergeEnabled}
+          inMergeQueue={snapshot.inMergeQueue}
           mergeability={snapshot.mergeability}
           baseBranch={snapshot.baseBranch}
         />

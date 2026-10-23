@@ -1,4 +1,5 @@
 import { usePullRequestConnected } from "./usePullRequestConnected";
+import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import type { PullRequestAction, PullRequestDetail } from "@t3tools/contracts";
@@ -52,11 +53,16 @@ export function PullRequestStatusMenu(props: RowProps) {
   const trigger = (
     <Pressable
       accessibilityRole={actions.length ? "button" : undefined}
-      accessibilityLabel={`Pull request status, ${status.label}`}
+      accessibilityLabel={`Pull request status, ${status.accessibleLabel}`}
       disabled={!actions.length}
       className="min-h-8 flex-row items-center gap-1.5 active:opacity-70"
     >
-      <SymbolView name={status.icon} size={14} tintColorClassName={status.tint} />
+      <PullRequestMergeIntentIcon
+        name={status.icon}
+        size={14}
+        tintColorClassName={status.tint}
+        mergeIntent={status.mergeIntent}
+      />
       <Text className={`text-xs font-t3-medium ${status.text}`}>{status.label}</Text>
       {actions.length ? (
         <SymbolView name="chevron.down" size={9} tintColorClassName="accent-icon-muted" />

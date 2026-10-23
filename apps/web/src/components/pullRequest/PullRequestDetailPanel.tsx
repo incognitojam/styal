@@ -1,4 +1,9 @@
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import {
+  pullRequestMergeIntentLabel,
+  resolvePullRequestMergeIntent,
+} from "@t3tools/shared/threadPullRequests";
+import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -1611,10 +1616,14 @@ function PullRequestDetailPanelBody({
   // Only an outright yes arms it. A host that reports nothing has not said the merge is already
   // spoken for, and an off switch for something that may not be on says the wrong thing twice.
   const autoMergeArmed = detail?.state === "open" && detail.autoMergeEnabled === true;
+  const mergeIntent = detail ? resolvePullRequestMergeIntent(detail) : null;
   const armedMergeMethod = detail?.autoMergeMethod;
-  const armedAutoMergeLabel = armedMergeMethod
-    ? `Auto-merge (${PULL_REQUEST_MERGE_METHOD_LABELS[armedMergeMethod].toLowerCase()})`
-    : "Auto-merge";
+  const armedAutoMergeLabel =
+    mergeIntent === "queued"
+      ? pullRequestMergeIntentLabel(mergeIntent)
+      : armedMergeMethod
+        ? `Auto-merge (${PULL_REQUEST_MERGE_METHOD_LABELS[armedMergeMethod].toLowerCase()})`
+        : "Auto-merge";
   const workflowApprovalsRequired =
     detail?.state === "open" ? (detail.workflowApprovalsRequired ?? 0) : 0;
   // Out of date with the base, and still cleanly mergeable — the one pairing an update button
@@ -2153,7 +2162,7 @@ function PullRequestDetailPanelBody({
               ) : null}
               {/* Said where the Merge button is, because it is the answer to why nobody has
                   pressed it: the merge is already asked for, and the host is holding it. */}
-              {autoMergeArmed && primaryAction !== "auto-merge-armed" ? (
+              {mergeIntent && primaryAction !== "auto-merge-armed" ? (
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -2163,7 +2172,11 @@ function PullRequestDetailPanelBody({
                         role="img"
                         aria-label={armedAutoMergeLabel}
                       >
-                        <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                        <PullRequestMergeIntentIcon
+                          Icon={PullRequestGlyph.pullRequest}
+                          mergeIntent={mergeIntent ?? undefined}
+                          className={cn("size-3.5", statePresentation?.toneClassName)}
+                        />
                         <span className="@max-[30rem]/pr-header:hidden">{armedAutoMergeLabel}</span>
                       </Badge>
                     }
@@ -2260,7 +2273,11 @@ function PullRequestDetailPanelBody({
                         role="img"
                         aria-label={armedAutoMergeLabel}
                       >
-                        <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                        <PullRequestMergeIntentIcon
+                          Icon={PullRequestGlyph.pullRequest}
+                          mergeIntent={mergeIntent ?? undefined}
+                          className={cn("size-3.5", statePresentation?.toneClassName)}
+                        />
                         <span className="@max-[30rem]/pr-header:hidden">{armedAutoMergeLabel}</span>
                       </Badge>
                     }
