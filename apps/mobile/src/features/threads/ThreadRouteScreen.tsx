@@ -318,7 +318,7 @@ function ThreadRouteContent(
   const threadUsageText = useMemo(
     () =>
       selectedThreadUsage
-        ? usageFigureText(threadUsageView(selectedThreadUsage), turnUsageFigure)
+        ? usageFigureText(threadUsageView(selectedThreadUsage), turnUsageFigure, true)
         : null,
     [selectedThreadUsage, turnUsageFigure],
   );
