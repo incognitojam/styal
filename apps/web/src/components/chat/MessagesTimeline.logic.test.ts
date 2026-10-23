@@ -1613,6 +1613,117 @@ describe("deriveMessagesTimelineRows", () => {
     expect(assistantRow?.assistantTurnDiffSummary).toBe(assistantTurnDiffSummary);
   });
 
+  it.each([false, true])(
+    "excludes reasoning from turn-fold tool counts (tools: %s)",
+    (withTools) => {
+      const runId = RunId.make("summary-run");
+      const threadId = ThreadId.make("summary-thread");
+      const at = (second: number) =>
+        DateTime.makeUnsafe(`2026-01-01T00:00:${String(second).padStart(2, "0")}Z`);
+      const base = (id: string, second: number) => ({
+        id: TurnItemId.make(id),
+        threadId,
+        runId,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: second,
+        status: "completed" as const,
+        title: null,
+        startedAt: at(second),
+        completedAt: at(second),
+        updatedAt: at(second),
+      });
+      const tools: OrchestrationV2TurnItem[] = withTools
+        ? [
+            {
+              ...base("command", 2),
+              type: "command_execution",
+              input: "pwd",
+              output: "/repo",
+              exitCode: 0,
+            },
+            {
+              ...base("tool", 3),
+              type: "dynamic_tool",
+              toolName: "list_resources",
+              input: {},
+              output: [],
+            },
+          ]
+        : [];
+      const items: OrchestrationV2TurnItem[] = [
+        {
+          ...base("user", 0),
+          type: "user_message",
+          messageId: MessageId.make("user"),
+          text: "Consider the options.",
+          attachments: [],
+          inputIntent: "turn_start",
+          createdBy: "user",
+          creationSource: "web",
+        },
+        {
+          ...base("thought", 1),
+          type: "reasoning",
+          text: "Compare the two options.",
+          streaming: false,
+        },
+        ...tools,
+        {
+          ...base("answer", 18),
+          type: "assistant_message",
+          messageId: MessageId.make("answer"),
+          text: "Choose the first option.",
+          streaming: false,
+        },
+      ];
+      const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: items.map((item, position) => ({
+          position,
+          visibility: "local",
+          sourceThreadId: threadId,
+          sourceItemId: item.id,
+          item,
+        })),
+        optimisticMessages: [],
+      });
+      const input = {
+        timelineEntries,
+        isWorking: false,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      };
+
+      for (const expanded of [false, true]) {
+        const rows = deriveMessagesTimelineRows({
+          ...input,
+          expandedRunIds: new Set(expanded ? [runId] : []),
+        });
+        expect(rows.find((row) => row.kind === "turn-fold")).toMatchObject({
+          label: "Worked for 18s",
+          expanded,
+          activitySummary: withTools
+            ? [
+                { kind: "terminal", count: 1 },
+                { kind: "tool", count: 1 },
+              ]
+            : [],
+        });
+        if (!withTools) {
+          const thoughts = rows.flatMap((row) =>
+            row.kind === "work"
+              ? row.groupedEntries.filter((entry) => entry.itemType === "reasoning")
+              : [],
+          );
+          expect(thoughts).toHaveLength(expanded ? 1 : 0);
+        }
+      }
+    },
+  );
+
   it("counts distinct agent memories separately from repo file edits in the turn fold", () => {
     const memoryPath = "/synthetic/.claude/projects/-demo/memory/first.md";
     const timelineEntries = [
