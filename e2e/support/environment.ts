@@ -7,7 +7,11 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import { hasTestFailed, markFailed } from "./failures.ts";
-import { type FakeGitHubApiRequest, startFakeGitHubApi } from "./fake-github-api.ts";
+import {
+  type FakeGitHubApiRequest,
+  type FakeGitHubPullRequest,
+  startFakeGitHubApi,
+} from "./fake-github-api.ts";
 
 const REPO_ROOT = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -38,6 +42,7 @@ export interface EnvironmentOptions {
   /** fake-codex scenario; see apps/server/scripts/fake-codex.ts. Without one, replies echo the prompt. */
   readonly scenario?: { readonly turns: ReadonlyArray<unknown>; readonly stepDelayMs?: number };
   readonly issues?: ReadonlyArray<FakeGitHubIssue>;
+  readonly pullRequests?: ReadonlyArray<FakeGitHubPullRequest>;
 }
 
 /** One provider turn as fake-codex received it. */
@@ -101,7 +106,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
   NodeFS.writeFileSync(NodePath.join(home, ".bash_profile"), profile);
 
   writeLauncher(NodePath.join(bin, "gh"), FAKE_GH, { E2E_GH_CALL_LOG: ghCallLog });
-  const gitHubApi = await startFakeGitHubApi(options.issues ?? []);
+  const gitHubApi = await startFakeGitHubApi(options.issues ?? [], options.pullRequests ?? []);
 
   const scenarioPath = NodePath.join(root, "codex-scenario.json");
   NodeFS.writeFileSync(scenarioPath, JSON.stringify(options.scenario ?? { turns: [] }));
