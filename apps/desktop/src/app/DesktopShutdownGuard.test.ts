@@ -192,7 +192,9 @@ describe("DesktopShutdownGuard", () => {
       assert.isTrue(yield* guard.confirm("quit"));
       assert.lengthOf(h.messages, 0);
       active = true;
-      assert.isFalse(yield* guard.confirm("restart", "Install update 9.0.363 and restart styal?"));
+      assert.isFalse(
+        yield* guard.confirm("restart", { title: "Install update 9.0.363 and restart styal?" }),
+      );
       assert.include(h.messages[0]!, "Install update 9.0.363 and restart styal?");
       assert.include(h.messages[0]!, "1 thread will be interrupted");
       assert.equal(h.checks(), 4);
@@ -329,6 +331,91 @@ describe("shutdown confirmation copy", () => {
       },
     );
   });
+  const thread = (id: string, continuable: boolean) => ({
+    threadId: ThreadId.make(id),
+    title: id,
+    reasons: ["running" as const],
+    continuable,
+  });
+  it("lists threads that continue apart from interrupted ones", () => {
+    const confirmation = Guard.shutdownConfirmation(
+      [
+        {
+          ...idle,
+          activeSessions: 2,
+          continuableSessions: 1,
+          threads: [thread("resumes", true), thread("stops", false)],
+        },
+      ],
+      "restart",
+    );
+    assert.strictEqual(
+      confirmation?.detail,
+      "1 thread will be interrupted.\n1 thread will continue after the restart. Make sure you're ready before continuing.",
+    );
+    assert.deepEqual(
+      confirmation?.threadActivity?.map((item) => item.continuesAfterRestart),
+      [true, false],
+    );
+  });
+  it("drops the warning when every thread continues, and says when for quit", () => {
+    const check = {
+      ...idle,
+      activeSessions: 1,
+      continuableSessions: 1,
+      threads: [thread("resumes", true)],
+    };
+    const quit = Guard.shutdownConfirmation([check], "quit");
+    assert.strictEqual(quit?.message, "Quit with running work?");
+    assert.strictEqual(quit?.detail, "1 thread will continue when styal next starts.");
+    assert.strictEqual(
+      Guard.shutdownConfirmation([check], "restart")?.detail,
+      "1 thread will continue after the restart.",
+    );
+  });
+  it("keeps the warning when a continuing thread shares the restart with a waiting one", () => {
+    const confirmation = Guard.shutdownConfirmation(
+      [
+        {
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          waitingSessions: 1,
+          threads: [
+            thread("resumes", true),
+            { ...thread("asks", false), reasons: ["approval" as const] },
+          ],
+        },
+      ],
+      "restart",
+    );
+    assert.strictEqual(
+      confirmation?.detail,
+      "1 thread will be interrupted.\n1 thread will continue after the restart. Make sure you're ready before continuing.",
+    );
+  });
+  it("reports every thread as interrupted when the restart replaces a backend", () => {
+    const confirmation = Guard.shutdownConfirmation(
+      [
+        {
+          ...idle,
+          activeSessions: 1,
+          continuableSessions: 1,
+          threads: [thread("resumes", true)],
+        },
+      ],
+      "restart",
+      { continueThreads: false },
+    );
+    assert.strictEqual(
+      confirmation?.detail,
+      "1 thread will be interrupted. Make sure you're ready before continuing.",
+    );
+    assert.deepEqual(
+      confirmation?.threadActivity?.map((item) => item.continuesAfterRestart),
+      [false],
+    );
+  });
   it("asks about waiting threads in the title", () => {
     assert.deepEqual(Guard.shutdownConfirmation([{ ...idle, waitingSessions: 1 }], "restart"), {
       message: "Restart with waiting threads?",
@@ -346,7 +433,9 @@ it.effect("only an explicit quit can consume the failed-presentation escape", ()
   });
   return Effect.gen(function* () {
     const guard = yield* Guard.DesktopShutdownGuard;
-    assert.isFalse(yield* guard.confirm("restart", "Install update 9.0.363 and restart styal?"));
+    assert.isFalse(
+      yield* guard.confirm("restart", { title: "Install update 9.0.363 and restart styal?" }),
+    );
     assert.isFalse(yield* guard.confirm("restart"));
     assert.equal(h.overrideChecks(), 0);
     assert.lengthOf(h.messages, 2);

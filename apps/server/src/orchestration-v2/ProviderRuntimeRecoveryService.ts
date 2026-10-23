@@ -24,7 +24,12 @@ import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { restartContinuationRun } from "./RestartContinuation.ts";
+import {
+  declinesRestartContinuation,
+  restartContinuationChainFull,
+  restartContinuationDeclineFilter,
+  restartContinuationRun,
+} from "./RestartContinuation.ts";
 import { isBufferedProviderNotification } from "./NotificationMailbox.ts";
 import {
   endOrphanedNativeSubagent,
@@ -100,12 +105,19 @@ export const listContinuableThreadIds = Effect.fn(
     if (!enabledThreadIds.has(threadId)) continue;
     const projection = yield* projections.getRuntimeRecoveryProjection(threadId);
     if (
-      resolveProjectSettings(current, projection.thread.projectId).settings
-        .continueThreadsAfterServerUpdate &&
-      restartContinuationRun(projection, yield* DateTime.now)
-    ) {
-      eligible.add(threadId);
-    }
+      !resolveProjectSettings(current, projection.thread.projectId).settings
+        .continueThreadsAfterServerUpdate
+    )
+      continue;
+    const run = restartContinuationRun(projection, yield* DateTime.now);
+    // Delivery after the restart skips these runs, so they are not continuable.
+    if (!run || restartContinuationChainFull(run, projection.runs)) continue;
+    const records = yield* projections.getThreadRecords(
+      threadId,
+      ["messages", "turnItems"],
+      restartContinuationDeclineFilter(run),
+    );
+    if (!declinesRestartContinuation(run, records)) eligible.add(threadId);
   }
   return eligible;
 });

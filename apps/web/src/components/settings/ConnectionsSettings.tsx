@@ -2078,8 +2078,6 @@ export function ConnectionsSettings() {
             installation: environment.serverConfig?.environment.capabilities.serverInstallation,
             desktopAppUpdate,
             threadContinuation: supportsServerUpdateThreadContinuation(environment.serverConfig),
-            continueThreadsAfterServerUpdate:
-              environment.serverConfig?.settings.continueThreadsAfterServerUpdate ?? false,
             targetVersion: mismatch.clientVersion,
           },
         ];

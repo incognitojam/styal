@@ -121,12 +121,12 @@ export function supportsDesktopAppUpdate(
   return serverConfig?.environment.capabilities.desktopAppUpdate === true;
 }
 
-/** True when the connected server can recover opted-in running turns after
-    its self-update restart. */
+/** True when the connected server continues opted-in running turns after a
+    restart and reports which threads will continue in its host activity. */
 export function supportsServerUpdateThreadContinuation(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): boolean {
-  return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
+  return serverConfig?.environment.capabilities.threadRestartContinuation === true;
 }
 
 /**

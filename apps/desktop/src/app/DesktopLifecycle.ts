@@ -52,8 +52,10 @@ type DesktopLifecycleRegistrationServices =
 export class DesktopLifecycle extends Context.Service<
   DesktopLifecycle,
   {
+    /** Pass `continueThreads: false` when the relaunch turns off or replaces a backend. */
     readonly relaunch: (
       reason: string,
+      options?: { readonly continueThreads?: boolean },
     ) => Effect.Effect<boolean, never, DesktopLifecycleRuntimeServices>;
     readonly register: Effect.Effect<
       void,
@@ -240,13 +242,13 @@ function quitFromSignal(
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = DesktopLifecycle.of({
-  relaunch: Effect.fn("desktop.lifecycle.relaunch")(function* (reason) {
+  relaunch: Effect.fn("desktop.lifecycle.relaunch")(function* (reason, options) {
     const electronApp = yield* ElectronApp.ElectronApp;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const state = yield* DesktopState.DesktopState;
     if (yield* Ref.get(state.quitting)) return false;
     const guard = yield* DesktopShutdownGuard.DesktopShutdownGuard;
-    if (!(yield* guard.confirm("restart"))) return false;
+    if (!(yield* guard.confirm("restart", options))) return false;
     yield* logLifecycleInfo("desktop relaunch requested", { reason });
     yield* Ref.set(state.quitting, true);
     return yield* Effect.gen(function* () {

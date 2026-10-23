@@ -145,12 +145,79 @@ it.effect.each([false, true])(
                 readIds.push(id);
                 return projection;
               }),
+            getThreadRecords: () => Effect.succeed(projection),
           }),
         ),
       ),
     );
   },
 );
+
+it.effect("does not list runs that delivery after the restart skips as continuable", () => {
+  const base = makeProjection();
+  const userMessageId = MessageId.make("message:user");
+  const running = {
+    ...base,
+    runs: [{ ...base.runs[0]!, userMessageId }],
+  } as unknown as OrchestrationV2ThreadProjection;
+  // Three automatic continuations in a row: run:chain-3 continued run:chain-2, and so on.
+  const chain = [0, 1, 2].map((index) => ({
+    ...base.runs[0]!,
+    id: RunId.make(`run:chain-${index}`),
+    ordinal: index - 3,
+    status: "cancelled",
+    ...(index > 0 ? { restartContinuationOfRunId: RunId.make(`run:chain-${index - 1}`) } : {}),
+  }));
+  const variants = [
+    {
+      expected: [],
+      projection: {
+        ...running,
+        runs: [
+          ...chain,
+          {
+            ...running.runs[0]!,
+            ordinal: 1,
+            restartContinuationOfRunId: RunId.make("run:chain-2"),
+          },
+        ],
+      },
+    },
+    { expected: [threadId], projection: running },
+    {
+      expected: [],
+      projection: {
+        ...running,
+        turnItems: [{ id: "turn-item:interrupt", runId, type: "run_interrupt_request" }],
+      },
+    },
+    {
+      expected: [],
+      projection: {
+        ...running,
+        messages: [{ id: userMessageId, text: "/compact", attachments: [] }],
+      },
+    },
+  ] as unknown as ReadonlyArray<{
+    expected: ThreadId[];
+    projection: OrchestrationV2ThreadProjection;
+  }>;
+  return Effect.forEach(variants, ({ expected, projection }) =>
+    ProviderRuntimeRecovery.listContinuableThreadIds([projection.thread]).pipe(
+      Effect.map((eligible) => assert.deepEqual([...eligible], expected)),
+      Effect.provide(
+        Layer.mergeAll(
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getRecoveryThreadIds: () => Effect.succeed([threadId]),
+            getRuntimeRecoveryProjection: () => Effect.succeed(projection),
+            getThreadRecords: () => Effect.succeed(projection),
+          }),
+        ),
+      ),
+    ),
+  ).pipe(Effect.asVoid);
+});
 
 it("requires matching saved native state for an unfinished root run", () => {
   const projection = makeProjection();

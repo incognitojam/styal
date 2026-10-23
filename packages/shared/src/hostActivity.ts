@@ -55,6 +55,8 @@ export function describeHostActivity(
     readonly uncheckedHostsLine: string;
     /** Thread continuation is requested, so continuable threads resume after the restart. */
     readonly continueRunningThreads?: boolean;
+    /** When continuable threads resume; defaults to "after the restart". */
+    readonly continuesWhen?: string;
   },
 ): {
   readonly concern: HostActivityConcern | null;
@@ -62,6 +64,8 @@ export function describeHostActivity(
   readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
   /** Some host or terminal could not be inspected. */
   readonly incomplete: boolean;
+  /** Some work will be stopped or could not be checked; false when every affected thread continues. */
+  readonly interrupts: boolean;
 } {
   let active = 0;
   let continuing = 0;
@@ -106,7 +110,10 @@ export function describeHostActivity(
     ...(terminals ? [plural(terminals, "terminal session")] : []),
   ];
   if (interrupted.length) lines.push(`${interrupted.join(" and ")} will be interrupted.`);
-  if (continuing) lines.push(`${plural(continuing, "thread")} will continue after the restart.`);
+  if (continuing)
+    lines.push(
+      `${plural(continuing, "thread")} will continue ${options.continuesWhen ?? "after the restart"}.`,
+    );
   if (deviceUsers) lines.push("Devices in use by other environments will be disconnected.");
   if (providerInstalls)
     lines.push(
@@ -130,6 +137,12 @@ export function describeHostActivity(
     lines,
     threadActivity,
     incomplete: uncheckedHosts || uncheckedTerminals > 0,
+    interrupts:
+      interrupted.length > 0 ||
+      deviceUsers > 0 ||
+      providerInstalls > 0 ||
+      uncheckedHosts ||
+      uncheckedTerminals > 0,
   };
 }
 

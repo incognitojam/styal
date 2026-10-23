@@ -10,7 +10,11 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import type { ProjectionRuntimeRecoveryState } from "./ProjectionStore.ts";
+import type {
+  ProjectionRecordFilter,
+  ProjectionRecords,
+  ProjectionRuntimeRecoveryState,
+} from "./ProjectionStore.ts";
 
 import * as ServerSettings from "../serverSettings.ts";
 import { isNativeMaintenanceCommand } from "./Orchestrator.ts";
@@ -201,6 +205,53 @@ export function restartContinuationRun(
   return run;
 }
 
+/**
+ * True when `run` ends a chain of automatic continuations that reached the
+ * limit. A turn that keeps crashing the server would otherwise restart it forever.
+ */
+export function restartContinuationChainFull(
+  run: OrchestrationV2Run,
+  runs: ReadonlyArray<OrchestrationV2Run>,
+): boolean {
+  let chainLength = 0;
+  for (
+    let current: OrchestrationV2Run | undefined = run;
+    current?.restartContinuationOfRunId !== undefined && chainLength < MAX_CONTINUATION_CHAIN;
+    current = runs.find((candidate) => candidate.id === current?.restartContinuationOfRunId)
+  ) {
+    chainLength += 1;
+  }
+  return chainLength >= MAX_CONTINUATION_CHAIN;
+}
+
+/** The records `declinesRestartContinuation` reads for `run`. */
+export function restartContinuationDeclineFilter(
+  run: Pick<OrchestrationV2Run, "id" | "userMessageId">,
+): ProjectionRecordFilter {
+  return {
+    messageIds: [run.userMessageId],
+    turnItemRunIds: [run.id],
+    turnItemTypes: ["run_interrupt_request"],
+  };
+}
+
+/**
+ * True when restart continuation never resumes `run`: the user asked it to stop
+ * before the restart cut it, or it ran a native maintenance command such as
+ * `/compact`. Read `records` with `restartContinuationDeclineFilter(run)`.
+ */
+export function declinesRestartContinuation(
+  run: Pick<OrchestrationV2Run, "id" | "userMessageId">,
+  records: Pick<ProjectionRecords<"messages" | "turnItems">, "messages" | "turnItems">,
+): boolean {
+  if (
+    records.turnItems.some((item) => item.runId === run.id && item.type === "run_interrupt_request")
+  )
+    return true;
+  const message = records.messages.find((candidate) => candidate.id === run.userMessageId);
+  return message !== undefined && isNativeMaintenanceCommand(message);
+}
+
 export const continueRestartedRun = Effect.fn("RestartContinuation.continueRestartedRun")(
   function* (input: { readonly threadId: ThreadId; readonly sourceRunId: RunId }) {
     const settings = yield* ServerSettings.ServerSettingsService;
@@ -242,16 +293,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     )
       return;
     if (projection.thread.providerInstanceId !== source.providerInstanceId) return;
-    // A turn that keeps crashing the server would otherwise restart it forever.
-    let chainLength = 0;
-    for (
-      let run: OrchestrationV2Run | undefined = source;
-      run?.restartContinuationOfRunId !== undefined && chainLength < MAX_CONTINUATION_CHAIN;
-      run = projection.runs.find((candidate) => candidate.id === run?.restartContinuationOfRunId)
-    ) {
-      chainLength += 1;
-    }
-    if (chainLength >= MAX_CONTINUATION_CHAIN) {
+    if (restartContinuationChainFull(source, projection.runs)) {
       yield* Effect.logWarning("Not continuing a run restarted too many times in a row", {
         threadId: input.threadId,
         sourceRunId: input.sourceRunId,
@@ -261,23 +303,9 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     const sourceRecords = yield* threads.getThreadRecords(
       input.threadId,
       ["messages", "turnItems"],
-      {
-        messageIds: [source.userMessageId],
-        turnItemRunIds: [source.id],
-        turnItemTypes: ["run_interrupt_request"],
-      },
+      restartContinuationDeclineFilter(source),
     );
-    // The user asked this run to stop before the restart cut it.
-    if (
-      sourceRecords.turnItems.some(
-        (item) => item.runId === source.id && item.type === "run_interrupt_request",
-      )
-    )
-      return;
-    const sourceMessage = sourceRecords.messages.find(
-      (message) => message.id === source.userMessageId,
-    );
-    if (sourceMessage !== undefined && isNativeMaintenanceCommand(sourceMessage)) return;
+    if (declinesRestartContinuation(source, sourceRecords)) return;
     const note = restartContinuationNote(
       source,
       projection.runs,

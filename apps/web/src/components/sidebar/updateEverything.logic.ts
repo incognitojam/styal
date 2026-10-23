@@ -134,7 +134,6 @@ export function collectServerUpdateTargets(
       installation: config.environment.capabilities.serverInstallation,
       desktopAppUpdate,
       threadContinuation: supportsServerUpdateThreadContinuation(config),
-      continueThreadsAfterServerUpdate: config.settings.continueThreadsAfterServerUpdate ?? false,
       targetVersion,
     });
   }

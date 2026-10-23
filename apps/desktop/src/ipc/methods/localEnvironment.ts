@@ -23,7 +23,12 @@ export const setLocalEnvironmentEnabled = makeIpcMethod({
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
     const change = yield* appSettings.setLocalEnvironmentEnabled(enabled);
-    if (change.changed && !(yield* lifecycle.relaunch(`localEnvironmentEnabled=${enabled}`))) {
+    if (
+      change.changed &&
+      !(yield* lifecycle.relaunch(`localEnvironmentEnabled=${enabled}`, {
+        continueThreads: false,
+      }))
+    ) {
       // The restart was declined, so this run keeps the mode it started with.
       yield* appSettings.setLocalEnvironmentEnabled(!enabled);
     }

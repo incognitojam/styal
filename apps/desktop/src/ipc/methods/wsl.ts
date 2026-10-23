@@ -66,7 +66,9 @@ export const setWslBackendEnabled = makeIpcMethod({
       : previousSettings.wslBackendEnabled && previousSettings.wslOnly;
     if (changedWslOnlyPrimary && change.changed) {
       const state = yield* readWslState;
-      if (!(yield* lifecycle.relaunch(`wslBackendEnabled=${enabled}`))) {
+      if (
+        !(yield* lifecycle.relaunch(`wslBackendEnabled=${enabled}`, { continueThreads: false }))
+      ) {
         yield* appSettings.setWslBackendEnabled(previousSettings.wslBackendEnabled);
         yield* appSettings.setWslOnly(previousSettings.wslOnly);
         return yield* readWslState;
@@ -98,7 +100,9 @@ export const setWslDistro = makeIpcMethod({
     // When WSL is disabled, this only stages a preference for the next enable.
     if (settings.wslBackendEnabled && settings.wslOnly && change.changed) {
       const state = yield* readWslState;
-      if (!(yield* lifecycle.relaunch(`wslDistro=${distro ?? "default"}`))) {
+      if (
+        !(yield* lifecycle.relaunch(`wslDistro=${distro ?? "default"}`, { continueThreads: false }))
+      ) {
         yield* appSettings.setWslDistro(previousSettings.wslDistro);
         return yield* readWslState;
       }
@@ -124,7 +128,7 @@ export const setWslOnly = makeIpcMethod({
     const change = yield* appSettings.setWslOnly(enabled);
     const state = yield* readWslState;
     if (state.enabled && change.changed) {
-      if (!(yield* lifecycle.relaunch(`wslOnly=${enabled}`))) {
+      if (!(yield* lifecycle.relaunch(`wslOnly=${enabled}`, { continueThreads: false }))) {
         yield* appSettings.setWslOnly(previousSettings.wslOnly);
         return yield* readWslState;
       }
