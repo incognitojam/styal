@@ -41,6 +41,7 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
@@ -496,6 +497,7 @@ function layerTest(input: {
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
+  readonly analyticsLayer?: Layer.Layer<AnalyticsService.AnalyticsService>;
 }) {
   const layerConfiguredEventSink =
     input.flakyReleaseWrites !== undefined
@@ -561,6 +563,7 @@ function layerTest(input: {
       Layer.provide(
         Layer.mergeAll(
           layerRegistry.pipe(Layer.provideMerge(McpProviderSessions.layer)),
+          ...(input.analyticsLayer === undefined ? [] : [input.analyticsLayer]),
           layerConfiguredEventSink,
           IdAllocator.layer,
           layerProviderEventIngestorTest,
@@ -962,6 +965,7 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
 it.effect("ProviderSessionManagerV2 records provider session and turn metrics", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
+    const sends: Array<Readonly<Record<string, unknown>> | undefined> = [];
     const effect = Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -985,7 +989,7 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
         modelSelection,
         runtimePolicy,
       });
-      yield* runtime.startTurn({
+      const input = {
         appThread: (yield* projectionStore.getThreadProjection(threadId)).thread,
         threadId,
         runId,
@@ -1003,6 +1007,14 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
         },
         modelSelection,
         runtimePolicy,
+      } satisfies ProviderAdapter.ProviderAdapterV2TurnInput;
+      yield* runtime.startTurn(input);
+      yield* runtime.steerTurn({
+        ...input,
+        providerTurnId: idAllocator.derive.providerTurn({
+          driver: CODEX_DRIVER,
+          nativeTurnId: "steer",
+        }),
       });
       yield* runtime.interruptTurn({
         providerThread,
@@ -1012,6 +1024,17 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
         }),
       });
       yield* manager.close(providerSessionId);
+      assert.deepEqual(
+        sends,
+        [0, 1].map(() => ({
+          provider: "codex",
+          model: modelSelection.model,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          attachmentCount: 0,
+          hasInput: true,
+        })),
+      );
 
       const snapshots = yield* Metric.snapshot;
       const has = (id: string, attributes: Readonly<Record<string, string>>) =>
@@ -1056,7 +1079,20 @@ it.effect("ProviderSessionManagerV2 records provider session and turn metrics", 
     });
 
     yield* effect.pipe(
-      Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 60_000,
+          analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
+            record: (event, properties) =>
+              Effect.sync(() => {
+                assert.equal(event, "provider.turn.sent");
+                sends.push(properties);
+              }),
+            flush: Effect.void,
+          }),
+        }),
+      ),
       // A private registry keeps other tests' provider metrics out of the assertions.
       Effect.provideService(Metric.MetricRegistry, new Map()),
     );
@@ -1337,10 +1373,13 @@ it.effect("ProviderSessionManagerV2 cleans up an interrupted open whose scope cl
   }),
 );
 
-it.effect("ProviderSessionManagerV2 releases an idle session whose turn start was stopped", () =>
+it.effect.each([false, true])("turn stays busy after acceptance=%s", (telemetry) =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
     const startTurnReached = yield* Deferred.make<void>();
+    const blocked = Deferred.succeed(startTurnReached, undefined).pipe(
+      Effect.andThen(Effect.never),
+    );
     yield* Effect.gen(function* () {
       const eventSink = yield* EventSink.EventSinkV2;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -1385,21 +1424,22 @@ it.effect("ProviderSessionManagerV2 releases an idle session whose turn start wa
         .pipe(Effect.forkChild);
       yield* Deferred.await(startTurnReached);
 
-      // Stop lands while the provider is still accepting the turn. No terminal
-      // event follows, so the session must count itself idle again.
+      // Only an unaccepted start may clear its busy state on interruption.
       yield* Fiber.interrupt(starting);
       yield* TestClock.adjust("2 seconds");
       yield* Effect.yieldNow;
-      assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
-      assert.equal((yield* Ref.get(state)).closeCount, 1);
+      assert.equal(yield* manager.isLive(providerSessionId), telemetry);
+      assert.equal((yield* Ref.get(state)).closeCount, telemetry ? 0 : 1);
     }).pipe(
       Effect.provide(
         layerTest({
           state,
           idleTimeoutMs: 1000,
-          startTurn: Deferred.succeed(startTurnReached, undefined).pipe(
-            Effect.andThen(Effect.never),
-          ),
+          startTurn: telemetry ? Effect.void : blocked,
+          analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
+            record: () => blocked,
+            flush: Effect.void,
+          }),
         }),
       ),
     );
