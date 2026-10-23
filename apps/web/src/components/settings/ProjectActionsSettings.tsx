@@ -41,6 +41,7 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { EnvironmentRow } from "./EnvironmentRow";
+import { SettingsGroup } from "./SettingsGroup";
 import { ProjectActionsList } from "./ProjectActionsList";
 import { ProjectFileMigrationRow } from "./ProjectFileMigrationRow";
 import { useProjectScriptSettings } from "./useProjectScriptSettings";
@@ -154,44 +155,50 @@ export function ProjectActionsSettings() {
   );
   const representative = writeTargets[0];
 
+  // Each checkout is its own card so its actions read as belonging to it.
   return (
-    <SettingsSection id="project-actions" title="Actions">
-      <SettingsRow
-        serverScoped
-        settingKeys={["defaultProjectScripts"]}
-        mixed={mixed}
-        title="Actions"
-        description={`${ACTIONS_DESCRIPTION} Each checkout below lists the actions it offers; adding here adds the action to all of them.`}
-        onResetOverride={() => void persist(() => null)}
-        control={
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={saving || !canWriteSettings || writeTargets.length === 0}
-            onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
-          >
-            <PlusIcon className="size-3.5" />
-            Add to all
-          </Button>
-        }
-      />
-      {checkouts.map((checkout) => (
-        <CheckoutActions
-          key={checkout.member.physicalProjectKey}
-          checkout={checkout}
-          canWriteSettings={canWriteSettings}
-          renderHeader={(controls) => (
-            <EnvironmentRow
-              className="bg-muted/20"
-              kind={resolveEnvironmentMachineKind(checkout.environment.serverConfig ?? null)}
-              label={checkout.environment.label}
-              subtitle={checkout.member.workspaceRoot}
-            >
-              {controls}
-            </EnvironmentRow>
-          )}
-        />
-      ))}
+    <SettingsSection id="project-actions" title="Actions" variant="plain">
+      <div className="space-y-3">
+        <SettingsGroup>
+          <SettingsRow
+            serverScoped
+            settingKeys={["defaultProjectScripts"]}
+            mixed={mixed}
+            title="Actions"
+            description={`${ACTIONS_DESCRIPTION} Each checkout below lists the actions it offers; adding here adds the action to all of them.`}
+            onResetOverride={() => void persist(() => null)}
+            control={
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={saving || !canWriteSettings || writeTargets.length === 0}
+                onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
+              >
+                <PlusIcon className="size-3.5" />
+                Add to all
+              </Button>
+            }
+          />
+        </SettingsGroup>
+        {checkouts.map((checkout) => (
+          <SettingsGroup key={checkout.member.physicalProjectKey}>
+            <CheckoutActions
+              checkout={checkout}
+              canWriteSettings={canWriteSettings}
+              renderHeader={(controls) => (
+                <EnvironmentRow
+                  className="rounded-t-xl bg-muted/30"
+                  kind={resolveEnvironmentMachineKind(checkout.environment.serverConfig ?? null)}
+                  label={checkout.environment.label}
+                  subtitle={checkout.member.workspaceRoot}
+                >
+                  {controls}
+                </EnvironmentRow>
+              )}
+            />
+          </SettingsGroup>
+        ))}
+      </div>
       {representative ? (
         <ProjectScriptEditorDialog
           environmentId={representative.environmentId}
