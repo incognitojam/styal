@@ -1,0 +1,89 @@
+name: Fork E2E (network)
+
+# End-to-end tests that need npm and GitHub releases, such as a published @styal/cli server
+# updating itself. They run against real registries, so they stay out of Fork CI: a failure
+# here shows on the commit without blocking merges, intake promotion, or the nightly.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  push:
+    branches:
+      - "intake/**"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/fork-features.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-e2e-network-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Fork E2E (network)
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup test dependencies
+        uses: ./.github/actions/setup-deps
+
+      # The client claims the newest nightly, and the server runs the nightly before it, so
+      # the server is behind on the same channel and both versions are published.
+      - id: versions
+        name: Choose client and server versions
+        run: |
+          client="$(npm view @styal/cli dist-tags.nightly)"
+          server="$(npm view @styal/cli versions --json | jq -r --arg client "$client" \
+            '[.[] | select(contains("-nightly."))] as $v | $v[($v | index($client)) - 1]')"
+          echo "client=$client" >> "$GITHUB_OUTPUT"
+          echo "server=$server" >> "$GITHUB_OUTPUT"
+          echo "Client $client, server $server" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cache headless Chromium
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package.json') }}
+
+      - name: Install headless Chromium
+        run: vp run --filter @t3tools/e2e install:browser
+
+      - name: Build web client as the client version
+        env:
+          APP_VERSION: ${{ steps.versions.outputs.client }}
+        run: vp run --filter @t3tools/web build
+
+      - name: Test end to end
+        env:
+          E2E_CLIENT_VERSION: ${{ steps.versions.outputs.client }}
+          E2E_PREVIOUS_SERVER_VERSION: ${{ steps.versions.outputs.server }}
+          # Environments live under TMPDIR; a failed test keeps its directory for upload.
+          TMPDIR: ${{ runner.temp }}/e2e
+        run: |
+          mkdir -p "$TMPDIR"
+          vp run --filter @t3tools/e2e test:e2e:network \
+            --reporter=default \
+            --reporter="$GITHUB_WORKSPACE/scripts/vitest-ci-exit-reporter.ts"
+
+      - name: Upload end to end state
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-network-state
+          path: ${{ runner.temp }}/e2e/styal-e2e-*
+          if-no-files-found: ignore
+          retention-days: 7
