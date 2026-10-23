@@ -115,7 +115,7 @@ describe("PullRequestChecksTab", () => {
     });
 
     expect(text).toContain("1 workflow awaiting approval");
-    expect(text).toContain("until someone with write access approves");
+    expect(text).toContain("This workflow requires approval from a maintainer.");
     expect(text).toContain("Approve workflows to run");
     // The run is named once, in the notice, and is not also drawn as an "Awaiting approval" row.
     expect(text).not.toContain("Awaiting approval");

@@ -35,6 +35,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import {
   isWorkflowApprovalCheck,
+  workflowApprovalMessage,
   PullRequestCheckStatusIcon,
   pullRequestCheckStatusLabel,
   pullRequestChecksState,
@@ -322,29 +323,32 @@ export function PullRequestChecksTab({
           {waitingRuns.length > 0 ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-warning/25 bg-warning/5 px-3 py-2 text-xs">
               <div className="min-w-0 flex-1 basis-56">
+                {/* GitHub's own words, so a reader who knows its merge box reads this the same way. */}
                 <p className="font-medium text-foreground">
                   {waitingRuns.length} {waitingRuns.length === 1 ? "workflow" : "workflows"}{" "}
                   awaiting approval
+                  <span className="font-normal text-muted-foreground">
+                    {" · "}
+                    {waitingRuns.map((run, index) => (
+                      <Fragment key={`${run.name}:${run.url ?? ""}`}>
+                        {index > 0 ? ", " : null}
+                        {run.url === null ? (
+                          run.name
+                        ) : (
+                          <button
+                            type="button"
+                            className="cursor-pointer underline-offset-2 hover:underline"
+                            onClick={() => openCheck(run.url ?? "")}
+                          >
+                            {run.name}
+                          </button>
+                        )}
+                      </Fragment>
+                    ))}
+                  </span>
                 </p>
                 <p className="mt-0.5 text-muted-foreground">
-                  {waitingRuns.map((run, index) => (
-                    <Fragment key={`${run.name}:${run.url ?? ""}`}>
-                      {index > 0 ? ", " : null}
-                      {run.url === null ? (
-                        <span className="text-foreground">{run.name}</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="cursor-pointer text-foreground underline-offset-2 hover:underline"
-                          onClick={() => openCheck(run.url ?? "")}
-                        >
-                          {run.name}
-                        </button>
-                      )}
-                    </Fragment>
-                  ))}{" "}
-                  {waitingRuns.length === 1 ? "does" : "do"} not start until someone with write
-                  access approves {waitingRuns.length === 1 ? "it" : "them"}.
+                  {workflowApprovalMessage(waitingRuns.length)}
                 </p>
               </div>
               {workflowApprovalAction}
