@@ -80,6 +80,8 @@ export function pullRequestListRowsAreEqual(
       previous.url === next.url &&
       previous.state === next.state &&
       previous.isDraft === next.isDraft &&
+      previous.autoMergeEnabled === next.autoMergeEnabled &&
+      previous.inMergeQueue === next.inMergeQueue &&
       previous.updatedAt === next.updatedAt &&
       previous.additions === next.additions &&
       previous.deletions === next.deletions &&

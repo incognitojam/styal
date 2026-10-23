@@ -87,6 +87,8 @@ export interface PullRequestProviderFailure {
 
 /** A change request as the provider sees it, before the service attaches project context. */
 export interface ProviderChangeRequest {
+  readonly autoMergeEnabled?: boolean;
+  readonly inMergeQueue?: boolean;
   readonly stack?: PullRequestStackMembership;
   readonly number: number;
   readonly title: string;

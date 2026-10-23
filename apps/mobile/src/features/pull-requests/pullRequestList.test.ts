@@ -87,6 +87,8 @@ describe("recycled PR list rows", () => {
     { reviewDecision: "approved" as const },
     { viewerReviewRequested: true },
     { isDraft: true },
+    { autoMergeEnabled: true },
+    { inMergeQueue: true },
     { state: "closed" as const },
     { author: { login: "another", name: null, avatarUrl: null } },
     { author: { login: "octocat", name: null, avatarUrl: "https://example.com/avatar.png" } },
@@ -94,6 +96,18 @@ describe("recycled PR list rows", () => {
     { stack: { number: 1, position: 2, size: 3, base: "main" } },
   ])("updates the row when visible status or quick actions change: %j", (patch) => {
     expect(pullRequestListRowsAreEqual(scopedEntry(), scopedEntry(patch))).toBe(false);
+  });
+
+  it("clears the marker when automatic merge intent is disabled or no longer reported", () => {
+    expect(
+      pullRequestListRowsAreEqual(
+        scopedEntry({ autoMergeEnabled: true }),
+        scopedEntry({ autoMergeEnabled: false }),
+      ),
+    ).toBe(false);
+    expect(pullRequestListRowsAreEqual(scopedEntry({ inMergeQueue: true }), scopedEntry())).toBe(
+      false,
+    );
   });
 
   it("updates navigation and commands when a duplicate moves to another environment", () => {

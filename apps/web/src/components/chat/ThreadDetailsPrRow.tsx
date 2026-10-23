@@ -1,5 +1,10 @@
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { PullRequestMergeIntentIcon } from "../pullRequest/PullRequestMergeIntentIcon";
+import {
+  pullRequestMergeIntentLabel,
+  resolvePullRequestMergeIntent,
+} from "@t3tools/shared/threadPullRequests";
 /**
  * The thread details panel's pull request row: what the thread's pull request is, and the one
  * thing worth doing to it right now.
@@ -219,9 +224,11 @@ export function ThreadDetailsPrRow({
           state: detail.state,
           isDraft: detail.isDraft,
         });
+  const mergeIntent = detail ? resolvePullRequestMergeIntent(detail) : null;
   const icon = statePresentation ? (
-    <statePresentation.Icon
-      aria-hidden
+    <PullRequestMergeIntentIcon
+      Icon={statePresentation.Icon}
+      mergeIntent={mergeIntent ?? undefined}
       className={cn("size-4 shrink-0", statePresentation.toneClassName)}
     />
   ) : pr && status ? (
@@ -254,11 +261,15 @@ export function ThreadDetailsPrRow({
           </div>
           <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
             <div className="flex min-w-0 items-center gap-2">
-              <statePresentation.Icon
-                aria-hidden
+              <PullRequestMergeIntentIcon
+                Icon={statePresentation.Icon}
+                mergeIntent={mergeIntent ?? undefined}
                 className={cn("size-3 shrink-0", statePresentation.toneClassName)}
               />
-              <div className="min-w-0 truncate text-foreground/75">{statePresentation.label}</div>
+              <div className="min-w-0 truncate text-foreground/75">
+                {statePresentation.label}
+                {mergeIntent ? ` · ${pullRequestMergeIntentLabel(mergeIntent)}` : ""}
+              </div>
             </div>
             <div className="flex min-w-0 items-center gap-2">
               <GitBranchIcon className="size-3 shrink-0 stroke-muted-foreground" />

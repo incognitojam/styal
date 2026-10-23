@@ -6,6 +6,11 @@ import { useRef, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
+import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
+import {
+  pullRequestMergeIntentLabel,
+  resolvePullRequestMergeIntent,
+} from "@t3tools/shared/threadPullRequests";
 import { ControlPillMenu } from "../../components/ControlPillMenu";
 import { MaterialButton } from "../../components/MaterialButton";
 import { MaterialIconButton } from "../../components/MaterialIconButton";
@@ -30,6 +35,7 @@ export function PullRequestMergeControls(props: {
   readonly stack: PullRequestStackState;
 }) {
   const { pr, stack } = props;
+  const mergeIntent = resolvePullRequestMergeIntent(pr);
   const target = pullRequestTarget(props.params);
   const permissions = usePullRequestPermissions(props.params, pr);
   const preferences = useAtomValue(mobilePreferencesAtom);
@@ -273,10 +279,19 @@ export function PullRequestMergeControls(props: {
       !(checkingStack && reason === "Refresh the stack before merging.") ? (
         <Text className="px-1 text-xs text-foreground-muted">{reason}</Text>
       ) : null}
-      {pr.autoMergeEnabled ? (
-        <Text className="px-1 text-xs text-foreground-muted">
-          Auto-merge is enabled{pr.autoMergeMethod ? ` · ${pr.autoMergeMethod}` : ""}
-        </Text>
+      {mergeIntent ? (
+        <View className="flex-row items-center gap-1.5 px-1">
+          <PullRequestMergeIntentIcon
+            name="arrow.triangle.pull"
+            size={14}
+            tintColorClassName="accent-adaptive-emerald-600-400"
+            mergeIntent={mergeIntent}
+          />
+          <Text className="text-xs text-foreground-muted">
+            {pullRequestMergeIntentLabel(mergeIntent)}
+            {pr.autoMergeMethod ? ` · ${pr.autoMergeMethod}` : ""}
+          </Text>
+        </View>
       ) : null}
       {stack.error && stack.supportsStackActions ? (
         <Pressable

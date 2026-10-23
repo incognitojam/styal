@@ -1,6 +1,39 @@
 import type { PullRequestActivity, PullRequestCheck, PullRequestComment } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { pullRequestChecksSummary, pullRequestReviewSummary } from "./pullRequestStatus";
+import {
+  pullRequestChecksSummary,
+  pullRequestReviewSummary,
+  pullRequestStatus,
+} from "./pullRequestStatus";
+
+describe("mobile pull request merge intent", () => {
+  it("retains the open state and distinguishes enabled auto-merge from queue membership", () => {
+    const pr = { state: "open", isDraft: false, autoMergeEnabled: true } as const;
+    expect(pullRequestStatus(pr)).toMatchObject({
+      icon: "arrow.triangle.pull",
+      label: "Open",
+      mergeIntent: "auto-merge",
+      accessibleLabel: "Open · Auto-merge enabled",
+    });
+    expect(pullRequestStatus({ ...pr, inMergeQueue: true })).toMatchObject({
+      icon: "arrow.triangle.pull",
+      mergeIntent: "queued",
+      accessibleLabel: "Open · In merge queue",
+    });
+  });
+
+  it.each([
+    { state: "open", isDraft: false },
+    { state: "open", isDraft: false, autoMergeEnabled: false, inMergeQueue: false },
+    { state: "open", isDraft: true, autoMergeEnabled: true },
+    { state: "closed", isDraft: false, autoMergeEnabled: true },
+    { state: "merged", isDraft: false, autoMergeEnabled: true, inMergeQueue: true },
+  ] as const)("leaves unarmed, draft and finished pull requests unmarked: %j", (pr) => {
+    const status = pullRequestStatus(pr);
+    expect(status.mergeIntent).toBeUndefined();
+    expect(status.accessibleLabel).toBe(status.label);
+  });
+});
 
 const author = { login: "julius", name: null, avatarUrl: null };
 function review(state: string, at: string): PullRequestComment {

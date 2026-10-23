@@ -6,7 +6,7 @@ import { SymbolView } from "../../components/AppSymbol";
 export function PullRequestMergeIntentIcon({
   mergeIntent,
   ...symbol
-}: ComponentProps<typeof SymbolView> & { mergeIntent?: PullRequestMergeIntent }) {
+}: ComponentProps<typeof SymbolView> & { mergeIntent?: PullRequestMergeIntent | undefined }) {
   return (
     <View className="relative">
       <SymbolView {...symbol} />

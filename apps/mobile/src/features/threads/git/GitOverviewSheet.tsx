@@ -47,6 +47,8 @@ import { useSelectedThreadWorktree } from "../../../state/use-selected-thread-wo
 import { vcsEnvironment } from "../../../state/vcs";
 import { resolveGitOverviewReviewNavigationAction } from "./git-overview-navigation";
 import { MetaCard, SheetListRow, menuItemIconName, statusSummary } from "./gitSheetComponents";
+import { PullRequestMergeIntentIcon } from "../../pull-requests/PullRequestMergeIntentIcon";
+import { pullRequestStatus } from "../../pull-requests/pullRequestStatus";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -421,37 +423,53 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
                   </Text>
                 </View>
               ) : null}
-              {chain.layers.map((link, index) => (
-                <View key={threadPullRequestKeyOf(link)}>
-                  {index > 0 && Platform.OS !== "android" ? (
-                    <View className="ml-12 h-px bg-border" />
-                  ) : null}
-                  <SheetListRow
-                    icon="arrow.triangle.pull"
-                    title={`#${link.number} ${link.snapshot?.title ?? "Pull request"}`}
-                    subtitle={[
-                      link.repository,
-                      link.snapshot === null
-                        ? "Status pending"
-                        : link.snapshot.isDraft && link.snapshot.state === "open"
-                          ? "Draft"
-                          : link.snapshot.state,
-                      pullRequestMergeIntentLabel(
-                        link.snapshot && resolvePullRequestMergeIntent(link.snapshot),
-                      ),
-                      link.watch === undefined ? null : "Watching",
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                    onPress={() => {
-                      void openPullRequest(link.url).then((opened) => {
-                        if (!opened)
-                          Alert.alert("Unable to open PR", "The pull request could not be opened.");
-                      });
-                    }}
-                  />
-                </View>
-              ))}
+              {chain.layers.map((link, index) => {
+                const status = link.snapshot ? pullRequestStatus(link.snapshot) : null;
+                return (
+                  <View key={threadPullRequestKeyOf(link)}>
+                    {index > 0 && Platform.OS !== "android" ? (
+                      <View className="ml-12 h-px bg-border" />
+                    ) : null}
+                    <SheetListRow
+                      icon="arrow.triangle.pull"
+                      leading={
+                        status ? (
+                          <PullRequestMergeIntentIcon
+                            name={status.icon}
+                            size={Platform.OS === "android" ? 24 : 16}
+                            tintColorClassName={status.tint}
+                            mergeIntent={status.mergeIntent}
+                          />
+                        ) : undefined
+                      }
+                      title={`#${link.number} ${link.snapshot?.title ?? "Pull request"}`}
+                      subtitle={[
+                        link.repository,
+                        link.snapshot === null
+                          ? "Status pending"
+                          : link.snapshot.isDraft && link.snapshot.state === "open"
+                            ? "Draft"
+                            : link.snapshot.state,
+                        pullRequestMergeIntentLabel(
+                          link.snapshot && resolvePullRequestMergeIntent(link.snapshot),
+                        ),
+                        link.watch === undefined ? null : "Watching",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      onPress={() => {
+                        void openPullRequest(link.url).then((opened) => {
+                          if (!opened)
+                            Alert.alert(
+                              "Unable to open PR",
+                              "The pull request could not be opened.",
+                            );
+                        });
+                      }}
+                    />
+                  </View>
+                );
+              })}
             </View>
           ))}
         </View>

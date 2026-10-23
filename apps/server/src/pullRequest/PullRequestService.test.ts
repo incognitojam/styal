@@ -928,6 +928,47 @@ it.effect("reads nothing from a host with no implementation, but reports it", ()
   }),
 );
 
+it.effect("carries optional automatic merge intent from lightweight listings to clients", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService({
+      projects: [
+        project({ id: "p1", title: "Demo", workspaceRoot: "/demo", repository: "example/demo" }),
+      ],
+      providers: [
+        fakeProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequests: () =>
+            Effect.succeed({
+              items: [
+                {
+                  ...changeRequest(1, "2026-07-02T00:00:00Z"),
+                  autoMergeEnabled: true,
+                  inMergeQueue: false,
+                },
+                {
+                  ...changeRequest(2, "2026-07-02T00:00:00Z"),
+                  autoMergeEnabled: false,
+                  inMergeQueue: true,
+                },
+                changeRequest(3, "2026-07-02T00:00:00Z"),
+              ],
+              truncated: false,
+              continues: true,
+            }),
+          getChangeRequest: () => Effect.die("A list must not fetch individual PR details"),
+        }),
+      ],
+    });
+    const result = yield* service.list({ state: "open" });
+    const byNumber = new Map(result.entries.map((entry) => [entry.number, entry]));
+    assert.strictEqual(byNumber.get(1)?.autoMergeEnabled, true);
+    assert.strictEqual(byNumber.get(1)?.inMergeQueue, false);
+    assert.strictEqual(byNumber.get(2)?.autoMergeEnabled, false);
+    assert.strictEqual(byNumber.get(2)?.inMergeQueue, true);
+    assert.isFalse(Object.hasOwn(byNumber.get(3)!, "autoMergeEnabled"));
+    assert.isFalse(Object.hasOwn(byNumber.get(3)!, "inMergeQueue"));
+  }),
+);
+
 it.effect("asks for a whole page of a host, and for the reader's own size when given one", () =>
   Effect.gen(function* () {
     const limits: number[] = [];
