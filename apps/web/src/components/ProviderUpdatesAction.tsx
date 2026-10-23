@@ -6,7 +6,8 @@ import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
   canOneClickUpdateProviderCandidate,
-  collectProviderUpdateCandidates,
+  collectPromptedProviderUpdateCandidates,
+  environmentAutoUpdatesProviders,
   getProviderUpdateRunToastView,
   type ProviderUpdateRun,
 } from "./ProviderUpdateLaunchNotification.logic";
@@ -20,9 +21,13 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
  * Each server queues updates that share an installer, so sending them all
  * together is safe. The server still checks permissions: a session that
  * cannot operate a machine gets a failure line for it. The returned promise
- * settles when every update has finished.
+ * settles when every update has finished. With `leaveManagedUpdates`, a
+ * provider that styal managed updates installs in the background is left to
+ * that updater, as the update prompts do.
  */
-export function useProviderUpdates() {
+export function useProviderUpdates({
+  leaveManagedUpdates = false,
+}: { readonly leaveManagedUpdates?: boolean } = {}) {
   const { environments } = useEnvironments();
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
@@ -34,14 +39,15 @@ export function useProviderUpdates() {
         if (environment.connection.phase !== "connected") {
           return [];
         }
-        const candidates = collectProviderUpdateCandidates(providers).filter((candidate) =>
-          canOneClickUpdateProviderCandidate(candidate, providers),
-        );
+        const candidates = collectPromptedProviderUpdateCandidates(
+          providers,
+          leaveManagedUpdates && environmentAutoUpdatesProviders(environment.serverConfig),
+        ).filter((candidate) => canOneClickUpdateProviderCandidate(candidate, providers));
         return candidates.length > 0
           ? [{ environmentId: environment.environmentId, label: environment.label, candidates }]
           : [];
       }),
-    [environments],
+    [environments, leaveManagedUpdates],
   );
 
   const updateAll = async () => {
