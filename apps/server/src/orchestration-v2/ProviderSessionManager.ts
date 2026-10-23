@@ -2021,8 +2021,17 @@ export const layerWithOptions = (
                 }),
               ),
             ),
-          startTurn: (input) =>
-            observeActivity(
+          startTurn: (input) => {
+            // Keep only attribution, scoped to the live provider thread:
+            // a shared session can run different models and modes at once.
+            const context = {
+              runId: input.runId,
+              runOrdinal: input.runOrdinal,
+              model: input.modelSelection.model,
+              runtimeMode: input.runtimePolicy.runtimeMode,
+              interactionMode: input.runtimePolicy.interactionMode,
+            };
+            return observeActivity(
               providerSessionId,
               ensureThreadAttached({
                 providerSessionId,
@@ -2053,20 +2062,10 @@ export const layerWithOptions = (
                   ),
                   () =>
                     Effect.suspend(() => {
-                      // Keep only attribution, scoped to the live provider thread:
-                      // a shared session can run different models and modes at once.
-                      const context = {
-                        runId: input.runId,
-                        runOrdinal: input.runOrdinal,
-                        model: input.modelSelection.model,
-                        runtimeMode: input.runtimePolicy.runtimeMode,
-                        interactionMode: input.runtimePolicy.interactionMode,
-                      };
                       sendContexts.set(input.providerThread.id, context);
-                      return runtime.startTurn(input).pipe(
-                        turnMetrics("send", input.modelSelection.model),
-                        Effect.tap(() => recordSent(input.message, context)),
-                      );
+                      return runtime
+                        .startTurn(input)
+                        .pipe(turnMetrics("send", input.modelSelection.model));
                     }),
                   (_, exit) =>
                     Exit.isFailure(exit)
@@ -2077,7 +2076,10 @@ export const layerWithOptions = (
                       : Effect.void,
                 ),
               ),
-            ),
+              // Telemetry interruption must not clear an already accepted turn.
+              Effect.tap(() => recordSent(input.message, context)),
+            );
+          },
           steerTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
               Effect.andThen(

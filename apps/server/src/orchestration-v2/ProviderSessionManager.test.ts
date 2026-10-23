@@ -1324,6 +1324,79 @@ it.effect.each(["rejected", "interrupted"] as const)(
     }),
 );
 
+it.effect("interrupting send analytics preserves the accepted turn and steering attribution", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const reporting = yield* Deferred.make<void>();
+    const events: Array<{
+      event: string;
+      properties: Readonly<Record<string, unknown>> | undefined;
+    }> = [];
+    let reports = 0;
+    yield* Effect.gen(function* () {
+      const { runtime, input, providerSessionId } = yield* prepareSend("analytics-interruption");
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const sending = yield* runtime.startTurn(input).pipe(Effect.forkChild);
+      yield* Deferred.await(reporting);
+      yield* Fiber.interrupt(sending);
+      yield* TestClock.adjust("2 seconds");
+      assert.isTrue(yield* manager.isLive(providerSessionId));
+      const providerTurnId = idAllocator.derive.providerTurn({
+        driver: CODEX_DRIVER,
+        nativeTurnId: "accepted-before-analytics",
+      });
+      yield* runtime.steerTurn({
+        threadId: input.threadId,
+        runId: input.runId,
+        providerThread: input.providerThread,
+        providerTurnId,
+        message: input.message,
+      });
+      assert.lengthOf(events, 1);
+      assert.deepEqual(events[0]?.properties, {
+        provider: "codex",
+        model: modelSelection.model,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        attachmentCount: 1,
+        hasInput: true,
+      });
+      const subscription = yield* runtime.subscribeEvents!;
+      const received = yield* subscription.events.pipe(Stream.runHead, Effect.forkChild);
+      yield* Queue.offer((yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!, {
+        type: "turn.terminal",
+        driver: CODEX_DRIVER,
+        providerThreadId: input.providerThread.id,
+        providerTurnId,
+        runOrdinal: input.runOrdinal,
+        status: "completed",
+        failure: null,
+        threadDisposition: "reusable",
+      });
+      yield* Fiber.join(received);
+      yield* TestClock.adjust("2 seconds");
+      assert.isFalse(yield* manager.isLive(providerSessionId));
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 1000,
+          analyticsLayer: Layer.succeed(AnalyticsService.AnalyticsService, {
+            record: (event, properties) =>
+              Effect.suspend(() =>
+                reports++ === 0
+                  ? Deferred.succeed(reporting, undefined).pipe(Effect.andThen(Effect.never))
+                  : Effect.sync(() => void events.push({ event, properties })),
+              ),
+            flush: Effect.void,
+          }),
+        }),
+      ),
+    );
+  }),
+);
+
 it.effect("send analytics failures leave accepted sends successful", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
