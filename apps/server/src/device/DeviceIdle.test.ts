@@ -77,7 +77,8 @@ const fixture = Effect.fn("fixture")(function* (
   /** Threads that are not "idle"; `busy` marks working ones. */
   const ended = new Map<string, "archived" | "missing">();
   const releasedNames = yield* Ref.make<ReadonlyArray<string>>([]);
-  const ledgerSaves = { count: 0 };
+  const releaseStarted = yield* Deferred.make<void>();
+  const saveStarted = yield* Deferred.make<void>();
   const daemonRunning = yield* Ref.make(true);
   const starts: string[] = [];
   const calls: string[] = [];
@@ -141,6 +142,7 @@ const fixture = Effect.fn("fixture")(function* (
           request.body._tag === "Uint8Array" ? decoder.decode(request.body.body) : "{}",
         );
         calls.push(`release ${body.params.session}`);
+        yield* Deferred.succeed(releaseStarted, undefined);
         if (options.gate) yield* Deferred.await(options.gate);
         const code = sessionErrors.get(body.params.session) ?? (yield* Ref.get(releaseError));
         return HttpClientResponse.fromWeb(
@@ -227,7 +229,7 @@ const fixture = Effect.fn("fixture")(function* (
       load: Ref.get(saved),
       save: (records) =>
         Effect.gen(function* () {
-          ledgerSaves.count++;
+          yield* Deferred.succeed(saveStarted, undefined);
           if (options.saveGate) yield* Deferred.await(options.saveGate);
           yield* Ref.set(saved, records);
         }),
@@ -264,7 +266,8 @@ const fixture = Effect.fn("fixture")(function* (
     busy,
     ended,
     releasedNames,
-    ledgerSaves,
+    releaseStarted,
+    saveStarted,
     bootElsewhere,
   };
 });
@@ -396,7 +399,7 @@ describe("hand-back", () => {
   it.effect("targeting after a reopen does not hand out a session a take-over released", () =>
     Effect.gen(function* () {
       const gate = yield* Deferred.make<void>();
-      const { service, calls, releasedNames, daemonRunning } = yield* fixture(
+      const { service, calls, releasedNames, daemonRunning, releaseStarted } = yield* fixture(
         yield* Ref.make<BootRecords>([]),
         { gate },
       );
@@ -415,12 +418,11 @@ describe("hand-back", () => {
       const takingOver = yield* agentOpen(service, thread2, "emulator-5554", true).pipe(
         Effect.forkChild,
       );
-      while (calls.length === 0) yield* Effect.yieldNow;
+      yield* Deferred.await(releaseStarted);
       expect(calls).toEqual([release("thread-1")]);
       const targeting = yield* service
         .agentTarget({ threadId, hostId: LOCAL_DEVICE_HOST_ID, deviceId: "emulator-5554" })
-        .pipe(Effect.forkChild);
-      for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+        .pipe(Effect.forkChild({ startImmediately: true }));
       yield* Deferred.succeed(gate, undefined);
       yield* Fiber.join(takingOver);
       yield* Fiber.join(targeting);
@@ -731,15 +733,18 @@ describe("hand-back", () => {
   it.effect("a reopen waits for a hand-over in progress instead of being dropped by it", () =>
     Effect.gen(function* () {
       const gate = yield* Deferred.make<void>();
-      const { service, calls, releasedNames } = yield* fixture(yield* Ref.make<BootRecords>([]), {
-        gate,
-      });
+      const { service, releasedNames, releaseStarted } = yield* fixture(
+        yield* Ref.make<BootRecords>([]),
+        {
+          gate,
+        },
+      );
       yield* service.configure({ enabled: true });
       yield* agentOpen(service);
       yield* agentOpen(service, threadId, "emulator-5554");
 
       const takingOver = yield* agentOpen(service, thread2, "emulator-5554").pipe(Effect.forkChild);
-      while (calls.length === 0) yield* Effect.yieldNow;
+      yield* Deferred.await(releaseStarted);
       const reopening = yield* agentOpen(service, threadId, "emulator-5554").pipe(Effect.forkChild);
       yield* Effect.yieldNow;
       yield* Deferred.succeed(gate, undefined);
@@ -774,16 +779,15 @@ describe("hand-back", () => {
   it.effect("an Android device's AVD name and serial share one lock while it boots", () =>
     Effect.gen(function* () {
       const saveGate = yield* Deferred.make<void>();
-      const { service, calls, ledgerSaves } = yield* fixture(yield* Ref.make<BootRecords>([]), {
+      const { service, calls, saveStarted } = yield* fixture(yield* Ref.make<BootRecords>([]), {
         saveGate,
       });
       yield* service.configure({ enabled: true });
       const opening = yield* agentOpen(service).pipe(Effect.forkChild);
-      while (ledgerSaves.count === 0) yield* Effect.yieldNow;
+      yield* Deferred.await(saveStarted);
       const stopping = yield* service
         .shutdown({ deviceId: "emulator-5554", platform: "android" })
-        .pipe(Effect.forkChild);
-      for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+        .pipe(Effect.forkChild({ startImmediately: true }));
       expect(calls).not.toContain("shutdown");
       yield* Deferred.succeed(saveGate, undefined);
       yield* Fiber.join(opening);
