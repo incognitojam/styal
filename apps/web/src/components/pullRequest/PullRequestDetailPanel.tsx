@@ -247,6 +247,9 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
 const UPDATE_BRANCH_REBASE_FAILURE_HINT =
   "The host refused it. A rebase stops at the first commit that does not apply cleanly; updating with a merge commit may still work.";
 
+/** How long after approving workflows to read the host again, once GitHub has created their checks. */
+const APPROVAL_FOLLOW_UP_MS = 10_000;
+
 const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "summary", label: "Summary" },
   { value: "checks", label: "Checks" },
@@ -954,6 +957,17 @@ function PullRequestDetailPanelBody({
       setIsInvalidating(false);
     }
   }, [refreshDetailFromHost]);
+  // Approving answers before GitHub has created the runs' checks, so the read that follows the
+  // action still shows them as not reported. One more host read a little later shows them
+  // started instead of leaving it to the next live refresh, which can be minutes away.
+  const [approvalFollowUp, setApprovalFollowUp] = useState(0);
+  const refreshFromHostRef = useRef(refreshFromHost);
+  refreshFromHostRef.current = refreshFromHost;
+  useEffect(() => {
+    if (approvalFollowUp === 0) return;
+    const timer = setTimeout(() => void refreshFromHostRef.current(), APPROVAL_FOLLOW_UP_MS);
+    return () => clearTimeout(timer);
+  }, [approvalFollowUp]);
   // A refresh asked for by the page: the detail, and through the token below, the diff with it.
   const appliedForcedToken = useRef(forcedRefreshToken);
   useEffect(() => {
@@ -1080,6 +1094,7 @@ function PullRequestDetailPanelBody({
     // no longer what anyone is looking at.
     if (pullRequestActionNeedsHostRefresh(action)) {
       void refreshFromHost();
+      if (action === "approve-workflows") setApprovalFollowUp((count) => count + 1);
     } else {
       refreshDetail();
     }
@@ -1841,12 +1856,9 @@ function PullRequestDetailPanelBody({
             </span>
           }
         />
-        <TooltipPopup side="top">
-          {pendingAction === "approve-workflows"
-            ? "Approving..."
-            : inlineConfirm.isArmed("approve-workflows")
-              ? "Confirm approve?"
-              : "Approve workflows to run"}
+        <TooltipPopup side="top" className="max-w-72 whitespace-normal">
+          Starts the runs GitHub is holding. They run this pull request's code on this repository's
+          runners.
         </TooltipPopup>
       </Tooltip>
     ) : null;
