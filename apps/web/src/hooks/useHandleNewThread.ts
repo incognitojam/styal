@@ -36,6 +36,7 @@ import {
 } from "../lib/chatThreadActions";
 import { readProjectConfig } from "../lib/projectConfigDefaults";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentSummaries } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
@@ -142,8 +143,14 @@ export function useNewThreadHandler() {
     // skipped entirely when a higher-priority source decides, and its
     // query atom caches per project after the first call.
     const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
+      // Environment queries wait for a connection, so reading the project file on an
+      // offline machine would never settle and the draft would never open.
       const consultProjectFile =
-        project !== undefined && projectSettings.settings.defaultThreadEnvMode === null;
+        project !== undefined &&
+        projectSettings.settings.defaultThreadEnvMode === null &&
+        appAtomRegistry
+          .get(environmentSummaries.connectedEnvironmentIdsAtom)
+          .includes(project.environmentId);
       const projectFile = consultProjectFile
         ? await readProjectConfig(project.environmentId, project.workspaceRoot)
         : null;
