@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-22T22:28:19.938Z",
+  "updatedAt": "2026-10-23T07:45:17.381Z",
   "compatibility": [
     {
       "driver": "codex",
@@ -11,6 +11,11 @@
           "version": "0.163.0",
           "package": "@openai/codex",
           "styal": "0.1.1-nightly.20261017.782"
+        },
+        {
+          "version": "0.164.0",
+          "package": "@openai/codex",
+          "styal": "0.1.1-nightly.20261022.879"
         }
       ],
       "ranges": [
