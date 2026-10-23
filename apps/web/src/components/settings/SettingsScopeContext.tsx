@@ -106,7 +106,7 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
       ) ??
       targets[0] ??
       null;
-    return { scope, groups, search, ...selected, targets, target };
+    return { scope, groups, search, ...selected, targets, target, projectFiles };
   }, [availableEnvironments, groups, primaryEnvironmentId, projectFiles, scope, search]);
 }
 

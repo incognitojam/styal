@@ -13,13 +13,15 @@ import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environ
 import { AsyncResult } from "effect/reactivity";
 import {
   type EnvironmentId,
+  type EnvironmentMachineKind,
   type ProjectIconOverride,
+  resolveEnvironmentMachineKind,
   type SourceControlDefaultRepositoryState,
 } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { InfoIcon, Trash2Icon } from "lucide-react";
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
@@ -41,7 +43,10 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { EnvironmentRow } from "./EnvironmentRow";
 import {
+  ForkFeatureBadge,
   SettingResetButton,
   SettingsPageContainer,
   SettingsRow,
@@ -95,13 +100,16 @@ function currentDefaultRepositoryLabel(state: SourceControlDefaultRepositoryStat
     : defaultRepositoryLabel(state, state.defaultRemoteName);
 }
 
+const DEFAULT_REPOSITORY_DESCRIPTION =
+  "Which repository pull requests, issues, and releases target in this checkout, shared with the GitHub CLI's gh repo set-default. Changing it can move this checkout to a different project group.";
+
 /**
- * The config `gh repo set-default` writes for one checkout. Renders nothing
+ * The config `gh repo set-default` writes for one checkout. Returns null
  * until the checkout has a choice to make: the pin only means something to
  * the GitHub CLI, and only a checkout with more than one remote (or an
  * existing pin to clear) can change it.
  */
-function DefaultRepositorySetting({ checkout }: { checkout: SidebarProjectGroupMember }) {
+function useDefaultRepository(checkout: SidebarProjectGroupMember) {
   const [defaultRepository, setDefaultRepositoryState] =
     useState<SourceControlDefaultRepositoryState | null>(null);
   const readDefaultRepository = useAtomQueryRunner(sourceControlEnvironment.defaultRepository, {
@@ -128,7 +136,7 @@ function DefaultRepositorySetting({ checkout }: { checkout: SidebarProjectGroupM
     };
   }, [readDefaultRepository, checkout.environmentId, checkout.workspaceRoot]);
 
-  const updateDefaultRepository = useCallback(
+  const update = useCallback(
     async (remoteName: string | null): Promise<void> => {
       const target = checkout;
       const result = await writeDefaultRepository({
@@ -151,37 +159,129 @@ function DefaultRepositorySetting({ checkout }: { checkout: SidebarProjectGroupM
   ) {
     return null;
   }
+  return { state: defaultRepository, update };
+}
+
+function DefaultRepositorySelect({
+  state,
+  update,
+  size,
+  className,
+  ariaLabel,
+}: {
+  state: SourceControlDefaultRepositoryState;
+  update: (remoteName: string | null) => Promise<void>;
+  size?: "xs";
+  /** Layout width for the trigger, set by the row it sits in. */
+  className?: string;
+  ariaLabel: string;
+}) {
+  return (
+    <Select
+      value={state.defaultRemoteName ?? UNSET_DEFAULT_REPOSITORY_VALUE}
+      onValueChange={(value) => {
+        const remoteName = String(value);
+        void update(remoteName === UNSET_DEFAULT_REPOSITORY_VALUE ? null : remoteName);
+      }}
+    >
+      <SelectTrigger
+        {...(size ? { size } : {})}
+        {...(className ? { className } : {})}
+        aria-label={ariaLabel}
+      >
+        <SelectValue>{currentDefaultRepositoryLabel(state)}</SelectValue>
+      </SelectTrigger>
+      <SelectPopup align="end" alignItemWithTrigger={false}>
+        {state.remotes.map((remote) => (
+          <SelectItem hideIndicator key={remote.remoteName} value={remote.remoteName}>
+            {defaultRepositoryLabel(state, remote.remoteName)}
+          </SelectItem>
+        ))}
+        <SelectItem hideIndicator value={UNSET_DEFAULT_REPOSITORY_VALUE}>
+          {defaultRepositoryLabel(state, null)}
+        </SelectItem>
+      </SelectPopup>
+    </Select>
+  );
+}
+
+/** The default repository row for a project with a single checkout. */
+function DefaultRepositorySetting({ checkout }: { checkout: SidebarProjectGroupMember }) {
+  const defaultRepository = useDefaultRepository(checkout);
+  if (defaultRepository === null) return null;
   return (
     <SettingsRow
       title="Default repository"
       forkFeature="source-control-fork-remotes"
-      description="Which repository pull requests, issues, and releases target in this checkout, shared with the GitHub CLI's gh repo set-default. Changing it can move this checkout to a different project group."
-      control={
-        <Select
-          value={defaultRepository.defaultRemoteName ?? UNSET_DEFAULT_REPOSITORY_VALUE}
-          onValueChange={(value) => {
-            const remoteName = String(value);
-            void updateDefaultRepository(
-              remoteName === UNSET_DEFAULT_REPOSITORY_VALUE ? null : remoteName,
-            );
-          }}
-        >
-          <SelectTrigger aria-label="Default repository">
-            <SelectValue>{currentDefaultRepositoryLabel(defaultRepository)}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            {defaultRepository.remotes.map((remote) => (
-              <SelectItem hideIndicator key={remote.remoteName} value={remote.remoteName}>
-                {defaultRepositoryLabel(defaultRepository, remote.remoteName)}
-              </SelectItem>
-            ))}
-            <SelectItem hideIndicator value={UNSET_DEFAULT_REPOSITORY_VALUE}>
-              {defaultRepositoryLabel(defaultRepository, null)}
-            </SelectItem>
-          </SelectPopup>
-        </Select>
-      }
+      description={DEFAULT_REPOSITORY_DESCRIPTION}
+      control={<DefaultRepositorySelect {...defaultRepository} ariaLabel="Default repository" />}
     />
+  );
+}
+
+/**
+ * One checkout of a multi-checkout project: its environment and folder, with
+ * the checkout's own settings under it.
+ */
+function CheckoutRow({
+  checkout,
+  machineKind,
+  canRemove,
+  onRemove,
+}: {
+  checkout: SidebarProjectGroupMember;
+  machineKind: EnvironmentMachineKind;
+  canRemove: boolean;
+  onRemove: () => void;
+}) {
+  const defaultRepository = useDefaultRepository(checkout);
+  const environmentLabel = checkout.environmentLabel ?? "Environment";
+  return (
+    <EnvironmentRow
+      kind={machineKind}
+      label={environmentLabel}
+      subtitle={checkout.workspaceRoot}
+      detail={
+        defaultRepository ? (
+          <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
+            <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span
+                      tabIndex={0}
+                      className="rounded-sm underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    />
+                  }
+                >
+                  Default repository
+                </TooltipTrigger>
+                <TooltipPopup side="top" className="max-w-xs">
+                  {DEFAULT_REPOSITORY_DESCRIPTION}
+                </TooltipPopup>
+              </Tooltip>
+              <ForkFeatureBadge />
+            </span>
+            <DefaultRepositorySelect
+              {...defaultRepository}
+              size="xs"
+              className="w-auto max-w-72 min-w-0"
+              ariaLabel={`Default repository for ${environmentLabel}`}
+            />
+          </div>
+        ) : null
+      }
+    >
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={!canRemove}
+        onClick={onRemove}
+        aria-label={`Remove checkout ${checkout.workspaceRoot}`}
+      >
+        Remove
+      </Button>
+    </EnvironmentRow>
   );
 }
 
@@ -565,24 +665,15 @@ function ProjectDetail({
   const checkoutChoices = (
     <SettingsSection title="Checkouts">
       {group.memberProjects.map((member) => (
-        <Fragment key={member.physicalProjectKey}>
-          <SettingsRow
-            title={member.environmentLabel ?? "Environment"}
-            description={member.workspaceRoot}
-            control={
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!editableIds.has(member.environmentId)}
-                onClick={() => void removeMembers([member])}
-                aria-label={`Remove checkout ${member.workspaceRoot}`}
-              >
-                Remove
-              </Button>
-            }
-          />
-          <DefaultRepositorySetting checkout={member} />
-        </Fragment>
+        <CheckoutRow
+          key={member.physicalProjectKey}
+          checkout={member}
+          machineKind={resolveEnvironmentMachineKind(
+            environmentById.get(member.environmentId)?.serverConfig ?? null,
+          )}
+          canRemove={editableIds.has(member.environmentId)}
+          onRemove={() => void removeMembers([member])}
+        />
       ))}
     </SettingsSection>
   );

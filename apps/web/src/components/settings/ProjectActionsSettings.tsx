@@ -1,6 +1,11 @@
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
-import { AuthSettingsWriteScope } from "@t3tools/contracts";
-import { EnvironmentId, type T3ProjectFileScript } from "@t3tools/contracts";
+import {
+  AuthSettingsWriteScope,
+  resolveEnvironmentMachineKind,
+  type ResolvedKeybindingsConfig,
+  type ServerSettings,
+  type T3ProjectFileScript,
+} from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { projectFileApprovalKey } from "@t3tools/shared/projectFileApprovals";
 import {
@@ -9,9 +14,10 @@ import {
   type ResolvedProjectAction,
 } from "@t3tools/shared/projectScripts";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
+import type { SidebarProjectGroupMember } from "../../sidebarProjectGrouping";
 import { projectConfigRoot, useProjectConfigState } from "../../hooks/useProjectConfig";
-import { useEnvironments } from "../../state/environments";
+import { type EnvironmentPresentation, useEnvironments } from "../../state/environments";
 import {
   FileActionApprovalDialog,
   type FileActionApprovalTarget,
@@ -34,105 +40,119 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
+import { EnvironmentRow } from "./EnvironmentRow";
 import { ProjectActionsList } from "./ProjectActionsList";
 import { ProjectFileMigrationRow } from "./ProjectFileMigrationRow";
 import { useProjectScriptSettings } from "./useProjectScriptSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 
+const ACTIONS_DESCRIPTION =
+  "Commands that run in this project's checkout or its worktree, with optional shortcuts.";
+
+/** One selected checkout of the project and what its actions resolve against. */
+interface ActionsCheckout {
+  readonly member: SidebarProjectGroupMember;
+  readonly environment: EnvironmentPresentation;
+  /** The checkout's saved actions, before styal.json actions are added. */
+  readonly saved: ServerSettings["defaultProjectScripts"];
+  readonly keybindings: ResolvedKeybindingsConfig;
+  /** Where edits are written; null when the environment cannot store project actions. */
+  readonly writeTarget: Parameters<typeof useProjectScriptSettings>[0][number] | null;
+}
+
 /**
- * A project's actions on each selected environment. Actions belong to a
- * project, so this only renders at a project scope; the environment's
- * `defaultProjectScripts` is the layer a project without its own list
- * inherits. Shortcuts are environment-wide, so the same action id shares its
- * binding on an environment.
+ * A project's actions on each selected checkout. With several checkouts
+ * selected, each one lists the actions it actually offers (its saved actions
+ * and its own styal.json), and edits in a group change only that checkout.
+ * Adding from the section header adds the action to every checkout.
+ * Shortcuts are environment-wide, so the same action id shares its binding
+ * on an environment.
  */
 export function ProjectActionsSettings() {
-  const { scope, targets, target } = useSettingsScope();
+  const { scope, targets, projectFiles } = useSettingsScope();
   const { environments } = useEnvironments();
-  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
-  const representativeConfig = target
-    ? environments.find((environment) => environment.environmentId === target.environmentId)
-        ?.serverConfig
-    : undefined;
-  const scripts = target?.settings.defaultProjectScripts ?? [];
-  const keybindings = representativeConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
-  const mixed = targets.some(
-    (candidate) =>
-      JSON.stringify(candidate.settings.defaultProjectScripts) !== JSON.stringify(scripts),
-  );
   const canWriteSettings = useScopedSettingsWriteAllowed();
-  const [request, setRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  const memberById = new Map(
-    isProjectScope ? scope.members.map((member) => [member.id, member]) : [],
-  );
-  const { saving, persist, submit } = useProjectScriptSettings(
-    targets.flatMap((candidate) => {
+
+  const checkouts = useMemo(() => {
+    const memberById = new Map(scope.members.map((member) => [member.id, member]));
+    return targets.flatMap((target): ActionsCheckout[] => {
+      const member = target.projectId ? memberById.get(target.projectId) : undefined;
       const environment = environments.find(
-        (entry) => entry.environmentId === candidate.environmentId,
+        (entry) => entry.environmentId === target.environmentId,
       );
-      if (!environment?.serverConfig) return [];
-      const member = candidate.projectId ? memberById.get(candidate.projectId) : undefined;
-      // An older server ignores the override record, so a project edit there
-      // would report success and vanish; such environments are left out and
-      // the legacy per-project map keeps serving them.
-      if (
-        member &&
-        environment.serverConfig.environment?.capabilities.projectSettingsOverrides !== true
-      ) {
-        return [];
-      }
+      const serverConfig = environment?.serverConfig;
+      if (!member || !environment || !serverConfig) return [];
       return [
         {
-          environmentId: candidate.environmentId,
-          // Writes read the raw environment settings so an override entry is
-          // extended, not derived from already-resolved values.
-          settings: environment.serverConfig.settings,
-          keybindings: environment.serverConfig.keybindings,
-          ...(member ? { project: member } : {}),
+          member,
+          environment,
+          saved: target.settings.defaultProjectScripts,
+          keybindings: serverConfig.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
+          // An older server ignores the override record, so a project edit
+          // there would report success and vanish; the legacy per-project
+          // map keeps serving those environments.
+          writeTarget:
+            serverConfig.environment?.capabilities.projectSettingsOverrides === true
+              ? {
+                  environmentId: target.environmentId,
+                  // Writes read the raw environment settings so an override
+                  // entry is extended, not derived from already-resolved values.
+                  settings: serverConfig.settings,
+                  keybindings: serverConfig.keybindings,
+                  project: member,
+                }
+              : null,
         },
       ];
-    }),
-  );
+    });
+  }, [environments, scope.members, targets]);
 
-  // The project file's actions are listed alongside the saved ones, and a
-  // legacy t3.json can declare actions to import; a styal.json hides it.
-  // Read it from the representative member; edits still fan out.
-  const representativeMember = target?.projectId ? memberById.get(target.projectId) : undefined;
-  const projectConfig = useProjectConfigState(
-    representativeMember?.environmentId ?? EnvironmentId.make("none"),
-    representativeMember ? projectConfigRoot(representativeMember) : null,
+  const mixed = checkouts.some(
+    (checkout) => JSON.stringify(checkout.saved) !== JSON.stringify(checkouts[0]?.saved),
   );
-  const approvals = representativeMember
-    ? representativeConfig?.settings.projectFileActionApprovals[
-        projectFileApprovalKey(representativeMember)
-      ]
-    : undefined;
-  const actions = useMemo(
-    () =>
-      mergeProjectActions(scripts, isProjectScope ? projectConfig.config : null, approvals ?? {}),
-    [approvals, isProjectScope, projectConfig.config, scripts],
+  const writeTargets = useMemo(
+    () => checkouts.flatMap((checkout) => (checkout.writeTarget ? [checkout.writeTarget] : [])),
+    [checkouts],
   );
-  const [reviewing, setReviewing] = useState<FileActionApprovalTarget | null>(null);
-  const fileActionIds = useMemo(
-    () => actions.filter((action) => action.source !== "local").map((action) => action.id),
-    [actions],
+  const { saving, persist, submit } = useProjectScriptSettings(writeTargets);
+  const [request, setRequest] = useState<ProjectScriptEditorRequest | null>(null);
+
+  if (checkouts.length <= 1) {
+    const checkout = checkouts[0];
+    return (
+      <SettingsSection id="project-actions" title="Actions">
+        {checkout ? (
+          <CheckoutActions
+            checkout={checkout}
+            canWriteSettings={canWriteSettings}
+            renderHeader={(controls) => (
+              <SettingsRow
+                serverScoped
+                settingKeys={["defaultProjectScripts"]}
+                title="Actions"
+                description={ACTIONS_DESCRIPTION}
+                onResetOverride={() => void persist(() => null)}
+                control={controls}
+              />
+            )}
+          />
+        ) : (
+          <SettingsRow title="Actions" description={ACTIONS_DESCRIPTION} />
+        )}
+      </SettingsSection>
+    );
+  }
+
+  // Adding to every checkout picks an id that is free in each of them,
+  // including their styal.json actions, so it never overrides a file action.
+  const allActions = checkouts.flatMap((checkout) => checkout.saved);
+  const fileActionIds = checkouts.flatMap(
+    (checkout) =>
+      projectFiles.get(checkout.member.physicalProjectKey)?.actions.map((action) => action.id) ??
+      [],
   );
-  const importableScripts = useMemo(
-    () =>
-      projectConfig.legacyScripts.filter(
-        (fileScript) =>
-          !scripts.some(
-            (script) =>
-              script.command === fileScript.command ||
-              script.name.toLowerCase() === fileScript.name.toLowerCase(),
-          ),
-      ),
-    [scripts, projectConfig.legacyScripts],
-  );
-  const importFileScript = useCallback((fileScript: T3ProjectFileScript) => {
-    setRequest(editorRequestForFileScript(fileScript));
-  }, []);
+  const representative = writeTargets[0];
 
   return (
     <SettingsSection id="project-actions" title="Actions">
@@ -141,88 +161,162 @@ export function ProjectActionsSettings() {
         settingKeys={["defaultProjectScripts"]}
         mixed={mixed}
         title="Actions"
-        description="Commands that run in this project's checkout or its worktree, with optional shortcuts."
+        description={`${ACTIONS_DESCRIPTION} Each checkout below lists the actions it offers; adding here adds the action to all of them.`}
         onResetOverride={() => void persist(() => null)}
         control={
-          <div className="flex flex-wrap items-center gap-1.5">
-            {importableScripts.length > 0 ? (
-              <Menu>
-                <MenuTrigger
-                  render={
-                    <Button
-                      id="import-scripts"
-                      size="xs"
-                      variant="ghost"
-                      disabled={saving || !canWriteSettings}
-                      type="button"
-                    />
-                  }
-                >
-                  Import scripts
-                  <ChevronDownIcon className="size-3.5" />
-                </MenuTrigger>
-                <MenuPopup align="end">
-                  <MenuGroup>
-                    <MenuGroupLabel>Import from t3.json</MenuGroupLabel>
-                    <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
-                      Review actions declared by this checkout before importing them.
-                    </p>
-                  </MenuGroup>
-                  <MenuSeparator />
-                  {importableScripts.map((fileScript) => (
-                    <MenuItem
-                      key={`${fileScript.name} ${fileScript.command}`}
-                      onClick={() => importFileScript(fileScript)}
-                    >
-                      <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">
-                          {projectScriptMenuLabel(fileScript)}
-                        </div>
-                        <div className="truncate font-mono text-muted-foreground">
-                          {fileScript.command}
-                        </div>
-                      </div>
-                    </MenuItem>
-                  ))}
-                </MenuPopup>
-              </Menu>
-            ) : null}
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={saving || !canWriteSettings || targets.length === 0}
-              onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
-            >
-              <PlusIcon className="size-3.5" />
-              Add action
-            </Button>
-          </div>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={saving || !canWriteSettings || writeTargets.length === 0}
+            onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
+          >
+            <PlusIcon className="size-3.5" />
+            Add to all
+          </Button>
         }
       />
-      {mixed ? (
-        <SettingsRow
-          title="Different actions across environments"
-          description="Choose one environment to edit its list. Adding an action here adds it on every selected environment."
+      {checkouts.map((checkout) => (
+        <CheckoutActions
+          key={checkout.member.physicalProjectKey}
+          checkout={checkout}
+          canWriteSettings={canWriteSettings}
+          renderHeader={(controls) => (
+            <EnvironmentRow
+              className="bg-muted/20"
+              kind={resolveEnvironmentMachineKind(checkout.environment.serverConfig ?? null)}
+              label={checkout.environment.label}
+              subtitle={checkout.member.workspaceRoot}
+            >
+              {controls}
+            </EnvironmentRow>
+          )}
         />
-      ) : (
-        <ProjectActionsList
-          scripts={actions}
-          keybindings={keybindings}
-          disabled={saving || !canWriteSettings}
-          onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
-          {...(representativeMember
-            ? {
-                onReview: (script: ResolvedProjectAction) =>
-                  setReviewing({
-                    environmentId: representativeMember.environmentId,
-                    projectId: representativeMember.id,
-                    actionId: script.id,
-                  }),
-              }
-            : {})}
+      ))}
+      {representative ? (
+        <ProjectScriptEditorDialog
+          environmentId={representative.environmentId}
+          editScope={AuthSettingsWriteScope}
+          request={request}
+          scripts={allActions}
+          onSubmit={(scriptId, input) => submit(scriptId, input, fileActionIds)}
+          onDelete={() => undefined}
+          onClose={() => setRequest(null)}
         />
+      ) : null}
+    </SettingsSection>
+  );
+}
+
+/**
+ * One checkout's actions: its saved actions followed by the styal.json
+ * actions read from its project root, with edits written to it alone.
+ */
+function CheckoutActions({
+  checkout,
+  canWriteSettings,
+  renderHeader,
+}: {
+  checkout: ActionsCheckout;
+  canWriteSettings: boolean;
+  renderHeader: (controls: ReactNode) => ReactNode;
+}) {
+  const { member, environment, saved, keybindings, writeTarget } = checkout;
+  const writeTargets = useMemo(() => (writeTarget ? [writeTarget] : []), [writeTarget]);
+  const { saving, persist, submit } = useProjectScriptSettings(writeTargets);
+  const [request, setRequest] = useState<ProjectScriptEditorRequest | null>(null);
+  const [reviewing, setReviewing] = useState<FileActionApprovalTarget | null>(null);
+  const projectRoot = projectConfigRoot(member);
+  const projectConfig = useProjectConfigState(member.environmentId, projectRoot);
+  const approvals =
+    environment.serverConfig?.settings.projectFileActionApprovals[projectFileApprovalKey(member)];
+  const actions = useMemo(
+    () => mergeProjectActions(saved, projectConfig.config, approvals ?? {}),
+    [approvals, projectConfig.config, saved],
+  );
+  const fileActionIds = useMemo(
+    () => actions.filter((action) => action.source !== "local").map((action) => action.id),
+    [actions],
+  );
+  const importableScripts = useMemo(
+    () =>
+      projectConfig.legacyScripts.filter(
+        (fileScript) =>
+          !saved.some(
+            (script) =>
+              script.command === fileScript.command ||
+              script.name.toLowerCase() === fileScript.name.toLowerCase(),
+          ),
+      ),
+    [saved, projectConfig.legacyScripts],
+  );
+  const importFileScript = useCallback((fileScript: T3ProjectFileScript) => {
+    setRequest(editorRequestForFileScript(fileScript));
+  }, []);
+  const disabled = saving || !canWriteSettings || writeTarget === null;
+
+  return (
+    <>
+      {renderHeader(
+        <div className="flex flex-wrap items-center gap-1.5">
+          {importableScripts.length > 0 ? (
+            <Menu>
+              <MenuTrigger
+                render={<Button size="xs" variant="ghost" disabled={disabled} type="button" />}
+              >
+                Import scripts
+                <ChevronDownIcon className="size-3.5" />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuGroup>
+                  <MenuGroupLabel>Import from t3.json</MenuGroupLabel>
+                  <p className="px-2 pb-2 text-pretty text-sm text-muted-foreground">
+                    Review actions declared by this checkout before importing them.
+                  </p>
+                </MenuGroup>
+                <MenuSeparator />
+                {importableScripts.map((fileScript) => (
+                  <MenuItem
+                    key={`${fileScript.name} ${fileScript.command}`}
+                    onClick={() => importFileScript(fileScript)}
+                  >
+                    <ScriptIcon icon={fileScript.icon ?? "play"} className="size-4 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">
+                        {projectScriptMenuLabel(fileScript)}
+                      </div>
+                      <div className="truncate font-mono text-muted-foreground">
+                        {fileScript.command}
+                      </div>
+                    </div>
+                  </MenuItem>
+                ))}
+              </MenuPopup>
+            </Menu>
+          ) : null}
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={disabled}
+            onClick={() => setRequest({ scriptId: null, initial: EMPTY_PROJECT_SCRIPT_INPUT })}
+          >
+            <PlusIcon className="size-3.5" />
+            Add action
+          </Button>
+        </div>,
       )}
+      <ProjectActionsList
+        scripts={actions}
+        keybindings={keybindings}
+        disabled={disabled}
+        onEdit={(script) => setRequest(editorRequestForScript(script, keybindings))}
+        onReview={(script: ResolvedProjectAction) =>
+          setReviewing({
+            environmentId: member.environmentId,
+            projectId: member.id,
+            actionId: script.id,
+          })
+        }
+      />
       {projectConfig.status === "invalid" ? (
         <SettingsRow
           title={`${projectConfig.source} is invalid`}
@@ -237,36 +331,35 @@ export function ProjectActionsSettings() {
           className="text-warning"
         />
       ) : null}
-      {isProjectScope && representativeMember && projectConfig.legacyContents !== null ? (
+      {projectConfig.legacyContents !== null ? (
         <ProjectFileMigrationRow
-          environmentId={representativeMember.environmentId}
-          projectRoot={projectConfigRoot(representativeMember)}
+          environmentId={member.environmentId}
+          projectRoot={projectRoot}
+          environmentLabel={environment.label}
           legacyContents={projectConfig.legacyContents}
         />
       ) : null}
       <FileActionApprovalDialog target={reviewing} onClose={() => setReviewing(null)} />
-      {target && (
-        <ProjectScriptEditorDialog
-          environmentId={target.environmentId}
-          editScope={AuthSettingsWriteScope}
-          request={request}
-          scripts={actions}
-          onSubmit={(scriptId, input) => submit(scriptId, input, fileActionIds)}
-          onDelete={(id) => {
-            // Removing an override hands the id, and its shortcut, back to styal.json.
-            const restoresFileAction = actions.some(
-              (action) => action.id === id && action.source === "override",
-            );
-            void persist(
-              (current) => current.filter((script) => script.id !== id),
-              id,
-              null,
-              restoresFileAction,
-            );
-          }}
-          onClose={() => setRequest(null)}
-        />
-      )}
-    </SettingsSection>
+      <ProjectScriptEditorDialog
+        environmentId={member.environmentId}
+        editScope={AuthSettingsWriteScope}
+        request={request}
+        scripts={actions}
+        onSubmit={(scriptId, input) => submit(scriptId, input, fileActionIds)}
+        onDelete={(id) => {
+          // Removing an override hands the id, and its shortcut, back to styal.json.
+          const restoresFileAction = actions.some(
+            (action) => action.id === id && action.source === "override",
+          );
+          void persist(
+            (current) => current.filter((script) => script.id !== id),
+            id,
+            null,
+            restoresFileAction,
+          );
+        }}
+        onClose={() => setRequest(null)}
+      />
+    </>
   );
 }

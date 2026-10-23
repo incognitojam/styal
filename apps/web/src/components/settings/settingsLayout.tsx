@@ -511,7 +511,7 @@ export function SettingsRow({
   );
 }
 
-function ForkFeatureBadge() {
+export function ForkFeatureBadge() {
   return (
     <Tooltip>
       <TooltipTrigger

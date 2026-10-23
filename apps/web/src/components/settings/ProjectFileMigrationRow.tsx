@@ -24,6 +24,8 @@ import { SettingsRow } from "./settingsLayout";
 export function ProjectFileMigrationRow(props: {
   readonly environmentId: EnvironmentId;
   readonly projectRoot: string;
+  /** Names the checkout written to when the project spans several environments. */
+  readonly environmentLabel: string | null;
   readonly legacyContents: string;
 }) {
   const canWriteFiles = useEnvironmentScope(props.environmentId, AuthFilesystemWriteScope);
@@ -51,11 +53,11 @@ export function ProjectFileMigrationRow(props: {
 
   return (
     <SettingsRow
-      title="Move to styal.json"
+      title="Create styal.json from t3.json"
       description={
         state === "failed"
           ? "Could not write styal.json. Check that the project folder is writable, then try again."
-          : "This repository still uses a T3 Code t3.json, whose scripts styal only offers to import. Write a styal.json at the project root with its settings and scripts as shared actions, then commit it and delete t3.json. Actions that run on their own will ask for approval."
+          : `Writes styal.json to ${props.projectRoot}${props.environmentLabel ? ` on ${props.environmentLabel}` : ""} with t3.json's settings, and turns its scripts into shared actions. Nothing is committed: review the file, commit it, then delete t3.json. Actions that run automatically need your approval first.`
       }
       control={
         <Button
@@ -64,7 +66,7 @@ export function ProjectFileMigrationRow(props: {
           disabled={!canWriteFiles || state === "writing"}
           onClick={() => void migrate()}
         >
-          Write styal.json
+          Create styal.json
         </Button>
       }
     />
