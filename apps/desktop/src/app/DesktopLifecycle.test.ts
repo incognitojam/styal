@@ -8,6 +8,7 @@ import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Exit from "effect/Exit";
 import * as NodeEvents from "node:events";
+import * as TestClock from "effect/testing/TestClock";
 
 import type * as Electron from "electron";
 
@@ -506,6 +507,65 @@ describe("DesktopLifecycle", () => {
           ),
         ),
       );
+    }),
+  );
+
+  it.effect("exits on a repeated quit only once shutdown has stalled", () =>
+    Effect.gen(function* () {
+      const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
+      const exitCodes: number[] = [];
+      const electronApp = makeElectronApp({
+        exit: (code) =>
+          Effect.sync(() => {
+            exitCodes.push(code);
+          }),
+        on: (eventName, listener) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              appListeners.set(
+                eventName,
+                listener as unknown as (...args: readonly unknown[]) => void,
+              );
+            }),
+            () =>
+              Effect.sync(() => {
+                appListeners.delete(eventName);
+              }),
+          ).pipe(Effect.asVoid),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+          const shutdown = yield* DesktopShutdown.DesktopShutdown;
+          yield* lifecycle.register;
+
+          let prevented = 0;
+          const event = {
+            preventDefault: () => {
+              prevented += 1;
+            },
+          } as Electron.Event;
+          appListeners.get("before-quit")?.(event);
+          // Nothing marks this shutdown complete, so it stays pending.
+          yield* shutdown.awaitRequest;
+          appListeners.get("before-quit")?.(event);
+          yield* TestClock.adjust("9999 millis");
+          appListeners.get("before-quit")?.(event);
+          assert.deepEqual(
+            exitCodes,
+            [],
+            "a repeat before the threshold must not cut shutdown short",
+          );
+
+          yield* TestClock.adjust("1 millis");
+          appListeners.get("before-quit")?.(event);
+
+          assert.deepEqual(exitCodes, [0]);
+          // The first quit is also cancelled once by the shutdown confirmation check.
+          assert.equal(prevented, 5);
+        }),
+      ).pipe(Effect.provide(makeLifecycleLayer("darwin", electronApp)));
     }),
   );
 
