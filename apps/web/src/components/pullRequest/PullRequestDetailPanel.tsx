@@ -1798,6 +1798,59 @@ function PullRequestDetailPanelBody({
     </Tooltip>
   );
 
+  // The same button on Summary and Checks: one press approves every run waiting on this head.
+  const approveWorkflowsButton =
+    workflowApprovalsRequired > 0 && !checksStale && can("approve-workflows") ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span className="inline-flex shrink-0">
+              <Button
+                size="xs"
+                variant="warning-outline"
+                disabled={actionPending}
+                {...inlineConfirm.props(
+                  "approve-workflows",
+                  () => void perform("approve-workflows"),
+                )}
+                aria-label={
+                  pendingAction === "approve-workflows"
+                    ? "Approving..."
+                    : inlineConfirm.isArmed("approve-workflows")
+                      ? "Confirm approve?"
+                      : "Approve workflows to run"
+                }
+              >
+                <PlayIcon aria-hidden className="size-3.5" />
+                <span className="inline-grid">
+                  <span aria-hidden className="invisible col-start-1 row-start-1">
+                    Approve workflows to run
+                  </span>
+                  <span aria-hidden className="invisible col-start-1 row-start-1">
+                    Confirm approve?
+                  </span>
+                  <span className="col-start-1 row-start-1">
+                    {pendingAction === "approve-workflows"
+                      ? "Approving..."
+                      : inlineConfirm.isArmed("approve-workflows")
+                        ? "Confirm approve?"
+                        : "Approve workflows to run"}
+                  </span>
+                </span>
+              </Button>
+            </span>
+          }
+        />
+        <TooltipPopup side="top">
+          {pendingAction === "approve-workflows"
+            ? "Approving..."
+            : inlineConfirm.isArmed("approve-workflows")
+              ? "Confirm approve?"
+              : "Approve workflows to run"}
+        </TooltipPopup>
+      </Tooltip>
+    ) : null;
+
   // The list already has the pull request's identity and summary. Keep them on screen
   // and let the richer detail read replace the remaining placeholders in place.
   if (detailQuery.isPending && !detail) {
@@ -2821,56 +2874,7 @@ function PullRequestDetailPanelBody({
           >
             {tab === "summary" ? (
               <span className="ml-auto inline-flex shrink-0 items-center gap-2">
-                {workflowApprovalsRequired > 0 && !checksStale && can("approve-workflows") ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span className="inline-flex shrink-0">
-                          <Button
-                            size="xs"
-                            variant="warning-outline"
-                            disabled={actionPending}
-                            {...inlineConfirm.props(
-                              "approve-workflows",
-                              () => void perform("approve-workflows"),
-                            )}
-                            aria-label={
-                              pendingAction === "approve-workflows"
-                                ? "Approving..."
-                                : inlineConfirm.isArmed("approve-workflows")
-                                  ? "Confirm approve?"
-                                  : "Approve workflows to run"
-                            }
-                          >
-                            <PlayIcon aria-hidden className="size-3.5" />
-                            <span className="inline-grid">
-                              <span aria-hidden className="invisible col-start-1 row-start-1">
-                                Approve workflows to run
-                              </span>
-                              <span aria-hidden className="invisible col-start-1 row-start-1">
-                                Confirm approve?
-                              </span>
-                              <span className="col-start-1 row-start-1">
-                                {pendingAction === "approve-workflows"
-                                  ? "Approving..."
-                                  : inlineConfirm.isArmed("approve-workflows")
-                                    ? "Confirm approve?"
-                                    : "Approve workflows to run"}
-                              </span>
-                            </span>
-                          </Button>
-                        </span>
-                      }
-                    />
-                    <TooltipPopup side="top">
-                      {pendingAction === "approve-workflows"
-                        ? "Approving..."
-                        : inlineConfirm.isArmed("approve-workflows")
-                          ? "Confirm approve?"
-                          : "Approve workflows to run"}
-                    </TooltipPopup>
-                  </Tooltip>
-                ) : null}
+                {approveWorkflowsButton}
                 <PullRequestChecksNavButton
                   checks={detail.checks}
                   isDraft={detail.isDraft}
@@ -3035,6 +3039,7 @@ function PullRequestDetailPanelBody({
                   isDraft={detail.isDraft}
                   mergeReadiness={detail.mergeReadiness}
                   requiredBranchUpdate={requiredBranchUpdate}
+                  workflowApprovalAction={approveWorkflowsButton}
                   actionPending={actionPending}
                   onUpdateBranch={(method) => void perform("update-branch", undefined, method)}
                   pendingFinding={handoff}

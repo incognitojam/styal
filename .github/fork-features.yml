@@ -5236,7 +5236,7 @@ features:
       - A same-repository head needs no check that it names one pull request, so its runs cost one GraphQL read. When that read fails, nothing is shown; a fork keeps its "Workflow approval status" unknown row.
       - Approving a same-repository run calls GitHub's approve endpoint and, when GitHub refuses it with 403 or 422, re-runs the run, after confirming the head has not moved.
       - A watched pull request wakes its agent once when workflow runs wait for approval, naming them apart from failed checks and telling the agent to leave approval to the user unless told otherwise.
-      - Runs waiting for approval are listed before the other checks, above the required checks they hold back.
+      - Runs waiting for approval are listed before the other checks. The web Checks tab names them in a notice above the jobs, with the same Approve workflows to run button the Summary tab shows, instead of as job rows.
       - Each approval pressed in a client that reports its surface records one `workflow-approvals` feature.used event with its outcome and no repository, pull request or workflow names.
     rationale: GitHub creates runs for pull requests that a workflow's GITHUB_TOKEN opens or updates, such as Changesets release pull requests, in an approval-required state. Without this the panel reads "waiting" forever and watched agents never wake.
     implementation_paths:
@@ -5245,6 +5245,8 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/ws.ts
+      - apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
       - packages/source-control-github/src/server/GitHubPullRequestProvider.ts

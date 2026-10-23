@@ -24,6 +24,7 @@ import {
   HammerIcon,
   ShieldAlertIcon,
 } from "lucide-react";
+import { Fragment, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
@@ -33,6 +34,7 @@ import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import {
+  isWorkflowApprovalCheck,
   PullRequestCheckStatusIcon,
   pullRequestCheckStatusLabel,
   pullRequestChecksState,
@@ -199,6 +201,7 @@ export function PullRequestChecksTab({
   isDraft = false,
   mergeReadiness,
   requiredBranchUpdate,
+  workflowApprovalAction,
   actionPending = false,
   onUpdateBranch,
   pendingFinding,
@@ -217,6 +220,8 @@ export function PullRequestChecksTab({
     readonly behindBy: number | null;
     readonly methods: ReadonlyArray<PullRequestUpdateMethod>;
   } | null;
+  /** The control that approves the waiting workflow runs, where the viewer may approve them. */
+  workflowApprovalAction?: ReactNode;
   actionPending?: boolean;
   onUpdateBranch?: (method: PullRequestUpdateMethod) => void;
   /** The hand-off currently preparing, if any, so only the check it belongs to says so. */
@@ -250,6 +255,11 @@ export function PullRequestChecksTab({
               toneClassName: "text-muted-foreground",
             };
   const requiredCount = checks.filter((check) => check.required === true).length;
+  // A run waiting for approval is not a job: it is what holds the jobs back, so it heads the
+  // list as a notice of its own instead of sitting among them as another row.
+  const waitingRuns = checks.filter(isWorkflowApprovalCheck);
+  const jobs =
+    waitingRuns.length === 0 ? checks : checks.filter((check) => !isWorkflowApprovalCheck(check));
   const requiredBranchUpdateMessage = requiredBranchUpdate
     ? `This branch is ${
         requiredBranchUpdate.behindBy === null
@@ -281,7 +291,7 @@ export function PullRequestChecksTab({
 
   return (
     <div className="h-full overflow-y-auto">
-      {mergePresentation || rollup || requiredBranchUpdate ? (
+      {mergePresentation || rollup || requiredBranchUpdate || waitingRuns.length > 0 ? (
         // The verdict rides the top of the scroll box the way the summary's section headings do,
         // so a long list of runs never scrolls its own answer out of sight.
         <div className="sticky top-0 z-10 space-y-1 bg-background px-4 py-2.5">
@@ -309,6 +319,37 @@ export function PullRequestChecksTab({
               </span>
             </div>
           ) : null}
+          {waitingRuns.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-warning/25 bg-warning/5 px-3 py-2 text-xs">
+              <div className="min-w-0 flex-1 basis-56">
+                <p className="font-medium text-foreground">
+                  {waitingRuns.length} {waitingRuns.length === 1 ? "workflow" : "workflows"}{" "}
+                  awaiting approval
+                </p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {waitingRuns.map((run, index) => (
+                    <Fragment key={`${run.name}:${run.url ?? ""}`}>
+                      {index > 0 ? ", " : null}
+                      {run.url === null ? (
+                        <span className="text-foreground">{run.name}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="cursor-pointer text-foreground underline-offset-2 hover:underline"
+                          onClick={() => openCheck(run.url ?? "")}
+                        >
+                          {run.name}
+                        </button>
+                      )}
+                    </Fragment>
+                  ))}{" "}
+                  {waitingRuns.length === 1 ? "does" : "do"} not start until someone with write
+                  access approves {waitingRuns.length === 1 ? "it" : "them"}.
+                </p>
+              </div>
+              {workflowApprovalAction}
+            </div>
+          ) : null}
           {requiredBranchUpdate ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-warning/25 bg-warning/5 px-3 py-2 text-xs">
               <div className="min-w-0 flex-1 basis-56">
@@ -333,7 +374,7 @@ export function PullRequestChecksTab({
         </div>
       ) : null}
 
-      {checks.length === 0 ? (
+      {jobs.length === 0 && waitingRuns.length > 0 ? null : jobs.length === 0 ? (
         // The same words the fold under the summary used, given the room a tab has: a reader who
         // opened Checks asked a question, and "nothing here" on its own does not answer it.
         <div className="flex min-h-48 flex-col items-center justify-center gap-2 px-4 py-10 text-center">
@@ -347,7 +388,7 @@ export function PullRequestChecksTab({
         // One grid for the whole list, which every row joins as a subgrid: the Required badge,
         // the status and the link mark line up in columns whatever each row's status says.
         <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] gap-x-2 gap-y-0.5 px-4 py-3">
-          {checks.map((check) => {
+          {jobs.map((check) => {
             const finding = { kind: "check", check } as const;
             const failing = isFailing(check);
             const keyBase = `${check.name}:${check.url ?? ""}:${check.status}:${check.description ?? ""}`;
