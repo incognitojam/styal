@@ -45,6 +45,12 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         detail: relayProtectedErrorMessage(error),
         traceId: error.traceId,
       });
+    case "RelaySignInCodeInvalidError":
+      return new ConnectionBlockedError({
+        reason: "authentication",
+        detail: relayProtectedErrorMessage(error),
+        traceId: error.traceId,
+      });
     case "RelayEnvironmentConnectNotAuthorizedError":
     case "RelayEnvironmentLinkProofInvalidError":
     case "RelayEnvironmentLinkLimitExceededError":
@@ -66,6 +72,8 @@ function relayProtectedError(error: RelayProtectedError): ConnectionAttemptError
         detail: relayProtectedErrorMessage(error),
         traceId: error.traceId,
       });
+    case "RelayAuthRateLimitedError":
+    case "RelayEmailSignInUnavailableError":
     case "RelayEnvironmentLinkFailedError":
     case "RelayInternalError":
       return new ConnectionTransientError({

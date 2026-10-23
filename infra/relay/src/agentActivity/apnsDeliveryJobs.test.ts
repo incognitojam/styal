@@ -39,6 +39,26 @@ const notification = {
 };
 
 describe("apnsDeliveryJobs", () => {
+  it("authenticates the registration-removal authorization in the signature", () => {
+    const payload = makeApnsDeliveryJobPayload({
+      kind: "live_activity_end",
+      userId: "usr_synthetic",
+      deviceId: "phone",
+      token: "card-token",
+      aggregate: null,
+      createdAt: "2026-05-25T00:00:00.000Z",
+      expiresAt: "2026-05-25T00:05:00.000Z",
+      jobId: "job-removal",
+    });
+    const signed = signApnsDeliveryJob({ secret, payload });
+    const result = verifySignedApnsDeliveryJob({
+      secret,
+      nowMs: Date.parse("2026-05-25T00:01:00.000Z"),
+      job: { ...signed, payload: { ...signed.payload, registrationRemoved: true } },
+    });
+    expect(result).toMatchObject({ _tag: "ApnsDeliveryJobSignatureInvalid" });
+  });
+
   it("rejects tampered signed queue jobs", () => {
     const payload = makeApnsDeliveryJobPayload({
       kind: "live_activity_end",

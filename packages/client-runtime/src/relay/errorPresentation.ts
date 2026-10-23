@@ -32,6 +32,8 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
           return dpopFailureMessage("Relay rejected the DPoP proof.", error.dpopFailureReason);
         case "not_authorized":
           return "Relay rejected the authenticated request.";
+        case "invalid_session":
+          return "Your styal Link sign-in has ended. Sign in again.";
       }
     case "RelayEnvironmentLinkProofExpiredError":
       return "Relay rejected an expired environment link proof.";
@@ -60,9 +62,29 @@ export function relayProtectedErrorMessage(error: RelayProtectedError): string {
       return "Relay rejected an expired agent activity publish proof.";
     case "RelayAgentActivityPublishProofInvalidError":
       return `Relay rejected the agent activity publish proof (${error.reason}).`;
+    case "RelaySignInCodeInvalidError":
+      switch (error.reason) {
+        case "incorrect":
+          return "That code is not right. Check the email and try again.";
+        case "expired":
+          return "That code has expired. Request a new one.";
+        case "too_many_attempts":
+          return "Too many wrong codes. Request a new one.";
+      }
+    case "RelayAuthRateLimitedError":
+      return `Too many sign-in attempts. Try again in ${formatRetryAfter(error.retryAfterSeconds)}.`;
+    case "RelayEmailSignInUnavailableError":
+      return error.reason === "delivery_failed"
+        ? "The sign-in email could not be sent. Try again in a few minutes."
+        : "Email sign-in is not available on this relay.";
     case "RelayInternalError":
       return `Relay encountered an internal error (${error.reason}).`;
   }
+}
+
+function formatRetryAfter(seconds: number): string {
+  if (seconds < 90) return `${Math.max(1, seconds)} seconds`;
+  return `${Math.ceil(seconds / 60)} minutes`;
 }
 
 // A host with a current build gets a new tunnel on its own within minutes of

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vite-plus/test";
 import * as OpenApi from "effect/http-api/OpenApi";
 import * as Schema from "effect/Schema";
 
-import { RelayApi, RelayDeviceRegistrationRequest } from "./relay.ts";
+import { RelayApi, RelayDeviceRegistrationRequest, RelaySignInCode } from "./relay.ts";
 
+const decodeSignInCode = Schema.decodeUnknownExit(RelaySignInCode);
 const decodeDevice = Schema.decodeUnknownExit(RelayDeviceRegistrationRequest);
 const device = {
   deviceId: "device",
@@ -57,5 +58,21 @@ describe("RelayApi security", () => {
       scheme: "DPoP",
       description: "DPoP-bound access token. Requests must also include the DPoP proof JWT header.",
     });
+    expect(document.components.securitySchemes?.accountDpop).toMatchObject({
+      type: "http",
+      scheme: "DPoP",
+    });
   });
+});
+
+describe("email sign-in codes", () => {
+  it.each(["00000000", "12345678", "99999999"])("accepts eight digits: %s", (code) => {
+    expect(decodeSignInCode(code)._tag).toBe("Success");
+  });
+  it.each(["123456", "1234567", "123456789", "1234abcd", "１２３４５６７８"])(
+    "rejects invalid code: %s",
+    (code) => {
+      expect(decodeSignInCode(code)._tag).toBe("Failure");
+    },
+  );
 });

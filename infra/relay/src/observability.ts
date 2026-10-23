@@ -72,18 +72,27 @@ export const withSpanAttributes =
       Effect.andThen(effect.pipe(Effect.annotateSpans(attributes))),
     );
 
+/**
+ * Error fields never copied onto spans. Database errors carry their query's
+ * bound values as `params` and the offending row as `detail`, which include
+ * emails, push tokens and other account data; the query text itself is kept.
+ */
+const OMITTED_ERROR_FIELDS = new Set(["params", "detail"]);
+
 const appendEncodedAttributes = (
   attributes: Record<string, unknown>,
   prefix: string,
   value: unknown,
 ): void => {
+  if (OMITTED_ERROR_FIELDS.has(prefix.slice(prefix.lastIndexOf(".") + 1))) {
+    return;
+  }
   if (
     value === null ||
     typeof value === "string" ||
     typeof value === "number" ||
     typeof value === "boolean" ||
-    typeof value === "bigint" ||
-    Array.isArray(value)
+    typeof value === "bigint"
   ) {
     attributes[prefix] = value;
     return;
@@ -91,9 +100,152 @@ const appendEncodedAttributes = (
   if (typeof value !== "object") {
     return;
   }
+  // Arrays are walked like objects so omitted fields inside them stay out.
   for (const [key, child] of Object.entries(value)) {
     appendEncodedAttributes(attributes, `${prefix}.${key}`, child);
   }
+};
+
+const DRIVER_ERROR_TAGS = new Set([
+  "EffectDrizzleQueryError",
+  "EffectDrizzleError",
+  "DrizzleQueryError",
+  "SqlError",
+]);
+
+const isDriverError = (value: object): boolean => {
+  const tag = Reflect.get(value, "_tag") ?? Reflect.get(value, "name");
+  // Summaries such as persistenceCause's `{ name, code }` are already safe.
+  if (
+    typeof tag === "string" &&
+    DRIVER_ERROR_TAGS.has(tag) &&
+    (value instanceof Error || "cause" in value || "query" in value || "reason" in value)
+  ) {
+    return true;
+  }
+  // A Postgres server error, such as the cause inside an SqlError.
+  return (
+    typeof Reflect.get(value, "severity") === "string" &&
+    typeof Reflect.get(value, "code") === "string"
+  );
+};
+
+/**
+ * What a span keeps of a database driver error: its kind, query text and the
+ * Postgres SQL state and constraint. Driver messages and stacks embed bound
+ * values (`params: …`) and failing rows, so neither is kept.
+ */
+export class ScrubbedDatabaseError extends Error {
+  readonly query: string | undefined;
+  readonly sqlState: string | undefined;
+  readonly constraint: string | undefined;
+
+  constructor(driver: string, details: { query?: string; sqlState?: string; constraint?: string }) {
+    super(
+      `${driver} failed${details.sqlState ? ` (SQLSTATE ${details.sqlState})` : ""}${
+        details.query ? `: ${details.query}` : ""
+      }`,
+    );
+    this.name = driver;
+    this.query = details.query;
+    this.sqlState = details.sqlState;
+    this.constraint = details.constraint;
+    this.stack = `${this.name}: ${this.message}`;
+  }
+}
+
+const findDriverDetail = (value: unknown, key: string, depth = 0): string | undefined => {
+  if (typeof value !== "object" || value === null || depth > 6) return undefined;
+  if (Cause.isCause(value)) {
+    for (const reason of value.reasons) {
+      const found = findDriverDetail(
+        Cause.isFailReason(reason)
+          ? reason.error
+          : Cause.isDieReason(reason)
+            ? reason.defect
+            : undefined,
+        key,
+        depth + 1,
+      );
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (typeof Reflect.get(value, "severity") === "string") {
+    const found = Reflect.get(value, key);
+    if (typeof found === "string") return found;
+  }
+  for (const child of ["cause", "reason"]) {
+    const found = findDriverDetail(Reflect.get(value, child), key, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+};
+
+const scrubDriverError = (error: object): ScrubbedDatabaseError => {
+  const tag = Reflect.get(error, "_tag") ?? Reflect.get(error, "name");
+  const query = Reflect.get(error, "query");
+  const sqlState = findDriverDetail(error, "code");
+  const constraint = findDriverDetail(error, "constraint");
+  return new ScrubbedDatabaseError(typeof tag === "string" ? tag : "DatabaseError", {
+    ...(typeof query === "string" ? { query } : {}),
+    ...(sqlState ? { sqlState } : {}),
+    ...(constraint ? { constraint } : {}),
+  });
+};
+
+const MAX_SCRUB_DEPTH = 8;
+
+/**
+ * Replaces driver errors anywhere inside a failure (error fields, `cause`
+ * chains and nested Causes) with ScrubbedDatabaseError. Unchanged values keep
+ * their identity; changed errors are copied with the same prototype so schema
+ * encoding and `instanceof` still work.
+ */
+const scrubFailure = (value: unknown, depth = 0): unknown => {
+  if (typeof value !== "object" || value === null || depth > MAX_SCRUB_DEPTH) return value;
+  if (Cause.isCause(value)) {
+    let changed = false;
+    const reasons = value.reasons.map((reason) => {
+      const original = Cause.isFailReason(reason)
+        ? reason.error
+        : Cause.isDieReason(reason)
+          ? reason.defect
+          : undefined;
+      if (original === undefined) return reason;
+      const scrubbed = scrubFailure(original, depth + 1);
+      if (scrubbed === original) return reason;
+      changed = true;
+      const next = Cause.isFailReason(reason)
+        ? Cause.makeFailReason(scrubbed)
+        : Cause.makeDieReason(scrubbed);
+      return next.annotate(Cause.reasonAnnotations(reason));
+    });
+    return changed ? Cause.fromReasons(reasons) : value;
+  }
+  if (isDriverError(value)) return scrubDriverError(value);
+  if (Array.isArray(value)) {
+    const next = value.map((child) => scrubFailure(child, depth + 1));
+    return next.some((child, index) => child !== value[index]) ? next : value;
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  let changed = false;
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if (key === "stack" || key === "message" || !("value" in descriptor)) continue;
+    const scrubbed = scrubFailure(descriptor.value, depth + 1);
+    if (scrubbed !== descriptor.value) {
+      descriptor.value = scrubbed;
+      changed = true;
+    }
+  }
+  return changed ? Object.create(Object.getPrototypeOf(value), descriptors) : value;
+};
+
+/** The exit a span records, with database driver detail removed. */
+export const scrubSpanExit = (exit: Exit.Exit<unknown, unknown>): Exit.Exit<unknown, unknown> => {
+  if (Exit.isSuccess(exit)) return exit;
+  const cause = scrubFailure(exit.cause) as Cause.Cause<unknown>;
+  return cause === exit.cause ? exit : Exit.failCause(cause);
 };
 
 const schemaErrorAttributes = (error: unknown): Record<string, unknown> | undefined => {
@@ -126,6 +278,13 @@ const schemaErrorAttributes = (error: unknown): Record<string, unknown> | undefi
   return attributes;
 };
 
+const scrubbedDatabaseErrorAttributes = (error: ScrubbedDatabaseError) => ({
+  "error.type": error.name,
+  ...(error.query ? { "error.query": error.query } : {}),
+  ...(error.sqlState ? { "error.sql_state": error.sqlState } : {}),
+  ...(error.constraint ? { "error.constraint": error.constraint } : {}),
+});
+
 const annotateSchemaError = (span: Tracer.Span, exit: Exit.Exit<unknown, unknown>): void => {
   if (Exit.isSuccess(exit)) {
     return;
@@ -136,7 +295,10 @@ const annotateSchemaError = (span: Tracer.Span, exit: Exit.Exit<unknown, unknown
       : Cause.isDieReason(reason)
         ? reason.defect
         : undefined;
-    const attributes = schemaErrorAttributes(error);
+    const attributes =
+      error instanceof ScrubbedDatabaseError
+        ? scrubbedDatabaseErrorAttributes(error)
+        : schemaErrorAttributes(error);
     if (attributes) {
       for (const [key, value] of Object.entries(attributes)) {
         span.attribute(key, value);
@@ -185,9 +347,12 @@ class RelayTraceSpan implements Tracer.Span {
     return this.delegate.kind;
   }
 
+  // The delegate's exporter turns the exit into `exception` events and the
+  // status message, so it receives the scrubbed exit too.
   end(endTime: bigint, exit: Exit.Exit<unknown, unknown>): void {
-    annotateSchemaError(this.delegate, exit);
-    this.delegate.end(endTime, exit);
+    const scrubbed = scrubSpanExit(exit);
+    annotateSchemaError(this.delegate, scrubbed);
+    this.delegate.end(endTime, scrubbed);
   }
 
   attribute(key: string, value: unknown): void {
@@ -211,7 +376,8 @@ const withSchemaErrorAttributes = (delegate: Tracer.Tracer): Tracer.Tracer =>
 
 /**
  * Adds a failed span's schema error fields (`error.type`, `error.<field>`) to
- * the span, on whichever tracer is current. Provide it around the work whose
+ * the span, on whichever tracer is current, and removes database driver
+ * detail from the exit the exporter records. Provide it around the work whose
  * spans should carry them; the Worker's telemetry still owns export.
  */
 export const withSchemaErrorSpanAttributes = <A, E, R>(

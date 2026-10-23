@@ -75,6 +75,7 @@ const settings = RelayConfiguration.RelayConfiguration.of({
   clerkSecretKey: Redacted.make("clerk-secret"),
   clerkPublishableKey: "pk_test_test",
   clerkJwtAudience: "t3-code-relay",
+  signInCodeSecret: Redacted.make("test-sign-in-code-secret"),
   cloudMintPrivateKey: Redacted.make(cloudKeyPair.privateKey),
   cloudMintPublicKey: cloudKeyPair.publicKey,
   managedEndpointBaseDomain: "example.test",

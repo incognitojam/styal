@@ -116,6 +116,7 @@ const main = Effect.gen(function* () {
           clerkSecretKey: Redacted.make(""),
           clerkPublishableKey: "",
           clerkJwtAudience: "",
+          signInCodeSecret: Redacted.make("test-sign-in-code-secret"),
           apnsDeliveryJobSigningSecret: Redacted.make(""),
           cloudMintPrivateKey: Redacted.make(""),
           cloudMintPublicKey: "",

@@ -13,6 +13,7 @@ import {
   EnvironmentId,
   ThreadId,
   TrimmedNonEmptyString,
+  TrimmedString,
 } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 
@@ -394,6 +395,8 @@ export const RelayAuthInvalidReason = Schema.Literals([
   "invalid_bearer",
   "invalid_dpop",
   "not_authorized",
+  // Only the auth group returns this, so clients that predate it never see it.
+  "invalid_session",
 ]);
 export type RelayAuthInvalidReason = typeof RelayAuthInvalidReason.Type;
 
@@ -592,6 +595,61 @@ export class RelayInternalError extends Schema.TaggedError<RelayInternalError>()
   }
 }
 
+export const RelaySignInCodeInvalidReason = Schema.Literals([
+  "incorrect",
+  "expired",
+  "too_many_attempts",
+]);
+export type RelaySignInCodeInvalidReason = typeof RelaySignInCodeInvalidReason.Type;
+
+export class RelaySignInCodeInvalidError extends Schema.TaggedError<RelaySignInCodeInvalidError>()(
+  "RelaySignInCodeInvalidError",
+  {
+    code: Schema.Literal("sign_in_code_invalid"),
+    reason: RelaySignInCodeInvalidReason,
+    traceId: TrimmedNonEmptyString,
+  },
+  { httpApiStatus: 400 },
+) {
+  override get message(): string {
+    return `Relay sign-in code is invalid: ${this.reason}`;
+  }
+}
+
+export class RelayAuthRateLimitedError extends Schema.TaggedError<RelayAuthRateLimitedError>()(
+  "RelayAuthRateLimitedError",
+  {
+    code: Schema.Literal("auth_rate_limited"),
+    retryAfterSeconds: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    traceId: TrimmedNonEmptyString,
+  },
+  { httpApiStatus: 429 },
+) {
+  override get message(): string {
+    return `Too many sign-in attempts; retry in ${this.retryAfterSeconds} seconds`;
+  }
+}
+
+export const RelayEmailSignInUnavailableReason = Schema.Literals([
+  "not_configured",
+  "delivery_failed",
+]);
+export type RelayEmailSignInUnavailableReason = typeof RelayEmailSignInUnavailableReason.Type;
+
+export class RelayEmailSignInUnavailableError extends Schema.TaggedError<RelayEmailSignInUnavailableError>()(
+  "RelayEmailSignInUnavailableError",
+  {
+    code: Schema.Literal("email_sign_in_unavailable"),
+    reason: RelayEmailSignInUnavailableReason,
+    traceId: TrimmedNonEmptyString,
+  },
+  { httpApiStatus: 503 },
+) {
+  override get message(): string {
+    return `Relay email sign-in is unavailable: ${this.reason}`;
+  }
+}
+
 export const RelayProtectedError = Schema.Union([
   RelayAuthInvalidError,
   RelayEnvironmentLinkProofExpiredError,
@@ -604,6 +662,9 @@ export const RelayProtectedError = Schema.Union([
   RelayEnvironmentLinkLimitExceededError,
   RelayAgentActivityPublishProofExpiredError,
   RelayAgentActivityPublishProofInvalidError,
+  RelaySignInCodeInvalidError,
+  RelayAuthRateLimitedError,
+  RelayEmailSignInUnavailableError,
   RelayInternalError,
 ]);
 export type RelayProtectedError = typeof RelayProtectedError.Type;
@@ -642,6 +703,8 @@ export class RelayClientPrincipal extends Context.Service<
     readonly token: string;
     readonly proofKeyThumbprint?: string;
     readonly dpopScopes?: ReadonlyArray<RelayDpopAccessTokenScope>;
+    /** Relay sign-in session behind a DPoP access token; absent for Clerk bearer tokens. */
+    readonly sessionId?: string;
   }
 >()("@t3tools/contracts/relay/RelayClientPrincipal") {}
 
@@ -660,12 +723,29 @@ const RelayClientBearerAuthorization = HttpApiSecurity.http({ scheme: "bearer" }
   ),
 );
 
+const RelayClientDpopAuthorization = HttpApiSecurity.http({ scheme: "DPoP" }).pipe(
+  HttpApiSecurity.annotate(
+    OpenApi.Description,
+    "Relay DPoP access token with the account scope. Requests must also include the DPoP proof JWT header.",
+  ),
+);
+
+/**
+ * Accepts a Clerk bearer token or a relay DPoP access token. Schemes run in
+ * declaration order and the last failure is the one returned, so a request
+ * that fails both reports the DPoP failure.
+ *
+ * @effect-expect-leaking HttpServerRequest | ParsedSearchParams | RouteContext
+ */
 export class RelayClientAuth extends HttpApiMiddleware.Service<
   RelayClientAuth,
   { provides: RelayClientPrincipal }
 >()("RelayClientAuth", {
-  error: RelayAuthInvalidError,
-  security: { clientBearer: RelayClientBearerAuthorization },
+  error: [RelayAuthInvalidError, RelayInternalError],
+  security: {
+    clientBearer: RelayClientBearerAuthorization,
+    accountDpop: RelayClientDpopAuthorization,
+  },
 }) {}
 
 const RelayEnvironmentBearerAuthorization = HttpApiSecurity.http({ scheme: "bearer" }).pipe(
@@ -694,7 +774,7 @@ export class RelayDpopClientAuth extends HttpApiMiddleware.Service<
   RelayDpopClientAuth,
   { provides: RelayClientPrincipal }
 >()("RelayDpopClientAuth", {
-  error: RelayAuthInvalidError,
+  error: [RelayAuthInvalidError, RelayInternalError],
   security: { relayDpop: RelayDpopAuthorization },
 }) {}
 
@@ -733,10 +813,13 @@ export type RelayEnvironmentConnectRequest = typeof RelayEnvironmentConnectReque
 export const RelayEnvironmentConnectScope = "environment:connect" as const;
 export const RelayEnvironmentStatusScope = "environment:status" as const;
 export const RelayMobileRegistrationScope = "mobile:registration" as const;
+/** Account endpoints: environment links, devices, sessions. */
+export const RelayAccountScope = "account" as const;
 export const RelayDpopAccessTokenScope = Schema.Literals([
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
   RelayMobileRegistrationScope,
+  RelayAccountScope,
 ]);
 export type RelayDpopAccessTokenScope = typeof RelayDpopAccessTokenScope.Type;
 
@@ -744,10 +827,11 @@ export const RelayDpopTokenExchangeGrantType =
   "urn:ietf:params:oauth:grant-type:token-exchange" as const;
 export const RelayJwtSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt" as const;
 export const RelayAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
-export const RelayPublicClientId = Schema.Literals(["t3-mobile", "t3-web"]);
+export const RelayPublicClientId = Schema.Literals(["t3-mobile", "t3-web", "t3-cli"]);
 export type RelayPublicClientId = typeof RelayPublicClientId.Type;
 export const RelayMobileClientId = "t3-mobile" as const;
 export const RelayWebClientId = "t3-web" as const;
+export const RelayCliClientId = "t3-cli" as const;
 
 export const RelayDpopAccessTokenRequest = Schema.Struct({
   grant_type: Schema.Literal(RelayDpopTokenExchangeGrantType),
@@ -779,6 +863,8 @@ export type RelayDpopAccessTokenResponse = typeof RelayDpopAccessTokenResponse.T
 
 export const RelayBearerRequestHeaders = Schema.Struct({
   authorization: TrimmedNonEmptyString,
+  // Sent with relay DPoP access tokens; Clerk bearer tokens omit it.
+  dpop: Schema.optional(TrimmedNonEmptyString),
 });
 
 export const RelayDpopProofRequestHeaders = Schema.Struct({
@@ -1050,6 +1136,191 @@ const RelayMobileGroup = HttpApiGroup.make("mobile")
   .annotate(OpenApi.Description, "Mobile push-notification and Live Activity registration.")
   .middleware(RelayDpopClientAuth);
 
+export const RelaySignInEmail = TrimmedString.check(
+  Schema.isMaxLength(320),
+  Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
+).annotate({ description: "Email address to sign in with." });
+
+export const RelaySignInCode = TrimmedString.check(Schema.isPattern(/^\d{8}$/)).annotate({
+  description: "Eight-digit code from the sign-in email.",
+});
+
+const RelaySessionLabel = TrimmedNonEmptyString.check(Schema.isMaxLength(120)).annotate({
+  description: "Name shown in the account's signed-in devices list, such as the device name.",
+});
+
+export const RelayAccountUser = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  // Null for accounts migrated from Clerk whose email was never imported.
+  email: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type RelayAccountUser = typeof RelayAccountUser.Type;
+
+export const RelayEmailSignInStartRequest = Schema.Struct({
+  email: RelaySignInEmail,
+  client_id: RelayPublicClientId,
+});
+export type RelayEmailSignInStartRequest = typeof RelayEmailSignInStartRequest.Type;
+
+export const RelayEmailSignInStartResponse = Schema.Struct({
+  expiresAt: TrimmedNonEmptyString,
+  resendAfterSeconds: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type RelayEmailSignInStartResponse = typeof RelayEmailSignInStartResponse.Type;
+
+export const RelayEmailSignInVerifyRequest = Schema.Struct({
+  email: RelaySignInEmail,
+  code: RelaySignInCode,
+  client_id: RelayPublicClientId,
+  label: Schema.optional(RelaySessionLabel),
+});
+export type RelayEmailSignInVerifyRequest = typeof RelayEmailSignInVerifyRequest.Type;
+
+export const RelayClerkSessionExchangeRequest = Schema.Struct({
+  subject_token: TrimmedNonEmptyString.annotate({
+    description: "Clerk session or OAuth token for the signed-in user.",
+  }),
+  client_id: RelayPublicClientId,
+  label: Schema.optional(RelaySessionLabel),
+});
+export type RelayClerkSessionExchangeRequest = typeof RelayClerkSessionExchangeRequest.Type;
+
+const RelayAccessTokenFields = {
+  access_token: TrimmedNonEmptyString,
+  token_type: Schema.Literal("DPoP"),
+  expires_in: Schema.Int.check(Schema.isGreaterThan(0)),
+  scope: TrimmedNonEmptyString,
+  user: RelayAccountUser,
+} as const;
+
+export const RelayAuthSessionResponse = Schema.Struct({
+  ...RelayAccessTokenFields,
+  refresh_token: TrimmedNonEmptyString.annotate({
+    description:
+      "Long-lived session credential. It only works with DPoP proofs from the key that signed in.",
+  }),
+  session_id: TrimmedNonEmptyString,
+});
+export type RelayAuthSessionResponse = typeof RelayAuthSessionResponse.Type;
+
+export const RelayAuthTokenRequest = Schema.Struct({
+  refresh_token: TrimmedNonEmptyString,
+});
+export type RelayAuthTokenRequest = typeof RelayAuthTokenRequest.Type;
+
+export const RelayAuthTokenResponse = Schema.Struct(RelayAccessTokenFields);
+export type RelayAuthTokenResponse = typeof RelayAuthTokenResponse.Type;
+
+export const RelayAuthSignOutRequest = Schema.Struct({
+  refresh_token: TrimmedNonEmptyString,
+});
+export type RelayAuthSignOutRequest = typeof RelayAuthSignOutRequest.Type;
+
+export const RelayAccountResponse = Schema.Struct({
+  user: RelayAccountUser,
+});
+export type RelayAccountResponse = typeof RelayAccountResponse.Type;
+
+export const RelayAccountSessionRecord = Schema.Struct({
+  sessionId: TrimmedNonEmptyString,
+  clientId: RelayPublicClientId,
+  label: Schema.NullOr(TrimmedNonEmptyString),
+  createdAt: TrimmedNonEmptyString,
+  lastUsedAt: TrimmedNonEmptyString,
+  current: Schema.Boolean,
+});
+export type RelayAccountSessionRecord = typeof RelayAccountSessionRecord.Type;
+
+export const RelayListAccountSessionsResponse = Schema.Struct({
+  sessions: Schema.Array(RelayAccountSessionRecord),
+});
+export type RelayListAccountSessionsResponse = typeof RelayListAccountSessionsResponse.Type;
+
+export const RelayAccountSessionParams = Schema.Struct({
+  sessionId: TrimmedNonEmptyString,
+});
+export type RelayAccountSessionParams = typeof RelayAccountSessionParams.Type;
+
+const RelayEmailSignInErrors = [
+  RelayAuthInvalidError,
+  RelaySignInCodeInvalidError,
+  RelayAuthRateLimitedError,
+  RelayEmailSignInUnavailableError,
+  RelayInternalError,
+] as const;
+
+const RelayStartEmailSignInEndpoint = HttpApiEndpoint.post(
+  "startEmailSignIn",
+  "/v1/auth/email/start",
+  {
+    headers: RelayDpopProofRequestHeaders,
+    payload: RelayEmailSignInStartRequest,
+    success: RelayEmailSignInStartResponse,
+    error: RelayEmailSignInErrors,
+  },
+)
+  .annotate(OpenApi.Summary, "Email a sign-in code")
+  .annotate(
+    OpenApi.Description,
+    "Sends a eight-digit code to the address. The response is the same whether or not an account exists. Only the DPoP key that requested the code can redeem it.",
+  );
+
+const RelayVerifyEmailSignInEndpoint = HttpApiEndpoint.post(
+  "verifyEmailSignIn",
+  "/v1/auth/email/verify",
+  {
+    headers: RelayDpopProofRequestHeaders,
+    payload: RelayEmailSignInVerifyRequest,
+    success: RelayAuthSessionResponse,
+    error: RelayEmailSignInErrors,
+  },
+)
+  .annotate(OpenApi.Summary, "Redeem a sign-in code")
+  .annotate(
+    OpenApi.Description,
+    "Signs in, creating the account on first sign-in, and returns a session credential bound to the proof key plus an access token.",
+  );
+
+const RelayExchangeClerkSessionEndpoint = HttpApiEndpoint.post(
+  "exchangeClerkSession",
+  "/v1/auth/clerk-exchange",
+  {
+    headers: RelayDpopProofRequestHeaders,
+    payload: RelayClerkSessionExchangeRequest,
+    success: RelayAuthSessionResponse,
+    error: RelayAuthAndInternalErrors,
+  },
+)
+  .annotate(OpenApi.Summary, "Exchange a Clerk session for a relay session")
+  .annotate(
+    OpenApi.Description,
+    "Migration path for clients signed in with Clerk. Keeps the Clerk user id as the account id.",
+  );
+
+const RelayRefreshAuthTokenEndpoint = HttpApiEndpoint.post("refreshAuthToken", "/v1/auth/token", {
+  headers: RelayDpopProofRequestHeaders,
+  payload: RelayAuthTokenRequest,
+  success: RelayAuthTokenResponse,
+  error: RelayAuthAndInternalErrors,
+}).annotate(OpenApi.Summary, "Issue an access token for a session");
+
+const RelaySignOutEndpoint = HttpApiEndpoint.post("signOut", "/v1/auth/sign-out", {
+  headers: RelayDpopProofRequestHeaders,
+  payload: RelayAuthSignOutRequest,
+  success: RelayOkResponse,
+  error: RelayAuthAndInternalErrors,
+}).annotate(OpenApi.Summary, "End a session");
+
+const RelayAuthGroup = HttpApiGroup.make("auth")
+  .add(
+    RelayStartEmailSignInEndpoint,
+    RelayVerifyEmailSignInEndpoint,
+    RelayExchangeClerkSessionEndpoint,
+    RelayRefreshAuthTokenEndpoint,
+    RelaySignOutEndpoint,
+  )
+  .annotate(OpenApi.Description, "Email sign-in and DPoP-bound relay sessions.");
+
 const RelayClientGroup = HttpApiGroup.make("client")
   .add(
     HttpApiEndpoint.get("listEnvironments", "/v1/environments", {
@@ -1104,6 +1375,32 @@ const RelayClientGroup = HttpApiGroup.make("client")
         OpenApi.Description,
         "Deletes the provisioned Cloudflare tunnel while keeping the environment link and its hostname reservation, so a later link re-provisions the tunnel under the same URL. Environments call this when they shut down; Cloudflare bills per provisioned tunnel, so idle tunnels should not outlive their environment.",
       ),
+    HttpApiEndpoint.get("getAccount", "/v1/client/account", {
+      headers: RelayBearerRequestHeaders,
+      success: RelayAccountResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Read the signed-in account"),
+    HttpApiEndpoint.delete("deleteAccount", "/v1/client/account", {
+      headers: RelayBearerRequestHeaders,
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    })
+      .annotate(OpenApi.Summary, "Delete the signed-in account")
+      .annotate(
+        OpenApi.Description,
+        "Unlinks every environment, tearing down its managed tunnel, then deletes the account's devices, sessions and records. Irreversible.",
+      ),
+    HttpApiEndpoint.get("listAccountSessions", "/v1/client/sessions", {
+      headers: RelayBearerRequestHeaders,
+      success: RelayListAccountSessionsResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "List signed-in sessions"),
+    HttpApiEndpoint.delete("revokeAccountSession", "/v1/client/sessions/:sessionId", {
+      headers: RelayBearerRequestHeaders,
+      params: RelayAccountSessionParams,
+      success: RelayOkResponse,
+      error: RelayAuthAndInternalErrors,
+    }).annotate(OpenApi.Summary, "Sign out a session"),
   )
   .annotate(OpenApi.Description, "Cloud-user environment links and registered devices.")
   .middleware(RelayClientAuth);
@@ -1260,6 +1557,7 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayMobileGroup,
     RelayClientGroup,
     RelayTokenGroup,
+    RelayAuthGroup,
     RelayDpopClientGroup,
     RelayServerGroup,
     RelayHooksGroup,

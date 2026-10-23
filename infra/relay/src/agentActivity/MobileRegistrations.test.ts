@@ -146,6 +146,7 @@ const config = RelayConfiguration.RelayConfiguration.of({
   clerkSecretKey: Redacted.make("clerk-secret"),
   clerkPublishableKey: "pk_test_test",
   clerkJwtAudience: "t3-code-relay",
+  signInCodeSecret: Redacted.make("test-sign-in-code-secret"),
   apnsDeliveryJobSigningSecret: Redacted.make("apns-job-secret"),
   cloudMintPrivateKey: Redacted.make("cloud-private-key"),
   cloudMintPublicKey: "cloud-public-key",
