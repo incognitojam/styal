@@ -30,8 +30,12 @@
       "ignore": ["npm-launcher/**"],
     },
     "e2e": {
-      // Installed as the `gh` binary of each e2e environment.
-      "entry": ["fixtures/fake-gh.ts"],
+      "entry": [
+        // Installed as the `gh` binary of each e2e environment.
+        "fixtures/fake-gh.ts",
+        // The vitest config includes these only with E2E_NETWORK=1.
+        "tests/network/*.e2e.ts",
+      ],
     },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
