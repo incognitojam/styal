@@ -346,6 +346,7 @@ export function CommandPalette(props: {
       .filter(
         (thread) =>
           thread.archivedAt === null &&
+          thread.lineage.relationshipToParent !== "subagent" &&
           !archivedProjectKeys.has(scopedProjectKey(thread.environmentId, thread.projectId)),
       )
       .sort((left, right) =>
