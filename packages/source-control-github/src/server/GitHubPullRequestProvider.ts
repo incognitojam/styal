@@ -28,7 +28,7 @@ import {
   type GitHubViewerAccess,
   type GitHubWorkflowRunApproval,
 } from "./gitHubPullRequestJson.ts";
-import { definition } from "../client/definition.ts";
+import { definition } from "../shared/definition.ts";
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,

@@ -4578,7 +4578,7 @@ features:
       - apps/web/src/components/pullRequest/pullRequestPresentation.tsx
       - packages/contracts/src/threadPullRequest.ts
       - packages/shared/src/threadPullRequests.ts
-      - packages/source-control-core/src/client/threadPullRequests.ts
+      - packages/source-control-core/src/shared/threadPullRequests.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
       - packages/source-control-github/src/server/pullRequestBatches.graphql
@@ -4591,7 +4591,7 @@ features:
       - apps/mobile/src/state/thread-pr-presentation.ts
       - apps/web/src/components/ThreadStatusIndicators.tsx
       - packages/shared/src/threadPullRequests.ts
-      - packages/source-control-core/src/client/threadPullRequests.ts
+      - packages/source-control-core/src/shared/threadPullRequests.ts
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
     tests:
       - apps/mobile/src/features/pull-requests/pullRequestList.test.ts

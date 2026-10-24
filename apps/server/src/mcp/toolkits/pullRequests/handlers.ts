@@ -17,7 +17,7 @@ import * as PullRequestService from "../../../pullRequest/PullRequestService.ts"
 import * as WorkflowRunWatchUsage from "../../../telemetry/WorkflowRunWatchUsage.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
 import { pullRequestSyncKey } from "../../../pullRequest/pullRequestSyncKey.ts";
-import { sourceControlClients } from "../../../sourceControl/sourceControlClients.ts";
+import { sourceControlDefinitions } from "../../../sourceControl/sourceControlDefinitions.ts";
 import {
   normalizeThreadPullRequestKey,
   resolveThreadPullRequestChains,
@@ -69,7 +69,7 @@ function projectHostAndProvider(project: OrchestrationProjectShell | undefined):
   const kind = identity?.provider ?? null;
   if (!identity || kind === null) return { host: null, kind: null };
   return {
-    host: sourceControlClients.changeRequestHost(identity, kind),
+    host: sourceControlDefinitions.changeRequestHost(identity, kind),
     kind,
   };
 }
@@ -79,7 +79,7 @@ const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
   project: OrchestrationProjectShell | undefined,
 ) {
   if (input.url !== undefined) {
-    const parsed = sourceControlClients.parseChangeRequestUrl(input.url)?.link;
+    const parsed = sourceControlDefinitions.parseChangeRequestUrl(input.url)?.link;
     if (parsed === undefined) {
       return yield* new PullRequestUrlInvalidError({});
     }
@@ -96,11 +96,11 @@ const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
   const repository = input.repository.toLowerCase();
   // Without a URL, a public forge host says what shape its change request URLs take;
   // any other host is taken to run the project's own forge.
-  const kind = sourceControlClients.findByPublicHost(host)?.kind ?? projectHost.kind;
+  const kind = sourceControlDefinitions.findByPublicHost(host)?.kind ?? projectHost.kind;
   const url =
     kind === null
       ? null
-      : sourceControlClients.get(kind).changeRequestUrl({
+      : sourceControlDefinitions.get(kind).changeRequestUrl({
           host,
           repository,
           number: input.number,
@@ -207,7 +207,8 @@ function projectForPullRequest(
         : pullRequestSyncKey(
             {
               projectId: project.id,
-              repository: sourceControlClients.repositorySelector(project.repositoryIdentity) ?? "",
+              repository:
+                sourceControlDefinitions.repositorySelector(project.repositoryIdentity) ?? "",
               number: 1,
             },
             project.repositoryIdentity,

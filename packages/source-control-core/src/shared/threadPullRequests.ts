@@ -11,7 +11,7 @@ import {
   type PullRequestMergeIntent,
 } from "@t3tools/shared/threadPullRequests";
 
-import type { SourceControlClientRegistry } from "./definition.ts";
+import type { SourceControlDefinitionRegistry } from "./definition.ts";
 
 type ThreadPullRequestKeySource = ThreadPullRequestKey & {
   readonly authority?: string;
@@ -69,7 +69,7 @@ export type ThreadPullRequestBadge = {
  */
 export function makeThreadPullRequests(
   registry: Pick<
-    SourceControlClientRegistry,
+    SourceControlDefinitionRegistry,
     | "parseChangeRequestUrl"
     | "canonicalRepositoryKey"
     | "findByRepositoryKey"

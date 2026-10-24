@@ -48,7 +48,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { classifyNonZeroExit } from "../vcs/VcsProcess.ts";
 import { MAX_REFERENCES_PER_REQUEST } from "@t3tools/source-control-github/server/gitHubReferences";
 import { makeReferenceCache } from "./referenceCache.ts";
-import { sourceControlClients } from "./sourceControlClients.ts";
+import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -328,7 +328,7 @@ function repositoryNameWithOwnerFromRemoteUrl(url: string): string | null {
   if (gitHubNameWithOwner) {
     return gitHubNameWithOwner;
   }
-  const segments = sourceControlClients.repositoryKeyFromRemote(url).split("/");
+  const segments = sourceControlDefinitions.repositoryKeyFromRemote(url).split("/");
   return segments.length > 1 ? segments.slice(1).join("/") : null;
 }
 
@@ -343,7 +343,7 @@ function parseRemoteConfig(stdout: string): ParsedRemoteConfig {
             url: entry.url,
             nameWithOwner: repositoryNameWithOwnerFromRemoteUrl(entry.url),
             provider:
-              sourceControlClients.recognizeRemote(entry.url)?.kind ??
+              sourceControlDefinitions.recognizeRemote(entry.url)?.kind ??
               SourceControlProviderKind.make("unknown"),
           },
         ],
@@ -931,7 +931,7 @@ export const make = Effect.gen(function* () {
         remotes.find((remote) => remote.remoteName === "origin") ??
         remotes[0];
       const host = preferred
-        ? sourceControlClients.repositoryKeyFromRemote(preferred.url).split("/")[0]
+        ? sourceControlDefinitions.repositoryKeyFromRemote(preferred.url).split("/")[0]
         : undefined;
       return host && host.length > 0 ? host : "github.com";
     },
