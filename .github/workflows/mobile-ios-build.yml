@@ -1,0 +1,168 @@
+name: Mobile iOS Build
+
+# Trial: builds the production iOS app with `eas build --local` on a GitHub
+# macOS runner and reports how long it takes, whether it fits the runner, and
+# whether its runtime version matches the fingerprint Mobile EAS Production
+# computes on Linux. It uploads nothing to TestFlight.
+on:
+  # Temporary: lets the workflow run before it exists on main.
+  push:
+    branches: [styal/mobile-ios-builds-on-ci]
+  workflow_dispatch:
+
+env:
+  APP_VARIANT: production
+  EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+  EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+  APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+
+jobs:
+  linux-fingerprint:
+    name: iOS fingerprint on Linux
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    outputs:
+      fingerprint: ${{ steps.fingerprint.outputs.fingerprint }}
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - id: fingerprint
+        name: Compute the iOS fingerprint as Mobile EAS Production does
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas fingerprint:generate --platform ios --environment production --json --non-interactive \
+            | sed -n '/^{/,$p' > "$RUNNER_TEMP/fingerprint.json"
+          fingerprint="$(jq -er '.hash' "$RUNNER_TEMP/fingerprint.json")"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "Linux iOS fingerprint: $fingerprint"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios-fingerprint-linux
+          path: ${{ runner.temp }}/fingerprint.json
+          retention-days: 3
+
+  build:
+    name: Build production iOS app
+    needs: linux-fingerprint
+    runs-on: xcode-27
+    timeout-minutes: 240
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - name: Runner resources
+        run: |
+          sysctl -n hw.ncpu hw.memsize | paste - -
+          df -h / | tail -1
+          ls -d /Applications/Xcode*.app
+
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+
+      # Full checkout: eas-cli copies the project with `git clone` from the
+      # workspace, which fails on a partial clone.
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - id: fingerprint
+        name: Compute the iOS fingerprint on macOS
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          LINUX_FINGERPRINT: ${{ needs.linux-fingerprint.outputs.fingerprint }}
+        run: |
+          eas fingerprint:generate --platform ios --environment production --json --non-interactive \
+            | sed -n '/^{/,$p' > "$RUNNER_TEMP/fingerprint.json"
+          fingerprint="$(jq -er '.hash' "$RUNNER_TEMP/fingerprint.json")"
+          echo "macOS iOS fingerprint: $fingerprint (Linux: $LINUX_FINGERPRINT)"
+          echo "- macOS fingerprint \`$fingerprint\`, Linux \`$LINUX_FINGERPRINT\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios-fingerprint-macos
+          path: ${{ runner.temp }}/fingerprint.json
+          retention-days: 3
+
+      - name: Build with eas build --local
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          started="$(date +%s)"
+          eas build --local --platform ios --profile ci-trial --non-interactive \
+            --output "$RUNNER_TEMP/styal.ipa"
+          echo "- eas build --local took $(( ($(date +%s) - started) / 60 )) minutes" >> "$GITHUB_STEP_SUMMARY"
+          df -h / | tail -1
+
+      - name: Inspect the IPA
+        env:
+          LINUX_FINGERPRINT: ${{ needs.linux-fingerprint.outputs.fingerprint }}
+        run: |
+          cd "$RUNNER_TEMP"
+          unzip -q styal.ipa -d ipa
+          app="$(find ipa/Payload -maxdepth 1 -name '*.app' | head -n 1)"
+          ls -lh styal.ipa
+          plutil -extract CFBundleShortVersionString raw "$app/Info.plist"
+          plutil -extract CFBundleVersion raw "$app/Info.plist"
+          plutil -p "$app/Expo.plist" | grep -E 'EXUpdates(RuntimeVersion|RequestHeaders|URL)' -A2 || true
+          runtime_file="$(find "$app" -name fingerprint -type f | head -n 1)"
+          runtime_version="$(cat "$runtime_file" 2>/dev/null || true)"
+          echo "Embedded runtime version: ${runtime_version:-none} ($runtime_file)"
+          echo "- IPA $(du -h styal.ipa | cut -f1), runtime version \`${runtime_version:-none}\`, Linux fingerprint \`$LINUX_FINGERPRINT\`" >> "$GITHUB_STEP_SUMMARY"
+          codesign -dv "$app" 2>&1 | grep -E 'Identifier|TeamIdentifier|Authority' || true
+          for ext in "$app"/PlugIns/*.appex; do
+            echo "== $ext"
+            codesign -dv "$ext" 2>&1 | grep -E 'Identifier|Authority=Apple Distribution' || true
+          done
+          codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -p - | head -40

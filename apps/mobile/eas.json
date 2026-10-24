@@ -65,6 +65,10 @@
         "distribution": "internal",
         "buildType": "apk"
       }
+    },
+    "ci-trial": {
+      "extends": "production",
+      "autoIncrement": false
     }
   },
   "submit": {
