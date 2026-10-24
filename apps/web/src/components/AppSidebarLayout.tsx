@@ -332,6 +332,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           data-app-sidebar=""
           role="navigation"
           aria-label={isOnSettings ? "Settings" : "Threads"}
+          // The thread sidebar answers thread shortcuts and the next unread
+          // button above the composer, so it stays mounted while the mobile
+          // sheet is closed.
+          keepMountedOnMobile={!isOnSettings && !legacySidebarEnabled}
           resizable={{
             maxWidth: sidebarMaximumWidth,
             minWidth: sidebarMinimumWidth,

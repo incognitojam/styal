@@ -205,6 +205,7 @@ function Sidebar({
   variant = "sidebar",
   collapsible = "offcanvas",
   resizable = false,
+  keepMountedOnMobile = false,
   className,
   children,
   ...props
@@ -213,6 +214,8 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
   resizable?: boolean | SidebarResizableOptions;
+  /** Keep the mobile sheet's content mounted while it is closed. */
+  keepMountedOnMobile?: boolean;
 }) {
   const { isMobile, state, openMobile, setOpenMobile, setMobileSheetElement } = useSidebar();
   // The rail's width restore and drag refresh key on this value.
@@ -242,6 +245,7 @@ function Sidebar({
         <Sheet onOpenChange={setOpenMobile} open={openMobile}>
           <SheetPopup
             ref={setMobileSheetElement}
+            keepMounted={keepMountedOnMobile}
             className={cn(
               "w-(--sidebar-width) max-w-none bg-sidebar surface-grain p-0 text-sidebar-foreground",
               className,
