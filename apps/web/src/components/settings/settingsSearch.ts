@@ -758,6 +758,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["allow disable enable open drive preview tools sessions project override"],
   },
   {
+    id: "agent-cross-project-access",
+    title: "Agent access to other projects",
+    to: "/settings/integrations",
+    scope: "project-defaults",
+    searchTerms: [
+      "allow restrict limit cross project threads read send rename schedule mcp tools own project override",
+    ],
+  },
+  {
     id: "device-hosts",
     title: "SSH device hosts",
     to: "/settings/integrations",

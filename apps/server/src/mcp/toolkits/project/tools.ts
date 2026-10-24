@@ -38,6 +38,7 @@ const shared = {
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
+    ServerSettings.ServerSettingsService,
     ProjectService.ProjectService,
     Crypto.Crypto,
   ],
@@ -145,7 +146,6 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     GitVcsDriver.GitVcsDriver,
     FileSystem.FileSystem,
     ServerConfig.ServerConfig,
-    ServerSettings.ServerSettingsService,
   ],
 })
   .annotate(Tool.Destructive, true)

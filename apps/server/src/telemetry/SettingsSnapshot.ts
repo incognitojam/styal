@@ -85,6 +85,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     enableAgentBrowserAccess: settings.enableAgentBrowserAccess,
     enableAgentDeviceAccess: settings.enableAgentDeviceAccess,
     enableAgentHardwareAccess: settings.enableAgentHardwareAccess,
+    enableAgentCrossProjectAccess: settings.enableAgentCrossProjectAccess,
     enableDeviceSupport: settings.enableDeviceSupport,
     // null keeps devices running.
     deviceIdleShutdownMinutes: settings.deviceIdleShutdownMinutes,

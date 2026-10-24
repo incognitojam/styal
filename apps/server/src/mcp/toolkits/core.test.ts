@@ -192,6 +192,7 @@ it.effect("returns a bounded public failure without serializing storage causes",
       layerThreadToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(ServerSettings.layerTest()),
         Layer.provide(
           Layer.mock(ThreadManagement.ThreadManagementService)({
             getThreadShell: () =>
@@ -305,6 +306,7 @@ it.effect("returns invalid parameter errors through the production registration"
       layerThreadToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
       ),
     ),
@@ -330,6 +332,7 @@ it.effect("keeps unexpected handler defects private through the production regis
       layerThreadToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(ServerSettings.layerTest()),
         Layer.provide(
           Layer.mock(ThreadManagement.ThreadManagementService)({
             getThreadShell: () => Effect.die(new Error("private-storage-path")),
@@ -448,6 +451,7 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
       layerThreadToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(ServerSettings.layerTest()),
         Layer.provide(
           Layer.mock(ThreadManagement.ThreadManagementService)({
             getThreadShell: (id) =>
@@ -508,6 +512,7 @@ it.effect("a read-only client reads threads and is refused every write before it
       layerThreadToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(ServerSettings.layerTest()),
         Layer.provide(
           Layer.mock(ThreadManagement.ThreadManagementService)({
             getThreadShell: () =>
@@ -561,6 +566,7 @@ it.effect("refuses act-as-caller tools to a client caller", () =>
       layerOrchestratorToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
@@ -600,6 +606,7 @@ it.effect("a caller cannot rewrite a scheduled task that runs above its own mode
       layerOrchestratorToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
@@ -675,6 +682,7 @@ it.effect.each(["t3_thread_interrupt", "t3_workflow_stop"])(
         layerOrchestratorToolkit.pipe(
           Layer.provideMerge(McpServer.McpServer.layer),
           Layer.provide(NodeCrypto.layer),
+          Layer.provide(ServerSettings.layerTest()),
           Layer.provide(
             Layer.mock(ThreadManagement.ThreadManagementService)({
               getThreadShell: () =>
@@ -779,6 +787,7 @@ it.effect("discovers workflow stop targets and requires orchestration capability
       layerOrchestratorToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(ServerSettings.layerTest()),
         Layer.provide(
           Layer.mock(ThreadManagement.ThreadManagementService)({
             getThreadShell: (id) => Effect.succeed(McpToolAccessTestkit.liveThreadShell(id)),

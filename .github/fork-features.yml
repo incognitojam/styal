@@ -78,6 +78,43 @@ features:
         - https://github.com/pingdotgg/t3code/pull/16268
       retire_when: Upstream opens the Add Project browser in ~/Developer on macOS when that folder exists and no base directory is configured.
 
+  - id: agent-cross-project-limit
+    title: Limit in-thread agents to their own project
+    status: maintained
+    prs: [1018]
+    invariants:
+      - "`enableAgentCrossProjectAccess` (default on, keeping upstream's behaviour) is a project-scoped server setting decided by the calling thread's project, read on every T3 MCP tool call so a change applies to running agents without restarting their sessions."
+      - When it is off, an in-thread agent cannot read or act on a thread in another project, list or search another project's threads, launch or schedule into another project or the Scratch project, read, list, change or run another project's scheduled tasks, read, update or delete another project's record, or resolve a pull request guide through another project. Refusals return `capability_denied` without naming the other project; a missing thread still returns its own not-found error.
+      - "`t3_project_list` returns only the caller's own project while the limit is on. Subagents, `create_threads`, and threads launched or scheduled in the caller's own project keep working."
+      - MCP clients signed in from outside a thread have no own project and are not limited by the setting.
+      - A thread caller whose thread can no longer be read is refused with `thread_not_found`, never treated as an outside client. A replayed `schedule_task` request that would update a task in another project is refused, and another project's task is refused before its runtime modes are compared.
+      - Each call that reaches into another project records one `feature.used` event with feature `agent-cross-project`, action `read` or `write`, and outcome `allowed` or `refused`, and no thread, project or tool arguments.
+    rationale: Upstream lets every in-thread agent reach every project on the server. Dropping the `orchestration` capability would also remove subagents, scheduled tasks and thread launch, so the limit applies only to targets in other projects.
+    implementation_paths:
+      - apps/server/src/mcp/agentProjectScope.ts
+      - apps/server/src/telemetry/SettingsSnapshot.ts
+    upstream_paths:
+      - apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.tsx
+      - apps/server/src/mcp/McpToolAccess.ts
+      - apps/server/src/mcp/OrchestratorMcpService.ts
+      - apps/server/src/mcp/toolkits/orchestrator/handlers.ts
+      - apps/server/src/mcp/toolkits/project/handlers.ts
+      - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
+      - apps/server/src/mcp/toolkits/thread/handlers.ts
+      - apps/server/src/mcp/toolkits/worktree/handlers.ts
+      - apps/web/src/components/settings/ProjectDefaultsSettings.tsx
+      - packages/contracts/src/settings.ts
+    tests:
+      - apps/server/src/mcp/McpToolAccess.test.ts
+      - apps/server/src/mcp/OrchestratorMcpService.test.ts
+      - apps/server/src/mcp/toolkits/project/handlers.test.ts
+      - apps/server/src/mcp/toolkits/pullRequests/handlers.test.ts
+      - apps/server/src/telemetry/SettingsSnapshot.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream lets the user keep in-thread agents to their own project's threads, projects and scheduled tasks without removing subagents, scheduled tasks or thread launch.
+
   - id: android-notification-settings
     title: Android notification settings match Android's categories
     status: maintained

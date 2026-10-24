@@ -10,6 +10,8 @@ import {
 import * as Effect from "effect/Effect";
 import { modelSelectionCommandType } from "@t3tools/shared/model";
 
+import * as AgentProjectScope from "../../agentProjectScope.ts";
+import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
   dispatchFailure,
@@ -70,6 +72,9 @@ const readQuestion = Effect.fn("mcp.readQuestion")(function* (input: {
     });
   return { ...context, request, item };
 });
+const readsThread = <P extends { readonly threadId?: ThreadId | undefined }, A, E, R>(
+  handle: (params: P) => Effect.Effect<A, E, R>,
+) => McpToolAccess.readsThreads((params: P) => [params.threadId], handle);
 const writesThread = <P extends { readonly threadId?: ThreadId | undefined }, A, E, R>(
   handle: (params: P) => Effect.Effect<A, E, R>,
 ) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle);
@@ -79,11 +84,19 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
     Effect.gen(function* () {
       const scheduler = yield* ScheduledTasks.ScheduledTaskService;
       const { tasks } = yield* scheduler.list().pipe(Effect.mapError(unavailable));
-      if (!tasks.some((task) => task.id === input.taskId))
+      const existing = tasks.find((task) => task.id === input.taskId);
+      if (existing === undefined)
         return yield* new OrchestratorMcpFailure({
           code: "invalid_request",
           message: "The scheduled task was not found.",
         });
+      yield* AgentProjectScope.assertProject(
+        yield* AgentProjectScope.services,
+        yield* McpInvocationContext.McpInvocationContext,
+        "write",
+        existing.projectId,
+        `scheduled task ${existing.id}`,
+      );
       const { task } = yield* scheduler
         .runNow({ id: input.taskId })
         .pipe(Effect.mapError(unavailable));
@@ -98,9 +111,16 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
   ),
   t3_thread_search: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
-      const { caller } = yield* readCaller();
+      const { caller, scope } = yield* readCaller();
       const { projectId: requested, ...query } = input;
       const projectId = requested ?? caller?.projectId;
+      if (projectId !== undefined)
+        yield* AgentProjectScope.assertProject(
+          yield* AgentProjectScope.services,
+          scope,
+          "read",
+          projectId,
+        );
       const threadSearch = yield* ThreadSearch.ThreadSearch;
       const result = yield* threadSearch.search(query).pipe(Effect.mapError(unavailable));
       return {
@@ -151,7 +171,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
         return { sequence: result.sequence, targetThreadId: input.targetThreadId };
       }),
   ),
-  t3_thread_transfers: McpToolAccess.reads((input) =>
+  t3_thread_transfers: readsThread((input) =>
     Effect.gen(function* () {
       const { projection } = yield* readThread(input.threadId, ["contextTransfers"]);
       return {
@@ -166,7 +186,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       };
     }),
   ),
-  t3_thread_configuration: McpToolAccess.reads((input) =>
+  t3_thread_configuration: readsThread((input) =>
     Effect.gen(function* () {
       const {
         projection: { thread },
@@ -197,7 +217,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       return { sequence: result.sequence };
     }),
   ),
-  t3_pending_request_list: McpToolAccess.reads((input) =>
+  t3_pending_request_list: readsThread((input) =>
     Effect.gen(function* () {
       const { projection } = yield* readThread(input.threadId, ["runtimeRequests"]);
       return {
@@ -207,7 +227,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       };
     }),
   ),
-  t3_pending_request_read: McpToolAccess.reads((input) =>
+  t3_pending_request_read: readsThread((input) =>
     Effect.gen(function* () {
       const { item } = yield* readQuestion(input);
       return { requestId: input.requestId, questions: item.questions };
@@ -228,7 +248,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       return { sequence: result.sequence };
     }),
   ),
-  t3_queue_list: McpToolAccess.reads((input) =>
+  t3_queue_list: readsThread((input) =>
     Effect.gen(function* () {
       const { projection } = yield* readThread(input.threadId, ["runs", "messages"]);
       const runs = queuedRunsInDeliveryOrder(projection);
@@ -243,7 +263,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       };
     }),
   ),
-  t3_queue_read: McpToolAccess.reads((input) =>
+  t3_queue_read: readsThread((input) =>
     Effect.gen(function* () {
       const { projection } = yield* readThread(input.threadId, ["runs", "messages"]);
       const entry = queueEntry(projection, input.queuedRunId, 16000);

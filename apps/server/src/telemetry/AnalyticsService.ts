@@ -209,6 +209,7 @@ export const make = Effect.gen(function* () {
           providerAnalyticsUsageVersion: 1,
           providerSendUsageVersion: 1,
           settingsSnapshotUsageVersion: 1,
+          agentCrossProjectUsageVersion: 1,
           desktopUpdateIdleRestartUsageVersion: 1,
           ...buildContext,
           clientType,

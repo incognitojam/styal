@@ -16,6 +16,7 @@ import { Tool, Toolkit } from "effect/ai";
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const shared = {
@@ -24,6 +25,7 @@ const shared = {
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
+    ServerSettings.ServerSettingsService,
     ServerConfig.ServerConfig,
     ServerSecretStore.ServerSecretStore,
     FileSystem.FileSystem,
