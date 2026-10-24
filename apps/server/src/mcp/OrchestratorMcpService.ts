@@ -90,6 +90,7 @@ import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
+import * as AgentProjectScope from "./agentProjectScope.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   clientRuntimeModeCeiling,
@@ -912,6 +913,7 @@ const make = Effect.gen(function* () {
   const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const projectScope = { threads: threadManagement, settings: serverSettings };
 
   const requireProject = (projectId: ProjectId) =>
     projects.getById(projectId).pipe(
@@ -1616,6 +1618,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { parent, limits } = yield* loadCaller(scope);
         const projectId = yield* resolveProjectTarget(parent, input.projectId);
+        yield* AgentProjectScope.assertProject(projectScope, scope, "write", projectId);
         yield* assertLiveCallerForOtherProject(scope, parent, projectId);
         const project = yield* requireProject(projectId);
         const bindToCurrentThread =
@@ -1675,6 +1678,8 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { parent, limits } = yield* loadCaller(scope);
         const projectId = input.projectId ?? parent?.thread.projectId;
+        if (projectId !== undefined)
+          yield* AgentProjectScope.assertProject(projectScope, scope, "read", projectId);
         const { tasks } = yield* scheduledTasks
           .list()
           .pipe(
@@ -1693,6 +1698,13 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
+        yield* AgentProjectScope.assertProject(
+          projectScope,
+          scope,
+          "write",
+          existing.projectId,
+          `scheduled task ${existing.id}`,
+        );
         yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
         if (
           input.bindToCurrentThread === true &&
@@ -1746,6 +1758,13 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { parent, limits } = yield* loadCaller(scope);
         const existing = yield* loadScheduledTask(input.scheduledTaskId, limits);
+        yield* AgentProjectScope.assertProject(
+          projectScope,
+          scope,
+          "write",
+          existing.projectId,
+          `scheduled task ${existing.id}`,
+        );
         yield* assertLiveCallerForOtherProject(scope, parent, existing.projectId);
         yield* scheduledTasks
           .delete({ id: existing.id })
@@ -2404,6 +2423,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { parent } = yield* loadCaller(scope);
         const projectId = yield* resolveProjectTarget(parent, input.projectId);
+        yield* AgentProjectScope.assertProject(projectScope, scope, "read", projectId);
         const projectThreads = yield* threadManagement
           .listProjectThreads({
             projectId,

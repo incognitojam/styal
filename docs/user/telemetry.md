@@ -24,6 +24,11 @@ found a run already finished, and how each watch ended: the run's conclusion, a 
 it, or being stopped, with how many minutes it was watched. Repositories, run links, and workflow
 or job names are not collected.
 
+When an agent in a thread reads or acts on another project's threads, projects or scheduled
+tasks, the server records whether it read or changed something and whether
+**Agent access to other projects** allowed it. Projects, threads, tool names and arguments are not
+collected.
+
 Once after startup and then daily, the server reports each configured provider: its type, whether
 it is the default or an added instance, whether it is installed, enabled and healthy, its version
 and the newest version styal has tested, how it was installed (such as npm or Homebrew), and whether automatic updates are on, could update

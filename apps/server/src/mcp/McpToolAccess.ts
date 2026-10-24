@@ -15,6 +15,7 @@ import {
   DispatchModeLimit,
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
+import * as AgentProjectScope from "./agentProjectScope.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./OrchestratorMcpService.ts";
 import {
@@ -103,6 +104,27 @@ const requireThreadCaller = McpInvocationContext.McpInvocationContext.pipe(
 export const reads = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => handle(params));
 
+/**
+ * Names the threads a read targets so the caller's project limit covers them;
+ * an omitted thread is the caller's own.
+ */
+export const readsThreads = <P, A, E, R>(
+  threads: (params: P) => ReadonlyArray<ThreadId | undefined>,
+  handle: (params: P) => Effect.Effect<A, E, R>,
+) =>
+  declare((params: P) =>
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      yield* AgentProjectScope.assertThreads(
+        yield* AgentProjectScope.services,
+        scope,
+        "read",
+        threads(params),
+      );
+      return yield* handle(params);
+    }),
+  );
+
 export const readsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => requireThreadCaller.pipe(Effect.flatMap(() => handle(params))));
 
@@ -131,12 +153,22 @@ export const writesThreads = <P, A, E, R>(
   declare((params: P) =>
     Effect.gen(function* () {
       const caller = yield* writingCaller;
+      const reach = yield* AgentProjectScope.callerReach(
+        yield* AgentProjectScope.services,
+        caller.scope,
+      );
       for (const threadId of threads(params)) {
         if (threadId === undefined || threadId === caller.scope.thread?.threadId) continue;
         const target = yield* caller.threads
           .getThreadShell(threadId)
           .pipe(Effect.mapError(unavailable));
         if (target !== null && target.deletedAt === null) {
+          yield* AgentProjectScope.checkTarget(
+            reach,
+            "write",
+            target.projectId,
+            `thread ${threadId}`,
+          );
           yield* assertTargetWithinLimits(caller.limits, target);
         }
       }

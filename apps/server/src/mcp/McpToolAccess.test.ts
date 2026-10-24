@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
   OrchestratorMcpFailure,
+  ProjectId,
   ProviderInstanceId,
   ProviderInteractionMode,
   RuntimeMode,
@@ -14,6 +15,8 @@ import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 
 import { OrchestratorProjectionError } from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
@@ -27,6 +30,8 @@ const backgroundThreadId = ThreadId.make("thread:background");
 const oldProviderThreadId = ThreadId.make("thread:old-provider-background");
 const archivedThreadId = ThreadId.make("thread:archived-background");
 const unknownOwnerThreadId = ThreadId.make("thread:unknown-background-owner");
+const otherProjectThreadId = ThreadId.make("thread:other-project");
+const callerProjectId = liveThreadShell(supervisedThreadId).projectId;
 
 const backgroundShell = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) => ({
   ...liveThreadShell(threadId, { activeRunId: null }),
@@ -42,6 +47,13 @@ const shells = new Map([
     liveThreadShell(planThreadId, { runtimeMode: "approval-required", interactionMode: "plan" }),
   ],
   [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
+  [
+    otherProjectThreadId,
+    {
+      ...liveThreadShell(otherProjectThreadId, { runtimeMode: "approval-required" }),
+      projectId: ProjectId.make("project:other"),
+    },
+  ],
   [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
   [backgroundThreadId, backgroundShell(backgroundThreadId, ProviderInstanceId.make("codex"))],
   [oldProviderThreadId, backgroundShell(oldProviderThreadId, ProviderInstanceId.make("claude"))],
@@ -105,6 +117,7 @@ const probe = {
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagement.ThreadManagementService,
+    ServerSettings.ServerSettingsService,
   ],
 };
 const ProbeToolkit = Toolkit.make(
@@ -113,6 +126,10 @@ const ProbeToolkit = Toolkit.make(
   Tool.make("acts_as_caller", probe),
   Tool.make("writes", probe),
   Tool.make("writes_with_capability", probe),
+  Tool.make("reads_threads", {
+    ...probe,
+    parameters: Schema.Struct({ threadId: Schema.optional(ThreadId) }),
+  }),
   Tool.make("writes_threads", {
     ...probe,
     parameters: Schema.Struct({ threadId: Schema.optional(ThreadId) }),
@@ -129,6 +146,10 @@ const ProbeToolkit = Toolkit.make(
 const ran = Effect.succeed({ ran: "ran" });
 const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   reads: McpToolAccess.reads(() => ran),
+  reads_threads: McpToolAccess.readsThreads(
+    (input) => [input.threadId],
+    () => ran,
+  ),
   reads_as_caller: McpToolAccess.readsAsCaller(() => ran),
   acts_as_caller: McpToolAccess.actsAsCaller(() => ran),
   writes: McpToolAccess.writes(() => ran),
@@ -174,6 +195,7 @@ export const refusedAtCompileTime = () => {
     // @ts-expect-error a handlers layer that skipped `McpToolAccess.toLayer`
     ProbeToolkit.toLayer({
       reads: unchecked,
+      reads_threads: unchecked,
       reads_as_caller: unchecked,
       acts_as_caller: unchecked,
       writes: unchecked,
@@ -185,10 +207,14 @@ export const refusedAtCompileTime = () => {
   );
 };
 
-const probeServer = (threads: Layer.Layer<ThreadManagement.ThreadManagementService>) =>
+const probeServer = (
+  threads: Layer.Layer<ThreadManagement.ThreadManagementService>,
+  settings = ServerSettings.layerTest(),
+) =>
   McpHttpServer.toolkitRegistration(ProbeToolkit, layerProbeHandlers).pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provideMerge(threads),
+    Layer.provideMerge(settings),
   );
 
 const decodeOutcome = Schema.decodeUnknownEffect(
@@ -309,6 +335,61 @@ it.effect.each([
       ),
     ),
   ),
+);
+
+const knownThreads = Layer.mock(ThreadManagement.ThreadManagementService)({
+  getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+});
+const crossProjectOff = ServerSettings.layerTest({ enableAgentCrossProjectAccess: false });
+const crossProjectOffElsewhere = ServerSettings.layerTest({
+  enableAgentCrossProjectAccess: false,
+  projectSettingsOverrides: { [callerProjectId]: { enableAgentCrossProjectAccess: true } },
+});
+const crossProjectOffHere = ServerSettings.layerTest({
+  projectSettingsOverrides: { [callerProjectId]: { enableAgentCrossProjectAccess: false } },
+});
+
+it.effect.each([
+  ["writes_threads", supervised, otherProjectThreadId, crossProjectOff, "capability_denied"],
+  ["reads_threads", supervised, otherProjectThreadId, crossProjectOff, "capability_denied"],
+  ["reads_threads", supervised, otherProjectThreadId, crossProjectOffHere, "capability_denied"],
+  ["writes_threads", supervised, planThreadId, crossProjectOff, "ran"],
+  ["reads_threads", supervised, fullAccessThreadId, crossProjectOff, "ran"],
+  ["reads_threads", supervised, undefined, crossProjectOff, "ran"],
+  ["reads_threads", supervised, ThreadId.make("thread:missing"), crossProjectOff, "ran"],
+  ["writes_threads", supervised, otherProjectThreadId, ServerSettings.layerTest(), "ran"],
+  ["reads_threads", supervised, otherProjectThreadId, ServerSettings.layerTest(), "ran"],
+  ["writes_threads", supervised, otherProjectThreadId, crossProjectOffElsewhere, "ran"],
+  ["writes_threads", supervisedClient, otherProjectThreadId, crossProjectOff, "ran"],
+  ["reads_threads", supervisedClient, otherProjectThreadId, crossProjectOff, "ran"],
+] as const)(
+  "agent access to other projects: %s from %o to %s",
+  ([tool, scope, threadId, settings, expected]) =>
+    call(tool, scope, threadId === undefined ? {} : { threadId }).pipe(
+      Effect.map((outcome) => expect(outcome).toBe(expected)),
+      Effect.provide(probeServer(knownThreads, settings)),
+    ),
+);
+
+it.effect("records an allowed reach into another project without its ids", () =>
+  Effect.gen(function* () {
+    const recorded: Array<readonly [string, Readonly<Record<string, unknown>> | undefined]> = [];
+    const analytics = Layer.succeed(AnalyticsService.AnalyticsService, {
+      record: (event, properties) => Effect.sync(() => void recorded.push([event, properties])),
+      flush: Effect.void,
+    });
+    const outcomes = yield* Effect.all([
+      call("writes_threads", supervised, { threadId: otherProjectThreadId }),
+      call("reads_threads", supervised, { threadId: planThreadId }),
+    ]).pipe(Effect.provide(probeServer(knownThreads).pipe(Layer.provide(analytics))));
+    expect(outcomes).toEqual(["ran", "ran"]);
+    expect(recorded).toEqual([
+      [
+        "feature.used",
+        { feature: "agent-cross-project", action: "write", source: "agent", outcome: "allowed" },
+      ],
+    ]);
+  }),
 );
 
 it("refuses a declaration or handlers layer built outside McpToolAccess", () => {

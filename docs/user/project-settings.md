@@ -236,6 +236,19 @@ the project. The instructions apply to every checkout in the project group and w
 Claude, Cursor, Grok, and OpenCode. Clear the field or reset it to stop including them in future
 sessions.
 
+## Keep agents in their own project
+
+Agents running in a thread can read, message and manage threads in every project on the
+environment. To keep them to their own project, turn off **Agent access to other projects** in
+**Settings → Integrations → Agent access**, either as the environment default or for one project.
+On mobile, use **Settings → Agent behavior**. The change applies to running agents on their next
+tool call.
+
+With access off, an agent cannot read or message threads in other projects, start or schedule
+threads there or in Scratch, change their scheduled tasks, or see other projects in its project
+list. Subagents and threads it starts in its own project still work. Agents connected from outside
+styal, such as [outside agents](./outside-agents.md), are not affected.
+
 ## Keep the default branch current
 
 In Source Control, enable **Automatically pull** to keep the default-branch checkout up to date

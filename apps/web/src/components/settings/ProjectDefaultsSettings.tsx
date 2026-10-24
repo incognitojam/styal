@@ -79,6 +79,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedSubmodules = useScopedSettingsMixed(["worktreeSubmodules"]);
   const mixedBrowser = useScopedSettingsMixed(["enableAgentBrowserAccess"]);
+  const mixedCrossProject = useScopedSettingsMixed(["enableAgentCrossProjectAccess"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedAgentCredits = useScopedSettingsMixed(["removeAgentCreditsOnMerge"]);
   const mixedMergeMethod = useScopedSettingsMixed(["pullRequestMergeMethod"]);
@@ -265,7 +266,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
         category === "general" || category === "project"
           ? "New threads"
           : category === "integrations"
-            ? "Browser"
+            ? "Agent access"
             : "Repositories"
       }
     >
@@ -524,6 +525,42 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                 mixed={mixedBrowser}
                 checked={mixedBrowser ? false : settings.enableAgentBrowserAccess}
                 onCheckedChange={(enabled) => updateSettings({ enableAgentBrowserAccess: enabled })}
+              />
+            }
+          />
+          <SettingsRow
+            serverScoped
+            settingKeys={["enableAgentCrossProjectAccess"]}
+            mixed={mixedCrossProject}
+            id={searchableSetting("agent-cross-project-access").id}
+            title="Agent access to other projects"
+            description={
+              isProjectScope
+                ? "Allow agents in this project to read, message and manage threads, projects and scheduled tasks in other projects. Applies to running agents right away."
+                : "Allow agents to read, message and manage threads, projects and scheduled tasks in other projects. Projects can override it."
+            }
+            resetAction={
+              settings.enableAgentCrossProjectAccess !==
+              DEFAULT_SERVER_SETTINGS.enableAgentCrossProjectAccess ? (
+                <SettingResetButton
+                  label="default access to other projects"
+                  onClick={() =>
+                    updateSettings({
+                      enableAgentCrossProjectAccess:
+                        DEFAULT_SERVER_SETTINGS.enableAgentCrossProjectAccess,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                aria-label="Agent access to other projects"
+                mixed={mixedCrossProject}
+                checked={mixedCrossProject ? false : settings.enableAgentCrossProjectAccess}
+                onCheckedChange={(enabled) =>
+                  updateSettings({ enableAgentCrossProjectAccess: enabled })
+                }
               />
             }
           />

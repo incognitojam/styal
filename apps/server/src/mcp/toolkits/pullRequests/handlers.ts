@@ -30,6 +30,7 @@ import * as PullRequestService from "../../../pullRequest/PullRequestService.ts"
 import * as WorkflowRunWatchUsage from "../../../telemetry/WorkflowRunWatchUsage.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
 import { pullRequestSyncKey } from "../../../pullRequest/pullRequestSyncKey.ts";
+import * as AgentProjectScope from "../../agentProjectScope.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
@@ -419,9 +420,15 @@ const make = Effect.gen(function* () {
             Effect.orElseSucceed(() => null),
             Effect.map((shell) => shell ?? undefined),
           );
-    const known = yield* projects
+    const confined = yield* AgentProjectScope.confinedProject(
+      yield* AgentProjectScope.services,
+      scope,
+    );
+    const known = (yield* projects
       .listShells()
-      .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })));
+      .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })))).filter(
+      (project) => confined === undefined || project.id === confined,
+    );
     const callerProject = known.find((project) => project.id === callerThread?.projectId);
     return yield* Effect.forEach(targets, (input) =>
       resolveTarget(input, callerProject).pipe(
@@ -519,10 +526,12 @@ const make = Effect.gen(function* () {
         };
       }),
     ),
-    list_thread_pull_requests: McpToolAccess.reads((input) =>
-      requireThread(PullRequestListFailedError, input.threadId).pipe(
-        Effect.map(listThreadPullRequests),
-      ),
+    list_thread_pull_requests: McpToolAccess.readsThreads(
+      (input) => [input.threadId],
+      (input) =>
+        requireThread(PullRequestListFailedError, input.threadId).pipe(
+          Effect.map(listThreadPullRequests),
+        ),
     ),
     watch_pull_request: writesThread((input) => setWatching(input, true)),
     unwatch_pull_request: writesThread((input) => setWatching(input, false)),

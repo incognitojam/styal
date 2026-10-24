@@ -59,7 +59,11 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "branchNamePrefix",
     "branchNameInstructions",
   ],
-  "agent-behavior": ["responseStreamingMode", "enableAgentBrowserAccess"],
+  "agent-behavior": [
+    "responseStreamingMode",
+    "enableAgentBrowserAccess",
+    "enableAgentCrossProjectAccess",
+  ],
   maintenance: ["continueThreadsAfterServerUpdate"],
 };
 
@@ -433,6 +437,16 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       value={uniform("enableAgentBrowserAccess")}
                       disabled={disabledFor("enableAgentBrowserAccess")}
                       onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
+                    />
+                  </SettingsSection>
+                  <SettingsSection title="Other projects">
+                    <SettingsSwitchRow
+                      icon="folder"
+                      label="Agent access to other projects"
+                      subtitle="Allow agents to read, message and manage threads, projects and scheduled tasks in other projects."
+                      value={uniform("enableAgentCrossProjectAccess")}
+                      disabled={disabledFor("enableAgentCrossProjectAccess")}
+                      onValueChange={(value) => write({ enableAgentCrossProjectAccess: value })}
                     />
                   </SettingsSection>
                 </>
