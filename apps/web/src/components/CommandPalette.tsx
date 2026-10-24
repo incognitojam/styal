@@ -91,7 +91,9 @@ import {
   SquarePenIcon,
   SunIcon,
   TextSearchIcon,
+  InboxIcon,
 } from "lucide-react";
+import { requestNextAttentionThread } from "./sidebar/nextAttentionThreadBus";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
   useContext,
@@ -2017,6 +2019,20 @@ function OpenCommandPaletteDialog(props: {
       icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "chat.newWithoutProject",
       run: () => startScratchThread(scratchTargetEnvironmentId),
+    });
+  }
+
+  if (!legacySidebarEnabled) {
+    actionItems.push({
+      kind: "action",
+      value: "action:next-attention-thread",
+      title: "Open next thread that needs you",
+      searchTerms: ["next", "unread", "attention", "approval", "input", "inbox", "triage"],
+      icon: <InboxIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "thread.nextAttention",
+      run: async () => {
+        requestNextAttentionThread();
+      },
     });
   }
 

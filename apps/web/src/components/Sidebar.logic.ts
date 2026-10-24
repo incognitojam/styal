@@ -1119,6 +1119,69 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
   return "ready";
 }
 
+// What a thread is waiting on the user for, matching the precedence of a
+// row's status slot. Running and idle work is not attention.
+export type SidebarThreadAttention = "approval" | "input" | "limited" | "failed" | "woke" | "done";
+
+const SIDEBAR_THREAD_ATTENTION_ORDER: readonly SidebarThreadAttention[] = [
+  "approval",
+  "input",
+  "limited",
+  "failed",
+  "woke",
+  "done",
+];
+
+export function isSidebarThreadWoke(input: {
+  wokeAt: string | null;
+  lastVisitedAt: string | undefined;
+  settled: boolean;
+}): boolean {
+  if (input.wokeAt === null || input.settled) return false;
+  const wokeAt = Date.parse(input.wokeAt);
+  if (Number.isNaN(wokeAt)) return false;
+  if (input.lastVisitedAt === undefined) return true;
+  const lastVisitedAt = Date.parse(input.lastVisitedAt);
+  return Number.isNaN(lastVisitedAt) || lastVisitedAt < wokeAt;
+}
+
+export function resolveSidebarThreadAttention(input: {
+  status: SidebarThreadStatus;
+  isUnread: boolean;
+  isWoke: boolean;
+}): SidebarThreadAttention | null {
+  switch (input.status) {
+    case "approval":
+    case "input":
+    case "limited":
+    case "failed":
+      return input.status;
+    case "working":
+    case "waiting":
+      return null;
+  }
+  if (input.isWoke) return "woke";
+  return input.isUnread ? "done" : null;
+}
+
+/**
+ * The thread to open next: the most urgent attention first, then sidebar
+ * order. The open thread is skipped, so pressing again moves on while it
+ * still waits.
+ */
+export function resolveNextAttentionThread(
+  candidates: readonly { key: string; attention: SidebarThreadAttention | null }[],
+  currentKey: string | null,
+): { key: string; attention: SidebarThreadAttention } | null {
+  let best: { key: string; attention: SidebarThreadAttention; rank: number } | null = null;
+  for (const { key, attention } of candidates) {
+    if (attention === null || key === currentKey) continue;
+    const rank = SIDEBAR_THREAD_ATTENTION_ORDER.indexOf(attention);
+    if (best === null || rank < best.rank) best = { key, attention, rank };
+  }
+  return best === null ? null : { key: best.key, attention: best.attention };
+}
+
 export type SidebarV2TopStatusKind =
   | "approval"
   | "done"

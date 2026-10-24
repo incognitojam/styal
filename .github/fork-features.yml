@@ -2722,6 +2722,37 @@ features:
       tracking: []
       retire_when: Upstream measures client connection quality per network type and exposes it to users and maintainers.
 
+  - id: next-attention-thread-shortcut
+    title: Open the next thread that needs the user
+    status: maintained
+    prs: []
+    invariants:
+      - "`thread.nextAttention` (`mod+shift+u` by default, outside terminals) and the command palette's Open next thread that needs you open the pinned, active or Working thread with the most urgent attention, in the row status precedence: approval, input, usage limit, failed run, woke, then an unread completion. Ties open in sidebar order."
+      - The open thread is skipped, so repeating the command moves to the next waiting thread. Snoozed and settled threads are not candidates.
+      - With nothing waiting, it opens nothing and shows a "Nothing needs you right now" toast.
+      - Each use emits a bounded `next-attention-thread` client-usage event through the primary environment with the entry point and, when a thread opened, the attention kind, never with thread names or keys.
+    rationale: Working through many threads means finding the next one that needs a decision. The flat inbox puts them in the list, but reaching each one takes the mouse or counting rows for a jump shortcut.
+    implementation_paths:
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/Sidebar.logic.ts
+      - apps/web/src/components/Sidebar.tsx
+      - apps/web/src/components/sidebar/nextAttentionThreadBus.ts
+      - packages/contracts/src/forkClientUsage.ts
+      - packages/contracts/src/keybindings.ts
+      - packages/shared/src/keybindings.ts
+    upstream_paths:
+      - apps/web/src/components/CommandPalette.tsx
+      - apps/web/src/components/Sidebar.logic.ts
+      - apps/web/src/components/Sidebar.tsx
+      - packages/contracts/src/keybindings.ts
+      - packages/shared/src/keybindings.ts
+    tests:
+      - apps/web/src/components/Sidebar.logic.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream adds a command that opens the next thread waiting on the user in the same precedence.
+
   - id: pair-cli-startup
     title: Avoid redundant CLI loading and Tailscale pairing probes
     status: maintained
