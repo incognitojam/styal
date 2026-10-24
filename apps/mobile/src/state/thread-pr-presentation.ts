@@ -4,7 +4,10 @@ import type {
   ThreadPullRequestLink,
   VcsStatusResult,
 } from "@t3tools/contracts";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import {
+  sourceControlClients,
+  type ChangeRequestTerminology,
+} from "@t3tools/client-runtime/source-control-clients";
 
 import {
   resolveThreadCurrentPullRequestLink,
@@ -25,6 +28,7 @@ export interface ThreadPrPresentation {
   readonly mergeIntent?: PullRequestMergeIntent;
   readonly updatedAt: string | null;
   readonly url: string;
+  readonly changeRequest: ChangeRequestTerminology;
   readonly label: string;
   readonly accessibilityLabel: string;
   readonly textClassName: string;
@@ -52,6 +56,7 @@ export function presentThreadPr(
     ...(mergeIntent ? { mergeIntent } : {}),
     updatedAt: pr.updatedAt ?? null,
     url: pr.url,
+    changeRequest,
     label: String(pr.number),
     accessibilityLabel: `#${pr.number} ${changeRequest.singular} ${isDraft ? "draft" : pr.state}${mergeIntent ? `, ${pullRequestMergeIntentLabel(mergeIntent)}` : ""}`,
     textClassName: isDraft ? "text-adaptive-zinc-500-400" : PR_STATE_TEXT_CLASS[pr.state],
@@ -64,6 +69,8 @@ export function presentThreadLinkedPullRequests(
   const link = resolveThreadCurrentPullRequestLink(links);
   const badge = resolveThreadPullRequestBadge(links);
   if (link === null || badge === null) return null;
+  const { changeRequest } =
+    sourceControlClients.findByChangeRequestUrl(link.url) ?? sourceControlClients.get(undefined);
   const snapshot = link.snapshot;
   const linkedCount = badge.kind === "pull-request" && badge.others > 0 ? badge.others + 1 : null;
   const isMultiple = badge.kind === "stack" || linkedCount !== null;
@@ -95,13 +102,14 @@ export function presentThreadLinkedPullRequests(
     ...(badge.mergeIntent ? { mergeIntent: badge.mergeIntent } : {}),
     updatedAt: snapshot?.updatedAt ?? null,
     url: link.url,
+    changeRequest,
     label,
     accessibilityLabel:
       badge.kind === "stack"
-        ? `${badge.layers} pull requests in stack, ${isDraft ? "draft" : (state ?? "status pending")}${mergeLabel}`
+        ? `${badge.layers} ${changeRequest.singular}s in stack, ${isDraft ? "draft" : (state ?? "status pending")}${mergeLabel}`
         : linkedCount !== null
-          ? `${linkedCount} linked pull requests, overall ${badge.state}${mergeLabel}`
-          : `#${link.number} pull request ${state === null ? "status pending" : isDraft ? "draft" : state}${mergeLabel}`,
+          ? `${linkedCount} linked ${changeRequest.plural}, overall ${badge.state}${mergeLabel}`
+          : `#${link.number} ${changeRequest.singular} ${state === null ? "status pending" : isDraft ? "draft" : state}${mergeLabel}`,
     textClassName:
       state === null || isDraft
         ? "text-foreground-muted"

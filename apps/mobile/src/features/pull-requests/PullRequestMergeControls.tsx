@@ -2,6 +2,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import type { PullRequestDetail, PullRequestMergeMethod } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
@@ -31,7 +32,7 @@ import {
   MERGE_CONFLICT_REASON,
   MERGE_METHODS,
   PR_ACTION_ICONS,
-  PR_ACTION_LABELS,
+  pullRequestActionLabel,
 } from "./pullRequestActions";
 import { pullRequestStackMerge, singlePullRequestMergeAllowed } from "./pullRequestStack";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
@@ -46,6 +47,7 @@ export function PullRequestMergeControls(props: {
 }) {
   const { pr, stack } = props;
   const mergeIntent = resolvePullRequestMergeIntent(pr);
+  const terminology = sourceControlClients.get(pr.provider).changeRequest;
   const target = pullRequestTarget(props.params);
   const permissions = usePullRequestPermissions(props.params, pr);
   const preferences = useAtomValue(mobilePreferencesAtom);
@@ -66,7 +68,7 @@ export function PullRequestMergeControls(props: {
     : methods.includes("squash")
       ? "squash"
       : methods[0];
-  const scope = stack.stack ? pullRequestStackMerge(stack.stack, pr.number) : null;
+  const scope = stack.stack ? pullRequestStackMerge(stack.stack, pr.number, terminology) : null;
   const canMergeSingle = singlePullRequestMergeAllowed({
     supportsStackActions: stack.supportsStackActions,
     hasStack: stack.stack !== null,
@@ -77,7 +79,7 @@ export function PullRequestMergeControls(props: {
   const reason =
     (!permissions.connected
       ? "Reconnect to merge."
-      : mergeUnavailableReason(pr, permissions.canWrite)) ??
+      : mergeUnavailableReason(pr, permissions.canWrite, terminology)) ??
     (stack.stack
       ? !stack.supportsStackActions
         ? "This environment can display stacks but cannot merge them."
@@ -171,7 +173,7 @@ export function PullRequestMergeControls(props: {
                     !canPerformPullRequestAction(fresh, "merge") ||
                     !allowedMergeMethods(fresh).includes(method)
                   )
-                    throw new Error("The pull request changed. Refresh before merging.");
+                    throw new Error(`The ${terminology.singular} changed. Refresh before merging.`);
                   return method;
                 },
               }
@@ -204,7 +206,7 @@ export function PullRequestMergeControls(props: {
         : action === "merge"
           ? scope && scope.layers.length > 1
             ? `Merge ${scope.layers.length} stack layers?`
-            : "Merge pull request?"
+            : `${pullRequestActionLabel("merge", terminology)}?`
           : action === "enable-auto-merge"
             ? "Enable auto-merge?"
             : "Disable auto-merge?";
@@ -216,7 +218,7 @@ export function PullRequestMergeControls(props: {
           : action === "enable-auto-merge"
             ? `Merge #${pr.number} using ${method} when its requirements are met. This may happen immediately.`
             : action === "disable-auto-merge"
-              ? "Stop the provider from automatically merging this pull request."
+              ? `Stop the provider from automatically merging this ${terminology.singular}.`
               : `Merge #${pr.number} into ${pr.baseBranch} using ${method}.`;
     Dialog.alert(title, message, [
       { text: "Cancel", style: "cancel" },
@@ -300,7 +302,7 @@ export function PullRequestMergeControls(props: {
                 ? [
                     {
                       id: menuAutoAction,
-                      title: PR_ACTION_LABELS[menuAutoAction],
+                      title: pullRequestActionLabel(menuAutoAction, terminology),
                       image: PR_ACTION_ICONS[menuAutoAction],
                       attributes: { disabled: busy },
                     },
