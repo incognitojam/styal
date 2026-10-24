@@ -618,6 +618,37 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # Web tests also run a browser project in headless Chromium. The guard lets this land
+      # before the web package depends on Playwright.
+      - name: Resolve web Playwright version
+        id: web_playwright
+        if: matrix.shard
+        run: |
+          if [ -f apps/web/node_modules/playwright/package.json ]; then
+            echo "version=$(node -p "require('./apps/web/node_modules/playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache Chromium for web browser tests
+        id: web_chromium_cache
+        if: steps.web_playwright.outputs.version != ''
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.web_playwright.outputs.version }}
+
+      - name: Install Chromium for web browser tests
+        if: steps.web_playwright.outputs.version != '' && steps.web_chromium_cache.outputs.cache-hit != 'true'
+        run: node apps/web/node_modules/playwright/cli.js install --only-shell chromium
+
+      - name: Install missing Chromium system dependencies for web browser tests
+        if: steps.web_playwright.outputs.version != ''
+        run: |
+          browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+          test -n "$browser"
+          if ldd "$browser" | grep '=> not found'; then
+            node apps/web/node_modules/playwright/cli.js install-deps chromium
+          fi
+
       - name: Test web shard
         if: matrix.shard
         run: |
