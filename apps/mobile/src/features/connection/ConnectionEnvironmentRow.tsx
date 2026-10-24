@@ -30,6 +30,7 @@ function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string
     phase: environment.connectionState,
     error: environment.connectionError,
     traceId: environment.connectionErrorTraceId,
+    unreachable: environment.connectionUnreachable,
   });
 }
 

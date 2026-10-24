@@ -97,6 +97,11 @@ or remove it. On mobile, open the machine under **Settings → Environments** an
 choose **Edit**. Signing out of styal Link removes only that route; a machine
 you can still reach another way stays saved.
 
+When a connection fails, each route shows why, such as **No answer** for an
+address that did not respond. If every route fails, the machine is shown as
+**Unreachable on every route**; it is usually asleep, offline, or not running
+styal.
+
 Open **Permissions** next to **Routes** in web or desktop, or **Your permissions**
 in the mobile route details, to see what your current connection can do on that
 environment. For a remote environment, this is in its route details. Permissions

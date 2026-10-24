@@ -21,6 +21,7 @@ import {
   connectionStatusTitle,
   presentEnvironmentConnection,
   presentConnectionState,
+  routeFailureLabel,
 } from "./presentation.ts";
 
 const TARGET = new BearerConnectionTarget({
@@ -53,6 +54,7 @@ function supervisorState(overrides: Partial<SupervisorConnectionState>): Supervi
     generation: 0,
     lastFailure: null,
     retryAt: null,
+    routeFailures: [],
     ...overrides,
   };
 }
@@ -162,6 +164,7 @@ describe("connection presentation", () => {
           phase: "backoff",
           attempt: 2,
           retryAt: 1,
+          routeFailures: [],
           lastFailure: new ConnectionTransientError({
             reason: "transport",
             detail: "Disconnected.",
@@ -189,11 +192,74 @@ describe("connection presentation", () => {
             traceId: "trace-retry",
           }),
         }),
+        ENTRY,
       ),
     ).toEqual({
       phase: "reconnecting",
       error: "Relay connection timed out.",
       traceId: "trace-retry",
+    });
+  });
+
+  describe("unreachable on every route", () => {
+    const relayFailure = new ConnectionTransientError({
+      reason: "endpoint-unavailable",
+      detail: "Relay could not reach the environment endpoint (endpoint_request_failed).",
+    });
+    const lanThenRelay: ConnectionCatalogEntry = {
+      ...ENTRY,
+      alternateRoutes: [
+        {
+          target: new RelayConnectionTarget({
+            environmentId: TARGET.environmentId,
+            label: TARGET.label,
+          }),
+          profile: Option.none(),
+        },
+      ],
+    };
+    const failing = (routeFailures: SupervisorConnectionState["routeFailures"]) =>
+      supervisorState({
+        phase: "backoff",
+        stage: null,
+        lastFailure: relayFailure,
+        retryAt: 1_000,
+        routeFailures,
+      });
+
+    it("names no single route when every route failed", () => {
+      const connection = presentEnvironmentConnection(
+        failing([
+          { _tag: "NoAnswer", routeId: TARGET.connectionId },
+          { _tag: "Failed", routeId: "relay", error: relayFailure },
+        ]),
+        lanThenRelay,
+      );
+      expect(connection.unreachable).toBe(true);
+      expect(connectionStatusText(connection)).toBe("Unreachable on every route. Reconnecting...");
+      expect(connection.routeFailures?.map(routeFailureLabel)).toEqual([
+        "No answer",
+        "styal Link can't reach the computer",
+      ]);
+    });
+
+    it("keeps the single reason when a route was not heard from", () => {
+      const connection = presentEnvironmentConnection(
+        failing([{ _tag: "Failed", routeId: "relay", error: relayFailure }]),
+        lanThenRelay,
+      );
+      expect(connection.unreachable).toBe(false);
+      expect(connectionStatusText(connection)).toBe(
+        `Failed to connect. Reconnecting... Reason: ${relayFailure.detail}`,
+      );
+    });
+
+    it("keeps the single reason for an environment with one route", () => {
+      const connection = presentEnvironmentConnection(
+        failing([{ _tag: "Failed", routeId: TARGET.connectionId, error: relayFailure }]),
+        ENTRY,
+      );
+      expect(connection.unreachable).toBe(false);
     });
   });
 
@@ -217,6 +283,7 @@ describe("connection presentation", () => {
           phase: "offline",
           stage: null,
         }),
+        ENTRY,
       ),
     ).toEqual({
       phase: "offline",
@@ -233,6 +300,7 @@ describe("connection presentation", () => {
           stage: null,
           generation: 1,
         }),
+        ENTRY,
       ),
     ).toEqual({
       phase: "connected",
@@ -251,6 +319,7 @@ describe("connection presentation", () => {
           stage: null,
           attempt: 0,
         }),
+        ENTRY,
       ),
     ).toEqual({
       phase: "available",

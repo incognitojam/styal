@@ -2890,6 +2890,38 @@ features:
         - https://github.com/pingdotgg/t3code/blob/6524a8d43795dc543f7cfb572388cdea3662ad48/apps/web/src/pendingUserInput.ts
       retire_when: Upstream combines selected options and typed additions for multi-select questions across web, desktop, and mobile without moving the addition into a separate thread draft.
 
+  - id: per-route-connection-failures
+    title: Show why each route to an environment failed
+    status: maintained
+    prs: []
+    invariants:
+      - A connection attempt records, per saved route, the error it failed with or that its reachability check went unanswered, and the supervisor keeps the last finished attempt's list in its state until the next attempt finishes, through a setup timeout, and clears it when the environment is switched off.
+      - When the last attempt failed on every usable route of an environment with more than one, status text on web, desktop and mobile reads "Unreachable on every route" instead of naming the last route's error, and each route row shows its own short reason with the full error in a tooltip or accessibility label.
+      - While connected, routes ahead of the one in use keep their reason in a muted style; the route in use never shows one.
+      - A styal Link machine that is not added on mobile shows the host's offline status in muted text; only a failed status request is red, matching web.
+    rationale: Upstream keeps one failure per environment, usually styal Link's endpoint_request_failed, so a sleeping computer read as a styal Link fault. Usage is not measured; a count of unreachable states would measure how often computers sleep, not whether the reasons help.
+    implementation_paths:
+      - apps/mobile/src/features/cloud/cloudEnvironmentPresentation.ts
+      - apps/mobile/src/features/connection/CloudEnvironmentRows.tsx
+      - apps/mobile/src/features/settings/EnvironmentRoutesSection.tsx
+      - apps/web/src/components/settings/ConnectionsSettings.tsx
+      - apps/web/src/components/settings/EnvironmentRoutesList.tsx
+      - packages/client-runtime/src/connection/driver.ts
+      - packages/client-runtime/src/connection/presentation.ts
+      - packages/client-runtime/src/connection/supervisor.ts
+    upstream_paths:
+      - packages/client-runtime/src/connection/driver.ts
+      - packages/client-runtime/src/connection/presentation.ts
+      - packages/client-runtime/src/connection/supervisor.ts
+    tests:
+      - apps/mobile/src/features/cloud/cloudEnvironmentPresentation.test.ts
+      - packages/client-runtime/src/connection/presentation.test.ts
+      - packages/client-runtime/src/connection/supervisor.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream records and shows a failure reason per route and stops naming a single route when every route fails.
+
   - id: pinned-thread-auto-settlement
     title: Keep pinned threads active until unpinned or manually settled
     status: retiring

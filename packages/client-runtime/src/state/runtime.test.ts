@@ -442,6 +442,7 @@ describe("environment query lifecycle", () => {
                 detail: "Relay session is reconnecting.",
               }),
               retryAt: 1,
+              routeFailures: [],
             }),
           );
           yield* Effect.yieldNow;
@@ -618,6 +619,7 @@ describe("environment query lifecycle", () => {
               detail: "Retrying.",
             }),
             retryAt: 1,
+            routeFailures: [],
           }),
         );
         yield* Effect.yieldNow;

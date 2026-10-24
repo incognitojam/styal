@@ -21,8 +21,11 @@ import {
   connectionRouteAddress,
   connectionRouteId,
   connectionRouteLabel,
+  type ConnectionRouteFailure,
   connectionRoutes,
   isLearned,
+  routeFailureDetail,
+  routeFailureLabel,
 } from "@t3tools/client-runtime/connection";
 import { GripVerticalIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
@@ -60,6 +63,11 @@ export function EnvironmentRoutesList({
     prepared._tag === "Some" && environment.connection.phase === "connected"
       ? connectionRouteId(prepared.value.target)
       : null;
+  const failures = new Map(
+    (environment.entry.enabled ? (environment.connection.routeFailures ?? []) : []).map(
+      (failure) => [failure.routeId, failure],
+    ),
+  );
   const reorder = useAtomCommand(environmentCatalog.reorderRoutes, "Reorder routes");
   const removeRoute = useAtomCommand(environmentCatalog.removeRoute, "Remove route");
   const sensors = useSensors(
@@ -109,6 +117,8 @@ export function EnvironmentRoutesList({
                 route={route}
                 position={index + 1}
                 inUse={connectionRouteId(route.target) === activeRouteId}
+                failure={failures.get(connectionRouteId(route.target))}
+                connected={activeRouteId !== null}
                 removable={routes.length > 1 && !isLearned(route)}
                 onRemove={() => void confirmRemove(route)}
               />
@@ -130,12 +140,17 @@ function SortableRouteRow({
   route,
   position,
   inUse,
+  failure,
+  connected,
   removable,
   onRemove,
 }: {
   readonly route: ConnectionRoute;
   readonly position: number;
   readonly inUse: boolean;
+  readonly failure: ConnectionRouteFailure | undefined;
+  /** Another route is in use, so this route's failure is informational. */
+  readonly connected: boolean;
   readonly removable: boolean;
   readonly onRemove: () => void;
 }) {
@@ -168,6 +183,25 @@ function SortableRouteRow({
             <span className="rounded-sm bg-success/12 px-1 text-2xs font-normal text-success-foreground">
               In use
             </span>
+          ) : null}
+          {failure !== undefined ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className={cn(
+                      "min-w-0 truncate rounded-sm px-1 text-2xs font-normal",
+                      connected
+                        ? "bg-muted text-muted-foreground"
+                        : "bg-destructive/12 text-destructive-foreground",
+                    )}
+                  />
+                }
+              >
+                {routeFailureLabel(failure)}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{routeFailureDetail(failure)}</TooltipPopup>
+            </Tooltip>
           ) : null}
         </p>
         {address !== null ? (

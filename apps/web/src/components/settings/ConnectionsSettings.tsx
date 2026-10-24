@@ -1391,14 +1391,22 @@ function savedBackendStatus(environment: EnvironmentPresentation): {
       return { text: "Connecting", tone: "muted" };
     case "reconnecting":
       return {
-        text: connection.error ? `Reconnecting: ${connection.error}` : "Reconnecting",
+        text: connection.unreachable
+          ? "Unreachable on every route · Reconnecting"
+          : connection.error
+            ? `Reconnecting: ${connection.error}`
+            : "Reconnecting",
         tone: "error",
       };
     case "unsupported":
       return { text: "Client not supported", tone: "muted" };
     case "error":
       return {
-        text: connection.error ? `Connection failed: ${connection.error}` : "Connection failed",
+        text: connection.unreachable
+          ? "Unreachable on every route"
+          : connection.error
+            ? `Connection failed: ${connection.error}`
+            : "Connection failed",
         tone: "error",
       };
     case "offline":

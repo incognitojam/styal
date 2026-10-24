@@ -48,6 +48,9 @@ export function SettingsEnvironmentDetailRouteScreen({
   );
 }
 
+// Without a connection, the version and providers come from the cached server config.
+const LAST_SEEN = "Last seen while connected.";
+
 function EnvironmentDetail({ environmentId }: { readonly environmentId: EnvironmentId }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -236,7 +239,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             {notice ? <Text className="px-2 text-sm text-foreground-muted">{notice}</Text> : null}
             {config ? (
               <>
-                <SettingsSection title="styal">
+                <SettingsSection title="styal" footer={connected ? undefined : LAST_SEEN}>
                   <View className="gap-1 p-4">
                     <Text className="text-base text-foreground">Version {version}</Text>
                     {running ? (
@@ -303,7 +306,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                     />
                   ) : null}
                 </SettingsSection>
-                <SettingsSection title="Providers">
+                <SettingsSection title="Providers" footer={connected ? undefined : LAST_SEEN}>
                   <SettingsActionRow
                     icon="arrow.clockwise"
                     label="Refresh providers"

@@ -20,6 +20,7 @@ import * as Connectivity from "./connectivity.ts";
 import * as ConnectionDriver from "./driver.ts";
 import {
   type ConnectionAttemptError,
+  type ConnectionRouteFailure,
   type ConnectionTarget,
   ConnectionTransientError,
   type NetworkStatus,
@@ -58,6 +59,9 @@ const BETTER_ROUTE_CHECK_INTERVAL = "60 seconds";
 // doubles the wait, up to the cap.
 const BETTER_ROUTE_COOLDOWN_MS = 300_000;
 const BETTER_ROUTE_MAX_COOLDOWN_MS = 1_800_000;
+
+/** The supervisor fills in route failures when it publishes a state. */
+type SupervisorStateFields = Omit<SupervisorConnectionState, "routeFailures">;
 
 interface SupervisorIntent {
   readonly desired: boolean;
@@ -143,7 +147,7 @@ function annotateTarget(target: ConnectionTarget) {
   });
 }
 
-function availableState(intent: SupervisorIntent, generation: number): SupervisorConnectionState {
+function availableState(intent: SupervisorIntent, generation: number): SupervisorStateFields {
   return {
     desired: false,
     network: intent.network,
@@ -161,7 +165,7 @@ function offlineState(
   generation: number,
   attempt: number,
   lastFailure: ConnectionAttemptError | null,
-): SupervisorConnectionState {
+): SupervisorStateFields {
   return {
     desired: true,
     network: intent.network,
@@ -180,7 +184,7 @@ function connectingState(
   attempt: number,
   lastFailure: ConnectionAttemptError | null,
   stage: SupervisorConnectionState["stage"] = "preparing",
-): SupervisorConnectionState {
+): SupervisorStateFields {
   return {
     desired: true,
     network: intent.network,
@@ -269,13 +273,15 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   const signals = yield* Queue.unbounded<SupervisorSignal>();
   const resetRetryState = yield* Ref.make(false);
   const probeUnanswered = yield* Ref.make(false);
-  const state = yield* SubscriptionRef.make<SupervisorConnectionState>(
-    !initialIntent.desired
+  const state = yield* SubscriptionRef.make<SupervisorConnectionState>({
+    ...(!initialIntent.desired
       ? availableState(initialIntent, 0)
       : initialIntent.network === "offline"
         ? offlineState(initialIntent, 0, 0, null)
-        : connectingState(initialIntent, 0, 1, null),
-  );
+        : connectingState(initialIntent, 0, 1, null)),
+    routeFailures: [],
+  });
+  const routeFailures = yield* Ref.make<ReadonlyArray<ConnectionRouteFailure>>([]);
   const session = yield* SubscriptionRef.make<Option.Option<RpcSession.RpcSession>>(Option.none());
   const prepared = yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(Option.none());
   // Learned routes arrive while a session is live, so the route list is read
@@ -397,9 +403,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   );
 
   const setState = Effect.fn("EnvironmentSupervisor.setState")(function* (
-    next: SupervisorConnectionState,
+    next: SupervisorStateFields,
   ) {
-    yield* SubscriptionRef.set(state, next);
+    yield* SubscriptionRef.set(state, { ...next, routeFailures: yield* Ref.get(routeFailures) });
   });
 
   const signal = Effect.fn("EnvironmentSupervisor.signal")(function* (next: SupervisorSignal) {
@@ -434,12 +440,20 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     generation: number,
     lastFailure: ConnectionAttemptError | null,
     synchronizedRoutes: Ref.Ref<number>,
+    attemptRouteFailures: Ref.Ref<ReadonlyArray<ConnectionRouteFailure>>,
   ) {
-    return yield* driver.connect(yield* attemptEntry, (progress) =>
-      (progress.stage === "synchronizing"
-        ? Ref.update(synchronizedRoutes, (count) => count + 1)
-        : Effect.void
-      ).pipe(Effect.andThen(reportProgress(attempt, generation, lastFailure, progress))),
+    return yield* driver.connect(
+      yield* attemptEntry,
+      (progress) =>
+        (progress.stage === "synchronizing"
+          ? Ref.update(synchronizedRoutes, (count) => count + 1)
+          : Effect.void
+        ).pipe(Effect.andThen(reportProgress(attempt, generation, lastFailure, progress))),
+      (failure) =>
+        Ref.update(attemptRouteFailures, (current) => [
+          ...current.filter((existing) => existing.routeId !== failure.routeId),
+          failure,
+        ]),
     );
   });
 
@@ -491,16 +505,29 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     lastFailure: ConnectionAttemptError | null,
     pendingRetry: Option.Option<PendingRetryTrace>,
     synchronizedRoutes: Ref.Ref<number>,
+    attemptRouteFailures: Ref.Ref<ReadonlyArray<ConnectionRouteFailure>>,
   ) {
     if (usesRelay) {
       return yield* traceRelayEstablishment(
-        establishConnection(attempt, generation, lastFailure, synchronizedRoutes),
+        establishConnection(
+          attempt,
+          generation,
+          lastFailure,
+          synchronizedRoutes,
+          attemptRouteFailures,
+        ),
         attempt,
         generation,
         pendingRetry,
       );
     }
-    return yield* establishConnection(attempt, generation, lastFailure, synchronizedRoutes).pipe(
+    return yield* establishConnection(
+      attempt,
+      generation,
+      lastFailure,
+      synchronizedRoutes,
+      attemptRouteFailures,
+    ).pipe(
       Effect.map((lease) => ({
         attemptSpan: Option.none<Tracer.Span>(),
         lease,
@@ -699,6 +726,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     const switchingTo = yield* Ref.get(preferredRouteId);
     yield* SubscriptionRef.set(prepared, Option.none());
     const synchronizedRoutes = yield* Ref.make(0);
+    const attemptRouteFailures = yield* Ref.make<ReadonlyArray<ConnectionRouteFailure>>([]);
     const establishment = yield* Effect.raceAllFirst([
       exitUnlessInterrupted(
         establishTracedConnection(
@@ -707,6 +735,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           lastFailure,
           pendingRetry,
           synchronizedRoutes,
+          attemptRouteFailures,
         ),
       ).pipe(
         Effect.map((exit): EstablishmentEvent => ({
@@ -749,6 +778,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       } satisfies AttemptOutcome;
     }
     if (establishment._tag === "TimedOut") {
+      yield* Ref.set(routeFailures, yield* Ref.get(attemptRouteFailures));
       return {
         _tag: "Failure",
         established: false,
@@ -763,6 +793,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       } satisfies AttemptOutcome;
     }
     if (Exit.isFailure(establishment.exit)) {
+      yield* Ref.set(routeFailures, yield* Ref.get(attemptRouteFailures));
       const isUnexpectedDefect =
         !Cause.hasInterruptsOnly(establishment.exit.cause) &&
         !establishment.exit.cause.reasons.some(Cause.isFailReason);
@@ -803,6 +834,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     }
 
     const connectedAt = yield* Clock.currentTimeMillis;
+    const activeRouteId = connectionRouteId(active.lease.prepared.target);
+    yield* Ref.set(
+      routeFailures,
+      (yield* Ref.get(attemptRouteFailures)).filter((failure) => failure.routeId !== activeRouteId),
+    );
     yield* SubscriptionRef.set(prepared, Option.some(active.lease.prepared));
     yield* SubscriptionRef.set(session, Option.some(active.lease.session));
     if (options?.learnRoutes !== undefined) {
@@ -931,6 +967,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       if (!currentIntent.desired) {
         resetRetryLadder();
         latestFailure = null;
+        yield* Ref.set(routeFailures, []);
         yield* clearLease;
         yield* setState(availableState(currentIntent, generation));
         yield* waitForSignal;

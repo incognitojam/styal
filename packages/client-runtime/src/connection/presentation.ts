@@ -2,8 +2,18 @@ import type { ServerConfig } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 
 import type { ConnectionCatalogEntry } from "./catalog.ts";
-import type { ConnectionTarget, SupervisorConnectionState } from "./model.ts";
-import { connectionRouteId, connectionRoutes, routeHttpBaseUrl } from "./routes.ts";
+import type {
+  ConnectionRouteFailure,
+  ConnectionTarget,
+  SupervisorConnectionState,
+} from "./model.ts";
+import {
+  RELAY_ROUTE_ID,
+  connectionRouteId,
+  connectionRoutes,
+  routeHttpBaseUrl,
+  usableRoutes,
+} from "./routes.ts";
 
 export type EnvironmentConnectionPhase =
   | "available"
@@ -18,6 +28,9 @@ export interface EnvironmentConnectionPresentation {
   readonly phase: EnvironmentConnectionPhase;
   readonly error: string | null;
   readonly traceId: string | null;
+  /** The last attempt failed on every saved route, and there is more than one. */
+  readonly unreachable?: boolean;
+  readonly routeFailures?: ReadonlyArray<ConnectionRouteFailure>;
 }
 
 export interface EnvironmentPresentation {
@@ -66,6 +79,7 @@ export function connectionStatusText(connection: EnvironmentConnectionPresentati
     case "connecting":
       return "Connecting...";
     case "reconnecting":
+      if (connection.unreachable) return "Unreachable on every route. Reconnecting...";
       return connection.error
         ? `Failed to connect. Reconnecting... Reason: ${connection.error}`
         : "Reconnecting...";
@@ -74,6 +88,7 @@ export function connectionStatusText(connection: EnvironmentConnectionPresentati
     case "unsupported":
       return "Client not supported";
     case "error":
+      if (connection.unreachable) return "Unreachable on every route";
       return connection.error
         ? `Connection failed. Reason: ${connection.error}`
         : "Connection failed";
@@ -81,6 +96,7 @@ export function connectionStatusText(connection: EnvironmentConnectionPresentati
 }
 
 export function connectionStatusTitle(connection: EnvironmentConnectionPresentation): string {
+  if (connection.unreachable) return "Unreachable on every route";
   if (connection.phase === "reconnecting" && connection.error) {
     return "Failed to connect. Reconnecting...";
   }
@@ -89,8 +105,53 @@ export function connectionStatusTitle(connection: EnvironmentConnectionPresentat
 
 export function presentEnvironmentConnection(
   state: SupervisorConnectionState,
+  entry: ConnectionCatalogEntry,
 ): EnvironmentConnectionPresentation {
-  return presentConnectionState(state);
+  const connection = presentConnectionState(state);
+  if (state.routeFailures.length === 0) return connection;
+  const failed = new Set(state.routeFailures.map((failure) => failure.routeId));
+  const routes = usableRoutes(entry);
+  const unreachable =
+    (connection.phase === "reconnecting" || connection.phase === "error") &&
+    state.lastFailure !== null &&
+    routes.length > 1 &&
+    routes.every((route) => failed.has(connectionRouteId(route.target)));
+  return { ...connection, unreachable, routeFailures: state.routeFailures };
+}
+
+/** A few words for a route row; `routeFailureDetail` has the full reason. */
+export function routeFailureLabel(failure: ConnectionRouteFailure): string {
+  if (failure._tag === "NoAnswer") return "No answer";
+  switch (failure.error.reason) {
+    case "network":
+      return "Couldn't connect";
+    case "timeout":
+      return "Timed out";
+    case "transport":
+      return "Connection dropped";
+    case "endpoint-unavailable":
+      return failure.routeId === RELAY_ROUTE_ID
+        ? "styal Link can't reach the computer"
+        : "Not reachable";
+    case "relay-unavailable":
+      return "styal Link unavailable";
+    case "remote-unavailable":
+      return "Server error";
+    case "authentication":
+      return "Sign-in rejected";
+    case "permission":
+      return "Not permitted";
+    case "configuration":
+      return "Route misconfigured";
+    case "unsupported":
+      return "Not supported";
+  }
+}
+
+export function routeFailureDetail(failure: ConnectionRouteFailure): string {
+  return failure._tag === "NoAnswer"
+    ? "Did not answer the reachability check."
+    : failure.error.message;
 }
 
 /**
