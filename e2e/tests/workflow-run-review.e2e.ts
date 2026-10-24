@@ -151,7 +151,9 @@ describe("review a watched workflow deployment", () => {
         comment: "Ship the release",
       },
     ]);
-    await sidebar().getByText("Waiting", { exact: true }).waitFor();
+    await sidebar()
+      .getByText(/^Waiting/)
+      .waitFor();
     expect(environment.codexTurns()).toHaveLength(turnsBeforeReview);
 
     single.status = "completed";
@@ -169,7 +171,9 @@ describe("review a watched workflow deployment", () => {
         text: expect.stringContaining("finished: success."),
       },
     ]);
-    await sidebar().getByText("Waiting", { exact: true }).waitFor({ state: "hidden" });
+    await sidebar()
+      .getByText(/^Waiting/)
+      .waitFor({ state: "hidden" });
     // The completed watch was removed durably, so another startup cannot wake it again.
     await environment.restart();
     await page.reload();
