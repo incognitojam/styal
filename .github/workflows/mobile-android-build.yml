@@ -1,0 +1,276 @@
+name: Mobile Android Build
+
+# Builds the production Android APK on GitHub's runners rather than EAS Build,
+# whose free plan allows fewer Android builds a month than main's native
+# changes need. Mobile EAS Production calls this when main's Android
+# fingerprint has no release; dispatch it to build one by hand.
+#
+# Signing uses the EAS-managed production keystore, copied into the
+# android-release environment's secrets, because Android installs an update
+# only when it carries the installed app's signer. Version codes continue from
+# the newest android-* GitHub release, the record of every shipped build.
+#
+# With publish off, the run builds and verifies the APK, uploads it as a
+# workflow artifact, and publishes nothing.
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+      expected-fingerprint:
+        description: The fingerprint the caller decided to build; the run fails if the APK's differs.
+        type: string
+        default: ""
+      ota-message:
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the GitHub release and an Android OTA update"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build production APK
+    if: github.repository == 'incognitojam/styal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: android-release
+    # Unpublished runs share nothing, so only publishing runs queue on each
+    # other and version codes cannot collide.
+    concurrency:
+      group: mobile-android-build-${{ inputs.publish && 'publish' || github.run_id }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      APP_VARIANT: production
+      EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      NODE_OPTIONS: --max-old-space-size=8192
+      EXPO_NO_GIT_STATUS: "1"
+      # Written by `eas env:pull`; loadRepoEnv reads only the repository
+      # root's env files, so the path is passed explicitly, as in Mobile EAS
+      # Production. The file is part of the Android fingerprint.
+      T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/apps/mobile/.eas/.env/T3CODE_ANDROID_GOOGLE_SERVICES_FILE
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      # The fingerprint must be computed with package.json's pnpm, as in
+      # Mobile EAS Production, or the hashes of the two workflows disagree.
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+          "$vp_pnpm_bin/pnpm" --version
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      # Writes the Google services file. The build steps load the variables
+      # themselves through `eas env:exec`.
+      - name: Pull production environment variables
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas env:pull production --non-interactive
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Not gradle/actions/setup-gradle: its wrapper validation and cache key
+      # walk every Gradle file in node_modules, which takes six to nine minutes.
+      - name: Cache Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: gradle-android-
+
+      - id: meta
+        name: Resolve version, version code, and fingerprint
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected-fingerprint }}
+        run: |
+          version="$(npx expo config --json --type public | jq -er '.version')"
+          last_code="$(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[].tag_name' \
+              | sed -nE 's/^android-[0-9.]+-([0-9]+)$/\1/p' | sort -n | tail -n 1
+          )"
+          code="$((${last_code:-0} + 1))"
+
+          # eas-cli prints an environment-loaded notice to stdout before the
+          # JSON even with --json, so discard everything before the document.
+          fingerprint_json="$(eas fingerprint:generate --platform android --environment production --json --non-interactive | sed -n '/^{/,$p')"
+          fingerprint="$(jq -er '.hash | select(type == "string" and length > 0)' <<<"$fingerprint_json")"
+          # @expo/fingerprint swallows autolinking errors and returns no Expo
+          # module sources; see Mobile EAS Production.
+          expo_modules="$(jq '[.sources[] | select((.reasons // []) | index("expoAutolinkingAndroid"))] | length' <<<"$fingerprint_json")"
+          if [ "$expo_modules" -eq 0 ]; then
+            echo "The Android fingerprint hashes no Expo native modules." >&2
+            exit 1
+          fi
+          if [ -n "$EXPECTED_FINGERPRINT" ] && [ "$fingerprint" != "$EXPECTED_FINGERPRINT" ]; then
+            echo "Fingerprint $fingerprint differs from the caller's $EXPECTED_FINGERPRINT." >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "code=$code"
+            echo "fingerprint=$fingerprint"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $version ($code), fingerprint $fingerprint."
+
+      # Gradle runs Node scripts that read the app config without loading env
+      # files, such as the config embedded for expo-constants. `eas env:exec`
+      # gives prebuild and Gradle the production variables in their process
+      # environment, as an EAS builder has them.
+      - name: Generate the native project
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          T3CODE_ANDROID_VERSION_CODE: ${{ steps.meta.outputs.code }}
+        run: eas env:exec production --non-interactive 'npx expo prebuild --platform android --clean --no-install'
+
+      # EAS Build writes the profile's update channel into the manifest after
+      # prebuild; without it the update server rejects every update check.
+      # This does what eas-cli's androidSetChannelNativelyAsync does.
+      - name: Set the update channel
+        working-directory: apps/mobile
+        run: |
+          node -e '
+            const { AndroidConfig } = require("expo/config-plugins");
+            const channel = require("./eas.json").build.production.channel;
+            const key = "expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY";
+            (async () => {
+              const path = await AndroidConfig.Paths.getAndroidManifestAsync(process.cwd());
+              const manifest = await AndroidConfig.Manifest.readAndroidManifestAsync(path);
+              const headers = JSON.parse(AndroidConfig.Manifest.getMainApplicationMetaDataValue(manifest, key) ?? "{}");
+              AndroidConfig.Manifest.addMetaDataItemToMainApplication(
+                AndroidConfig.Manifest.getMainApplicationOrThrow(manifest),
+                key,
+                JSON.stringify({ ...headers, "expo-channel-name": channel }),
+                "value",
+              );
+              await AndroidConfig.Manifest.writeAndroidManifestAsync(path, manifest);
+            })();
+          '
+
+      - name: Build and sign the APK
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          FINGERPRINT: ${{ steps.meta.outputs.fingerprint }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          keystore="$RUNNER_TEMP/release.jks"
+          base64 -d <<<"$ANDROID_KEYSTORE_BASE64" > "$keystore"
+          # The prebuild template signs release builds with the debug key.
+          # AGP's injected signing properties replace it for this build.
+          export KEYSTORE="$keystore"
+          # Fingerprinting during the build also hashes the build output Gradle
+          # writes into native module directories, so the runtime version is
+          # the one computed before prebuild. EAS builders pass it the same way.
+          export EXPO_UPDATES_FINGERPRINT_OVERRIDE="$FINGERPRINT"
+          export EXPO_UPDATES_WORKFLOW_OVERRIDE=managed
+          eas env:exec production --non-interactive 'cd android && ./gradlew :app:assembleRelease \
+            -Pandroid.injected.signing.store.file="$KEYSTORE" \
+            -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"'
+          rm -f "$keystore"
+          df -h /
+
+      # expo-updates reads the runtime version from this asset at launch, and
+      # OTA updates are published for the fingerprint computed above.
+      - id: apk
+        name: Check the APK's update configuration
+        env:
+          FINGERPRINT: ${{ steps.meta.outputs.fingerprint }}
+        run: |
+          apk="$GITHUB_WORKSPACE/apps/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          runtime_version="$(unzip -p "$apk" assets/fingerprint)"
+          if [ "$runtime_version" != "$FINGERPRINT" ]; then
+            echo "The APK's runtime version '$runtime_version' differs from the fingerprint $FINGERPRINT." >&2
+            exit 1
+          fi
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          if ! "$build_tools/aapt2" dump xmltree --file AndroidManifest.xml "$apk" | grep -qF '{"expo-channel-name":"production"}'; then
+            echo "The APK's manifest does not request the production update channel." >&2
+            exit 1
+          fi
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: styal-android-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.code }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 3
+
+      - name: Publish the GitHub release
+        env:
+          APK: ${{ steps.apk.outputs.path }}
+          APP_VERSION: ${{ steps.meta.outputs.version }}
+          VERSION_CODE: ${{ steps.meta.outputs.code }}
+          RUNTIME_VERSION: ${{ steps.meta.outputs.fingerprint }}
+          COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ !inputs.publish && '1' || '' }}
+          # The EAS-managed production keystore that every released APK must
+          # carry. Users cannot install an APK from another key over an
+          # existing installation.
+          ANDROID_SIGNING_CERT_SHA256: 168a6f8a44785ce28af01c4814c38b7ac27eab6fc0137138757d26e4c979fd04
+        run: .github/scripts/publish-android-release.sh
+
+      - name: Publish the Android OTA update
+        if: inputs.publish
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          OTA_MESSAGE: ${{ inputs.ota-message || format('Production OTA ({0})', github.sha) }}
+        run: |
+          eas update \
+            --channel production \
+            --environment production \
+            --platform android \
+            --message "$OTA_MESSAGE" \
+            --non-interactive
+          echo ":white_check_mark: android: built ${{ steps.meta.outputs.version }} (${{ steps.meta.outputs.code }}), published its release and the OTA update (fingerprint \`${{ steps.meta.outputs.fingerprint }}\`)" >> "$GITHUB_STEP_SUMMARY"

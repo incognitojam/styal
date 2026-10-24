@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
-# Publishes the newest finished EAS production Android build as a GitHub
-# release. EAS artifact links expire after two weeks; the release keeps the
-# APK at a permanent public URL that Obtainium and the docs can point at.
+# Publishes a production Android APK built by mobile-android-build.yml as a
+# GitHub release. The release keeps the APK at a permanent public URL that
+# Obtainium and the docs can point at.
 # The android-update.json asset tells installed apps whether the release has a
 # different runtime version, which over-the-air updates cannot deliver; see
 # apps/mobile/src/features/updates/native-app-updates.ts.
 #
-# Safe to rerun: a build that already has a published release is left alone,
-# and a draft left by an interrupted run is replaced.
+# Safe to rerun: a version code that already has a published release is left
+# alone, and a draft left by an interrupted run is replaced.
 #
 # Tags are android-<version>-<versionCode>, and releases are created with
 # --latest=false so they never take Latest from a stable v<semver> release.
@@ -16,39 +16,23 @@
 # Latest. The CLI installers and the release workflows look only for v<semver>
 # tags.
 #
-# Environment: EXPO_TOKEN, EXPO_OWNER, EXPO_PROJECT_ID, GH_TOKEN,
-# GITHUB_REPOSITORY, RUNNER_TEMP, ANDROID_HOME, ANDROID_SIGNING_CERT_SHA256.
-# DRY_RUN=1 verifies the APK and stops before creating the release.
+# Environment: APK, APP_VERSION, VERSION_CODE, RUNTIME_VERSION, COMMIT,
+# GH_TOKEN, GITHUB_REPOSITORY, RUNNER_TEMP, ANDROID_HOME,
+# ANDROID_SIGNING_CERT_SHA256. DRY_RUN=1 verifies the APK and stops before
+# creating the release.
 set -euo pipefail
 
 work="${RUNNER_TEMP:?}/android-release"
 rm -rf "$work"
-mkdir -p "$work/eas-project" "$work/assets"
+mkdir -p "$work/assets"
 
-# eas-cli reads the project ID from an Expo project. apps/mobile/app.config.ts
-# imports workspace packages, so loading it would mean installing the mobile
-# app's dependencies on every hourly run; a stub project needs nothing.
-jq -n --arg owner "$EXPO_OWNER" --arg id "$EXPO_PROJECT_ID" \
-  '{expo: {name: "styal", slug: "styal", owner: $owner, extra: {eas: {projectId: $id}}}}' \
-  > "$work/eas-project/app.json"
-echo '{}' > "$work/eas-project/eas.json"
-echo '{"private": true}' > "$work/eas-project/package.json"
+version="${APP_VERSION:?}"
+code="${VERSION_CODE:?}"
+commit="${COMMIT:?}"
+runtime_version="${RUNTIME_VERSION:?}"
 
-build="$(
-  cd "$work/eas-project"
-  eas build:list --platform android --build-profile production --status finished \
-    --limit 1 --json --non-interactive | jq -e '.[0]'
-)"
-version="$(jq -r '.appVersion' <<< "$build")"
-code="$(jq -r '.appBuildVersion' <<< "$build")"
-commit="$(jq -r '.gitCommitHash' <<< "$build")"
-url="$(jq -r '.artifacts.buildUrl' <<< "$build")"
-build_id="$(jq -r '.id' <<< "$build")"
-runtime_version="$(jq -r '.runtime.version' <<< "$build")"
-
-if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ && "$code" =~ ^[0-9]+$ && "$commit" =~ ^[0-9a-f]{40}$ && "$url" == https://*.apk && "$runtime_version" =~ ^[A-Za-z0-9._-]+$ ]]; then
-  echo "Unexpected build metadata for EAS build $build_id:" >&2
-  jq '{appVersion, appBuildVersion, gitCommitHash, runtime, artifacts}' <<< "$build" >&2
+if ! [[ "$version" =~ ^[0-9]+(\.[0-9]+)*$ && "$code" =~ ^[0-9]+$ && "$commit" =~ ^[0-9a-f]{40}$ && "$runtime_version" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "Unexpected build metadata: version=${version} versionCode=${code} commit=${commit} runtimeVersion=${runtime_version}" >&2
   exit 1
 fi
 
@@ -60,8 +44,7 @@ fi
 
 apk_name="styal-android-${version}-${code}.apk"
 apk="$work/assets/$apk_name"
-echo "Downloading EAS build ${build_id} (${version}, build ${code})."
-curl -fsSL --retry 3 -o "$apk" "$url"
+cp "${APK:?}" "$apk"
 
 build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
 
@@ -81,7 +64,7 @@ fi
 expected_package="package: name='build.styal.app' versionCode='${code}' versionName='${version}'"
 badging="$("$build_tools/aapt2" dump badging "$apk")"
 if [[ "$badging" != *"$expected_package"* ]]; then
-  echo "APK package does not match EAS metadata; expected: ${expected_package}" >&2
+  echo "APK package does not match the build metadata; expected: ${expected_package}" >&2
   exit 1
 fi
 

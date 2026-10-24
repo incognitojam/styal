@@ -9,8 +9,9 @@ name: Mobile EAS Production
 # Every merge to main that touches the mobile app reconciles, per platform:
 #   1. Distribution builds: when no production build matches the current
 #      native fingerprint, or the latest build's version differs from
-#      app.config.ts, cut a new build (TestFlight for iOS, installable APK for
-#      Android). Native changes therefore ship a binary on merge, and bumping
+#      app.config.ts, cut a new build (TestFlight for iOS through EAS Build,
+#      an installable APK for Android through mobile-android-build.yml, which
+#      publishes it as a GitHub release). Native changes therefore ship a binary on merge, and bumping
 #      `version` is all it takes to start the next release train — the first build of a version enters
 #      external-TestFlight beta review immediately, and later builds of the
 #      same version auto-approve until that version is released. After App
@@ -34,7 +35,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "build (iOS TestFlight / Android APK) or update (OTA)"
+        description: "build (iOS TestFlight / Android APK release) or update (OTA)"
         required: true
         type: choice
         default: build
@@ -111,6 +112,8 @@ jobs:
             pnpm-workspace.yaml
             .easignore
             .github/workflows/mobile-eas-production.yml
+            .github/workflows/mobile-android-build.yml
+            .github/scripts/publish-android-release.sh
             .github/actions/changed-since-last-deploy
 
   production:
@@ -120,7 +123,12 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      issues: write
+    outputs:
+      checked: ${{ steps.reconcile.outputs.checked }}
+      skipped: ${{ steps.reconcile.outputs.skipped }}
+      android-build: ${{ steps.reconcile.outputs.android-build == 'true' || (steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'build' && inputs.platform != 'ios') }}
+      android-fingerprint: ${{ steps.reconcile.outputs.android-fingerprint }}
+      ota-message: ${{ steps.reconcile.outputs.ota-message }}
     env:
       APP_VARIANT: production
       EXPO_OWNER: ${{ vars.EXPO_OWNER }}
@@ -259,25 +267,14 @@ jobs:
             echo "> Apple closes an iOS release train after App Store approval. Before building iOS, confirm \`$version\` is newer than the approved App Store version."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build for TestFlight or APK distribution (manual)
-        if: steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'build'
+      # Android builds run in the android-build job below.
+      - name: Build for TestFlight (manual)
+        if: steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'build' && inputs.platform != 'android'
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           MOBILE_BUILD_PROFILE: ${{ inputs.profile || 'production' }}
-          REQUESTED_PLATFORM: ${{ inputs.platform }}
-        run: |
-          platforms=("$REQUESTED_PLATFORM")
-          if [ "$REQUESTED_PLATFORM" = all ]; then
-            platforms=(ios android)
-          fi
-          for platform in "${platforms[@]}"; do
-            submit_args=()
-            if [ "$platform" = ios ]; then
-              submit_args=(--auto-submit)
-            fi
-            eas build --platform "$platform" --profile "$MOBILE_BUILD_PROFILE" "${submit_args[@]}" --non-interactive --no-wait
-          done
+        run: eas build --platform ios --profile "$MOBILE_BUILD_PROFILE" --auto-submit --non-interactive --no-wait
 
       # @expo/fingerprint swallows autolinking errors and returns no Expo module
       # sources, so native changes stop moving the hash and OTAs reach binaries
@@ -327,6 +324,10 @@ jobs:
       # because only the major version is part of the fingerprint.
       # An errored build for this fingerprint is not retried on push (it would
       # rebuild on every merge); retry via workflow_dispatch mode=build.
+      # Android builds leave no EAS record: the newest android-* GitHub release
+      # stands for the latest build, and its android-update.json carries the
+      # runtime version. A failed Android build has no release, so the next
+      # push builds again.
       # EAS builders give app.config.ts the Google services file variable, and
       # the file is part of the Android fingerprint. The pull step writes it to
       # apps/mobile/.eas/.env/, but loadRepoEnv only reads the repository
@@ -338,6 +339,7 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/apps/mobile/.eas/.env/T3CODE_ANDROID_GOOGLE_SERVICES_FILE
         run: |
           failed=0
@@ -348,11 +350,26 @@ jobs:
             # eas-cli prints an environment-loaded notice to stdout before the
             # JSON even with --json, so discard everything before the document.
             hash="$(eas fingerprint:generate --platform "$platform" --environment production --json --non-interactive | sed -n '/^{/,$p' | jq -er '.hash | select(type == "string" and length > 0)')"
-            matches="$(eas build:list --platform "$platform" --build-profile production --fingerprint-hash "$hash" --limit 20 --json --non-interactive)"
-            finished="$(jq '[.[] | select(.status == "FINISHED")] | length' <<<"$matches")"
-            active="$(jq '[.[] | select(.status == "NEW" or .status == "IN_QUEUE" or .status == "IN_PROGRESS")] | length' <<<"$matches")"
-            errored="$(jq '[.[] | select(.status == "ERRORED")] | length' <<<"$matches")"
-            latest_version="$(eas build:list --platform "$platform" --build-profile production --limit 1 --json --non-interactive | jq -r '.[0].appVersion // "none"')"
+            if [ "$platform" = android ]; then
+              tag="$(
+                gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | select(.draft | not) | .tag_name' \
+                  | sed -nE 's/^android-[0-9.]+-([0-9]+)$/\1 &/p' | sort -n | tail -n 1 | cut -d' ' -f2
+              )"
+              manifest='{}'
+              if [ -n "$tag" ]; then
+                manifest="$(gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern android-update.json --output -)"
+              fi
+              finished="$(jq --arg hash "$hash" 'if .runtimeVersion == $hash then 1 else 0 end' <<<"$manifest")"
+              active=0
+              errored=0
+              latest_version="$(jq -r '.version // "none"' <<<"$manifest")"
+            else
+              matches="$(eas build:list --platform "$platform" --build-profile production --fingerprint-hash "$hash" --limit 20 --json --non-interactive)"
+              finished="$(jq '[.[] | select(.status == "FINISHED")] | length' <<<"$matches")"
+              active="$(jq '[.[] | select(.status == "NEW" or .status == "IN_QUEUE" or .status == "IN_PROGRESS")] | length' <<<"$matches")"
+              errored="$(jq '[.[] | select(.status == "ERRORED")] | length' <<<"$matches")"
+              latest_version="$(eas build:list --platform "$platform" --build-profile production --limit 1 --json --non-interactive | jq -r '.[0].appVersion // "none"')"
+            fi
 
             if [ "$finished" -gt 0 ]; then
               if eas update \
@@ -390,11 +407,16 @@ jobs:
             fi
 
             echo "$platform: $reason — building"
-            submit_args=()
-            if [ "$platform" = ios ]; then
-              submit_args=(--auto-submit)
+            if [ "$platform" = android ]; then
+              {
+                echo "android-build=true"
+                echo "android-fingerprint=$hash"
+                echo "ota-message=$message"
+              } >> "$GITHUB_OUTPUT"
+              echo ":building_construction: android: building $version on GitHub Actions ($reason)" >> "$GITHUB_STEP_SUMMARY"
+              continue
             fi
-            if eas build --platform "$platform" --profile production "${submit_args[@]}" --non-interactive --no-wait; then
+            if eas build --platform ios --profile production --auto-submit --non-interactive --no-wait; then
               echo ":building_construction: $platform: scheduled production build for $version ($reason)" >> "$GITHUB_STEP_SUMMARY"
             else
               failed=1
@@ -411,19 +433,44 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           exit "$failed"
 
-      # One open issue stands for "main cannot send OTA updates". It opens on the
-      # first skipped OTA, later skips edit its body without notifying anyone, and
-      # it closes once every platform publishes again.
+  android-build:
+    needs: production
+    if: needs.production.outputs.android-build == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/mobile-android-build.yml
+    with:
+      publish: true
+      expected-fingerprint: ${{ needs.production.outputs.android-fingerprint }}
+      ota-message: ${{ needs.production.outputs.ota-message }}
+    secrets: inherit
+
+  # One open issue stands for "main cannot send OTA updates". It opens on the
+  # first skipped OTA, later skips edit its body without notifying anyone, and
+  # it closes once every platform publishes again.
+  ota-blocked-issue:
+    name: Update the OTA blocked issue
+    needs: [production, android-build]
+    if: ${{ !cancelled() && needs.production.outputs.checked == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
       - name: Update the OTA blocked issue
-        if: ${{ !cancelled() && steps.reconcile.outputs.checked == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-          SKIPPED: ${{ steps.reconcile.outputs.skipped }}
+          GH_REPO: ${{ github.repository }}
+          SKIPPED: ${{ needs.production.outputs.skipped }}
+          ANDROID_BUILD: ${{ needs.android-build.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # A successful Android build publishes its OTA update itself.
+          if [ "$ANDROID_BUILD" = success ]; then
+            SKIPPED="$(printf '%s\n' "$SKIPPED" | grep -v '^android ' || true)"
+          fi
           title="Mobile OTA updates are blocked by native changes"
           issue="$(gh issue list --state open --label mobile-ota-blocked --json number --jq '.[0].number // empty')"
-          commit="$(git rev-parse --short=9 HEAD)"
+          commit="${GITHUB_SHA::9}"
           if [ -z "$SKIPPED" ]; then
             if [ -n "$issue" ]; then
               gh issue close "$issue" --comment "OTA updates published for iOS and Android again from $commit ($RUN_URL)."
@@ -435,7 +482,7 @@ jobs:
             "Main's native fingerprint matches no finished production build, so Mobile EAS Production skips the OTA update on every push for the platforms below. Installed apps receive no JavaScript changes until a matching build ships." \
             "$fingerprints" \
             "Latest skipped run: $RUN_URL at $commit." \
-            "Mobile EAS Production starts a build for a fingerprint that has none, and the next push after it finishes publishes the OTA update. The run summary says whether a build is in progress or errored; retry an errored build with workflow_dispatch mode=build. This closes when an OTA update publishes for every platform again.")"
+            "Mobile EAS Production starts a build for a fingerprint that has none. An Android build publishes its OTA update when it finishes, and a failed one is retried on the next push. For iOS, the next push after the build finishes publishes the OTA update; the run summary says whether the build is in progress or errored, and an errored build is retried with workflow_dispatch mode=build. This closes when an OTA update publishes for every platform again.")"
           if [ -n "$issue" ]; then
             gh issue edit "$issue" --body "$body"
           else
