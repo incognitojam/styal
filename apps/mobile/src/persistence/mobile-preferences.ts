@@ -59,6 +59,8 @@ const isUpdateRestartLocation = Schema.is(UpdateRestartLocation);
 const isPullRequestListPreferences = Schema.is(PullRequestListPreferences);
 
 export interface Preferences {
+  readonly navigationTabOrder?: readonly string[];
+  readonly hiddenNavigationTabs?: readonly string[];
   readonly pullRequestHideTestFiles?: boolean;
   /** Changed-file order in thread review and pull request diffs; unset means relevance. */
   readonly diffSortMode?: "relevance" | "alphabetical";
@@ -155,6 +157,8 @@ export class MobilePreferencesStore extends Context.Service<
 
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
+    navigationTabOrder?: readonly string[];
+    hiddenNavigationTabs?: readonly string[];
     pullRequestHideTestFiles?: boolean;
     diffSortMode?: "relevance" | "alphabetical";
     pullRequestMergeMethod?: PullRequestMergeMethod;
@@ -198,6 +202,18 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     pullRequestListFilters?: PullRequestListPreferences;
     updateRestartLocation?: UpdateRestartLocation;
   } = {};
+
+  if (Array.isArray(parsed.hiddenNavigationTabs)) {
+    preferences.hiddenNavigationTabs = parsed.hiddenNavigationTabs.filter(
+      (tab): tab is string => typeof tab === "string",
+    );
+  }
+
+  if (Array.isArray(parsed.navigationTabOrder)) {
+    preferences.navigationTabOrder = parsed.navigationTabOrder.filter(
+      (tab): tab is string => typeof tab === "string",
+    );
+  }
 
   if (typeof parsed.pullRequestHideTestFiles === "boolean") {
     preferences.pullRequestHideTestFiles = parsed.pullRequestHideTestFiles;

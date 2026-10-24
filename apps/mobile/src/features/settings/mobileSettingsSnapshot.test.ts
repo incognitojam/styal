@@ -20,6 +20,8 @@ const NOT_REPORTED: Record<string, string> = {
   updateRestartLocation: "navigation state, not a preference",
   markdownFontSize: "legacy, read only as baseFontSize",
   projectGroupingEnabled: "legacy, read only as projectGroupingMode",
+  navigationTabOrder: "not settable while navigation customization is unavailable",
+  hiddenNavigationTabs: "not settable while navigation customization is unavailable",
 };
 
 // Every preference set, so a new one fails to compile here until it is added.
@@ -73,6 +75,8 @@ const EVERY_PREFERENCE: Required<Preferences> = {
   },
   pullRequestListFilters: { environmentId: "synthetic-environment", controls: {} },
   updateRestartLocation: { path: "/synthetic/path", fromUpdateId: null },
+  navigationTabOrder: ["usage", "threads", "pullRequests"],
+  hiddenNavigationTabs: ["usage"],
 };
 
 describe("mobileSettingsSnapshot", () => {
