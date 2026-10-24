@@ -20,8 +20,11 @@ describe("settle a thread", () => {
   });
 
   afterAll(async () => {
-    await app?.close();
-    await environment?.stop();
+    try {
+      await app?.close();
+    } finally {
+      await environment?.stop();
+    }
   });
 
   it("moves the thread to the settled shelf and back", async () => {

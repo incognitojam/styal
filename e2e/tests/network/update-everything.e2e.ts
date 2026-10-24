@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, addEnvironment, openApp } from "../../support/browser.ts";
+import { type App, addEnvironment, allowOrigin, openApp } from "../../support/browser.ts";
 import { type Environment, startEnvironment } from "../../support/environment.ts";
 import { type PublishedServer, startPublishedServer } from "../../support/publishedServer.ts";
 
@@ -19,16 +19,19 @@ describe("update everything from the sidebar", () => {
     if (!CLIENT_VERSION || !SERVER_VERSION) {
       throw new Error("Set E2E_CLIENT_VERSION and E2E_PREVIOUS_SERVER_VERSION.");
     }
-    [environment, server] = await Promise.all([
-      startEnvironment(),
-      startPublishedServer(SERVER_VERSION),
-    ]);
+    environment = await startEnvironment();
+    server = await startPublishedServer(SERVER_VERSION);
     app = await openApp(environment);
+    // The client asks npm whether the release it would install is published.
+    allowOrigin(app.page, "https://registry.npmjs.org");
   });
 
   afterAll(async () => {
-    await app?.close();
-    await Promise.all([environment?.stop(), server?.stop()]);
+    try {
+      await app?.close();
+    } finally {
+      await Promise.all([environment?.stop(), server?.stop()]);
+    }
   });
 
   it("updates a server behind this client through its service launcher", async () => {

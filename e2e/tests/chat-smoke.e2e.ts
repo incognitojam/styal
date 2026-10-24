@@ -25,8 +25,11 @@ describe("chat with an agent", () => {
   });
 
   afterAll(async () => {
-    await app?.close();
-    await environment?.stop();
+    try {
+      await app?.close();
+    } finally {
+      await environment?.stop();
+    }
   });
 
   it("adds a project, starts a thread, and sends follow-ups to the same provider thread", async () => {

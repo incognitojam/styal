@@ -1,11 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalDate:off globalTimers:off - e2e harness runs plain Node outside any Effect runtime.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { hasTestFailed, markFailed } from "./failures.ts";
+import { markFailed } from "./failures.ts";
 import { freePort, isolatedEnv, waitFor } from "./environment.ts";
+import { ownProcess, stateResources } from "./resources.ts";
 
 export interface PublishedServer {
   /** Temporary directory holding the server's home, styal state, and log. */
@@ -29,7 +29,20 @@ export interface PublishedServer {
  * archive for `version` and for any version an update installs.
  */
 export async function startPublishedServer(version: string): Promise<PublishedServer> {
-  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "styal-e2e-published-"));
+  const state = stateResources("styal-e2e-published-");
+  try {
+    return await setupPublishedServer(version, state);
+  } catch (error) {
+    markFailed();
+    await state.stop();
+    throw error;
+  }
+}
+
+async function setupPublishedServer(
+  version: string,
+  { root, resources, stop }: ReturnType<typeof stateResources>,
+): Promise<PublishedServer> {
   const home = NodePath.join(root, "home");
   const bin = NodePath.join(root, "bin");
   const styalHome = NodePath.join(root, "styal");
@@ -66,40 +79,21 @@ export async function startPublishedServer(version: string): Promise<PublishedSe
 
   const port = await freePort();
   const serverLog = NodeFS.openSync(serverLogPath, "w");
+  resources.defer(() => NodeFS.closeSync(serverLog));
   const launcher = NodeChildProcess.spawn(NodePath.join(runtime, "styal"), ["__service-launcher"], {
     env: { ...env, T3CODE_HOST: "127.0.0.1", T3CODE_PORT: String(port), T3CODE_NO_BROWSER: "1" },
     stdio: ["ignore", serverLog, serverLog],
   });
-  const exited = new Promise<void>((resolve) => launcher.once("exit", () => resolve()));
+  const assertRunning = ownProcess(resources, launcher, 15_000);
   const readServerLog = () => NodeFS.readFileSync(serverLogPath, "utf8");
-
-  const stop = async () => {
-    if (launcher.exitCode === null && launcher.signalCode === null) {
-      // The launcher stops its server before it exits.
-      launcher.kill("SIGTERM");
-      const killTimer = setTimeout(() => launcher.kill("SIGKILL"), 15_000);
-      await exited;
-      clearTimeout(killTimer);
-    }
-    NodeFS.closeSync(serverLog);
-    if (process.env.E2E_KEEP_STATE || hasTestFailed()) {
-      process.stderr.write(`e2e state kept at ${root}\n`);
-    } else {
-      NodeFS.rmSync(root, { recursive: true, force: true });
-    }
-  };
-
-  let pairingUrl: string;
-  try {
-    pairingUrl = await waitFor("the published server's pairing URL", () => {
-      if (launcher.exitCode !== null) throw new Error(`The launcher exited:\n${readServerLog()}`);
+  const pairingUrl = await waitFor(
+    "the published server's pairing URL",
+    () => {
+      assertRunning();
       return /(?:Pairing URL|pairingUrl): (\S+)/.exec(readServerLog())?.[1];
-    });
-  } catch (error) {
-    markFailed();
-    await stop();
-    throw error;
-  }
+    },
+    readServerLog,
+  );
 
   return {
     root,
