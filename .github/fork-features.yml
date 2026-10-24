@@ -5164,9 +5164,9 @@ features:
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
       - apps/server/src/persistence/ForkMigrations/006_LegacyTurnUsage.ts
       - apps/web/src/components/Sidebar.tsx
-      - apps/web/src/components/chat/TurnUsageLabel.tsx
       - apps/web/src/components/chat/SubagentTooltipContent.tsx
       - apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx
+      - apps/web/src/components/chat/TurnUsageLabel.tsx
       - packages/contracts/src/legacyTurnUsage.ts
       - packages/shared/src/turnUsage.ts
     upstream_paths:
