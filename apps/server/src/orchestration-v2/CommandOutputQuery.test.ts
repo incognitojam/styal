@@ -126,7 +126,7 @@ it.effect("queries migrated command IDs and retained activity IDs without V1 pro
         '2026-01-01T00:00:00Z', ${yield* encodeFixtureJson(payload)}
       )
     `;
-    yield* sql`DROP TABLE projection_thread_activities`;
+    yield* sql`DROP TABLE styal_legacy_v1_thread_activities`;
     const expected = {
       status: "available",
       output: null,

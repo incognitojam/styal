@@ -2321,6 +2321,7 @@ features:
       - Migrated V1 checkpoints retain their original refs, assistant-message association, files, and exact checkpoint count including zero, without synthetic native runs.
       - Web, desktop, and mobile review select the preserved checkpoint scope explicitly, so historical turn one and a new native run one cannot select each other's changes.
       - Historical diffs use the original source thread's baseline ref even when import assigns a new thread id; requests without a scope retain native V2 behavior.
+      - Before upstream's migration 63 drops the V1 activity and turn projections, startup renames them to fork-owned tables, so V1 threads first opened after that upgrade still import their tool history, usage, and checkpoints.
     rationale: Upstream de343914 migrates messages only and its diff query excludes runless checkpoints. The fork keeps frozen checkpoint history readable through the V2 review APIs without assigning it native execution ownership.
     implementation_paths:
       - apps/mobile/src/features/review/useReviewSections.ts
@@ -2328,6 +2329,8 @@ features:
       - apps/server/src/checkpointing/CheckpointDiffQuery.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/orchestration-v2/legacy/LegacyHistoricalItems.ts
+      - apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts
+      - apps/server/src/persistence/ForkMigrations.ts
       - apps/web/src/components/DiffPanel.tsx
       - packages/client-runtime/src/state/threadCheckpoints.ts
       - packages/contracts/src/checkpointDiff.ts
@@ -2341,6 +2344,7 @@ features:
     tests:
       - apps/server/src/checkpointing/CheckpointDiffQuery.test.ts
       - apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.test.ts
+      - apps/server/src/persistence/ForkMigrations.v1History.test.ts
       - packages/client-runtime/src/state/threadCheckpoints.test.ts
     upstream:
       status: partial
@@ -2368,6 +2372,8 @@ features:
     implementation_paths:
       - apps/mobile/src/features/threads/thread-work-log.tsx
       - apps/server/src/orchestration-v2/CommandOutputQuery.ts
+      - apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts
+      - apps/server/src/persistence/ForkMigrations.ts
       - apps/web/src/components/chat/MessagesTimeline.tsx
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/shared/src/toolRowPresentation.ts
@@ -2377,6 +2383,7 @@ features:
     tests:
       - apps/mobile/src/lib/threadActivity.test.ts
       - apps/server/src/orchestration-v2/CommandOutputQuery.test.ts
+      - apps/server/src/persistence/ForkMigrations.v1History.test.ts
       - apps/web/src/components/chat/MessagesTimeline.logic.test.ts
       - packages/client-runtime/src/work-log/presentation.test.ts
       - packages/shared/src/toolRowPresentation.test.ts
@@ -5226,6 +5233,9 @@ features:
       - apps/server/src/dataImport/LegacyHistoryWriter.ts
       - apps/server/src/orchestration-v2/ProjectionStore.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.ts
+      - apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts
+      - apps/server/src/persistence/ForkMigrations.ts
+      - apps/server/src/persistence/ForkMigrations/005_ProjectionThreadTokenUsage.ts
       - apps/server/src/persistence/ForkMigrations/006_LegacyTurnUsage.ts
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/components/chat/SubagentTooltipContent.tsx
@@ -5271,6 +5281,7 @@ features:
       - apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts
       - apps/server/src/orchestration-v2/ProjectionStore.test.ts
       - apps/server/src/orchestration-v2/ProviderEventIngestor.test.ts
+      - apps/server/src/persistence/ForkMigrations.v1History.test.ts
       - apps/server/src/provider/TurnTokenUsage.test.ts
       - apps/server/src/usage/UsageService.test.ts
       - packages/provider-opencode/src/server/adapter.test.ts

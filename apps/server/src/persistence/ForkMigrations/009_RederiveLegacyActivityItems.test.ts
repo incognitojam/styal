@@ -12,8 +12,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { readHistoryRewriteFence } from "../../orchestration-v2/historyRewriteFence.ts";
-import { runForkMigrations } from "../ForkMigrations.ts";
-import { runMigrations } from "../Migrations.ts";
+import { runAllMigrations, runForkMigrations } from "../ForkMigrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 const encodeItem = Schema.encodeEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson));
@@ -98,8 +97,7 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
     it.effect("re-derives imported items in their events and projection", () =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        yield* runMigrations();
-        yield* runForkMigrations({ toMigrationInclusive: 8 });
+        yield* runAllMigrations({ forkToMigrationInclusive: 8 });
         for (const item of items) {
           const payload = yield* encodeItem(item);
           yield* sql`
@@ -172,8 +170,7 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
     it.effect("repairs multiple pages without changing unrelated events", () =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        yield* runMigrations();
-        yield* runForkMigrations({ toMigrationInclusive: 8 });
+        yield* runAllMigrations({ forkToMigrationInclusive: 8 });
         const payload = yield* encodeItem(items[0]!);
         const count = 401;
         yield* sql`
