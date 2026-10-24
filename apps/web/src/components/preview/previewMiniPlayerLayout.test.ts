@@ -3,12 +3,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   clampPreviewMiniPlayerPosition,
+  estimatePreviewMiniPlayerVelocity,
   PREVIEW_MINI_PLAYER_EDGE_GAP,
   type PreviewMiniPlayerObstacles,
   resizePreviewMiniPlayer,
   resolveDeviceMiniPlayerCornerRadius,
   resolveDeviceMiniPlayerSourceSize,
   resolvePreviewMiniPlayerFrame,
+  resolvePreviewMiniPlayerRelease,
   resolvePreviewMiniPlayerSourceSize,
 } from "./previewMiniPlayerLayout";
 
@@ -433,5 +435,93 @@ describe("clampPreviewMiniPlayerPosition", () => {
         obstacles,
       ),
     ).toEqual({ x: gap, y: 700 - 150 - gap - 500 });
+  });
+});
+
+describe("estimatePreviewMiniPlayerVelocity", () => {
+  it("measures the motion just before release", () => {
+    expect(
+      estimatePreviewMiniPlayerVelocity(
+        [
+          { x: 0, y: 0, time: 0 },
+          { x: 100, y: 0, time: 150 },
+          { x: 120, y: 10, time: 240 },
+          { x: 160, y: 30, time: 280 },
+        ],
+        280,
+      ),
+    ).toEqual({ x: 1, y: 0.5 });
+  });
+
+  it("reads a pause before release as still", () => {
+    expect(
+      estimatePreviewMiniPlayerVelocity(
+        [
+          { x: 0, y: 0, time: 0 },
+          { x: 200, y: 0, time: 100 },
+          { x: 200, y: 0, time: 400 },
+        ],
+        400,
+      ),
+    ).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("resolvePreviewMiniPlayerRelease", () => {
+  const bounds = { left: gap, top: gap, right: 748, bottom: 538 };
+  const position = { x: 400, y: 300 };
+  const still = { x: 0, y: 0 };
+
+  it("stays where a slow drag drops it away from the edges", () => {
+    expect(resolvePreviewMiniPlayerRelease({ position, velocity: still, bounds })).toEqual({
+      ...position,
+      settle: "free",
+    });
+  });
+
+  it("pulls a drop near an edge flush to it", () => {
+    expect(
+      resolvePreviewMiniPlayerRelease({ position: { x: 718, y: 37 }, velocity: still, bounds }),
+    ).toEqual({ x: 748, y: gap, settle: "edge" });
+  });
+
+  it("snaps a diagonal flick into the corner it was thrown toward", () => {
+    expect(
+      resolvePreviewMiniPlayerRelease({ position, velocity: { x: 0.8, y: 0.6 }, bounds }),
+    ).toEqual({ x: 748, y: 538, settle: "corner" });
+  });
+
+  it("snaps a sideways flick to the nearer corner on that side", () => {
+    expect(
+      resolvePreviewMiniPlayerRelease({ position, velocity: { x: -2, y: 0.4 }, bounds }),
+    ).toEqual({ x: gap, y: 538, settle: "corner" });
+    expect(
+      resolvePreviewMiniPlayerRelease({
+        position: { x: 400, y: 100 },
+        velocity: { x: -2, y: 0 },
+        bounds,
+      }),
+    ).toEqual({ x: gap, y: gap, settle: "corner" });
+  });
+
+  it("lets a modest flick leave the corner it was dropped in", () => {
+    expect(
+      resolvePreviewMiniPlayerRelease({
+        position: { x: gap, y: gap },
+        velocity: { x: 0.6, y: 0 },
+        bounds,
+      }),
+    ).toEqual({ x: 748, y: gap, settle: "corner" });
+  });
+
+  it("chooses corners within the reachable area, not the whole canvas", () => {
+    const lane = { left: 700, top: 255, right: 750, bottom: 416 };
+    expect(
+      resolvePreviewMiniPlayerRelease({
+        position: { x: 700, y: 263 },
+        velocity: { x: 0.8, y: 0.05 },
+        bounds: lane,
+      }),
+    ).toEqual({ x: 750, y: 255, settle: "corner" });
   });
 });

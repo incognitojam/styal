@@ -291,6 +291,7 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Floating previews stay out of the way of your text.** A floating browser or device preview
   can sit anywhere over the conversation, and moving or resizing it never shifts or narrows the
   messages or the composer. It still keeps clear of the composer and the thread details card.
+  Flick it to send it to a corner, or drop it near an edge to have it sit flush.
   Compared with
   [T3 Code revision 7fd2e09](https://github.com/pingdotgg/t3code/tree/7fd2e09e381a61f427da09dd7a8f2c9c1558fe59),
   checked October 25, 2026, which keeps the preview beside the conversation and narrows chat to

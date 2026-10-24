@@ -30,7 +30,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 9;
+export const FORK_CLIENT_USAGE_VERSION = 10;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -174,6 +174,13 @@ export const ForkClientUsageInput = Schema.Union([
     feature: Schema.Literal("next-unread-thread"),
     action: Schema.Literal("nothing_waiting"),
     entryPoint: Schema.Literals(["shortcut", "command_palette"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("floating-preview"),
+    action: Schema.Literal("released"),
+    /** `corner` after a flick, `edge` when a drop near an edge pulled flush, `free` otherwise. */
+    settle: Schema.Literals(["corner", "edge", "free"]),
+    preview: Schema.Literals(["browser", "device"]),
   }),
   Schema.Struct({
     feature: Schema.Literal("desktop-update-notice"),

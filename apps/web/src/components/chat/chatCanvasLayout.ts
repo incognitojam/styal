@@ -16,7 +16,7 @@ export interface ChatCanvasPreview {
   readonly position: PreviewMiniPlayerPosition | null;
   readonly source: PreviewMiniPlayerSize;
   readonly lastInteraction?: PreviewMiniPlayerState["lastInteraction"];
-  /** A dragged player follows the pointer over everything and settles clear of obstacles on release. */
+  /** A dragged or settling player moves freely over everything; obstacles apply once it comes to rest. */
   readonly dragging?: boolean;
 }
 

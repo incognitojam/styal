@@ -1372,26 +1372,30 @@ features:
   - id: floating-preview-overlay
     title: Floating previews overlay chat instead of reflowing it
     status: maintained
-    prs: []
+    prs: [1033]
     invariants:
       - Dragging or resizing a floating browser or device preview never moves or narrows the conversation or composer; the preview may cover messages anywhere on the chat canvas.
       - A dropped or resized floating preview stays clear of the composer, the open find bar, and the thread details card; a resize may overlap the details card and fold it, but never the composer.
-      - While dragged, a floating preview follows the pointer over chat, the composer, and the details card without jumping between clear slots, and settles at the nearest clear position when dropped.
+      - While dragged, a floating preview follows the pointer over chat, the composer, and the details card without jumping between clear slots.
+      - Releasing a dragged preview animates it to rest, moving freely until it lands. A flick lands in the corner it was thrown toward, a slow drop within reach of an edge settles flush against it, and any other drop settles at the nearest clear position. Reduced motion places it immediately.
       - A resize beside the composer stops at the composer's columns instead of throwing the preview above it mid-gesture; a preview already within those columns is lifted above the composer continuously.
     rationale: Upstream reserves a readable chat lane beside the preview and reflows chat around it, which pins the preview to the right of the conversation and rearranges text while reading or typing.
     implementation_paths:
       - apps/web/src/components/chat/ChatCanvas.tsx
+      - apps/web/src/components/chat/ChatCanvasContext.ts
       - apps/web/src/components/chat/chatCanvasLayout.ts
       - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
       - apps/web/src/components/preview/previewMiniPlayerLayout.ts
     upstream_paths:
       - apps/web/src/components/chat/ChatCanvas.tsx
+      - apps/web/src/components/chat/ChatCanvasContext.ts
       - apps/web/src/components/chat/chatCanvasLayout.ts
       - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
       - apps/web/src/components/preview/previewMiniPlayerLayout.ts
     tests:
       - apps/web/src/components/chat/chatCanvasLayout.test.ts
       - apps/web/src/components/preview/ThreadPreviewMiniPlayer.browser.test.tsx
+      - apps/web/src/components/preview/previewMiniPlayerLayout.test.ts
     upstream:
       status: tracking
       tracking:
