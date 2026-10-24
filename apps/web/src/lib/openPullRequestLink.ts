@@ -12,7 +12,6 @@ import {
   sourceControlClients,
   type ChangeRequestLink,
 } from "@t3tools/client-runtime/source-control-clients";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 
 import { useOpenLink } from "../browser/useOpenLink";
 import { useClientSettings } from "../hooks/useSettings";
@@ -169,7 +168,8 @@ export function useOpenChangeRequestLink(
     const repository =
       serverConfigs.get(project.environmentId)?.environment.capabilities.threadPullRequests === true
         ? parsed.repository
-        : (sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository);
+        : (sourceControlClients.repositorySelector(project.repositoryIdentity) ??
+          parsed.repository);
     event.preventDefault();
     event.stopPropagation();
     if (resolvedPanelRef) {

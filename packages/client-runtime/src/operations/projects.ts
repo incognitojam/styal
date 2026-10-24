@@ -10,10 +10,7 @@ import type {
   SourceControlDiscoveryResult,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
-import {
-  detectSourceControlProviderFromGitRemoteUrl,
-  normalizeGitRemoteUrl,
-} from "@t3tools/shared/git";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Arr from "effect/Array";
@@ -128,7 +125,7 @@ export function repositoryOwnerAvatarUrl(input: {
   readonly nameWithOwner: string;
   readonly size?: number;
 }): string | null {
-  if (detectSourceControlProviderFromGitRemoteUrl(input.repositoryUrl)?.kind !== "github") {
+  if (sourceControlClients.recognizeRemote(input.repositoryUrl)?.kind !== "github") {
     return null;
   }
   const owner = input.nameWithOwner.split("/")[0]?.trim();

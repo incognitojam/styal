@@ -1,13 +1,11 @@
 import {
   CommandId,
-  pullRequestHostOf,
   type OrchestrationProjectShell,
   type OrchestrationV2ThreadShell,
   type SourceControlProviderKind,
   type ThreadId,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -68,10 +66,10 @@ function projectHostAndProvider(project: OrchestrationProjectShell | undefined):
   readonly kind: SourceControlProviderKind | null;
 } {
   const identity = project?.repositoryIdentity;
-  const kind = (identity?.provider as SourceControlProviderKind | undefined) ?? null;
+  const kind = identity?.provider ?? null;
   if (!identity || kind === null) return { host: null, kind: null };
   return {
-    host: pullRequestHostOf(identity, kind),
+    host: sourceControlClients.changeRequestHost(identity, kind),
     kind,
   };
 }
@@ -209,7 +207,7 @@ function projectForPullRequest(
         : pullRequestSyncKey(
             {
               projectId: project.id,
-              repository: sourceControlRepositorySelector(project.repositoryIdentity) ?? "",
+              repository: sourceControlClients.repositorySelector(project.repositoryIdentity) ?? "",
               number: 1,
             },
             project.repositoryIdentity,

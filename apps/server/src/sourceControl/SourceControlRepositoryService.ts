@@ -35,12 +35,7 @@ import {
   type SourceControlSetDefaultRepositoryInput,
   type SourceControlUpstreamRemote,
 } from "@t3tools/contracts";
-import {
-  detectSourceControlProviderFromGitRemoteUrl,
-  normalizeGitRemoteUrl,
-  parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
-  parseGitRemoteConfig,
-} from "@t3tools/shared/git";
+import { parseGitRemoteConfig } from "@t3tools/shared/git";
 
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
@@ -53,6 +48,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { classifyNonZeroExit } from "../vcs/VcsProcess.ts";
 import { MAX_REFERENCES_PER_REQUEST } from "@t3tools/source-control-github/server/gitHubReferences";
 import { makeReferenceCache } from "./referenceCache.ts";
+import { sourceControlClients } from "./sourceControlClients.ts";
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -328,11 +324,14 @@ interface ParsedRemoteConfig {
  * than a URL.
  */
 function repositoryNameWithOwnerFromRemoteUrl(url: string): string | null {
-  const gitHubNameWithOwner = parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url);
+  const gitHubNameWithOwner =
+    /^(?:git@github\.com:|ssh:\/\/(?:git@)?github\.com\/|https:\/\/github\.com\/|git:\/\/github\.com\/)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i
+      .exec(url.trim())?.[1]
+      ?.trim();
   if (gitHubNameWithOwner) {
     return gitHubNameWithOwner;
   }
-  const segments = normalizeGitRemoteUrl(url).split("/");
+  const segments = sourceControlClients.repositoryKeyFromRemote(url).split("/");
   return segments.length > 1 ? segments.slice(1).join("/") : null;
 }
 
@@ -347,7 +346,7 @@ function parseRemoteConfig(stdout: string): ParsedRemoteConfig {
             url: entry.url,
             nameWithOwner: repositoryNameWithOwnerFromRemoteUrl(entry.url),
             provider:
-              detectSourceControlProviderFromGitRemoteUrl(entry.url)?.kind ??
+              sourceControlClients.recognizeRemote(entry.url)?.kind ??
               SourceControlProviderKind.make("unknown"),
           },
         ],
@@ -934,7 +933,9 @@ export const make = Effect.gen(function* () {
         remotes.find((remote) => remote.remoteName === config?.state.defaultRemoteName) ??
         remotes.find((remote) => remote.remoteName === "origin") ??
         remotes[0];
-      const host = preferred ? normalizeGitRemoteUrl(preferred.url).split("/")[0] : undefined;
+      const host = preferred
+        ? sourceControlClients.repositoryKeyFromRemote(preferred.url).split("/")[0]
+        : undefined;
       return host && host.length > 0 ? host : "github.com";
     },
   );

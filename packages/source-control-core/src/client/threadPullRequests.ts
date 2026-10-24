@@ -1,16 +1,10 @@
 import type {
   OrchestrationV2AppThread,
   RepositoryIdentity,
-  SourceControlProviderKind,
   ThreadLinkedPullRequest,
   ThreadPullRequestKey,
   ThreadPullRequestLink,
 } from "@t3tools/contracts";
-import { pullRequestHostOf } from "@t3tools/contracts";
-import {
-  canonicalRepositoryKey,
-  sourceControlRepositorySelector,
-} from "@t3tools/shared/sourceControl";
 import {
   resolvePullRequestMergeIntent,
   visibleThreadPullRequests,
@@ -74,7 +68,14 @@ export type ThreadPullRequestBadge = {
  * binds these once to its own registry.
  */
 export function makeThreadPullRequests(
-  registry: Pick<SourceControlClientRegistry, "parseChangeRequestUrl">,
+  registry: Pick<
+    SourceControlClientRegistry,
+    | "parseChangeRequestUrl"
+    | "canonicalRepositoryKey"
+    | "findByRepositoryKey"
+    | "changeRequestHost"
+    | "repositorySelector"
+  >,
 ) {
   const parse = (url: string) => registry.parseChangeRequestUrl(url)?.link ?? null;
 
@@ -85,7 +86,7 @@ export function makeThreadPullRequests(
       (parsed?.repository === key.repository.trim().toLowerCase() && parsed.number === key.number
         ? parsed.authority
         : undefined);
-    const canonical = canonicalRepositoryKey(
+    const canonical = registry.canonicalRepositoryKey(
       `${(authority ?? key.host).trim().toLowerCase()}/${key.repository.trim().toLowerCase()}`,
     );
     const separator = canonical.indexOf("/");
@@ -102,8 +103,10 @@ export function makeThreadPullRequests(
   ): ThreadPullRequestKey {
     const parsed = parse(linked.url);
     if (parsed !== null && parsed.number === linked.number) {
-      const canonical = canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`);
-      if (parsed.authority !== undefined || canonical.startsWith("dev.azure.com/")) {
+      if (
+        parsed.authority !== undefined ||
+        registry.findByRepositoryKey(`${parsed.host}/${parsed.repository}`) !== undefined
+      ) {
         return normalizeThreadPullRequestKey(parsed);
       }
     }
@@ -190,19 +193,19 @@ export function makeThreadPullRequests(
     identity: RepositoryIdentity | null | undefined,
   ): ThreadLinkedPullRequest | null {
     if (!identity) return null;
-    const host = pullRequestHostOf(identity, identity.provider as SourceControlProviderKind);
+    const host = registry.changeRequestHost(identity, identity.provider);
     if (typeof host !== "string") return null;
-    const repository = sourceControlRepositorySelector(identity);
+    const repository = registry.repositorySelector(identity);
     if (repository === null) return null;
     const azureKey =
       identity.provider === "azure-devops"
-        ? canonicalRepositoryKey(identity.canonicalKey.toLowerCase())
+        ? registry.canonicalRepositoryKey(identity.canonicalKey.toLowerCase())
         : null;
     const link = resolveThreadCurrentPullRequestLink(
       links.filter((link) => {
         if (azureKey !== null) {
           const key = legacyThreadPullRequestKey(link, link.host);
-          return canonicalRepositoryKey(`${key.host}/${key.repository}`) === azureKey;
+          return registry.canonicalRepositoryKey(`${key.host}/${key.repository}`) === azureKey;
         }
         const parsed = parse(link.url);
         if (parsed?.authority !== undefined) {
