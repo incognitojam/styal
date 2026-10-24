@@ -5,6 +5,7 @@ import { worktreeNeedsFirstCommit } from "@t3tools/client-runtime/state/vcs";
 import { LogInIcon } from "lucide-react";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
+import { NextUnreadChip } from "./chat/NextUnreadChip";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
 import {
   isThreadWokeUnseen,
@@ -8520,9 +8521,21 @@ export default function ChatView(props: ChatViewProps) {
                   : { historyControls: threadHistoryControls })}
               />
 
+              {!isDraftHeroState && !isThreadFindActive && !showScrollToBottom ? (
+                // Lines up with the composer's right edge. While Scroll to end
+                // shows, the chip sits beside it instead so they never overlap.
+                <div
+                  className="chat-composer-lane pointer-events-none absolute inset-x-0 z-30 py-1.5"
+                  style={{ bottom: scrollToEndClearance + 4 }}
+                >
+                  <div className="mx-auto flex w-full max-w-(--chat-content-max-width) justify-end">
+                    <NextUnreadChip />
+                  </div>
+                </div>
+              ) : null}
               {showScrollToBottom && !isThreadFindActive && (
                 <div
-                  className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center py-1.5"
+                  className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center gap-2 py-1.5"
                   style={{ bottom: scrollToEndClearance + 4 }}
                 >
                   <Button
@@ -8539,6 +8552,7 @@ export default function ChatView(props: ChatViewProps) {
                     <ChevronDownIcon className="size-3.5" />
                     Scroll to end
                   </Button>
+                  {isDraftHeroState ? null : <NextUnreadChip />}
                 </div>
               )}
             </div>
