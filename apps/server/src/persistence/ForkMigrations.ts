@@ -98,11 +98,107 @@ const releaseMisplacedLatestMessageMigration = Effect.fn("releaseMisplacedLatest
   },
 );
 
-export const runAllMigrations = Effect.fn("runAllMigrations")(function* () {
+const UPSTREAM_V1_HISTORY_DROP_MIGRATION_ID = 63;
+
+/**
+ * Upstream migration 63 drops the V1 activity and turn projections, but the lazy V1 thread
+ * import still reads tool history, usage and checkpoints from them. Renaming them to fork-owned
+ * tables before it runs lets that migration stay verbatim; its `DROP TABLE IF EXISTS` then finds
+ * nothing. A rename keeps the tables' indexes, so a large database pays no index rebuild. A
+ * database another build took past 63 has lost this history and gets empty tables, so readers
+ * need no existence checks.
+ */
+const keepV1HistoryTables = Effect.fn("keepV1HistoryTables")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const tables = new Set(
+    (yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_master WHERE type = 'table'
+    `).map((table) => table.name),
+  );
+  if (tables.has("styal_legacy_v1_thread_activities") && tables.has("styal_legacy_v1_turns")) {
+    return false;
+  }
+  const dropApplied =
+    (yield* sql`
+      SELECT 1 FROM effect_sql_migrations
+      WHERE migration_id >= ${UPSTREAM_V1_HISTORY_DROP_MIGRATION_ID}
+      LIMIT 1
+    `).length > 0;
+  const renamesV1 = (table: string) => !dropApplied && tables.has(table);
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      if (!tables.has("styal_legacy_v1_thread_activities")) {
+        if (renamesV1("projection_thread_activities")) {
+          yield* sql`ALTER TABLE projection_thread_activities RENAME TO styal_legacy_v1_thread_activities`;
+        } else {
+          yield* sql`
+            CREATE TABLE styal_legacy_v1_thread_activities (
+              activity_id TEXT PRIMARY KEY,
+              thread_id TEXT NOT NULL,
+              turn_id TEXT,
+              tone TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              summary TEXT NOT NULL,
+              payload_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              sequence INTEGER
+            )
+          `;
+          yield* sql`
+            CREATE INDEX styal_legacy_v1_thread_activities_thread_idx
+            ON styal_legacy_v1_thread_activities(thread_id, created_at, sequence, activity_id)
+          `;
+        }
+      }
+      if (!tables.has("styal_legacy_v1_turns")) {
+        if (renamesV1("projection_turns")) {
+          yield* sql`ALTER TABLE projection_turns RENAME TO styal_legacy_v1_turns`;
+        } else {
+          yield* sql`
+            CREATE TABLE styal_legacy_v1_turns (
+              row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              thread_id TEXT NOT NULL,
+              turn_id TEXT,
+              pending_message_id TEXT,
+              assistant_message_id TEXT,
+              state TEXT NOT NULL,
+              requested_at TEXT NOT NULL,
+              started_at TEXT,
+              completed_at TEXT,
+              checkpoint_turn_count INTEGER,
+              checkpoint_ref TEXT,
+              checkpoint_status TEXT,
+              checkpoint_files_json TEXT NOT NULL,
+              source_proposed_plan_thread_id TEXT,
+              source_proposed_plan_id TEXT,
+              UNIQUE (thread_id, turn_id),
+              UNIQUE (thread_id, checkpoint_turn_count)
+            )
+          `;
+        }
+      }
+    }),
+  );
+  return true;
+});
+
+export interface RunAllMigrationsOptions {
+  readonly forkToMigrationInclusive?: number | undefined;
+}
+
+export const runAllMigrations = Effect.fn("runAllMigrations")(function* ({
+  forkToMigrationInclusive,
+}: RunAllMigrationsOptions = {}) {
   if (yield* releaseMisplacedLatestMessageMigration()) {
     yield* Effect.log("Moved the latest message migration out of upstream migration history");
   }
-  const upstream = yield* runMigrations();
-  const fork = yield* runForkMigrations();
+  const beforeDrop = yield* runMigrations({
+    toMigrationInclusive: UPSTREAM_V1_HISTORY_DROP_MIGRATION_ID - 1,
+  });
+  if (yield* keepV1HistoryTables()) {
+    yield* Effect.log("Kept the V1 activity and turn history in fork tables");
+  }
+  const upstream = [...beforeDrop, ...(yield* runMigrations())];
+  const fork = yield* runForkMigrations({ toMigrationInclusive: forkToMigrationInclusive });
   return { upstream, fork } as const;
 });

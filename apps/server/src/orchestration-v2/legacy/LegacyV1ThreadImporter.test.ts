@@ -89,12 +89,12 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
           ["usage:model-only", "turn:3", { model: "model-without-usage" }],
         ] as const) {
           yield* sql`
-          INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+          INSERT INTO styal_legacy_v1_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
           VALUES (${id}, ${threadId}, ${turn}, 'info', 'turn.usage', 'Recorded usage', ${encodeHistoryJson(payload)}, ${at}, ${id === "usage:stale" ? 1 : 2})
         `;
         }
         yield* sql`
-        INSERT INTO projection_turns (thread_id, turn_id, state, requested_at, checkpoint_files_json)
+        INSERT INTO styal_legacy_v1_turns (thread_id, turn_id, state, requested_at, checkpoint_files_json)
         VALUES (${threadId}, 'turn:1', 'completed', ${at}, '[]'),
           (${threadId}, 'turn:2', 'completed', ${at}, '[]'),
           (${threadId}, 'turn:3', 'completed', ${at}, '[]')
@@ -117,13 +117,13 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
           exactNestedPayload: { keep: [1, 2, 3] },
         };
         yield* sql`
-        INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+        INSERT INTO styal_legacy_v1_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
         VALUES ('synthetic-command-activity', ${threadId}, 'turn:1', 'tool', 'tool.completed', 'Recorded command',
           ${encodeHistoryJson(historicalCommand)}, ${at}, 3)
       `;
         // Runtime bookkeeping is not history; a background task outcome is.
         yield* sql`
-        INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+        INSERT INTO styal_legacy_v1_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
         VALUES ('context-window', ${threadId}, 'turn:1', 'info', 'context-window.updated', 'Context window updated', '{"usedTokens":1}', ${at}, 4),
           ('checkpoint-captured', ${threadId}, 'turn:1', 'info', 'checkpoint.captured', 'Checkpoint captured', '{}', ${at}, 5),
           ('task-completed', ${threadId}, 'turn:1', 'info', 'task.completed', 'Task completed', '{"taskId":"synthetic-task","title":"Run tests","taskType":"local_bash"}', ${at}, 6),
@@ -136,14 +136,14 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
           ["tool-late-update", "tool.updated", "inProgress", 10],
         ] as const) {
           yield* sql`
-          INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+          INSERT INTO styal_legacy_v1_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
           VALUES (${id}, ${threadId}, 'turn:1', 'tool', ${kind}, 'MCP tool call',
             ${encodeHistoryJson({ itemType: "mcp_tool_call", toolCallId: "synthetic-mcp", status, data: { toolName: "synthetic_tool" } })},
             ${sequence === 8 ? at : "2026-01-01T00:00:01.000Z"}, ${sequence})
         `;
         }
         yield* sql`
-        UPDATE projection_turns SET checkpoint_turn_count = 1, checkpoint_ref = 'refs/styal/checkpoints/synthetic',
+        UPDATE styal_legacy_v1_turns SET checkpoint_turn_count = 1, checkpoint_ref = 'refs/styal/checkpoints/synthetic',
           checkpoint_status = 'ready', checkpoint_files_json = '[{"path":"synthetic.txt","kind":"modified","additions":2,"deletions":1}]',
           assistant_message_id = 'message:usage', completed_at = ${at}
         WHERE thread_id = ${threadId} AND turn_id = 'turn:1'

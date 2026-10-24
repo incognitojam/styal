@@ -3,8 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { runForkMigrations } from "../ForkMigrations.ts";
-import { runMigrations } from "../Migrations.ts";
+import { runAllMigrations, runForkMigrations } from "../ForkMigrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
@@ -53,8 +52,7 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
     it.effect("removes imported items made only of undisplayed activity kinds", () =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        yield* runMigrations();
-        yield* runForkMigrations({ toMigrationInclusive: 6 });
+        yield* runAllMigrations({ forkToMigrationInclusive: 6 });
 
         for (const [index, item] of items.entries()) {
           const payload = yield* encodeJson({

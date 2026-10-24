@@ -17,7 +17,7 @@ export default Effect.gen(function* () {
     UPDATE projection_threads
     SET token_usage_json = (
       SELECT json_extract(activity.payload_json, '$.thread')
-      FROM projection_thread_activities AS activity
+      FROM styal_legacy_v1_thread_activities AS activity
       WHERE activity.thread_id = projection_threads.thread_id
         AND activity.kind = 'turn.usage'
       ORDER BY activity.created_at DESC
