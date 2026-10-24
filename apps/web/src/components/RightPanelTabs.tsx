@@ -6,7 +6,7 @@ import {
   visibleThreadPullRequests,
   resolvePullRequestMergeIntent,
   pullRequestMergeIntentLabel,
-} from "@t3tools/shared/threadPullRequests";
+} from "@t3tools/client-runtime/thread-pull-requests";
 import { PullRequestMergeIntentIcon } from "./pullRequest/PullRequestMergeIntentIcon";
 import type {
   ContextMenuItem,

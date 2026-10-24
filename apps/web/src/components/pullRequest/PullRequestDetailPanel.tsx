@@ -1,4 +1,4 @@
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { projectChangeRequestUrl } from "@t3tools/client-runtime/change-request-links";
 import {
   pullRequestMergeIntentLabel,
   resolvePullRequestMergeIntent,
@@ -57,7 +57,6 @@ import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { usePullRequestDefaultMergeMethodResolver } from "./usePullRequestActions";
 import { OFF_HEAD_PULL_REQUEST_CHECKOUT_TOAST } from "./pullRequestCheckoutToast";
-import { changeRequestRepositoryUrl, gitHubPullRequestBrowserUrl } from "~/lib/openPullRequestLink";
 import { usePreparePullRequestThreadAction } from "~/lib/sourceControlActions";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
@@ -269,7 +268,10 @@ function pullRequestStackReference(
 ) {
   return detail === null || detail.capabilities.stacks !== true || !supportsThreadPullRequests
     ? null
-    : { ...reference, host: reference.host ?? parseChangeRequestUrl(detail.url)?.host };
+    : {
+        ...reference,
+        host: reference.host ?? sourceControlClients.parseChangeRequestUrl(detail.url)?.link.host,
+      };
 }
 
 type PullRequestDetailPanelProps = {
@@ -348,7 +350,7 @@ function PullRequestDetailPanelBody({
     supportsThreadPullRequests,
   );
   const loadingCheckoutCommand = loadingPullRequestCheckoutCommand(reference, repositoryIdentity);
-  const unavailableGitHubUrl = gitHubPullRequestBrowserUrl(
+  const unavailableHostUrl = projectChangeRequestUrl(
     repositoryIdentity,
     reference.repository,
     reference.number,
@@ -511,7 +513,10 @@ function PullRequestDetailPanelBody({
     setSeenAutoMergeKey(autoMergeKey);
     if (detail?.autoMergeMethod !== undefined) setMergeMethod(detail.autoMergeMethod);
   }
-  const repositoryUrl = detail === null ? null : changeRequestRepositoryUrl(detail.url);
+  const repositoryUrl =
+    detail === null
+      ? null
+      : (sourceControlClients.parseChangeRequestUrl(detail.url)?.link.repositoryUrl ?? null);
   const hostClient = sourceControlClients.get(detail?.provider);
   const openOnHostText = openOnHostLabel(hostClient);
   const markdownContext = pullRequestMarkdownContext(hostClient, repositoryUrl, threadRef);
@@ -525,7 +530,7 @@ function PullRequestDetailPanelBody({
         handoffSummary.number,
         handoffSummary.headBranch,
         detail?.headRepositoryNameWithOwner,
-        changeRequestRepositoryUrl(handoffSummary.url),
+        sourceControlClients.parseChangeRequestUrl(handoffSummary.url)?.link.repositoryUrl ?? null,
       )
     : loadingCheckoutCommand;
   const branchRefsQuery = useEnvironmentQuery(
@@ -1832,7 +1837,16 @@ function PullRequestDetailPanelBody({
               : { error: detailQuery.error })}
             refreshing={detailQuery.isPending}
             onRetry={refreshDetail}
-            {...(unavailableGitHubUrl ? { gitHubUrl: unavailableGitHubUrl } : {})}
+            {...(unavailableHostUrl
+              ? {
+                  host: {
+                    url: unavailableHostUrl,
+                    openLabel: openOnHostLabel(
+                      sourceControlClients.get(repositoryIdentity?.provider),
+                    ),
+                  },
+                }
+              : {})}
           />
         ) : detail ? (
           <PullRequestMarkdownContext value={markdownContext}>

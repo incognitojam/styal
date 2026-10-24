@@ -150,6 +150,46 @@ const rewriteEffectImports = (directory: string): void => {
   }
 };
 
+// Links `source`'s dependencies into `destination`, except that workspace packages resolve to
+// the previous nightly's copies under `workspacePackages`. Its server source then imports the
+// workspace exports it was written against, even after a later change moves or removes them.
+const linkPreviousNodeModules = (
+  source: string,
+  destination: string,
+  workspacePackages: ReadonlyMap<string, string>,
+): void => {
+  NodeFS.mkdirSync(destination, { recursive: true });
+  for (const entry of NodeFS.readdirSync(source)) {
+    if (entry !== "@t3tools") {
+      NodeFS.symlinkSync(NodePath.join(source, entry), NodePath.join(destination, entry));
+      continue;
+    }
+    NodeFS.mkdirSync(NodePath.join(destination, entry));
+    for (const name of NodeFS.readdirSync(NodePath.join(source, entry))) {
+      NodeFS.symlinkSync(
+        workspacePackages.get(`${entry}/${name}`) ?? NodePath.join(source, entry, name),
+        NodePath.join(destination, entry, name),
+        "dir",
+      );
+    }
+  }
+};
+
+const readWorkspacePackages = (packagesRoot: string): ReadonlyMap<string, string> => {
+  const packages = new Map<string, string>();
+  for (const entry of NodeFS.readdirSync(packagesRoot, { withFileTypes: true })) {
+    const manifestPath = NodePath.join(packagesRoot, entry.name, "package.json");
+    if (!entry.isDirectory() || !NodeFS.existsSync(manifestPath)) continue;
+    const manifest: { readonly name?: unknown } = JSON.parse(
+      NodeFS.readFileSync(manifestPath, "utf8"),
+    );
+    if (typeof manifest.name === "string") {
+      packages.set(manifest.name, NodePath.join(packagesRoot, entry.name));
+    }
+  }
+  return packages;
+};
+
 const tempRoot = NodeFS.mkdtempSync(NodePath.join(repoRoot, ".nightly-schema-upgrade-"));
 
 try {
@@ -162,16 +202,33 @@ try {
     // Migrations may reuse server code, such as the V1 history conversion fork migration 9
     // re-derives imports with, so the previous nightly's whole server source comes along.
     "apps/server/src",
+    "packages",
   ]);
   runChecked("tar", ["-xf", "-", "-C", tempRoot], archive);
   // The previous nightly runs on this checkout's dependencies, so source from before the
   // Effect 4.0 stable release needs its `effect/unstable/*` imports moved to their new paths.
   rewriteEffectImports(NodePath.join(tempRoot, "apps/server/src"));
-  NodeFS.symlinkSync(
+  rewriteEffectImports(NodePath.join(tempRoot, "packages"));
+  const previousPackages = readWorkspacePackages(NodePath.join(tempRoot, "packages"));
+  linkPreviousNodeModules(
     NodePath.join(repoRoot, "apps/server/node_modules"),
     NodePath.join(tempRoot, "apps/server/node_modules"),
-    "dir",
+    previousPackages,
   );
+  for (const previousPackage of previousPackages.values()) {
+    const currentNodeModules = NodePath.join(
+      repoRoot,
+      NodePath.relative(tempRoot, previousPackage),
+      "node_modules",
+    );
+    if (NodeFS.existsSync(currentNodeModules)) {
+      linkPreviousNodeModules(
+        currentNodeModules,
+        NodePath.join(previousPackage, "node_modules"),
+        previousPackages,
+      );
+    }
+  }
 
   const previousPersistenceRoot = NodePath.join(tempRoot, "apps/server/src/persistence");
   const previousMigrations: typeof CurrentMigrations = await import(

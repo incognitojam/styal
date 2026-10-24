@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { Platform } from "react-native";
 import { resetAndroidWorkspace } from "../lib/android-workspace-navigation";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useThreadShell } from "../state/entities";
+import { useProjects, useThreadShell } from "../state/entities";
 import { tryOpenExternalUrl } from "../lib/openExternalUrl";
 
 type PullRequestContext = { readonly environmentId: string; readonly projectId: string };
@@ -20,11 +20,12 @@ export function useNavigateToPullRequest(options?: {
   readonly selectInWorkspace?: boolean;
 }) {
   const navigation = useNavigation();
+  const projects = useProjects();
   const replace = options?.replace;
   const selectInWorkspace = options?.selectInWorkspace;
   return useCallback(
     async (url: string, context: PullRequestContext | null) => {
-      const params = nativePullRequestDestination(url, context);
+      const params = nativePullRequestDestination(url, context, projects);
       if (!params) return tryOpenExternalUrl(url, "pull-request");
       if (Platform.OS === "android" && selectInWorkspace)
         resetAndroidWorkspace(navigation, { name: "PullRequest", params });
@@ -32,7 +33,7 @@ export function useNavigateToPullRequest(options?: {
       else navigation.navigate("PullRequest", params);
       return true;
     },
-    [navigation, replace, selectInWorkspace],
+    [navigation, projects, replace, selectInWorkspace],
   );
 }
 

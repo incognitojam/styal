@@ -12,7 +12,7 @@ import {
   resolvePullRequestMergeIntent,
   pullRequestMergeIntentLabel,
   type PullRequestMergeIntent,
-} from "@t3tools/shared/threadPullRequests";
+} from "@t3tools/client-runtime/thread-pull-requests";
 
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
 

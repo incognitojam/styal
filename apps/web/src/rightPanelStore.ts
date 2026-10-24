@@ -6,7 +6,7 @@ import {
 import { EnvironmentId, RunId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
 import { useClosedViewStore } from "./closedViewStore";
 import { resolveStorage } from "./lib/storage";
@@ -306,7 +306,9 @@ export function pullRequestSurface(target: {
   // link to the same PR cannot change the panel's React key or its query/snapshot cache keys.
   const host =
     target.host?.toLowerCase() ??
-    (typeof target.url === "string" ? parseChangeRequestUrl(target.url)?.host : undefined);
+    (typeof target.url === "string"
+      ? sourceControlClients.parseChangeRequestUrl(target.url)?.link.host
+      : undefined);
   return {
     // Keep historical tab IDs: upsertSurface already matches explicit and URL-derived hosts.
     id: pullRequestSurfaceId(target),
@@ -326,7 +328,8 @@ const matchesPullRequestSurface = (
   surface: PullRequestSurface,
 ): entry is PullRequestSurface => {
   const hostOf = (entry: PullRequestSurface) =>
-    entry.host?.toLowerCase() ?? (entry.url ? parseChangeRequestUrl(entry.url)?.host : undefined);
+    entry.host?.toLowerCase() ??
+    (entry.url ? sourceControlClients.parseChangeRequestUrl(entry.url)?.link.host : undefined);
   return (
     entry.kind === "pull-request" &&
     (entry.id === surface.id ||

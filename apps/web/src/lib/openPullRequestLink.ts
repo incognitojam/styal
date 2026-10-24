@@ -1,11 +1,17 @@
-import type { EnvironmentId, LocalApi, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, LocalApi, ScopedThreadRef } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { type MouseEvent } from "react";
 
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { parseChangeRequestUrl, type ChangeRequestLink } from "@t3tools/shared/changeRequestUrl";
+import {
+  findProjectForChangeRequest,
+  resolvePullRequestPreviewTarget,
+} from "@t3tools/client-runtime/change-request-links";
+import {
+  sourceControlClients,
+  type ChangeRequestLink,
+} from "@t3tools/client-runtime/source-control-clients";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 
 import { useOpenLink } from "../browser/useOpenLink";
@@ -54,58 +60,6 @@ export async function openPullRequestLink(
   }
 }
 
-export {
-  parseChangeRequestUrl,
-  type ChangeRequestLink,
-  gitHubPullRequestBrowserUrl,
-  pullRequestCandidateUrlFromReferenceAutolink,
-  matchesLinkedPullRequestUrl,
-  changeRequestRepositoryUrl,
-} from "@t3tools/shared/changeRequestUrl";
-
-export function findProjectForChangeRequest(
-  projects: ReadonlyArray<EnvironmentProject>,
-  link: ChangeRequestLink,
-): EnvironmentProject | undefined {
-  return projects.find((project) => {
-    const identity = project.repositoryIdentity;
-    return (
-      identity?.provider !== undefined &&
-      sourceControlClients.get(identity.provider).isChangeRequestInRepository(identity, link)
-    );
-  });
-}
-
-export function resolvePullRequestPreviewTarget({
-  environmentId,
-  projects,
-  pullRequestsEnabled,
-  url,
-}: {
-  environmentId: EnvironmentId | null;
-  projects: ReadonlyArray<EnvironmentProject>;
-  pullRequestsEnabled: boolean;
-  url: string;
-}): { environmentId: EnvironmentId; input: PullRequestRef } | null {
-  if (!pullRequestsEnabled || environmentId === null) return null;
-  const parsed = parseChangeRequestUrl(url);
-  if (parsed === null) return null;
-  const project = findProjectForChangeRequest(
-    projects.filter((candidate) => candidate.environmentId === environmentId),
-    parsed,
-  );
-  if (project === undefined) return null;
-  return {
-    environmentId,
-    input: {
-      projectId: project.id,
-      host: parsed.authority ?? parsed.host,
-      repository: sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository,
-      number: parsed.number,
-    },
-  };
-}
-
 export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null, url: string) {
   const projects = useProjects();
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
@@ -148,7 +102,7 @@ export function findProjectOnChangeRequestHost(
  *
  * With "Open pull requests in styal" turned off, every link is left alone.
  */
-export function shouldOpenPullRequestExternally(
+function shouldOpenPullRequestExternally(
   event: Pick<MouseEvent<HTMLElement>, "metaKey" | "ctrlKey"> &
     Partial<Pick<MouseEvent<HTMLElement>, "button">>,
 ): boolean {
@@ -179,8 +133,8 @@ export function useOpenChangeRequestLink(
     const allProjects = readProjects();
     const resolvedThreadRef = targetThreadRef ?? threadRef;
     const resolvedPanelRef = panelRef ?? resolvedThreadRef;
-    const parsed = parseChangeRequestUrl(targetUrl);
-    if (parsed === null) return false;
+    const parsed = sourceControlClients.parseChangeRequestUrl(targetUrl)?.link;
+    if (parsed === undefined) return false;
     const reads = (environmentId: string) =>
       serverConfigs.get(environmentId as EnvironmentId)?.environment.capabilities.pullRequests ===
       true;
