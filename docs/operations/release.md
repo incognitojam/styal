@@ -141,13 +141,19 @@ After changing a variable or secret, run the **Deploy styal Link relay** workflo
 `main` with **force** unchecked. Alchemy compares the values the Worker reads and redeploys it when
 one changed. Check **force** only to redeploy resources with no detected change.
 
-Developers deploy personal stages locally rather than through pull-request automation:
+Developers deploy personal stages locally:
 
 ```sh
 cd infra/relay
 ./node_modules/.bin/alchemy plan --stage "dev_$USER" --env-file .env.local
 ./node_modules/.bin/alchemy deploy --stage "dev_$USER" --env-file .env.local
 ```
+
+A same-repository PR labeled `relay:preview` deploys stage `pr-<number>` through
+`.github/workflows/relay-preview.yml`, after approval in the `relay-preview` environment. Removing the
+label or closing the PR runs `.github/workflows/relay-preview-cleanup.yml`, which destroys the stage
+and sweeps its managed tunnels and DNS records. A nightly run destroys stages of closed labeled PRs
+whose teardown failed. Fork PRs get no preview.
 
 ### Managed tunnel cleanup rollout
 

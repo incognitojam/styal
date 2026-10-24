@@ -11,6 +11,8 @@ import * as Neon from "alchemy/Neon";
 import { PublishClientConfig, tokenDigest } from "./src/clientConfig.ts";
 import * as RelayDb from "./src/db.ts";
 import { RelayObservability } from "./src/observability.ts";
+import { isPreviewStage } from "./src/previewStages.ts";
+import { PreviewTunnelSweep, PreviewTunnelSweepProvider } from "./src/previewTunnelSweep.ts";
 import { ManagedEndpointZone, RelayApiZone, RelayDeploymentConfig } from "./src/zone.ts";
 import * as RelayWorker from "./src/worker.ts";
 
@@ -22,6 +24,7 @@ export default Alchemy.Stack(
       Cloudflare.providers(),
       Drizzle.providers(),
       Neon.providers(),
+      PreviewTunnelSweepProvider(),
     ),
     state: Cloudflare.state(),
   },
@@ -41,6 +44,14 @@ export default Alchemy.Stack(
         : null;
     const observability = yield* RelayObservability;
     const api = yield* RelayWorker.Api;
+    if (isPreviewStage(stage)) {
+      const { managedEndpointZoneName } = yield* RelayDeploymentConfig;
+      yield* PreviewTunnelSweep("PreviewTunnelSweep", {
+        stage,
+        tunnelZoneName: managedEndpointZoneName,
+        workerName: api.workerName,
+      });
+    }
     yield* PublishClientConfig({
       url: api.url,
       mobileTracingUrl: observability.traces.otelTracesEndpoint,

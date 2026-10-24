@@ -133,8 +133,9 @@ the shared Alchemy `prod` stage on pushes to `main` that change the relay or its
 dependencies, followed by the shared `dev` stage, which
 verifies development Clerk tokens for local source builds. Stable and nightly release builds both
 resolve their static public config from the same
-`production` GitHub environment. After changing a relay variable or secret, run the workflow
-manually on `main` to redeploy. Pull requests do not deploy relay stages. Developers can
+`production` GitHub environment. Labeling a same-repository PR `relay:preview` deploys a `pr-<number>`
+stage, and the cleanup workflow tears it down; see
+[`relay-preview.yml`](../../.github/workflows/relay-preview.yml). Developers can
 deploy personal non-production stages locally with any stage name other than `prod` or `dev`.
 
 The repository must define these Actions variables shared by relay deployments:
