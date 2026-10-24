@@ -110,7 +110,7 @@ export function normalizeHost(host: string): string {
  * Where the API for a host lives. github.com and GHE.com data residency serve it from an `api.`
  * subdomain; GitHub Enterprise Server serves it under `/api` on the instance itself.
  */
-export function gitHubApiUrls(host: string): { readonly rest: string; readonly graphql: string } {
+function gitHubApiUrls(host: string): { readonly rest: string; readonly graphql: string } {
   const normalized = normalizeHost(host);
   if (normalized === "github.com") {
     return { rest: "https://api.github.com", graphql: "https://api.github.com/graphql" };
