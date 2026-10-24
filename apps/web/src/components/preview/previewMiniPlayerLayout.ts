@@ -84,20 +84,28 @@ const spanOf = (x: number, width: number): HorizontalSpan => ({ left: x, right: 
 
 const spansOverlap = (a: HorizontalSpan, b: HorizontalSpan) => a.left < b.right && a.right > b.left;
 
+// Placement keeps an edge gap from obstacles, so every overlap test includes it.
+// Otherwise a player inside the gap counts as clear until it touches, then snaps a gap away.
+const nearObstacle = (span: HorizontalSpan, obstacle: HorizontalSpan) =>
+  spansOverlap(span, {
+    left: obstacle.left - PREVIEW_MINI_PLAYER_EDGE_GAP,
+    right: obstacle.right + PREVIEW_MINI_PLAYER_EDGE_GAP,
+  });
+
 function floorFor(
   span: HorizontalSpan,
   container: PreviewMiniPlayerSize,
   obstacles: PreviewMiniPlayerObstacles,
 ): number {
   const { composer } = obstacles;
-  return composer && spansOverlap(span, composer)
+  return composer && nearObstacle(span, composer)
     ? container.height - Math.max(0, composer.height)
     : container.height;
 }
 
 function ceilingFor(span: HorizontalSpan, obstacles: PreviewMiniPlayerObstacles): number {
   const { detailsCard } = obstacles;
-  return detailsCard && spansOverlap(span, detailsCard) ? Math.max(0, detailsCard.bottom) : 0;
+  return detailsCard && nearObstacle(span, detailsCard) ? Math.max(0, detailsCard.bottom) : 0;
 }
 
 const availableArea = (
@@ -168,8 +176,9 @@ const overlapsObstacle = (
 ): boolean => {
   const span = spanOf(position.x, player.width);
   return (
-    position.y + player.height > floorFor(span, container, obstacles) ||
-    position.y < ceilingFor(span, obstacles)
+    position.y + player.height >
+      floorFor(span, container, obstacles) - PREVIEW_MINI_PLAYER_EDGE_GAP ||
+    position.y < ceilingFor(span, obstacles) + PREVIEW_MINI_PLAYER_EDGE_GAP
   );
 };
 
@@ -203,7 +212,7 @@ export function clampPreviewMiniPlayerPosition(
   const beside = [composer, detailsCard]
     .filter(
       (obstacle): obstacle is NonNullable<typeof obstacle> =>
-        obstacle !== null && spansOverlap(span, obstacle),
+        obstacle !== null && nearObstacle(span, obstacle),
     )
     .flatMap((obstacle) => [obstacle.left - gap - player.width, obstacle.right + gap]);
   let best = fallback;
@@ -316,12 +325,38 @@ export function resizePreviewMiniPlayer(input: {
       : horizontal
         ? desiredWidth
         : desiredHeight * aspectRatio;
-  const size = fitPreviewMiniPlayerWidth(desired, source, max);
-  const position = clampPreviewMiniPlayerPosition(
-    { x: west ? right - size.width : start.x, y: north ? bottom - size.height : start.y },
-    container,
-    size,
-    obstacles,
-  );
-  return { ...position, ...size };
+  const anchoredAt = (width: number): PreviewMiniPlayerFrame => {
+    const size = fitPreviewMiniPlayerWidth(width, source, max);
+    return {
+      x: west
+        ? right - size.width
+        : Math.min(start.x, container.width - PREVIEW_MINI_PLAYER_EDGE_GAP - size.width),
+      y: north ? bottom - size.height : start.y,
+      ...size,
+    };
+  };
+  const { composer } = obstacles;
+  const inColumns = (frame: PreviewMiniPlayerFrame) =>
+    composer !== null &&
+    composer.height > 0 &&
+    nearObstacle(spanOf(frame.x, frame.width), composer);
+  const entersComposer = (frame: PreviewMiniPlayerFrame) =>
+    inColumns(frame) &&
+    frame.y + frame.height >
+      container.height - (composer?.height ?? 0) - PREVIEW_MINI_PLAYER_EDGE_GAP;
+  let next = anchoredAt(desired);
+  // Growing sideways into the composer's columns while below its top would make
+  // the clamp throw the player above the composer mid-gesture, so the composer
+  // stops the resize at the largest size that fits beside it.
+  if (!inColumns(start) && entersComposer(next)) {
+    let fits = start.width;
+    let enters = next.width;
+    while (enters - fits > 0.5) {
+      const width = (fits + enters) / 2;
+      if (entersComposer(anchoredAt(width))) enters = width;
+      else fits = width;
+    }
+    next = anchoredAt(fits);
+  }
+  return { ...next, ...clampPreviewMiniPlayerPosition(next, container, next, obstacles) };
 }

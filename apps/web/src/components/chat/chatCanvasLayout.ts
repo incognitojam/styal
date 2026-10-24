@@ -16,17 +16,23 @@ export interface ChatCanvasPreview {
   readonly position: PreviewMiniPlayerPosition | null;
   readonly source: PreviewMiniPlayerSize;
   readonly lastInteraction?: PreviewMiniPlayerState["lastInteraction"];
+  /** A dragged player follows the pointer over everything and settles clear of obstacles on release. */
+  readonly dragging?: boolean;
 }
 
 const GAP = 12;
 export const DETAILS_CARD_CLEARANCE = 32;
 
+/**
+ * The floating preview overlays the conversation and never moves or narrows
+ * chat. It may cover messages, but keeps clear of the composer, the find bar,
+ * and, unless a resize asks to fold it, the thread details card.
+ */
 export function resolveChatCanvasLayout({
   container,
   preview,
   padding = 48,
   maxChatWidth = 768,
-  minChatWidth = 640,
   composerHeight = 0,
   detailsCard = null,
   findBar = null,
@@ -35,7 +41,6 @@ export function resolveChatCanvasLayout({
   preview: ChatCanvasPreview | null;
   padding?: number;
   maxChatWidth?: number;
-  minChatWidth?: number;
   composerHeight?: number;
   detailsCard?: PreviewMiniPlayerObstacles["detailsCard"];
   findBar?: PreviewMiniPlayerObstacles["detailsCard"];
@@ -44,54 +49,20 @@ export function resolveChatCanvasLayout({
   const laneRight = detailsCard
     ? detailsCard.left - DETAILS_CARD_CLEARANCE
     : container.width - padding;
-  const normalWidth = Math.max(0, Math.min(centeredWidth, laneRight - padding));
-  const normalLeft = Math.max(
-    padding,
-    Math.min((container.width - normalWidth) / 2, laneRight - normalWidth),
-  );
-  let chat = {
-    left: normalLeft,
-    width: normalWidth,
+  const width = Math.max(0, Math.min(centeredWidth, laneRight - padding));
+  const left = Math.max(padding, Math.min((container.width - width) / 2, laneRight - width));
+  const chat = {
+    left,
+    width,
     insetStart: 0,
-    insetEnd: Math.max(0, container.width - normalLeft * 2 - normalWidth),
+    insetEnd: Math.max(0, container.width - left * 2 - width),
   };
+  const composer = { left: chat.left, right: chat.left + chat.width, height: composerHeight };
+  // A resize may fold the details card, so only the composer and find bar bound it.
+  const resizeObstacles: PreviewMiniPlayerObstacles = { composer, detailsCard: findBar };
   let frame: PreviewMiniPlayerFrame | null = null;
-  let overlapsChat = false;
   if (preview && container.width > 0 && container.height > 0) {
-    frame = resolvePreviewMiniPlayerFrame({ ...preview, container });
-    // Reserve a readable chat lane only while it leaves room to drag. Otherwise
-    // the container's right edge would pin the preview at every pointer position.
-    const minimumPreviewX =
-      preview.lastInteraction === "resize" ||
-      container.width <= padding + minChatWidth + frame.width + GAP * 2
-        ? GAP
-        : padding + minChatWidth + GAP;
-    if (preview.position === null) frame = { ...frame, y: container.height - frame.height - GAP };
-    if (preview.lastInteraction === "resize" && composerHeight > 0) {
-      const laneWidth = Math.min(normalWidth, minChatWidth);
-      const transitionWidth = Math.max(GAP, normalWidth - laneWidth);
-      const lift = Math.min(
-        1,
-        Math.max(0, (padding + normalWidth + GAP - frame.x) / transitionWidth),
-      );
-      if (lift > 0) {
-        frame = resolvePreviewMiniPlayerFrame({
-          width: frame.width,
-          position: frame,
-          source: preview.source,
-          container: {
-            ...container,
-            height: Math.max(GAP * 2 + 1, container.height - composerHeight * lift),
-          },
-        });
-      }
-    }
-    const findBarObstacles = findBar ? { detailsCard: findBar, composer: null } : undefined;
-    const preferredFrame = {
-      ...frame,
-      ...clampPreviewMiniPlayerPosition(frame, container, frame, findBarObstacles, minimumPreviewX),
-    };
-    const dragObstacle =
+    const card =
       detailsCard && findBar
         ? {
             left: Math.min(detailsCard.left, findBar.left),
@@ -99,77 +70,40 @@ export function resolveChatCanvasLayout({
             bottom: Math.max(detailsCard.bottom, findBar.bottom),
           }
         : (detailsCard ?? findBar);
-    const cardObstacle = preview.lastInteraction === "resize" ? findBar : dragObstacle;
-    frame = {
-      ...frame,
-      ...clampPreviewMiniPlayerPosition(
-        frame,
-        container,
-        frame,
-        { detailsCard: cardObstacle, composer: null },
-        minimumPreviewX,
-      ),
-    };
-    const chatBeside = (player: PreviewMiniPlayerFrame) => {
-      const normalRight = normalLeft + normalWidth;
-      if (player.x >= normalRight + GAP) return chat;
-      const width = Math.min(maxChatWidth, player.x - GAP - padding);
-      if (width < minChatWidth) return null;
-      const left = Math.min(normalLeft, player.x - GAP - width);
-      return {
-        left,
-        width,
-        insetStart: 0,
-        insetEnd: Math.max(0, container.width - left * 2 - width),
+    const obstacles =
+      preview.lastInteraction === "resize" ? resizeObstacles : { composer, detailsCard: card };
+    frame = resolvePreviewMiniPlayerFrame({ ...preview, container, obstacles });
+    // Choosing the nearest clear slot on every pointer move flips between slots
+    // mid-drag, so obstacles only apply once the player is dropped.
+    if (preview.dragging && preview.position) {
+      frame = {
+        ...frame,
+        ...clampPreviewMiniPlayerPosition(preview.position, container, frame),
       };
-    };
-    let nextChat = chatBeside(frame);
-    if (!nextChat && detailsCard) {
-      nextChat = chatBeside(preferredFrame);
-      if (nextChat) frame = preferredFrame;
+      return { chat, frame, overlapsDetailsCard: false, resizeObstacles };
     }
-    if (nextChat) chat = nextChat;
-    else overlapsChat = true;
-    if (overlapsChat && preview.lastInteraction === "resize") {
-      const width = Math.min(normalWidth, minChatWidth);
-      chat = {
-        left: padding,
-        width,
-        insetStart: 0,
-        insetEnd: Math.max(0, container.width - padding * 2 - width),
+    // With no slot clear of both, keep typing usable and let the card fold above the player.
+    if (
+      frame.x < composer.right &&
+      frame.x + frame.width > composer.left &&
+      frame.y + frame.height > container.height - composer.height
+    ) {
+      frame = {
+        ...frame,
+        ...clampPreviewMiniPlayerPosition(frame, container, frame, resizeObstacles),
       };
-    } else if (overlapsChat) {
-      const obstacles = {
-        detailsCard: cardObstacle,
-        composer: { left: chat.left, right: chat.left + chat.width, height: composerHeight },
-      };
-      frame = resolvePreviewMiniPlayerFrame({ ...preview, container, obstacles });
+    }
+    // New players start in the bottom-right corner, below any details card.
+    if (preview.position === null) {
       frame = {
         ...frame,
         ...clampPreviewMiniPlayerPosition(
-          preview.position ?? { x: frame.x, y: container.height - frame.height - GAP },
+          { x: frame.x, y: container.height - frame.height - GAP },
           container,
           frame,
           obstacles,
-          minimumPreviewX,
         ),
       };
-      if (
-        frame.x < obstacles.composer.right &&
-        frame.x + frame.width > obstacles.composer.left &&
-        frame.y + frame.height > container.height - composerHeight
-      ) {
-        frame = {
-          ...frame,
-          ...clampPreviewMiniPlayerPosition(
-            frame,
-            container,
-            frame,
-            { composer: obstacles.composer, detailsCard: findBar },
-            minimumPreviewX,
-          ),
-        };
-      }
     }
   }
   const overlapsDetailsCard = Boolean(
@@ -179,5 +113,5 @@ export function resolveChatCanvasLayout({
     frame.x + frame.width > detailsCard.left &&
     frame.y < detailsCard.bottom,
   );
-  return { chat, frame, overlapsChat, overlapsDetailsCard };
+  return { chat, frame, overlapsDetailsCard, resizeObstacles };
 }

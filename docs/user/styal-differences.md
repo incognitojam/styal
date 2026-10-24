@@ -282,6 +282,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 - **Complete conversation export.** Copy a thread's user and assistant messages as Markdown,
   including history that is not currently loaded in the view.
   [Transcripts](./thread-sidebar.md#copying-a-transcript).
+- **Floating previews stay out of the way of your text.** A floating browser or device preview
+  can sit anywhere over the conversation, and moving or resizing it never shifts or narrows the
+  messages or the composer. It still keeps clear of the composer and the thread details card.
+  Compared with
+  [T3 Code revision 7fd2e09](https://github.com/pingdotgg/t3code/tree/7fd2e09e381a61f427da09dd7a8f2c9c1558fe59),
+  checked October 25, 2026, which keeps the preview beside the conversation and narrows chat to
+  make room.
 
 ## Bringing your work from T3 Code
 

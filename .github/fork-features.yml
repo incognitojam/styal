@@ -1369,6 +1369,36 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9124
       retire_when: Upstream makes first completion unread when navigation happens before thread creation settles without marking historical threads unread or leaving stale state after failed creation.
 
+  - id: floating-preview-overlay
+    title: Floating previews overlay chat instead of reflowing it
+    status: maintained
+    prs: []
+    invariants:
+      - Dragging or resizing a floating browser or device preview never moves or narrows the conversation or composer; the preview may cover messages anywhere on the chat canvas.
+      - A dropped or resized floating preview stays clear of the composer, the open find bar, and the thread details card; a resize may overlap the details card and fold it, but never the composer.
+      - While dragged, a floating preview follows the pointer over chat, the composer, and the details card without jumping between clear slots, and settles at the nearest clear position when dropped.
+      - A resize beside the composer stops at the composer's columns instead of throwing the preview above it mid-gesture; a preview already within those columns is lifted above the composer continuously.
+    rationale: Upstream reserves a readable chat lane beside the preview and reflows chat around it, which pins the preview to the right of the conversation and rearranges text while reading or typing.
+    implementation_paths:
+      - apps/web/src/components/chat/ChatCanvas.tsx
+      - apps/web/src/components/chat/chatCanvasLayout.ts
+      - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
+      - apps/web/src/components/preview/previewMiniPlayerLayout.ts
+    upstream_paths:
+      - apps/web/src/components/chat/ChatCanvas.tsx
+      - apps/web/src/components/chat/chatCanvasLayout.ts
+      - apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx
+      - apps/web/src/components/preview/previewMiniPlayerLayout.ts
+    tests:
+      - apps/web/src/components/chat/chatCanvasLayout.test.ts
+      - apps/web/src/components/preview/ThreadPreviewMiniPlayer.browser.test.tsx
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/discussions/14935
+        - https://github.com/pingdotgg/t3code/issues/14929
+      retire_when: Upstream lets floating previews overlay chat without reserving a chat lane or reflowing the conversation.
+
   - id: focused-panel-tab-close
     title: Keep panel focus and tab order stable when closing tabs
     status: review-needed
