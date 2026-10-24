@@ -128,6 +128,7 @@ jobs:
       skipped: ${{ steps.reconcile.outputs.skipped }}
       android-build: ${{ steps.reconcile.outputs.android-build == 'true' || (steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'build' && inputs.platform != 'ios') }}
       android-fingerprint: ${{ steps.reconcile.outputs.android-fingerprint }}
+      source-sha: ${{ steps.source.outputs.sha }}
       ota-message: ${{ steps.reconcile.outputs.ota-message }}
     env:
       APP_VARIANT: production
@@ -250,6 +251,13 @@ jobs:
             -m "chore(mobile): bump app version to $RELEASE_VERSION" \
             -m "Co-authored-by: codex <codex@users.noreply.github.com>"
           git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+
+      # A version override commits after the triggering commit, and builds in
+      # other jobs must check out that commit rather than github.sha.
+      - id: source
+        name: Record the commit to build
+        if: steps.expo-token.outputs.present == 'true'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Summarize manual build version
         if: steps.expo-token.outputs.present == 'true' && github.event_name == 'workflow_dispatch' && inputs.mode == 'build'
@@ -441,6 +449,7 @@ jobs:
     uses: ./.github/workflows/mobile-android-build.yml
     with:
       publish: true
+      ref: ${{ needs.production.outputs.source-sha }}
       expected-fingerprint: ${{ needs.production.outputs.android-fingerprint }}
       ota-message: ${{ needs.production.outputs.ota-message }}
     secrets: inherit

@@ -81,8 +81,9 @@ Android APK build.
 **Mobile Android Build** builds the production APK with `expo prebuild` and
 Gradle, publishes it as a GitHub release tagged `android-<version>-<versionCode>`,
 then publishes an Android over-the-air update for its runtime. Mobile EAS
-Production calls it; dispatching it directly with `publish` off builds and
-verifies an APK, keeps it as a workflow artifact for three days, and publishes
+Production calls it, including for manual `mode=build` runs, so every OTA
+update publishes in merge order. Dispatching it directly builds and verifies an
+APK, keeps it as a workflow artifact for three days, and publishes
 nothing. Each build takes the version code after the newest `android-*` release.
 The tags never start with `v`, so the CLI installers and the release workflows
 ignore them. The releases never take Latest from a stable `v` release, but while
