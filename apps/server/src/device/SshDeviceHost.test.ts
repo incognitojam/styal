@@ -111,10 +111,17 @@ it.effect("preserves installed status after probes and cleans failed agent activ
       ),
     );
     yield* host.ensureReady(() => Effect.void);
-    yield* SshDeviceHost.probe({ id: "test", label: "Test", target: "test.example" }).pipe(
+    const probed = yield* SshDeviceHost.probe({
+      id: "test",
+      label: "Test",
+      target: "test.example",
+    }).pipe(
       Effect.provide(ServerConfig.layerTest(home, home)),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
+    // The fixture reports no tool inventory; MCP structured content rejects a key set to undefined.
+    expect("tools" in probed).toBe(false);
+    expect("tools" in (yield* host.summary)).toBe(false);
     expect(new Set(owners).size).toBe(1);
     expect(owners[0]).toMatch(/^[a-f0-9]{24}$/);
     expect(forwards).toBe(1);

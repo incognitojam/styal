@@ -1,9 +1,10 @@
 import { expect, it } from "@effect/vitest";
-import { ThreadId } from "@t3tools/contracts";
+import { DeviceToolListResult, ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as ServerSettings from "../serverSettings.ts";
 import * as DeviceHost from "./DeviceHost.ts";
@@ -270,4 +271,50 @@ it.effect(
         }),
       ),
     ),
+);
+
+const encodeToolListResult = Schema.encodeEffect(DeviceToolListResult);
+// MCP structured content must be a JSON object, which rejects keys set to undefined.
+const isJsonObject = Schema.is(Schema.JsonObject);
+
+it.effect("omits a missing host status detail so device_list stays valid MCP JSON", () =>
+  Effect.gen(function* () {
+    const host: DeviceHost.DeviceHost["Service"] = {
+      id: "local",
+      summary: Effect.succeed({
+        id: "local",
+        label: "local",
+        kind: "local",
+        hubInstalled: true,
+        agentDeviceInstalled: true,
+        platforms: [],
+      }),
+      platformAvailability: (platform) => Effect.succeed({ platform, available: false }),
+      ensureReady: () => Effect.never,
+      ensureAgentReady: () => Effect.never,
+      current: Effect.never,
+      stopAgent: Effect.void,
+      stop: Effect.void,
+    };
+    const service = yield* DeviceService.makeWithHosts(new Map([["local", host]])).pipe(
+      Effect.provide(NodeCrypto.layer),
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make(() => Effect.die("unused")),
+      ),
+    );
+    yield* service.setHostStatus("local", { status: "ready", detail: "Hub ready" });
+    yield* service.setHostStatus("local", { status: "starting", detail: undefined });
+    const state = yield* service.state;
+    expect(state.hostStatuses.local).toEqual({ status: "starting" });
+    expect("hostStatusDetail" in state).toBe(false);
+    const encoded = yield* encodeToolListResult({
+      hostStatuses: state.hostStatuses,
+      hosts: state.hosts,
+      devices: state.devices,
+      open: [],
+      openInOtherThreads: [],
+    });
+    expect(isJsonObject(encoded)).toBe(true);
+  }).pipe(Effect.provide(ServerSettings.layerTest({ enableDeviceSupport: true }))),
 );

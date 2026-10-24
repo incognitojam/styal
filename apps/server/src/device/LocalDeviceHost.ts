@@ -282,7 +282,8 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       Effect.provideService(Path.Path, path),
     );
     return {
-      tools,
+      // MCP structured content rejects keys set to undefined, so an unreadable inventory is omitted.
+      ...(tools === undefined ? {} : { tools }),
       id: hostId,
       kind: "local",
       label: "This machine",

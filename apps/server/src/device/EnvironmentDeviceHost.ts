@@ -345,7 +345,12 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   );
   return DeviceHost.DeviceHost.of({
     id: config.id,
-    summary: Effect.sync(() => ({ ...summary, connectedUrl: client.connectedUrl })),
+    // MCP structured content rejects keys set to undefined, so an unreachable host omits it.
+    summary: Effect.sync(() => {
+      const { connectedUrl: _peerUrl, ...rest } = summary;
+      const connectedUrl = client.connectedUrl;
+      return connectedUrl === undefined ? rest : { ...rest, connectedUrl };
+    }),
     inspect: client.info("inspect").pipe(
       Effect.map(update),
       Effect.map(() => summary),

@@ -102,7 +102,7 @@ export const probe = Effect.fn("SshDeviceHost.probe")(function* (
     id: config.id,
     label: config.label,
     kind: "ssh",
-    tools: value.tools,
+    ...(value.tools === undefined ? {} : { tools: value.tools }),
     hubInstalled:
       value.tools?.hub.installedVersions.includes(value.tools.hub.requiredVersion) ?? false,
     agentDeviceInstalled:
@@ -204,10 +204,11 @@ export const make = Effect.fn("SshDeviceHost.make")(function* (
           }),
       ),
     );
+    const { tools: _previousTools, ...previous } = summary;
     summary = {
-      ...summary,
+      ...previous,
       platforms: remote.platforms,
-      tools: remote.tools,
+      ...(remote.tools === undefined ? {} : { tools: remote.tools }),
       hubInstalled: true,
       agentDeviceInstalled: wantsAgent || summary.agentDeviceInstalled,
     };
