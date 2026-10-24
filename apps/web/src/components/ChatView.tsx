@@ -5048,13 +5048,14 @@ export default function ChatView(props: ChatViewProps) {
 
     updateHeight();
     return observeResize(composerOverlayElement, updateHeight);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The scroll-to-bottom row and the next unread button beside it change the clearance without resizing the observed node first.
+    // oxlint-disable react/exhaustive-effect-dependencies -- The scroll-to-bottom row and the next unread button beside it change the clearance without resizing the observed node first.
   }, [
     composerOverlayElement,
     publishComposerOverlayHeightStable,
     showScrollToBottom,
     nextUnreadSummary,
   ]);
+  // oxlint-enable react/exhaustive-effect-dependencies
   useLayoutEffect(() => {
     if (composerMountedRef.current === composerMounted) return;
     composerMountedRef.current = composerMounted;
