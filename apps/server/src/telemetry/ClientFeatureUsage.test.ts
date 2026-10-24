@@ -202,6 +202,14 @@ it.effect("records allowlisted client interactions with socket attribution and n
         event: "feature.used",
         source: "user",
       },
+      {
+        feature: "floating-preview",
+        action: "released",
+        settle: "corner",
+        preview: "device",
+        event: "feature.used",
+        source: "user",
+      },
     ]) {
       yield* report(yield* decode({ ...input, content: "Synthetic content", path: "/private" }));
       expect(events.at(-1)).toEqual({ event, properties: { ...input, ...properties, source } });
@@ -211,6 +219,9 @@ it.effect("records allowlisted client interactions with socket attribution and n
     expect(isUsage({ feature: "setup-thread-settlement", action: "continued" })).toBe(false);
     expect(isUsage({ feature: "sidebar-project-filter", action: "filter_set" })).toBe(false);
     expect(isUsage({ feature: "sidebar-project-groups", action: "archived" })).toBe(false);
+    expect(isUsage({ feature: "floating-preview", action: "released", settle: "fling" })).toBe(
+      false,
+    );
     expect(isUsage({ feature: "project-actions", action: "run", actionSource: "t3.json" })).toBe(
       false,
     );
@@ -221,7 +232,7 @@ it.effect("records allowlisted client interactions with socket attribution and n
       yield* otherReport({ feature: "web-build-update-notice", action: "refresh_requested" });
       yield* otherReport({ feature: "mentioned-time-chips", action: "details_opened" });
     }
-    expect(events).toHaveLength(12);
+    expect(events).toHaveLength(13);
     const mobile = yield* ClientFeatureUsage.reporter({ surface: "mobile" }).pipe(
       Effect.provideService(AnalyticsService.AnalyticsService, analytics),
     );
@@ -230,9 +241,9 @@ it.effect("records allowlisted client interactions with socket attribution and n
       action: "alphabetical_selected",
       view: "pull_request",
     });
-    expect(events).toHaveLength(13);
-    yield* mobile({ feature: "incoming-share-thread", action: "added", outcome: "success" });
     expect(events).toHaveLength(14);
+    yield* mobile({ feature: "incoming-share-thread", action: "added", outcome: "success" });
+    expect(events).toHaveLength(15);
     expect(events.at(-1)).toEqual({
       event: "feature.used",
       properties: {
@@ -244,7 +255,7 @@ it.effect("records allowlisted client interactions with socket attribution and n
         surface: "mobile",
       },
     });
-    expect(events[12]).toEqual({
+    expect(events[13]).toEqual({
       event: "feature.used",
       properties: {
         feature: "diff-file-review-order",
@@ -255,7 +266,7 @@ it.effect("records allowlisted client interactions with socket attribution and n
         surface: "mobile",
       },
     });
-    expect(events[11]).toEqual({
+    expect(events[12]).toEqual({
       event: "feature.used",
       properties: {
         feature: "mentioned-time-chips",

@@ -72,10 +72,12 @@ mentioned time's explanation, which automatic settling rules you keep when finis
 you change the sidebar's project filter or start a thread while it is applied, when you reorder,
 pin, unpin, or archive a project from its header in the grouped sidebar, whether a project
 action you run is saved in styal or comes from the project's `styal.json`, and whether the project
-has a `styal.json`, a `t3.json` or neither. The web app records when a new-build notice is visible and
+has a `styal.json`, a `t3.json` or neither. When you let go of a floating browser or device
+preview after dragging it, they record whether it was flicked into a corner, pulled flush against
+an edge, or left where you dropped it. The web app records when a new-build notice is visible and
 when you choose Refresh. The desktop app records when its notice
 naming the version it updated to is shown and when you open that version's release notes. These events use the relevant paired environment's telemetry setting.
-File paths, written times, deployment identifiers, project names, action names and commands, and composer drafts are not collected.
+File paths, written times, deployment identifiers, project names, action names and commands, preview positions and pages, and composer drafts are not collected.
 
 The server also counts when someone uses a feature from any client, such as launching, forking or pinning a thread, rolling back a checkpoint, changing a thread's permission or interaction mode, opening a terminal, preview or editor, creating a worktree, running a git or pull request action, saving or running a scheduled task, cloning a project, publishing a repository or customizing a keybinding. Where a feature has options, the choice is recorded from a fixed list, such as the editor or worktree strategy. Paths, titles, branch names, messages and other text are not collected.
 
