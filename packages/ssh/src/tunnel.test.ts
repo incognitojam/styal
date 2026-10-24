@@ -1185,8 +1185,28 @@ server.listen(Number(flag("--port")), "127.0.0.1", () => {
             yield* parent.stdout.pipe(Stream.decodeText(), Stream.splitLines, Stream.runHead),
           ),
         );
+        // Until the parent execs, the shell still reaps its children, and a child killed then
+        // never becomes a zombie. Wait for the parent to be the non-reaping sleep.
+        const parentExec = yield* runScript(home, [
+          "-c",
+          `attempt=0; while [ "$attempt" -lt 1000 ]; do
+            case "$(ps -o comm= -p ${parent.pid})" in *sleep) exit 0;; esac
+            attempt=$((attempt + 1))
+          done; exit 1`,
+        ]);
+        assert.equal(parentExec.exitCode, 0);
         process.kill(zombie, "SIGKILL");
-        assert.include((yield* runScript(home, ["-c", `ps -o stat= -p ${zombie}`])).stdout, "Z");
+        // SIGKILL delivery is asynchronous; establish the zombie fixture before launching.
+        const zombieState = yield* runScript(home, [
+          "-c",
+          `attempt=0; while [ "$attempt" -lt 100 ]; do
+            state=$(ps -o stat= -p ${zombie}) || exit 1
+            case "$state" in *Z*) printf '%s\\n' "$state"; exit 0;; esac
+            attempt=$((attempt + 1))
+          done; printf '%s\\n' "$state"; exit 1`,
+        ]);
+        assert.equal(zombieState.exitCode, 0, zombieState.stdout);
+        assert.include(zombieState.stdout, "Z");
         yield* fs.writeFileString(`${stateDir}/pid`, `${zombie}\n`);
         yield* fs.writeFileString(
           `${home}/.styal/userdata/server-runtime.json`,
