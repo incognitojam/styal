@@ -224,14 +224,14 @@ export function ProjectsList() {
               groups={pinnedGroups}
               isVisible={matches}
               // Dragging a filtered list would skip hidden pins, so search turns
-              // it off; so do an older server on any pinned project and a
-              // pending write.
+              // it off; so does an older server on any pinned project.
               reorderable={
                 normalizedQuery.length === 0 &&
-                pinnedGroups.every(
-                  (group) => actions.canOrganize(group) && !actions.isBusy(group.projectKey),
-                )
+                pinnedGroups.every((group) => actions.canOrganize(group))
               }
+              // A pending pin or archive write only pauses dragging. Hiding the
+              // grips for it would shift every title while the write runs.
+              saving={pinnedGroups.some((group) => actions.isBusy(group.projectKey))}
               onReorder={actions.reorderPinned}
               renderRow={renderRow}
             />
@@ -273,6 +273,7 @@ function PinnedProjects({
   groups,
   isVisible,
   reorderable,
+  saving,
   onReorder,
   renderRow,
 }: {
@@ -280,6 +281,7 @@ function PinnedProjects({
   groups: readonly SidebarProjectSnapshot[];
   isVisible: (group: SidebarProjectSnapshot) => boolean;
   reorderable: boolean;
+  saving: boolean;
   onReorder: ReturnType<typeof useProjectGroupActions>["reorderPinned"];
   renderRow: (group: SidebarProjectSnapshot, reorderable?: boolean) => ReactNode;
 }) {
@@ -342,7 +344,7 @@ function PinnedProjects({
               key={group.projectKey}
               group={group}
               reorderable={reorderable}
-              locked={activeHeld !== null}
+              locked={activeHeld !== null || saving}
               renderRow={renderRow}
             />
           ))}
@@ -360,7 +362,7 @@ function SortablePinnedRow({
 }: {
   group: SidebarProjectSnapshot;
   reorderable: boolean;
-  /** Dragging waits while an earlier drop is still being saved. */
+  /** Dragging waits while an earlier drop or a pin or archive change is being saved. */
   locked: boolean;
   renderRow: (group: SidebarProjectSnapshot, reorderable?: boolean) => ReactNode;
 }) {
