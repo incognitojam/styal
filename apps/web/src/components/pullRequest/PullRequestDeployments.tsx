@@ -12,7 +12,7 @@ import { useState } from "react";
 import { useOpenLink } from "~/browser/useOpenLink";
 import { reportForkClientUsage } from "~/forkClientUsage";
 import { cn } from "~/lib/utils";
-import { formatRelativeTimeLabel } from "~/timestampFormat";
+import { RelativeTime } from "~/components/RelativeTime";
 
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
@@ -129,7 +129,7 @@ export function PullRequestDeployments({
                   <span aria-hidden>·</span>
                   <Tooltip>
                     <TooltipTrigger render={<time dateTime={deployment.updatedAt} />}>
-                      {formatRelativeTimeLabel(deployment.updatedAt)}
+                      <RelativeTime timestamp={deployment.updatedAt} />
                     </TooltipTrigger>
                     <TooltipPopup>
                       Updated {new Date(deployment.updatedAt).toLocaleString()}

@@ -735,6 +735,7 @@ features:
     prs: [294, 297, 298, 300, 306, 347, 349, 379, 478, 842]
     rationale: Upstream V2 supplies canonical orchestration and messages-only automatic V1 migration, but the maintained T3 import flow must retain full recorded history and costs. The batch explicitly preserves these values, converts V1 history at the boundary, imports native V2 projections through inert canonical events, and materializes unavailable fork ancestors.
     invariants:
+      - Import previews on web and desktop keep last-active ages counting while the same projects remain displayed.
       - A selected styal environment can preview and import projects, missing threads, attachments, provider continuations, and supported server preferences from a live T3 Code database, including older fork databases, without modifying the source.
       - Existing styal project configuration wins while each imported thread and its verified attachments commit atomically, so interrupted or repeated imports resume without duplication.
       - Credentials, connections, provider sign-ins, active sessions, and client-local preferences remain isolated, while affected earlier imports can restore provider context only after their loaded sessions stop.
@@ -812,6 +813,7 @@ features:
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
       - apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
       - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.test.ts
+      - apps/web/src/components/RelativeTime.browser.test.tsx
       - apps/web/src/components/import/useHistoryImport.browser.test.tsx
       - apps/web/src/components/import/useLegacyImport.browser.test.tsx
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
@@ -2287,6 +2289,7 @@ features:
     status: maintained
     prs: []
     invariants:
+      - Web and desktop hardware settings keep offline last-seen and recent-activity ages counting without device state changes.
       - A hardware device's definition (actions, tiers, health probe, lifecycle hooks) is read from `.styal/hardware/<file>` on the project's remote default branch, never from a working tree. Anything looser than the definition the user accepted (a new or reshaped action, a lowered tier, changed hooks or health probe) runs at `approve` until the user accepts it; removals and raised tiers apply at once. Only accepted hooks and health probes run.
       - A worktree's own definition applies to threads in that worktree, but an action it adds or reshapes runs at `approve` and a shared action can only get stricter.
       - One thread holds a device at a time. `read` actions need no lease; `operate` needs the caller's lease; `approve` also needs the user's answer to a `permission` runtime request with server response capability, whatever the thread's runtime mode. "Allow for this lease" covers that action until the lease ends. Agents cannot answer it through `t3_pending_request_respond`.
@@ -2336,6 +2339,7 @@ features:
       - apps/server/src/hardware/HardwareService.test.ts
       - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
+      - apps/web/src/components/RelativeTime.browser.test.tsx
       - apps/web/src/components/settings/hardwareSettings.logic.test.ts
       - packages/client-runtime/src/state/commandPermissions.test.ts
       - packages/client-runtime/src/state/hardware.test.ts
@@ -3790,6 +3794,7 @@ features:
     status: maintained
     prs: [883]
     invariants:
+      - Web and desktop deployment ages keep counting without waiting for a pull request detail refresh.
       - The web and desktop pull request Summary shows the latest deployment attempt per GitHub environment, including status, commit, environment URL, and logs where available.
       - Deployment history remains visible when the PR head advances, and pending head deployments supersede earlier attempts in the same environment.
       - Failed environments list first, then running, deployed, and inactive ones, in name order within each status. Rows show a commit only when it differs from the PR head, and they show failure reasons without hover.
@@ -3815,6 +3820,7 @@ features:
     tests:
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - apps/web/src/components/RelativeTime.browser.test.tsx
       - apps/web/src/components/pullRequest/PullRequestDeployments.browser.test.tsx
       - apps/web/src/components/pullRequest/pullRequestDeployments.logic.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
