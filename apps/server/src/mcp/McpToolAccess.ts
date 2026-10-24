@@ -15,6 +15,7 @@ import {
   DispatchModeLimit,
   type DispatchModeRefusal,
 } from "../orchestration-v2/DispatchModeLimit.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as AgentProjectScope from "./agentProjectScope.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./OrchestratorMcpService.ts";
@@ -153,16 +154,18 @@ export const writesThreads = <P, A, E, R>(
   declare((params: P) =>
     Effect.gen(function* () {
       const caller = yield* writingCaller;
-      const reach = yield* AgentProjectScope.callerReach(
-        yield* AgentProjectScope.services,
-        caller.scope,
-      );
+      // writingCaller already loaded the caller's shell; settings are read
+      // only when the call targets another thread.
+      const settings = yield* ServerSettings.ServerSettingsService;
+      let reach: AgentProjectScope.CallerReach | undefined;
       for (const threadId of threads(params)) {
         if (threadId === undefined || threadId === caller.scope.thread?.threadId) continue;
         const target = yield* caller.threads
           .getThreadShell(threadId)
           .pipe(Effect.mapError(unavailable));
         if (target !== null && target.deletedAt === null) {
+          if (caller.caller !== undefined && target.projectId !== caller.caller.projectId)
+            reach ??= yield* AgentProjectScope.reachOf(settings, caller.caller);
           yield* AgentProjectScope.checkTarget(
             reach,
             "write",

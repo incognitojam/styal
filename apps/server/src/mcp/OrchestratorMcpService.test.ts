@@ -18,6 +18,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import {
@@ -2142,7 +2143,9 @@ describe("OrchestratorMcpService provider resolution", () => {
 
   describe("an agent limited to its own project", () => {
     const callerId = ThreadId.make("thread:limited");
-    const caller = liveThreadShell(callerId);
+    // Supervised, so another project's full-access task would also fail the
+    // mode check; the project refusal comes first.
+    const caller = liveThreadShell(callerId, { runtimeMode: "approval-required" });
     const otherProjectId = ProjectId.make("project:other");
     const scope: McpInvocationScope = {
       environmentId: EnvironmentId.make("environment:limited"),
@@ -2166,7 +2169,7 @@ describe("OrchestratorMcpService provider resolution", () => {
       threadId: null,
       workspaceStrategy: { type: "root" },
       modelSelection: caller.modelSelection,
-      runtimeMode: "approval-required",
+      runtimeMode: "full-access",
       interactionMode: "default",
       createdBy: "agent",
       creationSource: "mcp",
@@ -2269,6 +2272,72 @@ describe("OrchestratorMcpService provider resolution", () => {
           assert.deepEqual(own.tasks, []);
           assert.equal((yield* mcp.listThreads(scope, {})).projectId, caller.projectId);
         }),
+    );
+
+    it.effect("refuses replaying a request that scheduled a task in another project", () =>
+      Effect.gen(function* () {
+        const stored = yield* Ref.make<ReadonlyArray<ScheduledTask>>([]);
+        const serviceWith = (enableAgentCrossProjectAccess: boolean) =>
+          layerOrchestratorService.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                NodeServices.layer,
+                Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  getThreadShell: () => Effect.succeed(caller),
+                  getThreadRecords: () => Effect.succeed(idleThreadProjection(caller)),
+                }),
+                ServerSettings.layerTest({ enableAgentCrossProjectAccess }),
+                Layer.mock(ProviderRegistry.ProviderRegistry)({
+                  getProviders: Effect.succeed([]),
+                }),
+                Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+                  list: () => Effect.succeed([]),
+                }),
+                Layer.mock(ProjectService.ProjectService)({
+                  getById: (id) =>
+                    Effect.succeed(Option.some({ id, workspaceRoot: "/projects/any" } as never)),
+                }),
+                Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(ScheduledTaskService.ScheduledTaskService)({
+                  list: () => Ref.get(stored).pipe(Effect.map((tasks) => ({ tasks }))),
+                  upsert: (input) =>
+                    Effect.gen(function* () {
+                      const task: ScheduledTask = {
+                        ...otherTask,
+                        id: ScheduledTaskId.make(`scheduled-task:${input.commandId}`),
+                        projectId: input.projectId,
+                        prompt: input.prompt,
+                        runtimeMode: input.runtimeMode,
+                      };
+                      yield* Ref.set(stored, [task]);
+                      return { task };
+                    }),
+                }),
+              ),
+            ),
+          );
+        const schedule = (projectId: ProjectId, prompt: string) =>
+          OrchestratorMcpService.OrchestratorMcpService.pipe(
+            Effect.flatMap((mcp) =>
+              mcp.scheduleTask(scope, {
+                prompt,
+                schedule: { type: "interval", everyMs: 3_600_000 },
+                projectId,
+                clientRequestId: "same-request",
+              }),
+            ),
+          );
+        yield* schedule(otherProjectId, "Check the build").pipe(Effect.provide(serviceWith(true)));
+        const error = yield* schedule(caller.projectId, "Something else").pipe(
+          Effect.provide(serviceWith(false)),
+          Effect.flip,
+        );
+        assert.deepInclude(error, { code: "capability_denied" });
+        assert.deepEqual(
+          (yield* Ref.get(stored)).map((task) => [task.projectId, task.prompt]),
+          [[otherProjectId, "Check the build"]],
+        );
+      }),
     );
   });
 

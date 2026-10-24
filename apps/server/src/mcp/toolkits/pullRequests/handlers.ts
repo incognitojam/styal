@@ -411,6 +411,7 @@ const make = Effect.gen(function* () {
 
   const locateAll = Effect.fn("PullRequestsToolkit.locateAll")(function* (
     targets: ReadonlyArray<Omit<PullRequestTargetInput, "threadId">>,
+    reach: AgentProjectScope.Reach,
   ) {
     const scope = yield* McpInvocationContext.requireMcpCapability("pull-requests");
     const callerThread =
@@ -420,26 +421,34 @@ const make = Effect.gen(function* () {
             Effect.orElseSucceed(() => null),
             Effect.map((shell) => shell ?? undefined),
           );
-    const confined = yield* AgentProjectScope.confinedProject(
-      yield* AgentProjectScope.services,
-      scope,
-    );
-    const known = (yield* projects
+    const caller = yield* AgentProjectScope.callerReach(yield* AgentProjectScope.services, scope);
+    const known = yield* projects
       .listShells()
-      .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })))).filter(
-      (project) => confined === undefined || project.id === confined,
-    );
+      .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })));
     const callerProject = known.find((project) => project.id === callerThread?.projectId);
     return yield* Effect.forEach(targets, (input) =>
       resolveTarget(input, callerProject).pipe(
-        Effect.map((target) => ({
-          input,
-          target,
-          project: projectForPullRequest(known, target, callerProject),
-          failure: null,
-        })),
+        Effect.flatMap((target) => {
+          const project = projectForPullRequest(known, target, callerProject);
+          return (
+            project === undefined
+              ? Effect.void
+              : AgentProjectScope.checkTarget(caller, reach, project.id, "this pull request")
+          ).pipe(
+            Effect.as({ input, target, project, failure: null, refused: null }),
+            Effect.catch((refused) =>
+              Effect.succeed({ input, target, project, failure: null, refused }),
+            ),
+          );
+        }),
         Effect.catch((error) =>
-          Effect.succeed({ input, target: null, project: undefined, failure: error.message }),
+          Effect.succeed({
+            input,
+            target: null,
+            project: undefined,
+            failure: error.message,
+            refused: null,
+          }),
         ),
       ),
     );
@@ -539,7 +548,7 @@ const make = Effect.gen(function* () {
     unwatch_workflow_run: writesThread((input) => setWorkflowRunWatching(input, false)),
     write_pull_request_guides: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
-        const located = yield* locateAll(input.pullRequests);
+        const located = yield* locateAll(input.pullRequests, "write");
         const guides = yield* Effect.forEach(
           located,
           (entry) =>
@@ -560,6 +569,9 @@ const make = Effect.gen(function* () {
                 number: entry.target.number,
                 url: entry.target.url,
               };
+              if (entry.refused !== null) {
+                return { ...identity, outcome: "failed" as const, detail: entry.refused.message };
+              }
               if (entry.project === undefined) {
                 return {
                   ...identity,
@@ -591,10 +603,11 @@ const make = Effect.gen(function* () {
     ),
     read_pull_request_guide: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
-        const [entry] = yield* locateAll([input]);
+        const [entry] = yield* locateAll([input], "read");
         if (entry !== undefined && entry.target === null) {
           return yield* new PullRequestGuideFailedError({ detail: entry.failure ?? "" });
         }
+        if (entry !== undefined && entry.refused !== null) return yield* entry.refused;
         if (entry === undefined || entry.target === null || entry.project === undefined) {
           return yield* new PullRequestProjectNotFoundError({
             repository: entry?.target.repository ?? input.repository ?? "",

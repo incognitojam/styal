@@ -362,6 +362,13 @@ it.effect.each([
   ["writes_threads", supervised, otherProjectThreadId, crossProjectOffElsewhere, "ran"],
   ["writes_threads", supervisedClient, otherProjectThreadId, crossProjectOff, "ran"],
   ["reads_threads", supervisedClient, otherProjectThreadId, crossProjectOff, "ran"],
+  [
+    "reads_threads",
+    threadCaller(ThreadId.make("thread:gone")),
+    otherProjectThreadId,
+    ServerSettings.layerTest(),
+    "thread_not_found",
+  ],
 ] as const)(
   "agent access to other projects: %s from %o to %s",
   ([tool, scope, threadId, settings, expected]) =>

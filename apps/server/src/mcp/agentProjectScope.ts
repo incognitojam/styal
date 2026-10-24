@@ -38,7 +38,24 @@ const refusal = (target: string) =>
     message: `This agent is limited to its own project, and ${target} is outside it. The user can allow other projects with "Agent access to other projects" in the project's settings.`,
   });
 
-/** Undefined for a caller outside a thread, which has no own project to keep to. */
+/** The reach of a caller whose thread shell is already loaded. */
+export const reachOf = (
+  settings: Services["settings"],
+  caller: { readonly projectId: ProjectId },
+): Effect.Effect<CallerReach, OrchestratorMcpFailure> =>
+  settings.getSettings.pipe(
+    Effect.mapError(unavailable),
+    Effect.map((current) => ({
+      projectId: caller.projectId,
+      allowed: resolveProjectSettings(current, caller.projectId).settings
+        .enableAgentCrossProjectAccess,
+    })),
+  );
+
+/**
+ * Undefined for a caller outside a thread, which has no own project to keep to.
+ * A thread caller whose thread is gone is refused rather than treated as one.
+ */
 export const callerReach = (
   { threads, settings }: Services,
   scope: McpInvocationScope,
@@ -50,14 +67,12 @@ export const callerReach = (
         const caller = yield* threads
           .getThreadShell(thread.threadId)
           .pipe(Effect.mapError(unavailable));
-        // The access checks refuse a missing caller with their own error.
-        if (caller === null) return undefined;
-        const current = yield* settings.getSettings.pipe(Effect.mapError(unavailable));
-        return {
-          projectId: caller.projectId,
-          allowed: resolveProjectSettings(current, caller.projectId).settings
-            .enableAgentCrossProjectAccess,
-        };
+        if (caller === null || caller.deletedAt !== null)
+          return yield* new OrchestratorMcpFailure({
+            code: "thread_not_found",
+            message: "The calling thread was not found.",
+          });
+        return yield* reachOf(settings, caller);
       }).pipe(Effect.withSpan("mcp.agentProjectScope.callerReach"));
 };
 
@@ -113,6 +128,23 @@ export const assertProject = (
   callerReach(services, scope).pipe(
     Effect.flatMap((caller) => checkTarget(caller, reach, projectId, target)),
   );
+
+/**
+ * For services that already hold the caller's thread: `caller` is undefined
+ * for a caller outside a thread. Settings are read only for another project.
+ */
+export const assertProjectFor = (
+  settings: Services["settings"],
+  caller: { readonly projectId: ProjectId } | undefined,
+  reach: Reach,
+  projectId: ProjectId,
+  target = `project ${projectId}`,
+) =>
+  caller === undefined || caller.projectId === projectId
+    ? Effect.void
+    : reachOf(settings, caller).pipe(
+        Effect.flatMap((callerReach) => checkTarget(callerReach, reach, projectId, target)),
+      );
 
 /**
  * A missing thread passes, so the tool reports it as not found in its own

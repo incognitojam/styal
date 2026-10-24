@@ -27,6 +27,7 @@ import {
   v2PullRequestThread,
 } from "../../../orchestration-v2/testkit/pullRequestFixtures.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
 import type { ProviderWorkflowRun } from "@t3tools/source-control-core/server/PullRequestProvider";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 import * as AnalyticsService from "../../../telemetry/AnalyticsService.ts";
@@ -149,6 +150,7 @@ interface HarnessOptions {
   readonly workflowRuns?: ReadonlyArray<ThreadWorkflowRunWatch>;
   /** The calling thread's run has ended, so the access check refuses changes. */
   readonly callerIdle?: boolean;
+  readonly crossProjectAccess?: boolean;
   readonly projects?: ReadonlyArray<OrchestrationProjectShell>;
   readonly generate?: (
     input: PullRequestRef,
@@ -241,11 +243,21 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
     }),
     Layer.succeed(Crypto.Crypto, testCrypto),
     options.callerIdle
-      ? Layer.mock(ThreadManagement.ThreadManagementService)({
-          getThreadShell: (id) =>
-            Effect.succeed(McpToolAccessTestkit.liveThreadShell(id, { activeRunId: null })),
-        })
-      : McpToolAccessTestkit.liveThreadsLayer,
+      ? Layer.mergeAll(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: (id) =>
+              Effect.succeed(McpToolAccessTestkit.liveThreadShell(id, { activeRunId: null })),
+          }),
+          ServerSettings.layerTest(),
+        )
+      : options.crossProjectAccess === false
+        ? Layer.mergeAll(
+            Layer.mock(ThreadManagement.ThreadManagementService)({
+              getThreadShell: (id) => Effect.succeed(McpToolAccessTestkit.liveThreadShell(id)),
+            }),
+            ServerSettings.layerTest({ enableAgentCrossProjectAccess: false }),
+          )
+        : McpToolAccessTestkit.liveThreadsLayer,
     Layer.succeed(
       AnalyticsService.AnalyticsService,
       AnalyticsService.AnalyticsService.of({
@@ -827,6 +839,51 @@ describe("pull request guide tools", () => {
           [PROJECT_ID, 12],
         ]);
       }),
+  );
+
+  it.effect("keeps guides to the caller's project when access to other projects is off", () =>
+    Effect.gen(function* () {
+      const own = {
+        ...makeProject(),
+        id: McpToolAccessTestkit.liveThreadShell(THREAD_ID).projectId,
+      };
+      const other = {
+        ...makeProject({
+          canonicalKey: "github.com/acme/web",
+          locator: {
+            source: "git-remote",
+            remoteName: "origin",
+            remoteUrl: "git@github.com:acme/web.git",
+          },
+          provider: "github",
+          displayName: "acme/web",
+          owner: "acme",
+          name: "web",
+        }),
+        id: ProjectId.make("project-web"),
+      };
+      const harness = yield* makeHarness({ projects: [own, other], crossProjectAccess: false });
+      const written = yield* harness.call("write_pull_request_guides", {
+        pullRequests: [
+          { url: "https://github.com/acme/web/pull/7" },
+          { url: "https://github.com/t3tools/t3code/pull/12" },
+        ],
+      });
+      expect(written.guides.map((guide) => [guide.repository, guide.outcome])).toEqual([
+        ["acme/web", "failed"],
+        ["t3tools/t3code", "started"],
+      ]);
+      expect(written.guides[0]?.detail).toContain("limited to its own project");
+      expect((yield* Ref.get(harness.guideRequests)).map((ref) => ref.projectId)).toEqual([own.id]);
+      const read = yield* harness
+        .call("read_pull_request_guide", { url: "https://github.com/acme/web/pull/7" })
+        .pipe(Effect.flip);
+      expect(read).toMatchObject({ code: "capability_denied" });
+      expect(harness.usage.filter((event) => event.feature === "agent-cross-project")).toEqual([
+        { feature: "agent-cross-project", action: "write", source: "agent", outcome: "refused" },
+        { feature: "agent-cross-project", action: "read", source: "agent", outcome: "refused" },
+      ]);
+    }),
   );
 
   it.effect("reports a refused run on its own pull request without failing the rest", () =>

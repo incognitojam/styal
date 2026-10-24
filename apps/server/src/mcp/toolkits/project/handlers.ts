@@ -93,7 +93,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 ),
               )).projectId
             : yield* resolveProjectId(context, input.projectId);
-        yield* AgentProjectScope.assertProject(projectScope, context.scope, "write", projectId);
+        if (input.scratch !== true)
+          yield* AgentProjectScope.assertProject(projectScope, context.scope, "write", projectId);
         const readProject = Project.ProjectService.pipe(
           Effect.flatMap((projects) => projects.getById(projectId)),
           Effect.mapError(unavailable),
