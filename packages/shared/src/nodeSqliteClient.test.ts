@@ -2,6 +2,7 @@ import * as NodeSqlite from "node:sqlite";
 import type * as NodeWorkerThreads from "node:worker_threads";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -29,7 +30,13 @@ vi.mock("node:worker_threads", async (importOriginal) => {
         ...((silentWorkers.on
           ? ["setInterval(() => {}, 1 << 30);", { eval: true }]
           : failingWorkers.message !== undefined
-            ? [`throw new Error(${JSON.stringify(failingWorkers.message)});`, { eval: true }]
+            ? [
+                `const { parentPort } = require("node:worker_threads");
+parentPort.on("message", (request) => {
+  if (request === "barrier") throw new Error(${JSON.stringify(failingWorkers.message)});
+});`,
+                { eval: true },
+              ]
             : args) as ConstructorParameters<typeof actual.Worker>),
       );
       startedWorkers.push(this);
@@ -765,27 +772,51 @@ const withCheckpointClient = <A, E>(
     const path = yield* Path.Path;
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-sqlite-checkpoint-" });
     const filename = path.join(directory, "state.sqlite");
+    // Changing journal mode races the worker's first schema read.
+    yield* Effect.acquireUseRelease(
+      Effect.sync(() => new NodeSqlite.DatabaseSync(filename)),
+      (database) => Effect.sync(() => database.exec("PRAGMA journal_mode = WAL")),
+      (database) => Effect.sync(() => database.close()),
+    );
     return yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* sql`PRAGMA journal_mode = WAL`;
       return yield* use(sql, filename);
     }).pipe(Effect.provide(SqliteClient.layer({ filename, checkpointWorker: true })));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
+class CheckpointWorkerError extends Data.TaggedError("CheckpointWorkerError")<{
+  readonly cause: Error;
+}> {}
+
 const checkpointWorkerReply = (worker: NodeWorkerThreads.Worker) =>
-  Effect.promise(
-    () =>
-      new Promise<void>((resolve) => {
-        const onReply = (reply: unknown) => {
-          if (reply !== "barrier") return;
-          worker.off("message", onReply);
-          resolve();
-        };
-        worker.on("message", onReply);
-        // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node workers do not accept a target origin.
-        worker.postMessage("barrier");
-      }),
-  );
+  Effect.callback<void, CheckpointWorkerError>((resume) => {
+    const cleanup = () => {
+      worker.off("message", onReply);
+      worker.off("error", onError);
+      worker.off("exit", onExit);
+    };
+    const onReply = (reply: unknown) => {
+      if (reply !== "barrier") return;
+      cleanup();
+      resume(Effect.void);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      resume(Effect.fail(new CheckpointWorkerError({ cause: error })));
+    };
+    const onExit = (code: number) =>
+      onError(new Error(`Checkpoint worker exited with code ${code} before replying`));
+    if (worker.threadId === -1) {
+      onError(new Error("Checkpoint worker already exited before replying"));
+      return;
+    }
+    worker.on("message", onReply);
+    worker.once("error", onError);
+    worker.once("exit", onExit);
+    // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node workers do not accept a target origin.
+    worker.postMessage("barrier");
+    return Effect.sync(cleanup);
+  });
 
 it.effect("checkpoints the WAL on the worker instead of the writer", () =>
   withCheckpointClient((sql, filename) =>
@@ -793,6 +824,8 @@ it.effect("checkpoints the WAL on the worker instead of the writer", () =>
       const fs = yield* FileSystem.FileSystem;
       const walSize = Effect.map(fs.stat(`${filename}-wal`), (info) => Number(info.size));
       const worker = startedWorkers.at(-1)!;
+      // Finish opening the worker connection before the fixture takes write locks.
+      yield* checkpointWorkerReply(worker);
       const limit = 1024 * 1024;
       yield* sql.unsafe(`PRAGMA journal_size_limit = ${limit}`);
       const autocheckpoint = yield* sql<{
@@ -824,7 +857,10 @@ it.effect("checkpoints the WAL on the worker instead of the writer", () =>
 it.effect("hands checkpoints back to the writer when the worker stops", () =>
   withCheckpointClient((sql) =>
     Effect.gen(function* () {
-      yield* Effect.promise(() => startedWorkers.at(-1)!.terminate());
+      const worker = startedWorkers.at(-1)!;
+      yield* Effect.promise(() => worker.terminate());
+      const failure = yield* checkpointWorkerReply(worker).pipe(Effect.flip);
+      assert.include(failure.cause.message, "already exited");
       const autocheckpoint = yield* sql<{
         readonly wal_autocheckpoint: number;
       }>`PRAGMA wal_autocheckpoint`;
@@ -844,6 +880,8 @@ it.effect("warns once and hands checkpoints back when the worker fails at startu
       withCheckpointClient((sql) =>
         Effect.gen(function* () {
           const worker = startedWorkers.at(-1)!;
+          const failure = yield* checkpointWorkerReply(worker).pipe(Effect.flip);
+          assert.equal(failure.cause.message, reason);
           if (worker.threadId !== -1) {
             yield* Effect.promise(() => new Promise((resolve) => worker.once("exit", resolve)));
           }
