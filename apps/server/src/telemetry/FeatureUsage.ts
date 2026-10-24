@@ -1,8 +1,4 @@
-import {
-  ORCHESTRATION_V2_WS_METHODS,
-  type OrchestrationV2Command,
-  WS_METHODS,
-} from "@t3tools/contracts";
+import { type OrchestrationV2Command, WS_METHODS } from "@t3tools/contracts";
 import type {
   ClientOs,
   ClientSurface,
@@ -37,11 +33,14 @@ const use = (feature: string, variant?: string): FeatureUsage =>
  * User commands sent through `orchestration.dispatchCommand` that represent a
  * feature choice. Housekeeping commands (visits, reorders, acknowledgements)
  * and `message.dispatch`, which `client.turn.requested` already counts, are
- * left out.
+ * left out. The dispatch handler records these, not the RPC middleware, so a
+ * retried command id that changed nothing is not counted again.
  */
-const COMMAND_FEATURES: Partial<
-  Record<OrchestrationV2Command["type"], (command: Payload) => FeatureUsage>
-> = {
+const COMMAND_FEATURES: {
+  readonly [Type in OrchestrationV2Command["type"]]?: (
+    command: Extract<OrchestrationV2Command, { readonly type: Type }>,
+  ) => FeatureUsage;
+} = {
   "checkpoint.rollback": (command) => ({
     feature: "checkpoint.rollback",
     variant: command.restoreFiles === false ? "conversation_only" : "with_files",
@@ -54,11 +53,11 @@ const COMMAND_FEATURES: Partial<
   "thread.pin": () => ({ feature: "thread.pin" }),
   "thread.settle": () => ({ feature: "thread.settle" }),
   "thread.pull-request.link": () => ({ feature: "thread.pull_request.link" }),
-  "thread.pull-request.watch": () => ({ feature: "thread.pull_request.watch" }),
-  "thread.runtime-mode.set": (command) =>
-    use("thread.runtime_mode.set", literal(command, "runtimeMode")),
+  "thread.pull-request.watch": (command) =>
+    use("thread.pull_request.watch", command.watching ? "on" : "off"),
+  "thread.runtime-mode.set": (command) => use("thread.runtime_mode.set", command.runtimeMode),
   "thread.interaction-mode.set": (command) =>
-    use("thread.interaction_mode.set", literal(command, "interactionMode")),
+    use("thread.interaction_mode.set", command.interactionMode),
   "run.interrupt": () => ({ feature: "run.interrupt" }),
   // Clients stop a thread without naming a run once the server supports it; count it as the same Stop.
   "thread.stop": () => ({ feature: "run.interrupt" }),
@@ -69,17 +68,9 @@ const COMMAND_FEATURES: Partial<
 /**
  * RPCs that represent a user starting a feature. Variants come only from
  * closed enums in the contracts, so no path, id, or free text can reach analytics.
+ * Thread launches are left out because `client.thread.started` counts them.
  */
 const METHOD_FEATURES: Readonly<Record<string, (payload: Payload) => FeatureUsage>> = {
-  [ORCHESTRATION_V2_WS_METHODS.launchThread]: (payload) => {
-    const strategy = payload.workspaceStrategy;
-    return use(
-      "thread.launch",
-      typeof strategy === "object" && strategy !== null
-        ? literal(strategy as Payload, "type")
-        : undefined,
-    );
-  },
   [WS_METHODS.terminalOpen]: () => ({ feature: "terminal.open" }),
   [WS_METHODS.previewOpen]: () => ({ feature: "preview.open" }),
   [WS_METHODS.deviceOpen]: () => ({ feature: "device.open" }),
@@ -102,26 +93,31 @@ const METHOD_FEATURES: Readonly<Record<string, (payload: Payload) => FeatureUsag
 /**
  * Requests the fork already reports under its own events: Device panel opens and
  * workflow approvals as `devices` and `workflow-approvals` feature usage with outcomes,
- * and thread launches, settles and archives as `client.thread.started`,
- * `client.thread.settled` and `client.thread.archived`. Counting them here as well would
- * report one action twice.
+ * and thread settles and archives as `client.thread.settled` and `client.thread.archived`.
+ * Counting them here as well would report one action twice.
  */
-const reportedByForkEvents = (method: string, input: Payload) =>
+const methodReportedByForkEvents = (method: string, input: Payload) =>
   method === WS_METHODS.deviceOpen ||
-  method === ORCHESTRATION_V2_WS_METHODS.launchThread ||
-  (method === WS_METHODS.pullRequestsRunAction && input.action === "approve-workflows") ||
-  (method === ORCHESTRATION_V2_WS_METHODS.dispatchCommand &&
-    (input.type === "thread.settle" || input.type === "thread.archive"));
+  (method === WS_METHODS.pullRequestsRunAction && input.action === "approve-workflows");
+
+const commandReportedByForkEvents = (command: OrchestrationV2Command) =>
+  command.type === "thread.settle" || command.type === "thread.archive";
+
+/** The feature a dispatched command uses, or undefined when it is not a tracked feature. */
+export function commandFeatureUsage(command: OrchestrationV2Command): FeatureUsage | undefined {
+  if (commandReportedByForkEvents(command)) return undefined;
+  // TypeScript cannot pair a union's tag with its own entry, so widen once here.
+  const mapping = COMMAND_FEATURES[command.type] as
+    | ((command: OrchestrationV2Command) => FeatureUsage)
+    | undefined;
+  return mapping?.(command);
+}
 
 /** The feature a WebSocket request uses, or undefined when it is not a tracked feature. */
 export function featureUsage(method: string, payload: unknown): FeatureUsage | undefined {
   if (typeof payload !== "object" || payload === null) return undefined;
   const input = payload as Payload;
-  if (reportedByForkEvents(method, input)) return undefined;
-  if (method === ORCHESTRATION_V2_WS_METHODS.dispatchCommand) {
-    const type = literal(input, "type") as OrchestrationV2Command["type"] | undefined;
-    return type === undefined ? undefined : COMMAND_FEATURES[type]?.(input);
-  }
+  if (methodReportedByForkEvents(method, input)) return undefined;
   return METHOD_FEATURES[method]?.(input);
 }
 

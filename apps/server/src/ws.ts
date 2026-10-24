@@ -243,7 +243,7 @@ import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import { inspectHostActivity } from "./environment/HostActivity.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ThreadSettleUsage from "./telemetry/ThreadSettleUsage.ts";
-import { featureUsage } from "./telemetry/FeatureUsage.ts";
+import { commandFeatureUsage, featureUsage } from "./telemetry/FeatureUsage.ts";
 import type { TelemetryOwner } from "./telemetry/Identify.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
@@ -1293,11 +1293,24 @@ export const layerWsRpc = (
       const recordClientCommandAnalytics = (
         command: OrchestrationV2Command,
         commandProps: Readonly<Record<string, unknown>> = {},
-      ) =>
-        recordAcceptedClientCommandAnalytics(command, analytics, {
+      ) => {
+        const usage = commandFeatureUsage(command);
+        return recordAcceptedClientCommandAnalytics(command, analytics, {
           ...originProps,
           ...commandProps,
-        });
+        }).pipe(
+          Effect.andThen(
+            usage === undefined
+              ? Effect.void
+              : analytics
+                  .record("feature.used", {
+                    ...usage,
+                    ...(originProps.surface === undefined ? {} : { surface: originProps.surface }),
+                  })
+                  .pipe(Effect.ignore),
+          ),
+        );
+      };
       // Read before dispatch: the un-settle clears the reason it reports.
       const clientCommandAnalyticsProps = (command: OrchestrationV2Command) =>
         command.type === "thread.unsettle"
@@ -1973,7 +1986,11 @@ export const layerWsRpc = (
                   ).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
-                  Effect.tap(() => recordClientCommandAnalytics(command, commandAnalyticsProps)),
+                  Effect.tap((result) =>
+                    result.replayed
+                      ? Effect.void
+                      : recordClientCommandAnalytics(command, commandAnalyticsProps),
+                  ),
                   Effect.map((result) => ({ sequence: result.sequence })),
                   Effect.mapError((cause) => {
                     const detail = userFacingDispatchErrorMessage(cause);
@@ -2122,17 +2139,23 @@ export const layerWsRpc = (
                   }).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
-                  Effect.tap(() =>
-                    analytics
-                      .record("client.thread.started", originProps)
-                      .pipe(
-                        Effect.andThen(
-                          input.initialMessage === undefined
-                            ? Effect.void
-                            : analytics.record("client.turn.requested", originProps),
-                        ),
-                        Effect.ignore,
-                      ),
+                  // A resumed launch is a retry of one already counted.
+                  Effect.tap((result) =>
+                    result.resumed
+                      ? Effect.void
+                      : analytics
+                          .record("client.thread.started", {
+                            ...originProps,
+                            workspaceStrategy: input.workspaceStrategy.type,
+                          })
+                          .pipe(
+                            Effect.andThen(
+                              input.initialMessage === undefined
+                                ? Effect.void
+                                : analytics.record("client.turn.requested", originProps),
+                            ),
+                            Effect.ignore,
+                          ),
                   ),
                   Effect.map((result) => ({
                     ...result,
@@ -3384,7 +3407,6 @@ export const layer = Layer.unwrap(
         const clientOrigin = readClientConnectionOrigin(request);
         const clientAnalyticsProps = readClientAnalyticsProps(request);
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
-        yield* analytics.record("client.connected", clientAnalyticsProps);
         yield* analytics.recordOwners(readClientOwners(request), "client");
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;

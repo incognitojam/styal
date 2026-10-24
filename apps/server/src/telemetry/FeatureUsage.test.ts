@@ -1,6 +1,5 @@
 import { expect, it } from "@effect/vitest";
 import {
-  CommandId,
   DeviceBootError,
   DeviceHeldError,
   DeviceHostUnavailableError,
@@ -9,6 +8,7 @@ import {
   DeviceId,
   HardwareToolError,
   ORCHESTRATION_V2_WS_METHODS,
+  OrchestrationV2Command,
   ProjectFileActionApprovalError,
   ThreadId,
   WS_METHODS,
@@ -18,11 +18,12 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as AnalyticsService from "./AnalyticsService.ts";
 import * as FeatureUsage from "./FeatureUsage.ts";
-import { featureUsage } from "./FeatureUsage.ts";
+import { commandFeatureUsage, featureUsage } from "./FeatureUsage.ts";
 
 const usage = { feature: "browser-tools", action: "snapshot", source: "agent" } as const;
 const capture = (events: Array<unknown>) =>
@@ -268,24 +269,55 @@ it.effect(
     }),
 );
 
-const dispatch = ORCHESTRATION_V2_WS_METHODS.dispatchCommand;
-const threadId = ThreadId.make("thread-private");
-const commandId = CommandId.make("command-private");
-
-it("counts stopping a thread as the same interrupt as stopping its run", () => {
-  const interrupt = { feature: "run.interrupt" };
-  expect(
-    featureUsage(dispatch, { type: "run.interrupt", commandId, threadId, runId: "run-private" }),
-  ).toEqual(interrupt);
-  expect(featureUsage(dispatch, { type: "thread.stop", commandId, threadId })).toEqual(interrupt);
-});
+const command = Schema.decodeUnknownSync(OrchestrationV2Command);
+const ids = { commandId: "command-private", threadId: "thread-private" };
 
 it("ignores messages, housekeeping commands, and untracked RPCs", () => {
-  expect(featureUsage(dispatch, { type: "message.dispatch", text: "secret prompt" })).toBe(
-    undefined,
-  );
-  expect(featureUsage(dispatch, { type: "thread.visit", threadId })).toBe(undefined);
+  expect(
+    commandFeatureUsage(
+      command({
+        ...ids,
+        type: "message.dispatch",
+        messageId: "message-private",
+        text: "secret prompt",
+        attachments: [],
+        createdBy: "user",
+        creationSource: "web",
+        dispatchMode: { type: "start_immediately" },
+      }),
+    ),
+  ).toBe(undefined);
+  expect(
+    commandFeatureUsage(
+      command({ ...ids, type: "thread.visit", visitedAt: "2026-10-24T00:00:00.000Z" }),
+    ),
+  ).toBe(undefined);
   expect(featureUsage(WS_METHODS.terminalWrite, { data: "rm -rf" })).toBe(undefined);
+});
+
+it("leaves thread launches to client.thread.started", () => {
+  expect(
+    featureUsage(ORCHESTRATION_V2_WS_METHODS.launchThread, {
+      title: "Private title",
+      workspaceStrategy: { type: "worktree", baseRef: "main", branch: "secret-branch" },
+    }),
+  ).toBe(undefined);
+});
+
+it("tells watching a pull request apart from unwatching it", () => {
+  const watch = (watching: boolean) =>
+    commandFeatureUsage(
+      command({
+        ...ids,
+        type: "thread.pull-request.watch",
+        host: "github.com",
+        repository: "owner/private",
+        number: 7,
+        watching,
+      }),
+    );
+  expect(watch(true)).toEqual({ feature: "thread.pull_request.watch", variant: "on" });
+  expect(watch(false)).toEqual({ feature: "thread.pull_request.watch", variant: "off" });
 });
 
 it("reads RPC variants from enums, never from paths or text", () => {
@@ -307,15 +339,21 @@ it("leaves actions the fork reports under its own events to those events", () =>
   expect(
     featureUsage(WS_METHODS.pullRequestsRunAction, { action: "update-branch", number: 7 }),
   ).toEqual({ feature: "pull_request.action", variant: "update-branch" });
+  expect(commandFeatureUsage(command({ ...ids, type: "thread.settle" }))).toBe(undefined);
+  expect(commandFeatureUsage(command({ ...ids, type: "thread.archive" }))).toBe(undefined);
   expect(
-    featureUsage(ORCHESTRATION_V2_WS_METHODS.launchThread, {
-      title: "Private title",
-      workspaceStrategy: { type: "worktree", baseRef: "main", branch: "secret-branch" },
-    }),
-  ).toBe(undefined);
-  expect(featureUsage(dispatch, { type: "thread.settle", commandId, threadId })).toBe(undefined);
-  expect(featureUsage(dispatch, { type: "thread.archive", commandId, threadId })).toBe(undefined);
-  expect(featureUsage(dispatch, { type: "thread.snooze", commandId, threadId })).toEqual({
+    commandFeatureUsage(
+      command({ ...ids, type: "thread.snooze", snoozedUntil: "2026-10-25T00:00:00.000Z" }),
+    ),
+  ).toEqual({
     feature: "thread.snooze",
   });
+});
+
+it("counts stopping a thread as the same interrupt as stopping its run", () => {
+  const interrupt = { feature: "run.interrupt" };
+  expect(
+    commandFeatureUsage(command({ ...ids, type: "run.interrupt", runId: "run-private" })),
+  ).toEqual(interrupt);
+  expect(commandFeatureUsage(command({ ...ids, type: "thread.stop" }))).toEqual(interrupt);
 });
