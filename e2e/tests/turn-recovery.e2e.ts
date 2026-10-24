@@ -43,7 +43,7 @@ describe("recover a turn", () => {
     await page.getByRole("button", { name: "Submit message", exact: true }).click();
     await page.getByText("Work has started.", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Stop generation" }).click();
-    await page.getByText("Run interrupted by user").first().waitFor();
+    await page.getByText("Stopped by user").first().waitFor();
     await page.getByRole("button", { name: "Stop generation" }).waitFor({ state: "hidden" });
     await sendMessage(app, "Continue with a shorter task");
     const turns = environment.codexTurns();
