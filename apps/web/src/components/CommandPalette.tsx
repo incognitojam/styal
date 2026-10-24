@@ -205,7 +205,6 @@ import {
 } from "./CommandPalette.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
-import { GitHubIcon } from "./Icons";
 import {
   selectCommandPaletteClientSettings,
   useEnvironmentLookups,
@@ -252,7 +251,10 @@ import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
 import { useFocusPullRequestTab, createViewPullRequest } from "../lib/viewPullRequest";
-import { getSourceControlPresentation } from "../sourceControlPresentation";
+import {
+  getSourceControlPresentation,
+  getSourceControlPresentationForKind,
+} from "../sourceControlPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
@@ -260,6 +262,7 @@ import { threadRecentUse } from "@t3tools/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
+const GitHubLogo = getSourceControlPresentationForKind("github").Icon;
 
 /**
  * Shows who owns a repository. The avatar is derived from the repository URL, so
@@ -2757,7 +2760,7 @@ function OpenCommandPaletteDialog(props: {
               nameWithOwner: remote.nameWithOwner ?? remote.url,
               remoteName: remote.remoteName,
               repositoryUrl: remote.url,
-              fallbackIcon: <GitHubIcon className={ITEM_ICON_CLASS} />,
+              fallbackIcon: <GitHubLogo className={ITEM_ICON_CLASS} />,
               disabled: flow.pending,
               run: () => chooseCheckoutDefaultRepository(remote.remoteName),
             }),

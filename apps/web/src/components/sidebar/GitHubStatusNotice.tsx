@@ -7,11 +7,14 @@ import {
 import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useProjects } from "../../state/entities";
-import { GitHubIcon, type Icon } from "../Icons";
+import { getSourceControlPresentationForKind } from "../../sourceControlPresentation";
+import type { Icon } from "../Icons";
 import { StatusPageNotice } from "./StatusPageNotice";
 
-const GitHubBrandIcon: Icon = ({ className, ...props }) => (
-  <GitHubIcon {...props} className={cn("text-black dark:text-white", className)} />
+const GitHubLogo = getSourceControlPresentationForKind("github").Icon;
+
+const GitHubBrandIcon: Icon = ({ className }) => (
+  <GitHubLogo className={cn("text-black dark:text-white", className)} />
 );
 
 export function GitHubStatusNotice() {

@@ -1895,7 +1895,7 @@ features:
       - apps/mobile/modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3NativeControlsModule.kt
       - apps/mobile/plugins/withAndroidPreviewApkVersion.cjs
       - apps/mobile/src/components/StyalMark.tsx
-      - apps/mobile/src/features/connection/GitHubRoutingSettings.tsx
+      - apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx
       - apps/mobile/src/features/settings/appearance/components/AppearancePreviews.tsx
       - apps/mobile/src/features/settings/components/BranchNamingSettings.tsx
       - apps/mobile/src/features/settings/components/NativeAppUpdateRow.tsx
