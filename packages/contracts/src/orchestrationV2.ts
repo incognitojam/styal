@@ -1356,6 +1356,15 @@ export const OrchestrationV2LegacyActivity = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ProviderStallIncident = Schema.Struct({
+  attemptId: RunAttemptId,
+  phase: Schema.Literals(["startup", "provider_silent"]),
+  detectedAt: NonNegativeInt,
+  lastActivityAt: NonNegativeInt,
+  resolvedAt: Schema.optional(NonNegativeInt),
+  resolution: Schema.optional(Schema.Literals(["activity", "waiting", "run_ended"])),
+});
+
 const OrchestrationV2TurnItemBaseFields = {
   legacyTurnId: Schema.optional(Schema.String),
   legacyActivities: Schema.optional(Schema.Array(OrchestrationV2LegacyActivity)),
@@ -1545,6 +1554,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("system_notice"),
     message: Schema.String,
+    providerStall: Schema.optional(ProviderStallIncident),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2330,6 +2340,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("system_notice"),
     message: Schema.String,
+    providerStall: Schema.optional(ProviderStallIncident),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,

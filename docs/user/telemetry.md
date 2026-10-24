@@ -32,6 +32,12 @@ the background, records the provider type, its versions before and after, whethe
 fixed failure category, and how long it took. Instance names, installation paths, update commands,
 installer output, and error messages are not collected.
 
+When a turn triggers an inactivity warning, the server reports the provider type, whether the
+delay happened during startup or after attachment, how long it was quiet, and when the warning
+clears because activity resumed, work or a request appeared, or the turn ended. Thread and
+session identifiers, prompts, output, commands, and paths are not collected. Local incident
+records remain in the activity log even when telemetry is disabled.
+
 Once after startup and then daily, the server also reports the current values of its settings, so
 we can see which defaults people change: on/off settings, chosen options such as the default permission mode, and day or minute
 counts. Paths, branch prefixes, instructions, model choices, and per-project settings are not

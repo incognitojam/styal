@@ -36,7 +36,6 @@ import type {
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
-  RunAttemptId,
   ThreadWorkflowRunWatch,
 } from "@t3tools/contracts";
 import {
@@ -60,6 +59,7 @@ import {
   OrchestrationV2TurnItemJson as OrchestrationV2TurnItemJsonSchema,
   orchestrationV2RunWorkStartedAt,
   RunId,
+  RunAttemptId,
   MessageId,
   RuntimeRequestId,
   CheckpointScopeId,
@@ -286,6 +286,14 @@ export type ProjectionRuntimeRecoveryState = Pick<
   | "turnItems"
 >;
 
+export interface ProjectionProviderStallCandidate {
+  readonly run: OrchestrationV2Run;
+  readonly attemptId: RunAttemptId;
+  readonly phase: "startup" | "provider_silent";
+  readonly lastActivityAt: number;
+  readonly blocked: boolean;
+}
+
 export type ProjectionPendingUserInputs = Pick<
   OrchestrationV2ThreadProjection,
   "runtimeRequests" | "nodes" | "turnItems"
@@ -370,6 +378,13 @@ export interface ShellSnapshotOptions {
 }
 
 export interface ProjectionStoreV2Shape {
+  readonly getProviderStallCandidates: (
+    runId?: RunId,
+  ) => Effect.Effect<ReadonlyArray<ProjectionProviderStallCandidate>, ProjectionStoreV2Error>;
+  readonly getOpenProviderStalls: () => Effect.Effect<
+    ReadonlyArray<Extract<OrchestrationV2TurnItem, { type: "system_notice" }>>,
+    ProjectionStoreV2Error
+  >;
   readonly searchThreadStream: (
     input: OrchestrationV2SearchThreadInput,
   ) => Stream.Stream<OrchestrationV2SearchThreadResult, ProjectionStoreV2Error>;
@@ -5905,6 +5920,140 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         );
       }).pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
 
+    const getProviderStallCandidates: ProjectionStoreV2Shape["getProviderStallCandidates"] = (
+      runId,
+    ) =>
+      Effect.gen(function* () {
+        // Scan the compact status index, not overflow pages holding historical run
+        // payloads. The commit guard selects one run and keeps its primary-key lookup.
+        const rows = yield* sql<{
+          readonly payload_json: string;
+          readonly attempt_id: string;
+          readonly provider_turn_id: string | null;
+          readonly last_activity_at: string;
+          readonly blocked: number;
+        }>`
+          WITH startup AS (
+            SELECT candidate.run_id, (
+              SELECT event.occurred_at FROM orchestration_events AS event
+              WHERE event.stream_id = candidate.thread_id
+                AND event.aggregate_kind = 'thread' AND event.application_event_version = 2
+                AND event.event_type IN ('run.created', 'run.updated')
+                AND json_extract(event.payload_json, '$.id') = candidate.run_id
+                AND json_extract(event.payload_json, '$.status') = 'starting'
+                AND json_extract(event.payload_json, '$.activeAttemptId') =
+                  json_extract(candidate.payload_json, '$.activeAttemptId')
+              ORDER BY event.sequence DESC LIMIT 1
+            ) AS started_at
+            FROM orchestration_v2_projection_runs AS candidate
+            WHERE candidate.status = 'starting'
+              ${runId === undefined ? sql`` : sql`AND candidate.run_id = ${runId}`}
+          )
+          SELECT run.payload_json, attempt.attempt_id,
+            COALESCE(attached.provider_turn_id, attempt.provider_turn_id) AS provider_turn_id,
+            MAX(
+              COALESCE(json_extract(attempt.payload_json, '$.startedAt'), startup.started_at),
+              COALESCE((
+                SELECT MAX(message.updated_at) FROM orchestration_v2_projection_messages AS message
+                WHERE message.run_id = run.run_id
+                  AND json_extract(message.payload_json, '$.role') = 'assistant'
+                  AND (message.node_id = json_extract(run.payload_json, '$.rootNodeId')
+                    OR message.node_id IS NULL)
+              ), COALESCE(json_extract(attempt.payload_json, '$.startedAt'), startup.started_at)),
+              COALESCE((
+                SELECT MAX(request.resolved_at) FROM orchestration_v2_projection_runtime_requests AS request
+                WHERE request.thread_id = run.thread_id
+              ), COALESCE(json_extract(attempt.payload_json, '$.startedAt'), startup.started_at)),
+              COALESCE((
+                SELECT MAX(turn.started_at) FROM orchestration_v2_projection_provider_turns AS turn
+                WHERE turn.thread_id = run.thread_id AND turn.run_attempt_id = attempt.attempt_id
+              ), COALESCE(json_extract(attempt.payload_json, '$.startedAt'), startup.started_at)),
+              COALESCE((
+                SELECT MAX(item.updated_at)
+                FROM orchestration_v2_projection_turn_items AS item
+                WHERE item.run_id = run.run_id
+                  AND item.type NOT IN ('system_notice', 'notification', 'user_message', 'checkpoint')
+                  AND (item.provider_turn_id = COALESCE(attached.provider_turn_id, attempt.provider_turn_id) OR (
+                    item.provider_turn_id IS NULL
+                    AND item.updated_at >= COALESCE(json_extract(attempt.payload_json, '$.startedAt'), startup.started_at)
+                  ))
+              ), COALESCE(json_extract(attempt.payload_json, '$.startedAt'), startup.started_at))
+            ) AS last_activity_at,
+            (
+              EXISTS (
+                SELECT 1 FROM orchestration_v2_projection_runtime_requests AS request
+                WHERE request.thread_id = run.thread_id AND request.status = 'pending'
+              ) OR EXISTS (
+                SELECT 1 FROM orchestration_v2_projection_turn_items AS work
+                WHERE work.thread_id = run.thread_id
+                  AND work.status IN ('pending', 'running', 'waiting')
+                  AND work.type IN ('command_execution', 'dynamic_tool', 'subagent',
+                    'approval_request', 'user_input_request', 'checkpoint', 'compaction',
+                    'handoff', 'error', 'file_change', 'file_search', 'web_search')
+                  AND (
+                    work.provider_turn_id = COALESCE(attached.provider_turn_id, attempt.provider_turn_id)
+                    OR (work.run_id = run.run_id AND work.provider_turn_id IS NULL
+                      AND work.updated_at >= COALESCE(json_extract(attempt.payload_json, '$.startedAt'), startup.started_at))
+                    OR (work.provider_thread_id = run.provider_thread_id
+                      AND work.type IN ('command_execution', 'dynamic_tool', 'subagent'))
+                  )
+              ) OR EXISTS (
+                SELECT 1 FROM orchestration_v2_projection_provider_threads AS owner
+                WHERE owner.provider_thread_id = run.provider_thread_id
+                  AND json_array_length(owner.payload_json, '$.pendingBackgroundTasks') > 0
+              ) OR EXISTS (
+                SELECT 1 FROM orchestration_v2_projection_subagents AS child
+                WHERE child.thread_id = run.thread_id AND child.run_id = run.run_id
+                  AND child.status IN ('pending', 'running', 'waiting')
+              )
+            ) AS blocked
+          FROM orchestration_v2_projection_runs AS run
+          ${runId === undefined ? sql`INDEXED BY orchestration_v2_projection_runs_thread_status_idx` : sql``}
+          JOIN orchestration_v2_projection_run_attempts AS attempt
+            ON attempt.attempt_id = json_extract(run.payload_json, '$.activeAttemptId')
+          LEFT JOIN orchestration_v2_projection_provider_turns AS attached
+            ON attached.provider_turn_id = (
+              SELECT latest.provider_turn_id FROM orchestration_v2_projection_provider_turns AS latest
+              WHERE latest.thread_id = run.thread_id AND latest.run_attempt_id = attempt.attempt_id
+              ORDER BY latest.ordinal DESC LIMIT 1
+            )
+          JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = run.thread_id
+          LEFT JOIN startup ON startup.run_id = run.run_id
+          WHERE run.status IN ('starting', 'running')
+            AND COALESCE(json_extract(attempt.payload_json, '$.startedAt'), startup.started_at) IS NOT NULL
+            AND thread.deleted_at IS NULL
+            AND json_extract(thread.payload_json, '$.archivedAt') IS NULL
+            ${runId === undefined ? sql`` : sql`AND run.run_id = ${runId}`}
+        `;
+        return yield* Effect.forEach(rows, (row) =>
+          decodeRunPayload(row.payload_json).pipe(
+            Effect.map((run): ProjectionProviderStallCandidate => ({
+              run,
+              attemptId: RunAttemptId.make(row.attempt_id),
+              phase: row.provider_turn_id === null ? "startup" : "provider_silent",
+              lastActivityAt: DateTime.toEpochMillis(DateTime.makeUnsafe(row.last_activity_at)),
+              blocked: row.blocked !== 0,
+            })),
+          ),
+        );
+      }).pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
+
+    const getOpenProviderStalls: ProjectionStoreV2Shape["getOpenProviderStalls"] = () =>
+      Effect.gen(function* () {
+        // The primary-key prefix bounds this read to diagnostic notices, including
+        // notices whose runs have ended since the previous sweep.
+        const rows = yield* sql<PayloadRow>`
+          SELECT payload_json FROM orchestration_v2_projection_turn_items
+          WHERE turn_item_id GLOB 'turn-item:provider-stall:*'
+            AND json_extract(payload_json, '$.providerStall.resolvedAt') IS NULL
+        `;
+        const items = yield* Effect.forEach(rows, (row) => decodeTurnItemPayload(row.payload_json));
+        return items.filter(
+          (item): item is Extract<OrchestrationV2TurnItem, { type: "system_notice" }> =>
+            item.type === "system_notice" && item.providerStall !== undefined,
+        );
+      }).pipe(Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })));
+
     const getThreadsWithWorkflowRuns: ProjectionStoreV2Shape["getThreadsWithWorkflowRuns"] = () =>
       Effect.gen(function* () {
         const rows = yield* sql<PayloadRow>`
@@ -6290,6 +6439,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getSettlementCandidates,
       getThreadsWithPullRequests,
       getThreadsWithWorkflowRuns,
+      getProviderStallCandidates,
+      getOpenProviderStalls,
       getThreadWorktreePaths,
       getThreadProjection,
       getTurnStartContext,
@@ -6331,10 +6482,18 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
   Effect.gen(function* () {
     const replayState = yield* Ref.make(makeProjectionReplayState());
     const sequence = yield* Ref.make(0);
+    const startupAt = new Map<RunAttemptId, number>();
 
     const service: ProjectionStoreV2Shape = {
       apply: (event) =>
         Effect.gen(function* () {
+          if (
+            (event.type === "run.created" || event.type === "run.updated") &&
+            event.payload.status === "starting" &&
+            event.payload.activeAttemptId !== null
+          ) {
+            startupAt.set(event.payload.activeAttemptId, DateTime.toEpochMillis(event.occurredAt));
+          }
           const result = yield* Ref.modify(replayState, (existing) => {
             const next: ProjectionReplayState = {
               projections: new Map(existing.projections),
@@ -6498,6 +6657,120 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                 settledAt: thread.settledAt,
                 workflowRuns: thread.workflowRuns ?? [],
               })),
+          ),
+        ),
+      getProviderStallCandidates: (runId) =>
+        Ref.get(replayState).pipe(
+          Effect.map((state) =>
+            [...state.projections.values()].flatMap((projection) => {
+              if (projection.thread.deletedAt !== null || projection.thread.archivedAt !== null)
+                return [];
+              return projection.runs.flatMap((run): Array<ProjectionProviderStallCandidate> => {
+                if (
+                  (runId !== undefined && run.id !== runId) ||
+                  (run.status !== "starting" && run.status !== "running")
+                )
+                  return [];
+                const attempt = projection.attempts.find((item) => item.id === run.activeAttemptId);
+                if (attempt === undefined) return [];
+                const startedAt =
+                  attempt.startedAt === null
+                    ? startupAt.get(attempt.id)
+                    : DateTime.toEpochMillis(attempt.startedAt);
+                if (startedAt === undefined) return [];
+                const providerTurnId =
+                  projection.providerTurns
+                    .filter((turn) => turn.runAttemptId === attempt.id)
+                    .toSorted((left, right) => right.ordinal - left.ordinal)[0]?.id ??
+                  attempt.providerTurnId;
+                const items = projection.turnItems.filter(
+                  (item) =>
+                    item.runId === run.id &&
+                    !["system_notice", "notification", "user_message", "checkpoint"].includes(
+                      item.type,
+                    ) &&
+                    ((item.providerTurnId === providerTurnId && item.providerTurnId !== null) ||
+                      (item.providerTurnId === null &&
+                        DateTime.toEpochMillis(item.updatedAt) >= startedAt)),
+                );
+                return [
+                  {
+                    run,
+                    attemptId: attempt.id,
+                    phase: providerTurnId === null ? "startup" : "provider_silent",
+                    lastActivityAt: Math.max(
+                      startedAt,
+                      ...projection.messages
+                        .filter(
+                          (message) =>
+                            message.runId === run.id &&
+                            message.role === "assistant" &&
+                            (message.nodeId === run.rootNodeId || message.nodeId === null),
+                        )
+                        .map((message) => DateTime.toEpochMillis(message.updatedAt)),
+                      ...projection.runtimeRequests
+                        .filter((request) => request.resolvedAt !== null)
+                        .map((request) => DateTime.toEpochMillis(request.resolvedAt!)),
+                      ...projection.providerTurns
+                        .filter(
+                          (turn) => turn.runAttemptId === attempt.id && turn.startedAt !== null,
+                        )
+                        .map((turn) => DateTime.toEpochMillis(turn.startedAt!)),
+                      ...items.map((item) => DateTime.toEpochMillis(item.updatedAt)),
+                    ),
+                    blocked:
+                      projection.runtimeRequests.some((request) => request.status === "pending") ||
+                      projection.turnItems.some(
+                        (item) =>
+                          ["pending", "running", "waiting"].includes(item.status) &&
+                          [
+                            "command_execution",
+                            "dynamic_tool",
+                            "subagent",
+                            "approval_request",
+                            "user_input_request",
+                            "checkpoint",
+                            "compaction",
+                            "handoff",
+                            "error",
+                            "file_change",
+                            "file_search",
+                            "web_search",
+                          ].includes(item.type) &&
+                          (items.includes(item) ||
+                            (item.providerThreadId === run.providerThreadId &&
+                              item.providerThreadId !== null &&
+                              ["command_execution", "dynamic_tool", "subagent"].includes(
+                                item.type,
+                              ))),
+                      ) ||
+                      projection.providerThreads.some(
+                        (owner) =>
+                          owner.id === run.providerThreadId &&
+                          (owner.pendingBackgroundTasks?.length ?? 0) > 0,
+                      ) ||
+                      projection.subagents.some(
+                        (child) =>
+                          child.runId === run.id &&
+                          ["pending", "running", "waiting"].includes(child.status),
+                      ),
+                  },
+                ];
+              });
+            }),
+          ),
+        ),
+      getOpenProviderStalls: () =>
+        Ref.get(replayState).pipe(
+          Effect.map((state) =>
+            [...state.projections.values()].flatMap((projection) =>
+              projection.turnItems.filter(
+                (item): item is Extract<OrchestrationV2TurnItem, { type: "system_notice" }> =>
+                  item.type === "system_notice" &&
+                  item.providerStall !== undefined &&
+                  item.providerStall.resolvedAt === undefined,
+              ),
+            ),
           ),
         ),
       getLimitRecoveryCandidates: (options) =>
