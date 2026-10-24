@@ -93,7 +93,7 @@ import {
   TextSearchIcon,
   InboxIcon,
 } from "lucide-react";
-import { requestNextAttentionThread } from "./sidebar/nextAttentionThreadBus";
+import { requestNextUnreadThread } from "./sidebar/nextUnreadThreadBus";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
   useContext,
@@ -2025,13 +2025,13 @@ function OpenCommandPaletteDialog(props: {
   if (!legacySidebarEnabled) {
     actionItems.push({
       kind: "action",
-      value: "action:next-attention-thread",
-      title: "Open next thread that needs you",
+      value: "action:next-unread-thread",
+      title: "Go to next unread thread",
       searchTerms: ["next", "unread", "attention", "approval", "input", "inbox", "triage"],
       icon: <InboxIcon className={ITEM_ICON_CLASS} />,
-      shortcutCommand: "thread.nextAttention",
+      shortcutCommand: "thread.nextUnread",
       run: async () => {
-        requestNextAttentionThread();
+        requestNextUnreadThread();
       },
     });
   }

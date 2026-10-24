@@ -2722,21 +2722,21 @@ features:
       tracking: []
       retire_when: Upstream measures client connection quality per network type and exposes it to users and maintainers.
 
-  - id: next-attention-thread-shortcut
-    title: Open the next thread that needs the user
+  - id: next-unread-thread-shortcut
+    title: Open the next unread thread
     status: maintained
     prs: []
     invariants:
-      - "`thread.nextAttention` (`mod+shift+u` by default, outside terminals) and the command palette's Open next thread that needs you open the pinned, active or Working thread with the most urgent attention, in the row status precedence: approval, input, usage limit, failed run, woke, then an unread completion. Ties open in sidebar order."
+      - "`thread.nextUnread` (`mod+shift+u` by default, outside terminals) and the command palette's Go to next unread thread open the pinned, active or Working thread with the most urgent attention, in the row status precedence: approval, input, usage limit, failed run, woke, then an unread completion. Ties open in sidebar order."
       - The open thread is skipped, so repeating the command moves to the next waiting thread. Snoozed and settled threads are not candidates.
-      - With nothing waiting, it opens nothing and shows a "Nothing needs you right now" toast.
-      - Each use emits a bounded `next-attention-thread` client-usage event through the primary environment with the entry point and, when a thread opened, the attention kind, never with thread names or keys.
+      - With nothing waiting, it opens nothing and shows a "No unread threads" toast.
+      - Each use emits a bounded `next-unread-thread` client-usage event through the primary environment with the entry point and, when a thread opened, the attention kind, never with thread names or keys.
     rationale: Working through many threads means finding the next one that needs a decision. The flat inbox puts them in the list, but reaching each one takes the mouse or counting rows for a jump shortcut.
     implementation_paths:
       - apps/web/src/components/CommandPalette.tsx
       - apps/web/src/components/Sidebar.logic.ts
       - apps/web/src/components/Sidebar.tsx
-      - apps/web/src/components/sidebar/nextAttentionThreadBus.ts
+      - apps/web/src/components/sidebar/nextUnreadThreadBus.ts
       - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/keybindings.ts
       - packages/shared/src/keybindings.ts

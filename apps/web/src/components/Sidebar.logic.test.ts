@@ -926,7 +926,7 @@ describe("isContextMenuPointerDown", () => {
   });
 });
 
-describe("next thread that needs you", () => {
+describe("next unread thread", () => {
   it("reports what a thread needs from the user, ignoring work still in progress", () => {
     expect(
       resolveSidebarThreadAttention({ status: "approval", isUnread: true, isWoke: true }),

@@ -164,14 +164,14 @@ export const ForkClientUsageInput = Schema.Union([
     entryPoint: Schema.Literals(["header_drag", "header_menu"]),
   }),
   Schema.Struct({
-    feature: Schema.Literal("next-attention-thread"),
+    feature: Schema.Literal("next-unread-thread"),
     action: Schema.Literal("opened"),
     /** What the opened thread was waiting for. */
     attention: Schema.Literals(["approval", "input", "limited", "failed", "woke", "done"]),
     entryPoint: Schema.Literals(["shortcut", "command_palette"]),
   }),
   Schema.Struct({
-    feature: Schema.Literal("next-attention-thread"),
+    feature: Schema.Literal("next-unread-thread"),
     action: Schema.Literal("nothing_waiting"),
     entryPoint: Schema.Literals(["shortcut", "command_palette"]),
   }),

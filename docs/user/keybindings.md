@@ -154,11 +154,13 @@ seconds after the latest action. While the notice is visible, it also works from
 a focused text field until you press another key or edit text; after that, the
 shortcut undoes text edits again. Terminals keep their native shortcut.
 
-`thread.nextAttention` (`mod+shift+u` by default) opens the thread that most needs you: one
-waiting for an approval, then an answer, then a usage limit or failed run, then a woken thread, then
-a finished thread you have not read. Threads that need the same thing open in sidebar order, and the
-open thread is skipped, so pressing it again moves on. Snoozed and settled threads are left out. It
-is also in the command palette as **Open next thread that needs you**.
+`thread.nextUnread` (`mod+shift+u` by default) opens the next thread with something for you.
+Besides finished threads you have not read, that includes threads waiting for an approval or an
+answer, threads stopped by a usage limit or a failed run, and threads that woke from a snooze. It
+opens the most urgent first, in that order: approval, answer, usage limit or failure, woke, then
+unread. Threads of the same kind open in sidebar order, and the open thread is skipped, so pressing
+it again moves on. Snoozed and settled threads are left out. It is also in the command palette as
+**Go to next unread thread**.
 
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.

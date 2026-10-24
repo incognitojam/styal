@@ -40,7 +40,7 @@ const THREAD_KEYBINDING_COMMANDS = [
   "thread.editQueuedMessage",
   "thread.previous",
   "thread.next",
-  "thread.nextAttention",
+  "thread.nextUnread",
   "thread.copyReference",
   "thread.settle",
   "thread.pin",

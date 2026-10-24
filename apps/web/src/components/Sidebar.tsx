@@ -287,7 +287,7 @@ import {
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useStableCallback } from "../hooks/useStableCallback";
-import { subscribeNextAttentionThread } from "./sidebar/nextAttentionThreadBus";
+import { subscribeNextUnreadThread } from "./sidebar/nextUnreadThreadBus";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button, InlineButton } from "./ui/button";
 import {
@@ -4944,54 +4944,52 @@ export default function Sidebar() {
 
   // Opens the thread that most needs the user, as its row status shows it.
   // Snoozed and settled threads are left out: they come back on their own.
-  const openNextAttentionThread = useStableCallback(
-    (entryPoint: "shortcut" | "command_palette") => {
-      const now = new Date().toISOString();
-      const lastVisitedAtById = useUiStateStore.getState().threadLastVisitedAtById;
-      const next = resolveNextAttentionThread(
-        [...pinnedThreads, ...activeThreads, ...workingThreads].map((thread) => {
-          const key = threadShellKey(thread);
-          const lastVisitedAt = resolveThreadLastVisitedAt(
-            thread.lastVisitedAt,
-            lastVisitedAtById[key],
-          );
-          return {
-            key,
-            attention: resolveSidebarThreadAttention({
-              status: resolveSidebarThreadStatus(thread),
-              isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
-              isWoke: isSidebarThreadWoke({
-                wokeAt: threadWokeAt(thread, { now }),
-                lastVisitedAt,
-                settled: thread.settledOverride === "settled",
-              }),
+  const openNextUnreadThread = useStableCallback((entryPoint: "shortcut" | "command_palette") => {
+    const now = new Date().toISOString();
+    const lastVisitedAtById = useUiStateStore.getState().threadLastVisitedAtById;
+    const next = resolveNextAttentionThread(
+      [...pinnedThreads, ...activeThreads, ...workingThreads].map((thread) => {
+        const key = threadShellKey(thread);
+        const lastVisitedAt = resolveThreadLastVisitedAt(
+          thread.lastVisitedAt,
+          lastVisitedAtById[key],
+        );
+        return {
+          key,
+          attention: resolveSidebarThreadAttention({
+            status: resolveSidebarThreadStatus(thread),
+            isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
+            isWoke: isSidebarThreadWoke({
+              wokeAt: threadWokeAt(thread, { now }),
+              lastVisitedAt,
+              settled: thread.settledOverride === "settled",
             }),
-          };
-        }),
-        routeThreadKey,
-      );
-      const target = next === null ? undefined : threadByKey.get(next.key);
-      if (next === null || target === undefined) {
-        toastManager.add({ type: "info", title: "Nothing needs you right now" });
-        void reportSidebarUsage({
-          feature: "next-attention-thread",
-          action: "nothing_waiting",
-          entryPoint,
-        });
-        return;
-      }
-      navigateToThread(scopeThreadRef(target.environmentId, target.id));
+          }),
+        };
+      }),
+      routeThreadKey,
+    );
+    const target = next === null ? undefined : threadByKey.get(next.key);
+    if (next === null || target === undefined) {
+      toastManager.add({ type: "info", title: "No unread threads" });
       void reportSidebarUsage({
-        feature: "next-attention-thread",
-        action: "opened",
-        attention: next.attention,
+        feature: "next-unread-thread",
+        action: "nothing_waiting",
         entryPoint,
       });
-    },
-  );
+      return;
+    }
+    navigateToThread(scopeThreadRef(target.environmentId, target.id));
+    void reportSidebarUsage({
+      feature: "next-unread-thread",
+      action: "opened",
+      attention: next.attention,
+      entryPoint,
+    });
+  });
   useEffect(
-    () => subscribeNextAttentionThread(() => openNextAttentionThread("command_palette")),
-    [openNextAttentionThread],
+    () => subscribeNextUnreadThread(() => openNextUnreadThread("command_palette")),
+    [openNextUnreadThread],
   );
 
   const routeTerminalOpen = useTerminalUiStateStore((state) =>
@@ -5023,10 +5021,10 @@ export default function Sidebar() {
         navigateToThread(scopeThreadRef(targetThread.environmentId, targetThread.id));
         return true;
       };
-      if (command === "thread.nextAttention") {
+      if (command === "thread.nextUnread") {
         event.preventDefault();
         event.stopPropagation();
-        openNextAttentionThread("shortcut");
+        openNextUnreadThread("shortcut");
         return;
       }
       const traversalDirection = threadTraversalDirectionFromCommand(command);
@@ -5049,7 +5047,7 @@ export default function Sidebar() {
   }, [
     keybindings,
     navigateToThread,
-    openNextAttentionThread,
+    openNextUnreadThread,
     orderedThreadKeys,
     routeTerminalOpen,
     routeThreadKey,
