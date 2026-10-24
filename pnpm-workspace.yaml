@@ -53,6 +53,7 @@ catalog:
   "@noble/curves": 1.9.1
   "@noble/hashes": 1.8.0
   "@pierre/diffs": "catalog:"
+  "@pierre/highlights": 0.2.0
   "@posthog/core": 1.57.4
   "@posthog/rollup-plugin": 1.6.1
   "@tailwindcss/node": 4.3.3
