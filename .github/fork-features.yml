@@ -81,7 +81,7 @@ features:
   - id: agent-cross-project-limit
     title: Limit in-thread agents to their own project
     status: maintained
-    prs: []
+    prs: [1018]
     invariants:
       - "`enableAgentCrossProjectAccess` (default on, keeping upstream's behaviour) is a project-scoped server setting decided by the calling thread's project, read on every T3 MCP tool call so a change applies to running agents without restarting their sessions."
       - When it is off, an in-thread agent cannot read or act on a thread in another project, list or search another project's threads, launch or schedule into another project or the Scratch project, read, list, change or run another project's scheduled tasks, read, update or delete another project's record, or resolve a pull request guide through another project. Refusals return `capability_denied` without naming the other project; a missing thread still returns its own not-found error.
