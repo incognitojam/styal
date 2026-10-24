@@ -10,11 +10,13 @@ import type { ConnectionCatalogEntry, ConnectionRoute } from "./catalog.ts";
 import type {
   ConnectionAttemptError,
   ConnectionAttemptStage,
+  ConnectionRouteFailure,
   PreparedConnection,
 } from "./model.ts";
 import { ConnectionTransientError } from "./model.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import {
+  connectionRouteId,
   connectionRoutes,
   routeEntry,
   routeHttpBaseUrl,
@@ -48,6 +50,7 @@ export class ConnectionDriver extends Context.Service<
     readonly connect: (
       entry: ConnectionCatalogEntry,
       reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
+      reportRouteFailure?: (failure: ConnectionRouteFailure) => Effect.Effect<void>,
     ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope>;
     readonly checkRoute: (
       entry: ConnectionCatalogEntry,
@@ -74,7 +77,9 @@ export class ConnectionDriver extends Context.Service<
  *
  * The reported error is a transient one when any route failed transiently,
  * so the supervisor keeps retrying a route that may come back; a blocked
- * error is reported only when every attempted route was blocked.
+ * error is reported only when every attempted route was blocked. Each route
+ * that fails or goes unanswered is also reported on its own, because the one
+ * error names a single route.
  */
 export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")(function* <R>(
   entry: ConnectionCatalogEntry,
@@ -82,6 +87,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
   connectRoute: (
     route: ConnectionRoute,
   ) => Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, R | Scope.Scope>,
+  reportRouteFailure: (failure: ConnectionRouteFailure) => Effect.Effect<void> = () => Effect.void,
 ) {
   const routes = usableRoutes(entry);
   const checks =
@@ -102,6 +108,11 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     if (result._tag === "Failure") {
       if (result.failure._tag === "ConnectionTransientError") transient ??= result.failure;
       else blocked ??= result.failure;
+      yield* reportRouteFailure({
+        _tag: "Failed",
+        routeId: connectionRouteId(route.target),
+        error: result.failure,
+      });
     }
     return result;
   });
@@ -110,6 +121,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     const check = checks.length === 0 ? "unchecked" : yield* Fiber.join(checks[index]!);
     if (check === "silent") {
       silent.push(route);
+      yield* reportRouteFailure({ _tag: "NoAnswer", routeId: connectionRouteId(route.target) });
       continue;
     }
     const result = yield* attempt(route);
@@ -161,6 +173,7 @@ export const make = Effect.gen(function* () {
   const connect = Effect.fn("ConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
     reportProgress: (progress: ConnectionDriverProgress) => Effect.Effect<void>,
+    reportRouteFailure?: (failure: ConnectionRouteFailure) => Effect.Effect<void>,
   ) {
     const target = entry.target;
     yield* Effect.annotateCurrentSpan({
@@ -180,6 +193,7 @@ export const make = Effect.gen(function* () {
         yield* session.ready;
         return { prepared, session } satisfies EnvironmentConnectionLease;
       }),
+      reportRouteFailure,
     );
   });
 

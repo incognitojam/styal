@@ -50,7 +50,7 @@ export function createEnvironmentPresentationAtoms<E>(input: {
         entry,
         connection:
           entry.unsupportedReason === undefined
-            ? presentEnvironmentConnection(state)
+            ? presentEnvironmentConnection(state, entry)
             : { phase: "unsupported", error: entry.unsupportedReason, traceId: null },
         serverConfig: get(input.serverConfigValueAtom(environmentId)),
       } satisfies EnvironmentPresentation;
@@ -88,6 +88,7 @@ export interface EnvironmentConnectionSummary {
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
+  readonly connectionUnreachable: boolean;
 }
 
 export function projectEnvironmentConnectionSummary(
@@ -103,6 +104,7 @@ export function projectEnvironmentConnectionSummary(
     connectionState: environment.connection.phase,
     connectionError: environment.connection.error,
     connectionErrorTraceId: environment.connection.traceId,
+    connectionUnreachable: environment.connection.unreachable === true,
   };
 }
 
@@ -154,7 +156,8 @@ export function createEnvironmentSummaryAtoms(input: {
         previous.isEnabled === next.isEnabled &&
         previous.connectionState === next.connectionState &&
         previous.connectionError === next.connectionError &&
-        previous.connectionErrorTraceId === next.connectionErrorTraceId
+        previous.connectionErrorTraceId === next.connectionErrorTraceId &&
+        previous.connectionUnreachable === next.connectionUnreachable
       )
         return previous;
       return next;

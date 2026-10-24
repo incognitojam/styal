@@ -39,13 +39,15 @@ export function availableCloudEnvironmentPresentation(input: {
     };
   }
 
+  // The host being offline is its own state, not a failure of this device,
+  // which has not tried to connect: the row is switched off.
   if (input.status?.status === "offline") {
     const connectionError =
       relayOfflineReasonMessage(input.status) ?? input.status.error ?? "Relay is offline.";
     return {
       connectionError,
       connectionErrorTraceId: input.status.traceId ?? null,
-      connectionState: "error",
+      connectionState: "available",
       statusText: connectionError,
     };
   }

@@ -47,6 +47,7 @@ export const SHOWCASE_CONNECTED_CLOUD_ENVIRONMENTS: ReadonlyArray<ConnectedEnvir
     connectionState: "connected",
     connectionError: null,
     connectionErrorTraceId: null,
+    connectionUnreachable: false,
   },
 ];
 

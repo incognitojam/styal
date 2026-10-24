@@ -43,6 +43,7 @@ function harness() {
       generation: 1,
       lastFailure,
       retryAt: null,
+      routeFailures: [],
     } satisfies SupervisorConnectionState);
   return { collector, reports, advance, state };
 }

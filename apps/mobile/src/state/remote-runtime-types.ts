@@ -17,6 +17,7 @@ export interface ConnectedEnvironmentSummary {
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
+  readonly connectionUnreachable: boolean;
 }
 
 export interface SelectedThreadRef {

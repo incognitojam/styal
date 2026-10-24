@@ -118,6 +118,7 @@ describe("environment shell synchronization", () => {
         generation: 0,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* Queue.offer(events, {
         kind: "snapshot",
@@ -146,6 +147,7 @@ describe("environment shell synchronization", () => {
         generation: 1,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       for (let index = 0; index < 10; index += 1) {
         yield* Effect.yieldNow;
@@ -212,6 +214,7 @@ describe("environment shell synchronization", () => {
         generation: 1,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* Queue.offer(events, { kind: "snapshot", snapshot: batchSnapshot });
       yield* Queue.offer(events, { kind: "synchronized" });
@@ -590,6 +593,7 @@ describe("environment shell synchronization", () => {
         generation: 0,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* Queue.offer(events, {
         kind: "snapshot",
@@ -610,6 +614,7 @@ describe("environment shell synchronization", () => {
         generation: 1,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* SubscriptionRef.set(supervisorState, {
         desired: false,
@@ -620,6 +625,7 @@ describe("environment shell synchronization", () => {
         generation: 2,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* Deferred.await(saveStarted);
 
@@ -632,6 +638,7 @@ describe("environment shell synchronization", () => {
         generation: 3,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       for (let index = 0; index < 100; index += 1) {
         if ((yield* SubscriptionRef.get(shellState)).status === "synchronizing") break;
@@ -732,6 +739,7 @@ describe("environment shell synchronization", () => {
         generation: 0,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* Queue.offer(events, {
         kind: "snapshot",
@@ -754,6 +762,7 @@ describe("environment shell synchronization", () => {
         generation: 1,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* Deferred.await(unenrichedSaveStarted);
 
@@ -851,6 +860,7 @@ describe("environment shell synchronization", () => {
         generation: 0,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* Queue.offer(events, {
         kind: "snapshot",

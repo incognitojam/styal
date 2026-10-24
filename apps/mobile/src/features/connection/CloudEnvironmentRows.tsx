@@ -217,6 +217,7 @@ function ConnectedCloudEnvironmentRow(props: {
         connectionError={enabled || unsupported ? props.environment.connectionError : null}
         connectionErrorTraceId={enabled ? props.environment.connectionErrorTraceId : null}
         connectionState={enabled || unsupported ? props.environment.connectionState : "available"}
+        unreachable={enabled && props.environment.connectionUnreachable}
         errorExpanded={props.errorExpanded}
         label={props.environment.environmentLabel}
         machine={resolveEnvironmentMachineKind(
@@ -285,6 +286,7 @@ function CloudEnvironmentRowShell(props: {
   readonly onToggleError: () => void;
   readonly onValueChange: (enabled: boolean) => void;
   readonly statusText?: string;
+  readonly unreachable?: boolean;
   readonly value: boolean;
 }) {
   const isRetrying =
@@ -296,11 +298,12 @@ function CloudEnvironmentRowShell(props: {
       phase: props.connectionState,
       error: props.connectionError,
       traceId: props.connectionErrorTraceId,
+      unreachable: props.unreachable === true,
     });
-  const statusClassName =
-    props.connectionError && props.connectionState !== "unsupported"
-      ? "text-danger-foreground"
-      : "text-foreground-muted";
+  const failing =
+    props.connectionError !== null &&
+    (props.connectionState === "error" || props.connectionState === "reconnecting");
+  const statusClassName = failing ? "text-danger-foreground" : "text-foreground-muted";
   const [errorMeasurement, setErrorMeasurement] = useState<{
     readonly text: string;
     readonly lineCount: number;
@@ -367,11 +370,7 @@ function CloudEnvironmentRowShell(props: {
             {errorTraceId ? (
               <ConnectionTraceId
                 traceId={errorTraceId}
-                tone={
-                  props.connectionError && props.connectionState !== "unsupported"
-                    ? "danger"
-                    : "muted"
-                }
+                tone={failing ? "danger" : "muted"}
                 activation="longPress"
               />
             ) : null}

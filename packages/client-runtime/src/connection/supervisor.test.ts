@@ -32,6 +32,7 @@ import {
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   type ConnectionAttemptError,
+  type ConnectionRouteFailure,
   type ConnectionTarget,
   type NetworkStatus,
   type PreparedConnection,
@@ -229,10 +230,14 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
   const connect = Effect.fn("TestConnectionDriver.connect")(function* (
     entry: ConnectionCatalogEntry,
     reportProgress: (progress: ConnectionDriver.ConnectionDriverProgress) => Effect.Effect<void>,
+    reportRouteFailure?: (failure: ConnectionRouteFailure) => Effect.Effect<void>,
   ) {
     yield* reportProgress({ stage: "preparing" });
-    return yield* ConnectionDriver.connectOverRoutes(entry, checkRoute, (route) =>
-      connectRoute(route.target, reportProgress),
+    return yield* ConnectionDriver.connectOverRoutes(
+      entry,
+      checkRoute,
+      (route) => connectRoute(route.target, reportProgress),
+      reportRouteFailure,
     );
   });
 
@@ -2046,6 +2051,72 @@ describe("EnvironmentSupervisor", () => {
 });
 
 describe("EnvironmentSupervisor routes", () => {
+  it.effect("records why each route failed when every route fails", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          Effect.succeed(route.target._tag === "BearerConnectionTarget" ? "silent" : "unchecked"),
+        prepare: () => Effect.fail(transient("Relay could not reach the environment endpoint.")),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      const state = yield* awaitState(supervisor.state, (value) => value.phase === "backoff");
+      expect(state.routeFailures.map((failure) => [failure.routeId, failure._tag])).toEqual([
+        ["bearer:lan", "NoAnswer"],
+        ["relay", "Failed"],
+      ]);
+
+      yield* supervisor.disconnect;
+      const available = yield* awaitState(supervisor.state, (value) => value.phase === "available");
+      expect(available.routeFailures).toEqual([]);
+    }),
+  );
+
+  it.effect("keeps the failures of routes ahead of the one in use", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        checkRoute: () => Effect.succeed("answered"),
+        prepare: (_attempt, target) =>
+          target._tag === "BearerConnectionTarget"
+            ? Effect.fail(blocked("The environment credential is invalid."))
+            : Effect.succeed(preparedFor(target)),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      const state = yield* awaitState(supervisor.state, (value) => value.phase === "connected");
+      expect(state.routeFailures).toEqual([
+        {
+          _tag: "Failed",
+          routeId: "bearer:lan",
+          error: blocked("The environment credential is invalid."),
+        },
+      ]);
+    }),
+  );
+
+  it.effect("keeps the routes it heard from when setup times out", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          Effect.succeed(route.target._tag === "BearerConnectionTarget" ? "silent" : "unchecked"),
+        prepare: () => Effect.never,
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(supervisor.state, (value) => value.stage === "preparing");
+      yield* TestClock.adjust("31 seconds");
+      const state = yield* awaitState(supervisor.state, (value) => value.phase === "backoff");
+      expect(state.lastFailure?.reason).toBe("timeout");
+      expect(state.routeFailures).toEqual([{ _tag: "NoAnswer", routeId: "bearer:lan" }]);
+    }),
+  );
+
   it.effect("skips a silent LAN route and connects over T3 Connect", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({

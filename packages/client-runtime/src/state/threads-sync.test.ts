@@ -1951,6 +1951,7 @@ describe("EnvironmentThreads", () => {
         generation: 0,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       yield* Queue.offer(harness.inputs, snapshot(BASE_PROJECTION));
       yield* awaitThreadState(harness.observed, (value) => value.status === "live");
@@ -1964,6 +1965,7 @@ describe("EnvironmentThreads", () => {
         generation: 1,
         lastFailure: null,
         retryAt: null,
+        routeFailures: [],
       });
       for (let index = 0; index < 10; index += 1) {
         yield* Effect.yieldNow;

@@ -137,6 +137,14 @@ export type SupervisorConnectionPhase =
 
 export type ConnectionAttemptStage = "preparing" | "opening" | "synchronizing";
 
+/**
+ * A route a connection attempt could not use. `NoAnswer` is a route whose
+ * reachability check went unanswered and that was not tried afterwards.
+ */
+export type ConnectionRouteFailure =
+  | { readonly _tag: "NoAnswer"; readonly routeId: string }
+  | { readonly _tag: "Failed"; readonly routeId: string; readonly error: ConnectionAttemptError };
+
 export interface SupervisorConnectionState {
   readonly desired: boolean;
   readonly network: NetworkStatus;
@@ -146,6 +154,12 @@ export interface SupervisorConnectionState {
   readonly generation: number;
   readonly lastFailure: ConnectionAttemptError | null;
   readonly retryAt: number | null;
+  /**
+   * Routes the last finished attempt could not use. While connected, these
+   * are the routes ahead of the one in use. A retry keeps showing them until
+   * it finishes, so the list does not empty on every attempt.
+   */
+  readonly routeFailures: ReadonlyArray<ConnectionRouteFailure>;
 }
 
 export type ConnectionProjectionPhase = "disconnected" | "synchronizing" | "ready";
@@ -175,4 +189,5 @@ export const AVAILABLE_CONNECTION_STATE: SupervisorConnectionState = Object.free
   generation: 0,
   lastFailure: null,
   retryAt: null,
+  routeFailures: [],
 });

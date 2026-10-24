@@ -84,7 +84,7 @@ describe("available cloud environment presentation", () => {
     });
   });
 
-  it("surfaces an offline relay as an error", () => {
+  it("shows an offline relay without marking the row as failing", () => {
     expect(
       availableCloudEnvironmentPresentation({
         isStatusPending: false,
@@ -95,7 +95,7 @@ describe("available cloud environment presentation", () => {
     ).toEqual({
       connectionError: "Tunnel is unavailable.",
       connectionErrorTraceId: "trace-offline",
-      connectionState: "error",
+      connectionState: "available",
       statusText: "Tunnel is unavailable.",
     });
   });
@@ -127,7 +127,7 @@ describe("available cloud environment presentation", () => {
         statusErrorTraceId: null,
       }),
     ).toMatchObject({
-      connectionState: "error",
+      connectionState: "available",
       statusText: RELAY_TUNNEL_RELEASED_MESSAGE,
       connectionErrorTraceId: "trace-released",
     });
