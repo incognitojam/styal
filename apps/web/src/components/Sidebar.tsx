@@ -231,7 +231,6 @@ import {
   resolveSidebarThreadAttention,
   resolveNextAttentionThread,
   isSidebarThreadWoke,
-  type SidebarThreadAttention,
   resolveThreadLastVisitedAt,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
@@ -291,7 +290,12 @@ import {
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useStableCallback } from "../hooks/useStableCallback";
-import { subscribeNextUnreadThread } from "./sidebar/nextUnreadThreadBus";
+import { SIDEBAR_ATTENTION_STATUS } from "./sidebar/attentionStatus";
+import {
+  type NextUnreadEntryPoint,
+  publishNextUnreadSummary,
+  subscribeNextUnreadThread,
+} from "./sidebar/nextUnreadThreadBus";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button, InlineButton } from "./ui/button";
 import {
@@ -1375,18 +1379,6 @@ function SidebarSectionPlaceholder(props: {
     </SortableSidebarMarker>
   );
 }
-
-const SIDEBAR_ATTENTION_STATUS = {
-  approval: { label: "Approval", icon: "approval", className: "text-warning-foreground" },
-  input: { label: "Input", icon: "input", className: "text-indigo-600 dark:text-indigo-300" },
-  limited: { label: "Limited", icon: "failed", className: "text-warning" },
-  failed: { label: "Failed", icon: "failed", className: "text-error" },
-  woke: { label: "Woke", icon: "woke", className: "text-warning" },
-  done: { label: "Done", icon: "done", className: "text-success" },
-} as const satisfies Record<
-  SidebarThreadAttention,
-  { label: string; icon: string; className: string }
->;
 
 const SIDEBAR_DRAG_DISTANCE = 6;
 
@@ -5050,39 +5042,48 @@ export default function Sidebar() {
     },
   );
 
-  // Opens the thread that most needs the user, as its row status shows it.
-  // Snoozed and settled threads are left out: they come back on their own.
-  const openNextUnreadThread = useStableCallback((entryPoint: "shortcut" | "command_palette") => {
-    const now = new Date().toISOString();
-    const lastVisitedAtById = useUiStateStore.getState().threadLastVisitedAtById;
-    const next = resolveNextAttentionThread(
-      [...pinnedThreads, ...activeThreads, ...workingThreads].map((thread) => {
-        const key = threadShellKey(thread);
-        const lastVisitedAt = resolveThreadLastVisitedAt(
-          thread.lastVisitedAt,
-          lastVisitedAtById[key],
-        );
-        const wokeAt = threadWokeAt(thread, { now });
-        const attention = resolveSidebarThreadAttention({
-          status: resolveSidebarThreadStatus(thread),
-          isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
-          isWoke: isSidebarThreadWoke({
-            wokeAt,
-            lastVisitedAt,
-            settled: thread.settledOverride === "settled",
-          }),
-        });
-        // A woken thread waits from its wake, not from its last run.
-        const waitingSince =
-          attention === "woke" && wokeAt !== null
-            ? Date.parse(wokeAt)
-            : threadInboxReturnedAt(thread, inboxReturns.returnedAt);
-        return { key, attention, waitingSince };
-      }),
-      routeThreadKey,
+  // What each pinned, active and Working thread needs from the user, as its
+  // row status shows it, and how long it has waited. Snoozed and settled
+  // threads are left out: they come back on their own.
+  const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const unreadCandidates = [...pinnedThreads, ...activeThreads, ...workingThreads].map((thread) => {
+    const key = threadShellKey(thread);
+    const lastVisitedAt = resolveThreadLastVisitedAt(
+      thread.lastVisitedAt,
+      threadLastVisitedAtById[key],
     );
-    const target = next === null ? undefined : threadByKey.get(next.key);
-    if (next === null || target === undefined) {
+    const wokeAt = threadWokeAt(thread, { now: snoozeNow });
+    const attention = resolveSidebarThreadAttention({
+      status: resolveSidebarThreadStatus(thread),
+      isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
+      isWoke: isSidebarThreadWoke({
+        wokeAt,
+        lastVisitedAt,
+        settled: thread.settledOverride === "settled",
+      }),
+    });
+    // A woken thread waits from its wake, not from its last run.
+    const waitingSince =
+      attention === "woke" && wokeAt !== null
+        ? Date.parse(wokeAt)
+        : threadInboxReturnedAt(thread, inboxReturns.returnedAt);
+    return { key, attention, waitingSince };
+  });
+  const nextUnread = resolveNextAttentionThread(unreadCandidates, routeThreadKey);
+  const unreadCount = unreadCandidates.filter(
+    (candidate) => candidate.attention !== null && candidate.key !== routeThreadKey,
+  ).length;
+  const nextUnreadAttention = nextUnread?.attention ?? null;
+  useEffect(() => {
+    publishNextUnreadSummary(
+      nextUnreadAttention === null ? null : { count: unreadCount, attention: nextUnreadAttention },
+    );
+  }, [nextUnreadAttention, unreadCount]);
+  useEffect(() => () => publishNextUnreadSummary(null), []);
+
+  const openNextUnreadThread = useStableCallback((entryPoint: NextUnreadEntryPoint) => {
+    const target = nextUnread === null ? undefined : threadByKey.get(nextUnread.key);
+    if (nextUnread === null || target === undefined) {
       toastManager.add({ type: "info", title: "No unread threads" });
       void reportSidebarUsage({
         feature: "next-unread-thread",
@@ -5095,12 +5096,12 @@ export default function Sidebar() {
     void reportSidebarUsage({
       feature: "next-unread-thread",
       action: "opened",
-      attention: next.attention,
+      attention: nextUnread.attention,
       entryPoint,
     });
   });
   useEffect(
-    () => subscribeNextUnreadThread(() => openNextUnreadThread("command_palette")),
+    () => subscribeNextUnreadThread((entryPoint) => openNextUnreadThread(entryPoint)),
     [openNextUnreadThread],
   );
 

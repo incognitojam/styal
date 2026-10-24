@@ -2011,7 +2011,7 @@ function OpenCommandPaletteDialog(props: {
       icon: <InboxIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "thread.nextUnread",
       run: async () => {
-        requestNextUnreadThread();
+        requestNextUnreadThread("command_palette");
       },
     });
   }
