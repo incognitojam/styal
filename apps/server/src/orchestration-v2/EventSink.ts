@@ -84,6 +84,10 @@ export interface EventSinkV2Shape {
     readonly runId: RunId;
     readonly activeAttemptId: RunAttemptId;
     readonly expectedStatus: OrchestrationV2Run["status"];
+    readonly providerStallGuard?: {
+      readonly lastActivityAt: number;
+      readonly phase: "startup" | "provider_silent";
+    };
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
     readonly effects?: ReadonlyArray<EffectOutbox.PendingOrchestrationEffectV2>;
   }) => Effect.Effect<
@@ -425,6 +429,22 @@ const layerBase: Layer.Layer<
                 committed: false as const,
                 storedEvents: [] as ReadonlyArray<OrchestrationV2StoredEvent>,
               };
+            }
+
+            if (input.providerStallGuard !== undefined) {
+              const observation = (yield* projectionStore.getProviderStallCandidates(
+                input.runId,
+              ))[0];
+              if (
+                observation === undefined ||
+                observation.blocked ||
+                observation.phase !== input.providerStallGuard.phase ||
+                observation.lastActivityAt !== input.providerStallGuard.lastActivityAt
+              )
+                return {
+                  committed: false as const,
+                  storedEvents: [] as ReadonlyArray<OrchestrationV2StoredEvent>,
+                };
             }
 
             const normalized = yield* normalizeEvents(

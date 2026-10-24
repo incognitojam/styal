@@ -1,4 +1,10 @@
-import { RunId, ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@t3tools/contracts";
+import {
+  RunAttemptId,
+  RunId,
+  ThreadId,
+  TurnItemId,
+  type OrchestrationV2TurnItem,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -64,6 +70,28 @@ function errorItem(
 }
 
 describe("runtime diagnostics in the v2 work log", () => {
+  it("clears the warning tone when a retained stall incident resolves", () => {
+    const notice = {
+      ...baseItem,
+      type: "system_notice" as const,
+      message: "The agent may be stuck.",
+      providerStall: {
+        attemptId: RunAttemptId.make("stall-attempt"),
+        phase: "provider_silent" as const,
+        detectedAt: 600_000,
+        lastActivityAt: 0,
+      },
+    };
+    expect(workEntry(notice).sourceActivityKind).toBe("runtime.warning");
+    const resolved = workEntry({
+      ...notice,
+      message: "Agent activity resumed.",
+      providerStall: { ...notice.providerStall, resolvedAt: 601_000, resolution: "activity" },
+    });
+    expect(resolved.sourceActivityKind).toBeUndefined();
+    expect(workEntryDisplayLabel(resolved, undefined)).toBe("Agent activity resumed.");
+  });
+
   it("shows the retained error message in place of a generic row label", () => {
     const entry = workEntry(errorItem());
 
