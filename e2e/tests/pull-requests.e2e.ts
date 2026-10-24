@@ -31,12 +31,14 @@ describe("fork pull request workflows", () => {
   beforeAll(async () => {
     environment = await startEnvironment({ pullRequests: [waiting, ready] });
     app = await openApp(environment);
-    await app.page.route("https://**/*", (route) => route.abort());
   });
 
   afterAll(async () => {
-    await app?.close();
-    await environment?.stop();
+    try {
+      await app?.close();
+    } finally {
+      await environment?.stop();
+    }
   });
 
   it("restores a numeric URL search and accepts a pasted pull request URL", async () => {

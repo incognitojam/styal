@@ -13,8 +13,11 @@ describe("group sidebar threads by project", () => {
   });
 
   afterAll(async () => {
-    await app?.close();
-    await environment?.stop();
+    try {
+      await app?.close();
+    } finally {
+      await environment?.stop();
+    }
   });
 
   it("shows project headers, and pins and archives projects from a header", async () => {

@@ -29,8 +29,11 @@ describe("start a thread from a GitHub issue", () => {
   });
 
   afterAll(async () => {
-    await app?.close();
-    await environment?.stop();
+    try {
+      await app?.close();
+    } finally {
+      await environment?.stop();
+    }
   });
 
   it("attaches the issue as a composer chip and sends its contents to the provider", async () => {

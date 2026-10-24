@@ -2,11 +2,11 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeNet from "node:net";
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
-import { hasTestFailed, markFailed } from "./failures.ts";
+import { markFailed } from "./failures.ts";
+import { ownProcess, stateResources } from "./resources.ts";
 import {
   type FakeGitHubApiRequest,
   type FakeGitHubPullRequest,
@@ -90,7 +90,20 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
   if (!NodeFS.existsSync(WEB_DIST_INDEX)) {
     throw new Error("apps/web/dist is missing. Build it first: vp run --filter @t3tools/web build");
   }
-  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "styal-e2e-"));
+  const state = stateResources("styal-e2e-");
+  try {
+    return await setupEnvironment(options, state);
+  } catch (error) {
+    markFailed();
+    await state.stop();
+    throw error;
+  }
+}
+
+async function setupEnvironment(
+  options: EnvironmentOptions,
+  { root, resources, stop }: ReturnType<typeof stateResources>,
+): Promise<Environment> {
   const home = NodePath.join(root, "home");
   const baseDir = NodePath.join(root, "styal");
   const bin = NodePath.join(root, "bin");
@@ -112,6 +125,16 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
 
   writeLauncher(NodePath.join(bin, "gh"), FAKE_GH, { E2E_GH_CALL_LOG: ghCallLog });
   const gitHubApi = await startFakeGitHubApi(options.issues ?? [], options.pullRequests ?? []);
+  resources.defer(async () => {
+    try {
+      await gitHubApi.stop();
+    } finally {
+      NodeFS.writeFileSync(
+        NodePath.join(root, "github-api-requests.json"),
+        JSON.stringify(gitHubApi.requests(), null, 2),
+      );
+    }
+  });
 
   const scenarioPath = NodePath.join(root, "codex-scenario.json");
   NodeFS.writeFileSync(scenarioPath, JSON.stringify(options.scenario ?? { turns: [] }));
@@ -157,6 +180,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
   const serverLog = NodeFS.openSync(serverLogPath, "w");
+  resources.defer(() => NodeFS.closeSync(serverLog));
   const server = NodeChildProcess.spawn(
     process.execPath,
     [
@@ -174,36 +198,16 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
     ],
     { cwd: projectDir, env, stdio: ["ignore", serverLog, serverLog] },
   );
-  const exited = new Promise<void>((resolve) => server.once("exit", () => resolve()));
+  const assertRunning = ownProcess(resources, server, 10_000);
   const readServerLog = () => NodeFS.readFileSync(serverLogPath, "utf8");
-
-  const stop = async () => {
-    if (server.exitCode === null && server.signalCode === null) {
-      server.kill("SIGTERM");
-      const killTimer = setTimeout(() => server.kill("SIGKILL"), 10_000);
-      await exited;
-      clearTimeout(killTimer);
-    }
-    NodeFS.closeSync(serverLog);
-    await gitHubApi.stop();
-    if (process.env.E2E_KEEP_STATE || hasTestFailed()) {
-      process.stderr.write(`e2e state kept at ${root}\n`);
-    } else {
-      NodeFS.rmSync(root, { recursive: true, force: true });
-    }
-  };
-
-  let pairingUrl: string;
-  try {
-    pairingUrl = await waitFor("the server's pairing URL", () => {
-      if (server.exitCode !== null) throw new Error(`The server exited:\n${readServerLog()}`);
+  const pairingUrl = await waitFor(
+    "the server's pairing URL",
+    () => {
+      assertRunning();
       return /(?:Pairing URL|pairingUrl): (\S+)/.exec(readServerLog())?.[1];
-    });
-  } catch (error) {
-    markFailed();
-    await stop();
-    throw error;
-  }
+    },
+    readServerLog,
+  );
 
   return {
     root,
@@ -283,12 +287,23 @@ export function freePort(): Promise<number> {
   });
 }
 
-export async function waitFor<T>(description: string, read: () => T | undefined): Promise<T> {
+export async function waitFor<T>(
+  description: string,
+  read: () => T | undefined,
+  diagnostics?: () => string,
+): Promise<T> {
   const deadline = Date.now() + 90_000;
-  for (;;) {
-    const value = read();
-    if (value !== undefined) return value;
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${description}.`);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+  try {
+    for (;;) {
+      const value = read();
+      if (value !== undefined) return value;
+      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${description}.`);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  } catch (error) {
+    if (!diagnostics) throw error;
+    throw new Error(`${String(error)}\nServer log tail:\n${diagnostics().slice(-8_000)}`, {
+      cause: error,
+    });
   }
 }

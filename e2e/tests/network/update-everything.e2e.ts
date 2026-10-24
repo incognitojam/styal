@@ -19,16 +19,17 @@ describe("update everything from the sidebar", () => {
     if (!CLIENT_VERSION || !SERVER_VERSION) {
       throw new Error("Set E2E_CLIENT_VERSION and E2E_PREVIOUS_SERVER_VERSION.");
     }
-    [environment, server] = await Promise.all([
-      startEnvironment(),
-      startPublishedServer(SERVER_VERSION),
-    ]);
+    environment = await startEnvironment();
+    server = await startPublishedServer(SERVER_VERSION);
     app = await openApp(environment);
   });
 
   afterAll(async () => {
-    await app?.close();
-    await Promise.all([environment?.stop(), server?.stop()]);
+    try {
+      await app?.close();
+    } finally {
+      await Promise.all([environment?.stop(), server?.stop()]);
+    }
   });
 
   it("updates a server behind this client through its service launcher", async () => {
