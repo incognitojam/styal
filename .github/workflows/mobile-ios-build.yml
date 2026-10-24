@@ -35,6 +35,9 @@ on:
         type: string
         default: ""
   workflow_dispatch:
+  # Temporary: lets the workflow run before it exists on main. Drop before merging.
+  push:
+    branches: [styal/mobile-ios-production-builds]
 
 env:
   APP_VARIANT: production
