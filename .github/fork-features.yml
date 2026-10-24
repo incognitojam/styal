@@ -2032,6 +2032,28 @@ features:
       tracking: []
       retire_when: The fork stops managing its own upstream intake or adopts another process that preserves explicit reconciliation of provisional imports.
 
+  - id: git-index-copy-without-block-clone
+    title: Copy the Git index without a filesystem block clone
+    status: maintained
+    prs: []
+    invariants:
+      - Checkpoint capture, commit-context preparation and the working-tree review diff copy `.git/index` into their private index by reading and writing its bytes, so a turn never waits on a filesystem sync before the provider starts.
+    rationale: Node's `fs.copyFile` uses `copy_file_range`, which OpenZFS 2.2+ turns into a block clone. With `zfs_bclone_wait_dirty=1`, cloning an index Git just rewrote waits for the next transaction group sync, which took from seconds to minutes on a busy pool, and V2 runs wait for the baseline checkpoint before starting the provider. Upstream still copies with `copyFile`. Compared with upstream revision bb7783e295 on October 24, 2026.
+    implementation_paths:
+      - apps/server/src/vcs/GitVcsDriver.ts
+      - apps/server/src/vcs/GitVcsDriverCore.ts
+    upstream_paths:
+      - apps/server/src/vcs/GitVcsDriver.ts
+      - apps/server/src/vcs/GitVcsDriverCore.ts
+    tests:
+      - apps/server/src/orchestration-v2/CheckpointCaptureService.test.ts
+      - apps/server/src/vcs/GitVcsDriver.test.ts
+      - e2e/tests/chat-smoke.e2e.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream copies the Git index without `copyFile`, or OpenZFS stops waiting for a sync when cloning dirty blocks.
+
   - id: github-issue-thread-context
     title: Start a thread from a GitHub issue
     status: review-needed
