@@ -138,10 +138,16 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
+          remote_before="$(eas build:version:get --platform ios --profile production --json --non-interactive | sed -n '/^{/,$p' | jq -r '.buildNumber // .appBuildVersion // empty')"
+          echo "Remote iOS build number before: $remote_before"
           started="$(date +%s)"
-          eas build --local --platform ios --profile ci-trial --non-interactive \
+          eas build --local --platform ios --profile production --non-interactive \
             --output "$RUNNER_TEMP/styal.ipa"
+          remote_after="$(eas build:version:get --platform ios --profile production --json --non-interactive | sed -n '/^{/,$p' | jq -r '.buildNumber // .appBuildVersion // empty')"
+          echo "Remote iOS build number after: $remote_after"
+          echo "- remote build number before \`$remote_before\`, after \`$remote_after\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- eas build --local took $(( ($(date +%s) - started) / 60 )) minutes" >> "$GITHUB_STEP_SUMMARY"
           df -h / | tail -1
 
