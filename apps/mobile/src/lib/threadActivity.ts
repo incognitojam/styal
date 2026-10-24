@@ -36,6 +36,7 @@ import {
   summarizeToolGroup,
   toolGroupSummaryKind,
   memoryRowLabel,
+  workEntryReadsMemoryFile,
   workEntryMemoryFileKind,
   type ToolGroupSummaryKind,
   type WorkLogPresentationEntry,
@@ -327,7 +328,7 @@ export function workEntryRowLabel(entry: WorkLogPresentationEntry, expanded = fa
   if (presentation) return presentation.displayName;
   if (entry.command?.trim()) return compactWorkEntryText(commandDisplayText(entry.command));
   const action = toolGroupAction(entry);
-  if (action === "memory") return memoryRowLabel(entry);
+  if (action === "memory" || workEntryReadsMemoryFile(entry)) return memoryRowLabel(entry);
   const isToolRead = action === "read" && entry.itemType === "dynamic_tool";
   if (action === "code-search" || action === "search") {
     const toolData =
@@ -946,7 +947,11 @@ function singleToolCallLabel(activity: ThreadFeedActivity, expanded: boolean): s
       : compactWorkEntryText(activity.workEntry.detail ?? "") || "Thought";
   const presentation = resolveWorkEntryToolPresentation(activity.workEntry, "completed");
   if (presentation) return presentation.displayName;
-  if (toolGroupAction(activity.workEntry) === "memory") return memoryRowLabel(activity.workEntry);
+  if (
+    toolGroupAction(activity.workEntry) === "memory" ||
+    workEntryReadsMemoryFile(activity.workEntry)
+  )
+    return memoryRowLabel(activity.workEntry);
   const command = activity.workEntry.command?.trim();
   return command || activity.summary;
 }
@@ -1777,7 +1782,11 @@ function liveToolActivitySummary(activity: ThreadFeedActivity, presentTense: boo
     toolLifecycleStatus: status,
   });
   if (presentation) return presentation.displayName;
-  if (toolGroupAction(activity.workEntry) === "memory") return memoryRowLabel(activity.workEntry);
+  if (
+    toolGroupAction(activity.workEntry) === "memory" ||
+    workEntryReadsMemoryFile(activity.workEntry)
+  )
+    return memoryRowLabel(activity.workEntry);
   const command = activity.workEntry.command?.trim();
   if (command) {
     const program = commandProgramName(command);

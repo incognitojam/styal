@@ -223,6 +223,44 @@ describe("deriveToolRowPresentation", () => {
     ).toEqual({ heading: "Updated memory index" });
   });
 
+  it("names memory reads without the projects path", () => {
+    expect(
+      deriveToolRowPresentation({
+        toolName: "Read",
+        itemType: "dynamic_tool_call",
+        label: "Read /Users/x/.claude/projects/-p/memory/chart-hover.md",
+        input: { file_path: "/Users/x/.claude/projects/-p/memory/chart-hover.md" },
+      }),
+    ).toEqual({ heading: "Read memory", argument: { kind: "text", value: "chart-hover" } });
+
+    expect(
+      deriveToolRowPresentation({
+        toolName: "Read",
+        itemType: "dynamic_tool_call",
+        input: { file_path: "/Users/x/.claude/projects/-p/memory/MEMORY.md" },
+      }),
+    ).toEqual({ heading: "Read memory index" });
+
+    expect(
+      deriveToolRowPresentation({
+        toolName: "Read",
+        itemType: "dynamic_tool_call",
+        label: "Read /repo/docs/memory/design.md",
+        input: { file_path: "/repo/docs/memory/design.md" },
+      })?.heading,
+    ).toBe("Read /repo/docs/memory/design.md");
+
+    // A read is not a memory update, so it keeps counting as a file read.
+    expect(
+      memoryFileToolKind(
+        "Read",
+        { file_path: "/Users/x/.claude/projects/-p/memory/chart-hover.md" },
+        undefined,
+        "dynamic_tool",
+      ),
+    ).toBeUndefined();
+  });
+
   it("recognizes memory writes in projected file changes, which name no tool", () => {
     expect(
       deriveToolRowPresentation({

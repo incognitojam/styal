@@ -6,6 +6,7 @@ import {
 } from "@t3tools/shared/reviewFindings";
 import {
   deriveToolRowPresentation,
+  memoryFileReadPath,
   memoryFileToolKind,
   memoryFileToolPath,
 } from "@t3tools/shared/toolRowPresentation";
@@ -571,7 +572,20 @@ export function workEntryMemoryFilePath(entry: WorkLogPresentationEntry) {
   );
 }
 
-/** "Updated memory - <name>", or "Updated memory index" for MEMORY.md. */
+/** Whether the entry read a Claude memory file or the memory index. */
+export function workEntryReadsMemoryFile(entry: WorkLogPresentationEntry): boolean {
+  return (
+    memoryFileReadPath(
+      structuredWorkEntryToolName(entry),
+      asRecord(workEntryToolInput(entry)) ?? undefined,
+    ) !== undefined
+  );
+}
+
+/**
+ * "Updated memory - <name>" or "Read memory - <name>", with "Updated memory
+ * index" and "Read memory index" for MEMORY.md.
+ */
 export function memoryRowLabel(entry: WorkLogPresentationEntry): string {
   const row = resolveWorkEntryToolRowPresentation(entry);
   if (!row) return entry.label;

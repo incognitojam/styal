@@ -14,6 +14,7 @@ import {
   resolveWorkEntryToolPresentation,
   resolveWorkEntryToolRowPresentation,
   memoryRowLabel,
+  workEntryReadsMemoryFile,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
@@ -275,6 +276,26 @@ describe("summarizeToolGroup", () => {
     expect(memoryRowLabel({ ...memory("first"), toolLifecycleStatus: "stopped" })).toBe(
       "Edit stopped - first",
     );
+  });
+
+  it("names memory reads without counting them as memory updates", () => {
+    const read = (id: string, path: string) =>
+      entry(id, {
+        label: `Read ${path}`,
+        itemType: "dynamic_tool",
+        toolName: "Read",
+        toolInput: { file_path: path },
+      });
+    const memory = read("memory", "/synthetic/.claude/projects/-demo/memory/first.md");
+    const index = read("index", "/synthetic/.claude/projects/-demo/memory/MEMORY.md");
+    const repo = read("repo", "/synthetic/docs/memory/design.md");
+
+    expect(workEntryReadsMemoryFile(memory)).toBe(true);
+    expect(workEntryReadsMemoryFile(repo)).toBe(false);
+    expect(memoryRowLabel(memory)).toBe("Read memory - first");
+    expect(memoryRowLabel(index)).toBe("Read memory index");
+    // A read is not a memory update.
+    expect(toolGroupAction(memory)).not.toBe("memory");
   });
 
   it("counts created threads alongside adjacent commands", () => {

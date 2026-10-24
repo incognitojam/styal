@@ -144,6 +144,16 @@ export function memoryFileToolPath(
   return memorySlug(path) ? path : undefined;
 }
 
+/** The memory file, or memory index, a Read call opened. */
+export function memoryFileReadPath(
+  toolName: string | undefined,
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!toolName || normalizeKnownToolName(toolName) !== "Read") return undefined;
+  const path = toolFilePath(input, undefined);
+  return memorySlug(path) ? path : undefined;
+}
+
 export function memoryFileToolKind(
   toolName: string | undefined,
   input: Record<string, unknown> | undefined,
@@ -751,6 +761,14 @@ function deriveBaseToolRowPresentation(
       heading: toolName === "Write" ? "Saved memory" : "Updated memory",
       argument: { kind: "text", value: memory },
     };
+  }
+
+  // Reads stay file reads in group and fold counts; only the row names the
+  // memory instead of printing its path under the projects directory.
+  const readMemory = memorySlug(memoryFileReadPath(toolName, toolInput));
+  if (readMemory === "MEMORY") return { heading: "Read memory index" };
+  if (readMemory) {
+    return { heading: "Read memory", argument: { kind: "text", value: readMemory } };
   }
 
   const override = toolName ? overrideHeading(toolName) : undefined;

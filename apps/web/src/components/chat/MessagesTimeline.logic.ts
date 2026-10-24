@@ -25,6 +25,7 @@ import {
   workEntryReviewFindings,
   workEntryIsStoppedToolCall,
   memoryRowLabel,
+  workEntryReadsMemoryFile,
   workEntryMemoryFileKind,
   workEntryMemoryFilePath,
   type ToolGroupSummaryKind,
@@ -152,7 +153,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command?.trim()) return commandDisplayText(entry.command);
   const action = toolGroupAction(entry);
-  if (action === "memory") return memoryRowLabel(entry);
+  if (action === "memory" || workEntryReadsMemoryFile(entry)) return memoryRowLabel(entry);
   if (action === "code-search" || action === "search") {
     const searchLabel =
       entry.itemType === "file_search"
