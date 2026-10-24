@@ -236,13 +236,19 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     Effect.suspend(() =>
       !hosts.has(hostId)
         ? SynchronizedRef.get(stateRef).pipe(Effect.map(({ state }) => state))
-        : publish((state) => ({
-            ...state,
-            ...(hostId === LOCAL_DEVICE_HOST_ID
-              ? { hostStatus: status.status, hostStatusDetail: status.detail }
-              : {}),
-            hostStatuses: { ...state.hostStatuses, [hostId]: status },
-          })),
+        : publish((state) => {
+            // MCP structured content rejects keys set to undefined, so a missing detail is omitted.
+            const entry = status.detail === undefined ? { status: status.status } : status;
+            const hostStatuses = { ...state.hostStatuses, [hostId]: entry };
+            if (hostId !== LOCAL_DEVICE_HOST_ID) return { ...state, hostStatuses };
+            const { hostStatusDetail: _previous, ...rest } = state;
+            return {
+              ...rest,
+              hostStatus: entry.status,
+              ...(entry.detail === undefined ? {} : { hostStatusDetail: entry.detail }),
+              hostStatuses,
+            };
+          }),
     );
 
   // Environment hosts wait on another server. Holding the lifecycle lock across that
