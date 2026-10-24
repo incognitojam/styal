@@ -2,7 +2,12 @@ import type {
   SubagentWorkflowGroup,
   RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import type { ProviderDriverKind, ProviderInstanceId, ServerProvider } from "@t3tools/contracts";
+import type {
+  OrchestrationV2ThreadShell,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ServerProvider,
+} from "@t3tools/contracts";
 import { ChevronDownIcon, LoaderCircleIcon, SquareIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -53,7 +58,7 @@ function WorkflowMemberRow({
   providers,
   driver,
   onOpen,
-  isThreadAvailable,
+  getThread,
 }: {
   member: RuntimeSubagent;
   providerInstanceId: ProviderInstanceId;
@@ -61,10 +66,11 @@ function WorkflowMemberRow({
   providers: ReadonlyArray<ServerProvider> | undefined;
   driver: ProviderDriverKind | undefined;
   onOpen: (threadId: string) => void;
-  isThreadAvailable: (threadId: string) => boolean;
+  getThread: (threadId: string) => OrchestrationV2ThreadShell | undefined;
 }) {
   const threadId = member.childThreadId;
-  const canOpen = threadId !== null && isThreadAvailable(threadId);
+  const childThread = threadId === null ? undefined : getThread(threadId);
+  const canOpen = threadId !== null && childThread !== undefined;
   return (
     <li>
       <Tooltip>
@@ -101,6 +107,7 @@ function WorkflowMemberRow({
             status={member.status}
             result={member.result ?? member.error}
             progress={member.progress}
+            tokenUsage={childThread?.tokenUsage}
           />
         </ThreadHoverCardPopup>
       </Tooltip>
@@ -116,7 +123,7 @@ export function ThreadLineageWorkflowRow({
   providers,
   driver,
   onOpenThread,
-  isThreadAvailable,
+  getThread,
   onStop,
   stopping,
   stopDisabled,
@@ -128,7 +135,7 @@ export function ThreadLineageWorkflowRow({
   readonly providers: ReadonlyArray<ServerProvider> | undefined;
   readonly driver: ProviderDriverKind | undefined;
   readonly onOpenThread: (threadId: string) => void;
-  readonly isThreadAvailable: (threadId: string) => boolean;
+  readonly getThread: (threadId: string) => OrchestrationV2ThreadShell | undefined;
   readonly onStop?: (() => void) | undefined;
   readonly stopping: boolean;
   readonly stopDisabled: boolean;
@@ -226,7 +233,7 @@ export function ThreadLineageWorkflowRow({
                         providers={providers}
                         driver={driver}
                         onOpen={onOpenThread}
-                        isThreadAvailable={isThreadAvailable}
+                        getThread={getThread}
                       />
                     ))}
                   </ul>
@@ -243,7 +250,7 @@ export function ThreadLineageWorkflowRow({
               providers={providers}
               driver={driver}
               onOpen={onOpenThread}
-              isThreadAvailable={isThreadAvailable}
+              getThread={getThread}
             />
           ))}
           {phases.length === 0 && group.unphasedMembers.length === 0 ? (
