@@ -160,7 +160,8 @@ answer, threads stopped by a usage limit or a failed run, and threads that woke 
 opens the most urgent first, in that order: approval, answer, usage limit or failure, woke, then
 unread. Threads of the same kind open in sidebar order, and the open thread is skipped, so pressing
 it again moves on. Snoozed and settled threads are left out. It is also in the command palette as
-**Go to next unread thread**.
+**Go to next unread thread**. While another thread is waiting, a button above the composer shows how
+many are waiting and the status of the next one; clicking it does the same thing.
 
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.
