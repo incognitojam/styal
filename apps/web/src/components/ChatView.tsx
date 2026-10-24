@@ -6,6 +6,7 @@ import { LogInIcon } from "lucide-react";
 import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { NextUnreadChip } from "./chat/NextUnreadChip";
+import { useNextUnreadSummary } from "./sidebar/nextUnreadThreadBus";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
 import {
   isThreadWokeUnseen,
@@ -1322,6 +1323,8 @@ export default function ChatView(props: ChatViewProps) {
   };
   const citeAssistantTextStable = useStableCallback(citeAssistantText);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  // Re-measures the scroll row when the next unread button beside it changes.
+  const nextUnreadSummary = useNextUnreadSummary((state) => state.summary);
   const [isWorkspaceFileDragActive, setIsWorkspaceFileDragActive] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   useEffect(() => {
@@ -4990,15 +4993,27 @@ export default function ChatView(props: ChatViewProps) {
     const mainSurface = composerOverlayElement?.querySelector<HTMLElement>(
       '[data-chat-composer-main-surface="true"]',
     );
-    const button = composerOverlayElement?.parentElement?.querySelector<HTMLElement>(
-      'button[aria-label="Scroll to end"]',
+    // Scroll to end can share its row with the next unread button, so the
+    // clearance covers both.
+    const rowButtons = Array.from(
+      composerOverlayElement?.parentElement?.querySelectorAll<HTMLElement>(
+        '[data-scroll-to-end-row="true"] button',
+      ) ?? [],
+      (element) => element.getBoundingClientRect(),
     );
+    const button =
+      rowButtons.length === 0
+        ? null
+        : {
+            left: Math.min(...rowButtons.map((rect) => rect.left)),
+            right: Math.max(...rowButtons.map((rect) => rect.right)),
+          };
     const clearance =
       composerOverlayElement && mainSurface && button
         ? resolveScrollToEndClearance({
             overlayHeight: nextHeight,
             mainSurfaceTop: mainSurface.getBoundingClientRect().top,
-            button: button.getBoundingClientRect(),
+            button,
             attachments: Array.from(
               composerOverlayElement.querySelectorAll<HTMLElement>(
                 '[data-composer-banner-surface="attached"]',
@@ -5033,8 +5048,13 @@ export default function ChatView(props: ChatViewProps) {
 
     updateHeight();
     return observeResize(composerOverlayElement, updateHeight);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The scroll-to-bottom button changes the overlay's height without resizing the observed node first.
-  }, [composerOverlayElement, publishComposerOverlayHeightStable, showScrollToBottom]);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The scroll-to-bottom row and the next unread button beside it change the clearance without resizing the observed node first.
+  }, [
+    composerOverlayElement,
+    publishComposerOverlayHeightStable,
+    showScrollToBottom,
+    nextUnreadSummary,
+  ]);
   useLayoutEffect(() => {
     if (composerMountedRef.current === composerMounted) return;
     composerMountedRef.current = composerMounted;
@@ -8535,6 +8555,7 @@ export default function ChatView(props: ChatViewProps) {
               ) : null}
               {showScrollToBottom && !isThreadFindActive && (
                 <div
+                  data-scroll-to-end-row="true"
                   className="chat-scroll-to-bottom pointer-events-none absolute z-30 flex justify-center gap-2 py-1.5"
                   style={{ bottom: scrollToEndClearance + 4 }}
                 >
