@@ -61,6 +61,11 @@ export interface Environment {
   /** One-time pairing URL printed at startup. */
   readonly pairingUrl: string;
   readonly projectDir: string;
+  /**
+   * Creates a folder with a README next to `projectDir`, ready to add as a project. It is a git
+   * repository with one commit unless `git` is false; a plain folder skips turn checkpoints.
+   */
+  readonly createProject: (name: string, options?: { readonly git?: boolean }) => string;
   /** Turns fake-codex has started, oldest first. */
   readonly codexTurns: () => ReadonlyArray<CodexTurnRequest>;
   /** Argument lists of every `gh` call, oldest first. */
@@ -93,7 +98,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
   const codexRequestLog = NodePath.join(root, "codex-requests.jsonl");
   const ghCallLog = NodePath.join(root, "gh-calls.jsonl");
   const serverLogPath = NodePath.join(root, "server.log");
-  for (const directory of [home, bin, projectDir, NodePath.join(baseDir, "userdata")]) {
+  for (const directory of [home, bin, NodePath.join(baseDir, "userdata")]) {
     NodeFS.mkdirSync(directory, { recursive: true });
   }
 
@@ -134,13 +139,20 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
   );
 
   const env = { ...isolatedEnv(home, bin), T3CODE_TEST_GITHUB_API_URL: gitHubApi.url };
-  const git = (...args: ReadonlyArray<string>) =>
-    NodeChildProcess.execFileSync("git", args, { cwd: projectDir, env, stdio: "ignore" });
-  git("init", "-q");
-  git("remote", "add", "origin", `https://github.com/e2e-org/${PROJECT_NAME}.git`);
-  NodeFS.writeFileSync(NodePath.join(projectDir, "README.md"), `# ${PROJECT_NAME}\n`);
-  git("add", "README.md");
-  git("commit", "-q", "-m", "Initial commit");
+  const createProject: Environment["createProject"] = (name, options = {}) => {
+    const directory = NodePath.join(NodePath.dirname(projectDir), name);
+    NodeFS.mkdirSync(directory, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(directory, "README.md"), `# ${name}\n`);
+    if (options.git === false) return directory;
+    const git = (...args: ReadonlyArray<string>) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, env, stdio: "ignore" });
+    git("init", "-q");
+    git("remote", "add", "origin", `https://github.com/e2e-org/${name}.git`);
+    git("add", "README.md");
+    git("commit", "-q", "-m", "Initial commit");
+    return directory;
+  };
+  createProject(PROJECT_NAME);
 
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
@@ -198,6 +210,7 @@ export async function startEnvironment(options: EnvironmentOptions = {}): Promis
     origin,
     pairingUrl,
     projectDir,
+    createProject,
     codexTurns: () => readJsonLines<CodexTurnRequest>(codexRequestLog),
     ghCalls: () => readJsonLines<ReadonlyArray<string>>(ghCallLog),
     gitHubApiRequests: gitHubApi.requests,

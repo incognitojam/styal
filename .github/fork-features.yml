@@ -4383,6 +4383,7 @@ features:
       - apps/web/src/components/Sidebar.tsx
       - packages/client-runtime/src/state/threadSettled.ts
     tests:
+      - e2e/tests/thread-settlement.e2e.ts
       - packages/client-runtime/src/state/threadSettled.test.ts
     upstream:
       status: partial
@@ -4612,6 +4613,7 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/Sidebar.drag.test.ts
       - apps/web/src/components/Sidebar.logic.test.ts
+      - e2e/tests/sidebar-project-groups.e2e.ts
     upstream:
       status: tracking
       tracking:

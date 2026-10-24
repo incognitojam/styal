@@ -94,3 +94,34 @@ export async function addEnvironment(page: Page, pairingUrl: string): Promise<vo
   await dialog.getByRole("button", { name: "Add environment" }).click();
   await page.getByText(`${new URL(pairingUrl).origin}/ · Connected`).waitFor({ timeout: 60_000 });
 }
+
+/**
+ * Sends `text` from the composer and waits for `reply`, which defaults to fake-codex's echo,
+ * and then for the turn to finish.
+ */
+export async function sendMessage(
+  app: App,
+  text: string,
+  reply = `Fake Codex reply to: ${text}`,
+): Promise<void> {
+  const { page, composer } = app;
+  await composer.click();
+  await page.keyboard.type(text);
+  await page.getByRole("button", { name: "Submit message" }).click();
+  await page.locator("[data-message-role=user]").filter({ hasText: text }).last().waitFor();
+  await page.getByText(reply).last().waitFor();
+  await page.getByRole("button", { name: "Stop generation" }).waitFor({ state: "hidden" });
+}
+
+/**
+ * Adds the folder at `path` as a project through the command palette, and waits for the new
+ * thread draft in it.
+ */
+export async function addProject(page: Page, path: string): Promise<void> {
+  await runPaletteItem(page, "add project", "Add project");
+  await page.keyboard.type(`${path}/`);
+  await page.getByRole("button", { name: "Add (Enter)" }).waitFor();
+  await page.keyboard.press("Enter");
+  const name = path.split("/").at(-1);
+  await page.getByRole("button", { name: `New thread in ${name}` }).waitFor();
+}
