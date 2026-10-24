@@ -335,7 +335,7 @@ function relayEnvironmentResponse(pathname: string): Promise<Response> {
           scope: AuthStandardClientScopes.join(" "),
         }),
       );
-    case "/api/auth/websocket-ticket":
+    case "/api/auth/websocket-ticket/rpc":
       return Promise.resolve(
         Response.json({
           ticket: "ws-ticket",
@@ -1151,7 +1151,7 @@ describe("EnvironmentSupervisor", () => {
       const connected = yield* awaitState(supervisor.state, (state) => state.phase === "connected");
       expect(connected).toMatchObject({ attempt: 1, lastFailure: null });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(httpPaths).toEqual(["/api/auth/websocket-ticket"]);
+      expect(httpPaths).toEqual(["/api/auth/websocket-ticket/rpc"]);
       const session = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.session));
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "access-token-1" });
@@ -1178,7 +1178,7 @@ describe("EnvironmentSupervisor", () => {
       expect(failure._tag).toBe("RemoteEnvironmentAuthFetchError");
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(2);
       expect(sessionAuthorizations).toEqual(["DPoP access-token-2"]);
-      expect(httpPaths.filter((path) => path === "/api/auth/websocket-ticket")).toHaveLength(1);
+      expect(httpPaths.filter((path) => path === "/api/auth/websocket-ticket/rpc")).toHaveLength(1);
       expect(httpPaths.filter((path) => path === "/oauth/token")).toHaveLength(1);
       expect(yield* Ref.get(harness.sessionCount)).toBe(1);
       expect(yield* Ref.get(harness.releaseCount)).toBe(0);
@@ -1209,7 +1209,10 @@ describe("EnvironmentSupervisor", () => {
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "stored-token" });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(server.paths).toEqual(["/api/auth/websocket-ticket", "/api/auth/websocket-ticket"]);
+      expect(server.paths).toEqual([
+        "/api/auth/websocket-ticket/rpc",
+        "/api/auth/websocket-ticket/rpc",
+      ]);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
@@ -1251,7 +1254,7 @@ describe("EnvironmentSupervisor", () => {
       const prepared = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared));
       expect(prepared.httpAuthorization).toMatchObject({ accessToken: "stored-token" });
       expect(yield* Ref.get(relay.bootstrapCalls)).toBe(0);
-      expect(server.paths).toEqual(Array(3).fill("/api/auth/websocket-ticket"));
+      expect(server.paths).toEqual(Array(3).fill("/api/auth/websocket-ticket/rpc"));
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
@@ -1313,7 +1316,7 @@ describe("EnvironmentSupervisor", () => {
       expect(server.paths.slice(6)).toEqual([
         "/.well-known/t3/environment",
         "/oauth/token",
-        "/api/auth/websocket-ticket",
+        "/api/auth/websocket-ticket/rpc",
       ]);
     }).pipe(Effect.provide(TestClock.layer())),
   );
