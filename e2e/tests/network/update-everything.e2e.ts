@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, addEnvironment, openApp } from "../../support/browser.ts";
+import { type App, addEnvironment, allowOrigin, openApp } from "../../support/browser.ts";
 import { type Environment, startEnvironment } from "../../support/environment.ts";
 import { type PublishedServer, startPublishedServer } from "../../support/publishedServer.ts";
 
@@ -22,6 +22,8 @@ describe("update everything from the sidebar", () => {
     environment = await startEnvironment();
     server = await startPublishedServer(SERVER_VERSION);
     app = await openApp(environment);
+    // The client asks npm whether the release it would install is published.
+    allowOrigin(app.page, "https://registry.npmjs.org");
   });
 
   afterAll(async () => {
