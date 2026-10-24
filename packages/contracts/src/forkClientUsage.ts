@@ -30,7 +30,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 8;
+export const FORK_CLIENT_USAGE_VERSION = 9;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -162,6 +162,18 @@ export const ForkClientUsageInput = Schema.Union([
     /** `reordered` moves an unpinned project; the others change its pin or archive state. */
     action: Schema.Literals(["reordered", "pinned", "unpinned", "pins_reordered", "archived"]),
     entryPoint: Schema.Literals(["header_drag", "header_menu"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("next-unread-thread"),
+    action: Schema.Literal("opened"),
+    /** What the opened thread was waiting for. */
+    attention: Schema.Literals(["approval", "input", "limited", "failed", "woke", "done"]),
+    entryPoint: Schema.Literals(["shortcut", "command_palette"]),
+  }),
+  Schema.Struct({
+    feature: Schema.Literal("next-unread-thread"),
+    action: Schema.Literal("nothing_waiting"),
+    entryPoint: Schema.Literals(["shortcut", "command_palette"]),
   }),
   Schema.Struct({
     feature: Schema.Literal("desktop-update-notice"),

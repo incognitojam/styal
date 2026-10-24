@@ -16,7 +16,7 @@ type FilterEntryPoint = Extract<
 export async function reportSidebarUsage(
   input: Extract<
     ForkClientUsageInput,
-    { feature: "sidebar-project-filter" | "sidebar-project-groups" }
+    { feature: "sidebar-project-filter" | "sidebar-project-groups" | "next-unread-thread" }
   >,
 ) {
   try {

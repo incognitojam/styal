@@ -143,7 +143,7 @@ import {
 } from "../sidebarProjectGrouping";
 import { useUiStateStore } from "../uiStateStore";
 import { useScopedProjectGroup } from "../sidebarProjectScopeStore";
-import { setSidebarProjectFilterFromUser } from "../sidebarProjectFilterUsage";
+import { reportSidebarUsage, setSidebarProjectFilterFromUser } from "../sidebarProjectFilterUsage";
 import { reportSidebarProjectGroupUsage } from "../sidebarProjectGroupUsage";
 import { sortPinnedProjectsFirst } from "@t3tools/client-runtime/state/project-organization";
 import {
@@ -188,7 +188,7 @@ import {
   resolveActiveThreadRouteRef,
   resolveThreadRouteTarget,
 } from "../threadRoutes";
-import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
+import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { SidebarThreadSummary } from "../types";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -225,6 +225,10 @@ import {
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
+  resolveSidebarThreadAttention,
+  resolveNextAttentionThread,
+  isSidebarThreadWoke,
+  type SidebarThreadAttention,
   resolveThreadLastVisitedAt,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
@@ -283,6 +287,7 @@ import {
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { subscribeNextUnreadThread } from "./sidebar/nextUnreadThreadBus";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button, InlineButton } from "./ui/button";
 import {
@@ -1293,6 +1298,18 @@ function SidebarSectionPlaceholder(props: {
   );
 }
 
+const SIDEBAR_ATTENTION_STATUS = {
+  approval: { label: "Approval", icon: "approval", className: "text-warning-foreground" },
+  input: { label: "Input", icon: "input", className: "text-indigo-600 dark:text-indigo-300" },
+  limited: { label: "Limited", icon: "failed", className: "text-warning" },
+  failed: { label: "Failed", icon: "failed", className: "text-error" },
+  woke: { label: "Woke", icon: "woke", className: "text-warning" },
+  done: { label: "Done", icon: "done", className: "text-success" },
+} as const satisfies Record<
+  SidebarThreadAttention,
+  { label: string; icon: string; className: string }
+>;
+
 const SIDEBAR_DRAG_DISTANCE = 6;
 
 type SidebarSweepAction = "settle" | "unsettle" | "unsnooze";
@@ -1803,12 +1820,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
 
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
-  const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
-  const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
-  const isWoke =
-    wokeAtDate !== null &&
-    (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
-    thread.settledOverride !== "settled";
+  const isWoke = isSidebarThreadWoke({
+    wokeAt: props.wokeAt,
+    lastVisitedAt,
+    settled: thread.settledOverride === "settled",
+  });
   // Background work always recedes when it is not selected: an unread parent
   // completion must not pull a still-working thread back into the foreground.
   // Ready rows keep their unread and wake prominence; action-required rows
@@ -1833,43 +1849,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             icon: "waiting" as const,
             className: "text-muted-foreground",
           }
-        : status === "approval"
-          ? {
-              label: "Approval",
-              icon: "approval" as const,
-              className: "text-warning-foreground",
-            }
-          : status === "input"
-            ? {
-                label: "Input",
-                icon: "input" as const,
-                className: "text-indigo-600 dark:text-indigo-300",
-              }
-            : status === "limited"
-              ? {
-                  label: "Limited",
-                  icon: "failed" as const,
-                  className: "text-warning",
-                }
-              : status === "failed"
-                ? {
-                    label: "Failed",
-                    icon: "failed" as const,
-                    className: "text-error",
-                  }
-                : isWoke
-                  ? {
-                      label: "Woke",
-                      icon: "woke" as const,
-                      className: "text-warning",
-                    }
-                  : isUnread
-                    ? {
-                        label: "Done",
-                        icon: "done" as const,
-                        className: "text-success",
-                      }
-                    : null;
+        : (() => {
+            const attention = resolveSidebarThreadAttention({ status, isUnread, isWoke });
+            return attention === null ? null : SIDEBAR_ATTENTION_STATUS[attention];
+          })();
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -4959,6 +4942,56 @@ export default function Sidebar() {
     },
   );
 
+  // Opens the thread that most needs the user, as its row status shows it.
+  // Snoozed and settled threads are left out: they come back on their own.
+  const openNextUnreadThread = useStableCallback((entryPoint: "shortcut" | "command_palette") => {
+    const now = new Date().toISOString();
+    const lastVisitedAtById = useUiStateStore.getState().threadLastVisitedAtById;
+    const next = resolveNextAttentionThread(
+      [...pinnedThreads, ...activeThreads, ...workingThreads].map((thread) => {
+        const key = threadShellKey(thread);
+        const lastVisitedAt = resolveThreadLastVisitedAt(
+          thread.lastVisitedAt,
+          lastVisitedAtById[key],
+        );
+        return {
+          key,
+          attention: resolveSidebarThreadAttention({
+            status: resolveSidebarThreadStatus(thread),
+            isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
+            isWoke: isSidebarThreadWoke({
+              wokeAt: threadWokeAt(thread, { now }),
+              lastVisitedAt,
+              settled: thread.settledOverride === "settled",
+            }),
+          }),
+        };
+      }),
+      routeThreadKey,
+    );
+    const target = next === null ? undefined : threadByKey.get(next.key);
+    if (next === null || target === undefined) {
+      toastManager.add({ type: "info", title: "No unread threads" });
+      void reportSidebarUsage({
+        feature: "next-unread-thread",
+        action: "nothing_waiting",
+        entryPoint,
+      });
+      return;
+    }
+    navigateToThread(scopeThreadRef(target.environmentId, target.id));
+    void reportSidebarUsage({
+      feature: "next-unread-thread",
+      action: "opened",
+      attention: next.attention,
+      entryPoint,
+    });
+  });
+  useEffect(
+    () => subscribeNextUnreadThread(() => openNextUnreadThread("command_palette")),
+    [openNextUnreadThread],
+  );
+
   const routeTerminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -4988,6 +5021,12 @@ export default function Sidebar() {
         navigateToThread(scopeThreadRef(targetThread.environmentId, targetThread.id));
         return true;
       };
+      if (command === "thread.nextUnread") {
+        event.preventDefault();
+        event.stopPropagation();
+        openNextUnreadThread("shortcut");
+        return;
+      }
       const traversalDirection = threadTraversalDirectionFromCommand(command);
       if (traversalDirection !== null) {
         navigateToThreadKey(
@@ -5008,6 +5047,7 @@ export default function Sidebar() {
   }, [
     keybindings,
     navigateToThread,
+    openNextUnreadThread,
     orderedThreadKeys,
     routeTerminalOpen,
     routeThreadKey,

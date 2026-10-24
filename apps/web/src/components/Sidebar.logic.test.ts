@@ -42,6 +42,9 @@ import {
   resolveSidebarThreadSection,
   resolveSidebarRowAccessibility,
   resolveSidebarThreadStatus,
+  resolveSidebarThreadAttention,
+  resolveNextAttentionThread,
+  isSidebarThreadWoke,
   resolveSidebarV2TopStatus,
   resolveThreadLastVisitedAt,
   resolveThreadRowClassName,
@@ -920,6 +923,66 @@ describe("isContextMenuPointerDown", () => {
         isMac: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("next unread thread", () => {
+  it("reports what a thread needs from the user, ignoring work still in progress", () => {
+    expect(
+      resolveSidebarThreadAttention({ status: "approval", isUnread: true, isWoke: true }),
+    ).toBe("approval");
+    expect(resolveSidebarThreadAttention({ status: "working", isUnread: true, isWoke: true })).toBe(
+      null,
+    );
+    expect(
+      resolveSidebarThreadAttention({ status: "waiting", isUnread: true, isWoke: false }),
+    ).toBe(null);
+    expect(resolveSidebarThreadAttention({ status: "ready", isUnread: true, isWoke: true })).toBe(
+      "woke",
+    );
+    expect(resolveSidebarThreadAttention({ status: "ready", isUnread: true, isWoke: false })).toBe(
+      "done",
+    );
+    expect(resolveSidebarThreadAttention({ status: "ready", isUnread: false, isWoke: false })).toBe(
+      null,
+    );
+  });
+
+  it("opens the most urgent thread first, then the first in sidebar order", () => {
+    const candidates = [
+      { key: "a", attention: "done" as const },
+      { key: "b", attention: null },
+      { key: "c", attention: "input" as const },
+      { key: "d", attention: "input" as const },
+      { key: "e", attention: "failed" as const },
+    ];
+    expect(resolveNextAttentionThread(candidates, null)).toEqual({ key: "c", attention: "input" });
+  });
+
+  it("skips the open thread so pressing again moves on", () => {
+    const candidates = [
+      { key: "a", attention: "approval" as const },
+      { key: "b", attention: "approval" as const },
+      { key: "c", attention: "done" as const },
+    ];
+    expect(resolveNextAttentionThread(candidates, "a")).toEqual({
+      key: "b",
+      attention: "approval",
+    });
+    expect(resolveNextAttentionThread([{ key: "a", attention: "done" }], "a")).toBeNull();
+    expect(resolveNextAttentionThread([{ key: "a", attention: null }], null)).toBeNull();
+  });
+
+  it("treats a thread as woke until it is visited after waking", () => {
+    const wokeAt = "2026-10-24T10:00:00.000Z";
+    expect(isSidebarThreadWoke({ wokeAt, lastVisitedAt: undefined, settled: false })).toBe(true);
+    expect(
+      isSidebarThreadWoke({ wokeAt, lastVisitedAt: "2026-10-24T09:00:00.000Z", settled: false }),
+    ).toBe(true);
+    expect(
+      isSidebarThreadWoke({ wokeAt, lastVisitedAt: "2026-10-24T11:00:00.000Z", settled: false }),
+    ).toBe(false);
+    expect(isSidebarThreadWoke({ wokeAt, lastVisitedAt: undefined, settled: true })).toBe(false);
   });
 });
 
