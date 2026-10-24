@@ -6,16 +6,19 @@ import type {
   ProviderDriverKind,
   ProviderInstanceId,
   OrchestrationV2Subagent,
+  ThreadTokenUsage,
 } from "@t3tools/contracts";
 import {
   resolveSubagentMetadata,
   subagentDetailPreview,
 } from "@t3tools/client-runtime/state/subagent-display";
 import { getModelSelectionStringOptionValue, resolveSelectableModel } from "@t3tools/shared/model";
+import { threadUsageSummary } from "@t3tools/shared/turnUsage";
 import { getTraitsSpeedDisplay, TraitsSpeedIcon } from "./TraitsSpeed";
 import type { ReactNode } from "react";
 import {
   BotIcon,
+  ChartNoAxesColumnIcon,
   CheckIcon,
   CircleDashedIcon,
   CircleXIcon,
@@ -28,6 +31,7 @@ import { MiddleTruncate } from "../ui/middle-truncate";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
 import { deriveProviderInstanceEntries, shouldShowInstanceBadge } from "../../providerInstances";
+import { useClientSettings } from "../../hooks/useSettings";
 
 /** Geometry and preview limits stay identical in lineage and timeline tooltips. */
 export function SubagentTooltipContent(props: {
@@ -40,6 +44,7 @@ export function SubagentTooltipContent(props: {
   providers?: ReadonlyArray<ServerProvider> | undefined;
   driver?: ProviderDriverKind | undefined;
   elapsed?: ReactNode;
+  tokenUsage?: ThreadTokenUsage | undefined;
   parentThread?: Pick<OrchestrationV2ThreadShell, "projectId" | "worktreePath"> | undefined;
   childThread?:
     | Pick<OrchestrationV2ThreadShell, "branch" | "worktreePath" | "modelSelection">
@@ -50,6 +55,8 @@ export function SubagentTooltipContent(props: {
   result?: string | null | undefined;
   progress?: string | null | undefined;
 }) {
+  const usageEnabled = useClientSettings((settings) => settings.turnUsageEnabled);
+  const usageFigure = useClientSettings((settings) => settings.turnUsageFigure);
   const { modelLabel, workspace: metadata } = resolveSubagentMetadata(props);
   const preview = subagentDetailPreview(props);
   const model = props.model?.trim();
@@ -168,6 +175,14 @@ export function SubagentTooltipContent(props: {
         </span>
         {props.elapsed}
       </div>
+      {usageEnabled && props.tokenUsage ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <ChartNoAxesColumnIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
+          <div className="min-w-0 truncate text-foreground/75 tabular-nums">
+            {threadUsageSummary(props.tokenUsage, usageFigure)}
+          </div>
+        </div>
+      ) : null}
       {metadata.map(({ label, value }) => {
         const Icon = label === "Branch" ? GitBranchIcon : FolderIcon;
         return (

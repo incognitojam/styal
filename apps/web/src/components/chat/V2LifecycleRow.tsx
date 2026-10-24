@@ -527,6 +527,7 @@ function SubagentTimelineTooltip(
       progress={props.progress}
       parentThread={parent}
       childThread={child}
+      tokenUsage={child?.tokenUsage}
       parentProject={parentProject ?? undefined}
       childProject={childProject ?? undefined}
     />

@@ -511,6 +511,7 @@ export function ThreadRelationshipsPanel(props: {
                   progress={agent.progress}
                   parentThread={currentThread ?? undefined}
                   childThread={node?.thread ?? undefined}
+                  tokenUsage={node?.thread?.tokenUsage}
                   parentProject={currentProject}
                   childProject={project}
                 />
@@ -583,8 +584,8 @@ export function ThreadRelationshipsPanel(props: {
                     providers={providers}
                     driver={providerDriver}
                     onOpenThread={(memberThreadId) => openThread(memberThreadId as ThreadId)}
-                    isThreadAvailable={(memberThreadId) =>
-                      graph.nodes.get(memberThreadId as ThreadId)?.missing === false
+                    getThread={(memberThreadId) =>
+                      graph.nodes.get(memberThreadId as ThreadId)?.thread ?? undefined
                     }
                     onStop={canStopWorkflow ? () => void stopWorkflow(agent.id) : undefined}
                     stopping={stoppingId === agent.id}
