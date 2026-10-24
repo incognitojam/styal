@@ -112,7 +112,10 @@ export const make = Effect.gen(function* () {
               isDevelopment: linux.variant === "development",
               appVersion: Electron.app.getVersion(),
             }).displayName,
-            execTarget: process.env.APPIMAGE?.trim() || process.execPath,
+            execTarget:
+              process.env.T3CODE_DESKTOP_LAUNCHER_PATH?.trim() ||
+              process.env.APPIMAGE?.trim() ||
+              process.execPath,
             scheme: DESKTOP_INSTALL_IDENTITIES[linux.variant].scheme,
             ...(iconPath === undefined ? {} : { iconPath }),
           }),

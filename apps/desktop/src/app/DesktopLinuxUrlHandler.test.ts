@@ -32,6 +32,7 @@ const makeEnvironment = (path: Path.Path, overrides: Record<string, unknown> = {
     linuxDesktopEntryName: "build.styal.Styal.desktop",
     linuxWmClass: "styal",
     linuxApplicationsDir: "/home/alice/.local/share/applications",
+    desktopLauncherPath: Option.none(),
     appImagePath: Option.some("/home/alice/Applications/T3-Code.AppImage"),
     path,
     ...overrides,
@@ -226,6 +227,18 @@ describe("DesktopLinuxUrlHandler", () => {
           iconPath: "/home/alice/.local/share/icons/build.styal.Styal.desktop.png",
         }),
       );
+    });
+  });
+
+  it.effect("launches a distribution package through its configured launcher", () => {
+    const recorded = emptyRecording();
+
+    return Effect.gen(function* () {
+      yield* runRegister(recorded, {
+        environment: { desktopLauncherPath: Option.some("/opt/T3 Code/t3code") },
+      });
+
+      assert.include(recorded.files[0]?.content, 'Exec="/opt/T3 Code/t3code" %U');
     });
   });
 
