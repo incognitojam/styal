@@ -303,6 +303,11 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    // Production APKs are built on GitHub Actions, which numbers them after the
+    // newest GitHub release; see .github/workflows/mobile-android-build.yml.
+    ...(repoEnv.T3CODE_ANDROID_VERSION_CODE
+      ? { versionCode: Number(repoEnv.T3CODE_ANDROID_VERSION_CODE) }
+      : {}),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),

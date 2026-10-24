@@ -1,8 +1,9 @@
 # styal mobile releases
 
-Mobile production builds use the styal-owned Expo project. iOS builds are submitted
-to TestFlight; Android builds produce signed APKs for direct installation. Android
-builds are not submitted to Google Play.
+Mobile production builds use the styal-owned Expo project. iOS builds run on EAS
+Build and are submitted to TestFlight. Android builds run on GitHub Actions and
+produce signed APKs for direct installation; they are not submitted to Google Play.
+Both platforms receive over-the-air updates through EAS Update.
 
 ## Account setup
 
@@ -74,18 +75,27 @@ place of all `.gitignore` files, so keep its exclusions aligned when those chang
 ## Build and distribute
 
 Run **Mobile EAS Production** with `mode=build` and the desired platform. Selecting
-`all` schedules an iOS build with automatic TestFlight submission and an Android
-APK build without store submission.
+`all` schedules an iOS build with automatic TestFlight submission and runs an
+Android APK build.
 
-**Mobile Android Release** checks EAS hourly and publishes the newest finished
-production APK as a GitHub release tagged `android-<version>-<versionCode>`. EAS
-artifact links expire after two weeks; the release keeps the APK available. Run
-the workflow manually to publish a build without waiting. The tags never start
-with `v`, so the CLI installers and the release workflows ignore them. The
-releases never take Latest from a stable `v` release, but while the fork has no
-stable release, GitHub reports the newest Android release as Latest.
-The workflow refuses an APK whose signing certificate differs from the one
-pinned in it, since existing installations cannot update to it.
+**Mobile Android Build** builds the production APK with `expo prebuild` and
+Gradle, publishes it as a GitHub release tagged `android-<version>-<versionCode>`,
+then publishes an Android over-the-air update for its runtime. Mobile EAS
+Production calls it; dispatching it directly with `publish` off builds and
+verifies an APK, keeps it as a workflow artifact for three days, and publishes
+nothing. Each build takes the version code after the newest `android-*` release.
+The tags never start with `v`, so the CLI installers and the release workflows
+ignore them. The releases never take Latest from a stable `v` release, but while
+the fork has no stable release, GitHub reports the newest Android release as
+Latest.
+
+The build signs with the EAS-managed production keystore, copied into the
+`android-release` GitHub environment as `ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. The
+environment's deployment branches limit which branches can use them. The workflow
+refuses an APK whose signing certificate differs from the one pinned in it, since
+existing installations cannot update to it, and an APK whose embedded runtime
+version differs from the fingerprint it built for.
 
 Each release also carries `android-update.json` with the build's runtime
 version. Installed production apps read it and offer the download when it
@@ -102,10 +112,12 @@ The production profile uses `build.styal.app` on both platforms. The preview
 profile uses `build.styal.app.preview` and a separate update channel. Preview iOS
 installation uses registered devices; TestFlight uses production builds.
 
-Once enabled, relevant pushes to `main` schedule a production build for each
-platform when its latest build has a different app version. Failed builds require
-a manual retry. The workflow publishes an over-the-air update only when a finished
-build matches the current native fingerprint. Native changes require a compatible
+Once enabled, relevant pushes to `main` start a production build for each
+platform when no build matches the current native fingerprint or its latest build
+has a different app version. For Android, the newest `android-*` release stands
+for the latest build. A failed iOS build requires a manual retry; a failed Android
+build is retried on the next relevant push. The workflow publishes an over-the-air
+update only when a finished build matches the current native fingerprint. Native changes require a compatible
 new binary; a JavaScript update cannot replace native code.
 
 ## Verify a release
