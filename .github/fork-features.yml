@@ -1605,8 +1605,8 @@ features:
       - .github/workflows/fork-nightly.yml
       - .github/workflows/fork-release.yml
       - .github/workflows/mobile-android-build.yml
-      - .github/workflows/mobile-ios-build.yml
       - .github/workflows/mobile-eas-production.yml
+      - .github/workflows/mobile-ios-build.yml
       - apps/desktop/gnome-extension/bundle.json
       - apps/desktop/gnome-extension/captureService.js
       - apps/desktop/package.json
