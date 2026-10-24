@@ -2064,7 +2064,6 @@ export const layerWsRpc = (
                 .pipe(
                   Effect.map(
                     (snapshot) =>
-                      // Measure the budget on wire items, as the stream snapshot does.
                       buildBoundedThreadProjection({
                         projection: projectThreadProjectionForWire(snapshot.projection),
                         snapshotSequence: snapshot.snapshotSequence,
