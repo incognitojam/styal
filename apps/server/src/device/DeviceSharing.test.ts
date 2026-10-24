@@ -7,6 +7,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   DeviceNotFoundError,
   DeviceSession,
+  DeviceToolListResult,
   DevicePeerAgent,
   ServerSettings as ServerSettingsSchema,
   ServerSettingsError,
@@ -840,6 +841,34 @@ it.effect("closes the local session when the device environment is unreachable",
     f.setUnavailable(true);
     yield* source.close({ threadId, hostId: host.id });
     expect((yield* source.state).sessions).toEqual([]);
+  }).pipe(Effect.scoped),
+);
+
+const encodeToolListResult = Schema.encodeSync(DeviceToolListResult);
+// MCP structured content must be a JSON object, which rejects keys set to undefined.
+const isJsonObject = Schema.is(Schema.JsonObject);
+
+it.effect("lists an unreachable device environment as JSON that MCP tool results accept", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    f.setUnavailable(true);
+    const host = yield* f.host;
+    const source = yield* DeviceService.makeWithHosts(new Map([[host.id, host]])).pipe(
+      Effect.provide(NodeCrypto.layer),
+      Effect.provideService(ServerSettingsService.ServerSettingsService, f.sourceSettings.service),
+      Effect.provideService(HttpClient.HttpClient, f.http),
+    );
+    const state = yield* source.list;
+    expect(state.hostStatuses[host.id]?.status).toBe("failed");
+    const encoded = encodeToolListResult({
+      hostStatuses: state.hostStatuses,
+      hosts: state.hosts,
+      devices: state.devices,
+      open: [],
+      openInOtherThreads: [],
+    });
+    expect(isJsonObject(encoded)).toBe(true);
   }).pipe(Effect.scoped),
 );
 
