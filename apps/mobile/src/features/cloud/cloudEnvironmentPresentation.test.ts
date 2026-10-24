@@ -84,22 +84,6 @@ describe("available cloud environment presentation", () => {
     });
   });
 
-  it("surfaces an offline relay as an error", () => {
-    expect(
-      availableCloudEnvironmentPresentation({
-        isStatusPending: false,
-        status: relayStatus("offline", "Tunnel is unavailable.", "trace-offline"),
-        statusError: null,
-        statusErrorTraceId: null,
-      }),
-    ).toEqual({
-      connectionError: "Tunnel is unavailable.",
-      connectionErrorTraceId: "trace-offline",
-      connectionState: "error",
-      statusText: "Tunnel is unavailable.",
-    });
-  });
-
   it("preserves trace metadata for relay request failures", () => {
     expect(
       availableCloudEnvironmentPresentation({
@@ -111,6 +95,22 @@ describe("available cloud environment presentation", () => {
     ).toMatchObject({
       connectionError: "Could not get relay environment status.",
       connectionErrorTraceId: "trace-status",
+    });
+  });
+
+  it("shows a machine the relay cannot reach as offline without its health-check error", () => {
+    expect(
+      availableCloudEnvironmentPresentation({
+        isStatusPending: false,
+        status: relayStatus("offline", "Managed endpoint health request failed.", "trace-offline"),
+        statusError: null,
+        statusErrorTraceId: null,
+      }),
+    ).toEqual({
+      connectionError: null,
+      connectionErrorTraceId: null,
+      connectionState: "available",
+      statusText: "Relay offline",
     });
   });
 

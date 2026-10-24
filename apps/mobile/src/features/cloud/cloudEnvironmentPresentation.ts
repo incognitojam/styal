@@ -40,13 +40,22 @@ export function availableCloudEnvironmentPresentation(input: {
   }
 
   if (input.status?.status === "offline") {
-    const connectionError =
-      relayOfflineReasonMessage(input.status) ?? input.status.error ?? "Relay is offline.";
+    const reasonMessage = relayOfflineReasonMessage(input.status);
+    // A machine that is simply off or asleep is a normal state, not a failure:
+    // the relay's health-check error is diagnostic detail, so it stays hidden.
+    if (reasonMessage === null) {
+      return {
+        connectionError: null,
+        connectionErrorTraceId: null,
+        connectionState: "available",
+        statusText: "Relay offline",
+      };
+    }
     return {
-      connectionError,
+      connectionError: reasonMessage,
       connectionErrorTraceId: input.status.traceId ?? null,
       connectionState: "error",
-      statusText: connectionError,
+      statusText: reasonMessage,
     };
   }
 
