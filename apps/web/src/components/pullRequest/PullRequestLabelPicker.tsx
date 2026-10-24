@@ -7,7 +7,7 @@ import type {
   PullRequestRef,
 } from "@t3tools/contracts";
 import { CheckIcon, TagIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
@@ -53,14 +53,10 @@ export function PullRequestLabelPicker({
     reportFailure: false,
   });
 
-  const candidates = useMemo(
-    () =>
-      (
-        candidatesQuery.data?.candidates ??
-        cachedPullRequestLabelCandidates(cachedLabels?.candidates ?? [], labels)
-      ).filter((entry) => matches(entry, query)),
-    [candidatesQuery.data, cachedLabels, labels, query],
-  );
+  const candidates = (
+    candidatesQuery.data?.candidates ??
+    cachedPullRequestLabelCandidates(cachedLabels?.candidates ?? [], labels)
+  ).filter((entry) => matches(entry, query));
 
   const toggle = async (candidate: PullRequestLabelCandidate) => {
     const result = await setLabels({

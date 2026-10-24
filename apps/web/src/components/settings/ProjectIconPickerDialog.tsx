@@ -6,7 +6,7 @@ import {
   type ProjectIconColor,
   type ProjectIconOverride,
 } from "@t3tools/contracts";
-import { createElement, useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import {
   filterProjectIconNames,
   firstEmoji,
@@ -108,15 +108,11 @@ export function ProjectIconPickerDialog({
     };
   }, [open, mode, emojiKeywords]);
 
-  const icons = useMemo(() => filterProjectIconNames(query), [query]);
+  const icons = filterProjectIconNames(query);
   const pastedEmoji = firstEmoji(emojiQuery);
-  const emojiResults = useMemo(
-    () =>
-      pastedEmoji
-        ? [{ emoji: pastedEmoji, label: "Pasted emoji" }]
-        : searchProjectEmojis(typeof emojiKeywords === "string" ? {} : emojiKeywords, emojiQuery),
-    [pastedEmoji, emojiKeywords, emojiQuery],
-  );
+  const emojiResults = pastedEmoji
+    ? [{ emoji: pastedEmoji, label: "Pasted emoji" }]
+    : searchProjectEmojis(typeof emojiKeywords === "string" ? {} : emojiKeywords, emojiQuery);
   const emojiSearchPending =
     !pastedEmoji && emojiQuery.trim() !== "" && typeof emojiKeywords === "string";
   const selectedColorClassName = projectIconColorClassName(color);

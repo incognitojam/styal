@@ -1400,7 +1400,7 @@ function SidebarProjectGroupHeader(props: {
       style={{
         transform: CSS.Translate.toString(transform),
         transition,
-        visibility: transform?.scaleY === 0 ? "hidden" : undefined,
+        visibility: !isDragging && transform?.scaleY === 0 ? "hidden" : undefined,
       }}
     >
       <div

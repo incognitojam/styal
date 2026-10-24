@@ -12,7 +12,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -252,9 +252,9 @@ export function ScheduledTasksSettings(target: {
     environmentId: EnvironmentId;
     task: ScheduledTask | null;
   } | null>(null);
-  const openForEdit = useCallback((environmentId: EnvironmentId, task: ScheduledTask) => {
+  const openForEdit = (environmentId: EnvironmentId, task: ScheduledTask) => {
     setEditor({ environmentId, task });
-  }, []);
+  };
   const defaultEnvironment = environment ?? connectedEnvironments[0];
   const canCreate = useAtomValue(
     serverEnvironment.upsertScheduledTask.permissionAtom(defaultEnvironment?.environmentId ?? null),
@@ -342,32 +342,28 @@ function ScheduledTaskEnvironmentList({
 }) {
   const { scope, environments } = useSettingsScope();
   const states = useAtomValue(
-    useMemo(
-      () =>
-        Atom.make((get) =>
-          environments.map((environment) => {
-            const connected =
-              environment.connection.phase === "connected" && environment.serverConfig !== null;
-            const query = connected
-              ? get(
-                  serverEnvironment.scheduledTasksLive({
-                    environmentId: environment.environmentId,
-                    input: {},
-                  }),
-                )
-              : null;
-            const data = query === null ? null : Option.getOrNull(AsyncResult.value(query));
-            return {
-              environment,
-              connected,
-              tasks: data?.tasks.filter((task) =>
-                matchesScheduledTaskScope(scope, environment.environmentId, task.projectId),
-              ),
-              error: query?._tag === "Failure" ? formatEnvironmentQueryError(query.cause) : null,
-            };
-          }),
-        ),
-      [environments, scope],
+    Atom.make((get) =>
+      environments.map((environment) => {
+        const connected =
+          environment.connection.phase === "connected" && environment.serverConfig !== null;
+        const query = connected
+          ? get(
+              serverEnvironment.scheduledTasksLive({
+                environmentId: environment.environmentId,
+                input: {},
+              }),
+            )
+          : null;
+        const data = query === null ? null : Option.getOrNull(AsyncResult.value(query));
+        return {
+          environment,
+          connected,
+          tasks: data?.tasks.filter((task) =>
+            matchesScheduledTaskScope(scope, environment.environmentId, task.projectId),
+          ),
+          error: query?._tag === "Failure" ? formatEnvironmentQueryError(query.cause) : null,
+        };
+      }),
     ),
   );
   const linkedState = states.find((state) => state.environment.environmentId === environmentId);
@@ -941,19 +937,15 @@ function ScheduledTaskEditorDialog({
   const allProjects = useProjects();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   // Pinned projects first and archived ones out, except the task's own project.
-  const projects = useMemo(
-    () =>
-      organizeProjectRecords({
-        projects: allProjects,
-        settings: projectGroupingSettings,
-        keep: (project) =>
-          project.environmentId === initialEnvironmentId && project.id === task?.projectId,
-      }).filter(
-        (project) =>
-          project.environmentId === environmentId &&
-          matchesScheduledTaskScope(scope, environmentId, project.id),
-      ),
-    [allProjects, environmentId, initialEnvironmentId, projectGroupingSettings, scope, task],
+  const projects = organizeProjectRecords({
+    projects: allProjects,
+    settings: projectGroupingSettings,
+    keep: (project) =>
+      project.environmentId === initialEnvironmentId && project.id === task?.projectId,
+  }).filter(
+    (project) =>
+      project.environmentId === environmentId &&
+      matchesScheduledTaskScope(scope, environmentId, project.id),
   );
   const settings = useEnvironmentSettings(environmentId);
   const providers =
@@ -978,16 +970,12 @@ function ScheduledTaskEditorDialog({
     : task;
   const selectedProjectId = draft.projectId || projects[0]?.id || "";
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
-  const instanceEntries = useMemo(
-    () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(
-          deriveProviderInstanceEntries(providers),
-          settings,
-          selectedProject?.id ?? null,
-        ),
-      ),
-    [providers, settings, selectedProject?.id],
+  const instanceEntries = sortProviderInstanceEntries(
+    applyProviderInstanceSettings(
+      deriveProviderInstanceEntries(providers),
+      settings,
+      selectedProject?.id ?? null,
+    ),
   );
 
   const firstInstance = instanceEntries[0];
@@ -1000,9 +988,11 @@ function ScheduledTaskEditorDialog({
   const activeInstanceId =
     activeSelection?.instanceId ?? firstInstance?.instanceId ?? ("" as ProviderInstanceId);
   const activeModel = activeSelection?.model ?? "";
-  const modelOptionsByInstance = useMemo(
-    () => getCustomModelOptionsByInstance(settings, providers, activeInstanceId, activeModel),
-    [settings, providers, activeInstanceId, activeModel],
+  const modelOptionsByInstance = getCustomModelOptionsByInstance(
+    settings,
+    providers,
+    activeInstanceId,
+    activeModel,
   );
 
   const reportFailure = (title: string, error: unknown) => {
