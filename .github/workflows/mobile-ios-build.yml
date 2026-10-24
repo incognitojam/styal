@@ -1,0 +1,271 @@
+name: Mobile iOS Build
+
+# Builds the production iOS app with `eas build --local` on a GitHub macOS
+# runner rather than EAS Build, whose free plan allows fewer iOS builds a month
+# than main's native changes need. A local build still uses the EAS-managed
+# distribution certificate and provisioning profiles, takes its build number
+# from the counter EAS keeps, and applies the update channel and runtime
+# version as an EAS builder does; it only leaves no EAS build record.
+#
+# Mobile EAS Production calls this when main's iOS fingerprint has no build,
+# and for its manual iOS builds. Only those calls publish, so every TestFlight
+# upload and OTA update goes through that workflow's queue. A published build
+# is recorded as an annotated ios-<version>-<build> tag whose message carries
+# the runtime version; Mobile EAS Production reads the tags to decide between
+# an OTA update and a new build.
+#
+# Dispatching this workflow directly builds and verifies the app with the
+# production-verify profile, which leaves the build number counter alone, and
+# uploads nothing.
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+      ref:
+        description: The commit to build, when the caller committed a version change after the triggering commit.
+        type: string
+        default: ""
+      expected-fingerprint:
+        description: The fingerprint the caller decided to build; the run fails if the app's differs.
+        type: string
+        default: ""
+      ota-message:
+        type: string
+        default: ""
+  workflow_dispatch:
+
+env:
+  APP_VARIANT: production
+  EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+  EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+  APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+
+jobs:
+  build:
+    name: Build production iOS app
+    if: github.repository == 'incognitojam/styal'
+    # The only image with the Xcode release eas.json pins for EAS builders.
+    runs-on: xcode-27
+    timeout-minutes: 180
+    # Only publishing runs advance the build number, so only they queue.
+    concurrency:
+      group: mobile-ios-build-${{ inputs.publish && 'publish' || github.run_id }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    outputs:
+      commit: ${{ steps.meta.outputs.commit }}
+      fingerprint: ${{ steps.meta.outputs.fingerprint }}
+      version: ${{ steps.ipa.outputs.version }}
+      build-number: ${{ steps.ipa.outputs.build-number }}
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      # Lets eas-cli sign in to App Store Connect with the EAS-held API key
+      # without prompting, so it validates the provisioning profiles.
+      EXPO_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+    steps:
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+
+      # Full checkout: eas-cli copies the project with `git clone` from the
+      # workspace, which fails on a partial clone.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+
+      # Pinned: local builds are experimental in eas-cli, so take new
+      # releases deliberately.
+      - name: Setup EAS
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: 25.3.0
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - id: meta
+        name: Resolve the fingerprint
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPECTED_FINGERPRINT: ${{ inputs.expected-fingerprint }}
+        run: |
+          # eas-cli prints an environment-loaded notice to stdout before the
+          # JSON even with --json, so discard everything before the document.
+          fingerprint_json="$(eas fingerprint:generate --platform ios --environment production --json --non-interactive | sed -n '/^{/,$p')"
+          fingerprint="$(jq -er '.hash | select(type == "string" and length > 0)' <<<"$fingerprint_json")"
+          # @expo/fingerprint swallows autolinking errors and returns no Expo
+          # module sources; see Mobile EAS Production.
+          expo_modules="$(jq '[.sources[] | select((.reasons // []) | index("expoAutolinkingIos"))] | length' <<<"$fingerprint_json")"
+          if [ "$expo_modules" -eq 0 ]; then
+            echo "The iOS fingerprint hashes no Expo native modules." >&2
+            exit 1
+          fi
+          if [ -n "$EXPECTED_FINGERPRINT" ] && [ "$fingerprint" != "$EXPECTED_FINGERPRINT" ]; then
+            echo "Fingerprint $fingerprint differs from the caller's $EXPECTED_FINGERPRINT." >&2
+            exit 1
+          fi
+          {
+            echo "commit=$(git rev-parse HEAD)"
+            echo "fingerprint=$fingerprint"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build the app
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PROFILE: ${{ inputs.publish && 'production' || 'production-verify' }}
+        run: eas build --local --platform ios --profile "$PROFILE" --non-interactive --output "$RUNNER_TEMP/styal.ipa"
+
+      - id: ipa
+        name: Check the app
+        env:
+          FINGERPRINT: ${{ steps.meta.outputs.fingerprint }}
+        run: |
+          cd "$RUNNER_TEMP"
+          rm -rf ipa && unzip -q styal.ipa -d ipa
+          app="$(find ipa/Payload -maxdepth 1 -name '*.app' | head -n 1)"
+          failed=0
+          fail() { echo "$1" >&2; failed=1; }
+
+          version="$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")"
+          build_number="$(plutil -extract CFBundleVersion raw "$app/Info.plist")"
+          # expo-updates reads the runtime version from this file at launch,
+          # and OTA updates are published for the fingerprint resolved above.
+          runtime_version="$(cat "$app/EXUpdates.bundle/fingerprint" 2>/dev/null || true)"
+          [ "$runtime_version" = "$FINGERPRINT" ] || fail "The app's runtime version '$runtime_version' differs from the fingerprint $FINGERPRINT."
+          channel="$(plutil -extract EXUpdatesRequestHeaders.expo-channel-name raw "$app/Expo.plist" 2>/dev/null || true)"
+          [ "$channel" = production ] || fail "The app requests update channel '$channel', not production."
+
+          for bundle in "$app" "$app"/PlugIns/*.appex; do
+            name="$(plutil -extract CFBundleIdentifier raw "$bundle/Info.plist")"
+            [ "$(plutil -extract CFBundleVersion raw "$bundle/Info.plist")" = "$build_number" ] \
+              || fail "$name's build number differs from the app's $build_number."
+            [ "$(plutil -extract CFBundleShortVersionString raw "$bundle/Info.plist")" = "$version" ] \
+              || fail "$name's version differs from the app's $version."
+            team="$(codesign -dv "$bundle" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+            [ "$team" = "$APPLE_TEAM_ID" ] || fail "$name is signed for team '$team', not $APPLE_TEAM_ID."
+            echo "$name $version ($build_number), team $team"
+          done
+          [ "$failed" -eq 0 ] || exit 1
+
+          {
+            echo "path=$RUNNER_TEMP/styal.ipa"
+            echo "version=$version"
+            echo "build-number=$build_number"
+          } >> "$GITHUB_OUTPUT"
+          echo "Built $version ($build_number), runtime version $runtime_version."
+
+      # Waits until EAS has handed the build to App Store Connect. Apple's
+      # processing afterwards is not awaited; it reports failures by email.
+      - name: Submit to TestFlight
+        if: inputs.publish
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          IPA: ${{ steps.ipa.outputs.path }}
+        run: eas submit --platform ios --profile production --path "$IPA" --non-interactive --wait
+
+      - name: Record the build
+        if: inputs.publish
+        env:
+          VERSION: ${{ steps.ipa.outputs.version }}
+          BUILD_NUMBER: ${{ steps.ipa.outputs.build-number }}
+          FINGERPRINT: ${{ steps.meta.outputs.fingerprint }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
+        run: |
+          tag="ios-${VERSION}-${BUILD_NUMBER}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" "$COMMIT" -m "styal for iOS ${VERSION} (${BUILD_NUMBER})" -m "runtime-version: ${FINGERPRINT}"
+          git push origin "refs/tags/$tag"
+          echo ":white_check_mark: ios: built and submitted ${VERSION} (${BUILD_NUMBER}) to TestFlight, recorded as \`$tag\` (fingerprint \`$FINGERPRINT\`)" >> "$GITHUB_STEP_SUMMARY"
+
+  # A separate job on Linux, where Mobile EAS Production publishes every other
+  # update, so the update is published from a clean checkout.
+  ota:
+    name: Publish the iOS OTA update
+    needs: build
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - name: Pull production environment variables
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas env:pull production --non-interactive
+
+      # eas update computes the runtime version itself, so check it lands on
+      # the app's before publishing anything.
+      - name: Publish the iOS OTA update
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          FINGERPRINT: ${{ needs.build.outputs.fingerprint }}
+          OTA_MESSAGE: ${{ inputs.ota-message || format('Production OTA ({0})', needs.build.outputs.commit) }}
+        run: |
+          runtime_version="$(eas fingerprint:generate --platform ios --environment production --json --non-interactive | sed -n '/^{/,$p' | jq -er '.hash')"
+          if [ "$runtime_version" != "$FINGERPRINT" ]; then
+            echo "This checkout's fingerprint $runtime_version differs from the app's $FINGERPRINT; not publishing." >&2
+            exit 1
+          fi
+          eas update \
+            --channel production \
+            --environment production \
+            --platform ios \
+            --message "$OTA_MESSAGE" \
+            --non-interactive
+          echo ":white_check_mark: ios: published the OTA update for ${{ needs.build.outputs.version }} (${{ needs.build.outputs.build-number }})" >> "$GITHUB_STEP_SUMMARY"
