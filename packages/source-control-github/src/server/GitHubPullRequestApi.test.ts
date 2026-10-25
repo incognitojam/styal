@@ -207,6 +207,23 @@ function output(
   return { status, headers, body, truncated, invalidUtf8 };
 }
 
+const workflowTarget = { cwd: "/w", repository: "acme/web", host: "github.com", runId: 40 };
+const workflowEndpoint = "repos/acme/web/actions/runs/40";
+const waitingWorkflow = {
+  name: "Promote",
+  run_number: 3,
+  run_attempt: 1,
+  status: "waiting",
+  conclusion: null,
+  html_url: "https://github.com/acme/web/actions/runs/40",
+  head_branch: "main",
+  head_sha: "abc123",
+  event: "workflow_run",
+};
+const pendingDeployment = (canApprove: boolean) => [
+  { environment: { id: 21, name: "production" }, current_user_can_approve: canApprove },
+];
+
 function graphqlQuota(remaining: number, resetAt = "2099-08-13T14:00:00Z") {
   return {
     "x-ratelimit-resource": "graphql",
@@ -3204,6 +3221,350 @@ layer("GitHubPullRequestApi.layer", (it) => {
           .map((call) => call.body),
       ).toEqual([{ environment_ids: [21], state: "approved", comment: "Ship it" }]);
     }),
+  );
+
+  it.effect("revalidates run and deployment state independently, and refreshes after review", () =>
+    Effect.gen(function* () {
+      const unchanged = output("", false, false, {}, 304);
+      mockedExecute
+        .mockReturnValueOnce(
+          Effect.succeed(output(encodeJson(waitingWorkflow), false, false, { etag: 'W/"run"' })),
+        )
+        .mockReturnValueOnce(
+          Effect.succeed(
+            output(encodeJson(pendingDeployment(true)), false, false, { etag: '"p1"' }),
+          ),
+        )
+        .mockReturnValueOnce(Effect.succeed(unchanged))
+        .mockReturnValueOnce(
+          Effect.succeed(
+            output(encodeJson(pendingDeployment(false)), false, false, { etag: '"p2"' }),
+          ),
+        )
+        .mockReturnValueOnce(Effect.succeed(unchanged))
+        .mockReturnValueOnce(Effect.succeed(unchanged))
+        .mockReturnValueOnce(Effect.succeed(output("[]")))
+        .mockReturnValueOnce(
+          Effect.succeed(output(encodeJson(waitingWorkflow), false, false, { etag: 'W/"run"' })),
+        )
+        .mockReturnValueOnce(Effect.succeed(output("[]")));
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      expect((yield* cli.getWorkflowRun(workflowTarget)).reviewableEnvironments).toEqual([
+        { id: 21, name: "production" },
+      ]);
+      const changed = yield* cli.getWorkflowRun(workflowTarget);
+      expect(changed.reviewableEnvironments).toEqual([]);
+      expect(changed.completed).toBe(false);
+      expect(yield* cli.getWorkflowRun(workflowTarget)).toEqual(changed);
+      yield* cli.reviewWorkflowRun({
+        ...workflowTarget,
+        environmentIds: [21],
+        state: "approved",
+        comment: "Synthetic review",
+      });
+      expect((yield* cli.getWorkflowRun(workflowTarget)).reviewableEnvironments).toEqual([]);
+      expect(
+        restCallsTo(workflowEndpoint).map(({ path, method, ifNoneMatch }) => [
+          path.slice(workflowEndpoint.length),
+          method ?? "GET",
+          ifNoneMatch,
+        ]),
+      ).toEqual([
+        ["", "GET", undefined],
+        ["/pending_deployments", "GET", undefined],
+        ["", "GET", 'W/"run"'],
+        ["/pending_deployments", "GET", '"p1"'],
+        ["", "GET", 'W/"run"'],
+        ["/pending_deployments", "GET", '"p2"'],
+        ["/pending_deployments", "POST", undefined],
+        ["", "GET", undefined],
+        ["/pending_deployments", "GET", undefined],
+      ]);
+    }),
+  );
+
+  it.effect(
+    "isolates workflow validators by credential, host, repository and run, pinning each read",
+    () =>
+      Effect.gen(function* () {
+        let active = "first";
+        mockedCredential.mockImplementation(() =>
+          Effect.succeed({ token: Redacted.make(active), fingerprint: active }),
+        );
+        const credentials: string[] = [];
+        mockedExecute.mockImplementation((call) =>
+          Effect.gen(function* () {
+            const pinned = yield* GitHubRequestPolicy.PinnedGitHubCredential;
+            assert(pinned !== null);
+            credentials.push(pinned.credentialFingerprint);
+            expect(yield* SourceControlRateLimit.CredentialScope).toBe(
+              pinned.credentialFingerprint,
+            );
+            // An account switch between the run and deployment reads cannot change this read's token.
+            active = "second";
+            return call.kind === "rest" && call.ifNoneMatch
+              ? output("", false, false, {}, 304)
+              : output(
+                  encodeJson(
+                    call.kind === "rest" && call.path.endsWith("/pending_deployments")
+                      ? pendingDeployment(pinned.credentialFingerprint === "first")
+                      : waitingWorkflow,
+                  ),
+                  false,
+                  false,
+                  { etag: '"one"' },
+                );
+          }),
+        );
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        expect((yield* cli.getWorkflowRun(workflowTarget)).reviewableEnvironments).toHaveLength(1);
+        expect((yield* cli.getWorkflowRun(workflowTarget)).reviewableEnvironments).toEqual([]);
+        for (const target of [
+          { ...workflowTarget, host: "github.example" },
+          { ...workflowTarget, repository: "acme/other" },
+          { ...workflowTarget, runId: 41 },
+        ])
+          yield* cli.getWorkflowRun(target);
+        expect(restCallsTo("actions/runs/").every((call) => call.ifNoneMatch === undefined)).toBe(
+          true,
+        );
+        active = "first";
+        expect((yield* cli.getWorkflowRun(workflowTarget)).reviewableEnvironments).toHaveLength(1);
+        expect(credentials).toEqual([
+          "first",
+          "first",
+          "second",
+          "second",
+          "second",
+          "second",
+          "second",
+          "second",
+          "second",
+          "second",
+          "first",
+          "first",
+        ]);
+        expect(
+          restCallsTo(workflowEndpoint)
+            .slice(-2)
+            .map((call) => call.ifNoneMatch),
+        ).toEqual(['"one"', '"one"']);
+      }),
+  );
+
+  it.effect("serializes concurrent workflow reads and expires inactive validators", () =>
+    Effect.gen(function* () {
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const target = { ...workflowTarget, runId: 42 };
+      mockedExecute.mockImplementation((call) =>
+        Effect.yieldNow.pipe(
+          Effect.as(
+            call.kind === "rest" && call.ifNoneMatch
+              ? output("", false, false, {}, 304)
+              : output(encodeJson({ ...waitingWorkflow, status: "in_progress" }), false, false, {
+                  etag: '"one"',
+                }),
+          ),
+        ),
+      );
+      const runs = yield* Effect.all(
+        Array.from({ length: 4 }, () => cli.getWorkflowRun(target)),
+        {
+          concurrency: 4,
+        },
+      );
+      expect(runs.every((run) => !run.completed)).toBe(true);
+      expect(restCallsTo("actions/runs/42").map((call) => call.ifNoneMatch)).toEqual([
+        undefined,
+        '"one"',
+        '"one"',
+        '"one"',
+      ]);
+      yield* TestClock.adjust("31 minutes");
+      yield* cli.getWorkflowRun(target);
+      expect(restCallsTo("actions/runs/42").at(-1)?.ifNoneMatch).toBeUndefined();
+    }),
+  );
+
+  it.effect("uses unconditional workflow reads when ETags are absent, ignored or removed", () =>
+    Effect.gen(function* () {
+      for (const headers of [{}, { etag: '"one"' }, {}, {}, { etag: " " }, {}]) {
+        mockedExecute.mockReturnValueOnce(
+          Effect.succeed(
+            output(
+              encodeJson({ ...waitingWorkflow, status: "in_progress" }),
+              false,
+              false,
+              headers,
+            ),
+          ),
+        );
+      }
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      for (let read = 0; read < 6; read++) yield* cli.getWorkflowRun(workflowTarget);
+      expect(restCallsTo(workflowEndpoint).map((call) => call.ifNoneMatch)).toEqual([
+        undefined,
+        undefined,
+        '"one"',
+        undefined,
+        undefined,
+        undefined,
+      ]);
+    }),
+  );
+
+  it.effect.each(
+    (
+      [
+        ["truncated", output(encodeJson(waitingWorkflow), true, false, { etag: '"bad"' })],
+        ["invalid UTF-8", output(encodeJson(waitingWorkflow), false, true, { etag: '"bad"' })],
+        ["invalid JSON", output("{", false, false, { etag: '"bad"' })],
+        ["invalid fields", output("{}", false, false, { etag: '"bad"' })],
+        [
+          "unexpected status",
+          output(encodeJson(waitingWorkflow), false, false, { etag: '"bad"' }, 202),
+        ],
+      ] as const
+    ).map(([label, response]) => ({ label, response })),
+  )("does not retain $label workflow responses or the validator they replaced", ({ response }) =>
+    Effect.gen(function* () {
+      const good = output(encodeJson({ ...waitingWorkflow, status: "in_progress" }), false, false, {
+        etag: '"good"',
+      });
+      mockedExecute
+        .mockReturnValueOnce(Effect.succeed(good))
+        .mockReturnValueOnce(Effect.succeed(response))
+        .mockReturnValueOnce(Effect.succeed(good));
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      yield* cli.getWorkflowRun(workflowTarget);
+      expect((yield* cli.getWorkflowRun(workflowTarget).pipe(Effect.flip))._tag).toBe(
+        "GitHubPullRequestReadError",
+      );
+      yield* cli.getWorkflowRun(workflowTarget);
+      expect(restCallsTo(workflowEndpoint).map((call) => call.ifNoneMatch)).toEqual([
+        undefined,
+        '"good"',
+        undefined,
+      ]);
+    }),
+  );
+
+  it.effect(
+    "rejects unsolicited 304s and truncated deployment bodies before caching their validators",
+    () =>
+      Effect.gen(function* () {
+        const run = output(encodeJson(waitingWorkflow), false, false, { etag: '"run"' });
+        mockedExecute
+          .mockReturnValueOnce(Effect.succeed(output("", false, false, {}, 304)))
+          .mockReturnValueOnce(Effect.succeed(run))
+          .mockReturnValueOnce(Effect.succeed(output("[]", true, false, { etag: '"pending"' })))
+          .mockReturnValueOnce(Effect.succeed(output("", false, false, {}, 304)))
+          .mockReturnValueOnce(Effect.succeed(output(encodeJson(pendingDeployment(true)))));
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        for (let read = 0; read < 2; read++) {
+          expect((yield* cli.getWorkflowRun(workflowTarget).pipe(Effect.flip))._tag).toBe(
+            "GitHubPullRequestReadError",
+          );
+        }
+        expect((yield* cli.getWorkflowRun(workflowTarget)).reviewableEnvironments).toEqual([
+          { id: 21, name: "production" },
+        ]);
+        expect(restCallsTo(workflowEndpoint).map((call) => call.ifNoneMatch)).toEqual([
+          undefined,
+          undefined,
+          undefined,
+          '"run"',
+          undefined,
+        ]);
+      }),
+  );
+
+  it.effect(
+    "propagates failed deployment reads and discards their validator without losing the run",
+    () =>
+      Effect.gen(function* () {
+        const failure = new GitHubRequestPolicy.GitHubApiResponseError({
+          host: workflowTarget.host,
+          operation: "getWorkflowRun",
+          status: 502,
+        });
+        mockedExecute
+          .mockReturnValueOnce(
+            Effect.succeed(output(encodeJson(waitingWorkflow), false, false, { etag: '"run"' })),
+          )
+          .mockReturnValueOnce(
+            Effect.succeed(
+              output(encodeJson(pendingDeployment(true)), false, false, { etag: '"pending"' }),
+            ),
+          )
+          .mockReturnValueOnce(Effect.succeed(output("", false, false, {}, 304)))
+          .mockReturnValueOnce(Effect.fail(failure))
+          .mockReturnValueOnce(Effect.succeed(output("", false, false, {}, 304)))
+          .mockReturnValueOnce(Effect.succeed(output("[]")));
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        yield* cli.getWorkflowRun(workflowTarget);
+        expect(yield* cli.getWorkflowRun(workflowTarget).pipe(Effect.flip)).toBe(failure);
+        expect((yield* cli.getWorkflowRun(workflowTarget)).reviewableEnvironments).toEqual([]);
+        expect(restCallsTo(workflowEndpoint).map((call) => call.ifNoneMatch)).toEqual([
+          undefined,
+          undefined,
+          '"run"',
+          '"pending"',
+          '"run"',
+          undefined,
+        ]);
+      }),
+  );
+
+  it.effect(
+    "refreshes the latest attempt's failed jobs even when the completed run returns 304",
+    () =>
+      Effect.gen(function* () {
+        const completed = { ...waitingWorkflow, status: "completed", conclusion: "failure" };
+        const jobs = (name: string) => ({
+          jobs: [
+            {
+              name,
+              conclusion: "failure",
+              html_url: "https://github.com/acme/web/actions/runs/40",
+            },
+            { name: "Passing", conclusion: "success", html_url: null },
+            { name: "Skipped", conclusion: "skipped", html_url: null },
+          ],
+        });
+        mockedExecute
+          .mockReturnValueOnce(
+            Effect.succeed(output(encodeJson(completed), false, false, { etag: '"run"' })),
+          )
+          .mockReturnValueOnce(
+            Effect.succeed(
+              output(encodeJson(jobs("First attempt")), false, false, { etag: '"jobs"' }),
+            ),
+          )
+          .mockReturnValueOnce(Effect.succeed(output("", false, false, {}, 304)))
+          .mockReturnValueOnce(Effect.succeed(output(encodeJson(jobs("Latest attempt")))))
+          .mockReturnValueOnce(
+            Effect.succeed(
+              output(encodeJson({ ...waitingWorkflow, status: "in_progress", run_attempt: 2 })),
+            ),
+          );
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        expect(
+          (yield* cli.getWorkflowRun(workflowTarget)).failedJobs.map((job) => job.name),
+        ).toEqual(["First attempt"]);
+        const latest = yield* cli.getWorkflowRun(workflowTarget);
+        expect(latest.completed).toBe(true);
+        expect(latest.conclusion).toBe("failure");
+        expect(latest.failedJobs.map((job) => job.name)).toEqual(["Latest attempt"]);
+        expect(restCallsTo("/jobs").map(({ path, ifNoneMatch }) => [path, ifNoneMatch])).toEqual([
+          [`${workflowEndpoint}/jobs?filter=latest&per_page=100`, undefined],
+          [`${workflowEndpoint}/jobs?filter=latest&per_page=100`, undefined],
+        ]);
+        const rerun = yield* cli.getWorkflowRun(workflowTarget);
+        expect(rerun.completed).toBe(false);
+        expect(rerun.conclusion).toBeNull();
+        expect(rerun.failedJobs).toEqual([]);
+      }),
   );
 
   it.effect("finds and approves every workflow waiting on a maintainer", () =>

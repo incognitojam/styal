@@ -3,6 +3,7 @@ import { makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
+import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -1025,6 +1026,14 @@ export const make = Effect.gen(function* () {
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const revalidateChecks = yield* makeChecksRevalidator;
+  const workflowRuns = yield* Cache.makeWith(
+    (_key: string) =>
+      Effect.sync(() => ({
+        gate: Semaphore.makeUnsafe(1),
+        validators: new Map<string, { etag: string; body: string }>(),
+      })),
+    { capacity: 128, timeToLive: () => "30 minutes" },
+  );
   const routingIdentities = new Map<
     string,
     {
@@ -1854,76 +1863,132 @@ export const make = Effect.gen(function* () {
    */
   const getWorkflowRun: GitHubPullRequestApi["Service"]["getWorkflowRun"] = (input) =>
     Effect.gen(function* () {
+      const host = GitHubRequestPolicy.normalizeHost(input.host);
+      const { token, fingerprint } = yield* api.credential(host);
       const { owner, name } = parseRepositorySelector(input.repository);
       const endpoint = `repos/${owner}/${name}/actions/runs/${input.runId}`;
+      const entry = yield* Cache.get(workflowRuns, `${fingerprint}\0${host}\0${endpoint}`);
       const readJson = <A>(
         path: string,
         decode: (raw: string) => Result.Result<A, unknown>,
+        conditional = true,
       ): Effect.Effect<A, GitHubPullRequestApiError> =>
-        api.rest({ host: input.host, operation: "getWorkflowRun", path }).pipe(
-          Effect.flatMap((response) => {
-            const decoded = decode(response.body.trim());
-            return Result.isSuccess(decoded)
-              ? Effect.succeed(decoded.success)
-              : Effect.fail(
-                  new GitHubPullRequestReadError({
-                    cwd: input.cwd,
-                    operation: "getWorkflowRun",
-                    cause: decoded.failure,
-                  }),
-                );
+        Effect.gen(function* () {
+          const previous = entry.validators.get(path);
+          entry.validators.delete(path);
+          const response = yield* api.rest({
+            host,
+            operation: "getWorkflowRun",
+            path,
+            ...(previous === undefined ? {} : { ifNoneMatch: previous.etag }),
+          });
+          if (
+            (response.status !== 200 && !(response.status === 304 && previous !== undefined)) ||
+            response.truncated ||
+            response.invalidUtf8
+          ) {
+            return yield* readError(
+              input.cwd,
+              "getWorkflowRun",
+              new Error("Expected a complete workflow response."),
+            );
+          }
+          const body =
+            response.status === 304 && previous !== undefined ? previous.body : response.body;
+          const decoded = decode(body.trim());
+          if (Result.isFailure(decoded)) {
+            return yield* readError(input.cwd, "getWorkflowRun", decoded.failure);
+          }
+          const etag =
+            response.headers["etag"]?.trim() ||
+            (response.status === 304 ? previous?.etag : undefined);
+          if (conditional && etag) {
+            entry.validators.set(path, { etag, body });
+          }
+          return decoded.success;
+        });
+      return yield* entry.gate.withPermit(
+        Effect.gen(function* () {
+          const run = yield* readJson(endpoint, decodeGitHubWorkflowRunJson);
+          const completed = run.status === "completed";
+          // Pending approvals can change while the run stays "waiting", including on a run 304.
+          const pending =
+            run.status === "waiting"
+              ? yield* readJson(
+                  `${endpoint}/pending_deployments`,
+                  decodeGitHubPendingDeploymentsJson,
+                )
+              : [];
+          const jobs =
+            completed && run.conclusion !== "success"
+              ? yield* readJson(
+                  `${endpoint}/jobs?filter=latest&per_page=100`,
+                  decodeGitHubWorkflowRunJobsJson,
+                  false,
+                )
+              : null;
+          return {
+            name: `${run.name ?? "Workflow"} #${run.run_number}`,
+            url: run.html_url,
+            completed,
+            conclusion: completed ? run.conclusion : null,
+            headBranch: run.head_branch,
+            headSha: run.head_sha,
+            event: run.event,
+            reviewableEnvironments: pending
+              .filter((deployment) => deployment.current_user_can_approve)
+              .map(({ environment }) => ({ id: environment.id, name: environment.name })),
+            failedJobs: (jobs?.jobs ?? [])
+              .filter(
+                (job) =>
+                  job.conclusion !== "success" &&
+                  job.conclusion !== "skipped" &&
+                  job.conclusion !== "neutral",
+              )
+              .map((job) => ({ name: job.name, conclusion: job.conclusion, url: job.html_url })),
+          } satisfies ProviderWorkflowRun;
+        }).pipe(
+          Effect.provideService(GitHubRequestPolicy.PinnedGitHubCredential, {
+            host,
+            token,
+            credentialFingerprint: fingerprint,
           }),
-        );
-      const run = yield* readJson(endpoint, decodeGitHubWorkflowRunJson);
-      const completed = run.status === "completed";
-      // "waiting" is GitHub's status for a run held by an environment's protection rules.
-      const pending =
-        run.status === "waiting"
-          ? yield* readJson(`${endpoint}/pending_deployments`, decodeGitHubPendingDeploymentsJson)
-          : [];
-      const jobs =
-        completed && run.conclusion !== "success"
-          ? yield* readJson(
-              `${endpoint}/jobs?filter=latest&per_page=100`,
-              decodeGitHubWorkflowRunJobsJson,
-            )
-          : null;
-      return {
-        name: `${run.name ?? "Workflow"} #${run.run_number}`,
-        url: run.html_url,
-        completed,
-        conclusion: completed ? run.conclusion : null,
-        headBranch: run.head_branch,
-        headSha: run.head_sha,
-        event: run.event,
-        reviewableEnvironments: pending
-          .filter((deployment) => deployment.current_user_can_approve)
-          .map(({ environment }) => ({ id: environment.id, name: environment.name })),
-        failedJobs: (jobs?.jobs ?? [])
-          .filter(
-            (job) =>
-              job.conclusion !== "success" &&
-              job.conclusion !== "skipped" &&
-              job.conclusion !== "neutral",
-          )
-          .map((job) => ({ name: job.name, conclusion: job.conclusion, url: job.html_url })),
-      } satisfies ProviderWorkflowRun;
+          Effect.provideService(SourceControlRateLimit.CredentialScope, fingerprint),
+        ),
+      );
     });
 
   const reviewWorkflowRun: GitHubPullRequestApi["Service"]["reviewWorkflowRun"] = (input) =>
     Effect.gen(function* () {
+      const host = GitHubRequestPolicy.normalizeHost(input.host);
+      const { token, fingerprint } = yield* api.credential(host);
       const { owner, name } = parseRepositorySelector(input.repository);
-      yield* api.rest({
-        host: input.host,
-        operation: "reviewWorkflowRun",
-        method: "POST",
-        path: `repos/${owner}/${name}/actions/runs/${input.runId}/pending_deployments`,
-        body: {
-          environment_ids: input.environmentIds,
-          state: input.state,
-          comment: input.comment,
-        },
-      });
+      const endpoint = `repos/${owner}/${name}/actions/runs/${input.runId}`;
+      const entry = yield* Cache.get(workflowRuns, `${fingerprint}\0${host}\0${endpoint}`);
+      yield* entry.gate.withPermit(
+        api
+          .rest({
+            host,
+            operation: "reviewWorkflowRun",
+            method: "POST",
+            path: `${endpoint}/pending_deployments`,
+            body: {
+              environment_ids: input.environmentIds,
+              state: input.state,
+              comment: input.comment,
+            },
+          })
+          .pipe(
+            // The immediate read after a review must see its new run and approval state.
+            Effect.tap(() => Effect.sync(() => entry.validators.clear())),
+            Effect.provideService(GitHubRequestPolicy.PinnedGitHubCredential, {
+              host,
+              token,
+              credentialFingerprint: fingerprint,
+            }),
+            Effect.provideService(SourceControlRateLimit.CredentialScope, fingerprint),
+          ),
+      );
     });
 
   return GitHubPullRequestApi.of({
