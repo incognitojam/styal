@@ -35,7 +35,7 @@ describe("describeServerUpdate", () => {
     });
   });
 
-  it("counts interrupted and continuing work and lists each affected thread", () => {
+  it("lists interrupted and continuing threads without repeating their counts", () => {
     const thread = (id: string, continuable: boolean) => ({
       threadId: ThreadId.make(id),
       title: id,
@@ -58,8 +58,7 @@ describe("describeServerUpdate", () => {
     expect(confirmation.message).toBe(
       [
         "Install styal 9.1.0. The desktop app will close and relaunch.",
-        "1 thread and 1 terminal session will be interrupted.",
-        "1 thread will continue after the restart.",
+        "1 terminal session will be interrupted.",
       ].join("\n"),
     );
     expect(confirmation.threadActivity.map((item) => item.continuesAfterRestart)).toEqual([
