@@ -161,7 +161,7 @@ const seedLegacyThread = Effect.gen(function* () {
           },
         };
         yield* sql`
-          INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+          INSERT INTO styal_legacy_v1_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
           VALUES (${`${toolCallId}:${kind}`}, ${THREAD_ID}, ${turnId}, 'tool', ${kind}, 'Ran command',
             ${encodeJson(payload)}, ${at(start + 1 + command * 9 + (status === "completed" ? 8 : 0))}, ${sequence})
         `;

@@ -138,12 +138,11 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
     it.effect("upgrades a database with migration 5 without losing frozen usage", () =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        yield* runMigrations();
-        yield* runForkMigrations({ toMigrationInclusive: 4 });
+        yield* runAllMigrations({ forkToMigrationInclusive: 4 });
         yield* insertSyntheticThread;
         const threadUsage = { inputTokens: 321, outputTokens: 123, totalCostUsd: 0.012345 };
         const activityUsage = yield* encodeJson({ thread: threadUsage });
-        yield* sql`INSERT INTO projection_thread_activities
+        yield* sql`INSERT INTO styal_legacy_v1_thread_activities
           (activity_id, thread_id, tone, kind, summary, payload_json, created_at)
           VALUES ('usage-1', 'thread-1', 'info', 'turn.usage', 'Recorded usage',
             ${activityUsage}, '2026-01-01T10:13:00.000Z')`;

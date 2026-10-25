@@ -407,7 +407,7 @@ const make = Effect.gen(function* () {
           ROW_NUMBER() OVER (
             PARTITION BY turn_id ORDER BY created_at DESC, sequence DESC, activity_id DESC
           ) AS latest
-        FROM projection_thread_activities
+        FROM styal_legacy_v1_thread_activities
         WHERE thread_id = ${threadId} AND kind = ${TURN_USAGE_ACTIVITY_KIND} AND turn_id IS NOT NULL
       ) WHERE latest = 1
       ORDER BY created_at ASC, turn_id ASC
@@ -421,7 +421,7 @@ const make = Effect.gen(function* () {
           : [{ turnId: TurnId.make(row.turn_id), usage, model }];
       });
       const counts = yield* sql<{ readonly turns: number }>`
-      SELECT COUNT(*) AS turns FROM projection_turns WHERE thread_id = ${threadId}
+      SELECT COUNT(*) AS turns FROM styal_legacy_v1_turns WHERE thread_id = ${threadId}
     `;
       const latestTotal = rows
         .toReversed()
@@ -893,7 +893,7 @@ const make = Effect.gen(function* () {
               readonly created_at: string;
             }>`
             SELECT activity_id, tone, kind, summary, payload_json, turn_id, sequence, created_at
-            FROM projection_thread_activities WHERE thread_id = ${threadId}
+            FROM styal_legacy_v1_thread_activities WHERE thread_id = ${threadId}
             ORDER BY created_at, sequence, activity_id
           `;
             const activities = yield* Effect.forEach(activityRows, (row) =>
@@ -918,7 +918,7 @@ const make = Effect.gen(function* () {
               readonly completed_at: string;
             }>`
             SELECT turn_id, checkpoint_turn_count, checkpoint_ref, checkpoint_status, checkpoint_files_json,
-              assistant_message_id, completed_at FROM projection_turns
+              assistant_message_id, completed_at FROM styal_legacy_v1_turns
             WHERE thread_id = ${threadId} AND checkpoint_ref IS NOT NULL AND turn_id IS NOT NULL
             ORDER BY checkpoint_turn_count, completed_at
           `;
