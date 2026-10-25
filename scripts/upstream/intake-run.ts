@@ -1090,31 +1090,11 @@ export function batchLength(
   return length;
 }
 
-/** Waits for the Fork CI runs on `sha`, returning their conclusion, or null after two hours. */
 const forkRepository = () => process.env.GH_REPO ?? "incognitojam/styal";
-
-function waitForForkCi(cwd: string, sha: string): string | null {
-  const repository = forkRepository();
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    sleep(60_000);
-    const result = run(cwd, "gh", [
-      "api",
-      `repos/${repository}/actions/runs?head_sha=${sha}`,
-      "--jq",
-      '.workflow_runs[] | select(.name == "Fork CI") | "\\(.status) \\(.conclusion)"',
-    ]);
-    // A SHA pushed to two branches gets a run for each; wait for all of them.
-    const runs = lines(result.stdout).map((line) => line.split(" "));
-    if (runs.length > 0 && runs.every(([status]) => status === "completed")) {
-      return runs.find(([, conclusion]) => conclusion !== "success")?.[1] ?? "success";
-    }
-  }
-  return null;
-}
 
 /**
  * Applies the queue until a pick needs a person or `max` commits are in, then finishes the batch:
- * fixes references and trailers, verifies, and with `push` pushes and waits for Fork CI. A pick
+ * fixes references and trailers, verifies, and with `push` pushes it. A pick
  * that needs a person ends the batch before it; when it is the first, it stays staged for
  * `continue`, as `apply` leaves a stop.
  */
@@ -1209,32 +1189,24 @@ function autoBatch(
     process.stdout.write(`\nVerified. Push ${options.branch} and wait for Fork CI.\n`);
     return true;
   }
-  return pushCandidate(cwd, options.branch);
+  pushCandidate(cwd, options.branch);
+  return true;
 }
 
 /**
- * Pushes an intake candidate, holds open pull requests while it lands, and waits for
- * Fork CI, after which promotion starts by itself.
+ * Pushes an intake candidate and holds open pull requests while it lands. Promotion starts by
+ * itself when Fork CI passes.
  */
-function pushCandidate(cwd: string, branch: string): boolean {
+function pushCandidate(cwd: string, branch: string): void {
   git(cwd, ["push", "-q", "--force-with-lease", "-u", "origin", `HEAD:refs/heads/${branch}`]);
   const sha = git(cwd, ["rev-parse", "HEAD"]).trim();
   process.stdout.write(`\nPushed ${sha}.\n`);
-  if (!holdForPushedCandidate(forkRepository(), branch, sha)) {
-    process.stdout.write(
-      "Fork CI has not started for it; the Intake landing hold workflow holds pull requests once it does.\n",
-    );
-  }
-  process.stdout.write("Waiting for Fork CI.\n");
-  const conclusion = waitForForkCi(cwd, sha);
-  if (conclusion !== "success") {
-    process.stdout.write(`Fork CI: ${conclusion ?? "still running after two hours"}.\n`);
-    return false;
-  }
+  const forkCi = holdForPushedCandidate(forkRepository(), branch, sha);
   process.stdout.write(
-    `Fork CI passed. Promotion started by itself; approve it if it waits: https://github.com/${forkRepository()}/actions/workflows/promote-upstream-intake.yml\n`,
+    forkCi === null
+      ? "Fork CI has not started for it; the Intake landing hold workflow holds pull requests once it does.\n"
+      : `Fork CI: ${forkCi}\n`,
   );
-  return true;
 }
 
 export interface SurveyEntry {
@@ -2362,7 +2334,7 @@ function main() {
       const branch = git(cwd, ["branch", "--show-current"]).trim();
       if (!branch.startsWith("intake/"))
         throw new Error("push needs an intake/ branch checked out.");
-      process.exitCode = pushCandidate(cwd, branch) ? 0 : 2;
+      pushCandidate(cwd, branch);
       return;
     }
     case "survey": {
