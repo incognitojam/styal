@@ -579,6 +579,55 @@ describe("review verdicts", () => {
 });
 
 describe("pull request timeline", () => {
+  it("orders host lifecycle events with conversation and commits, without a duplicate merge or close", () => {
+    const actor = { login: "maintainer", name: null, avatarUrl: null };
+    const events = buildPullRequestTimeline({
+      ...TIMELINE_SOURCE,
+      mergedAt: "2026-07-04T00:00:00Z",
+      closedAt: "2026-07-04T00:00:00Z",
+      lifecycleEvents: [
+        {
+          id: "ME_1",
+          kind: "merged",
+          actor,
+          createdAt: "2026-07-03T00:00:00Z",
+          targetBranch: "release",
+          commit: { oid: "1234567890", url: "https://github.com/acme/web/commit/1234567890" },
+        },
+        {
+          id: "HDE_1",
+          kind: "head-ref-deleted",
+          actor,
+          createdAt: "2026-07-03T00:30:00Z",
+          branchName: "feature",
+        },
+        {
+          id: "HRE_1",
+          kind: "head-ref-restored",
+          actor: null,
+          createdAt: "2026-07-03T00:31:00Z",
+          branchName: null,
+        },
+      ],
+    });
+    expect(events.filter((event) => event.lifecycle).map((event) => event.id)).toEqual([
+      "lifecycle:HRE_1",
+      "lifecycle:HDE_1",
+      "lifecycle:ME_1",
+    ]);
+    expect(events.filter((event) => event.kind === "merged")).toHaveLength(1);
+    expect(events.some((event) => event.kind === "closed")).toBe(false);
+    expect(events.find((event) => event.id === "lifecycle:ME_1")).toMatchObject({
+      actor,
+      title: "merged commit 1234567 into release",
+      at: "2026-07-03T00:00:00Z",
+    });
+    expect(
+      events
+        .filter((event) => event.kind === "comment" || event.kind === "commit")
+        .map((event) => event.id),
+    ).toEqual(["c1", "1baf7bdcafe"]);
+  });
   it("orders creation, commits and comments newest first", () => {
     expect(buildPullRequestTimeline(TIMELINE_SOURCE).map((event) => event.id)).toEqual([
       "c1",

@@ -1723,6 +1723,12 @@ export const make = Effect.gen(function* () {
               reviewThreads: activity.reviewThreads,
               commits: activity.commits,
               ...(activity.reactions === undefined ? {} : { reactions: activity.reactions }),
+              ...(activity.lifecycleEvents === undefined
+                ? {}
+                : { lifecycleEvents: activity.lifecycleEvents }),
+              ...(activity.lifecycleEventsTruncated === undefined
+                ? {}
+                : { lifecycleEventsTruncated: activity.lifecycleEventsTruncated }),
             })),
           ),
       ),

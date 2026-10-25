@@ -120,6 +120,140 @@ export const Deployment = Schema.Struct({
 })
 export interface Deployment extends Schema.Struct.Type<typeof Deployment.fields> {}
 
+/** Information about pagination in a connection. */
+export const PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo = Schema.Struct({
+  /** When paginating forwards, are there more items? */
+  hasNextPage: Schema.Boolean,
+  /** When paginating forwards, the cursor to continue. */
+  endCursor: Schema.NullOr(Schema.String)
+})
+export interface PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo extends Schema.Struct.Type<typeof PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo.fields> {}
+
+/** Represents an object which can take actions on GitHub. Typically a User or Bot. */
+export const ActorActor = Schema.Struct({
+  __typename: GraphQL.otherTypename<Shared.Typename.Actor>()([]),
+  /** The username of the actor. */
+  login: Schema.String,
+  /** A URL pointing to the actor's public avatar. */
+  avatarUrl: Shared.URI
+})
+export interface ActorActor extends Schema.Struct.Type<typeof ActorActor.fields> {}
+
+/** Represents a Git commit. */
+export const TimelineItemsNodesCommitCommit = Schema.Struct({
+  /** The Git object ID */
+  oid: Shared.GitObjectID,
+  /** The HTTP URL for this commit */
+  url: Shared.URI
+})
+export interface TimelineItemsNodesCommitCommit extends Schema.Struct.Type<typeof TimelineItemsNodesCommitCommit.fields> {}
+
+/** Represents a 'merged' event on a given pull request. */
+export const MergedEvent = Schema.Struct({
+  __typename: Schema.Literal("MergedEvent"),
+  /** The Node ID of the MergedEvent object */
+  id: Shared.ID,
+  /** Identifies the date and time when the object was created. */
+  createdAt: Shared.DateTime,
+  /** Identifies the actor who performed the event. */
+  actor: Schema.NullOr(ActorActor),
+  /** Identifies the name of the Ref associated with the `merge` event. */
+  mergeRefName: Schema.String,
+  /** Identifies the commit associated with the `merge` event. */
+  commit: Schema.NullOr(TimelineItemsNodesCommitCommit)
+})
+export interface MergedEvent extends Schema.Struct.Type<typeof MergedEvent.fields> {}
+
+/** Represents a 'head_ref_deleted' event on a given pull request. */
+export const HeadRefDeletedEvent = Schema.Struct({
+  __typename: Schema.Literal("HeadRefDeletedEvent"),
+  /** The Node ID of the HeadRefDeletedEvent object */
+  id: Shared.ID,
+  /** Identifies the date and time when the object was created. */
+  createdAt: Shared.DateTime,
+  /** Identifies the actor who performed the event. */
+  actor: Schema.NullOr(ActorActor),
+  /** Identifies the name of the Ref associated with the `head_ref_deleted` event. */
+  headRefName: Schema.String
+})
+export interface HeadRefDeletedEvent extends Schema.Struct.Type<typeof HeadRefDeletedEvent.fields> {}
+
+/** Represents a 'head_ref_restored' event on a given pull request. */
+export const HeadRefRestoredEvent = Schema.Struct({
+  __typename: Schema.Literal("HeadRefRestoredEvent"),
+  /** The Node ID of the HeadRefRestoredEvent object */
+  id: Shared.ID,
+  /** Identifies the date and time when the object was created. */
+  createdAt: Shared.DateTime,
+  /** Identifies the actor who performed the event. */
+  actor: Schema.NullOr(ActorActor)
+})
+export interface HeadRefRestoredEvent extends Schema.Struct.Type<typeof HeadRefRestoredEvent.fields> {}
+
+/** An item in a pull request timeline */
+export const PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsNodesPullRequestTimelineItemsOther = Schema.Struct({
+  __typename: GraphQL.otherTypename<Shared.Typename.PullRequestTimelineItems>()(["MergedEvent", "HeadRefDeletedEvent", "HeadRefRestoredEvent"])
+})
+export interface PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsNodesPullRequestTimelineItemsOther extends Schema.Struct.Type<typeof PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsNodesPullRequestTimelineItemsOther.fields> {}
+
+/** The connection type for PullRequestTimelineItems. */
+export const PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection = Schema.Struct({
+  /** Information to aid in pagination. */
+  pageInfo: PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo,
+  /** A list of nodes. */
+  nodes: Schema.NullOr(Schema.Array(Schema.NullOr(Schema.Union([
+    MergedEvent,
+    HeadRefDeletedEvent,
+    HeadRefRestoredEvent,
+    PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsNodesPullRequestTimelineItemsOther
+  ]))))
+})
+export interface PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection extends Schema.Struct.Type<typeof PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection.fields> {}
+
+/** A repository pull request. */
+export const PullRequestLifecycleEventsRepositoryPullRequestPullRequest = Schema.Struct({
+  /** A list of events, comments, commits, etc. associated with the pull request. */
+  timelineItems: PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection
+})
+export interface PullRequestLifecycleEventsRepositoryPullRequestPullRequest extends Schema.Struct.Type<typeof PullRequestLifecycleEventsRepositoryPullRequestPullRequest.fields> {}
+
+/** A repository contains the content for a project. */
+export const PullRequestLifecycleEventsRepositoryRepository = Schema.Struct({
+  /** Returns a single pull request from the current repository by number. */
+  pullRequest: Schema.NullOr(PullRequestLifecycleEventsRepositoryPullRequestPullRequest)
+})
+export interface PullRequestLifecycleEventsRepositoryRepository extends Schema.Struct.Type<typeof PullRequestLifecycleEventsRepositoryRepository.fields> {}
+
+/** `query PullRequestLifecycleEvents` */
+export const PullRequestLifecycleEvents = GraphQL.query("PullRequestLifecycleEvents", {
+  document: {
+    variables: [
+      { name: "owner", body: "String!" },
+      { name: "name", body: "String!" },
+      { name: "number", body: "Int!" },
+      { name: "after", body: "String" }
+    ],
+    selections: [
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){timelineItems(first:100 after:$", "after", " itemTypes:[MERGED_EVENT HEAD_REF_DELETED_EVENT HEAD_REF_RESTORED_EVENT]){pageInfo{hasNextPage endCursor}nodes{__typename...on MergedEvent{id createdAt actor{__typename login avatarUrl}mergeRefName commit{oid url}}...on HeadRefDeletedEvent{id createdAt actor{__typename login avatarUrl}headRefName}...on HeadRefRestoredEvent{id createdAt actor{__typename login avatarUrl}}}}}}"] }
+    ],
+    fragments: []
+  },
+  variables: {
+    owner: Schema.String,
+    name: Schema.String,
+    number: Shared.Int,
+    after: Schema.optional(Schema.NullOr(Schema.String))
+  },
+  result: Schema.Struct({
+    /** Lookup a given repository by the owner and repository name. */
+    repository: Schema.NullOr(PullRequestLifecycleEventsRepositoryRepository)
+  })
+})
+export declare namespace PullRequestLifecycleEvents {
+  export type Variables = typeof PullRequestLifecycleEvents.variables.Type
+  export type Result = typeof PullRequestLifecycleEvents.result.Type
+}
+
 /** A user is an individual's account on GitHub that owns repositories and can make new content. */
 export const ActorAvatarsNodesUser = Schema.Struct({
   __typename: Schema.Literal("User"),
@@ -328,29 +462,29 @@ export const DeployedEvent = Schema.Struct({
 export interface DeployedEvent extends Schema.Struct.Type<typeof DeployedEvent.fields> {}
 
 /** An item in a pull request timeline */
-export const PullRequestTimelineItemsOther = Schema.Struct({
+export const PullRequestCoreRepositoryPullRequestTimelineItemsNodesPullRequestTimelineItemsOther = Schema.Struct({
   __typename: GraphQL.otherTypename<Shared.Typename.PullRequestTimelineItems>()(["DeployedEvent"])
 })
-export interface PullRequestTimelineItemsOther extends Schema.Struct.Type<typeof PullRequestTimelineItemsOther.fields> {}
+export interface PullRequestCoreRepositoryPullRequestTimelineItemsNodesPullRequestTimelineItemsOther extends Schema.Struct.Type<typeof PullRequestCoreRepositoryPullRequestTimelineItemsNodesPullRequestTimelineItemsOther.fields> {}
 
 /** Information about pagination in a connection. */
-export const TimelineItemsPageInfoPageInfo = Schema.Struct({
+export const PullRequestCoreRepositoryPullRequestTimelineItemsPageInfoPageInfo = Schema.Struct({
   /** When paginating backwards, are there more items? */
   hasPreviousPage: Schema.Boolean
 })
-export interface TimelineItemsPageInfoPageInfo extends Schema.Struct.Type<typeof TimelineItemsPageInfoPageInfo.fields> {}
+export interface PullRequestCoreRepositoryPullRequestTimelineItemsPageInfoPageInfo extends Schema.Struct.Type<typeof PullRequestCoreRepositoryPullRequestTimelineItemsPageInfoPageInfo.fields> {}
 
 /** The connection type for PullRequestTimelineItems. */
-export const PullRequestTimelineItemsConnection = Schema.Struct({
+export const PullRequestCoreRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection = Schema.Struct({
   /** A list of nodes. */
   nodes: Schema.NullOr(Schema.Array(Schema.NullOr(Schema.Union([
     DeployedEvent,
-    PullRequestTimelineItemsOther
+    PullRequestCoreRepositoryPullRequestTimelineItemsNodesPullRequestTimelineItemsOther
   ])))),
   /** Information to aid in pagination. */
-  pageInfo: TimelineItemsPageInfoPageInfo
+  pageInfo: PullRequestCoreRepositoryPullRequestTimelineItemsPageInfoPageInfo
 })
-export interface PullRequestTimelineItemsConnection extends Schema.Struct.Type<typeof PullRequestTimelineItemsConnection.fields> {}
+export interface PullRequestCoreRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection extends Schema.Struct.Type<typeof PullRequestCoreRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection.fields> {}
 
 /** Information about pagination in a connection. */
 export const DeploymentsPageInfoPageInfo = Schema.Struct({
@@ -484,7 +618,7 @@ export const PullRequestCoreRepositoryPullRequestPullRequest = Schema.Struct({
   /** A list of labels associated with the object. */
   labels: Schema.NullOr(PullRequestCoreRepositoryPullRequestLabelsLabelConnection),
   /** A list of events, comments, commits, etc. associated with the pull request. */
-  timelineItems: Schema.optionalKey(PullRequestTimelineItemsConnection),
+  timelineItems: Schema.optionalKey(PullRequestCoreRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection),
   /** A list of commits present in this pull request's head branch not present in the base branch. */
   commits: PullRequestCoreRepositoryPullRequestCommitsPullRequestCommitConnection
 })
@@ -764,7 +898,7 @@ export const PullRequestCoreEnterpriseRepositoryPullRequestPullRequest = Schema.
   /** A list of labels associated with the object. */
   labels: Schema.NullOr(PullRequestCoreRepositoryPullRequestLabelsLabelConnection),
   /** A list of events, comments, commits, etc. associated with the pull request. */
-  timelineItems: Schema.optionalKey(PullRequestTimelineItemsConnection),
+  timelineItems: Schema.optionalKey(PullRequestCoreRepositoryPullRequestTimelineItemsPullRequestTimelineItemsConnection),
   /** A list of commits present in this pull request's head branch not present in the base branch. */
   commits: PullRequestCoreRepositoryPullRequestCommitsPullRequestCommitConnection
 })
@@ -946,21 +1080,12 @@ export declare namespace PullRequestCoreEnterpriseWithoutDeployments {
   export type Result = typeof PullRequestCoreEnterpriseWithoutDeployments.result.Type
 }
 
-/** Information about pagination in a connection. */
-export const ContextsPageInfoPageInfo = Schema.Struct({
-  /** When paginating forwards, are there more items? */
-  hasNextPage: Schema.Boolean,
-  /** When paginating forwards, the cursor to continue. */
-  endCursor: Schema.NullOr(Schema.String)
-})
-export interface ContextsPageInfoPageInfo extends Schema.Struct.Type<typeof ContextsPageInfoPageInfo.fields> {}
-
 /** The connection type for StatusCheckRollupContext. */
 export const PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection = Schema.Struct({
   /** A list of nodes. */
   nodes: Schema.NullOr(Schema.Array(Schema.NullOr(CheckContext))),
   /** Information to aid in pagination. */
-  pageInfo: ContextsPageInfoPageInfo
+  pageInfo: PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo
 })
 export interface PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection extends Schema.Struct.Type<typeof PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection.fields> {}
 
@@ -1189,7 +1314,7 @@ export interface NodesIssueComment extends Schema.Struct.Type<typeof NodesIssueC
 /** The connection type for IssueComment. */
 export const IssueCommentConnection = Schema.Struct({
   /** Information to aid in pagination. */
-  pageInfo: ContextsPageInfoPageInfo,
+  pageInfo: PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo,
   /** A list of nodes. */
   nodes: Schema.NullOr(Schema.Array(Schema.NullOr(NodesIssueComment)))
 })
@@ -1220,7 +1345,7 @@ export interface NodesPullRequestReview extends Schema.Struct.Type<typeof NodesP
 /** The connection type for PullRequestReview. */
 export const PullRequestReviewConnection = Schema.Struct({
   /** Information to aid in pagination. */
-  pageInfo: ContextsPageInfoPageInfo,
+  pageInfo: PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo,
   /** A list of nodes. */
   nodes: Schema.NullOr(Schema.Array(Schema.NullOr(NodesPullRequestReview)))
 })
@@ -1303,7 +1428,7 @@ export interface NodesPullRequest extends Schema.Struct.Type<typeof NodesPullReq
 /** The connection type for PullRequest. */
 export const PullRequestConnection = Schema.Struct({
   /** Information to aid in pagination. */
-  pageInfo: ContextsPageInfoPageInfo,
+  pageInfo: PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo,
   /** A list of nodes. */
   nodes: Schema.NullOr(Schema.Array(Schema.NullOr(NodesPullRequest)))
 })
@@ -1549,12 +1674,12 @@ export const UserConnection = Schema.Struct({
 export interface UserConnection extends Schema.Struct.Type<typeof UserConnection.fields> {}
 
 /** Represents an object which can take actions on GitHub. Typically a User or Bot. */
-export const Actor = Schema.Struct({
+export const AuthorActor = Schema.Struct({
   __typename: GraphQL.otherTypename<Shared.Typename.Actor>()([]),
   /** The username of the actor. */
   login: Schema.String
 })
-export interface Actor extends Schema.Struct.Type<typeof Actor.fields> {}
+export interface AuthorActor extends Schema.Struct.Type<typeof AuthorActor.fields> {}
 
 /** A request for a user to review a pull request. */
 export const ReviewerCandidatesRepositoryPullRequestReviewRequestsNodesReviewRequest = Schema.Struct({
@@ -1578,7 +1703,7 @@ export interface ReviewerCandidatesRepositoryPullRequestReviewRequestsReviewRequ
 /** A repository pull request. */
 export const ReviewerCandidatesRepositoryPullRequestPullRequest = Schema.Struct({
   /** The actor who authored the comment. */
-  author: Schema.NullOr(Actor),
+  author: Schema.NullOr(AuthorActor),
   /** A list of review requests associated with the pull request. */
   reviewRequests: Schema.NullOr(ReviewerCandidatesRepositoryPullRequestReviewRequestsReviewRequestConnection)
 })
@@ -1711,7 +1836,7 @@ export interface PullRequestChangedFile extends Schema.Struct.Type<typeof PullRe
 /** The connection type for PullRequestChangedFile. */
 export const PullRequestChangedFileConnection = Schema.Struct({
   /** Information to aid in pagination. */
-  pageInfo: ContextsPageInfoPageInfo,
+  pageInfo: PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo,
   /** A list of nodes. */
   nodes: Schema.NullOr(Schema.Array(Schema.NullOr(PullRequestChangedFile)))
 })
@@ -2107,7 +2232,7 @@ export interface NodesCheckSuite extends Schema.Struct.Type<typeof NodesCheckSui
 /** The connection type for CheckSuite. */
 export const CheckSuiteConnection = Schema.Struct({
   /** Information to aid in pagination. */
-  pageInfo: ContextsPageInfoPageInfo,
+  pageInfo: PullRequestLifecycleEventsRepositoryPullRequestTimelineItemsPageInfoPageInfo,
   /** A list of nodes. */
   nodes: Schema.NullOr(Schema.Array(Schema.NullOr(NodesCheckSuite)))
 })
@@ -2168,4 +2293,4 @@ export declare namespace WorkflowApprovalSuites {
 }
 
 /** Every operation in pullRequestReads.graphql. */
-export const PullRequestReadsGraphQLGroup = GraphQLGroup.make(ActorAvatars, PullRequestCore, PullRequestCoreWithoutDeployments, PullRequestCoreEnterprise, PullRequestCoreEnterpriseWithoutDeployments, PullRequestCheckContexts, PullRequestPreview, PullRequestActivity, PullRequestHeads, PullRequestNodeId, PullRequestSubject, ViewerPermissions, ReviewerCandidates, LabelCandidates, PullRequestFilesViewed, PullRequestMergeMessage, PullRequestActionState, PullRequestBranchToDelete, PullRequestSourceBranch, AutoMergePermissions, BranchProtectionRequiredChecks, WorkflowApprovalSuites)
+export const PullRequestReadsGraphQLGroup = GraphQLGroup.make(PullRequestLifecycleEvents, ActorAvatars, PullRequestCore, PullRequestCoreWithoutDeployments, PullRequestCoreEnterprise, PullRequestCoreEnterpriseWithoutDeployments, PullRequestCheckContexts, PullRequestPreview, PullRequestActivity, PullRequestHeads, PullRequestNodeId, PullRequestSubject, ViewerPermissions, ReviewerCandidates, LabelCandidates, PullRequestFilesViewed, PullRequestMergeMessage, PullRequestActionState, PullRequestBranchToDelete, PullRequestSourceBranch, AutoMergePermissions, BranchProtectionRequiredChecks, WorkflowApprovalSuites)

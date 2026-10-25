@@ -181,6 +181,8 @@ Open **Pull requests** to review changes and comments, request reviewers, check 
 or merge. You can edit review titles and descriptions and your own comments where the host allows it.
 GitLab calls these merge requests.
 
+For GitHub pull requests, **Timeline** on web and desktop and **Activity** on mobile show who merged the change, the resulting commit and target branch, and source-branch deletion and restoration events when GitHub supplies them. Open the merge commit to inspect it on GitHub. If some history could not be loaded, the view points you to the provider for more activity.
+
 On mobile, **Pull requests** lists reviews across your connected environments. Open a review
 to read its description, activity, commits, and changed files. Line comments stay as drafts
 until you submit the review. **Work on PR** opens a chat with the review attached; sending

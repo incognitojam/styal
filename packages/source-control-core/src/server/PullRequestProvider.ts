@@ -16,6 +16,7 @@ import type {
   PullRequestCommit,
   PullRequestInvolvement,
   PullRequestLabel,
+  PullRequestLifecycleEvent,
   PullRequestListFilters,
   PullRequestListState,
   PullRequestMergeCapabilities,
@@ -205,6 +206,8 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
 }
 
 export interface ProviderChangeRequestActivity {
+  readonly lifecycleEvents?: ReadonlyArray<PullRequestLifecycleEvent>;
+  readonly lifecycleEventsTruncated?: boolean;
   readonly author?: PullRequestActor | null;
   readonly reviewers?: ReadonlyArray<PullRequestActor>;
   readonly comments: ReadonlyArray<PullRequestComment>;

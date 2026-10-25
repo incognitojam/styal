@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   PullRequestActionInput,
+  PullRequestActivity,
   PullRequestCapabilities,
   PullRequestInvalidateInput,
   PullRequestFilesViewedResult,
@@ -22,6 +23,31 @@ const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerReques
 const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
 const decodeSetFilesViewed = Schema.decodeUnknownSync(PullRequestSetFilesViewedInput);
 const decodeFilesViewed = Schema.decodeUnknownSync(PullRequestFilesViewedResult);
+
+it("decodes historical lifecycle events without requiring them from older hosts", () => {
+  const decode = Schema.decodeUnknownSync(PullRequestActivity);
+  const legacy = {
+    comments: [],
+    commentCount: 0,
+    commentsTruncated: false,
+    reviewThreads: [],
+    commits: [],
+  };
+  expect(decode(legacy).lifecycleEvents).toBeUndefined();
+  const event = {
+    id: "ME_1",
+    kind: "merged",
+    createdAt: "2026-10-01T12:00:00Z",
+    actor: null,
+    commit: null,
+    targetBranch: null,
+  };
+  expect(
+    decode({ ...legacy, lifecycleEvents: [event], lifecycleEventsTruncated: true }),
+  ).toMatchObject({ lifecycleEvents: [event], lifecycleEventsTruncated: true });
+  expect(() => decode({ ...legacy, lifecycleEvents: [{ ...event, createdAt: 42 }] })).toThrow();
+  expect(() => decode({ ...legacy, lifecycleEvents: [{ ...event, id: "" }] })).toThrow();
+});
 
 const LIST_RESULT: PullRequestListResult = {
   viewers: { "github.com": "bilal", "gitlab.com": "bilal.hassan" },

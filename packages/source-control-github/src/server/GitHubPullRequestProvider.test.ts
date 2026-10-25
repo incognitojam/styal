@@ -1075,6 +1075,8 @@ describe("getChangeRequest commits", () => {
 
   const layerWith = (commits: GitHubReviewThreadComments["commits"]) =>
     Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
+      getPullRequestLifecycleEvents: () =>
+        Effect.succeed({ lifecycleEvents: [], lifecycleEventsTruncated: false }),
       revalidateChecks: (_input, read) => read,
       getPullRequestActivity: () =>
         Effect.succeed({
@@ -1162,6 +1164,8 @@ describe("getChangeRequestActivity dismissed reviews", () => {
   };
   const layerFor = (body: string) =>
     Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
+      getPullRequestLifecycleEvents: () =>
+        Effect.succeed({ lifecycleEvents: [], lifecycleEventsTruncated: false }),
       revalidateChecks: (_input, read) => read,
       getPullRequestActivity: () =>
         Effect.succeed({ author: null, comments: [dismissedReview(body)], commits: [] }),
@@ -1199,6 +1203,67 @@ describe("getChangeRequestActivity dismissed reviews", () => {
     ),
   );
 });
+
+it.effect(
+  "keeps lifecycle history separate from comments and reports event-read failures as incomplete",
+  () =>
+    Effect.gen(function* () {
+      const event = {
+        id: "HDE_1",
+        kind: "head-ref-deleted" as const,
+        createdAt: "2026-10-01T12:00:00Z",
+        actor: null,
+        branchName: "feature",
+      };
+      const comment = {
+        id: "IC_1",
+        kind: "issue-comment" as const,
+        createdAt: event.createdAt,
+        author: null,
+        body: "Keep this conversation.",
+        url: null,
+        path: null,
+        reviewState: null,
+      };
+      for (const fails of [false, true]) {
+        const provider = yield* make.pipe(
+          Effect.provide(
+            Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
+              getPullRequestActivity: () =>
+                Effect.succeed({ author: null, comments: [comment], commits: [] }),
+              listReviewThreadComments: () =>
+                Effect.fail(
+                  new GitHubPullRequestApi.GitHubPullRequestReadError({
+                    cwd: "/w",
+                    operation: "threads",
+                    cause: "unavailable",
+                  }),
+                ),
+              getPullRequestLifecycleEvents: () =>
+                fails
+                  ? Effect.fail(
+                      new GitHubPullRequestApi.GitHubPullRequestReadError({
+                        cwd: "/w",
+                        operation: "lifecycle",
+                        cause: "unsupported",
+                      }),
+                    )
+                  : Effect.succeed({ lifecycleEvents: [event], lifecycleEventsTruncated: false }),
+            }),
+          ),
+        );
+        const activity = yield* provider.getChangeRequestActivity({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+        });
+        expect(activity.comments.map((entry) => entry.body)).toEqual([comment.body]);
+        expect(activity.lifecycleEvents).toEqual(fails ? undefined : [event]);
+        expect(activity.lifecycleEventsTruncated).toBe(fails);
+      }
+    }),
+);
 
 describe("editing", () => {
   const rewrites: Array<unknown> = [];

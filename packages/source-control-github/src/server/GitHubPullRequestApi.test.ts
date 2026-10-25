@@ -750,6 +750,171 @@ it.effect(
 );
 
 layer("GitHubPullRequestApi.layer", (it) => {
+  const lifecycleInput = { cwd: "/w", repository: "acme/web", host: "github.com", number: 7 };
+  const lifecycleResponse = (
+    nodes: readonly unknown[],
+    hasNextPage = false,
+    endCursor: string | null = null,
+  ) =>
+    Effect.succeed(
+      output(
+        encodeJson({
+          data: {
+            repository: {
+              pullRequest: { timelineItems: { nodes, pageInfo: { hasNextPage, endCursor } } },
+            },
+          },
+        }),
+      ),
+    );
+  const mergeEvent = {
+    __typename: "MergedEvent",
+    id: "ME_1",
+    createdAt: "2026-10-01T12:00:00Z",
+    actor: { __typename: "User", login: "maintainer", avatarUrl: "https://example.com/avatar" },
+    mergeRefName: "release",
+    commit: { oid: "1234567890abcdef", url: "https://github.com/acme/web/commit/1234567890abcdef" },
+  };
+
+  it.effect(
+    "reads factual merge, deletion and restoration events across pages with stable IDs",
+    () =>
+      Effect.gen(function* () {
+        mockedExecute.mockReturnValueOnce(lifecycleResponse([mergeEvent], true, "page-2"));
+        mockedExecute.mockReturnValueOnce(
+          lifecycleResponse([
+            mergeEvent,
+            {
+              __typename: "HeadRefDeletedEvent",
+              id: "HDE_1",
+              createdAt: "2026-10-01T12:01:00Z",
+              actor: {
+                __typename: "Bot",
+                login: "automation",
+                avatarUrl: "https://example.com/bot",
+              },
+              headRefName: "feature",
+            },
+            {
+              __typename: "HeadRefRestoredEvent",
+              id: "HRE_1",
+              createdAt: "2026-10-01T12:02:00Z",
+              actor: null,
+            },
+            { ...mergeEvent, id: "ME_2", actor: null, commit: null },
+          ]),
+        );
+        const api = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        const result = yield* api.getPullRequestLifecycleEvents(lifecycleInput);
+        expect(result.lifecycleEventsTruncated).toBe(false);
+        expect(result.lifecycleEvents).toEqual([
+          {
+            id: "ME_1",
+            kind: "merged",
+            createdAt: mergeEvent.createdAt,
+            actor: { login: "maintainer", name: null, avatarUrl: "https://example.com/avatar" },
+            targetBranch: "release",
+            commit: mergeEvent.commit,
+          },
+          {
+            id: "HDE_1",
+            kind: "head-ref-deleted",
+            createdAt: "2026-10-01T12:01:00Z",
+            actor: {
+              login: "automation",
+              name: null,
+              avatarUrl: "https://example.com/bot",
+              isBot: true,
+            },
+            branchName: "feature",
+          },
+          {
+            id: "HRE_1",
+            kind: "head-ref-restored",
+            createdAt: "2026-10-01T12:02:00Z",
+            actor: null,
+            branchName: null,
+          },
+          {
+            id: "ME_2",
+            kind: "merged",
+            createdAt: mergeEvent.createdAt,
+            actor: null,
+            targetBranch: "release",
+            commit: null,
+          },
+        ]);
+        expect(varsAt(1)).toMatchObject({ after: "page-2" });
+        expect(mockedExecute).toHaveBeenCalledTimes(2);
+      }),
+  );
+
+  it.effect("bounds lifecycle pagination and marks repeated or missing cursors as incomplete", () =>
+    Effect.gen(function* () {
+      const api = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      let count = 0;
+      mockedExecute.mockImplementation(() =>
+        lifecycleResponse([{ ...mergeEvent, id: `ME_${++count}` }], true, `page-${count}`),
+      );
+      const capped = yield* api.getPullRequestLifecycleEvents(lifecycleInput);
+      expect(capped.lifecycleEvents).toHaveLength(10);
+      expect(capped.lifecycleEventsTruncated).toBe(true);
+      expect(count).toBe(10);
+      mockedExecute.mockReset();
+      mockedExecute.mockReturnValue(lifecycleResponse([mergeEvent], true, "repeated"));
+      const repeated = yield* api.getPullRequestLifecycleEvents(lifecycleInput);
+      expect(repeated.lifecycleEventsTruncated).toBe(true);
+      expect(repeated.lifecycleEvents).toHaveLength(1);
+      expect(mockedExecute).toHaveBeenCalledTimes(2);
+      mockedExecute.mockReset();
+      mockedExecute.mockReturnValue(lifecycleResponse([mergeEvent], true, null));
+      expect(
+        Result.isFailure(
+          yield* api.getPullRequestLifecycleEvents(lifecycleInput).pipe(Effect.result),
+        ),
+      ).toBe(true);
+    }),
+  );
+
+  it.effect("distinguishes empty history from unsupported, unreadable and failed later pages", () =>
+    Effect.gen(function* () {
+      const api = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      mockedExecute.mockReturnValueOnce(lifecycleResponse([]));
+      expect(yield* api.getPullRequestLifecycleEvents(lifecycleInput)).toEqual({
+        lifecycleEvents: [],
+        lifecycleEventsTruncated: false,
+      });
+      for (const body of [
+        { errors: [{ message: "Unknown type HeadRefRestoredEvent" }] },
+        { data: { repository: { pullRequest: null } } },
+        {
+          data: {
+            repository: {
+              pullRequest: {
+                timelineItems: { nodes: [{}], pageInfo: { hasNextPage: false, endCursor: null } },
+              },
+            },
+          },
+        },
+      ]) {
+        mockedExecute.mockReturnValueOnce(Effect.succeed(output(encodeJson(body))));
+        expect(
+          Result.isFailure(
+            yield* api.getPullRequestLifecycleEvents(lifecycleInput).pipe(Effect.result),
+          ),
+        ).toBe(true);
+      }
+      mockedExecute.mockReturnValueOnce(lifecycleResponse([mergeEvent], true, "next"));
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(output(encodeJson({ errors: [{ message: "History unavailable" }] }))),
+      );
+      expect(
+        Result.isFailure(
+          yield* api.getPullRequestLifecycleEvents(lifecycleInput).pipe(Effect.result),
+        ),
+      ).toBe(true);
+    }),
+  );
   it.effect("holds background previews once an answer reports the reserve, until it resets", () =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;

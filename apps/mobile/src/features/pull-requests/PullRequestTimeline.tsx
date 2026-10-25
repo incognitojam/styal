@@ -2,10 +2,18 @@ import { PullRequestEntryRow } from "./PullRequestEntryRow";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import IconGitCommit from "@tabler/icons-react-native/IconGitCommit";
-import type { PullRequestActivity, PullRequestComment } from "@t3tools/contracts";
+import type {
+  PullRequestActivity,
+  PullRequestComment,
+  PullRequestLifecycleEvent,
+} from "@t3tools/contracts";
+import {
+  pullRequestLifecycleEvents,
+  pullRequestLifecycleText,
+} from "@t3tools/client-runtime/pull-request-lifecycle";
 import { StackActions, type NavigationProp } from "@react-navigation/native";
 import { useMemo, useState, type ReactNode } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
 import { parseMarkdownDocument } from "../../lib/markdownDocument";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
@@ -14,6 +22,54 @@ import { PullRequestAvatar } from "./PullRequestPresentation";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { pullRequestDescriptionContent } from "./pullRequestDescriptionContent";
 import type { PullRequestParams } from "./usePullRequestDiff";
+import { PullRequestGlyph } from "./pullRequestGlyphs";
+
+function LifecycleEvent({ event }: { event: PullRequestLifecycleEvent }) {
+  const commit = event.kind === "merged" ? event.commit : null;
+  const commitUrl = commit?.url;
+  return (
+    <TimelineEvent
+      icon={
+        event.kind === "merged"
+          ? PullRequestGlyph.merged
+          : event.kind === "head-ref-deleted"
+            ? "trash"
+            : "arrow.uturn.backward"
+      }
+    >
+      <View className="flex-row items-center gap-2">
+        {event.actor ? <PullRequestAvatar actor={event.actor} size={22} /> : null}
+        <Text className="min-w-0 flex-1 text-sm">
+          {event.actor ? <Text className="font-t3-medium">{event.actor.login} </Text> : null}
+          {event.kind === "merged" && commit ? (
+            <>
+              merged commit{" "}
+              <Text
+                accessibilityRole={commitUrl ? "link" : undefined}
+                className="font-mono text-foreground-muted"
+                onPress={
+                  commitUrl
+                    ? () => {
+                        void Linking.openURL(commitUrl).catch((error: unknown) =>
+                          console.error("Unable to open commit", error),
+                        );
+                      }
+                    : undefined
+                }
+              >
+                {commit.oid.slice(0, 7)}
+              </Text>
+              {event.targetBranch ? ` into ${event.targetBranch}` : ""}
+            </>
+          ) : (
+            pullRequestLifecycleText(event)
+          )}
+        </Text>
+        <Text className="text-2xs text-foreground-tertiary">{relativeTime(event.createdAt)}</Text>
+      </View>
+    </TimelineEvent>
+  );
+}
 
 function TimelineEvent(props: {
   icon: AppSymbolName | "commit";
@@ -182,6 +238,11 @@ export function pullRequestTimelineRows(
     activity.reviewThreads.flatMap((thread) => thread.comments.map((comment) => comment.id)),
   );
   const events = [
+    ...pullRequestLifecycleEvents(activity).map((event) => ({
+      key: `lifecycle:${event.id}`,
+      date: event.createdAt,
+      content: <LifecycleEvent event={event} />,
+    })),
     ...activity.comments
       .filter((comment) => !discussionIds.has(comment.id))
       .map((comment) => ({
@@ -260,7 +321,11 @@ export function pullRequestTimelineRows(
       ),
     })),
   ].sort((a, b) => a.date.localeCompare(b.date));
-  if (activity.commentsTruncated || activity.reviewThreadsTruncated)
+  if (
+    activity.commentsTruncated ||
+    activity.reviewThreadsTruncated ||
+    activity.lifecycleEventsTruncated
+  )
     events.push({
       key: "truncated",
       date: "",

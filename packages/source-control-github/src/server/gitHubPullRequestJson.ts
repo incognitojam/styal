@@ -15,6 +15,7 @@ import type {
   PullRequestCommit,
   PullRequestFileViewedState,
   PullRequestLabel,
+  PullRequestLifecycleEvent,
   PullRequestMergeCapabilities,
   PullRequestMergeMethod,
   PullRequestMergeReadiness,
@@ -61,6 +62,7 @@ import type {
   CheckContext,
   LabelCandidates,
   PullRequestActivity,
+  PullRequestLifecycleEvents,
   PullRequestCheckContexts,
   PullRequestCore,
   PullRequestFilesViewed,
@@ -1544,6 +1546,50 @@ export interface GitHubPullRequestActivityPage {
   readonly remarks: ReadonlyArray<PullRequestComment>;
   readonly nextCommentsCursor: string | null;
   readonly nextReviewsCursor: string | null;
+}
+
+export function toPullRequestLifecycleEvents(result: PullRequestLifecycleEvents.Result) {
+  const connection = result.repository?.pullRequest?.timelineItems;
+  if (connection == null) return null;
+  const events = nodesOf(connection).flatMap((node): PullRequestLifecycleEvent[] => {
+    switch (node.__typename) {
+      case "MergedEvent":
+        return [
+          {
+            id: node.id,
+            kind: "merged",
+            createdAt: node.createdAt,
+            actor: toActor(node.actor),
+            targetBranch: trimmed(node.mergeRefName),
+            commit: node.commit == null ? null : { oid: node.commit.oid, url: node.commit.url },
+          },
+        ];
+      case "HeadRefDeletedEvent":
+        return [
+          {
+            id: node.id,
+            kind: "head-ref-deleted",
+            createdAt: node.createdAt,
+            actor: toActor(node.actor),
+            branchName: trimmed(node.headRefName),
+          },
+        ];
+      case "HeadRefRestoredEvent":
+        return [
+          {
+            id: node.id,
+            kind: "head-ref-restored",
+            createdAt: node.createdAt,
+            actor: toActor(node.actor),
+            // GitHub reports no historical branch name on a restoration event.
+            branchName: null,
+          },
+        ];
+      default:
+        return [];
+    }
+  });
+  return { events, pageInfo: connection.pageInfo };
 }
 
 /** One page of the activity read; null for a pull request the viewer cannot see. */

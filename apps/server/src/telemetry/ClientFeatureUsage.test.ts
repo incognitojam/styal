@@ -10,6 +10,48 @@ import * as ClientFeatureUsage from "./ClientFeatureUsage.ts";
 const decode = Schema.decodeUnknownEffect(ForkClientUsageInput);
 const isUsage = Schema.is(ForkClientUsageInput);
 
+it.effect("records lifecycle commit opens once with bounded outcomes and no host content", () =>
+  Effect.gen(function* () {
+    const events: unknown[] = [];
+    const report = yield* ClientFeatureUsage.reporter({ surface: "web" }).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, {
+        record: (event, properties) =>
+          Effect.sync(() => {
+            events.push({ event, properties });
+          }),
+        flush: Effect.void,
+      }),
+    );
+    for (const outcome of ["success", "failure"] as const) {
+      yield* report(
+        yield* decode({
+          feature: "pull-request-lifecycle",
+          action: "open_commit",
+          outcome,
+          oid: "1234567",
+          branch: "feature",
+          url: "https://example.com/commit",
+        }),
+      );
+      expect(events.at(-1)).toEqual({
+        event: "feature.used",
+        properties: {
+          feature: "pull-request-lifecycle",
+          action: "open_commit",
+          outcome,
+          source: "user",
+          surface: "web",
+          forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+        },
+      });
+    }
+    expect(events).toHaveLength(2);
+    expect(
+      isUsage({ feature: "pull-request-lifecycle", action: "delete", outcome: "success" }),
+    ).toBe(false);
+  }),
+);
+
 it.effect(
   "records deployment interactions with bounded outcomes and no PR or environment content",
   () =>

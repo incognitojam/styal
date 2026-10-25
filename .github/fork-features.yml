@@ -3927,6 +3927,55 @@ features:
         - https://github.com/pingdotgg/t3code/pull/11117
       retire_when: Upstream shares cached repository label metadata across pull requests while refreshing, keeps applied state specific to the current pull request, and applies label edits optimistically with rollback on failure.
 
+  - id: pull-request-lifecycle-events
+    title: Factual GitHub merge and source-branch history
+    status: maintained
+    prs: []
+    invariants:
+      - Web, desktop and mobile show host-reported merge actors, commits, target branches and times, and source-branch deletion and restoration events with stable host identities.
+      - Historical events do not imply current branch existence; unavailable actors, commits and historical branch names are omitted rather than inferred.
+      - Actual merge events suppress the timestamp-only web fallback and the close entry recorded alongside a merge; older servers and unsupported providers retain existing behavior.
+      - Lifecycle history has a bounded independent read and an incomplete-history notice on pagination limits or read errors, without preventing comments, reviews or deployments from loading.
+      - Mobile lifecycle events appear in All activity, with bot and resolved-conversation filters leaving factual lifecycle history intact.
+      - Explicit web and desktop merge-commit link opens report bounded outcomes without host content; older reporting servers and telemetry failures do not block opening links.
+    implementation_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestTimeline.tsx
+      - apps/mobile/src/features/pull-requests/pullRequestActivityFilter.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+      - packages/client-runtime/src/pullRequestLifecycle.ts
+      - packages/contracts/src/forkClientUsage.ts
+      - packages/contracts/src/pullRequest.ts
+      - packages/source-control-core/src/server/PullRequestProvider.ts
+      - packages/source-control-github/src/server/GitHubPullRequestApi.ts
+      - packages/source-control-github/src/server/GitHubPullRequestProvider.ts
+      - packages/source-control-github/src/server/gitHubPullRequestJson.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+      - packages/source-control-github/src/server/pullRequestReads.graphql.ts
+    upstream_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestTimeline.tsx
+      - apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.ts
+      - packages/contracts/src/pullRequest.ts
+      - packages/source-control-github/src/server/GitHubPullRequestApi.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+    tests:
+      - apps/mobile/src/features/pull-requests/pullRequestActivityFilter.test.ts
+      - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - apps/web/src/components/pullRequest/PullRequestTimelineTab.browser.test.tsx
+      - apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts
+      - packages/client-runtime/src/pullRequestLifecycle.test.ts
+      - packages/contracts/src/pullRequest.test.ts
+      - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
+      - packages/source-control-github/src/server/GitHubPullRequestProvider.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/140de68f25c5aeb3728596a7005635a6dfdf2989
+      retire_when: Upstream reports and renders factual GitHub merge, source-branch deletion and restoration events across web and mobile with honest fallbacks and bounded reads.
   - id: pull-request-linked-extras
     title: List the branch pull request in the thread hover card
     status: maintained

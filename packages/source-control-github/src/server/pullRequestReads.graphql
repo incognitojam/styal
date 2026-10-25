@@ -1,5 +1,59 @@
 # Reads of one pull request, or of the repository it belongs to.
 
+# Separate from deployments and reviews so unsupported schemas cannot break those reads.
+query PullRequestLifecycleEvents($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      timelineItems(
+        first: 100
+        after: $after
+        itemTypes: [MERGED_EVENT, HEAD_REF_DELETED_EVENT, HEAD_REF_RESTORED_EVENT]
+      ) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          __typename
+          ... on MergedEvent {
+            id
+            createdAt
+            actor {
+              __typename
+              login
+              avatarUrl
+            }
+            mergeRefName
+            commit {
+              oid
+              url
+            }
+          }
+          ... on HeadRefDeletedEvent {
+            id
+            createdAt
+            actor {
+              __typename
+              login
+              avatarUrl
+            }
+            headRefName
+          }
+          ... on HeadRefRestoredEvent {
+            id
+            createdAt
+            actor {
+              __typename
+              login
+              avatarUrl
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 # Resolves a listing's authors to avatars, which no listing field carries.
 query ActorAvatars($ids: [ID!]!) {
   nodes(ids: $ids) {

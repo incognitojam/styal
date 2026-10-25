@@ -13,11 +13,15 @@ import {
   FileCode2Icon,
   GitCommitHorizontalIcon,
   MessageSquareIcon,
+  GitBranchIcon,
+  RotateCcwIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
+import { useOpenLink } from "~/browser/useOpenLink";
+import { reportForkClientUsage } from "~/forkClientUsage";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { RelativeTime } from "~/components/RelativeTime";
 
@@ -407,7 +411,15 @@ function CommitEvent({
   );
 }
 
-function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
+function LifecycleEvent({
+  event,
+  onOpenCommit,
+}: {
+  event: PullRequestTimelineEvent;
+  onOpenCommit: (url: string) => void;
+}) {
+  const commit = event.lifecycle?.kind === "merged" ? event.lifecycle.commit : null;
+  const commitUrl = commit?.url;
   const presentation =
     event.kind === "opened"
       ? {
@@ -419,10 +431,14 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
             icon: <PullRequestGlyph.merged className="size-3.5" />,
             label: "Pull request merged",
           }
-        : {
-            icon: <PullRequestGlyph.closed className="size-3.5" />,
-            label: "Pull request closed",
-          };
+        : event.kind === "head-ref-deleted"
+          ? { icon: <GitBranchIcon className="size-3.5" />, label: event.title }
+          : event.kind === "head-ref-restored"
+            ? { icon: <RotateCcwIcon className="size-3.5" />, label: event.title }
+            : {
+                icon: <PullRequestGlyph.closed className="size-3.5" />,
+                label: "Pull request closed",
+              };
 
   return (
     <div className="relative mb-5 pl-12 [contain-intrinsic-block-size:48px] [content-visibility:auto]">
@@ -430,7 +446,34 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
       <div className="py-1.5 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           {event.actor ? <ActorName actor={event.actor} /> : null}
-          <span className="font-semibold text-foreground">{presentation.label}</span>
+          <span className="font-semibold text-foreground">
+            {event.lifecycle?.kind === "merged" && commit ? (
+              <>
+                merged commit{" "}
+                {commitUrl ? (
+                  <button
+                    type="button"
+                    className="font-mono text-primary hover:underline"
+                    onClick={() => onOpenCommit(commitUrl)}
+                  >
+                    {commit.oid.slice(0, 7)}
+                  </button>
+                ) : (
+                  <span className="font-mono">{commit.oid.slice(0, 7)}</span>
+                )}
+                {event.lifecycle.targetBranch ? (
+                  <>
+                    {" "}
+                    into <span className="font-mono">{event.lifecycle.targetBranch}</span>
+                  </>
+                ) : null}
+              </>
+            ) : event.lifecycle ? (
+              event.title
+            ) : (
+              presentation.label
+            )}
+          </span>
         </div>
         <div className="mt-0.5 text-2xs text-muted-foreground">
           <RelativeTime timestamp={event.at} />
@@ -545,6 +588,25 @@ export function PullRequestTimelineTab({
   onRefresh: () => void;
 }) {
   const events = buildPullRequestTimeline(detail);
+  const openLink = useOpenLink(threadRef);
+  const openLifecycleCommit = (url: string) => {
+    void openLink(url).then(
+      () => {
+        void reportForkClientUsage(environmentId, {
+          feature: "pull-request-lifecycle",
+          action: "open_commit",
+          outcome: "success",
+        });
+      },
+      () => {
+        void reportForkClientUsage(environmentId, {
+          feature: "pull-request-lifecycle",
+          action: "open_commit",
+          outcome: "failure",
+        });
+      },
+    );
+  };
   const newestCommitAt = newestPullRequestCommitAt(detail.commits);
   const reactions: ReactionSurface = {
     canReact: detail.capabilities.reactions === true,
@@ -600,9 +662,17 @@ export function PullRequestTimelineTab({
                 />
               );
             }
-            return <LifecycleEvent key={event.id} event={event} />;
+            return (
+              <LifecycleEvent key={event.id} event={event} onOpenCommit={openLifecycleCommit} />
+            );
           })}
         </div>
+
+        {detail.lifecycleEventsTruncated ? (
+          <p className="py-3 text-xs text-muted-foreground">
+            More activity is available on the provider.
+          </p>
+        ) : null}
 
         {events.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">

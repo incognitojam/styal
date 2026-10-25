@@ -23,6 +23,7 @@ import {
   type PullRequestStackHead,
   type PullRequestActor,
   type PullRequestComment,
+  type PullRequestLifecycleEvent,
   type PullRequestCommit,
   type PullRequestFileViewed,
   type PullRequestInvolvement,
@@ -75,6 +76,7 @@ import {
   toActorAvatars,
   toLabelCandidates,
   toPullRequestActivityPage,
+  toPullRequestLifecycleEvents,
   toPullRequestCheckContextsPage,
   toPullRequestCore,
   toPullRequestFilesViewedPage,
@@ -460,6 +462,18 @@ export interface GitHubPullRequestFilesViewed {
 export class GitHubPullRequestApi extends Context.Service<
   GitHubPullRequestApi,
   {
+    readonly getPullRequestLifecycleEvents: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly number: number;
+    }) => Effect.Effect<
+      {
+        readonly lifecycleEvents: ReadonlyArray<PullRequestLifecycleEvent>;
+        readonly lifecycleEventsTruncated: boolean;
+      },
+      GitHubPullRequestApiError
+    >;
     readonly withVerifiedCredential: <A, E, R>(
       input: { readonly cwd: string; readonly host: string },
       use: (identity: {
@@ -2317,6 +2331,37 @@ export const make = Effect.gen(function* () {
         }),
       );
     },
+
+    getPullRequestLifecycleEvents: (input) =>
+      Effect.gen(function* () {
+        const { owner, name } = parseRepositorySelector(input.repository);
+        const target = { ...input, operation: "getPullRequestLifecycleEvents" };
+        const { pages, truncated } = yield* readPages(
+          GraphQLClient.pages(client.PullRequestLifecycleEvents, {
+            variables: { owner, name, number: input.number },
+            connection: toPullRequestLifecycleEvents,
+          }),
+          {
+            ...target,
+            maxPages: HUNDRED_ROW_PAGES,
+            hasNextPage: (page) => page.pageInfo.hasNextPage,
+          },
+        ).pipe(graphql(target));
+        if (pages.length === 0)
+          return yield* readError(
+            input.cwd,
+            target.operation,
+            "No lifecycle event page was returned.",
+          );
+        return {
+          lifecycleEvents: [
+            ...new Map(
+              pages.flatMap((page) => page.events).map((event) => [event.id, event]),
+            ).values(),
+          ],
+          lifecycleEventsTruncated: truncated,
+        };
+      }),
 
     getPullRequestActivity: (input) =>
       Effect.gen(function* () {

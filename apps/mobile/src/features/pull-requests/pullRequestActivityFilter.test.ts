@@ -39,6 +39,34 @@ const activity: PullRequestActivity = {
 };
 
 describe("mobile activity filters", () => {
+  it("keeps factual lifecycle events, including bot actors, only in All activity", () => {
+    const events = [
+      {
+        id: "HDE_1",
+        kind: "head-ref-deleted" as const,
+        actor: bot,
+        createdAt: date,
+        branchName: "feature",
+      },
+      {
+        id: "HRE_1",
+        kind: "head-ref-restored" as const,
+        actor: null,
+        createdAt: date,
+        branchName: null,
+      },
+    ];
+    const input = { ...activity, lifecycleEvents: events, lifecycleEventsTruncated: true };
+    const all = filterPullRequestActivity(input, DEFAULT_ACTIVITY_FILTER);
+    expect(all.activity.lifecycleEvents).toEqual(events);
+    expect(all.activity.lifecycleEventsTruncated).toBe(true);
+    expect(all.hiddenCount).toBe(3);
+    for (const kind of ["comments", "commits"] as const) {
+      const filtered = filterPullRequestActivity(input, { ...DEFAULT_ACTIVITY_FILTER, kind });
+      expect(filtered.activity.lifecycleEvents).toEqual([]);
+      expect(filtered.activity.lifecycleEventsTruncated).toBe(false);
+    }
+  });
   it("hides bots and finished conversations by default, counting each thread once", () => {
     const result = filterPullRequestActivity(activity, DEFAULT_ACTIVITY_FILTER);
     expect(result.activity.comments.map((item) => item.id)).toEqual(["human"]);

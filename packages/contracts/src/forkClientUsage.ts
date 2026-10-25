@@ -31,7 +31,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 11;
+export const FORK_CLIENT_USAGE_VERSION = 12;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -127,6 +127,11 @@ export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
 
 /** Closed UI observations only: content, paths and identifiers stay in the client. */
 export const ForkClientUsageInput = Schema.Union([
+  Schema.Struct({
+    feature: Schema.Literal("pull-request-lifecycle"),
+    action: Schema.Literal("open_commit"),
+    outcome: Schema.Literals(["success", "failure"]),
+  }),
   Schema.Struct({
     feature: Schema.Literal("pull-request-deployments"),
     action: Schema.Literals(["open_environment", "open_logs", "show_all"]),

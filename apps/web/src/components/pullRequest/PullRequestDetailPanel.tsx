@@ -551,6 +551,8 @@ function usePullRequestDetail(
           reviewThreads: activity?.reviewThreads ?? [],
           commits: activity?.commits ?? [],
           reactions: activity?.reactions ?? [],
+          lifecycleEvents: activity?.lifecycleEvents,
+          lifecycleEventsTruncated: activity?.lifecycleEventsTruncated,
         };
   return {
     canWriteSourceControl,

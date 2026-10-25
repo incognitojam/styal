@@ -662,6 +662,29 @@ export const PullRequestChecks = Schema.Struct({
 });
 export type PullRequestChecks = typeof PullRequestChecks.Type;
 
+const PullRequestLifecycleEventFields = {
+  id: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+  actor: Schema.NullOr(PullRequestActor),
+};
+
+export const PullRequestLifecycleEvent = Schema.Union([
+  Schema.Struct({
+    ...PullRequestLifecycleEventFields,
+    kind: Schema.Literal("merged"),
+    targetBranch: Schema.NullOr(TrimmedNonEmptyString),
+    commit: Schema.NullOr(
+      Schema.Struct({ oid: TrimmedNonEmptyString, url: Schema.NullOr(TrimmedNonEmptyString) }),
+    ),
+  }),
+  Schema.Struct({
+    ...PullRequestLifecycleEventFields,
+    kind: Schema.Literals(["head-ref-deleted", "head-ref-restored"]),
+    branchName: Schema.NullOr(TrimmedNonEmptyString),
+  }),
+]);
+export type PullRequestLifecycleEvent = typeof PullRequestLifecycleEvent.Type;
+
 export const PullRequestActivity = Schema.Struct({
   author: Schema.optional(Schema.NullOr(PullRequestActor)),
   reviewers: Schema.optional(Schema.Array(PullRequestActor)),
@@ -672,6 +695,10 @@ export const PullRequestActivity = Schema.Struct({
   reviewThreads: Schema.Array(PullRequestReviewThread),
   commits: Schema.Array(PullRequestCommit),
   reactions: Schema.optional(Schema.Array(PullRequestReaction)),
+  /** Absent on older servers and hosts that do not report historical events. */
+  lifecycleEvents: Schema.optional(Schema.Array(PullRequestLifecycleEvent)),
+  /** Also true when the host's event read failed; missing events do not establish a state. */
+  lifecycleEventsTruncated: Schema.optional(Schema.Boolean),
 });
 export type PullRequestActivity = typeof PullRequestActivity.Type;
 

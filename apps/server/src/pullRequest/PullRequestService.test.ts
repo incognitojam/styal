@@ -3583,6 +3583,48 @@ it.effect("invalidates the cached activity after reacting, like the other mutati
   }),
 );
 
+it.effect(
+  "preserves optional host lifecycle history and its completeness through the activity service",
+  () =>
+    Effect.gen(function* () {
+      const event = {
+        id: "ME_1",
+        kind: "merged" as const,
+        createdAt: "2026-10-01T12:00:00Z",
+        actor: null,
+        commit: { oid: "1234567890", url: "https://github.com/acme/web/commit/1234567890" },
+        targetBranch: "release",
+      };
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakeProvider(SourceControlProviderKind.make("github"), {
+            getChangeRequestActivity: ({ number }) =>
+              Effect.succeed({
+                comments: [],
+                commentCount: 0,
+                commentsTruncated: false,
+                reviewThreads: [],
+                commits: [],
+                ...(number === 1
+                  ? { lifecycleEvents: [event], lifecycleEventsTruncated: true }
+                  : {}),
+              }),
+          }),
+        ],
+      });
+      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+      const activity = yield* service.activity(reference);
+      assert.deepStrictEqual(activity.lifecycleEvents, [event]);
+      assert.strictEqual(activity.lifecycleEventsTruncated, true);
+      const legacy = yield* service.activity({ ...reference, number: 2 });
+      assert.strictEqual(legacy.lifecycleEvents, undefined);
+      assert.strictEqual(legacy.lifecycleEventsTruncated, undefined);
+    }),
+);
+
 it.effect("refuses an empty reply before it reaches the host", () =>
   Effect.gen(function* () {
     const service = yield* makeService({

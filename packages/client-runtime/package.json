@@ -467,6 +467,10 @@
       "types": "./src/pullRequestMarkdown.ts",
       "default": "./src/pullRequestMarkdown.ts"
     },
+    "./pull-request-lifecycle": {
+      "types": "./src/pullRequestLifecycle.ts",
+      "default": "./src/pullRequestLifecycle.ts"
+    },
     "./pull-request-query": {
       "types": "./src/pullRequestQuery.ts",
       "default": "./src/pullRequestQuery.ts"

@@ -482,11 +482,15 @@ export const make = Effect.gen(function* () {
               viewer: { canUpdate: true, didAuthor: false },
             })),
           ),
+          cli
+            .getPullRequestLifecycleEvents(input)
+            .pipe(Effect.orElseSucceed(() => ({ lifecycleEventsTruncated: true }))),
         ],
-        { concurrency: 2 },
+        { concurrency: 3 },
       ).pipe(
         Effect.mapError(fail("getChangeRequestActivity")),
-        Effect.map(([pullRequest, reviewThreads]): ProviderChangeRequestActivity => ({
+        Effect.map(([pullRequest, reviewThreads, lifecycle]): ProviderChangeRequestActivity => ({
+          ...lifecycle,
           author: withAvatar(
             pullRequest.author,
             reviewThreads.avatarsByLogin,

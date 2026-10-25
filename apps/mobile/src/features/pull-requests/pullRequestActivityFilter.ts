@@ -25,7 +25,8 @@ function eventCount(activity: PullRequestActivity) {
   return (
     activity.comments.filter((comment) => !discussionIds.has(comment.id)).length +
     activity.reviewThreads.length +
-    activity.commits.length
+    activity.commits.length +
+    (activity.lifecycleEvents?.length ?? 0)
   );
 }
 
@@ -58,6 +59,8 @@ export function filterPullRequestActivity(activity: PullRequestActivity, filter:
     comments,
     reviewThreads,
     commits: filter.kind === "comments" ? [] : activity.commits,
+    lifecycleEvents: filter.kind === "all" ? activity.lifecycleEvents : [],
+    lifecycleEventsTruncated: filter.kind === "all" && activity.lifecycleEventsTruncated,
     commentsTruncated: filter.kind !== "commits" && activity.commentsTruncated,
     reviewThreadsTruncated: filter.kind !== "commits" && activity.reviewThreadsTruncated,
   };

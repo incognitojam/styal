@@ -1,4 +1,8 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import {
+  pullRequestLifecycleEvents,
+  pullRequestLifecycleText,
+} from "@t3tools/client-runtime/pull-request-lifecycle";
 import * as Schema from "effect/Schema";
 
 import {
@@ -7,6 +11,7 @@ import {
   pullRequestHostOf,
   type PullRequestAction,
   type PullRequestActor,
+  type PullRequestLifecycleEvent,
   type PullRequestBaseComparison,
   type PullRequestCheck,
   type PullRequestChecksState as ContractPullRequestChecksState,
@@ -485,7 +490,16 @@ export function latestPullRequestReviewOutcomes(
 export interface PullRequestTimelineEvent {
   readonly id: string;
   readonly at: string;
-  readonly kind: "opened" | "commit" | "comment" | "review" | "merged" | "closed";
+  readonly kind:
+    | "opened"
+    | "commit"
+    | "comment"
+    | "review"
+    | "merged"
+    | "closed"
+    | "head-ref-deleted"
+    | "head-ref-restored";
+  readonly lifecycle?: PullRequestLifecycleEvent;
   readonly title: string;
   readonly body: string | null;
   readonly markdown: boolean;
@@ -542,7 +556,7 @@ export function visibleBody(body: string): string | null {
 export function buildPullRequestTimeline(
   detail: Pick<
     PullRequestDetailView,
-    "createdAt" | "author" | "commits" | "comments" | "mergedAt" | "closedAt"
+    "createdAt" | "author" | "commits" | "comments" | "mergedAt" | "closedAt" | "lifecycleEvents"
   >,
 ): ReadonlyArray<PullRequestTimelineEvent> {
   return [
@@ -594,27 +608,26 @@ export function buildPullRequestTimeline(
       reviewState: comment.reviewState,
       reactions: comment.reactions ?? [],
     })),
-    ...(detail.mergedAt
-      ? [
-          {
-            id: "merged",
-            at: detail.mergedAt,
-            kind: "merged" as const,
-            title: "Pull request merged",
-            body: null,
-            markdown: false,
-            url: null,
-            actor: null,
-            commitAuthors: [],
-            additions: null,
-            deletions: null,
-            path: null,
-            reviewState: null,
-            reactions: [],
-          },
-        ]
-      : []),
-    ...(detail.closedAt && !detail.mergedAt
+    ...pullRequestLifecycleEvents(detail).map((event) => ({
+      id: event.id === "merged" ? "merged" : `lifecycle:${event.id}`,
+      at: event.createdAt,
+      kind: event.kind,
+      title: pullRequestLifecycleText(event),
+      body: null,
+      markdown: false,
+      url: null,
+      actor: event.actor,
+      lifecycle: event,
+      commitAuthors: [],
+      additions: null,
+      deletions: null,
+      path: null,
+      reviewState: null,
+      reactions: [],
+    })),
+    ...(detail.closedAt &&
+    !detail.mergedAt &&
+    !detail.lifecycleEvents?.some((event) => event.kind === "merged")
       ? [
           {
             id: "closed",
