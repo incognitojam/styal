@@ -210,7 +210,12 @@ jobs:
           # the one computed before prebuild. EAS builders pass it the same way.
           export EXPO_UPDATES_FINGERPRINT_OVERRIDE="$FINGERPRINT"
           export EXPO_UPDATES_WORKFLOW_OVERRIDE=managed
+          # Users download this APK, so it carries only arm64 libraries and
+          # compresses them, cutting it from about 220 MB. Development builds
+          # keep every architecture for x86_64 emulators.
           eas env:exec production --non-interactive 'cd android && ./gradlew :app:assembleRelease \
+            -PreactNativeArchitectures=arm64-v8a \
+            -Pexpo.useLegacyPackaging=true \
             -Pandroid.injected.signing.store.file="$KEYSTORE" \
             -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
@@ -234,6 +239,12 @@ jobs:
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           if ! "$build_tools/aapt2" dump xmltree --file AndroidManifest.xml "$apk" | grep -qF '{"expo-channel-name":"production"}'; then
             echo "The APK's manifest does not request the production update channel." >&2
+            exit 1
+          fi
+          # The in-app updater offers this APK only to arm64 devices.
+          abis="$(unzip -Z1 "$apk" 'lib/*' | cut -d/ -f2 | sort -u | paste -sd,)"
+          if [ "$abis" != "arm64-v8a" ]; then
+            echo "The APK carries native libraries for '$abis' instead of only arm64-v8a." >&2
             exit 1
           fi
           echo "path=$apk" >> "$GITHUB_OUTPUT"

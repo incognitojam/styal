@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import * as Device from "expo-device";
 import * as Updates from "expo-updates";
 import { useSyncExternalStore } from "react";
 
@@ -247,7 +248,9 @@ const defaultNativeAppUpdateEnvironment: NativeAppUpdateEnvironment = {
   isSupported: () =>
     Constants.platform?.android !== undefined &&
     isAppUpdateCheckAvailable() &&
-    (Constants.expoConfig?.extra?.appVariant ?? "production") === "production",
+    (Constants.expoConfig?.extra?.appVariant ?? "production") === "production" &&
+    // Release APKs carry only arm64 libraries and cannot install elsewhere.
+    Device.supportedCpuArchitectures?.includes("arm64-v8a") === true,
   installedRuntimeVersion: () => Updates.runtimeVersion,
   fetch: (input, init) => fetch(input, init),
   isForeground: async () => {
