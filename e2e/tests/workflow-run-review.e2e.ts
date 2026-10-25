@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, openApp, sendMessage } from "../support/browser.ts";
+import { type App, openApp, sendMessage, startNewThread } from "../support/browser.ts";
 import { type Environment, startEnvironment } from "../support/environment.ts";
 import type { FakeGitHubWorkflowRun } from "../support/fake-github-api.ts";
 
@@ -49,7 +49,7 @@ describe("review a watched workflow deployment", () => {
     app.page.getByRole("navigation", { name: "Threads" }).locator('[aria-current="page"]');
 
   async function watch(run: FakeGitHubWorkflowRun) {
-    await app.page.getByRole("button", { name: "New thread in demo-app", exact: true }).click();
+    await startNewThread(app, "demo-app");
     await sendMessage(app, `Watch ${run.name}`, `Watching ${run.name}.`);
     // A fresh server reads durable watches immediately, without waiting for its two-minute timer.
     await environment.restart();
