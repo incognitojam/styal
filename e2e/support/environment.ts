@@ -265,6 +265,8 @@ export function isolatedEnv(home: string, bin: string): NodeJS.ProcessEnv {
     XDG_STATE_HOME: NodePath.join(home, ".local/state"),
     XDG_CACHE_HOME: NodePath.join(home, ".cache"),
     GIT_CONFIG_NOSYSTEM: "1",
+    // Plain-folder fixtures must not discover a repository above the isolated home.
+    GIT_CEILING_DIRECTORIES: NodePath.dirname(home),
     T3CODE_TELEMETRY_ENABLED: "0",
   };
 }
