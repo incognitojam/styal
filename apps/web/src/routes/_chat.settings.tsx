@@ -4,12 +4,9 @@ import { RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
+import { AppRouteModal, AppRouteModalClose } from "../components/AppRouteModal";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
-import { SidebarInset } from "../components/ui/sidebar";
-import { useNavigateToMainApp } from "../components/sidebar/mainAppLocation";
-import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
-import { isElectron } from "../env";
-import { useEscapeToGoBack } from "../hooks/useNavigateBack";
+import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
 import {
   SettingsScopeProvider,
   useSettingsScope,
@@ -43,7 +40,7 @@ function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void })
       onClick={() => void restoreDefaults()}
     >
       <RotateCcwIcon className="mx-1 size-3.5" />
-      Restore device defaults
+      <span className="max-sm:sr-only">Restore device defaults</span>
     </Button>
   );
 }
@@ -115,32 +112,31 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 function SettingsToolbar({ pathname, onRestored }: { pathname: string; onRestored: () => void }) {
   const docked = useSettingsScopeDocked();
   return (
-    <WorkspacePageHeader electron={isElectron} className="@container/settings-toolbar">
-      <div className="flex w-full min-w-0 items-center gap-3">
-        <div className={docked ? "hidden min-w-0 @min-[48rem]/settings-toolbar:block" : "min-w-0"}>
-          <SettingsBreadcrumb pathname={pathname} />
-        </div>
-        <SettingsScopeToolbar />
+    <header className="@container/settings-toolbar flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
+      <div className={docked ? "hidden min-w-0 @min-[48rem]/settings-toolbar:block" : "min-w-0"}>
+        <SettingsBreadcrumb pathname={pathname} />
+      </div>
+      <SettingsScopeToolbar />
+      <div className="ms-auto flex shrink-0 items-center gap-1">
         {pathname === "/settings/general" ? (
           <div
             className={
               docked
-                ? "ms-auto hidden shrink-0 items-center @min-[56rem]/settings-toolbar:flex"
-                : "ms-auto flex shrink-0 items-center"
+                ? "hidden items-center @min-[56rem]/settings-toolbar:flex"
+                : "flex items-center"
             }
           >
             <RestoreDeviceDefaultsButton onRestored={onRestored} />
           </div>
         ) : null}
+        <AppRouteModalClose />
       </div>
-    </WorkspacePageHeader>
+    </header>
   );
 }
 
 function SettingsContentLayout() {
   const location = useLocation();
-  const navigateToMainApp = useNavigateToMainApp();
-  useEscapeToGoBack(navigateToMainApp);
   const { search, environment } = useSettingsScope();
   const contentScopeKey =
     location.pathname === "/settings/diagnostics" || location.pathname === "/settings/providers"
@@ -150,24 +146,27 @@ function SettingsContentLayout() {
   const hasScope = !SETTINGS_DEVICE_ONLY_PATHS.has(location.pathname);
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
-        <SettingsScopeDockProvider
-          key={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
-          enabled={hasScope}
-        >
-          <SettingsToolbar
-            pathname={location.pathname}
-            onRestored={() => setRestoreSignal((value) => value + 1)}
-          />
-          <div className="min-h-0 flex flex-1 flex-col">
-            <SettingsScopeBoundary pathname={location.pathname}>
-              <Outlet />
-            </SettingsScopeBoundary>
-          </div>
-        </SettingsScopeDockProvider>
+    <AppRouteModal label="Settings">
+      <div className="relative flex min-h-0 flex-1">
+        <SettingsSidebarNav pathname={location.pathname} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <SettingsScopeDockProvider
+            key={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
+            enabled={hasScope}
+          >
+            <SettingsToolbar
+              pathname={location.pathname}
+              onRestored={() => setRestoreSignal((value) => value + 1)}
+            />
+            <div className="min-h-0 flex flex-1 flex-col">
+              <SettingsScopeBoundary pathname={location.pathname}>
+                <Outlet />
+              </SettingsScopeBoundary>
+            </div>
+          </SettingsScopeDockProvider>
+        </div>
       </div>
-    </SidebarInset>
+    </AppRouteModal>
   );
 }
 
@@ -198,17 +197,10 @@ function SettingsRouteLayout() {
   );
 }
 
-export const Route = createFileRoute("/settings")({
+export const Route = createFileRoute("/_chat/settings")({
   validateSearch: validateSettingsRouteSearch,
   search: { middlewares: [retainSettingsScope] },
-  beforeLoad: async ({ context, location }) => {
-    if (
-      context.authGateState.status !== "authenticated" &&
-      context.authGateState.status !== "hosted-static"
-    ) {
-      throw redirect({ to: "/pair", replace: true });
-    }
-
+  beforeLoad: async ({ location }) => {
     if (location.pathname === "/settings") {
       throw redirect({ to: "/settings/general", replace: true });
     }

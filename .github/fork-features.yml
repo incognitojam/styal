@@ -2567,7 +2567,7 @@ features:
       - apps/web/src/components/hardware/HardwareLeaseChip.tsx
       - apps/web/src/components/settings/HardwareSettings.tsx
       - apps/web/src/components/settings/hardwareSettings.logic.ts
-      - apps/web/src/routes/settings.hardware.tsx
+      - apps/web/src/routes/_chat.settings.hardware.tsx
       - apps/web/src/state/hardware.ts
       - docs/user/hardware.md
       - packages/client-runtime/src/state/hardware.ts
@@ -4053,9 +4053,9 @@ features:
     implementation_paths:
       - apps/web/src/components/settings/SettingsScopeSentence.tsx
       - apps/web/src/components/settings/settingsScopeAxis.ts
-      - apps/web/src/routes/settings.providers.tsx
+      - apps/web/src/routes/_chat.settings.providers.tsx
     upstream_paths:
-      - apps/web/src/routes/settings.providers.tsx
+      - apps/web/src/routes/_chat.settings.providers.tsx
     tests:
       - apps/web/src/components/settings/settingsScope.test.ts
     upstream:
@@ -5121,7 +5121,7 @@ features:
       - apps/web/src/components/settings/SettingsScopeContext.tsx
       - apps/web/src/components/settings/SettingsScopeSentence.tsx
       - apps/web/src/components/settings/settingsSearch.ts
-      - apps/web/src/routes/settings.tsx
+      - apps/web/src/routes/_chat.settings.tsx
       - packages/contracts/src/forkClientUsage.ts
     upstream_paths:
       - apps/web/src/components/settings/IntegrationsSettings.tsx
@@ -5130,7 +5130,7 @@ features:
       - apps/web/src/components/settings/SettingsScopeContext.tsx
       - apps/web/src/components/settings/SettingsScopeSentence.tsx
       - apps/web/src/components/settings/settingsSearch.ts
-      - apps/web/src/routes/settings.tsx
+      - apps/web/src/routes/_chat.settings.tsx
     tests:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - apps/web/src/components/settings/DeviceToolUpdate.browser.test.tsx
@@ -5157,11 +5157,11 @@ features:
       - apps/web/src/components/settings/SettingsScopeDock.tsx
       - apps/web/src/components/settings/SettingsScopeSentence.tsx
       - apps/web/src/components/settings/settingsLayout.tsx
-      - apps/web/src/routes/settings.tsx
+      - apps/web/src/routes/_chat.settings.tsx
     upstream_paths:
       - apps/web/src/components/settings/SettingsScopeSentence.tsx
       - apps/web/src/components/settings/settingsLayout.tsx
-      - apps/web/src/routes/settings.tsx
+      - apps/web/src/routes/_chat.settings.tsx
     tests:
       - apps/web/src/components/settings/SettingsScopeDock.browser.test.tsx
       - apps/web/src/components/settings/settingsScopeAxis.test.ts

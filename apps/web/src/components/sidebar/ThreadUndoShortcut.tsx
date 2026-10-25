@@ -17,8 +17,8 @@ import { useSidebarVisibility } from "../ui/sidebar";
 
 const MODIFIER_KEYS = new Set(["Alt", "Control", "Meta", "Shift"]);
 
-// Undoes the thread actions in the sidebar's notice. Mounted wherever the
-// thread sidebar can show; Settings replaces it. Listens in the capture phase
+// Undoes the thread actions in the sidebar's notice. Settings and Usage own
+// mod+z while open. Listens in the capture phase
 // so mod+z reaches it before the composer's own undo handler consumes the key.
 export function ThreadUndoShortcut() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
