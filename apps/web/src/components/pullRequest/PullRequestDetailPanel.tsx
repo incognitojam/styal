@@ -3,6 +3,7 @@ import {
   pullRequestMergeIntentLabel,
   resolvePullRequestMergeIntent,
 } from "@t3tools/shared/threadPullRequests";
+import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
 import { changeRequestReferenceAutolinker } from "@t3tools/client-runtime/pull-request-markdown";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
@@ -358,6 +359,22 @@ function PullRequestDetailPanelBody({
     listEntry.number === reference.number
       ? listEntry
       : null;
+  const linkedReference = sourceControlClients.parseChangeRequestUrl(
+    matchingListEntry?.url ?? unavailableHostUrl ?? "",
+  )?.link;
+  useEnvironmentQuery(
+    context === "page" &&
+      supportsThreadPullRequests &&
+      linkedReference &&
+      (reference.host === undefined ||
+        reference.host.toLowerCase() === linkedReference.host.toLowerCase())
+      ? pullRequestEnvironment.linkedThreads({
+          environmentId,
+          input: { ...reference, ...normalizeThreadPullRequestKey(linkedReference) },
+        })
+      : null,
+  );
+  useEnvironmentQuery(pullRequestEnvironment.changeBreakdown({ environmentId, input: reference }));
   const [threadPickerOpen, setThreadPickerOpen] = useState(false);
   const [openReviewRequest, setOpenReviewRequest] = useState(0);
   const [tab, setTab] = useState<PullRequestDetailTab>(initialTab);

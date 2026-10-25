@@ -3,6 +3,7 @@ import type { PullRequestDiffSide, PullRequestOmittedFileStat } from "@t3tools/c
 import { diffFileTier } from "@t3tools/shared/diffFileOrder";
 
 export interface PullRequestDiffSlice {
+  readonly source?: object;
   readonly cursor: string | null;
   readonly patch: string;
   readonly truncated: boolean;

@@ -26,6 +26,7 @@ import {
   collectPullRequestListFacets,
   narrowPullRequestsToFilters,
   mergePullRequestDiffStats,
+  pullRequestDiffStatKey,
   pullRequestEntryKey,
   rankPullRequestMatches,
   readPullRequestListSnapshot,
@@ -104,6 +105,7 @@ import {
   usePullRequestList,
   usePullRequestListStats,
   usePullRequestTurnRefreshes,
+  useSharedPullRequestSummary,
   type EnvironmentQueryTarget,
 } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -207,6 +209,16 @@ export function PullRequestsPage() {
     (renderedPullRequestSurface?.environmentId as EnvironmentId | undefined) ??
     selectedProject?.environmentId ??
     null;
+  const panelSummary = useSharedPullRequestSummary(
+    panelEnvironmentId,
+    renderedPullRequestSurface === null
+      ? null
+      : {
+          ...renderedPullRequestSurface,
+          projectId: renderedPullRequestSurface.projectId as ProjectId,
+        },
+    null,
+  );
   const updateSearch = (patch: {
     [Key in keyof PullRequestsSearch]?: PullRequestsSearch[Key] | undefined;
   }) =>
@@ -276,6 +288,7 @@ export function PullRequestsPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const {
     sentQuery,
+    submitQuery,
     querySettled,
     typedParsed,
     sentParsed,
@@ -738,6 +751,22 @@ export function PullRequestsPage() {
 
   const visibleStatsKeys = useRef({ key: filterKey, values: new Set<string>() });
   const [statsByRow, setStatsByRow] = useState<PullRequestDiffStats>(() => new Map());
+  if (
+    panelEnvironmentId !== null &&
+    panelSummary?.additions !== undefined &&
+    panelSummary.deletions !== undefined
+  ) {
+    const stat = {
+      ...panelSummary,
+      environmentId: panelEnvironmentId,
+      additions: panelSummary.additions,
+      deletions: panelSummary.deletions,
+    };
+    const previous = statsByRow.get(pullRequestDiffStatKey(stat));
+    if (previous?.additions !== stat.additions || previous.deletions !== stat.deletions) {
+      setStatsByRow(mergePullRequestDiffStats(statsByRow, [stat]));
+    }
+  }
   const [statsTargetState, setStatsTargetState] = useState<{
     readonly key: string;
     readonly batches: ReadonlyArray<PullRequestStatsBatch>;
@@ -1107,6 +1136,7 @@ export function PullRequestsPage() {
         setSearchQuery(query);
         updateListScope({ q: query || undefined });
       }}
+      onSubmit={submitQuery}
     />
   );
   const panelToggleControls = (
