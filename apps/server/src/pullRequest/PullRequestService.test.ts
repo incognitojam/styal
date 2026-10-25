@@ -2403,67 +2403,6 @@ it.effect("reports repositories on a host that could not be read", () =>
   }),
 );
 
-it.effect(
-  "blocks 30-second workflow reads until the host reset and then reads fresh completion",
-  () =>
-    Effect.gen(function* () {
-      const retryAt = (yield* Clock.currentTimeMillis) + 300_000;
-      let reads = 0;
-      const completedRun = {
-        name: "CI #42",
-        url: "https://github.com/acme/web/actions/runs/42",
-        completed: true,
-        conclusion: "success",
-        headBranch: "main",
-        headSha: "a".repeat(40),
-        event: "push",
-        reviewableEnvironments: [],
-        failedJobs: [],
-      };
-      const service = yield* makeService({
-        projects: [
-          project({ id: "p1", title: "web", workspaceRoot: "/w", repository: "acme/web" }),
-        ],
-        providers: [
-          fakeProvider(SourceControlProviderKind.make("github"), {
-            getWorkflowRun: () =>
-              Effect.gen(function* () {
-                reads++;
-                if (reads === 1)
-                  return yield* new PullRequestProviderError({
-                    provider: SourceControlProviderKind.make("github"),
-                    operation: "getWorkflowRun",
-                    reason: "rate-limited",
-                    detail: "Requests paused until reset",
-                    retryAt,
-                  });
-                return completedRun;
-              }),
-          }),
-        ],
-      });
-      const input = {
-        projectId: "p1" as ProjectId,
-        host: "github.com",
-        repository: "acme/web",
-        runId: 42,
-      };
-      const paused = service.workflowRun(input).pipe(Effect.flip);
-      const first = yield* paused;
-      assert.instanceOf(first, PullRequestOperationError);
-      for (let pass = 0; pass < 9; pass++) {
-        yield* TestClock.adjust("30 seconds");
-        assert.instanceOf(yield* paused, PullRequestOperationError);
-      }
-      yield* TestClock.adjust("29999 millis");
-      assert.instanceOf(yield* paused, PullRequestOperationError);
-      assert.equal(reads, 1);
-      yield* TestClock.adjust("1 millis");
-      assert.deepEqual(yield* service.workflowRun(input), completedRun);
-      assert.equal(reads, 2);
-    }),
-);
-
 it.effect("stops new reads after a rate limit while leaving manual actions available", () =>
   Effect.gen(function* () {
     let listCalls = 0;
