@@ -397,8 +397,8 @@ describe("combined sidebar update", () => {
       expect(sections(hosts[2]!, "Will be interrupted")).toContain("ReleaseReview releaseWaiting");
       expect(hosts[3]!.querySelector('[aria-label="Will continue"]')).toBeNull();
       expect(sections(hosts[3]!, "Will be interrupted")).toContain("Build releaseRunning");
-      expect(dialog()!.textContent).toContain("1 thread will continue after the restart.");
-      expect(dialog()!.textContent).toContain("3 threads will be interrupted.");
+      expect(dialog()!.textContent).not.toContain("thread will continue after the restart.");
+      expect(dialog()!.textContent).not.toContain("threads will be interrupted.");
       expect(testState.install).not.toHaveBeenCalled();
     },
   );

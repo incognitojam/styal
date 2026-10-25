@@ -30,7 +30,6 @@ export function HostActivityThreadList({
     <div className="mx-6 mb-6 min-h-0 overflow-y-auto">
       <ul aria-label="Affected threads" className="space-y-6">
         {hosts.map((host) => {
-          const labelSections = host.sections.some((section) => section.continues);
           return (
             <li key={host.key}>
               {host.label ? (
@@ -43,9 +42,7 @@ export function HostActivityThreadList({
                   const heading = section.continues ? "Will continue" : "Will be interrupted";
                   return (
                     <section aria-label={heading} key={heading}>
-                      {labelSections ? (
-                        <h4 className="mb-2 text-sm font-medium text-foreground">{heading}</h4>
-                      ) : null}
+                      <h4 className="mb-2 text-sm font-medium text-foreground">{heading}</h4>
                       <div className="space-y-3">
                         {section.projects.map((project) => {
                           const first = project.activity[0]!;

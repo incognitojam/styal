@@ -57,6 +57,8 @@ export function describeHostActivity(
     readonly continueRunningThreads?: boolean;
     /** When continuable threads resume; defaults to "after the restart". */
     readonly continuesWhen?: string;
+    /** Quit copy also explains when listed threads will resume. */
+    readonly includeListedThreadCounts?: boolean;
   },
 ): {
   readonly concern: HostActivityConcern | null;
@@ -70,6 +72,8 @@ export function describeHostActivity(
   let active = 0;
   let continuing = 0;
   let waiting = 0;
+  let unlistedInterrupted = 0;
+  let unlistedContinuing = 0;
   let terminals = 0;
   let uncheckedTerminals = 0;
   let deviceUsers = 0;
@@ -86,6 +90,11 @@ export function describeHostActivity(
     const continueThreads = check.continueRunningThreads ?? options.continueRunningThreads;
     if (continueThreads) continuing += check.continuableSessions;
     waiting += check.waitingSessions;
+    if (!check.threads?.length || options.includeListedThreadCounts) {
+      const resumes = continueThreads ? check.continuableSessions : 0;
+      unlistedInterrupted += check.activeSessions - resumes + check.waitingSessions;
+      unlistedContinuing += resumes;
+    }
     if (check.threads === undefined && check.activeSessions + check.waitingSessions > 0) {
       threadWarnings.push(
         `Thread names and activity reasons are unavailable${check.hostLabel ? ` for ${singleLine(check.hostLabel)}` : " from this server"}.`,
@@ -106,13 +115,13 @@ export function describeHostActivity(
   }
   const lines: string[] = [];
   const interrupted = [
-    ...(active - continuing + waiting ? [plural(active - continuing + waiting, "thread")] : []),
+    ...(unlistedInterrupted ? [plural(unlistedInterrupted, "thread")] : []),
     ...(terminals ? [plural(terminals, "terminal session")] : []),
   ];
   if (interrupted.length) lines.push(`${interrupted.join(" and ")} will be interrupted.`);
-  if (continuing)
+  if (unlistedContinuing)
     lines.push(
-      `${plural(continuing, "thread")} will continue ${options.continuesWhen ?? "after the restart"}.`,
+      `${plural(unlistedContinuing, "thread")} will continue ${options.continuesWhen ?? "after the restart"}.`,
     );
   if (deviceUsers) lines.push("Devices in use by other environments will be disconnected.");
   if (providerInstalls)
@@ -138,7 +147,8 @@ export function describeHostActivity(
     threadActivity,
     incomplete: uncheckedHosts || uncheckedTerminals > 0,
     interrupts:
-      interrupted.length > 0 ||
+      active - continuing + waiting > 0 ||
+      terminals > 0 ||
       deviceUsers > 0 ||
       providerInstalls > 0 ||
       uncheckedHosts ||
