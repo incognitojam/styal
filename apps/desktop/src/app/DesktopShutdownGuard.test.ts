@@ -185,7 +185,10 @@ describe("DesktopShutdownGuard", () => {
 
       assert.isFalse(yield* guard.confirm("restart", { continueThreads: false }));
       assert.lengthOf(h.messages, 2);
-      assert.include(h.messages[1]!, "2 threads will be interrupted.");
+      assert.deepEqual(
+        h.details[1]?.map((item) => item.continuesAfterRestart),
+        [false, false],
+      );
     }).pipe(Effect.provide(h.layer));
   });
 
