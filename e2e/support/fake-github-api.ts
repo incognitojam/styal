@@ -2,7 +2,7 @@
 /**
  * A fake GitHub API for e2e tests. The server sends its GitHub requests here when started with
  * `T3CODE_TEST_GITHUB_API_URL` set to `url`. It answers the GraphQL issue list and issue reads
- * from `issues`, plus the pull request list, detail, policy and merge reads tests need, and
+ * from `issues`, plus pull request reads and mutations and workflow deployment reviews, and
  * reports no pull requests for the branch lookups the server makes on its own. Any other
  * request gets an error answer and is printed, so a test that reaches one fails visibly instead
  * of talking to GitHub.
@@ -19,6 +19,8 @@ export interface FakeGitHubApiRequest {
   readonly query?: string;
   readonly operationName?: string;
   readonly variables?: Readonly<Record<string, unknown>>;
+  /** The JSON body of a REST mutation. */
+  readonly body?: Readonly<Record<string, unknown>>;
 }
 
 /** Mutable host state, so a test can push a commit after the client has read the detail. */
@@ -32,6 +34,17 @@ export interface FakeGitHubPullRequest {
   checks?: ReadonlyArray<{ name: string; required: boolean }>;
 }
 
+/** Mutable Actions state, including deployments the viewer may or may not review. */
+export interface FakeGitHubWorkflowRun {
+  id: number;
+  name: string;
+  status: "waiting" | "in_progress" | "completed";
+  conclusion?: "success" | "failure";
+  environments: ReadonlyArray<{ id: number; name: string; canApprove?: boolean }>;
+  failedJobs?: ReadonlyArray<{ name: string; conclusion: string }>;
+  reviewError?: { status: number; message: string };
+}
+
 export interface FakeGitHubApi {
   readonly url: string;
   readonly requests: () => ReadonlyArray<FakeGitHubApiRequest>;
@@ -43,6 +56,7 @@ const RATE_LIMIT = { cost: 1, limit: 5000, remaining: 4999, resetAt: "2099-01-01
 export async function startFakeGitHubApi(
   issues: ReadonlyArray<FakeGitHubIssue>,
   pullRequests: ReadonlyArray<FakeGitHubPullRequest> = [],
+  workflowRuns: ReadonlyArray<FakeGitHubWorkflowRun> = [],
 ): Promise<FakeGitHubApi> {
   const requests: FakeGitHubApiRequest[] = [];
   const pageInfo = { hasNextPage: false, endCursor: null };
@@ -272,6 +286,74 @@ export async function startFakeGitHubApi(
     return { data, rateLimit: RATE_LIMIT };
   };
 
+  const answerWorkflowRun = (request: FakeGitHubApiRequest) => {
+    const match = /^\/repos\/e2e-org\/demo-app\/actions\/runs\/(\d+)(.*)$/.exec(request.path);
+    const run = workflowRuns.find((item) => item.id === Number(match?.[1]));
+    if (!run) return undefined;
+    const url = `https://github.com/e2e-org/demo-app/actions/runs/${run.id}`;
+    if (request.method === "GET" && match?.[2] === "") {
+      return {
+        status: 200,
+        body: {
+          name: run.name,
+          run_number: run.id,
+          status: run.status,
+          conclusion: run.conclusion ?? null,
+          html_url: url,
+          head_branch: "main",
+          head_sha: "d".repeat(40),
+          event: "workflow_dispatch",
+        },
+      };
+    }
+    if (request.method === "GET" && match?.[2]?.startsWith("/jobs?")) {
+      return {
+        status: 200,
+        body: {
+          jobs: (run.failedJobs ?? []).map((job) => ({
+            ...job,
+            html_url: `${url}/job/1`,
+          })),
+        },
+      };
+    }
+    if (match?.[2] !== "/pending_deployments") return undefined;
+    if (request.method === "GET") {
+      return {
+        status: 200,
+        body: run.environments.map(({ canApprove, ...environment }) => ({
+          environment,
+          current_user_can_approve: canApprove ?? true,
+        })),
+      };
+    }
+    if (request.method !== "POST") return undefined;
+    if (run.reviewError) {
+      return { status: run.reviewError.status, body: { message: run.reviewError.message } };
+    }
+    const ids = request.body?.environment_ids;
+    const state = request.body?.state;
+    if (
+      !Array.isArray(ids) ||
+      ids.length === 0 ||
+      !ids.every((id) =>
+        run.environments.some((item) => item.id === id && item.canApprove !== false),
+      ) ||
+      (state !== "approved" && state !== "rejected")
+    ) {
+      return { status: 422, body: { message: "Invalid deployment review" } };
+    }
+    run.environments =
+      state === "rejected" ? [] : run.environments.filter((item) => !ids.includes(item.id));
+    if (state === "rejected") {
+      run.status = "completed";
+      run.conclusion = "failure";
+    } else if (run.environments.length === 0) {
+      run.status = "in_progress";
+    }
+    return { status: 200, body: [] };
+  };
+
   const server = NodeHttp.createServer((incoming, response) => {
     const chunks: Buffer[] = [];
     incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -291,19 +373,24 @@ export async function startFakeGitHubApi(
           ...(body.operationName === undefined ? {} : { operationName: body.operationName }),
           variables: body.variables ?? {},
         };
+      } else if (chunks.length > 0) {
+        request = { ...request, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) };
       }
       requests.push(request);
+      const workflow = answerWorkflowRun(request);
       const answer =
         request.query !== undefined
           ? answerGraphQl(request)
-          : pullRequests.length === 0
-            ? undefined
-            : path === "/user"
-              ? { id: 1, login: "e2e-user" }
-              : path.startsWith("/repos/e2e-org/demo-app/rules/branches/") ||
-                  path.startsWith("/repos/e2e-org/demo-app/stacks?")
-                ? []
-                : undefined;
+          : workflow !== undefined
+            ? workflow.body
+            : pullRequests.length === 0 && workflowRuns.length === 0
+              ? undefined
+              : path === "/user"
+                ? { id: 1, login: "e2e-user" }
+                : path.startsWith("/repos/e2e-org/demo-app/rules/branches/") ||
+                    path.startsWith("/repos/e2e-org/demo-app/stacks?")
+                  ? []
+                  : undefined;
       if (answer === undefined) {
         const message = `fake GitHub API: unsupported request ${method} ${path} ${request.operationName ?? ""}${
           request.query === undefined ? "" : `\n${request.query}`
@@ -313,7 +400,7 @@ export async function startFakeGitHubApi(
         response.end(JSON.stringify({ message, errors: [{ message }] }));
         return;
       }
-      response.writeHead(200, { "content-type": "application/json" });
+      response.writeHead(workflow?.status ?? 200, { "content-type": "application/json" });
       response.end(JSON.stringify(answer));
     });
   });
