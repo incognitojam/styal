@@ -10,6 +10,7 @@ import { ownProcess, stateResources } from "./resources.ts";
 import {
   type FakeGitHubApiRequest,
   type FakeGitHubPullRequest,
+  type FakeGitHubWorkflowRun,
   startFakeGitHubApi,
 } from "./fake-github-api.ts";
 
@@ -43,6 +44,7 @@ export interface EnvironmentOptions {
   readonly scenario?: { readonly turns: ReadonlyArray<unknown>; readonly stepDelayMs?: number };
   readonly issues?: ReadonlyArray<FakeGitHubIssue>;
   readonly pullRequests?: ReadonlyArray<FakeGitHubPullRequest>;
+  readonly workflowRuns?: ReadonlyArray<FakeGitHubWorkflowRun>;
 }
 
 /** One provider turn as fake-codex received it. */
@@ -73,6 +75,8 @@ export interface Environment {
   /** Every request the server sent to the fake GitHub API, oldest first. */
   readonly gitHubApiRequests: () => ReadonlyArray<FakeGitHubApiRequest>;
   readonly serverLog: () => string;
+  /** Restarts the server on the same port with its persisted state, keeping the fake APIs. */
+  readonly restart: () => Promise<void>;
   readonly stop: () => Promise<void>;
 }
 
@@ -124,7 +128,11 @@ async function setupEnvironment(
   NodeFS.writeFileSync(NodePath.join(home, ".bash_profile"), profile);
 
   writeLauncher(NodePath.join(bin, "gh"), FAKE_GH, { E2E_GH_CALL_LOG: ghCallLog });
-  const gitHubApi = await startFakeGitHubApi(options.issues ?? [], options.pullRequests ?? []);
+  const gitHubApi = await startFakeGitHubApi(
+    options.issues ?? [],
+    options.pullRequests ?? [],
+    options.workflowRuns ?? [],
+  );
   resources.defer(async () => {
     try {
       await gitHubApi.stop();
@@ -181,33 +189,37 @@ async function setupEnvironment(
   const origin = `http://127.0.0.1:${port}`;
   const serverLog = NodeFS.openSync(serverLogPath, "w");
   resources.defer(() => NodeFS.closeSync(serverLog));
-  const server = NodeChildProcess.spawn(
-    process.execPath,
-    [
-      SERVER_BIN,
-      // `serve` never bootstraps a project from its cwd; `start` does, and prints the same URL.
-      "start",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--base-dir",
-      baseDir,
-      "--no-browser",
-      "--auto-bootstrap-project-from-cwd",
-    ],
-    { cwd: projectDir, env, stdio: ["ignore", serverLog, serverLog] },
-  );
-  const assertRunning = ownProcess(resources, server, 10_000);
+  const launchServer = () =>
+    NodeChildProcess.spawn(
+      process.execPath,
+      [
+        SERVER_BIN,
+        // `serve` never bootstraps a project from its cwd; `start` does, and prints the same URL.
+        "start",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(port),
+        "--base-dir",
+        baseDir,
+        "--no-browser",
+        "--auto-bootstrap-project-from-cwd",
+      ],
+      { cwd: projectDir, env, stdio: ["ignore", serverLog, serverLog] },
+    );
+  let server = launchServer();
+  let assertRunning = ownProcess(resources, server, 10_000);
   const readServerLog = () => NodeFS.readFileSync(serverLogPath, "utf8");
-  const pairingUrl = await waitFor(
-    "the server's pairing URL",
-    () => {
-      assertRunning();
-      return /(?:Pairing URL|pairingUrl): (\S+)/.exec(readServerLog())?.[1];
-    },
-    readServerLog,
-  );
+  const waitForStartup = (logOffset = 0) =>
+    waitFor(
+      "the server's pairing URL",
+      () => {
+        assertRunning();
+        return /(?:Pairing URL|pairingUrl): (\S+)/.exec(readServerLog().slice(logOffset))?.[1];
+      },
+      readServerLog,
+    );
+  const pairingUrl = await waitForStartup();
 
   return {
     root,
@@ -219,6 +231,16 @@ async function setupEnvironment(
     ghCalls: () => readJsonLines<ReadonlyArray<string>>(ghCallLog),
     gitHubApiRequests: gitHubApi.requests,
     serverLog: readServerLog,
+    restart: async () => {
+      assertRunning();
+      const closed = new Promise<void>((resolve) => server.once("close", () => resolve()));
+      server.kill("SIGTERM");
+      await closed;
+      const logOffset = readServerLog().length;
+      server = launchServer();
+      assertRunning = ownProcess(resources, server, 10_000);
+      await waitForStartup(logOffset);
+    },
     stop,
   };
 }

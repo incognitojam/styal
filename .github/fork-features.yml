@@ -5594,6 +5594,7 @@ features:
       - apps/server/src/orchestration-v2/workflowRunWatch.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - e2e/tests/workflow-run-review.e2e.ts
       - packages/shared/src/agentAwareness.test.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts

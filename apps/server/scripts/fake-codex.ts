@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalDate:off globalTimers:off - standalone fake CLI with no workspace imports.
+// @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalDate:off globalTimers:off globalFetch:off - standalone fake CLI with no workspace imports.
 /* oxlint-disable t3code/no-global-process-runtime -- standalone fake CLI process has no Effect runtime. */
 /**
  * A fake `codex` CLI for tests and local verification. Point a Codex
@@ -36,6 +36,9 @@
  *         { "label": "Memory", "description": "Fastest." }] }] },
  *   { "type": "message", "text": "Using {{answer:store}}." }
  *
+ * An `mcpCall` step calls a tool on the session's injected styal MCP server and
+ * fails the turn if the call fails, exercising real agent-to-server behavior.
+ *
  * Steps start 250 ms apart, like a provider waiting on its model. The server
  * captures the pre-turn checkpoint while the turn starts, so a file written
  * instantly would already be in that baseline and the turn diff would be
@@ -67,6 +70,7 @@ type Step =
     }
   | { readonly type: "writeFile"; readonly path: string; readonly content: string }
   | { readonly type: "question"; readonly questions: ReadonlyArray<JsonObject> }
+  | { readonly type: "mcpCall"; readonly name: string; readonly arguments: JsonObject }
   | { readonly type: "hold" };
 
 interface ScenarioTurn {
@@ -81,6 +85,11 @@ interface Scenario {
 }
 
 type JsonObject = Record<string, unknown>;
+
+interface McpServer {
+  readonly url: string;
+  readonly http_headers?: Readonly<Record<string, string>>;
+}
 
 const [mode, ...args] = process.argv.slice(2);
 
@@ -133,7 +142,7 @@ function makeActiveTurn(turnId: string): ActiveTurn {
 }
 
 function runAppServer(): void {
-  const threads = new Map<string, { cwd: string }>();
+  const threads = new Map<string, { cwd: string; mcpServer: McpServer | undefined }>();
   const pendingRequests = new Map<string, (result: JsonObject) => void>();
   let activeTurn: ActiveTurn | null = null;
 
@@ -149,7 +158,8 @@ function runAppServer(): void {
     const cwd = typeof params.cwd === "string" ? params.cwd : process.cwd();
     const model = typeof params.model === "string" ? params.model : MODEL;
     const createdAt = nowSeconds();
-    threads.set(threadId, { cwd });
+    const config = params.config as { mcp_servers?: Record<string, McpServer> } | undefined;
+    threads.set(threadId, { cwd, mcpServer: Object.values(config?.mcp_servers ?? {})[0] });
     return {
       thread: {
         id: threadId,
@@ -227,6 +237,11 @@ function runAppServer(): void {
         continue;
       }
       try {
+        if (step.type === "mcpCall") {
+          if (!thread?.mcpServer) throw new Error("fake-codex: no injected MCP server");
+          await callMcpTool(thread.mcpServer, step);
+          continue;
+        }
         emitStep(
           threadId,
           turnId,
@@ -364,6 +379,59 @@ function runAppServer(): void {
   input.on("close", () => process.exit(0));
 }
 
+async function callMcpTool(server: McpServer, step: Extract<Step, { type: "mcpCall" }>) {
+  const headers = new Headers({
+    ...server.http_headers,
+    "content-type": "application/json",
+    accept: "application/json, text/event-stream",
+  });
+  const rpc = async (method: string, params: JsonObject, id?: number) => {
+    const response = await fetch(server.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const sessionId = response.headers.get("mcp-session-id");
+    if (sessionId) headers.set("mcp-session-id", sessionId);
+    const raw = await response.text();
+    if (!response.ok) throw new Error(`fake-codex: MCP HTTP ${response.status}: ${raw}`);
+    if (id === undefined) return;
+    const messages = response.headers.get("content-type")?.includes("text/event-stream")
+      ? raw
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5))
+      : [raw];
+    const reply = messages
+      .map(
+        (message) =>
+          JSON.parse(message) as {
+            id?: number;
+            error?: unknown;
+            result?: { protocolVersion?: string; isError?: boolean };
+          },
+      )
+      .find((message) => message.id === id);
+    if (!reply || reply.error || reply.result?.isError) {
+      throw new Error(`fake-codex: MCP ${method} failed: ${raw}`);
+    }
+    return reply.result;
+  };
+  const initialized = await rpc(
+    "initialize",
+    {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "fake-codex", version: "0.0.0" },
+    },
+    1,
+  );
+  headers.set("mcp-protocol-version", initialized?.protocolVersion ?? "2025-06-18");
+  await rpc("notifications/initialized", {});
+  await rpc("tools/call", { name: step.name, arguments: step.arguments }, 2);
+}
+
 function emitStep(threadId: string, turnId: string, cwd: string, step: Step): void {
   const itemId = NodeCrypto.randomUUID();
   const started = (item: JsonObject) =>
@@ -432,6 +500,7 @@ function emitStep(threadId: string, turnId: string, cwd: string, step: Step): vo
       return;
     }
     case "question":
+    case "mcpCall":
     case "hold":
       return;
   }
