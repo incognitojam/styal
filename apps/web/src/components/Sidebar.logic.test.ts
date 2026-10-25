@@ -948,29 +948,41 @@ describe("next unread thread", () => {
     );
   });
 
-  it("opens the most urgent thread first, then the first in sidebar order", () => {
+  it("opens the most urgent thread first, then the one waiting longest", () => {
     const candidates = [
-      { key: "a", attention: "done" as const },
-      { key: "b", attention: null },
-      { key: "c", attention: "input" as const },
-      { key: "d", attention: "input" as const },
-      { key: "e", attention: "failed" as const },
+      { key: "a", attention: "done" as const, waitingSince: 100 },
+      { key: "b", attention: null, waitingSince: 50 },
+      { key: "c", attention: "input" as const, waitingSince: 300 },
+      { key: "d", attention: "input" as const, waitingSince: 200 },
+      { key: "e", attention: "failed" as const, waitingSince: 10 },
     ];
-    expect(resolveNextAttentionThread(candidates, null)).toEqual({ key: "c", attention: "input" });
+    expect(resolveNextAttentionThread(candidates, null)).toEqual({ key: "d", attention: "input" });
+  });
+
+  it("keeps sidebar order between threads waiting since the same time", () => {
+    const candidates = [
+      { key: "a", attention: "done" as const, waitingSince: 100 },
+      { key: "b", attention: "done" as const, waitingSince: 100 },
+    ];
+    expect(resolveNextAttentionThread(candidates, null)).toEqual({ key: "a", attention: "done" });
   });
 
   it("skips the open thread so pressing again moves on", () => {
     const candidates = [
-      { key: "a", attention: "approval" as const },
-      { key: "b", attention: "approval" as const },
-      { key: "c", attention: "done" as const },
+      { key: "a", attention: "approval" as const, waitingSince: 100 },
+      { key: "b", attention: "approval" as const, waitingSince: 200 },
+      { key: "c", attention: "done" as const, waitingSince: 50 },
     ];
     expect(resolveNextAttentionThread(candidates, "a")).toEqual({
       key: "b",
       attention: "approval",
     });
-    expect(resolveNextAttentionThread([{ key: "a", attention: "done" }], "a")).toBeNull();
-    expect(resolveNextAttentionThread([{ key: "a", attention: null }], null)).toBeNull();
+    expect(
+      resolveNextAttentionThread([{ key: "a", attention: "done", waitingSince: 0 }], "a"),
+    ).toBeNull();
+    expect(
+      resolveNextAttentionThread([{ key: "a", attention: null, waitingSince: 0 }], null),
+    ).toBeNull();
   });
 
   it("treats a thread as woke until it is visited after waking", () => {

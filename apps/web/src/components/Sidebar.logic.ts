@@ -1167,19 +1167,36 @@ export function resolveSidebarThreadAttention(input: {
 }
 
 /**
- * The thread to open next: the most urgent attention first, then sidebar
- * order. The open thread is skipped, so pressing again moves on while it
- * still waits.
+ * The thread to open next: the most urgent attention first, then the one
+ * waiting longest, so older work is cleared before its provider cache goes
+ * cold. Equal times keep sidebar order. The open thread is skipped, so
+ * pressing again moves on while it still waits.
  */
 export function resolveNextAttentionThread(
-  candidates: readonly { key: string; attention: SidebarThreadAttention | null }[],
+  candidates: readonly {
+    key: string;
+    attention: SidebarThreadAttention | null;
+    /** Epoch milliseconds the thread has been waiting since. */
+    waitingSince: number;
+  }[],
   currentKey: string | null,
 ): { key: string; attention: SidebarThreadAttention } | null {
-  let best: { key: string; attention: SidebarThreadAttention; rank: number } | null = null;
-  for (const { key, attention } of candidates) {
+  let best: {
+    key: string;
+    attention: SidebarThreadAttention;
+    rank: number;
+    waitingSince: number;
+  } | null = null;
+  for (const { key, attention, waitingSince } of candidates) {
     if (attention === null || key === currentKey) continue;
     const rank = SIDEBAR_THREAD_ATTENTION_ORDER.indexOf(attention);
-    if (best === null || rank < best.rank) best = { key, attention, rank };
+    if (
+      best === null ||
+      rank < best.rank ||
+      (rank === best.rank && waitingSince < best.waitingSince)
+    ) {
+      best = { key, attention, rank, waitingSince };
+    }
   }
   return best === null ? null : { key: best.key, attention: best.attention };
 }
@@ -1240,6 +1257,7 @@ export {
   isThreadWorking as isSidebarThreadWorking,
   sortInboxThreadsByReturn,
   sortWorkingThreadsBySend,
+  threadInboxReturnedAt,
 } from "@t3tools/client-runtime/state/thread-inbox";
 
 export { pinOrderKeyBetween } from "@t3tools/client-runtime/state/thread-sort";

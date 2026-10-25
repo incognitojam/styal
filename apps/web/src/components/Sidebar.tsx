@@ -246,6 +246,7 @@ import {
   sidebarThreadKeyAtY,
   SETTLED_SHELF_EXPANDED_KEY,
   sortInboxThreadsByReturn,
+  threadInboxReturnedAt,
   sortPinnedThreadsForSidebar,
   sortThreadsForSidebar,
   sortWorkingThreadsBySend,
@@ -5061,18 +5062,22 @@ export default function Sidebar() {
           thread.lastVisitedAt,
           lastVisitedAtById[key],
         );
-        return {
-          key,
-          attention: resolveSidebarThreadAttention({
-            status: resolveSidebarThreadStatus(thread),
-            isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
-            isWoke: isSidebarThreadWoke({
-              wokeAt: threadWokeAt(thread, { now }),
-              lastVisitedAt,
-              settled: thread.settledOverride === "settled",
-            }),
+        const wokeAt = threadWokeAt(thread, { now });
+        const attention = resolveSidebarThreadAttention({
+          status: resolveSidebarThreadStatus(thread),
+          isUnread: hasUnseenCompletion({ ...thread, lastVisitedAt }),
+          isWoke: isSidebarThreadWoke({
+            wokeAt,
+            lastVisitedAt,
+            settled: thread.settledOverride === "settled",
           }),
-        };
+        });
+        // A woken thread waits from its wake, not from its last run.
+        const waitingSince =
+          attention === "woke" && wokeAt !== null
+            ? Date.parse(wokeAt)
+            : threadInboxReturnedAt(thread, inboxReturns.returnedAt);
+        return { key, attention, waitingSince };
       }),
       routeThreadKey,
     );
