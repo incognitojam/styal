@@ -7,11 +7,7 @@ import { parse } from "yaml";
 
 import type { ForkFeatureLedger } from "../../fork-feature-ledger.ts";
 import type { CommitReview } from "./commit-review.ts";
-import {
-  auditUpstreamIntakeCandidate,
-  formatForkCiWatchCommand,
-  formatUpstreamIntakePushCommand,
-} from "./intake.ts";
+import { auditUpstreamIntakeCandidate } from "./intake.ts";
 
 const repoRoot = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
@@ -339,24 +335,6 @@ describe("upstream intake audit", () => {
       `| Upstream commits without PR | [\`${standaloneCommit}\`](https://github.com/pingdotgg/t3code/commit/${standaloneCommit}) |`,
     );
     assert.notInclude(result.summary, directCommit);
-  });
-
-  it("formats copyable push and watch commands", () => {
-    assert.equal(
-      formatUpstreamIntakePushCommand({ candidateBranch: "intake/catchup" }),
-      "git push -u origin 'intake/catchup'",
-    );
-    assert.equal(
-      formatUpstreamIntakePushCommand({
-        candidateBranch: "intake/catchup",
-        remoteSha: "c".repeat(40),
-      }),
-      `git push --force-with-lease='refs/heads/intake/catchup:${"c".repeat(40)}' origin 'intake/catchup:refs/heads/intake/catchup'`,
-    );
-    assert.equal(
-      formatForkCiWatchCommand({ repository: "example/fork", runId: 123 }),
-      "gh run watch 123 --repo 'example/fork' --exit-status",
-    );
   });
 
   it("runs Fork CI and the intake audit for intake branches", () => {

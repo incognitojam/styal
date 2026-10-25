@@ -1186,7 +1186,7 @@ function autoBatch(
   process.stdout.write("\n");
   if (!verify(cwd, "origin/main")) return false;
   if (!options.push) {
-    process.stdout.write(`\nVerified. Push ${options.branch} and wait for Fork CI.\n`);
+    process.stdout.write(`\nVerified. Push it with intake-run.ts push.\n`);
     return true;
   }
   pushCandidate(cwd, options.branch);
