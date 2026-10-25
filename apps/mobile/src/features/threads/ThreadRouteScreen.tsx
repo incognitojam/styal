@@ -578,7 +578,7 @@ function ThreadRouteContent(
   };
   const stoppingBackgroundWorkRef = useRef<string | null>(null);
   const [stoppingBackgroundWork, setStoppingBackgroundWork] = useState<string | null>(null);
-  const handleStopBackgroundWork = async () => {
+  const handleStopBackgroundWork = () => {
     if (
       !selectedThread ||
       !readEnvironmentScope(selectedThread.environmentId, AuthOrchestrationOperateScope)
@@ -589,17 +589,15 @@ function ThreadRouteContent(
     if (stoppingBackgroundWorkRef.current === key) return;
     stoppingBackgroundWorkRef.current = key;
     setStoppingBackgroundWork(key);
-    try {
-      await interruptThreadTurn({
-        environmentId: selectedThread.environmentId,
-        input: { threadId: selectedThread.id },
-      });
-    } finally {
+    return interruptThreadTurn({
+      environmentId: selectedThread.environmentId,
+      input: { threadId: selectedThread.id },
+    }).finally(() => {
       if (stoppingBackgroundWorkRef.current === key) {
         stoppingBackgroundWorkRef.current = null;
         setStoppingBackgroundWork(null);
       }
-    }
+    });
   };
   const handleStopThread = () => {
     if (
