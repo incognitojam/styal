@@ -3,21 +3,27 @@ name: Mobile Android Build
 # Builds the production Android APK on GitHub's runners rather than EAS Build,
 # whose free plan allows fewer Android builds a month than main's native
 # changes need. Mobile EAS Production calls this when main's Android
-# fingerprint has no release; dispatch it to build one by hand.
+# fingerprint has no release, and for its manual Android builds. Only those
+# calls publish: Mobile EAS Production serializes every OTA update, so a
+# publishing run started anywhere else could put an older update last.
 #
 # Signing uses the EAS-managed production keystore, copied into the
 # android-release environment's secrets, because Android installs an update
 # only when it carries the installed app's signer. Version codes continue from
 # the newest android-* GitHub release, the record of every shipped build.
 #
-# With publish off, the run builds and verifies the APK, uploads it as a
-# workflow artifact, and publishes nothing.
+# Dispatching this workflow directly builds and verifies the APK, uploads it
+# as a workflow artifact, and publishes nothing.
 on:
   workflow_call:
     inputs:
       publish:
         type: boolean
         default: false
+      ref:
+        description: The commit to build, when the caller committed a version change after the triggering commit.
+        type: string
+        default: ""
       expected-fingerprint:
         description: The fingerprint the caller decided to build; the run fails if the APK's differs.
         type: string
@@ -26,12 +32,6 @@ on:
         type: string
         default: ""
   workflow_dispatch:
-    inputs:
-      publish:
-        description: "Publish the GitHub release and an Android OTA update"
-        required: true
-        type: boolean
-        default: false
 
 jobs:
   build:
@@ -47,6 +47,11 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+    outputs:
+      commit: ${{ steps.meta.outputs.commit }}
+      fingerprint: ${{ steps.meta.outputs.fingerprint }}
+      version: ${{ steps.meta.outputs.version }}
+      code: ${{ steps.meta.outputs.code }}
     env:
       APP_VARIANT: production
       EXPO_OWNER: ${{ vars.EXPO_OWNER }}
@@ -62,6 +67,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref || github.sha }}
           sparse-checkout: |
             /*
             !/.repos/
@@ -149,6 +155,7 @@ jobs:
           fi
 
           {
+            echo "commit=$(git rev-parse HEAD)"
             echo "version=$version"
             echo "code=$code"
             echo "fingerprint=$fingerprint"
@@ -262,7 +269,7 @@ jobs:
           APP_VERSION: ${{ steps.meta.outputs.version }}
           VERSION_CODE: ${{ steps.meta.outputs.code }}
           RUNTIME_VERSION: ${{ steps.meta.outputs.fingerprint }}
-          COMMIT: ${{ github.sha }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
           GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ !inputs.publish && '1' || '' }}
           # The EAS-managed production keystore that every released APK must
@@ -271,17 +278,78 @@ jobs:
           ANDROID_SIGNING_CERT_SHA256: 168a6f8a44785ce28af01c4814c38b7ac27eab6fc0137138757d26e4c979fd04
         run: .github/scripts/publish-android-release.sh
 
-      - name: Publish the Android OTA update
-        if: inputs.publish
+  # A separate job so the update is published from a clean checkout: the
+  # build job's workspace holds Gradle output inside native module
+  # directories, which the fingerprint would hash.
+  ota:
+    name: Publish the Android OTA update
+    needs: build
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      APP_VARIANT: production
+      EXPO_OWNER: ${{ vars.EXPO_OWNER }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      NODE_OPTIONS: --max-old-space-size=8192
+      T3CODE_ANDROID_GOOGLE_SERVICES_FILE: ${{ github.workspace }}/apps/mobile/.eas/.env/T3CODE_ANDROID_GOOGLE_SERVICES_FILE
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - name: Pull production environment variables
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          OTA_MESSAGE: ${{ inputs.ota-message || format('Production OTA ({0})', github.sha) }}
+        run: eas env:pull production --non-interactive
+
+      # eas update computes the runtime version itself, so check it lands on
+      # the APK's before publishing anything.
+      - name: Publish the Android OTA update
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          FINGERPRINT: ${{ needs.build.outputs.fingerprint }}
+          OTA_MESSAGE: ${{ inputs.ota-message || format('Production OTA ({0})', needs.build.outputs.commit) }}
         run: |
+          runtime_version="$(eas fingerprint:generate --platform android --environment production --json --non-interactive | sed -n '/^{/,$p' | jq -er '.hash')"
+          if [ "$runtime_version" != "$FINGERPRINT" ]; then
+            echo "This checkout's fingerprint $runtime_version differs from the APK's $FINGERPRINT; not publishing." >&2
+            exit 1
+          fi
           eas update \
             --channel production \
             --environment production \
             --platform android \
             --message "$OTA_MESSAGE" \
             --non-interactive
-          echo ":white_check_mark: android: built ${{ steps.meta.outputs.version }} (${{ steps.meta.outputs.code }}), published its release and the OTA update (fingerprint \`${{ steps.meta.outputs.fingerprint }}\`)" >> "$GITHUB_STEP_SUMMARY"
+          echo ":white_check_mark: android: built ${{ needs.build.outputs.version }} (${{ needs.build.outputs.code }}), published its release and the OTA update (fingerprint \`$FINGERPRINT\`)" >> "$GITHUB_STEP_SUMMARY"
