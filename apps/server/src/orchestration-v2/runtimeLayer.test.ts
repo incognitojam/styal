@@ -30,6 +30,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
 import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -424,6 +425,7 @@ const workflowRunReactor = (
   Effect.gen(function* () {
     const usage: Array<Readonly<Record<string, unknown>>> = [];
     const dispatched: Array<string> = [];
+    const committed = yield* Queue.unbounded<string>();
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const reactor = yield* WorkflowRunWatchReactor.make.pipe(
       Effect.provide(
@@ -440,11 +442,13 @@ const workflowRunReactor = (
         ...orchestrator,
         dispatch: (command) => {
           dispatched.push(command.type);
-          return orchestrator.dispatch(command);
+          return orchestrator
+            .dispatch(command)
+            .pipe(Effect.tap(() => Queue.offer(committed, command.type)));
         },
       }),
     );
-    return { reactor, usage, dispatched };
+    return { reactor, usage, dispatched, committed };
   });
 
 const notificationsOf = (threadId: ThreadId) =>
@@ -2704,6 +2708,138 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         ["#8: stopped watching, could not read it"],
       );
     }),
+  );
+
+  it.effect("detects workflow completion on the next 30-second pass and wakes once", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId } = yield* watchRunFromNewThread("completion-cadence", 9010);
+      const firstRead = yield* Deferred.make<void>();
+      const reads: Array<number> = [];
+      let completed = false;
+      const { reactor, committed } = yield* workflowRunReactor(() =>
+        Effect.gen(function* () {
+          reads.push(yield* Clock.currentTimeMillis);
+          const run = hostRun(9010, { completed, conclusion: completed ? "success" : null });
+          yield* Deferred.succeed(firstRead, undefined);
+          return run;
+        }),
+      );
+      const startedAt = yield* Clock.currentTimeMillis;
+      yield* reactor.start();
+      yield* Deferred.await(firstRead);
+      completed = true;
+
+      yield* TestClock.adjust("29 seconds");
+      assert.deepEqual(reads, [startedAt]);
+      assert.deepEqual(yield* notificationsOf(threadId), []);
+
+      yield* TestClock.adjust("1 second");
+      assert.equal(yield* Queue.take(committed), "thread.workflow-run-watch.finish");
+      assert.deepEqual(reads, [startedAt, startedAt + 30_000]);
+      assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
+      assert.deepEqual(yield* notificationsOf(threadId), ["CI #9010: success"]);
+
+      yield* TestClock.adjust("90 seconds");
+      assert.lengthOf(reads, 2);
+      assert.deepEqual(yield* notificationsOf(threadId), ["CI #9010: success"]);
+    }),
+  );
+
+  it.effect("detects deployment review on the next 30-second pass and refreshes after review", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, key } = yield* watchRunFromNewThread("review-cadence", 9011);
+      const firstRead = yield* Deferred.make<void>();
+      const environment = { id: 42, name: "preview" };
+      let waiting = false;
+      const reads: Array<number> = [];
+      const { reactor, committed } = yield* workflowRunReactor(
+        () =>
+          Effect.gen(function* () {
+            reads.push(yield* Clock.currentTimeMillis);
+            const run = hostRun(9011, { reviewableEnvironments: waiting ? [environment] : [] });
+            yield* Deferred.succeed(firstRead, undefined);
+            return run;
+          }),
+        () =>
+          Effect.sync(() => {
+            waiting = false;
+          }),
+      );
+      const reviewOf = () =>
+        orchestrator
+          .getThreadShell(threadId)
+          .pipe(Effect.map((thread) => thread?.workflowRuns?.[0]?.review));
+      const startedAt = yield* Clock.currentTimeMillis;
+      yield* reactor.start();
+      yield* Deferred.await(firstRead);
+      waiting = true;
+
+      yield* TestClock.adjust("29 seconds");
+      assert.isUndefined(yield* reviewOf());
+      assert.lengthOf(reads, 1);
+      yield* TestClock.adjust("1 second");
+      assert.equal(yield* Queue.take(committed), "thread.workflow-run-watch.review");
+      assert.deepEqual(yield* reviewOf(), { environments: [environment] });
+      assert.deepEqual(reads, [startedAt, startedAt + 30_000]);
+
+      yield* reactor.review({
+        threadId,
+        ...key,
+        environmentIds: [42],
+        state: "approved",
+        comment: "",
+      });
+      assert.isUndefined(yield* reviewOf());
+      assert.deepEqual(reads, [startedAt, startedAt + 30_000, startedAt + 30_000]);
+      assert.deepEqual(yield* notificationsOf(threadId), []);
+    }),
+  );
+
+  it.effect(
+    "keeps a rate-limited workflow watch through eight passes and resumes completion detection",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const { threadId } = yield* watchRunFromNewThread("rate-limit-cadence", 9012);
+        const attempts = yield* Queue.unbounded<void>();
+        let limited = true;
+        const { reactor, committed } = yield* workflowRunReactor(() =>
+          Effect.gen(function* () {
+            const read = limited
+              ? Effect.fail(
+                  new PullRequestOperationError({
+                    operation: "workflowRun",
+                    detail: "Requests paused until reset",
+                    cause: new PullRequestProviderError({
+                      provider: SourceControlProviderKind.make("github"),
+                      operation: "getWorkflowRun",
+                      reason: "rate-limited",
+                      detail: "Requests paused until reset",
+                    }),
+                  }),
+                )
+              : Effect.succeed(hostRun(9012, { completed: true, conclusion: "success" }));
+            yield* Queue.offer(attempts, undefined);
+            return yield* read;
+          }),
+        );
+        yield* reactor.start();
+        yield* Queue.take(attempts);
+        for (let pass = 0; pass < 8; pass++) {
+          yield* TestClock.adjust("30 seconds");
+          yield* Queue.take(attempts);
+        }
+        assert.lengthOf((yield* orchestrator.getThreadShell(threadId))?.workflowRuns ?? [], 1);
+        assert.deepEqual(yield* notificationsOf(threadId), []);
+
+        limited = false;
+        yield* TestClock.adjust("30 seconds");
+        assert.equal(yield* Queue.take(committed), "thread.workflow-run-watch.finish");
+        assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.workflowRuns, []);
+        assert.deepEqual(yield* notificationsOf(threadId), ["CI #9012: success"]);
+      }),
   );
 
   it.effect("wakes the agent once when a watched workflow run completes", () =>

@@ -5551,7 +5551,7 @@ features:
     prs: [896]
     invariants:
       - watch_workflow_run reads the GitHub Actions run first; a run that already completed is reported to the agent instead of watched, and an unreadable run is an error.
-      - The server reads each watched run every two minutes and wakes the agent once when it completes, naming its conclusion and the jobs of the latest attempt that did not pass, then ends the watch in the same step.
+      - The server reads each watched run every 30 seconds, respecting host quota pauses, and wakes the agent once when it completes, naming its conclusion and the jobs of the latest attempt that did not pass, then ends the watch in the same step.
       - A watched run keeps the thread in the Working list as a monitor background task until the watch ends.
       - Settling, archiving, or stopping the thread ends its workflow run watches, and a finish read before that changes nothing and wakes no one. Subagents and settled or archived threads cannot start one.
       - Eight failed reads in a row end the watch with a wake saying so; a host rate limit only pauses it.
