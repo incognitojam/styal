@@ -333,77 +333,78 @@ describe("DesktopLifecycle", () => {
     },
   );
 
-  it.effect("flushes shutdown spans and records Electron's will-quit milestone", () =>
-    Effect.gen(function* () {
-      const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
-      const onceListeners = new Map<string, (...args: readonly unknown[]) => void>();
-      const traceFlushed = yield* Deferred.make<void>();
-      let flushCount = 0;
-      let quitCount = 0;
-      const electronApp = makeElectronApp({
-        quit: Effect.sync(() => {
-          quitCount += 1;
-          appListeners.get("before-quit")?.({ preventDefault: () => undefined } as Electron.Event);
-          const willQuit = onceListeners.get("will-quit");
-          onceListeners.delete("will-quit");
-          willQuit?.();
-        }),
-        on: (eventName, listener) =>
-          Effect.acquireRelease(
-            Effect.sync(() => {
-              appListeners.set(
-                eventName,
-                listener as unknown as (...args: readonly unknown[]) => void,
-              );
-            }),
-            () =>
-              Effect.sync(() => {
-                appListeners.delete(eventName);
-              }),
-          ).pipe(Effect.asVoid),
-        once: (eventName, listener) =>
-          Effect.sync(() => {
-            onceListeners.set(
-              eventName,
-              listener as unknown as (...args: readonly unknown[]) => void,
-            );
+  it.effect.each(["darwin", "win32", "linux"] satisfies ReadonlyArray<NodeJS.Platform>)(
+    "flushes shutdown spans asynchronously without blocking will-quit on %s",
+    (platform) =>
+      Effect.gen(function* () {
+        const events = new NodeEvents.EventEmitter();
+        const readyToQuit = yield* Deferred.make<void>();
+        const allowFinalFlush = yield* Deferred.make<void>();
+        const traceFlushed = yield* Deferred.make<void>();
+        let flushCount = 0;
+        let quitCount = 0;
+        const electronApp = makeElectronApp({
+          quit: Effect.sync(() => {
+            quitCount += 1;
+            events.emit("before-quit", {
+              preventDefault: () => undefined,
+            } as Electron.Event);
           }),
-      });
-      const flushTrace = Effect.sync(() => {
-        flushCount += 1;
-      }).pipe(
-        Effect.andThen(
-          Effect.suspend(() =>
-            flushCount >= 5 ? Deferred.succeed(traceFlushed, undefined) : Effect.void,
-          ),
-        ),
-        Effect.asVoid,
-      );
+          on: (eventName, listener) =>
+            Effect.acquireRelease(
+              Effect.sync(() => {
+                events.on(eventName, listener);
+              }),
+              () =>
+                Effect.sync(() => {
+                  events.removeListener(eventName, listener);
+                }),
+            ).pipe(Effect.asVoid),
+          once: (eventName, listener) =>
+            Effect.sync(() => {
+              events.once(eventName, listener);
+            }),
+        });
+        const flushTrace = Effect.gen(function* () {
+          flushCount += 1;
+          yield* Effect.promise(() => Promise.resolve());
+          if (flushCount === 4) yield* Deferred.succeed(readyToQuit, undefined);
+          if (flushCount === 5) {
+            yield* Deferred.await(allowFinalFlush);
+            yield* Deferred.succeed(traceFlushed, undefined);
+          }
+        });
 
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
-          const shutdown = yield* DesktopShutdown.DesktopShutdown;
-          yield* lifecycle.register;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+            const shutdown = yield* DesktopShutdown.DesktopShutdown;
+            yield* lifecycle.register;
 
-          let prevented = false;
-          appListeners.get("before-quit")?.({
-            preventDefault: () => {
-              prevented = true;
-            },
-          } as Electron.Event);
+            let prevented = false;
+            events.emit("before-quit", {
+              preventDefault: () => {
+                prevented = true;
+              },
+            } as Electron.Event);
 
-          yield* shutdown.awaitRequest;
-          yield* shutdown.markComplete;
-          yield* Deferred.await(traceFlushed);
+            yield* shutdown.awaitRequest;
+            yield* shutdown.markComplete;
+            yield* Deferred.await(readyToQuit);
 
-          assert.isTrue(prevented);
-          assert.equal(quitCount, 1);
-          assert.equal(flushCount, 5);
-          assert.isFalse(onceListeners.has("will-quit"));
-        }),
-      ).pipe(Effect.provide(makeLifecycleLayer("darwin", electronApp, flushTrace)));
-    }),
+            assert.equal(events.listenerCount("will-quit"), 1);
+            assert.doesNotThrow(() => events.emit("will-quit"));
+            assert.isFalse(yield* Deferred.isDone(traceFlushed));
+            yield* Deferred.succeed(allowFinalFlush, undefined);
+            yield* Deferred.await(traceFlushed);
+
+            assert.isTrue(prevented);
+            assert.equal(quitCount, 1);
+            assert.equal(flushCount, 5);
+            assert.equal(events.listenerCount("will-quit"), 0);
+          }),
+        ).pipe(Effect.provide(makeLifecycleLayer(platform, electronApp, flushTrace)));
+      }),
   );
 
   it.effect.each([false, true])(

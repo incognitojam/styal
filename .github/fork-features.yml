@@ -1002,6 +1002,7 @@ features:
     invariants:
       - Quitting flushes settings and gracefully closes the main window before destroying remaining windows and terminating the backend.
       - Cleanup is bounded and observable so a stuck close, telemetry flush, or backend request cannot indefinitely delay process exit.
+      - Electron's final will-quit diagnostic flush runs asynchronously without blocking quit or throwing when trace writes yield.
       - A backend that is force-killed because its shutdown outlived the stop grace period keeps its captured output in the backend log, including the server's report of what shutdown was waiting on.
     implementation_paths:
       - apps/desktop/src/app/DesktopLifecycle.ts

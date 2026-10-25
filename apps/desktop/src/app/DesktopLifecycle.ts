@@ -148,11 +148,18 @@ const recordQuitMilestone = Effect.fnUntraced(function* (
 const quitElectronAfterShutdown = Effect.fn("desktop.lifecycle.quitElectronAfterShutdown")(
   function* (
     shutdownStartedAt: number | undefined,
-    runSync: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => A,
+    runEffect: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => Promise<A>,
   ) {
     const electronApp = yield* ElectronApp.ElectronApp;
     yield* electronApp.once("will-quit", () => {
-      runSync(recordQuitMilestone("electron-will-quit", "Electron will quit", shutdownStartedAt));
+      // Trace writes can yield. Electron does not wait for this final diagnostic flush.
+      void runEffect(
+        recordQuitMilestone("electron-will-quit", "Electron will quit", shutdownStartedAt).pipe(
+          Effect.catchCause((cause) =>
+            logLifecycleError("failed to record Electron will-quit milestone", { cause }),
+          ),
+        ),
+      );
     });
     yield* recordQuitMilestone(
       "requesting-electron-quit",
@@ -175,7 +182,6 @@ function handleBeforeQuit(
   runEffect: <A, E>(
     effect: Effect.Effect<A, E, DesktopLifecycleRegistrationServices>,
   ) => Promise<A>,
-  runSync: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => A,
   allowQuit: () => boolean,
   markQuitAllowed: () => void,
 ): void {
@@ -208,7 +214,7 @@ function handleBeforeQuit(
   void runEffect(Effect.andThen(shutdownEffect, DesktopObservability.flushTrace)).finally(() => {
     markQuitAllowed();
     void runEffect(
-      quitElectronAfterShutdown(shutdownStartedAt, runSync).pipe(
+      quitElectronAfterShutdown(shutdownStartedAt, runEffect).pipe(
         Effect.andThen(DesktopObservability.flushTrace),
       ),
     );
@@ -220,7 +226,6 @@ function quitFromSignal(
   runEffect: <A, E>(
     effect: Effect.Effect<A, E, DesktopLifecycleRegistrationServices>,
   ) => Promise<A>,
-  runSync: <A, E>(effect: Effect.Effect<A, E, DesktopLifecycleRuntimeServices>) => A,
   markQuitAllowed: () => void,
 ): void {
   void runEffect(
@@ -232,7 +237,7 @@ function quitFromSignal(
       yield* logLifecycleInfo("process signal received", { signal });
       const shutdownStartedAt = yield* requestDesktopShutdownAndWait();
       markQuitAllowed();
-      yield* quitElectronAfterShutdown(shutdownStartedAt, runSync);
+      yield* quitElectronAfterShutdown(shutdownStartedAt, runEffect);
     }).pipe(
       Effect.withSpan("desktop.lifecycle.processSignal"),
       Effect.andThen(DesktopObservability.flushTrace),
@@ -281,7 +286,6 @@ export const make = DesktopLifecycle.of({
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const context = yield* Effect.context<DesktopLifecycleRegistrationServices>();
     const runEffect = Effect.runPromiseWith(context);
-    const runSync = Effect.runSyncWith(context);
     let quitAllowed = false;
     let quitCheckPending = false;
     let updaterQuitAllowed = false;
@@ -314,7 +318,6 @@ export const make = DesktopLifecycle.of({
         handleBeforeQuit(
           event,
           runEffect,
-          runSync,
           () => true,
           () => {},
         );
@@ -338,7 +341,6 @@ export const make = DesktopLifecycle.of({
           handleBeforeQuit(
             event,
             runEffect,
-            runSync,
             () => false,
             () => {
               quitAllowed = true;
@@ -372,12 +374,12 @@ export const make = DesktopLifecycle.of({
 
     if (environment.platform !== "win32") {
       yield* addScopedListener(process, "SIGINT", () => {
-        quitFromSignal("SIGINT", runEffect, runSync, () => {
+        quitFromSignal("SIGINT", runEffect, () => {
           quitAllowed = true;
         });
       });
       yield* addScopedListener(process, "SIGTERM", () => {
-        quitFromSignal("SIGTERM", runEffect, runSync, () => {
+        quitFromSignal("SIGTERM", runEffect, () => {
           quitAllowed = true;
         });
       });
