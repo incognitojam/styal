@@ -6,7 +6,7 @@
  * provider's binary path at a launcher from `install` and the server runs
  * real sessions against it without an OpenAI account:
  *
- *   node apps/server/scripts/fake-codex.ts install <dir> [--scenario <file>] [--request-log <file>]
+ *   node apps/server/scripts/fake-codex.ts install <dir> [--scenario <file>] [--request-log <file>] [--rpc-log <file>]
  *
  * `app-server` answers the provider status check (signed in with an API key,
  * one `fake-codex` model) and runs turns. `exec` answers text generation with
@@ -29,6 +29,8 @@
  * the held turn. `"error": "..."` on a turn fails it after its steps.
  * An `approval` step requests command approval, emits the command after acceptance,
  * and stops with a denial message when declined.
+ * A `backgroundCommand` step takes `command`, `processId`, and optional `output`;
+ * it stays running after the turn completes until backgroundTerminals/terminate.
  *
  * A `question` step asks the user and waits for the answers, like Codex's
  * request_user_input tool. Questions use Codex's wire shape, and a later
@@ -49,6 +51,7 @@
  *
  * With `--request-log`, every turn appends one JSON line with its thread id and
  * the turn's input items, so a test can check what the provider received.
+ * `--rpc-log` records incoming request methods and parameters.
  *
  * This file only imports Node built-ins so it can run from any checkout,
  * including an upstream T3 Code checkout that generates import fixtures.
@@ -60,6 +63,7 @@ import * as NodeReadline from "node:readline";
 
 const SCENARIO_ENV = "STYAL_FAKE_CODEX_SCENARIO";
 const REQUEST_LOG_ENV = "STYAL_FAKE_CODEX_REQUEST_LOG";
+const RPC_LOG_ENV = "STYAL_FAKE_CODEX_RPC_LOG";
 const MODEL = "fake-codex";
 
 type Step =
@@ -70,6 +74,12 @@ type Step =
       readonly command: string;
       readonly output?: string;
       readonly exitCode?: number;
+    }
+  | {
+      readonly type: "backgroundCommand";
+      readonly command: string;
+      readonly processId: string;
+      readonly output?: string;
     }
   | { readonly type: "writeFile"; readonly path: string; readonly content: string }
   | { readonly type: "question"; readonly questions: ReadonlyArray<JsonObject> }
@@ -139,6 +149,11 @@ interface ActiveTurn {
   steerText?: string;
 }
 
+interface BackgroundCommand {
+  readonly turnId: string;
+  readonly item: JsonObject;
+}
+
 function makeActiveTurn(turnId: string): ActiveTurn {
   let settle = (_reason: "interrupted" | "steered") => {};
   const interrupted = new Promise<"interrupted" | "steered">((resolve) => {
@@ -158,6 +173,7 @@ function makeActiveTurn(turnId: string): ActiveTurn {
 
 function runAppServer(): void {
   const threads = new Map<string, { cwd: string; mcpServer: McpServer | undefined }>();
+  const backgroundCommands = new Map<string, Map<string, BackgroundCommand>>();
   const pendingRequests = new Map<string, (result: JsonObject) => void>();
   let activeTurn: ActiveTurn | null = null;
 
@@ -283,6 +299,40 @@ function runAppServer(): void {
         continue;
       }
       try {
+        if (step.type === "backgroundCommand") {
+          const commands = backgroundCommands.get(threadId) ?? new Map<string, BackgroundCommand>();
+          if (commands.has(step.processId)) {
+            throw new Error(`fake-codex: background process '${step.processId}' already exists`);
+          }
+          const item = {
+            type: "commandExecution",
+            id: NodeCrypto.randomUUID(),
+            command: step.command,
+            cwd,
+            processId: step.processId,
+            source: "unifiedExecStartup",
+            status: "inProgress",
+            commandActions: [],
+            aggregatedOutput: null,
+            exitCode: null,
+            durationMs: null,
+          };
+          commands.set(step.processId, {
+            turnId,
+            item: { ...item, aggregatedOutput: step.output ?? "" },
+          });
+          backgroundCommands.set(threadId, commands);
+          notify("item/started", { threadId, turnId, item, startedAtMs: Date.now() });
+          if (step.output) {
+            notify("item/commandExecution/outputDelta", {
+              threadId,
+              turnId,
+              itemId: item.id,
+              delta: step.output,
+            });
+          }
+          continue;
+        }
         if (step.type === "mcpCall") {
           if (!thread?.mcpServer) throw new Error("fake-codex: no injected MCP server");
           await callMcpTool(thread.mcpServer, step);
@@ -328,6 +378,8 @@ function runAppServer(): void {
   };
 
   const handleRequest = (id: unknown, method: string, params: JsonObject) => {
+    const rpcLog = process.env[RPC_LOG_ENV];
+    if (rpcLog) NodeFS.appendFileSync(rpcLog, `${JSON.stringify({ method, params })}\n`, "utf8");
     switch (method) {
       case "initialize":
         return send({
@@ -409,6 +461,34 @@ function runAppServer(): void {
         send({ id, result: {} });
         if (activeTurn !== null && activeTurn.turnId === params.turnId) activeTurn.interrupt();
         return;
+      case "thread/backgroundTerminals/list":
+        return send({
+          id,
+          result: {
+            data: Array.from(
+              backgroundCommands.get(String(params.threadId))?.keys() ?? [],
+              (processId) => ({ processId }),
+            ),
+            nextCursor: null,
+          },
+        });
+      case "thread/backgroundTerminals/terminate": {
+        const threadId = String(params.threadId);
+        const commands = backgroundCommands.get(threadId);
+        const processId = String(params.processId);
+        const command = commands?.get(processId);
+        send({ id, result: { terminated: command !== undefined } });
+        if (command !== undefined) {
+          commands?.delete(processId);
+          notify("item/completed", {
+            threadId,
+            turnId: command.turnId,
+            completedAtMs: Date.now(),
+            item: { ...command.item, status: "failed", exitCode: 130, durationMs: 0 },
+          });
+        }
+        return;
+      }
       default:
         // Includes config/mcpServer/reload, which the server awaits without a timeout.
         return send({ id, result: {} });
@@ -647,12 +727,13 @@ function runInstall(argv: ReadonlyArray<string>): void {
   const directory = argv[0];
   if (!directory) {
     process.stderr.write(
-      "usage: fake-codex.ts install <dir> [--scenario <file>] [--request-log <file>]\n",
+      "usage: fake-codex.ts install <dir> [--scenario <file>] [--request-log <file>] [--rpc-log <file>]\n",
     );
     process.exit(2);
   }
   const scenario = flagValue(argv, "--scenario");
   const requestLog = flagValue(argv, "--request-log");
+  const rpcLog = flagValue(argv, "--rpc-log");
   const script = NodePath.resolve(import.meta.filename);
   NodeFS.mkdirSync(directory, { recursive: true });
   if (process.platform === "win32") {
@@ -663,6 +744,7 @@ function runInstall(argv: ReadonlyArray<string>): void {
         "@echo off",
         ...(scenario ? [`set "${SCENARIO_ENV}=${NodePath.resolve(scenario)}"`] : []),
         ...(requestLog ? [`set "${REQUEST_LOG_ENV}=${NodePath.resolve(requestLog)}"`] : []),
+        ...(rpcLog ? [`set "${RPC_LOG_ENV}=${NodePath.resolve(rpcLog)}"`] : []),
         `"${process.execPath}" "${script}" %*`,
         "exit /b %ERRORLEVEL%",
         "",
@@ -680,6 +762,7 @@ function runInstall(argv: ReadonlyArray<string>): void {
       "#!/bin/sh",
       ...(scenario ? [`export ${SCENARIO_ENV}=${quote(NodePath.resolve(scenario))}`] : []),
       ...(requestLog ? [`export ${REQUEST_LOG_ENV}=${quote(NodePath.resolve(requestLog))}`] : []),
+      ...(rpcLog ? [`export ${RPC_LOG_ENV}=${quote(NodePath.resolve(rpcLog))}`] : []),
       `exec ${quote(process.execPath)} ${quote(script)} "$@"`,
       "",
     ].join("\n"),

@@ -8,6 +8,7 @@ import { assert, it } from "@effect/vitest";
 import { CodexSettings, ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -132,6 +133,10 @@ const startSession = (launcher: string, workspace: string) =>
         }),
       interruptTurn: () =>
         protocol.request("turn/interrupt", { threadId: nativeThreadId, turnId: nativeTurnId }),
+      listBackgroundTerminals: (threadId = nativeThreadId) =>
+        protocol.request("thread/backgroundTerminals/list", { threadId }),
+      terminateBackgroundTerminal: (processId: string, threadId = nativeThreadId) =>
+        protocol.request("thread/backgroundTerminals/terminate", { threadId, processId }),
       close: child.kill(),
     };
   });
@@ -271,6 +276,82 @@ it.layer(
       assert.equal(completed.turn.status, "interrupted");
       yield* runtime.close;
     }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "keeps background commands after turn completion and terminates only a matching terminal",
+    () =>
+      Effect.gen(function* () {
+        const { launcher, workspace } = yield* installFakeCodex({
+          turns: [
+            {
+              steps: [
+                {
+                  type: "backgroundCommand",
+                  command: "fixture-server",
+                  processId: "4242",
+                  output: "Listening on port 5173.\n",
+                },
+                { type: "message", text: "Server started." },
+              ],
+            },
+          ],
+        });
+        const runtime = yield* startSession(launcher, workspace);
+        const turnCompleted = yield* Deferred.make<void>();
+        const events = yield* runtime.events.pipe(
+          Stream.tap((event) =>
+            event.method === "turn/completed"
+              ? Deferred.succeed(turnCompleted, undefined)
+              : Effect.void,
+          ),
+          Stream.takeUntil(
+            (event) =>
+              event.method === "item/completed" &&
+              (event.payload as { item: { type: string } }).item.type === "commandExecution",
+          ),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        yield* runtime.start();
+        yield* runtime.sendTurn({ input: "Start the server." });
+        yield* Deferred.await(turnCompleted);
+
+        const running = { data: [{ processId: "4242" }], nextCursor: null };
+        assert.deepEqual(yield* runtime.listBackgroundTerminals(), running);
+        assert.deepEqual(yield* runtime.listBackgroundTerminals("other-thread"), {
+          data: [],
+          nextCursor: null,
+        });
+        assert.deepEqual(yield* runtime.terminateBackgroundTerminal("unknown"), {
+          terminated: false,
+        });
+        assert.deepEqual(yield* runtime.terminateBackgroundTerminal("4242", "other-thread"), {
+          terminated: false,
+        });
+        assert.deepEqual(yield* runtime.listBackgroundTerminals(), running);
+        assert.deepEqual(yield* runtime.terminateBackgroundTerminal("4242"), { terminated: true });
+
+        const received = Array.from(yield* Fiber.join(events));
+        const started = received.find(
+          (event) =>
+            event.method === "item/started" &&
+            (event.payload as { item: { type: string } }).item.type === "commandExecution",
+        )!;
+        const completed = received.at(-1)!.payload as {
+          turnId: string;
+          item: { id: string; status: string; exitCode: number; aggregatedOutput: string };
+        };
+        const original = started.payload as { turnId: string; item: { id: string } };
+        assert.equal(completed.turnId, original.turnId);
+        assert.equal(completed.item.id, original.item.id);
+        assert.equal(completed.item.status, "failed");
+        assert.equal(completed.item.exitCode, 130);
+        assert.equal(completed.item.aggregatedOutput, "Listening on port 5173.\n");
+        assert.deepEqual(yield* runtime.listBackgroundTerminals(), { data: [], nextCursor: null });
+        assert.deepEqual(yield* runtime.terminateBackgroundTerminal("4242"), { terminated: false });
+        yield* runtime.close;
+      }).pipe(Effect.scoped),
   );
 
   it.effect("fails the turn when a file write leaves the workspace", () =>
