@@ -242,3 +242,17 @@ export async function addProject(page: Page, path: string): Promise<void> {
   const name = path.split("/").at(-1);
   await page.getByRole("button", { name: `New thread in ${name}` }).waitFor();
 }
+
+/**
+ * Holds back requests whose URL matches `url`, such as a lazily loaded route chunk, until the
+ * returned function is called.
+ */
+export async function holdRequests(page: Page, url: RegExp): Promise<() => void> {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route(url, async (route) => {
+    await released;
+    await route.fallback();
+  });
+  return release;
+}
