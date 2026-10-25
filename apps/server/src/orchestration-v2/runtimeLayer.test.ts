@@ -425,6 +425,7 @@ const workflowRunReactor = (
   Effect.gen(function* () {
     const usage: Array<Readonly<Record<string, unknown>>> = [];
     const dispatched: Array<string> = [];
+    const committed = yield* Queue.unbounded<string>();
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const reactor = yield* WorkflowRunWatchReactor.make.pipe(
       Effect.provide(
@@ -441,11 +442,13 @@ const workflowRunReactor = (
         ...orchestrator,
         dispatch: (command) => {
           dispatched.push(command.type);
-          return orchestrator.dispatch(command);
+          return orchestrator
+            .dispatch(command)
+            .pipe(Effect.tap(() => Queue.offer(committed, command.type)));
         },
       }),
     );
-    return { reactor, usage, dispatched };
+    return { reactor, usage, dispatched, committed };
   });
 
 const notificationsOf = (threadId: ThreadId) =>
@@ -2710,6 +2713,37 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("keeps rate-limited workflow reads out of the failure allowance", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const { threadId, key } = yield* watchRunFromNewThread("rate-limited", 9012);
+      const { reactor } = yield* workflowRunReactor(() =>
+        Effect.fail(
+          new PullRequestOperationError({
+            operation: "workflowRun",
+            detail: "Requests paused until reset",
+            cause: new PullRequestProviderError({
+              provider: SourceControlProviderKind.make("github"),
+              operation: "getWorkflowRun",
+              reason: "rate-limited",
+              detail: "Requests paused until reset",
+            }),
+          }),
+        ),
+      );
+      for (let pass = 0; pass < 9; pass++) yield* reactor.sweep;
+      assert.lengthOf((yield* orchestrator.getThreadShell(threadId))?.workflowRuns ?? [], 1);
+      assert.deepEqual(yield* notificationsOf(threadId), []);
+      yield* orchestrator.dispatch({
+        type: "thread.workflow-run.watch",
+        commandId: CommandId.make("workflow-run-rate-limited-stop"),
+        threadId,
+        ...key,
+        watching: false,
+      });
+    }),
+  );
+
   it.effect("wakes the agent once when a watched workflow run completes", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -2801,11 +2835,16 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const { threadId, projectId, key } = yield* watchRunFromNewThread("review", 9004);
         const environment = { id: 21258525450, name: "upstream-intake-manual" };
-        let waiting = true;
+        let waiting = false;
+        const firstRead = yield* Deferred.make<void>();
         const reviews: Array<unknown> = [];
-        const { reactor, dispatched } = yield* workflowRunReactor(
+        const { reactor, dispatched, committed } = yield* workflowRunReactor(
           () =>
-            Effect.succeed(hostRun(9004, { reviewableEnvironments: waiting ? [environment] : [] })),
+            Effect.gen(function* () {
+              const run = hostRun(9004, { reviewableEnvironments: waiting ? [environment] : [] });
+              yield* Deferred.succeed(firstRead, undefined);
+              return run;
+            }),
           (input) =>
             Effect.sync(() => {
               reviews.push(input);
@@ -2817,7 +2856,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             .getThreadShell(threadId)
             .pipe(Effect.map((thread) => thread?.workflowRuns?.[0]?.review));
 
-        yield* reactor.sweep;
+        yield* reactor.start();
+        yield* Deferred.await(firstRead);
+        waiting = true;
+        yield* TestClock.adjust("29 seconds");
+        assert.isUndefined(yield* reviewOf());
+        assert.deepEqual(dispatched, []);
+        yield* TestClock.adjust("1 second");
+        assert.equal(yield* Queue.take(committed), "thread.workflow-run-watch.review");
         assert.deepEqual(yield* reviewOf(), { environments: [environment] });
         // A pass that sees the same review records nothing new.
         yield* reactor.sweep;

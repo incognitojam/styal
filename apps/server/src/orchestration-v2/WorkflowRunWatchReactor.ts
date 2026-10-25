@@ -28,8 +28,8 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { workflowRunCompletedMessage, workflowRunUnreadableMessage } from "./workflowRunWatch.ts";
 
-/** Minutes between passes. Runs take minutes, and each pass spends one REST read per run. */
-const SWEEP_MINUTES = 2;
+/** Active runs need prompt completion/review detection; shared host policy bounds REST use. */
+const SWEEP_SECONDS = 30;
 /** Reads in a row that failed for a reason other than a rate limit before the watch ends. */
 const READ_FAILURE_LIMIT = 8;
 
@@ -59,7 +59,7 @@ const reviewKey = (review: ThreadWorkflowRunReview | null | undefined) =>
 
 /**
  * Wakes a thread's agent once when a CI workflow run it watches (`watch_workflow_run`)
- * completes, and ends the watch in the same step. A pass every two minutes reads each watched
+ * completes, and ends the watch in the same step. A pass every 30 seconds reads each watched
  * run, and records on the watch when the run waits for the user's deployment review. Settling,
  * archiving, or stopping a thread ends its watches in the orchestrator.
  */
@@ -215,7 +215,7 @@ export const make = Effect.gen(function* () {
 
   const start: WorkflowRunWatchReactor["Service"]["start"] = () =>
     forkParked(
-      sweep.pipe(Effect.repeat(Schedule.spaced(`${SWEEP_MINUTES} minutes`)), Effect.asVoid),
+      sweep.pipe(Effect.repeat(Schedule.spaced(`${SWEEP_SECONDS} seconds`)), Effect.asVoid),
     );
 
   const review: WorkflowRunWatchReactor["Service"]["review"] = Effect.fn(
