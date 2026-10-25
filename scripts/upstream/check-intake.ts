@@ -21,11 +21,7 @@ import {
   forkAdaptationNote,
   preservedFeatureIds,
 } from "./lib/commit-review.ts";
-import {
-  auditUpstreamIntakeCandidate,
-  formatForkCiWatchCommand,
-  formatUpstreamIntakePushCommand,
-} from "./lib/intake.ts";
+import { auditUpstreamIntakeCandidate } from "./lib/intake.ts";
 import {
   changedUpstreamMigrations,
   checkUpstreamMigrationsAtRevision,
@@ -340,7 +336,6 @@ function upstreamCommitPullRequests(
 }
 
 interface ForkCiRun {
-  readonly databaseId: number;
   readonly status: string;
   readonly conclusion: string;
   readonly url: string;
@@ -349,8 +344,6 @@ interface ForkCiRun {
 function isForkCiRun(value: unknown): value is ForkCiRun {
   if (typeof value !== "object" || value === null) return false;
   return (
-    "databaseId" in value &&
-    typeof value.databaseId === "number" &&
     "status" in value &&
     typeof value.status === "string" &&
     "conclusion" in value &&
@@ -392,7 +385,7 @@ function forkCiRuns(repository: string, branch: string, sha: string): ReadonlyAr
       "--limit",
       "20",
       "--json",
-      "databaseId,status,conclusion,url",
+      "status,conclusion,url",
     ],
     { cwd: repoRoot, encoding: "utf8" },
   );
@@ -415,12 +408,7 @@ function printPromotionReadiness(input: {
   if (remoteSha !== input.candidateSha) {
     const state = remoteSha === undefined ? "is not pushed" : `points at ${remoteSha}`;
     process.stdout.write(
-      `\nRemote branch ${state}. Push the audited candidate, then rerun this audit:\n\n${formatUpstreamIntakePushCommand(
-        {
-          candidateBranch: input.candidateBranch,
-          ...(remoteSha === undefined ? {} : { remoteSha }),
-        },
-      )}\n`,
+      `\nRemote branch ${state}. With ${input.candidateBranch} checked out, push the audited candidate, then rerun this audit:\n\nnode scripts/upstream/intake-run.ts push\n`,
     );
     return;
   }
@@ -429,7 +417,7 @@ function printPromotionReadiness(input: {
   const successful = runs.find((run) => run.status === "completed" && run.conclusion === "success");
   if (successful !== undefined) {
     process.stdout.write(
-      `\nFork CI passed: ${successful.url}\n\nPromotion started by itself; approve it if it waits: https://github.com/${input.repository}/actions/workflows/promote-upstream-intake.yml\n`,
+      `\nFork CI passed: ${successful.url}\n\nPromotion started by itself. Watch it until it lands or fails, then check Fork CI on main: https://github.com/${input.repository}/actions/workflows/promote-upstream-intake.yml\n`,
     );
     return;
   }
@@ -437,9 +425,7 @@ function printPromotionReadiness(input: {
   const active = runs.find((run) => run.status !== "completed");
   if (active !== undefined) {
     process.stdout.write(
-      `\nFork CI is ${active.status}: ${active.url}\n\nWait for it to finish, then rerun this audit:\n\n${formatForkCiWatchCommand(
-        { repository: input.repository, runId: active.databaseId },
-      )}\n`,
+      `\nFork CI is ${active.status}: ${active.url}\n\nWatch it, then rerun this audit when it finishes.\n`,
     );
     return;
   }
