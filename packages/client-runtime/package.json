@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./pull-request-branch": {
+      "types": "./src/pullRequestBranch.ts",
+      "default": "./src/pullRequestBranch.ts"
+    },
     "./composerThreadItems": {
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"

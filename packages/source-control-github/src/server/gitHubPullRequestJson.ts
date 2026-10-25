@@ -531,6 +531,7 @@ export interface GitHubPullRequestListItem {
 }
 
 export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
+  readonly headBranchState?: "present" | "deleted" | "unknown";
   readonly isCrossRepository?: boolean;
   readonly headRepositoryOwner: string | null;
   readonly headRepositoryNameWithOwner?: string | null;
@@ -1456,9 +1457,18 @@ export function toPullRequestCore(result: PullRequestCore.Result): GitHubPullReq
             headDeployments?.pageInfo?.hasNextPage === true,
         }),
     headRepositoryNameWithOwner: trimmed(pr.headRepository?.nameWithOwner),
+    // A missing fork can be deleted or inaccessible; neither proves its branch was deleted.
+    headBranchState:
+      pr.headRepository == null
+        ? "unknown"
+        : pr.headRef === null
+          ? "deleted"
+          : pr.headRef === undefined
+            ? "unknown"
+            : "present",
     viewerAccess: {
       canWrite: toCanWrite(repository.viewerPermission),
-      canDeleteBranch: toCanWrite(pr.headRepository?.viewerPermission) && pr.headRef !== null,
+      canDeleteBranch: toCanWrite(pr.headRepository?.viewerPermission) && pr.headRef != null,
       canTriage: toCanTriage(repository.viewerPermission),
       ...toPullRequestViewerFields(pr),
       ...(pr.viewerCanEnableAutoMerge === undefined

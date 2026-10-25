@@ -73,6 +73,10 @@ Each time the desktop app starts, it records how long its local server and windo
 
 Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
 
+Web and desktop record when a review shows the head branch as present, deleted, or unknown, once
+per review and state while its panel stays open. Branch names, repositories, URLs, and pull request
+numbers are not collected.
+
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 

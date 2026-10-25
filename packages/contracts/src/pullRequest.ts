@@ -621,6 +621,8 @@ export const PullRequestDetail = Schema.Struct({
   deletions: NonNegativeInt,
   changedFiles: NonNegativeInt,
   headBranch: TrimmedNonEmptyString,
+  /** Current source ref, independent of write access. Absent on hosts that do not report it. */
+  headBranchState: Schema.optional(Schema.Literals(["present", "deleted", "unknown"])),
   /**
    * The head commit this detail was read at. Reported only by hosts that refuse a merge whose
    * head has moved since, so a client that sends it back as `expectedHeadSha` gets that refusal.

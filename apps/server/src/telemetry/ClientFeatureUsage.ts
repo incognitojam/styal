@@ -36,8 +36,9 @@ export const reporter = Effect.fnUntraced(function* (client: FeatureUsage.Client
         .pipe(Effect.ignoreCause);
     }
     const exposed =
-      (input.feature === "web-build-update-notice" || input.feature === "desktop-update-notice") &&
-      input.action === "notice_shown";
+      input.feature === "pull-request-branch-status" ||
+      ((input.feature === "web-build-update-notice" || input.feature === "desktop-update-notice") &&
+        input.action === "notice_shown");
     return analytics
       .record(exposed ? "feature.exposed" : "feature.used", {
         ...input,

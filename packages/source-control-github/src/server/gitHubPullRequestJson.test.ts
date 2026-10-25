@@ -602,6 +602,39 @@ describe("pull request detail decoding", () => {
     pullRequest?: Record<string, unknown>,
   ) => expectSuccess(decodePullRequestCoreJson(coreJson(rollup, pullRequest)));
 
+  it.each(["READ", "WRITE"])(
+    "reports current source refs independently of %s access",
+    (permission) => {
+      for (const isCrossRepository of [false, true]) {
+        const headRepository = {
+          nameWithOwner: isCrossRepository ? "contributor/web" : "acme/web",
+          viewerPermission: permission,
+        };
+        for (const headRef of [{ id: "source-ref" }, null, { id: "recreated-source-ref" }]) {
+          const detail = detailOf([], { headRepository, headRef, isCrossRepository });
+          expect(detail.headBranchState).toBe(headRef === null ? "deleted" : "present");
+          expect(detail.headRepositoryNameWithOwner).toBe(headRepository.nameWithOwner);
+          expect(detail.viewerAccess.canDeleteBranch).toBe(
+            permission === "WRITE" && headRef !== null,
+          );
+        }
+      }
+    },
+  );
+
+  it("does not infer deletion from an unavailable source repository or an omitted ref", () => {
+    expect(detailOf([], { headRepository: null, headRef: null }).headBranchState).toBe("unknown");
+    const missingRef = JSON.parse(
+      coreJson([], {
+        headRepository: { nameWithOwner: "contributor/web", viewerPermission: "WRITE" },
+      }),
+    );
+    delete missingRef.data.repository.pullRequest.headRef;
+    const result = decodePullRequestCoreJson(JSON.stringify(missingRef));
+    // A malformed/failed read cannot become a successful deleted-branch observation.
+    expect(Result.isFailure(result)).toBe(true);
+  });
+
   /** The conversation the activity read carries, in the flat shape the tests below write. */
   const detailJson = JSON.stringify({
     comments: [{ id: "c1", body: "second", createdAt: "2026-07-04T00:00:00Z" }],

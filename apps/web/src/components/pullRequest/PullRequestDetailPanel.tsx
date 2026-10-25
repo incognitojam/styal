@@ -4,6 +4,7 @@ import {
   resolvePullRequestMergeIntent,
 } from "@t3tools/shared/threadPullRequests";
 import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
+import { PullRequestHeadBranchStatus } from "./PullRequestHeadBranchStatus";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -2761,6 +2762,9 @@ function PullRequestDetailPanelBody({
           </div>
         </div>
 
+        {detail ? (
+          <PullRequestHeadBranchStatus detail={detail} environmentId={environmentId} />
+        ) : null}
         {detail ? (
           <PullRequestDetailTabBar
             tabs={visibleTabs}

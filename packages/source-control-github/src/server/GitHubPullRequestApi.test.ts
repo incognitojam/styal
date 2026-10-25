@@ -2553,12 +2553,48 @@ layer("GitHubPullRequestApi.layer", (it) => {
         const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
         const input = { cwd: "/w", repository: "acme/web", host: "github.com", number: 7 };
         expect((yield* cli.getViewerAccess(input)).canDeleteBranch).toBe(actionAllowed);
-        expect((yield* cli.getPullRequestDetail(input)).viewerAccess.canDeleteBranch).toBe(
-          expected,
+        const detail = yield* cli.getPullRequestDetail(input);
+        expect(detail.viewerAccess.canDeleteBranch).toBe(expected);
+        expect(detail.headBranchState).toBe(
+          sourcePermission === null ? "unknown" : headRef === null ? "deleted" : "present",
         );
         expect(variablesOf("ViewerPermissions")).toHaveLength(1);
         expect(variablesOf("PullRequestCore")).toHaveLength(1);
       }),
+  );
+
+  it.effect("does not turn a failed source-ref read into a deleted branch observation", () =>
+    Effect.gen(function* () {
+      const answer = coreResponse({
+        headRepository: { nameWithOwner: "contributor/web-fork", viewerPermission: "READ" },
+        headRef: null,
+      });
+      mockedExecute.mockReturnValue(
+        Effect.succeed(
+          output(
+            encodeJson({
+              ...answer,
+              errors: [
+                {
+                  message: "Source ref could not be read",
+                  path: ["repository", "pullRequest", "headRef"],
+                },
+              ],
+            }),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const result = yield* cli
+        .getPullRequestDetail({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+        })
+        .pipe(Effect.result);
+      expect(Result.isFailure(result)).toBe(true);
+    }),
   );
 
   it.effect("preserves the actual source fork name in provider detail", () =>

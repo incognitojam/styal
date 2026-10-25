@@ -12,6 +12,7 @@ Upstream's `mcp.tool.invoked` records one event per agent MCP tool call with `to
 
 Additional measured operations are:
 
+- `pull-request-branch-status`, `source = system`, `action = status_shown`: `feature.exposed` records the current branch state (`present`, `deleted`, or `unknown`) once per review and state per mounted web/desktop panel. It requires client vocabulary version 12 and uses the review's environment. It measures exposure, not an explicit user action or mobile adoption; failed reports can lose observations. Branch names, repositories, URLs, and pull request numbers are never reported.
 - `pull-request-deployments`, `source = user`: `open_environment`, `open_logs`, and `show_all` record explicit deployment panel actions with `outcome = success | failure`. Link success means the browser accepted the handoff, not that the destination loaded. Display, polling, rerenders and Show less do not emit events. Reports require client vocabulary version 2 and go to the PR's environment without names, URLs, repositories, PR numbers or commit hashes.
 
 - `devices`, `source = user`: Device panel open, close, shutdown and device actions from a client that reports its surface. Requests forwarded from another environment and older clients without a surface remain unattributed instead of being counted again as manual use.

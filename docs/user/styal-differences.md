@@ -136,6 +136,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## GitHub and code review
 
+- **See whether a PR's branch was deleted.** GitHub reviews on web, desktop, and mobile show
+  the head branch's current state independently of permission to delete it. An inaccessible source
+  repository stays unknown, and refreshing reflects a branch recreated outside styal.
+  Compared with [T3 Code revision 140de68](https://github.com/pingdotgg/t3code/tree/140de68f25c5aeb3728596a7005635a6dfdf2989),
+  checked October 25, 2026, which uses branch existence only to offer **Delete branch**.
+  [Review and merge](./source-control.md#review-and-merge).
 - **PR deployments at a glance.** The pull request Summary shows each environment's latest
   deployment status, with links to open the environment and inspect deployment logs. Compared with
   [T3 Code revision e3b35d1](https://github.com/pingdotgg/t3code/tree/e3b35d1b2440b104f0bc2e357377c348121234dd),

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   PullRequestActionInput,
+  PullRequestDetail,
   PullRequestCapabilities,
   PullRequestInvalidateInput,
   PullRequestFilesViewedResult,
@@ -22,6 +23,18 @@ const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerReques
 const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
 const decodeSetFilesViewed = Schema.decodeUnknownSync(PullRequestSetFilesViewedInput);
 const decodeFilesViewed = Schema.decodeUnknownSync(PullRequestFilesViewedResult);
+
+it("keeps current branch state optional for hosts and servers that cannot report it", () => {
+  const decode = Schema.decodeUnknownSync(
+    Schema.Struct({ headBranchState: PullRequestDetail.fields.headBranchState }),
+  );
+  expect(decode({})).toEqual({});
+  for (const headBranchState of ["present", "deleted", "unknown"]) {
+    expect(decode({ headBranchState })).toEqual({ headBranchState });
+  }
+  expect(() => decode({ headBranchState: null })).toThrow();
+  expect(() => decode({ headBranchState: "closed" })).toThrow();
+});
 
 const LIST_RESULT: PullRequestListResult = {
   viewers: { "github.com": "bilal", "gitlab.com": "bilal.hassan" },

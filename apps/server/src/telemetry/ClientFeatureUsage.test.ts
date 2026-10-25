@@ -10,6 +10,52 @@ import * as ClientFeatureUsage from "./ClientFeatureUsage.ts";
 const decode = Schema.decodeUnknownEffect(ForkClientUsageInput);
 const isUsage = Schema.is(ForkClientUsageInput);
 
+it.effect("records branch status as exposure with no repository or branch content", () =>
+  Effect.gen(function* () {
+    const events: unknown[] = [];
+    const report = yield* ClientFeatureUsage.reporter({ surface: "web" }).pipe(
+      Effect.provideService(AnalyticsService.AnalyticsService, {
+        record: (event, properties) =>
+          Effect.sync(() => {
+            events.push({ event, properties });
+          }),
+        flush: Effect.void,
+      }),
+    );
+    for (const branchState of ["present", "deleted", "unknown"] as const) {
+      yield* report(
+        yield* decode({
+          feature: "pull-request-branch-status",
+          action: "status_shown",
+          branchState,
+          repository: "acme/web",
+          branch: "feature/synthetic",
+          number: 7,
+        }),
+      );
+      expect(events.at(-1)).toEqual({
+        event: "feature.exposed",
+        properties: {
+          feature: "pull-request-branch-status",
+          action: "status_shown",
+          branchState,
+          source: "system",
+          surface: "web",
+          forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+        },
+      });
+    }
+    expect(events).toHaveLength(3);
+    expect(
+      isUsage({
+        feature: "pull-request-branch-status",
+        action: "status_shown",
+        branchState: "arbitrary",
+      }),
+    ).toBe(false);
+  }),
+);
+
 it.effect(
   "records deployment interactions with bounded outcomes and no PR or environment content",
   () =>

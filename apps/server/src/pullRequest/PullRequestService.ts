@@ -1625,6 +1625,9 @@ export const make = Effect.gen(function* () {
             changedFiles: changeRequest.changedFiles,
             headBranch: changeRequest.headBranch,
             ...(changeRequest.headSha === undefined ? {} : { headSha: changeRequest.headSha }),
+            ...(changeRequest.headBranchState === undefined
+              ? {}
+              : { headBranchState: changeRequest.headBranchState }),
             ...(changeRequest.headRepositoryNameWithOwner === undefined
               ? {}
               : { headRepositoryNameWithOwner: changeRequest.headRepositoryNameWithOwner }),

@@ -3743,6 +3743,49 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9125
       retire_when: Upstream's repository identity honours `gh repo set-default` before `upstream` and `origin`, and upstream keeps pull request association correct across forks and branch pruning.
 
+  - id: pull-request-branch-status
+    title: Show the current source branch state independently of deletion permission
+    status: maintained
+    prs: []
+    invariants:
+      - GitHub detail reports present, deleted, or unknown source branch state independently of source-repository write access, including forks.
+      - A missing or inaccessible source repository is unknown; failed reads and hosts that omit the field never establish deletion.
+      - Web, desktop, and mobile show the current state; refresh after deletion or recreation replaces it even for merged pull requests with unchanged updatedAt.
+      - Delete branch retains its existing source-repository permissions and mutation guards; no restore action or historical lifecycle events are added.
+      - Web and desktop record bounded branch-state exposure without branch or repository identifiers; mobile is outside measurement coverage.
+    implementation_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx
+      - apps/mobile/src/features/pull-requests/PullRequestStatusRows.tsx
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/PullRequestHeadBranchStatus.tsx
+      - packages/client-runtime/src/pullRequestBranch.ts
+      - packages/contracts/src/forkClientUsage.ts
+      - packages/contracts/src/pullRequest.ts
+      - packages/source-control-core/src/server/PullRequestProvider.ts
+      - packages/source-control-github/src/server/gitHubPullRequestJson.ts
+    upstream_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx
+      - apps/mobile/src/features/pull-requests/PullRequestStatusRows.tsx
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/contracts/src/pullRequest.ts
+      - packages/source-control-core/src/server/PullRequestProvider.ts
+      - packages/source-control-github/src/server/gitHubPullRequestJson.ts
+    tests:
+      - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - apps/web/src/components/pullRequest/PullRequestHeadBranchStatus.browser.test.tsx
+      - packages/client-runtime/src/pullRequestBranch.test.ts
+      - packages/contracts/src/pullRequest.test.ts
+      - packages/source-control-github/src/server/gitHubPullRequestJson.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/19257
+      retire_when: Upstream shows current source branch existence independently of deletion permission and handles unknown source repositories and branch recreation.
+
   - id: pull-request-chip-context-menu
     title: Give pull request chips the chat link menu
     status: maintained

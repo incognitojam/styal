@@ -137,6 +137,60 @@ function hostedChangeRequest(body: string, additions = 1): ProviderChangeRequest
   return { ...changeRequestDetail(1), body, additions };
 }
 
+it.effect(
+  "refreshes a merged PR's source branch after deletion and recreation without a PR update",
+  () =>
+    Effect.gen(function* () {
+      let headBranchState: ProviderChangeRequestDetail["headBranchState"] = "present";
+      const permissions = {
+        actions: ["delete-branch" as const],
+        comment: false,
+        resolve: false,
+        verdicts: [],
+        requestReviewers: false,
+      };
+      const base = fakeProvider(SourceControlProviderKind.make("github"));
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/w", repository: "acme/web" }),
+        ],
+        providers: [
+          {
+            ...base,
+            capabilities: { ...base.capabilities, actions: ["delete-branch"], deleteBranch: true },
+            getViewerPermissions: () => Effect.succeed(permissions),
+            getChangeRequest: () =>
+              Effect.sync(() => ({
+                ...changeRequestDetail(1),
+                state: "merged" as const,
+                headRepositoryNameWithOwner: "contributor/web",
+                ...(headBranchState === undefined ? {} : { headBranchState }),
+              })),
+            runAction: () =>
+              Effect.sync(() => {
+                headBranchState = "deleted";
+              }),
+          },
+        ],
+      });
+      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+      const initial = yield* service.detail(reference);
+      assert.strictEqual(initial.headBranchState, "present");
+      assert.strictEqual(initial.headRepositoryNameWithOwner, "contributor/web");
+      yield* service.runAction({ ...reference, action: "delete-branch" });
+      assert.strictEqual((yield* service.detail(reference)).headBranchState, "deleted");
+      // Normal refresh also observes host-side changes, without using the PR's updatedAt as a gate.
+      for (const next of ["present", "deleted", "unknown", undefined] as const) {
+        headBranchState = next;
+        yield* service.invalidate({ reference, scope: "detail" });
+        const refreshed = yield* service.detail(reference);
+        assert.strictEqual(refreshed.headBranchState, next);
+        assert.strictEqual(refreshed.updatedAt, initial.updatedAt);
+        assert.strictEqual(refreshed.state, "merged");
+      }
+    }),
+);
+
 it.effect("refreshes deployment status and environment links with PR detail", () =>
   Effect.gen(function* () {
     let ready = false;
