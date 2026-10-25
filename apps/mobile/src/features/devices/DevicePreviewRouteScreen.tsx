@@ -38,6 +38,7 @@ import {
   type ThreadDevicePreview,
 } from "./threadDevicePreviews";
 import { createShakeDetector } from "./shakeDetector";
+import { SimulatorMemorySheet } from "./SimulatorMemorySheet";
 
 const OVERLAY_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
 const OVERLAY_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
@@ -83,6 +84,7 @@ function DevicePreviewScreen({
   const [streamAttempt, setStreamAttempt] = useState(0);
   const [shuttingDown, setShuttingDown] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [memoryVisible, setMemoryVisible] = useState(false);
   const retryHost = useAtomCommand(deviceEnvironment.list);
   const shutdown = useAtomCommand(deviceEnvironment.shutdown, { reportFailure: false });
   const streamRef = useRef<DeviceStreamRef>(null);
@@ -139,6 +141,16 @@ function DevicePreviewScreen({
   };
 
   const controls: AppBarMenuItem[] = [
+    ...(preview?.session.platform === "ios"
+      ? [
+          {
+            id: "simulator-memory",
+            title: "Simulator memory",
+            icon: "memorychip" as const,
+            onPress: () => setMemoryVisible(true),
+          },
+        ]
+      : []),
     ...(state.data?.hosts
       .filter(
         (host) =>
@@ -256,6 +268,14 @@ function DevicePreviewScreen({
   ];
   return (
     <View className="flex-1" style={{ backgroundColor: themeVariables["--color-sheet-solid"] }}>
+      {memoryVisible && preview?.session.platform === "ios" ? (
+        <SimulatorMemorySheet
+          key={preview.key}
+          environmentId={environmentId}
+          session={preview.session}
+          onClose={() => setMemoryVisible(false)}
+        />
+      ) : null}
       <StatusBar hidden animated />
       {preview && focused && foreground ? (
         <OpenDevicePreview

@@ -4934,6 +4934,44 @@ features:
         - https://github.com/pingdotgg/t3code/pull/13815
       retire_when: Upstream groups active sidebar threads under project headers, keeps two-line cards in groups with branches and one-line rows with equivalent details and actions in branchless groups, limits thread drags to their own project, and reorders projects by dragging their headers.
 
+  - id: simulator-memory-profiles
+    title: Choose app-specific simulator memory profiles
+    status: maintained
+    prs: []
+    invariants:
+      - Memory profiles are opt-in per iOS simulator on an Apple Silicon Mac; inspection never installs a helper or changes services, and setup installs only the pinned checksum-verified helper.
+      - Web, desktop, mobile, and agents execute the same typed device actions on the simulator's owning host, including SSH and connected-environment hosts.
+      - Low-memory profiles keep every service mapped to the selected app capabilities, verify those required services after applying, and report actual capability availability rather than category-wide warnings.
+      - Applying or restoring a profile retires the old capture session, restarts only the selected simulator, and attaches its stream again. Device lifecycle operations serialize with profile changes.
+      - Agents load app-specific selection guidance on demand and may change only a device open in their thread that no other thread holds. Unknown capabilities and unsupported persistence runtimes fail before changing services.
+      - Restoring standard services re-enables SimSlim-managed services. Profile state is read from the simulator and survives supported-runtime reboots, but erasing or recreating a simulator resets it.
+    rationale: Parallel agents need separate active simulators, and reducing each simulator's background services complements idle shutdown without forcing every app to give up the same OS capabilities.
+    implementation_paths:
+      - apps/mobile/src/features/devices/SimulatorMemorySheet.tsx
+      - apps/server/src/device/DeviceIdle.ts
+      - apps/server/src/device/SimulatorMemory.ts
+      - apps/server/src/device/simslimHostScript.ts
+      - apps/server/src/device/simulatorMemoryGuide.ts
+      - apps/web/src/components/device/SimulatorMemoryControls.tsx
+      - packages/client-runtime/src/device/simulatorMemory.ts
+    upstream_paths:
+      - apps/server/src/device/DeviceActions.ts
+      - apps/server/src/device/DeviceHost.ts
+      - apps/server/src/device/DeviceService.ts
+      - apps/server/src/mcp/toolkits/device/handlers.ts
+      - apps/server/src/mcp/toolkits/device/tools.ts
+      - apps/web/src/components/device/DeviceToolsPanel.tsx
+      - packages/contracts/src/device.ts
+    tests:
+      - apps/server/src/device/DeviceService.test.ts
+      - apps/server/src/device/SimulatorMemory.test.ts
+      - apps/server/src/mcp/McpDeviceToolkit.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/commit/5b35402623d7d1d88eaa472807272a6c2e78012a
+      retire_when: Upstream supports reversible per-simulator memory profiles, app-capability preservation and inspection, and remote host execution through clients and agent tools.
+
   - id: slow-network-route-stability
     title: Keep slow networks from bouncing a connection between routes
     status: maintained

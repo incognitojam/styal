@@ -19,6 +19,7 @@ import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
 import { cn } from "~/lib/utils";
 import type { DeviceControls } from "./useDeviceControls";
 import { type DeviceEventLogEntry, subscribeDeviceEventLog } from "./deviceHubApi";
+import { SimulatorMemoryControls } from "./SimulatorMemoryControls";
 
 const TEXT_SIZES: ReadonlyArray<{ value: DeviceTextSize; label: string }> = [
   { value: "small", label: "Small" },
@@ -122,6 +123,20 @@ export function DeviceToolsPanel(props: {
             <p className="whitespace-pre-line text-xs text-muted-foreground">
               {props.hostDiagnostics}
             </p>
+          </Section>
+        ) : null}
+
+        {isIos && (detail?.memory || detail?.memoryError) ? (
+          <Section title="Memory">
+            {detail.memory ? (
+              <SimulatorMemoryControls
+                key={detail.readAt}
+                memory={detail.memory}
+                controls={controls}
+              />
+            ) : (
+              <p className="text-xs text-destructive">{detail.memoryError}</p>
+            )}
           </Section>
         ) : null}
 

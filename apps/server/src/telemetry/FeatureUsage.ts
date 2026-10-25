@@ -132,7 +132,14 @@ type ObservedUsage =
     }
   | {
       readonly feature: "devices";
-      readonly action: "list" | "open" | "close" | "shutdown" | "snapshot" | DeviceActionType;
+      readonly action:
+        | "list"
+        | "open"
+        | "close"
+        | "shutdown"
+        | "snapshot"
+        | "memory_inspect"
+        | DeviceActionType;
       readonly source: "user" | "agent";
       readonly devicePlatform?: DevicePlatform | undefined;
       readonly deviceLocation?: "local" | "remote" | undefined;

@@ -70,6 +70,7 @@ it.effect(
           ["device_list", {}],
           ["device_open", { deviceId: "synthetic-private-device", platform: "android" }],
           ["device_screenshot", {}],
+          ["device_memory", { request: { operation: "inspect" } }],
         ] as const) {
           const result = yield* server.callTool({ name, arguments: args });
           expect(result.isError).toBe(true);
@@ -115,6 +116,14 @@ it.effect(
         {
           feature: "devices",
           action: "snapshot",
+          source: "agent",
+          outcome: "failure",
+          failureReason: "unavailable",
+          durationMs: 0,
+        },
+        {
+          feature: "devices",
+          action: "memory_inspect",
           source: "agent",
           outcome: "failure",
           failureReason: "unavailable",

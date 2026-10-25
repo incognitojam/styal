@@ -91,6 +91,8 @@ This estimates adoption among active reporting identities, not every user. Telem
 
 For reliability, include every action and outcome, then break down failures and p50/p95 `durationMs` by action and server version. Browser snapshot outcomes include saving a requested screenshot, and recording-stop outcomes include transferring its artifact. Internal status requests for tool icons do not emit additional usage events.
 
+Simulator memory controls report `feature = devices` with `memory_inspect`, `prepareSimulatorMemory`, and `setMemoryProfile` actions. Filter on `simulatorMemoryUsageVersion = 1` for instrumentation coverage. Capability selections, app identities, device IDs, and profiles are not collected.
+
 ## Client settings snapshot
 
 Web and desktop clients with `forkClientUsageVersion >= 8` send one `client.settings.snapshot` event per device per day. It is not a `feature.used` event. The client reports through its primary environment, or on hosted web through the first paired environment that accepts the vocabulary, and starts the next day only after that server accepts the report. Windows on one device share the day through local storage; a report that fails, for example before the socket reconnects, is retried a minute later. Events carry the reporting server's identity plus `surface`, `clientOs` and `clientAppVersion`. Mobile does not report.

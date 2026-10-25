@@ -86,7 +86,7 @@ export function useDeviceControls(options: {
       environmentId,
       input: { hostId, deviceId, ...body } as DeviceActionInput,
     })
-      .then((result) => {
+      .then(async (result) => {
         if (generation.current !== revision) {
           const request = visibleRead.current;
           if (!request) return;
@@ -105,7 +105,15 @@ export function useDeviceControls(options: {
           });
         }
         if (result._tag === "Success") setDetail(result.value);
-        else setError(formatEnvironmentQueryError(result.cause));
+        else {
+          setError(formatEnvironmentQueryError(result.cause));
+          // A profile command can fail after changing some services. Show the state read back.
+          if (body.type === "setMemoryProfile" || body.type === "prepareSimulatorMemory") {
+            const refreshed = await readDetail({ environmentId, input: { hostId, deviceId } });
+            if (generation.current !== revision) return;
+            setDetail(refreshed._tag === "Success" ? refreshed.value : null);
+          }
+        }
       })
       .finally(() => {
         busy.current = false;

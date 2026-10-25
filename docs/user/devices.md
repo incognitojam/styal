@@ -66,6 +66,14 @@ notification; Android adds orientation and toggling the network. The drawer
 only shows what the platform can do, and every control reflects the value read
 back from the device after a change.
 
+## Simulator memory profiles
+
+For an iOS simulator on an Apple Silicon Mac, open **Tools → Memory** on web or desktop, or **Simulator memory** in the mobile viewer's menu. Set up the memory controls, choose **Low memory**, and keep the capabilities your app needs, such as notifications, purchases, universal links, or photo access. Setup installs SimSlim on the simulator's Mac without changing its services; applying the profile restarts that simulator and affects every app on it. Low-memory profiles require iOS 18.5 or newer.
+
+The profile stays across reboots until you restore standard services or erase or recreate the simulator. Review the disabled capabilities when an OS integration behaves unexpectedly, and use **Restore standard services** to test with all managed services enabled. Memory savings depend on the runtime and app workload.
+
+Agents can use `device_memory` to inspect the current state, prepare the controls, and apply an app-specific profile. Its guidance asks the agent to inspect the app's source and test requirements and preserve uncertain dependencies. Agents must open the simulator first and cannot change a profile while another thread also holds the device.
+
 ## Agents and devices
 
 When an agent opens a device, it floats over the chat in web and desktop clients

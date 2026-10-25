@@ -54,6 +54,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { isLocalSshDeviceHost, remoteSshDeviceHosts } from "./localSshDeviceHost.ts";
 
 import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
+import { configureSimulatorMemory, readSimulatorMemory } from "./SimulatorMemory.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
@@ -852,6 +853,7 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
     hostId: DeviceHostId,
     deviceId: DeviceId,
     platform: DevicePlatform,
+    retainSessions = false,
   ) {
     const ready = yield* readiness(hostId);
     const postShutdown = (path: string, body: Record<string, string>) =>
@@ -894,6 +896,7 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
             ),
           )
         : postShutdown("/api/devices/shutdown", { platform, id: deviceId });
+    if (retainSessions) return;
     yield* publish((state) => ({
       ...state,
       devices: state.devices.map((device) =>
@@ -1015,11 +1018,19 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
       if (ready.remote) return { ...(yield* ready.remote.detail(input)), hostId: ready.hostId };
       const read = yield* readDeviceDetail(ready, device.platform, device.id);
+      const memory =
+        device.platform === "ios"
+          ? yield* readSimulatorMemory(ready, device.id).pipe(Effect.result)
+          : undefined;
       return {
         hostId: ready.hostId,
         deviceId: device.id,
         settings: read.settings,
         foregroundApp: read.foregroundApp,
+        ...(memory?._tag === "Success" ? { memory: memory.success } : {}),
+        ...(memory?._tag === "Failure"
+          ? { memoryError: "Could not read simulator memory settings. Reopen Tools to retry." }
+          : {}),
         readAt: DateTime.formatIso(yield* DateTime.now),
       };
     },
@@ -1029,7 +1040,20 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
     function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
       if (ready.remote) return { ...(yield* ready.remote.action(input)), hostId: ready.hostId };
-      yield* runDeviceAction(ready, device.platform, input);
+      if (input.type === "setMemoryProfile" && device.platform === "ios") {
+        yield* configureSimulatorMemory(ready, input, (operation) =>
+          Effect.gen(function* () {
+            // Retire the capture session before SimSlim reboots; otherwise serve-sim keeps a stale stream.
+            yield* shutdownDevice(ready.hostId, device.id, device.platform, true);
+            const result = yield* operation.pipe(
+              Effect.onError(() => boot(ready, device).pipe(Effect.ignore)),
+            );
+            yield* boot(ready, device);
+            return result;
+          }),
+        );
+        yield* refresh(ready);
+      } else yield* runDeviceAction(ready, device.platform, input);
       return yield* detail({ hostId: ready.hostId, deviceId: device.id });
     },
   );

@@ -89,6 +89,16 @@ new DataView(png.buffer).setUint32(20, 2622);
 const layerDeviceServiceMock = Layer.mock(DeviceService.DeviceService)({
   state: Effect.succeed(state),
   list: Effect.succeed(state),
+  detail: (input) =>
+    Effect.succeed({
+      ...input,
+      hostId: input.hostId ?? "local",
+      settings: {},
+      foregroundApp: null,
+      readAt: "2026-10-25T00:00:00.000Z",
+      memory: { supported: true, installed: false, mode: "unknown", capabilities: [] },
+    }),
+  action: () => Effect.die("Inspection must not configure simulator services"),
   open: (input) =>
     Effect.succeed({
       threadId: input.threadId,
@@ -128,12 +138,77 @@ const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
   Layer.provide(NodeServices.layer),
 );
 
+it.effect.each([false, true])(
+  "memory configuration distinguishes the caller's peer session from another thread (other=%s)",
+  (other) => {
+    const own = {
+      threadId,
+      hostId: "local",
+      deviceId: DeviceId.make("UDID-1"),
+      platform: "ios" as const,
+      openedAt: "2026-10-25T00:00:00.000Z",
+    };
+    const service = Layer.mock(DeviceService.DeviceService)({
+      state: Effect.succeed({
+        ...state,
+        sessions: [own],
+        externalSessions: [
+          { ...own, threadId: other ? ThreadId.make("device-peer-other:thread") : threadId },
+        ],
+      }),
+      sessionsForThread: () => Effect.succeed([own]),
+      action: () =>
+        other
+          ? Effect.die("Must not change another thread's simulator")
+          : Effect.succeed({
+              hostId: "local",
+              deviceId: own.deviceId,
+              settings: {},
+              foregroundApp: null,
+              readAt: own.openedAt,
+              memory: { supported: true, installed: true, mode: "standard", capabilities: [] },
+            }),
+    });
+    return Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const result = yield* server.callTool({
+        name: "device_memory",
+        arguments: { request: { operation: "prepare" } },
+      });
+      expect(result.isError === true).toBe(other);
+      if (!other) expect(result.structuredContent).toMatchObject({ memory: { installed: true } });
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(["device"])),
+      Effect.provideService(McpSchema.McpServerClient, client),
+      Effect.provide(
+        McpHttpServer.layerDeviceToolkit.pipe(
+          Layer.provide(AnalyticsService.AnalyticsService.layerTest),
+          Layer.provideMerge(McpServer.McpServer.layer),
+          Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
+          Layer.provide(service),
+          Layer.provide(
+            ServerConfig.layerTest(process.cwd(), { prefix: "device-memory-peer-test-" }),
+          ),
+          Layer.provide(NodeServices.layer),
+        ),
+      ),
+    );
+  },
+);
+
 it.effect("registers the device tools and returns the screenshot as image content", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const server = yield* McpServer.McpServer;
       const names = server.tools.map(({ tool }) => tool.name).toSorted();
-      expect(names).toEqual(["device_close", "device_list", "device_open", "device_screenshot"]);
+      expect(names).toEqual([
+        "device_close",
+        "device_list",
+        "device_memory",
+        "device_open",
+        "device_screenshot",
+      ]);
 
       const callWith = (capabilities: ReadonlyArray<McpInvocationContext.McpCapability>) =>
         Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities));
@@ -144,6 +219,26 @@ it.effect("registers the device tools and returns the screenshot as image conten
       expect(opened.isError).toBe(false);
       const openedContent = opened.structuredContent as { quickStart: string };
       expect(openedContent.quickStart).toContain("--udid UDID-1");
+
+      const memory = yield* server
+        .callTool({ name: "device_memory", arguments: { request: { operation: "inspect" } } })
+        .pipe(callWith(["device"]), Effect.provideService(McpSchema.McpServerClient, client));
+      expect(memory.isError).toBe(false);
+      expect(memory.structuredContent).toMatchObject({
+        memory: { mode: "unknown", installed: false },
+        guidance: expect.stringContaining("source, dependencies, entitlements"),
+      });
+      const foreignMemory = yield* server
+        .callTool({
+          name: "device_memory",
+          arguments: { deviceId: "UDID-2", request: { operation: "prepare" } },
+        })
+        .pipe(callWith(["device"]), Effect.provideService(McpSchema.McpServerClient, client));
+      expect(foreignMemory.isError).toBe(true);
+      const deniedMemory = yield* server
+        .callTool({ name: "device_memory", arguments: { request: { operation: "prepare" } } })
+        .pipe(callWith(["preview"]), Effect.provideService(McpSchema.McpServerClient, client));
+      expect(deniedMemory.isError).toBe(true);
 
       const shot = yield* server
         .callTool({ name: "device_screenshot", arguments: { deviceId: "UDID-1" } })

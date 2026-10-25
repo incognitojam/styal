@@ -306,11 +306,25 @@ export const DeviceForegroundApp = Schema.Struct({
 });
 export type DeviceForegroundApp = typeof DeviceForegroundApp.Type;
 
+export const SimulatorMemoryState = Schema.Struct({
+  supported: Schema.Boolean,
+  installed: Schema.Boolean,
+  mode: Schema.Literals(["unknown", "standard", "low-memory"]),
+  disabledServices: Schema.optional(Schema.Int),
+  persistent: Schema.optional(Schema.Boolean),
+  capabilities: Schema.Array(
+    Schema.Struct({ id: Schema.String, name: Schema.String, enabled: Schema.Boolean }),
+  ),
+});
+export type SimulatorMemoryState = typeof SimulatorMemoryState.Type;
+
 export const DeviceDetail = Schema.Struct({
   hostId: DeviceHostId,
   deviceId: DeviceId,
   settings: DeviceSettings,
   foregroundApp: Schema.NullOr(DeviceForegroundApp),
+  memory: Schema.optional(SimulatorMemoryState),
+  memoryError: Schema.optional(Schema.String),
   readAt: Schema.String,
 });
 export type DeviceDetail = typeof DeviceDetail.Type;
@@ -336,6 +350,18 @@ const DeviceTarget = {
 };
 
 export const DeviceActionInput = Schema.Union([
+  Schema.Struct({ ...DeviceTarget, type: Schema.Literal("prepareSimulatorMemory") }),
+  Schema.Struct({
+    ...DeviceTarget,
+    type: Schema.Literal("setMemoryProfile"),
+    mode: Schema.Literal("standard"),
+  }),
+  Schema.Struct({
+    ...DeviceTarget,
+    type: Schema.Literal("setMemoryProfile"),
+    mode: Schema.Literal("low-memory"),
+    keepCapabilities: Schema.Array(TrimmedNonEmptyString),
+  }),
   Schema.Struct({
     ...DeviceTarget,
     type: Schema.Literal("setAppearance"),
@@ -509,6 +535,7 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
       "invalid_payload",
       "settings_failed",
       "hub_rejected",
+      "unsupported_runtime",
     ]),
     exitCode: Schema.optional(Schema.Number),
     cause: Schema.Defect(),
@@ -521,6 +548,8 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
       invalid_payload: "The device request could not be encoded.",
       settings_failed: "Could not read or save device settings.",
       hub_rejected: "The device hub could not complete the request.",
+      unsupported_runtime:
+        "Low-memory mode requires iOS 18.5 or newer. Standard services can still be restored.",
     }[this.reason];
     return `Device ${this.operation} failed: ${explanation}`;
   }
@@ -632,6 +661,23 @@ export const DeviceToolTargetInput = Schema.Struct({
   hostId: Schema.optional(DeviceHostId),
 });
 export type DeviceToolTargetInput = typeof DeviceToolTargetInput.Type;
+
+export const DeviceMemoryToolInput = Schema.Struct({
+  ...DeviceToolTargetInput.fields,
+  request: Schema.Union([
+    Schema.Struct({ operation: Schema.Literal("inspect") }),
+    Schema.Struct({ operation: Schema.Literal("prepare") }),
+    Schema.Struct({ operation: Schema.Literal("apply"), mode: Schema.Literal("standard") }),
+    Schema.Struct({
+      operation: Schema.Literal("apply"),
+      mode: Schema.Literal("low-memory"),
+      keepCapabilities: Schema.Array(TrimmedNonEmptyString).annotate({
+        description:
+          "Capability IDs from inspect to keep enabled for this app. Inspect its source and entitlements first.",
+      }),
+    }),
+  ]),
+});
 
 export const DeviceToolScreenshotResult = Schema.Struct({
   device: DeviceSummary,

@@ -12,13 +12,29 @@ type Handlers = Toolkit.HandlersFrom<Toolkit.Tools<typeof DeviceStandardToolkit>
 export const observeHandlers = Effect.fnUntraced(function* (handlers: Handlers) {
   const analytics = yield* AnalyticsService.AnalyticsService;
   const observe = <A, E, R>(
-    action: "list" | "open" | "close" | "snapshot",
+    action:
+      | "list"
+      | "open"
+      | "close"
+      | "snapshot"
+      | "memory_inspect"
+      | "prepareSimulatorMemory"
+      | "setMemoryProfile",
     effect: Effect.Effect<A, E, R>,
   ) =>
     FeatureUsage.observe({ feature: "devices", action, source: "agent" }, effect).pipe(
       Effect.provideService(AnalyticsService.AnalyticsService, analytics),
     );
   return {
+    device_memory: (input, context) =>
+      observe(
+        input.request.operation === "inspect"
+          ? "memory_inspect"
+          : input.request.operation === "prepare"
+            ? "prepareSimulatorMemory"
+            : "setMemoryProfile",
+        handlers.device_memory(input, context),
+      ),
     device_list: (input, context) => observe("list", handlers.device_list(input, context)),
     device_open: (input, context) =>
       FeatureUsage.observe(

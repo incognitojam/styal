@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./device/simulator-memory": {
+      "types": "./src/device/simulatorMemory.ts",
+      "default": "./src/device/simulatorMemory.ts"
+    },
     "./composerThreadItems": {
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"

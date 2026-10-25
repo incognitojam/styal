@@ -111,6 +111,32 @@ it("serializes rapid actions and retains confirmed settings while pending or aft
   expect(controls.disabled).toBe(false);
 });
 
+it("reads actual services after a profile command partially changes the simulator and fails", async () => {
+  await mount();
+  const confirmed = snapshot("dark");
+  if (confirmed._tag !== "Success") throw new Error("Expected a confirmed snapshot");
+  read.mockResolvedValueOnce({
+    ...confirmed,
+    value: {
+      ...confirmed.value,
+      memory: {
+        supported: true,
+        installed: true,
+        mode: "low-memory",
+        disabledServices: 80,
+        capabilities: [{ id: "push", name: "Push", enabled: true }],
+      },
+    },
+  });
+  action.mockResolvedValueOnce({ _tag: "Failure", cause: offline });
+  await act(async () =>
+    controls.act({ type: "setMemoryProfile", mode: "low-memory", keepCapabilities: ["push"] }),
+  );
+  expect(controls.detail?.memory?.mode).toBe("low-memory");
+  expect(controls.detail?.memory?.disabledServices).toBe(80);
+  expect(controls.error).toBe("Device offline");
+});
+
 it("serializes host actions across hide/reopen and discards detached results", async () => {
   await mount();
   const response = deferred();
