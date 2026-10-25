@@ -3746,7 +3746,7 @@ features:
   - id: pull-request-branch-status
     title: Show the current source branch state independently of deletion permission
     status: maintained
-    prs: []
+    prs: [1070]
     invariants:
       - GitHub detail reports present, deleted, or unknown source branch state independently of source-repository write access, including forks.
       - A missing or inaccessible source repository is unknown; failed reads and hosts that omit the field never establish deletion.
