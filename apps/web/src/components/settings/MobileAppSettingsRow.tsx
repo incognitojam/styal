@@ -15,7 +15,7 @@ const stores = [
   {
     label: "Android",
     store: "Android releases",
-    url: "https://github.com/incognitojam/styal/releases?q=android-",
+    url: "https://github.com/incognitojam/styal/releases?q=%22styal+for+Android%22",
     Icon: AndroidIcon,
   },
 ];
