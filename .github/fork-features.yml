@@ -5829,7 +5829,7 @@ features:
     rationale: Imported from upstream's closed, unmerged proposal at head 31fb063804eb12fc9469c964be933976ca56e177, with repeat suppression kept until key release.
     implementation_paths:
       - apps/web/src/components/AppSidebarLayout.tsx
-      - apps/web/src/components/sidebar/ThreadUndoShortcut.tsx
+      - apps/web/src/components/sidebar/ThreadUndoShortcut.ts
       - apps/web/src/hooks/showThreadUndoNotice.ts
     upstream_paths:
       - apps/web/src/components/AppSidebarLayout.tsx

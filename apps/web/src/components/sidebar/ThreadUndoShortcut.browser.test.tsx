@@ -1,23 +1,20 @@
 import { Editor } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
 import StarterKit from "@tiptap/starter-kit";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { act, fakeTimers, render } from "../../../test/render";
+import { act, fakeTimers } from "../../../test/render";
 import { showThreadUndoNotice } from "../../hooks/showThreadUndoNotice";
 import * as ThreadUndo from "../../hooks/threadUndo";
-import { ThreadUndoShortcut } from "./ThreadUndoShortcut";
+import { registerThreadUndoCommands } from "./ThreadUndoShortcut";
 
-vi.mock(import("@effect/atom-react"), async (original) => ({
-  ...(await original()),
-  useAtomValue: (() => DEFAULT_RESOLVED_KEYBINDINGS) as never,
-}));
-vi.mock(import("../ui/sidebar"), async (original) => ({
-  ...(await original()),
-  useSidebarVisibility: () => true,
-}));
+vi.mock(import("../../state/server"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  const { DEFAULT_RESOLVED_KEYBINDINGS } = await import("@t3tools/shared/keybindings");
+  return { ...actual, primaryServerKeybindingsAtom: Atom.make(DEFAULT_RESOLVED_KEYBINDINGS) };
+});
 
 let undoClaimId = 0;
 
@@ -36,7 +33,13 @@ async function setup() {
   stack.defer(() => editor.destroy());
   editor.commands.insertContent("Saved synthetic draft.");
   editor.view.dom.focus();
-  stack.use(await render(<ThreadUndoShortcut />));
+  stack.defer(
+    registerThreadUndoCommands({
+      threadSidebarShown: () => true,
+      sidebarVisible: () => true,
+      routeContext: () => ({}),
+    }),
+  );
   stack.defer(() =>
     act(() => {
       vi.runAllTimers();
