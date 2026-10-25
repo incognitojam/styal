@@ -749,7 +749,7 @@ features:
       - V1 and native V2 source imports retain complete messages, structured tool and plan history, checkpoint metadata and associations, and recorded token and cost history without repricing; projection compaction and rebuild preserve the imported result.
       - V1 runtime bookkeeping that the V1 work log never displayed (context window, turn usage, plan, checkpoint, task lifecycle, setup-script start, subagent progress, and bare tool-start activity) does not become turn items; informational activity imports as neutral notifications with its recorded summary, compactions as compaction items, and only warnings and errors as system notices; a tool's status comes from its completion rather than a later in-progress update; imported history is ordered by time between the thread's messages rather than after them. Converted items keep their recorded content, including complete command output and exit codes, in canonical fields and only a reference to each V1 activity; the V1 source keeps the payloads. Fork migrations 7 and 9 bring earlier imports in line, a one-time pass after startup slims items imported before references, and each moves the history rewrite fence so cached clients refresh.
       - Startup history repairs index their temporary event lookups so upgrading large imported histories does not repeatedly scan every repair for each event.
-      - Legacy history metadata rewrites preserve JSON byte alignment where possible, avoiding writes of unchanged SQLite overflow pages; ordering updates preserve each historical event's own payload.
+      - Legacy history metadata rewrites preserve JSON byte alignment where possible, avoiding writes of unchanged SQLite overflow pages; ordering updates preserve each historical event's own payload. Ordering and slimming restrict lookups to the requested threads and V2 events, and ordering writes bounded pages of payload edits together.
       - Imported native V2 sessions remain stopped while durable native conversation references remain resumable; process sessions, pending effects, and runtime requests never migrate.
       - Resuming imported V1 history records a context handoff on its receiving run, including the selected target model and available source metadata, even before any V2 run has completed. Web, desktop, and mobile silently restore completed imported context when no provider change is known; provider and account switches, including those on the first restored turn, and unsuccessful restoration remain visible.
       - Fork imports retain history through the chosen source run even when ancestors are deleted, excluded, not yet imported, or fail during the batch. Materialized history keeps original fork lineage and never duplicates when an ancestor is imported later.
@@ -812,6 +812,7 @@ features:
       - apps/server/src/dataImport/V2HistoryImport.test.ts
       - apps/server/src/orchestration-v2/legacy/legacyPayloadEncoding.test.ts
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
+      - apps/server/src/orchestration-v2/legacy/slimImportedHistory.test.ts
       - apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
       - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.test.ts
       - apps/web/src/components/import/ImportDataView.browser.test.tsx

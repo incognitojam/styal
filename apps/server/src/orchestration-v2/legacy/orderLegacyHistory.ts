@@ -51,9 +51,10 @@ export const orderLegacyHistory = (sql: SqlClient.SqlClient, threadIds: Readonly
     `;
     if ((moved[0]?.count ?? 0) === 0) return 0;
     // Ranks are a permutation, so freeing the moved items' positions first avoids collisions.
+    // Restrict the outer scan as well as the lookup: other threads can have millions of positions.
     yield* sql`
       DELETE FROM orchestration_v2_turn_item_positions
-      WHERE EXISTS (
+      WHERE thread_id IN ${sql.in(threadIds)} AND EXISTS (
         SELECT 1 FROM legacy_history_order AS moved
         WHERE moved.thread_id = orchestration_v2_turn_item_positions.thread_id
           AND moved.turn_item_id = orchestration_v2_turn_item_positions.turn_item_id
@@ -79,11 +80,21 @@ export const orderLegacyHistory = (sql: SqlClient.SqlClient, threadIds: Readonly
         ORDER BY moved.projection_rowid
         LIMIT ${PAYLOAD_PAGE_SIZE}
       `;
-      for (const row of rows) {
+      if (rows.length > 0) {
+        const values = rows.map(
+          (row) => sql`(
+          ${row.projection_rowid}, ${row.ordinal},
+          ${legacyProjectionPayloadWithOrdinal(row.payload_json, row.previous_ordinal, row.ordinal)}
+        )`,
+        );
         yield* sql`
+          WITH updates (projection_rowid, ordinal, payload_json) AS (
+            VALUES ${sql.join(", ", false)(values)}
+          )
           UPDATE orchestration_v2_projection_turn_items
-          SET ordinal = ${row.ordinal}, payload_json = ${legacyProjectionPayloadWithOrdinal(row.payload_json, row.previous_ordinal, row.ordinal)}
-          WHERE rowid = ${row.projection_rowid}
+          SET ordinal = updates.ordinal, payload_json = updates.payload_json
+          FROM updates
+          WHERE orchestration_v2_projection_turn_items.rowid = updates.projection_rowid
         `;
       }
       const last = rows.at(-1);
@@ -100,7 +111,7 @@ export const orderLegacyHistory = (sql: SqlClient.SqlClient, threadIds: Readonly
     yield* sql`
       INSERT INTO legacy_history_events (sequence, ordinal)
       SELECT event.sequence, moved.ordinal
-      FROM orchestration_events AS event
+      FROM orchestration_events AS event INDEXED BY idx_orchestration_events_agent_stream_sequence
       JOIN legacy_history_order AS moved
         ON moved.thread_id = event.stream_id
           AND moved.turn_item_id = json_extract(event.payload_json, '$.id')
@@ -123,11 +134,20 @@ export const orderLegacyHistory = (sql: SqlClient.SqlClient, threadIds: Readonly
         ORDER BY moved.sequence
         LIMIT ${PAYLOAD_PAGE_SIZE}
       `;
-      for (const row of rows) {
+      if (rows.length > 0) {
+        const values = rows.map(
+          (row) => sql`(
+          ${row.sequence}, ${legacyPayloadWithOrdinal(row.payload_json, row.ordinal)}
+        )`,
+        );
         yield* sql`
+          WITH updates (sequence, payload_json) AS (
+            VALUES ${sql.join(", ", false)(values)}
+          )
           UPDATE orchestration_events
-          SET payload_json = ${legacyPayloadWithOrdinal(row.payload_json, row.ordinal)}
-          WHERE sequence = ${row.sequence}
+          SET payload_json = updates.payload_json
+          FROM updates
+          WHERE orchestration_events.sequence = updates.sequence
         `;
       }
       const last = rows.at(-1);

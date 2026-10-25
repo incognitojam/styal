@@ -60,21 +60,21 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
             WHERE thread_id = ${threadId}
               AND turn_item_id LIKE 'import:v1:activity:%'
               AND type = 'command_execution'
+              AND json_type(payload_json, '$.legacyActivities[0].payload') IS NOT NULL
               AND (json_type(payload_json, '$.output') IS NULL
                 OR json_type(payload_json, '$.exitCode') IS NULL)
-              AND json_type(payload_json, '$.legacyActivities[0].payload') IS NOT NULL
             UNION ALL
             SELECT 'event' AS source, CAST(sequence AS TEXT) AS key, payload_json
-            FROM orchestration_events
+            FROM orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
             WHERE application_event_version = 2
               AND aggregate_kind = 'thread'
               AND stream_id = ${threadId}
               AND event_type = 'turn-item.updated'
               AND instr(event_id, ${ITEM_EVENT_MARKER}) > 0
               AND json_extract(payload_json, '$.type') = 'command_execution'
+              AND json_type(payload_json, '$.legacyActivities[0].payload') IS NOT NULL
               AND (json_type(payload_json, '$.output') IS NULL
                 OR json_type(payload_json, '$.exitCode') IS NULL)
-              AND json_type(payload_json, '$.legacyActivities[0].payload') IS NOT NULL
           `;
           for (const command of commands) {
             const folded = foldedCommandOutput(command.payload_json);
@@ -103,23 +103,35 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
               `;
             }
           }
-          // json_set stores an absent value as JSON null; an absent field stays absent.
-          for (const field of ["$.output", "$.exitCode"]) {
-            yield* sql`
-              UPDATE orchestration_v2_projection_turn_items
-              SET payload_json = json_remove(payload_json, ${field})
-              WHERE thread_id = ${threadId} AND turn_item_id LIKE 'import:v1:activity:%'
-                AND json_type(payload_json, ${field}) = 'null'
-            `;
-            yield* sql`
-              UPDATE orchestration_events
-              SET payload_json = json_remove(payload_json, ${field})
-              WHERE application_event_version = 2 AND aggregate_kind = 'thread'
-                AND stream_id = ${threadId} AND event_type = 'turn-item.updated'
-                AND instr(event_id, ${ITEM_EVENT_MARKER}) > 0
-                AND json_type(payload_json, ${field}) = 'null'
-            `;
-          }
+          // Remove explicit nulls together; fields that were absent must stay absent.
+          yield* sql`
+            UPDATE orchestration_v2_projection_turn_items
+            SET payload_json = CASE
+              WHEN json_type(payload_json, '$.output') = 'null' THEN
+                CASE WHEN json_type(payload_json, '$.exitCode') = 'null'
+                  THEN json_remove(payload_json, '$.output', '$.exitCode')
+                  ELSE json_remove(payload_json, '$.output') END
+              ELSE json_remove(payload_json, '$.exitCode')
+            END
+            WHERE thread_id = ${threadId} AND turn_item_id LIKE 'import:v1:activity:%'
+              AND (json_type(payload_json, '$.output') = 'null'
+                OR json_type(payload_json, '$.exitCode') = 'null')
+          `;
+          yield* sql`
+            UPDATE orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
+            SET payload_json = CASE
+              WHEN json_type(payload_json, '$.output') = 'null' THEN
+                CASE WHEN json_type(payload_json, '$.exitCode') = 'null'
+                  THEN json_remove(payload_json, '$.output', '$.exitCode')
+                  ELSE json_remove(payload_json, '$.output') END
+              ELSE json_remove(payload_json, '$.exitCode')
+            END
+            WHERE application_event_version = 2 AND aggregate_kind = 'thread'
+              AND stream_id = ${threadId} AND event_type = 'turn-item.updated'
+              AND instr(event_id, ${ITEM_EVENT_MARKER}) > 0
+              AND (json_type(payload_json, '$.output') = 'null'
+                OR json_type(payload_json, '$.exitCode') = 'null')
+          `;
           // Keep each activity reference, in order, without its payload.
           const items = yield* sql`
             UPDATE orchestration_v2_projection_turn_items
@@ -137,7 +149,7 @@ export const slimImportedHistory = (sql: SqlClient.SqlClient) =>
             RETURNING 1
           `;
           const events = yield* sql`
-            UPDATE orchestration_events
+            UPDATE orchestration_events INDEXED BY idx_orchestration_events_agent_stream_sequence
             SET payload_json = json_set(payload_json, '$.legacyActivities', (
               SELECT json_group_array(json(json_remove(activity.value, '$.payload')))
               FROM (

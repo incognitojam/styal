@@ -22,6 +22,27 @@ const activity = (id: string, kind: string, payload: unknown) => ({
   createdAt: at,
 });
 const items = [
+  {
+    id: "import:v1:activity:thread-1:nulls",
+    type: "dynamic_tool",
+    output: null,
+    exitCode: null,
+    legacyActivities: [activity("nulls", "tool.completed", {})],
+  },
+  {
+    id: "import:v1:activity:thread-1:output-null",
+    type: "dynamic_tool",
+    output: null,
+    exitCode: 7,
+    legacyActivities: [activity("output-null", "tool.completed", {})],
+  },
+  {
+    id: "import:v1:activity:thread-1:exit-null",
+    type: "command_execution",
+    output: "preserved",
+    exitCode: null,
+    legacyActivities: [activity("exit-null", "tool.completed", {})],
+  },
   // Output recorded only in the V1 payload, in a shape the converter used to miss.
   {
     id: "import:v1:activity:thread-1:folded",
@@ -100,8 +121,9 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("slimImportedHistory"
         events.map((row) => row.payload_json),
         projected.map((row) => row.payload_json),
       );
-      const [folded, kept, tool] = (yield* Effect.forEach(projected, (row) =>
-        decodeJson(row.payload_json),
+      const [nulls, outputNull, exitNull, folded, kept, tool] = (yield* Effect.forEach(
+        projected,
+        (row) => decodeJson(row.payload_json),
       )) as ReadonlyArray<{
         readonly output?: string;
         readonly exitCode?: number;
@@ -110,6 +132,12 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("slimImportedHistory"
       assert.deepEqual([folded?.output, folded?.exitCode], ["3 passed", 0]);
       assert.deepEqual([kept?.output, kept?.exitCode], ["canonical", 2]);
       assert.notProperty(tool, "output");
+      assert.notProperty(nulls, "output");
+      assert.notProperty(nulls, "exitCode");
+      assert.notProperty(outputNull, "output");
+      assert.equal(outputNull?.exitCode, 7);
+      assert.equal(exitNull?.output, "preserved");
+      assert.notProperty(exitNull, "exitCode");
       assert.deepEqual(
         [folded, kept, tool].flatMap((item) =>
           (item?.legacyActivities ?? []).map((reference) => [reference.id, "payload" in reference]),
