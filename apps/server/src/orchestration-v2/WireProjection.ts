@@ -329,9 +329,10 @@ function remember<K, V>(memory: Map<K, V>, key: K, value: V): void {
 }
 
 /**
- * Applied after coalescing so it only remembers records the client received. A record event
- * precedes the turn item repeating its body, so the item (or a repeated subagent record) ships
- * blank and marked. Another order, or a forgotten record, only costs bytes: the repeat ships whole.
+ * One per subscription, after coalescing, so it remembers only records the client received. A
+ * record event comes before the turn item that repeats its body, so the item (or a repeated
+ * subagent record) ships blank and marked. The other order, or a forgotten record, only costs
+ * bytes: the repeat ships whole.
  */
 export function makeLiveBodyDeduper(): (
   item: OrchestrationV2ThreadStreamItem,
