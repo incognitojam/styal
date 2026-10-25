@@ -148,7 +148,7 @@ An empty database is a bad test. Seed your worktree's `.styal` with a copy of re
 
 - Verify user-visible frontend changes with one integrated pass in a real client: `test-styal-app` for web, `test-styal-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers.
 
-For authorized mobile verification, a missing or outdated native client is a build step, not a blocker. Run `node scripts/mobile-native-client.ts ensure <ios|android> <device-id>` on the simulator host before starting Metro. It checks the local Expo fingerprint and builds/installs when needed. See `test-styal-mobile` for the full workflow.
+For authorized mobile verification, a missing or outdated native client is an install step, not a blocker. Run `vp run mobile:install <ios|android> [device-id]` on the device host before starting Metro; it targets the only booted simulator or connected Android device when the id is omitted. It installs the dev client for this checkout's native fingerprint from the shared cache in seconds and builds only when no machine has built it yet, so prefer it over `expo run:*`, `xcodebuild`, or `gradlew`, which rebuild from scratch. Its stdout is one JSON line; build output goes to the log it names. See `test-styal-mobile` for the full workflow.
 
 ## Pull requests
 
