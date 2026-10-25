@@ -18,6 +18,7 @@ const NOT_REPORTED: Record<string, string> = {
   threadListFilters: "environment and project identifiers",
   pullRequestListFilters: "environment and project identifiers",
   updateRestartLocation: "navigation state, not a preference",
+  workspaceSelections: "navigation state and thread identifiers, not a preference",
   markdownFontSize: "legacy, read only as baseFontSize",
   projectGroupingEnabled: "legacy, read only as projectGroupingMode",
   navigationTabOrder: "not settable while navigation customization is unavailable",
@@ -75,6 +76,10 @@ const EVERY_PREFERENCE: Required<Preferences> = {
   },
   pullRequestListFilters: { environmentId: "synthetic-environment", controls: {} },
   updateRestartLocation: { path: "/synthetic/path", fromUpdateId: null },
+  workspaceSelections: {
+    threads: { environmentId: "synthetic-environment", threadId: "synthetic-thread" },
+    settings: "SettingsAppearance",
+  },
   navigationTabOrder: ["usage", "threads", "pullRequests"],
   hiddenNavigationTabs: ["usage"],
 };

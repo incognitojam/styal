@@ -155,18 +155,12 @@ function PoolWindowCard({
   // One account has nothing to pool, so the card reads like the provider's own app.
   const single = pool.columns.length === 1;
   const openAccount = (account: LimitAccount) =>
-    navigation.navigate("SettingsSheet", {
-      screen: "SettingsContent",
-      params: {
-        screen: "SettingsUsageAccount",
-        params: {
-          accountKey: account.key,
-          windowId: pool.id,
-          windowKind: pool.kind,
-          environmentIds,
-          now,
-        },
-      },
+    navigation.navigate("SettingsUsageAccount", {
+      accountKey: account.key,
+      windowId: pool.id,
+      windowKind: pool.kind,
+      environmentIds,
+      now,
     });
   return (
     <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
@@ -386,18 +380,12 @@ function SingleAccountCredits({
       accessibilityLabel={`${label} banked`}
       accessibilityHint="Show account details"
       onPress={() =>
-        navigation.navigate("SettingsSheet", {
-          screen: "SettingsContent",
-          params: {
-            screen: "SettingsUsageAccount",
-            params: {
-              accountKey: account.key,
-              windowId: window.id,
-              windowKind: window.kind,
-              environmentIds,
-              now,
-            },
-          },
+        navigation.navigate("SettingsUsageAccount", {
+          accountKey: account.key,
+          windowId: window.id,
+          windowKind: window.kind,
+          environmentIds,
+          now,
         })
       }
       className="min-h-[44px] flex-row items-center gap-1 active:opacity-60"

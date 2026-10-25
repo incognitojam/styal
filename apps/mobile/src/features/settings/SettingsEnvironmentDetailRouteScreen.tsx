@@ -143,13 +143,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         continueRunningThreads,
       });
       const proceed = await requestServerUpdateConfirmation(confirmation, (requestId) =>
-        navigation.navigate("SettingsSheet", {
-          screen: "SettingsContent",
-          params: {
-            screen: "SettingsServerUpdateConfirm",
-            params: { environmentId, requestId },
-          },
-        }),
+        navigation.navigate("SettingsServerUpdateConfirm", { environmentId, requestId }),
       );
       if (!proceed) return;
       if (
@@ -225,13 +219,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
               environmentId={environmentId}
               connected={connected}
               onAddRoute={() =>
-                navigation.navigate("SettingsSheet", {
-                  screen: "SettingsContent",
-                  params: {
-                    screen: "SettingsEnvironmentNew",
-                    params: { routeFor: environmentId },
-                  },
-                })
+                navigation.navigate("SettingsEnvironmentNew", { routeFor: environmentId })
               }
             />
             {outdated ? (
