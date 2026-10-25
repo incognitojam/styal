@@ -10,7 +10,7 @@ import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import { expect, it, vi } from "vite-plus/test";
-import type { EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
+import { EMPTY_SHELL_STATE, type EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
 
 import { render, stubGlobal, type Screen } from "../../test/render";
 
@@ -63,6 +63,7 @@ function snapshot(
   extra: Partial<OrchestrationV2ThreadShell> = {},
 ): EnvironmentShellState {
   return {
+    ...EMPTY_SHELL_STATE,
     status: "live",
     error: Option.none(),
     snapshot: Option.some({

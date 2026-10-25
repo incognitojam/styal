@@ -145,7 +145,7 @@ const snapshotCommand = Command.make("snapshot", {
               headers,
               params: { threadId: ThreadId.make(flags.thread.value) },
             })
-          : yield* client.orchestration.shellSnapshot({ headers });
+          : yield* client.orchestration.shellSnapshot({ headers, query: {} });
         yield* printJson(snapshot);
       }),
     ),
