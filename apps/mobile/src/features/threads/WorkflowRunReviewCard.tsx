@@ -59,7 +59,15 @@ export function WorkflowRunReviewCard(props: {
     });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const failure = squashAtomCommandFailure(result);
-      setError(failure instanceof Error ? failure.message : "Review it on GitHub instead.");
+      // A host error carries its readable text in `detail`; its message names the operation.
+      setError(
+        typeof failure === "object" &&
+          failure !== null &&
+          "detail" in failure &&
+          typeof failure.detail === "string"
+          ? failure.detail
+          : "Review it on GitHub instead.",
+      );
     }
   };
 
