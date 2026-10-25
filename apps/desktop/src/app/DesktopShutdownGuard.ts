@@ -36,7 +36,7 @@ export function shutdownConfirmation(
     continueRunningThreads: continueThreads,
     continuesWhen: action === "quit" ? "when styal next starts" : "after the restart",
   });
-  if (concern === null) return null;
+  if (concern === null || (action === "restart" && !interrupts)) return null;
   const detail = incomplete
     ? [
         ...lines,
