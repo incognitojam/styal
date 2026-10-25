@@ -43,6 +43,10 @@ export interface EnvironmentConnectionLease {
 export type RouteCheck = "answered" | "silent" | "unchecked";
 
 const ROUTE_CHECK_TIMEOUT_MS = 2_500;
+// Preferred direct routes share one head start, so a relay connection does not
+// wait the full probe timeout for a LAN the device has already left. A route
+// that misses it connects over relay, then upgrades with a second reconnect.
+const ROUTE_CHECK_HEAD_START_MS = 500;
 
 export class ConnectionDriver extends Context.Service<
   ConnectionDriver,
@@ -73,7 +77,8 @@ export class ConnectionDriver extends Context.Service<
  * not hide a working LAN. Silent routes are tried last, since a check is not
  * proof, unless an attempted route already failed transiently: then the
  * network itself is likely slow, and the supervisor's retry checks every
- * route again sooner than full attempts on routes that did not answer.
+ * route again sooner than full attempts on routes that did not answer. A route
+ * whose check answered only after the head start is still tried.
  *
  * The reported error is a transient one when any route failed transiently,
  * so the supervisor keeps retrying a route that may come back; a blocked
@@ -94,6 +99,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     routes.length === 1
       ? []
       : yield* Effect.forEach(routes, (route) => Effect.forkChild(checkRoute(route)));
+  const headStart = yield* Effect.forkChild(Effect.sleep(ROUTE_CHECK_HEAD_START_MS));
   const attemptScope = yield* Scope.Scope;
   let transient: ConnectionAttemptError | undefined;
   let blocked: ConnectionAttemptError | undefined;
@@ -116,11 +122,17 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     }
     return result;
   });
-  const silent: Array<ConnectionRoute> = [];
+  const silent: Array<{ readonly route: ConnectionRoute; readonly index: number }> = [];
   for (const [index, route] of routes.entries()) {
-    const check = checks.length === 0 ? "unchecked" : yield* Fiber.join(checks[index]!);
+    const check =
+      checks.length === 0
+        ? "unchecked"
+        : yield* Effect.raceFirst(
+            Fiber.join(checks[index]!),
+            Fiber.join(headStart).pipe(Effect.as<RouteCheck>("silent")),
+          );
     if (check === "silent") {
-      silent.push(route);
+      silent.push({ route, index });
       yield* reportRouteFailure({ _tag: "NoAnswer", routeId: connectionRouteId(route.target) });
       continue;
     }
@@ -129,7 +141,16 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     // An incompatible server is the same server on every route.
     if (result.failure.reason === "unsupported") return yield* result.failure;
   }
-  for (const route of transient === undefined ? silent : []) {
+  // A slow route that answered after the head start goes before one that is
+  // still dead, which can hold an attempt open far longer than its probe.
+  const late = yield* Effect.forEach(silent, ({ index }) => Fiber.join(checks[index]!), {
+    concurrency: "unbounded",
+  });
+  const retry = [
+    ...silent.filter((_, position) => late[position] !== "silent"),
+    ...(transient === undefined ? silent.filter((_, position) => late[position] === "silent") : []),
+  ];
+  for (const { route } of retry) {
     const result = yield* attempt(route);
     if (result._tag === "Success") return result.success;
     if (result.failure.reason === "unsupported") return yield* result.failure;
