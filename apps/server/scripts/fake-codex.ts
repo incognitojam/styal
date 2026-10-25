@@ -25,7 +25,10 @@
  *
  * `writeFile` writes inside the session's working directory, so checkpoints
  * and diffs see a real change. A `hold` step keeps the turn running until it
- * is interrupted. `"error": "..."` on a turn fails it after its steps.
+ * is interrupted or steered. Steering replies with the received text and finishes
+ * the held turn. `"error": "..."` on a turn fails it after its steps.
+ * An `approval` step requests command approval, emits the command after acceptance,
+ * and stops with a denial message when declined.
  *
  * A `question` step asks the user and waits for the answers, like Codex's
  * request_user_input tool. Questions use Codex's wire shape, and a later
@@ -71,6 +74,7 @@ type Step =
   | { readonly type: "writeFile"; readonly path: string; readonly content: string }
   | { readonly type: "question"; readonly questions: ReadonlyArray<JsonObject> }
   | { readonly type: "mcpCall"; readonly name: string; readonly arguments: JsonObject }
+  | { readonly type: "approval"; readonly command: string }
   | { readonly type: "hold" };
 
 interface ScenarioTurn {
@@ -128,17 +132,28 @@ function nowSeconds(): number {
 
 interface ActiveTurn {
   readonly turnId: string;
-  /** Settles when the server interrupts the turn, at any point in its steps. */
-  readonly interrupted: Promise<"interrupted">;
+  /** Settles when the server interrupts or steers the turn, at any point in its steps. */
+  readonly interrupted: Promise<"interrupted" | "steered">;
   readonly interrupt: () => void;
+  readonly steer: (text: string) => void;
+  steerText?: string;
 }
 
 function makeActiveTurn(turnId: string): ActiveTurn {
-  let interrupt = () => {};
-  const interrupted = new Promise<"interrupted">((resolve) => {
-    interrupt = () => resolve("interrupted");
+  let settle = (_reason: "interrupted" | "steered") => {};
+  const interrupted = new Promise<"interrupted" | "steered">((resolve) => {
+    settle = resolve;
   });
-  return { turnId, interrupted, interrupt };
+  const active: ActiveTurn = {
+    turnId,
+    interrupted,
+    interrupt: () => settle("interrupted"),
+    steer: (text) => {
+      active.steerText = text;
+      settle("steered");
+    },
+  };
+  return active;
 }
 
 function runAppServer(): void {
@@ -206,14 +221,45 @@ function runAppServer(): void {
       const delay = new Promise<"elapsed">((resolve) =>
         setTimeout(() => resolve("elapsed"), scenario.stepDelayMs ?? 250),
       );
-      if ((await Promise.race([delay, active.interrupted])) === "interrupted") {
-        interrupted = true;
+      const outcome = await Promise.race([delay, active.interrupted]);
+      const settled =
+        outcome === "elapsed" && step.type === "hold" ? await active.interrupted : outcome;
+      if (settled !== "elapsed") {
+        interrupted = settled === "interrupted";
+        if (!interrupted)
+          emitStep(threadId, turnId, cwd, {
+            type: "message",
+            text: `Steered: ${active.steerText}`,
+          });
         break;
       }
-      if (step.type === "hold") {
-        await active.interrupted;
-        interrupted = true;
-        break;
+      if (step.type === "approval") {
+        const response = await Promise.race([
+          request("item/commandExecution/requestApproval", {
+            threadId,
+            turnId,
+            itemId: NodeCrypto.randomUUID(),
+            command: step.command,
+            cwd,
+            startedAtMs: Date.now(),
+          }),
+          active.interrupted,
+        ]);
+        if (typeof response === "string") {
+          interrupted = true;
+          break;
+        }
+        if (response.decision !== "accept" && response.decision !== "acceptForSession") {
+          emitStep(threadId, turnId, cwd, { type: "message", text: "Command denied by user." });
+          interrupted = true;
+          break;
+        }
+        emitStep(threadId, turnId, cwd, {
+          type: "command",
+          command: step.command,
+          output: "approved",
+        });
+        continue;
       }
       if (step.type === "question") {
         const response = await Promise.race([
@@ -226,7 +272,7 @@ function runAppServer(): void {
           }),
           active.interrupted,
         ]);
-        if (response === "interrupted") {
+        if (typeof response === "string") {
           interrupted = true;
           break;
         }
@@ -345,6 +391,18 @@ function runAppServer(): void {
         send({ id, result: { turn: { id: turnId, items: [], status: "inProgress" } } });
         activeTurn = makeActiveTurn(turnId);
         void runTurn(threadId, activeTurn, prompt);
+        return;
+      }
+      case "turn/steer": {
+        if (activeTurn === null || params.expectedTurnId !== activeTurn.turnId) {
+          send({ id, error: { code: -32602, message: "Steering targeted a non-active turn." } });
+          return;
+        }
+        const text = Array.isArray(params.input)
+          ? params.input.map((item: { text?: string }) => item.text ?? "").join("\n")
+          : "";
+        send({ id, result: { turnId: activeTurn.turnId } });
+        activeTurn.steer(text);
         return;
       }
       case "turn/interrupt":
@@ -499,6 +557,7 @@ function emitStep(threadId: string, turnId: string, cwd: string, step: Step): vo
       completed({ type: "fileChange", id: itemId, changes: [change], status: "completed" });
       return;
     }
+    case "approval":
     case "question":
     case "mcpCall":
     case "hold":
