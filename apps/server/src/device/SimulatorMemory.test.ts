@@ -1,192 +1,135 @@
-import { describe, expect, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-
 import type { DeviceHostReady } from "./DeviceHost.ts";
-import { configureSimulatorMemory, readSimulatorMemory } from "./SimulatorMemory.ts";
+import { prepareSimulatorMemory } from "./SimulatorMemory.ts";
 
-const features = [
-  { id: "push", name: "Push notifications", labels: ["com.apple.apsd"] },
-  { id: "storekit", name: "Purchases", labels: ["com.apple.storekitd", "com.apple.passd"] },
-  { id: "widgets", name: "Widgets", labels: ["com.apple.chronod"] },
+const capabilities = [
+  "push",
+  "storekit",
+  "universal-links",
+  "icloud",
+  "keychain-sync",
+  "photos",
+  "contacts",
+  "calendar",
 ];
-
-function simulator(
-  options: {
-    installed?: boolean;
-    persistent?: boolean;
-    failMutation?: boolean;
-    failRead?: boolean;
-  } = {},
-) {
-  let installed = options.installed ?? true;
-  let disabled = new Set<string>();
-  const mutations: string[][] = [];
-  let installs = 0;
+const fixture = (installed = true) => {
+  const calls: { command: string; args: readonly string[] }[] = [];
+  const state = {
+    installed,
+    disabled: 153,
+    mutationCode: 0,
+    doctorCode: 0,
+    doctor: JSON.stringify({ features: capabilities.map((id) => ({ id, ok: true })) }),
+    applyChanges: true,
+  };
   const ready: DeviceHostReady = {
     nodePath: "/node",
-    hub: { origin: "http://device.test" },
-    helpers: { serveSimAxSettings: null, serveSimCli: null },
+    hub: { origin: "http://simulator.test" },
+    helpers: { serveSimCli: null, serveSimAxSettings: null },
     run: (command, args) =>
       Effect.sync(() => {
-        const json = (value: unknown, code = 0) => ({
-          code,
-          stdout: JSON.stringify(value),
-          stderr: "",
-        });
+        calls.push({ command, args });
+        const json = (value: unknown) => ({ code: 0, stdout: JSON.stringify(value), stderr: "" });
         if (command === "/node") {
-          if (args.at(-1) === "install") {
-            installed = true;
-            installs++;
-          }
-          return json({ supported: true, installed, executable: "/tools/simslim" });
+          if (args.at(-1) === "install") state.installed = true;
+          return json({ supported: true, installed: state.installed, executable: "/simslim" });
         }
-        if (args[0] === "doctor" && args.includes("--list")) return json(features);
-        if (args[0] === "status") {
-          if (options.failRead) return { code: 0, stdout: "not JSON", stderr: "" };
-          return json({
-            managedDisabled: disabled.size,
-            persistent: options.persistent ?? true,
-            dropped: [],
-          });
-        }
-        if (args[0] === "doctor") {
-          const requested = args[args.indexOf("--requires") + 1]!.split(",");
-          const statuses = features
-            .filter((feature) => requested.includes(feature.id))
-            .map((feature) => ({
-              id: feature.id,
-              name: feature.name,
-              ok: feature.labels.every((label) => !disabled.has(label)),
-            }));
-          return json({ features: statuses }, statuses.some((feature) => !feature.ok) ? 1 : 0);
-        }
-        if (args[0] === "on" || args[0] === "off") {
-          mutations.push([...args]);
-          if (options.failMutation) return { code: 1, stdout: "", stderr: "test failure" };
-          const keepIndex = args.indexOf("--keep");
-          const keep = new Set(keepIndex < 0 ? [] : args[keepIndex + 1]!.split(","));
-          disabled = new Set(
-            args[0] === "off"
-              ? []
-              : features.flatMap((feature) => feature.labels).filter((label) => !keep.has(label)),
-          );
-          return { code: 0, stdout: "Done", stderr: "" };
-        }
-        throw new Error(`Unexpected host command: ${command} ${args.join(" ")}`);
+        if (args[0] === "status")
+          return json({ persistent: true, managedDisabled: state.disabled });
+        if (args.includes("--list"))
+          return json(capabilities.map((id) => ({ id, labels: [`com.apple.test.${id}`] })));
+        if (args[0] === "doctor")
+          return { code: state.doctorCode, stdout: state.doctor, stderr: "" };
+        if (state.mutationCode === 0 && state.applyChanges)
+          state.disabled = args[0] === "off" ? 0 : 153;
+        return { code: state.mutationCode, stdout: "", stderr: "" };
       }),
   };
-  return { ready, mutations, installs: () => installs };
-}
+  return { ready, state, calls };
+};
 
-describe("simulator memory profiles", () => {
-  it.effect("inspects without installing or changing simulator services", () =>
+it.effect("leaves stock Standard hosts untouched without installing a helper", () =>
+  Effect.gen(function* () {
+    const f = fixture(false);
+    yield* prepareSimulatorMemory(f.ready, "simulator", "standard");
+    expect(f.state.installed).toBe(false);
+    expect(f.calls.map((call) => call.args.at(-1))).toEqual(["probe"]);
+  }),
+);
+
+it.effect("preserves the fixed capabilities, checks readback, and restores Standard", () =>
+  Effect.gen(function* () {
+    const f = fixture(false);
+    yield* prepareSimulatorMemory(f.ready, "simulator", "low-memory");
+    const apply = f.calls.find((call) => call.args[0] === "on")!;
+    expect(apply.args).toEqual([
+      "on",
+      "simulator",
+      "--keep",
+      capabilities.map((id) => `com.apple.test.${id}`).join(","),
+    ]);
+    expect(f.calls.at(-1)?.args).toEqual([
+      "doctor",
+      "simulator",
+      "--requires",
+      capabilities.join(","),
+      "--json",
+    ]);
+    yield* prepareSimulatorMemory(f.ready, "simulator", "standard");
+    expect(f.state.disabled).toBe(0);
+    expect(f.calls.at(-1)?.args).toEqual(["status", "simulator", "--json"]);
+  }),
+);
+
+it.effect.each(["standard", "low-memory"] as const)("refuses a timed-out %s command", (mode) =>
+  Effect.gen(function* () {
+    const f = fixture();
+    f.state.mutationCode = 124;
+    const error = yield* prepareSimulatorMemory(f.ready, "simulator", mode).pipe(Effect.flip);
+    expect(error).toMatchObject({
+      _tag: "DeviceOperationError",
+      reason: "command_failed",
+      exitCode: 124,
+    });
+  }),
+);
+
+it.effect.each([
+  "",
+  "invalid JSON",
+  JSON.stringify({ features: [] }),
+  JSON.stringify({ features: capabilities.map((id) => ({ id, ok: id !== "icloud" })) }),
+])("rejects incomplete required-capability verification (%s)", (doctor) =>
+  Effect.gen(function* () {
+    const f = fixture();
+    f.state.doctor = doctor;
+    const error = yield* prepareSimulatorMemory(f.ready, "simulator", "low-memory").pipe(
+      Effect.flip,
+    );
+    expect(error).toMatchObject({ _tag: "DeviceOperationError", reason: "settings_failed" });
+  }),
+);
+
+it.effect.each(["standard", "low-memory"] as const)(
+  "rejects %s when actual services do not match",
+  (mode) =>
     Effect.gen(function* () {
-      const sim = simulator({ installed: false });
-      expect(yield* readSimulatorMemory(sim.ready, "SIM-1")).toMatchObject({
-        supported: true,
-        installed: false,
-        mode: "unknown",
-      });
-      expect(sim.installs()).toBe(0);
-      expect(sim.mutations).toEqual([]);
-      yield* configureSimulatorMemory(sim.ready, {
-        type: "prepareSimulatorMemory",
-        deviceId: "SIM-1",
-      });
-      expect(yield* readSimulatorMemory(sim.ready, "SIM-1")).toMatchObject({
-        installed: true,
-        mode: "standard",
-      });
-      expect(sim.mutations).toEqual([]);
+      const f = fixture();
+      f.state.applyChanges = false;
+      f.state.disabled = mode === "standard" ? 153 : 0;
+      const error = yield* prepareSimulatorMemory(f.ready, "simulator", mode).pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "DeviceOperationError", reason: "settings_failed" });
     }),
-  );
+);
 
-  it.effect("keeps every service for required capabilities and restores standard services", () =>
-    Effect.gen(function* () {
-      const sim = simulator();
-      yield* configureSimulatorMemory(sim.ready, {
-        type: "setMemoryProfile",
-        deviceId: "SIM-1",
-        mode: "low-memory",
-        keepCapabilities: ["push", "storekit"],
-      });
-      const slim = yield* readSimulatorMemory(sim.ready, "SIM-1");
-      expect(slim.mode).toBe("low-memory");
-      expect(slim.disabledServices).toBe(1);
-      expect(slim.capabilities).toEqual([
-        { id: "push", name: "Push notifications", enabled: true },
-        { id: "storekit", name: "Purchases", enabled: true },
-        { id: "widgets", name: "Widgets", enabled: false },
-      ]);
-      yield* configureSimulatorMemory(sim.ready, {
-        type: "setMemoryProfile",
-        deviceId: "SIM-1",
-        mode: "standard",
-      });
-      const stock = yield* readSimulatorMemory(sim.ready, "SIM-1");
-      expect(stock.mode).toBe("standard");
-      expect(stock.capabilities.every((feature) => feature.enabled)).toBe(true);
-      expect(sim.mutations.every((args) => args[1] === "SIM-1")).toBe(true);
-    }),
-  );
-
-  it.effect("rejects unknown capabilities before changing the device", () =>
-    Effect.gen(function* () {
-      const sim = simulator();
-      const error = yield* Effect.flip(
-        configureSimulatorMemory(sim.ready, {
-          type: "setMemoryProfile",
-          deviceId: "SIM-1",
-          mode: "low-memory",
-          keepCapabilities: ["typo"],
-        }),
-      );
-      expect(error._tag).toBe("DeviceOperationError");
-      expect(sim.mutations).toEqual([]);
-    }),
-  );
-
-  it.effect("refuses persistent slimming on an older runtime but allows restoration", () =>
-    Effect.gen(function* () {
-      const sim = simulator({ persistent: false });
-      const error = yield* Effect.flip(
-        configureSimulatorMemory(sim.ready, {
-          type: "setMemoryProfile",
-          deviceId: "SIM-1",
-          mode: "low-memory",
-          keepCapabilities: [],
-        }),
-      );
-      expect(error.message).toContain("iOS 18.5");
-      expect(sim.mutations).toEqual([]);
-      yield* configureSimulatorMemory(sim.ready, {
-        type: "setMemoryProfile",
-        deviceId: "SIM-1",
-        mode: "standard",
-      });
-      expect(sim.mutations).toHaveLength(1);
-    }),
-  );
-
-  it.effect(
-    "reports failed commands and malformed state instead of claiming a profile applied",
-    () =>
-      Effect.gen(function* () {
-        const failed = simulator({ failMutation: true });
-        expect(
-          (yield* Effect.flip(
-            configureSimulatorMemory(failed.ready, {
-              type: "setMemoryProfile",
-              deviceId: "SIM-1",
-              mode: "low-memory",
-              keepCapabilities: [],
-            }),
-          ))._tag,
-        ).toBe("DeviceOperationError");
-        const invalid = simulator({ failRead: true });
-        expect((yield* Effect.flip(readSimulatorMemory(invalid.ready, "SIM-1")))._tag).toBe(
-          "DeviceOperationError",
-        );
-      }),
-  );
-});
+it.effect("does not reconfigure a device booted or claimed during helper setup", () =>
+  Effect.gen(function* () {
+    const f = fixture(false);
+    yield* prepareSimulatorMemory(f.ready, "simulator", "low-memory", {
+      stillStopped: Effect.succeed(false),
+      onMutationError: Effect.void,
+    });
+    expect(f.calls.some((call) => call.args[0] === "on" || call.args[0] === "off")).toBe(false);
+  }),
+);

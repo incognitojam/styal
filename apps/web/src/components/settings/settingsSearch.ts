@@ -780,6 +780,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["simulator emulator ios android install start"],
   },
   {
+    id: "simulator-memory",
+    title: "Simulator memory",
+    to: "/settings/integrations",
+    targetId: "devices",
+    scope: "project-defaults",
+    searchTerms: ["low standard memory ram simulator ios startup project"],
+  },
+  {
     id: "device-platform-support",
     title: "Simulator support",
     to: "/settings/integrations",

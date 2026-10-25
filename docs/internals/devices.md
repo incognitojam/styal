@@ -53,8 +53,8 @@ screenshot capture and stream tuning.
 
 ## Agents drive through the CLI
 
-The `device_*` toolkit covers discovery, opening, screenshots, closing, and simulator
-memory profiles. Driving happens through the `agent-device` CLI, which has the semantic
+The `device_*` toolkit is deliberately four tools: list, open, screenshot, and
+close. Driving happens through the `agent-device` CLI, which has the semantic
 snapshot model agents need and stays current with its own releases. styal prepends
 a shim directory to the provider's PATH. The CLI installs on the environment
 server even when that server cannot run simulators. Hosts start on demand.

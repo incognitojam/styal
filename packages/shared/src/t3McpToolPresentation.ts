@@ -274,11 +274,6 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     "device",
   ),
   device_close: tool(["Close", "Closing", "Closed", "a device"], "device", "device"),
-  device_memory: tool(
-    ["Check or configure", "Checking or configuring", "Checked or configured", "simulator memory"],
-    "device",
-    "device",
-  ),
   hardware_list: tool(["List", "Listing", "Listed", "hardware devices"], "hardware", "device"),
   hardware_acquire: tool(
     ["Acquire", "Acquiring", "Acquired", "a hardware lease"],

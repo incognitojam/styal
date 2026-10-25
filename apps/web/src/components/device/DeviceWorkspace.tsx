@@ -4,10 +4,7 @@ import {
   captureDeviceScreenshot,
   DeviceScreenshotError,
 } from "@t3tools/client-runtime/device/screenshot";
-import { deviceEnvironment, refreshDeviceHubAccess, useDeviceHubAccess } from "~/state/device";
-import { useAtomCommand } from "~/state/use-atom-command";
-import type { DeviceStreamStatus } from "@t3tools/client-runtime/device/stream";
-import { watchSimulatorRestart } from "@t3tools/client-runtime/device/simulator-stream-recovery";
+import { refreshDeviceHubAccess, useDeviceHubAccess } from "~/state/device";
 import { DeviceControlsRail } from "./DeviceControlsRail";
 import { DeviceStreamView, type DeviceStreamHandle } from "./DeviceStreamView";
 import { DeviceToolsPanel } from "./DeviceToolsPanel";
@@ -24,8 +21,6 @@ export function DeviceWorkspace(props: {
   onPowerOff: () => void;
 }) {
   const [handle, setHandle] = useState<DeviceStreamHandle | null>(null);
-  const [streamStatus, setStreamStatus] = useState<DeviceStreamStatus>("connecting");
-  const list = useAtomCommand(deviceEnvironment.list, { reportFailure: false });
   const [toolsOpen, setToolsOpen] = useState(false);
   const [axOverlay, setAxOverlay] = useState(false);
   const [screenshotPending, setScreenshotPending] = useState(false);
@@ -34,35 +29,6 @@ export function DeviceWorkspace(props: {
   const downloadRef = useRef<string | null>(null);
   const access = useDeviceHubAccess(props.environmentId, props.device.hostId);
   const controls = useDeviceControls({ ...props, access });
-  useEffect(() => {
-    if (
-      !props.visible ||
-      streamStatus !== "error" ||
-      props.device.platform !== "ios" ||
-      !props.device.hostId.startsWith("environment-")
-    )
-      return;
-    return watchSimulatorRestart(props.device.streamRevision, async () => {
-      const result = await list({
-        environmentId: props.environmentId,
-        input: { hostId: props.device.hostId },
-      });
-      return result._tag === "Success"
-        ? result.value.devices.find(
-            (device) => device.hostId === props.device.hostId && device.id === props.device.id,
-          )?.streamRevision
-        : undefined;
-    });
-  }, [
-    list,
-    props.visible,
-    props.environmentId,
-    props.device.hostId,
-    props.device.id,
-    props.device.platform,
-    props.device.streamRevision,
-    streamStatus,
-  ]);
   useEffect(() => {
     if (!access || !props.visible) captureRef.current?.abort();
     return () => {
@@ -119,14 +85,12 @@ export function DeviceWorkspace(props: {
         ) : null}
         <div className="min-h-0 flex-1">
           <DeviceStreamView
-            onStatus={setStreamStatus}
             environmentId={props.environmentId}
             platform={props.device.platform}
             deviceName={props.device.name}
             deviceDescription={`${props.hostLabel} · ${props.device.version}`}
             deviceId={props.device.id}
             hostId={props.device.hostId}
-            streamRevision={props.device.streamRevision}
             visible={props.visible}
             axOverlay={axOverlay}
             allowPhoneView

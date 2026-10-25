@@ -4935,52 +4935,45 @@ features:
       retire_when: Upstream groups active sidebar threads under project headers, keeps two-line cards in groups with branches and one-line rows with equivalent details and actions in branchless groups, limits thread drags to their own project, and reorders projects by dragging their headers.
 
   - id: simulator-memory-profiles
-    title: Choose app-specific simulator memory profiles
+    title: Apply project memory modes at simulator startup
     status: maintained
     prs: [1056]
     invariants:
-      - Memory profiles are opt-in per iOS simulator on an Apple Silicon Mac; inspection never installs a helper or changes services, and setup installs only the pinned checksum-verified helper.
-      - Web, desktop, mobile, and agents execute the same typed device actions on the simulator's owning host, including SSH and connected-environment hosts.
-      - Low-memory profiles keep every service mapped to the selected app capabilities, verify those required services after applying, and report actual capability availability rather than category-wide warnings.
-      - Client users confirm the restart before applying or restoring a profile. The operation retires the old capture session, restarts only the selected simulator, and attaches its stream again. Device lifecycle operations serialize with profile changes.
-      - Profile restart completion or failure advances the device stream revision so web and mobile viewers retry even after their no-video deadline. Connected-host memory deadlines cover helper installation, service changes, boot, and readback.
-      - Failed visible iOS viewers on connected hosts refresh only that host's inventory while waiting for a restart revision, with no overlapping requests and a thirty-minute limit; hidden, closed, and healthy viewers do not poll.
-      - Agents load app-specific selection guidance on demand and may change only a device open in their thread that no other thread holds. Unknown capabilities and unsupported persistence runtimes fail before changing services.
-      - Agent ownership is rechecked under the device lifecycle lock on the owning host with the authenticated peer's namespaced thread identity, independent of cached inventory.
-      - Restoring standard services re-enables SimSlim-managed services. Profile state is read from the simulator and survives supported-runtime reboots. Overrides are keyed by device ID on the host and can survive erasing simulator data; newly created devices start with standard services.
-    rationale: Parallel agents need separate active simulators, and reducing each simulator's background services complements idle shutdown without forcing every app to give up the same OS capabilities.
+      - Standard is the default, with an optional Low memory preference per project. Clients and agents inherit the same preference when opening a device; Android is unchanged.
+      - Only stopped, unclaimed iOS simulators are prepared, under the owning host's lifecycle lock and before a stream or usable session is attached. Running or claimed simulators keep their existing mode; a device booted by an external tool during setup keeps its external ownership.
+      - Low memory uses one fixed preset preserving push notifications, StoreKit, universal links, iCloud, keychain sync, photos, contacts, and calendar. Startup verifies actual service state and every required capability, and rejects failed, timed-out, empty, or incomplete results.
+      - Setup installs only checksum-pinned SimSlim on an Apple Silicon Mac. Standard never installs a helper on a stock host and restores managed services on hosts where styal installed it.
+      - Connected environments prepare the device on its owning host; older hosts refuse Low memory rather than silently opening a stock simulator. Startup deadlines cover preparation, boot, and stream attachment.
+      - Failed preparation does not publish a usable session; a failed mutation attempts to return the simulator to shutdown. Persistent overrides survive simulator reboots; changing the project preference takes effect on its next unused start through styal.
+      - Settings snapshots report the environment mode and the count of projects explicitly choosing Low memory, without project identifiers or app data.
+    rationale: A saved project default reduces memory use for parallel simulators without live reconfiguration or per-use agent decisions.
     implementation_paths:
-      - apps/mobile/src/features/devices/SimulatorMemorySheet.tsx
+      - apps/mobile/src/features/settings/SimulatorMemorySettings.tsx
       - apps/server/src/device/DeviceIdle.ts
       - apps/server/src/device/SimulatorMemory.ts
       - apps/server/src/device/simslimHostScript.ts
-      - apps/server/src/device/simulatorMemoryGuide.ts
-      - apps/web/src/components/device/SimulatorMemoryControls.tsx
-      - packages/client-runtime/src/device/simulatorMemory.ts
-      - packages/client-runtime/src/device/simulatorStreamRecovery.ts
+      - apps/web/src/components/settings/SimulatorMemorySetting.tsx
     upstream_paths:
-      - apps/server/src/device/DeviceActions.ts
-      - apps/server/src/device/DeviceHost.ts
       - apps/server/src/device/DeviceService.ts
-      - apps/server/src/mcp/toolkits/device/handlers.ts
-      - apps/server/src/mcp/toolkits/device/tools.ts
-      - apps/web/src/components/device/DeviceToolsPanel.tsx
+      - apps/server/src/device/DeviceSharing.ts
+      - apps/server/src/device/EnvironmentDeviceHost.ts
+      - apps/server/src/device/LocalDeviceHost.ts
+      - apps/web/src/components/device/DevicePanel.tsx
       - packages/contracts/src/device.ts
+      - packages/contracts/src/settings.ts
     tests:
-      - apps/server/src/device/DeviceIdle.test.ts
-      - apps/server/src/device/DeviceService.test.ts
       - apps/server/src/device/DeviceSharing.test.ts
       - apps/server/src/device/EnvironmentDeviceHost.test.ts
+      - apps/server/src/device/LocalDeviceHost.test.ts
       - apps/server/src/device/SimulatorMemory.test.ts
-      - apps/server/src/mcp/McpDeviceToolkit.test.ts
-      - apps/web/src/components/device/DeviceStreamView.browser.test.tsx
-      - apps/web/src/components/device/SimulatorMemoryControls.browser.test.tsx
-      - packages/client-runtime/src/device/simulatorStreamRecovery.test.ts
+      - apps/server/src/device/SimulatorStartup.test.ts
+      - apps/server/src/telemetry/SettingsSnapshot.test.ts
+      - packages/shared/src/projectSettings.test.ts
     upstream:
       status: tracking
       tracking:
-        - https://github.com/pingdotgg/t3code/commit/5b35402623d7d1d88eaa472807272a6c2e78012a
-      retire_when: Upstream supports reversible per-simulator memory profiles, app-capability preservation and inspection, and remote host execution through clients and agent tools.
+        - https://github.com/pingdotgg/t3code/commit/725ada6eaa32d4a32c361ee42a1717a3e65568d1
+      retire_when: Upstream applies reversible, verified project memory modes before starting unused simulators across clients and agents.
 
   - id: slow-network-route-stability
     title: Keep slow networks from bouncing a connection between routes

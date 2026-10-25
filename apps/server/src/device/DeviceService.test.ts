@@ -561,8 +561,8 @@ it.effect("keeps shutdown successful when subsequent discovery fails", () =>
   }).pipe(Effect.scoped),
 );
 
-it.effect.each(["shutdown", "close", "low-memory", "standard", "profile-failure"] as const)(
-  "%s starts a fresh iOS capture and retains sessions only for a profile restart",
+it.effect.each(["shutdown", "close"] as const)(
+  "%s releases iOS capture so reopening uses a fresh session",
   (operation) =>
     Effect.gen(function* () {
       const deviceId = DeviceId.make("11111111-1111-1111-1111-111111111111");
@@ -570,32 +570,15 @@ it.effect.each(["shutdown", "close", "low-memory", "standard", "profile-failure"
       let booted = true;
       let capture: number | null = null;
       let generation = 0;
-      let disabledServices = 0;
       const ready: DeviceHost.DeviceHostReady = {
         nodePath: process.execPath,
         hub: { origin: "http://device.test" },
         helpers: { serveSimAxSettings: null, serveSimCli: null },
-        run: (command, args) =>
-          Effect.sync(() => {
-            const json = (value: unknown) => ({
-              code: 0,
-              stdout: JSON.stringify(value),
-              stderr: "",
-            });
-            if (command === process.execPath)
-              return json({ supported: true, installed: true, executable: "/simslim" });
-            if (command !== "/simslim") return { code: 0, stdout: "", stderr: "" };
-            if (args[0] === "status")
-              return json({ managedDisabled: disabledServices, persistent: true });
-            if (args[0] === "doctor")
-              return args.includes("--list")
-                ? json([{ id: "push", name: "Push", labels: ["com.apple.apsd"] }])
-                : json({ features: [{ id: "push", name: "Push", ok: true }] });
-            if (operation === "profile-failure")
-              return { code: 1, stdout: "", stderr: "Profile failed" };
-            disabledServices = args[0] === "on" ? 100 : 0;
-            booted = true;
-            return { code: 0, stdout: "Done", stderr: "" };
+        run: () =>
+          Effect.succeed({
+            code: 0,
+            stdout: JSON.stringify({ supported: true, installed: false, executable: "/simslim" }),
+            stderr: "",
           }),
       };
       const host: DeviceHost.DeviceHost["Service"] = {
@@ -659,36 +642,6 @@ it.effect.each(["shutdown", "close", "low-memory", "standard", "profile-failure"
       const input = { threadId, deviceId, platform: "ios" as const };
       yield* service.open(input);
       expect(capture).toBe(1);
-      if (
-        operation === "low-memory" ||
-        operation === "standard" ||
-        operation === "profile-failure"
-      ) {
-        const changed = yield* service
-          .action({
-            deviceId,
-            type: "setMemoryProfile",
-            ...(operation === "standard"
-              ? { mode: "standard" as const }
-              : { mode: "low-memory" as const, keepCapabilities: ["push"] }),
-          })
-          .pipe(Effect.result);
-        if (operation === "profile-failure") expect(changed._tag).toBe("Failure");
-        else {
-          expect(changed._tag).toBe("Success");
-          if (changed._tag === "Success") {
-            expect(changed.success.memory?.mode).toBe(operation);
-            expect(changed.success.streamRevision).toEqual(expect.any(String));
-          }
-        }
-        expect(capture).toBe(2);
-        expect(booted).toBe(true);
-        expect((yield* service.state).sessions).toHaveLength(1);
-        const streamRevision = (yield* service.state).devices[0]?.streamRevision;
-        expect(streamRevision).toEqual(expect.any(String));
-        expect((yield* service.list).devices[0]?.streamRevision).toBe(streamRevision);
-        return;
-      }
       if (operation === "shutdown") yield* service.shutdown(input);
       else yield* service.close({ threadId, deviceId, shutdown: true });
       expect(capture).toBeNull();

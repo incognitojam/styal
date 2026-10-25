@@ -34,7 +34,6 @@ type NativeStreamBridge = {
   readonly ref?: Ref<DeviceStreamRef>;
   readonly onUnauthorized: () => Promise<void>;
   readonly onInputConnected: (connected: boolean) => Promise<void>;
-  readonly onStatus?: (status: DeviceStreamStatus) => void;
 };
 
 export function DeviceStreamWebView({
@@ -58,7 +57,6 @@ export function DeviceStreamWebView({
       background={props.colors.background}
       onUnauthorized={props.onUnauthorized}
       onInputConnected={props.onInputConnected}
-      onStatus={props.onStatus}
       onRetry={() => {
         processRetried.current = false;
         setAttempt((attempt) => attempt + 1);
@@ -85,7 +83,6 @@ function DeviceStreamDocumentView({
   background,
   onUnauthorized,
   onInputConnected,
-  onStatus,
   onRetry,
   onStreaming,
   onRecoverProcess,
@@ -110,7 +107,6 @@ function DeviceStreamDocumentView({
     webView.current?.injectJavaScript("window.T3DeviceStream?.stop(); true;");
     setError(message);
     setStatus("error");
-    onStatus?.("error");
   };
   const bootstrapTimedOut = useEffectEvent(() =>
     fail("Device viewer could not start. Reconnect to try again."),
@@ -181,7 +177,6 @@ function DeviceStreamDocumentView({
             if (message.status === "error") fail(message.detail ?? "Device stream failed.");
             else {
               setStatus(message.status);
-              onStatus?.(message.status);
               if (message.status === "streaming") onStreaming();
             }
           }

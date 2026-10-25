@@ -50,6 +50,8 @@ const defaultSnapshot = {
   enableAgentHardwareAccess: false,
   enableDeviceSupport: false,
   deviceIdleShutdownMinutes: 10,
+  simulatorMemoryMode: "standard",
+  projectsWithLowMemoryMode: 0,
   cursorKeychainUsageEnabled: false,
   backgroundActivityProfile: "balanced",
 };
@@ -76,6 +78,7 @@ const customizedSettings = {
     [ProjectId.make("synthetic-marker-project")]: {
       branchNamePrefix: "synthetic-marker-prefix",
       defaultRuntimeMode: "approval-required",
+      simulatorMemoryMode: "low-memory",
     },
     [ProjectId.make("synthetic-marker-empty")]: {},
   },
@@ -109,6 +112,7 @@ const customizedSettings = {
   reviewGuideInstructions: "synthetic marker guide instructions",
   storageCleanup: { worktreeAfterDays: 14, worktreeOnMerge: true, logsAfterDays: 30 },
   deviceIdleShutdownMinutes: null,
+  simulatorMemoryMode: "low-memory",
   usagePriceOverrides: {
     "synthetic-marker-priced-model": {
       inputCostPerMillionTokens: 1,
@@ -179,6 +183,8 @@ it.effect("reports changed values without names, paths, ids or record contents",
           worktreeCleanupOnMerge: true,
           logsCleanupAfterDays: 30,
           deviceIdleShutdownMinutes: null,
+          simulatorMemoryMode: "low-memory",
+          projectsWithLowMemoryMode: 1,
         },
       },
     ]);

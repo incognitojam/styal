@@ -3,14 +3,6 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./device/simulator-stream-recovery": {
-      "types": "./src/device/simulatorStreamRecovery.ts",
-      "default": "./src/device/simulatorStreamRecovery.ts"
-    },
-    "./device/simulator-memory": {
-      "types": "./src/device/simulatorMemory.ts",
-      "default": "./src/device/simulatorMemory.ts"
-    },
     "./composerThreadItems": {
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"

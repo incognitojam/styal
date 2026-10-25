@@ -41,18 +41,15 @@ const isHostUnavailable = Schema.is(DeviceHostUnavailableError);
 
 /**
  * Opening a cold simulator on the device machine can wait on hub startup, a boot,
- * and the iOS stream attach in turn. Memory changes also wait for SimSlim's
- * service update (up to eleven minutes) before booting and reading back settings.
+ * and stream attachment in turn. Startup memory preparation/restoration also
+ * waits for SimSlim's service update (up to eleven minutes).
  */
-const commandTimeout = (command: DevicePeerCommand): Duration.Input => {
-  if (command.operation === "action" || command.operation === "agent-action") {
-    if (command.input.type === "setMemoryProfile") return "30 minutes";
-    if (command.input.type === "prepareSimulatorMemory") return "10 minutes";
-  }
-  if (command.operation === "open") return "10 minutes";
-  if (command.operation === "agent" || command.operation === "detail") return "5 minutes";
-  return "1 minute";
-};
+const commandTimeout = (operation: DevicePeerCommand["operation"]): Duration.Input =>
+  operation === "open" || operation === "open-low-memory"
+    ? "30 minutes"
+    : operation === "agent"
+      ? "5 minutes"
+      : "1 minute";
 
 export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function* (
   config: EnvironmentDeviceHostConfig,
@@ -103,7 +100,7 @@ export const makeClient = Effect.fn("EnvironmentDeviceHost.makeClient")(function
     url: string,
     command: DevicePeerCommand,
     schema: Schema.Codec<A, I>,
-    timeout: Duration.Input = commandTimeout(command),
+    timeout: Duration.Input = commandTimeout(command.operation),
   ) =>
     Effect.gen(function* () {
       const response = yield* HttpClientRequest.post(`${url}/api/device-share/command`).pipe(
@@ -264,19 +261,17 @@ export const make = Effect.fn("EnvironmentDeviceHost.make")(function* (
   };
   const remote: NonNullable<DeviceHost.DeviceHostReady["remote"]> = {
     list: client.info("list").pipe(Effect.map(update)),
-    open: (input) => client.request({ operation: "open", input }, DeviceSession),
+    open: (input, mode) =>
+      client.request(
+        { operation: mode === "low-memory" ? "open-low-memory" : "open", input },
+        DeviceSession,
+      ),
     close: (input) =>
       client.request({ operation: "close", input }, Schema.Null).pipe(Effect.asVoid),
     shutdown: (input) =>
       client.request({ operation: "shutdown", input }, Schema.Null).pipe(Effect.asVoid),
     detail: (input) => client.request({ operation: "detail", input }, DeviceDetail),
-    action: (input, caller) =>
-      client.request(
-        caller
-          ? { operation: "agent-action", input, threadId: caller.threadId }
-          : { operation: "action", input },
-        DeviceDetail,
-      ),
+    action: (input) => client.request({ operation: "action", input }, DeviceDetail),
     screenshot: (input) =>
       client.request({ operation: "screenshot", input }, DevicePeerScreenshot).pipe(
         Effect.map((value) => ({

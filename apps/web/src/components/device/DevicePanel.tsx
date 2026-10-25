@@ -19,6 +19,7 @@ import { cn } from "~/lib/utils";
 import { deviceEnvironment, useDeviceState } from "~/state/device";
 import { formatEnvironmentQueryError } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useComposerDraftStore } from "~/composerDraftStore";
 import { DeviceLoadingView } from "./DeviceLoadingView";
 import { DeviceSetup, deviceHubReadiness } from "./DeviceSetup";
 import { DeviceWorkspace } from "./DeviceWorkspace";
@@ -92,10 +93,14 @@ export function DevicePanel(props: {
     const device = state.devices.find((candidate) => deviceKey(candidate) === value);
     if (!device) return;
     const settleOperation = startOperation(device);
+    const projectId = useComposerDraftStore
+      .getState()
+      .getDraftThreadByRef(props.threadRef)?.projectId;
     const result = await open({
       environmentId,
       input: {
         threadId,
+        ...(projectId === undefined ? {} : { projectId }),
         hostId: device.hostId,
         deviceId: device.id,
         platform: device.platform,

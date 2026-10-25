@@ -22,10 +22,14 @@
  */
 import {
   DeviceHeldError,
+  DeviceOperationError,
   DeviceHostId,
   DeviceId,
   DevicePlatform,
   type DeviceServiceState,
+  type DeviceOpenInput,
+  type DeviceError,
+  type SimulatorMemoryMode,
   type DeviceSession,
   type DeviceShutdownInput,
   LOCAL_DEVICE_HOST_ID,
@@ -49,6 +53,7 @@ import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -185,6 +190,9 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     /** This environment's id, which connected environments use to name their claims here. */
     readonly environmentId: string;
     readonly threadStatus: (threadId: ThreadId) => Effect.Effect<DeviceThreadStatus>;
+    readonly memoryModeForThread?: (
+      input: DeviceOpenInput,
+    ) => Effect.Effect<SimulatorMemoryMode, DeviceError>;
   },
 ) {
   const { ledger } = options;
@@ -477,7 +485,7 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
     );
 
   // The service publishes a booting entry only when it boots the device itself.
-  const open: DeviceService.DeviceService["Service"]["open"] = (input) =>
+  const open: DeviceService.DeviceService["Service"]["open"] = (input, memoryMode) =>
     Effect.scoped(
       Effect.gen(function* () {
         const hostId = input.hostId ?? LOCAL_DEVICE_HOST_ID;
@@ -503,7 +511,12 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
           yield* reclaim(input.threadId, hostId, input.deviceId, input.takeOver === true);
         }
         const updates = yield* inner.subscribe;
-        const session = yield* inner.open(input);
+        const mode =
+          input.platform === "android"
+            ? "standard"
+            : (memoryMode ??
+              (yield* options.memoryModeForThread?.(input) ?? Effect.succeed("standard" as const)));
+        const session = yield* inner.open(input, mode);
         const key = deviceKey(session.hostId, session.deviceId);
         const states = yield* PubSub.takeUpTo(updates, 10_000);
         const bootedHere = states.some((state) =>
@@ -739,10 +752,6 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       open,
       close,
       shutdown,
-      action: (input, caller) =>
-        inner
-          .action(input, caller)
-          .pipe(withDevice(input.hostId ?? LOCAL_DEVICE_HOST_ID, input.deviceId)),
     }),
     activity,
     sweep,
@@ -789,6 +798,31 @@ const live = Layer.effectContext(
           ),
       },
       // An unreadable projection keeps the device.
+      memoryModeForThread: (input) =>
+        Effect.gen(function* () {
+          const thread = yield* projections.getThreadShell(input.threadId).pipe(
+            Effect.mapError(
+              (cause) =>
+                new DeviceOperationError({
+                  operation: "read project memory mode",
+                  reason: "settings_failed",
+                  cause,
+                }),
+            ),
+          );
+          const current = yield* settings.getSettings.pipe(
+            Effect.mapError(
+              (cause) =>
+                new DeviceOperationError({
+                  operation: "read project memory mode",
+                  reason: "settings_failed",
+                  cause,
+                }),
+            ),
+          );
+          return resolveProjectSettings(current, thread?.projectId ?? input.projectId ?? null)
+            .settings.simulatorMemoryMode;
+        }),
       threadStatus: (threadId) =>
         projections.getThreadShell(threadId).pipe(
           Effect.map(threadStatus),

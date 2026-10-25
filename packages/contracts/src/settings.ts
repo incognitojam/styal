@@ -1,4 +1,8 @@
-import { EnvironmentDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
+import {
+  EnvironmentDeviceHostConfigs,
+  SimulatorMemoryMode,
+  SshDeviceHostConfigs,
+} from "./device.ts";
 import { DeviceIdleShutdownMinutes, DeviceIdleShutdownSetting } from "./deviceIdleShutdown.ts";
 import { HardwareDeviceConfigs } from "./hardware.ts";
 import { ProjectFileActionApprovals } from "./projectFileApprovals.ts";
@@ -1002,6 +1006,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "defaultProjectScripts",
   "enableAgentBrowserAccess",
   "enableAgentDeviceAccess",
+  "simulatorMemoryMode",
   "enableAgentHardwareAccess",
   "textGenerationModelSelection",
   "sourceControlWriterModelSelection",
@@ -1046,6 +1051,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
+  simulatorMemoryMode: ForwardCompatibleOptional(SimulatorMemoryMode),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
@@ -1234,6 +1240,9 @@ export const ServerSettings = Schema.Struct({
   enableDeviceSupport: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   deviceOnboardingCompleted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   deviceIdleShutdownMinutes: DeviceIdleShutdownSetting,
+  simulatorMemoryMode: SimulatorMemoryMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("standard")),
+  ),
   deviceHosts: SshDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   environmentDeviceHosts: EnvironmentDeviceHostConfigs.pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1569,6 +1578,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),
   deviceIdleShutdownMinutes: Schema.optionalKey(Schema.NullOr(DeviceIdleShutdownMinutes)),
+  simulatorMemoryMode: Schema.optionalKey(SimulatorMemoryMode),
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),

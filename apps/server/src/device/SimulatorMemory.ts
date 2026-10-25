@@ -1,32 +1,37 @@
 import {
   DeviceOperationError,
-  type SimulatorMemoryState,
-  type DeviceActionInput,
+  type DeviceError,
+  type SimulatorMemoryMode,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-
 import type { DeviceHostReady } from "./DeviceHost.ts";
 import { simslimHostScript } from "./simslimHostScript.ts";
 
-const HostHelper = Schema.Struct({
+const KEEP_CAPABILITIES = [
+  "push",
+  "storekit",
+  "universal-links",
+  "icloud",
+  "keychain-sync",
+  "photos",
+  "contacts",
+  "calendar",
+];
+const Helper = Schema.Struct({
   supported: Schema.Boolean,
   installed: Schema.Boolean,
   executable: Schema.String,
 });
-const Feature = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  labels: Schema.Array(Schema.String),
-});
 const Status = Schema.Struct({
-  managedDisabled: Schema.Int,
   persistent: Schema.Boolean,
+  managedDisabled: Schema.optional(Schema.Int),
 });
+const Features = Schema.Array(
+  Schema.Struct({ id: Schema.String, labels: Schema.Array(Schema.String) }),
+);
 const Doctor = Schema.Struct({
-  features: Schema.Array(
-    Schema.Struct({ id: Schema.String, name: Schema.String, ok: Schema.Boolean }),
-  ),
+  features: Schema.Array(Schema.Struct({ id: Schema.String, ok: Schema.Boolean })),
 });
 
 const command = Effect.fn("SimulatorMemory.command")(function* (
@@ -38,7 +43,7 @@ const command = Effect.fn("SimulatorMemory.command")(function* (
   const result = yield* ready.run(executable, args, { timeoutMs });
   if (result.code !== 0)
     return yield* new DeviceOperationError({
-      operation: "simulator memory profile",
+      operation: "prepare simulator memory",
       reason: "command_failed",
       exitCode: result.code,
       cause: result,
@@ -51,127 +56,114 @@ const decode = <S extends Schema.Top>(schema: S, output: string) =>
     Effect.mapError(
       (cause) =>
         new DeviceOperationError({
-          operation: "simulator memory profile",
+          operation: "prepare simulator memory",
           reason: "settings_failed",
           cause,
         }),
     ),
   );
 
-const helper = Effect.fn("SimulatorMemory.helper")(function* (
+/** Runs before boot/stream attachment, under the owning host's device lock. */
+export const prepareSimulatorMemory = Effect.fn("SimulatorMemory.prepare")(function* (
   ready: DeviceHostReady,
-  install: boolean,
+  deviceId: string,
+  mode: SimulatorMemoryMode,
+  options?: {
+    readonly stillStopped: Effect.Effect<boolean, DeviceError>;
+    readonly onMutationStart?: Effect.Effect<void>;
+    readonly onMutationError: Effect.Effect<void>;
+  },
 ) {
-  return yield* decode(
-    HostHelper,
+  const helper = yield* decode(
+    Helper,
     yield* command(
       ready,
       ready.nodePath,
-      ["--input-type=module", "--eval", simslimHostScript, "--", install ? "install" : "probe"],
+      [
+        "--input-type=module",
+        "--eval",
+        simslimHostScript,
+        "--",
+        mode === "low-memory" ? "install" : "probe",
+      ],
       120_000,
     ),
   );
-});
-
-export const readSimulatorMemory = Effect.fn("SimulatorMemory.read")(function* (
-  ready: DeviceHostReady,
-  deviceId: string,
-): Effect.fn.Return<SimulatorMemoryState, DeviceOperationError> {
-  const tool = yield* helper(ready, false);
-  if (!tool.supported || !tool.installed)
-    return {
-      supported: tool.supported,
-      installed: tool.installed,
-      mode: "unknown",
-      capabilities: [],
-    };
-  const features = yield* decode(
-    Schema.Array(Feature),
-    yield* command(ready, tool.executable, ["doctor", "--list", "--json"]),
-  );
-  const status = yield* decode(
-    Status,
-    yield* command(ready, tool.executable, ["status", deviceId, "--json"]),
-  );
-  // doctor exits non-zero when a feature is disabled; its JSON is still the authoritative result.
-  const diagnosis = yield* ready.run(tool.executable, [
-    "doctor",
-    deviceId,
-    "--requires",
-    features.map((feature) => feature.id).join(","),
-    "--json",
-  ]);
-  const doctor = yield* decode(Doctor, diagnosis.stdout);
-  return {
-    supported: true,
-    installed: true,
-    mode: status.managedDisabled === 0 ? "standard" : "low-memory",
-    disabledServices: status.managedDisabled,
-    persistent: status.persistent,
-    capabilities: doctor.features.map((feature) => ({
-      id: feature.id,
-      name: feature.name,
-      enabled: feature.ok,
-    })),
-  };
-});
-
-export const configureSimulatorMemory = Effect.fn("SimulatorMemory.configure")(function* <
-  E = never,
->(
-  ready: DeviceHostReady,
-  input: Extract<DeviceActionInput, { type: "prepareSimulatorMemory" | "setMemoryProfile" }>,
-  aroundApply: (
-    operation: Effect.Effect<string, DeviceOperationError>,
-  ) => Effect.Effect<string, DeviceOperationError | E> = (operation) => operation,
-) {
-  const tool = yield* helper(ready, true);
-  if (!tool.supported)
+  // Standard must not install a helper on a stock simulator host.
+  if (mode === "standard" && (!helper.supported || !helper.installed)) return;
+  if (!helper.supported || !helper.installed)
     return yield* new DeviceOperationError({
-      operation: "simulator memory profile",
-      reason: "settings_failed",
-      cause: new Error("SimSlim requires an Apple Silicon Mac."),
-    });
-  if (input.type === "prepareSimulatorMemory") return;
-  const status = yield* decode(
-    Status,
-    yield* command(ready, tool.executable, ["status", input.deviceId, "--json"]),
-  );
-  if (input.mode === "low-memory" && !status.persistent)
-    return yield* new DeviceOperationError({
-      operation: "simulator memory profile",
+      operation: "prepare simulator memory",
       reason: "unsupported_runtime",
-      cause: new Error("Persistent launchd overrides are not supported by this runtime."),
+      cause: new Error("Low memory requires an Apple Silicon Mac."),
     });
-  const features = yield* decode(
-    Schema.Array(Feature),
-    yield* command(ready, tool.executable, ["doctor", "--list", "--json"]),
-  );
-  const requested = input.mode === "standard" ? [] : input.keepCapabilities;
-  const kept = features.filter((feature) => requested.includes(feature.id));
-  if (requested.some((id) => !features.some((feature) => feature.id === id)))
-    return yield* new DeviceOperationError({
-      operation: "simulator memory profile",
-      reason: "invalid_payload",
-      cause: new Error("Unknown simulator capability."),
-    });
-  const labels = [...new Set(kept.flatMap((feature) => feature.labels))];
-  yield* aroundApply(
-    command(
+  let labels: ReadonlyArray<string> = [];
+  if (mode === "low-memory") {
+    const features = yield* decode(
+      Features,
+      yield* command(ready, helper.executable, ["doctor", "--list", "--json"]),
+    );
+    if (!KEEP_CAPABILITIES.every((id) => features.some((feature) => feature.id === id)))
+      return yield* new DeviceOperationError({
+        operation: "prepare simulator memory",
+        reason: "settings_failed",
+        cause: new Error("The simulator helper does not support the required preset."),
+      });
+    labels = [
+      ...new Set(
+        features
+          .filter((feature) => KEEP_CAPABILITIES.includes(feature.id))
+          .flatMap((feature) => feature.labels),
+      ),
+    ];
+  }
+  // SimSlim prepares and boots a stopped device itself. There is no viewer yet.
+  // Setup can take long enough for an external tool to boot the simulator.
+  if (!(yield* options?.stillStopped ?? Effect.succeed(true))) return;
+  yield* options?.onMutationStart ?? Effect.void;
+  yield* Effect.gen(function* () {
+    yield* command(
       ready,
-      tool.executable,
-      input.mode === "standard"
-        ? ["off", input.deviceId]
-        : ["on", input.deviceId, ...(labels.length > 0 ? ["--keep", labels.join(",")] : [])],
+      helper.executable,
+      mode === "standard" ? ["off", deviceId] : ["on", deviceId, "--keep", labels.join(",")],
       660_000,
-    ),
-  );
-  if (requested.length > 0)
-    yield* command(ready, tool.executable, [
-      "doctor",
-      input.deviceId,
-      "--requires",
-      requested.join(","),
-      "--json",
-    ]);
+    );
+    const actual = yield* decode(
+      Status,
+      yield* command(ready, helper.executable, ["status", deviceId, "--json"]),
+    );
+    if (
+      actual.managedDisabled === undefined ||
+      (mode === "standard"
+        ? actual.managedDisabled !== 0
+        : actual.managedDisabled <= 0 || !actual.persistent)
+    )
+      return yield* new DeviceOperationError({
+        operation: "prepare simulator memory",
+        reason: "settings_failed",
+        cause: new Error("The simulator did not apply the requested memory mode."),
+      });
+    if (mode === "low-memory") {
+      const doctor = yield* decode(
+        Doctor,
+        yield* command(ready, helper.executable, [
+          "doctor",
+          deviceId,
+          "--requires",
+          KEEP_CAPABILITIES.join(","),
+          "--json",
+        ]),
+      );
+      if (
+        !KEEP_CAPABILITIES.every((id) =>
+          doctor.features.some((feature) => feature.id === id && feature.ok),
+        )
+      )
+        return yield* new DeviceOperationError({
+          operation: "prepare simulator memory",
+          reason: "settings_failed",
+          cause: new Error("Required simulator capabilities are unavailable."),
+        });
+    }
+  }).pipe(Effect.onError(() => options?.onMutationError ?? Effect.void));
 });

@@ -66,13 +66,13 @@ notification; Android adds orientation and toggling the network. The drawer
 only shows what the platform can do, and every control reflects the value read
 back from the device after a change.
 
-## Simulator memory profiles
+## Simulator memory
 
-For an iOS simulator on an Apple Silicon Mac, open **Tools → Memory** on web or desktop, or **Simulator memory** in the mobile viewer's menu. Set up the memory controls, choose **Low memory**, and keep the capabilities your app needs, such as notifications, purchases, universal links, or photo access. Setup installs SimSlim on the simulator's Mac without changing its services. Applying or restoring a profile asks you to confirm a restart and affects every app on that simulator. Low-memory profiles require iOS 18.5 or newer.
+Choose **Simulator memory** in **Settings → Integrations → Devices** on web or desktop, or **Settings → Devices** on mobile. Select a project in the settings scope to save its preference. **Standard** is the default; **Low memory** reduces background services while keeping push notifications, purchases, universal links, iCloud, keychain sync, photos, contacts, and calendar. Use Standard when testing other OS integrations.
 
-The profile carries across future boots of that simulator. Erasing simulator data can leave the profile in place; use **Restore standard services** to reset it. A newly created simulator starts with standard services. Tools reads the current profile from the simulator when opened and after changes. Review the disabled capabilities when an OS integration behaves unexpectedly. Memory savings depend on the runtime and app workload.
+styal applies the preference before starting a stopped iOS simulator that no thread holds. Opening an already running or claimed device leaves its mode unchanged. Agents inherit the preference automatically. Low memory requires an Apple Silicon Mac and iOS 18.5 or newer; its first use downloads a verified helper onto the simulator's Mac. Local, SSH, and connected-environment hosts use the same preset. Android emulators are unchanged.
 
-Agents can use `device_memory` to inspect the current state, prepare the controls, and apply an app-specific profile. Its guidance asks the agent to inspect the app's source and test requirements and preserve uncertain dependencies. Agents must open the simulator first and cannot change a profile while another thread also holds the device.
+The applied mode persists across simulator boots, including boots outside styal. Changing the preference does not immediately change a running simulator. To restore services, choose Standard, stop the simulator, and start it through styal after its other threads release it. The helper's per-device overrides can survive erasing simulator data; a new simulator starts with standard services.
 
 ## Agents and devices
 

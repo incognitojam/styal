@@ -16,7 +16,6 @@ import { ensureAgentDeviceShim } from "../../../device/AgentDeviceShim.ts";
 import { nodeRuntimeUnavailableMessage } from "@t3tools/shared/nodeRuntime";
 
 import { DeviceActivity } from "../../../device/DeviceIdle.ts";
-import { simulatorMemoryGuide } from "../../../device/simulatorMemoryGuide.ts";
 import * as DeviceService from "../../../device/DeviceService.ts";
 import * as DeviceFeatureUsage from "../../../telemetry/DeviceFeatureUsage.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -61,11 +60,6 @@ export function agentDeviceQuickStart(
     "For remote hosts, arrange builds, app installation, and any Metro reverse forwarding yourself. T3 provides discovery, streaming, and control only.",
     "Keep the returned --config and --session flags on every command. Other hosts can be used concurrently; opening one does not switch these commands.",
     "Other agents may need devices. When you finish testing, hand it back with device_close; it stays booted for the next agent. While your turn is not running, another agent may take the device; commands then report that it was handed over, so call device_open again.",
-    ...(device.platform === "ios"
-      ? [
-          "Use device_memory to inspect or configure this simulator's memory profile; its guide explains how to preserve the capabilities your app needs.",
-        ]
-      : []),
     platformNotes,
   ].join("\n");
 }
@@ -173,50 +167,6 @@ export const pickDevice = (
 const toolError = (error: DeviceError | DeviceToolUnavailableError) => error;
 
 const handlers = {
-  device_memory: McpToolAccess.actsAsCaller((input) =>
-    Effect.gen(function* () {
-      const scope = yield* requireDeviceAccess;
-      const devices = yield* DeviceService.DeviceService;
-      const sessions = yield* devices.sessionsForThread(scope.thread.threadId);
-      const hostId =
-        input.deviceId === undefined ? input.hostId : (input.hostId ?? LOCAL_DEVICE_HOST_ID);
-      const target = sessions.findLast(
-        (session) =>
-          (hostId === undefined || session.hostId === hostId) &&
-          (input.deviceId === undefined || session.deviceId === input.deviceId),
-      );
-      if (!target)
-        return yield* new DeviceToolUnavailableError({
-          reason: "Open this simulator with device_open before configuring its memory profile.",
-        });
-      const detail =
-        input.request.operation === "inspect"
-          ? yield* devices.detail(target)
-          : yield* devices.action(
-              {
-                hostId: target.hostId,
-                deviceId: target.deviceId,
-                ...(input.request.operation === "prepare"
-                  ? { type: "prepareSimulatorMemory" as const }
-                  : input.request.mode === "standard"
-                    ? { type: "setMemoryProfile" as const, mode: "standard" as const }
-                    : {
-                        type: "setMemoryProfile" as const,
-                        mode: "low-memory" as const,
-                        keepCapabilities: input.request.keepCapabilities,
-                      }),
-              },
-              { threadId: scope.thread.threadId },
-            );
-      if (!detail.memory)
-        return yield* new DeviceToolUnavailableError({
-          reason:
-            detail.memoryError ??
-            "Memory profiles are available only for iOS simulators on a compatible host.",
-        });
-      return { memory: detail.memory, guidance: simulatorMemoryGuide };
-    }).pipe(Effect.mapError(toolError)),
-  ),
   device_list: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* requireDeviceAccess;

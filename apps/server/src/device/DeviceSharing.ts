@@ -62,9 +62,9 @@ const PEER_USE_WINDOW_MS = 5 * 60_000;
 const PEER_USE_OPERATIONS = new Set<DevicePeerCommand["operation"]>([
   "agent",
   "open",
+  "open-low-memory",
   "detail",
   "action",
-  "agent-action",
   "screenshot",
   "shutdown",
 ]);
@@ -377,11 +377,15 @@ const make = Effect.gen(function* () {
         return { token };
       }
       case "open":
-        return yield* devices.open({
-          ...input.input,
-          hostId: LOCAL_DEVICE_HOST_ID,
-          threadId: thread(input.input.threadId),
-        });
+      case "open-low-memory":
+        return yield* devices.open(
+          {
+            ...input.input,
+            hostId: LOCAL_DEVICE_HOST_ID,
+            threadId: thread(input.input.threadId),
+          },
+          input.operation === "open-low-memory" ? "low-memory" : "standard",
+        );
       case "close":
         yield* devices.close({
           ...input.input,
@@ -396,11 +400,6 @@ const make = Effect.gen(function* () {
         return yield* devices.detail({ ...input.input, hostId: LOCAL_DEVICE_HOST_ID });
       case "action":
         return yield* devices.action({ ...input.input, hostId: LOCAL_DEVICE_HOST_ID });
-      case "agent-action":
-        return yield* devices.action(
-          { ...input.input, hostId: LOCAL_DEVICE_HOST_ID },
-          { threadId: thread(input.threadId) },
-        );
       case "screenshot": {
         const shot = yield* devices.screenshot({ ...input.input, hostId: LOCAL_DEVICE_HOST_ID });
         return { device: shot.device, png: Buffer.from(shot.png).toString("base64") };

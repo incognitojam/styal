@@ -133,6 +133,21 @@ const fixture = Effect.gen(function* () {
   // Peer commands the target finished handling, as "operation:status".
   const commands = yield* Queue.unbounded<string>();
   let inventoryUnavailable = false;
+  let memoryDevice = false;
+  let rejectMemoryOpen = false;
+  let memoryBooted = false;
+  let memoryDisabled = 153;
+  const memoryCommands: string[] = [];
+  const memoryCapabilities = [
+    "push",
+    "storekit",
+    "universal-links",
+    "icloud",
+    "keychain-sync",
+    "photos",
+    "contacts",
+    "calendar",
+  ];
   // Hub device streams and daemon artifact downloads stay open until the test closes them.
   const openStreams: ReadableStreamDefaultController<Uint8Array>[] = [];
   let readyGate: Deferred.Deferred<void> | null = null;
@@ -155,6 +170,8 @@ const fixture = Effect.gen(function* () {
             ? decodeCommandBody(body).operation
             : "proxy";
         peerRequests.push({ origin, operation });
+        if (rejectMemoryOpen && operation === "open-low-memory")
+          return HttpClientResponse.fromWeb(request, new Response(null, { status: 400 }));
         const code = addressFailures.get(origin);
         if (code === "timeout") {
           yield* Deferred.succeed(probeStarted, undefined);
@@ -212,21 +229,38 @@ const fixture = Effect.gen(function* () {
       }
       if (inventoryUnavailable)
         return HttpClientResponse.fromWeb(request, new Response(null, { status: 503 }));
-      const response = request.url.includes("/api/devices")
-        ? {
-            simulators: [],
-            emulators: [
-              {
-                id: "emulator-5554",
-                platform: "android",
-                name: "Pixel",
-                booted: true,
-                physical: false,
-                version: "Android 17",
-              },
-            ],
-          }
-        : { ok: true };
+      if (memoryDevice && request.url.endsWith("/shutdown")) memoryBooted = false;
+      if (memoryDevice && request.url.endsWith("/boot")) memoryBooted = true;
+      const response =
+        memoryDevice && new URL(request.url).pathname === "/api/devices"
+          ? {
+              simulators: [
+                {
+                  id: "emulator-5554",
+                  platform: "ios",
+                  name: "Test iPhone",
+                  booted: memoryBooted,
+                  physical: false,
+                  version: "26.5",
+                },
+              ],
+              emulators: [],
+            }
+          : new URL(request.url).pathname === "/api/devices"
+            ? {
+                simulators: [],
+                emulators: [
+                  {
+                    id: "emulator-5554",
+                    platform: "android",
+                    name: "Pixel",
+                    booted: true,
+                    physical: false,
+                    version: "Android 17",
+                  },
+                ],
+              }
+            : { ok: true };
       return HttpClientResponse.fromWeb(request, Response.json(response));
     }),
   );
@@ -288,11 +322,24 @@ const fixture = Effect.gen(function* () {
     nodePath: process.execPath,
     hub: { origin: "http://hub.test" },
     helpers: { serveSimCli: null, serveSimAxSettings: null },
-    run: (command) =>
-      Effect.succeed({
-        stdout: command === "emulator" ? "" : " V....D libx264",
-        stderr: "",
-        code: 0,
+    run: (command, args) =>
+      Effect.sync(() => {
+        const json = (value: unknown) => ({ code: 0, stdout: JSON.stringify(value), stderr: "" });
+        if (!memoryDevice)
+          return { stdout: command === "emulator" ? "" : " V....D libx264", stderr: "", code: 0 };
+        if (command === process.execPath)
+          return json({ supported: true, installed: true, executable: "/simslim" });
+        if (command !== "/simslim") return { stdout: "", stderr: "", code: 0 };
+        if (args[0] === "status")
+          return json({ persistent: true, managedDisabled: memoryDisabled });
+        if (args.includes("--list"))
+          return json(memoryCapabilities.map((id) => ({ id, labels: [`com.apple.test.${id}`] })));
+        if (args[0] === "doctor")
+          return json({ features: memoryCapabilities.map((id) => ({ id, ok: true })) });
+        memoryCommands.push(args[0]!);
+        memoryBooted = true;
+        memoryDisabled = args[0] === "on" ? 153 : 0;
+        return { stdout: "", stderr: "", code: 0 };
       }),
     agentDevice: {
       baseUrl: "http://daemon.test",
@@ -302,14 +349,14 @@ const fixture = Effect.gen(function* () {
   };
   const local = DeviceHost.DeviceHost.of({
     id: LOCAL_DEVICE_HOST_ID,
-    summary: Effect.succeed({
+    summary: Effect.sync(() => ({
       id: LOCAL_DEVICE_HOST_ID,
       kind: "local",
       label: "Orion",
-      platforms: [{ platform: "android", available: true }],
+      platforms: [{ platform: memoryDevice ? "ios" : "android", available: true }],
       hubInstalled: true,
       agentDeviceInstalled: true,
-    }),
+    })),
     platformAvailability: (platform) => Effect.succeed({ platform, available: true }),
     ensureReady: () =>
       Effect.suspend(() =>
@@ -382,6 +429,13 @@ const fixture = Effect.gen(function* () {
   );
   return {
     target,
+    useMemoryDevice: () => {
+      memoryDevice = true;
+    },
+    rejectMemoryOpen: () => {
+      rejectMemoryOpen = true;
+    },
+    memoryCommands,
     source,
     grant,
     grants,
@@ -444,29 +498,47 @@ it.effect("persists device-only access and reconnects a host without client cred
   }).pipe(Effect.scoped),
 );
 
-it.effect("checks agent ownership on the owning host after peer inventory becomes stale", () =>
+it.effect("prepares and restores a cold iOS simulator on the owning environment", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
+    f.useMemoryDevice();
     yield* f.connect;
     const host = yield* f.host;
     const ready = yield* host.ensureReady(() => Effect.void);
-    const threadId = ThreadId.make("memory-agent");
-    const deviceId = "emulator-5554";
-    yield* ready.remote!.open({ threadId, deviceId, platform: "android" });
-    const cached = yield* ready.remote!.list;
-    expect(cached.sessions).toHaveLength(1);
-    const other = ThreadId.make("local-user");
-    yield* f.targetDevices.open({ threadId: other, deviceId, platform: "android" });
+    const input = {
+      threadId: ThreadId.make("memory-project"),
+      deviceId: "emulator-5554",
+      platform: "ios" as const,
+    };
+    yield* ready.remote!.open(input, "low-memory");
+    expect(f.memoryCommands).toEqual(["on"]);
+    expect(f.peerRequests.some((request) => request.operation === "open-low-memory")).toBe(true);
+    yield* ready.remote!.close({ ...input, shutdown: true });
+    yield* ready.remote!.open(input, "standard");
+    expect(f.memoryCommands).toEqual(["on", "off"]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("refuses unsupported peer memory preparation without falling back to a stock boot", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.useMemoryDevice();
+    f.rejectMemoryOpen();
+    yield* f.connect;
+    const ready = yield* (yield* f.host).ensureReady(() => Effect.void);
     const error = yield* ready
-      .remote!.action({ deviceId, type: "prepareSimulatorMemory" }, { threadId })
+      .remote!.open(
+        { threadId: ThreadId.make("memory-project"), deviceId: "emulator-5554", platform: "ios" },
+        "low-memory",
+      )
       .pipe(Effect.flip);
-    expect(error).toMatchObject({ _tag: "DeviceHeldError", hostId: host.id, threadIds: [other] });
-    expect(f.peerRequests.at(-1)?.operation).toBe("agent-action");
-    yield* ready.remote!.close({ threadId });
-    const missing = yield* ready
-      .remote!.action({ deviceId, type: "prepareSimulatorMemory" }, { threadId })
-      .pipe(Effect.flip);
-    expect(missing._tag).toBe("DeviceSessionRequiredError");
+    expect(error._tag).toBe("DeviceHostUnavailableError");
+    expect(f.memoryCommands).toEqual([]);
+    expect(
+      f.peerRequests
+        .filter((request) => request.operation.startsWith("open"))
+        .map((request) => request.operation),
+    ).toEqual(["open-low-memory"]);
   }).pipe(Effect.scoped),
 );
 

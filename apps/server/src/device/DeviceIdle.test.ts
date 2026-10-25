@@ -41,7 +41,6 @@ const fixture = Effect.fn("fixture")(function* (
   saved: Ref.Ref<BootRecords>,
   options: {
     readonly gate?: Deferred.Deferred<void>;
-    readonly releaseStarted?: Deferred.Deferred<void>;
     readonly saveGate?: Deferred.Deferred<void>;
   } = {},
 ) {
@@ -108,7 +107,6 @@ const fixture = Effect.fn("fixture")(function* (
           request.body._tag === "Uint8Array" ? decoder.decode(request.body.body) : "{}",
         );
         calls.push(`release ${body.params.session}`);
-        if (options.releaseStarted) yield* Deferred.succeed(options.releaseStarted, undefined);
         if (options.gate) yield* Deferred.await(options.gate);
         const code = sessionErrors.get(body.params.session) ?? (yield* Ref.get(releaseError));
         return HttpClientResponse.fromWeb(
@@ -256,58 +254,6 @@ const threads = (service: DeviceService.DeviceService["Service"]) =>
   service.state.pipe(Effect.map((state) => state.sessions.map((session) => session.threadId)));
 
 describe("hand-back", () => {
-  it.effect("checks an agent's action after a concurrent hand-over finishes", () =>
-    Effect.gen(function* () {
-      const gate = yield* Deferred.make<void>();
-      const releaseStarted = yield* Deferred.make<void>();
-      const { service } = yield* fixture(yield* Ref.make<BootRecords>([]), {
-        gate,
-        releaseStarted,
-      });
-      yield* service.configure({ enabled: true });
-      yield* agentOpen(service);
-      const takingOver = yield* agentOpen(service, thread2, "emulator-5554").pipe(Effect.forkChild);
-      yield* Deferred.await(releaseStarted);
-      expect(yield* threads(service)).toContain(threadId);
-      const actionStarted = yield* Deferred.make<void>();
-      const changing = yield* Deferred.succeed(actionStarted, undefined).pipe(
-        Effect.andThen(
-          service.action(
-            { deviceId: "emulator-5554", type: "prepareSimulatorMemory" },
-            { threadId },
-          ),
-        ),
-        Effect.result,
-        Effect.forkChild,
-      );
-      yield* Deferred.await(actionStarted);
-      expect(changing.pollUnsafe()).toBeUndefined();
-      yield* Deferred.succeed(gate, undefined);
-      yield* Fiber.join(takingOver);
-      const result = yield* Fiber.join(changing);
-      expect(result).toMatchObject({
-        _tag: "Failure",
-        failure: { _tag: "DeviceSessionRequiredError" },
-      });
-      expect(yield* threads(service)).toEqual([thread2]);
-    }).pipe(Effect.scoped),
-  );
-
-  it.effect(
-    "refuses an agent's settings change while a user in another thread holds the device",
-    () =>
-      Effect.gen(function* () {
-        const { service } = yield* fixture(yield* Ref.make<BootRecords>([]));
-        yield* service.configure({ enabled: true });
-        yield* agentOpen(service);
-        yield* service.open({ threadId: thread2, deviceId: "emulator-5554", platform: "android" });
-        const error = yield* service
-          .action({ deviceId: "emulator-5554", type: "prepareSimulatorMemory" }, { threadId })
-          .pipe(Effect.flip);
-        expect(error).toMatchObject({ _tag: "DeviceHeldError", threadIds: [thread2] });
-      }).pipe(Effect.scoped),
-  );
-
   it.effect(
     "device_close releases the session device_open handed out, even after an AVD boots",
     () =>

@@ -9,11 +9,10 @@ import {
   type DeviceId,
   DeviceBootError,
   DeviceHostUnavailableError,
-  DeviceHeldError,
-  DeviceSessionRequiredError,
   DeviceNotFoundError,
   DeviceOperationError,
   type DeviceOpenInput,
+  type SimulatorMemoryMode,
   type DevicePlatform,
   DevicePlatformUnavailableError,
   type DeviceServiceState,
@@ -56,7 +55,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { isLocalSshDeviceHost, remoteSshDeviceHosts } from "./localSshDeviceHost.ts";
 
 import { readDeviceDetail, runDeviceAction } from "./DeviceActions.ts";
-import { configureSimulatorMemory, readSimulatorMemory } from "./SimulatorMemory.ts";
+import { prepareSimulatorMemory } from "./SimulatorMemory.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
@@ -147,14 +146,14 @@ export class DeviceService extends Context.Service<
     readonly updateTool: (tool: "hub" | "agent") => Effect.Effect<DeviceServiceState, DeviceError>;
     readonly inspect: Effect.Effect<DeviceServiceState>;
     readonly retryHost: (hostId: DeviceHostId) => Effect.Effect<DeviceServiceState, DeviceError>;
-    readonly open: (input: DeviceOpenInput) => Effect.Effect<DeviceSession, DeviceError>;
+    readonly open: (
+      input: DeviceOpenInput,
+      memoryMode?: SimulatorMemoryMode,
+    ) => Effect.Effect<DeviceSession, DeviceError>;
     readonly close: (input: DeviceCloseInput) => Effect.Effect<void, DeviceError>;
     readonly shutdown: (input: DeviceShutdownInput) => Effect.Effect<void, DeviceError>;
     readonly detail: (input: DeviceDetailInput) => Effect.Effect<DeviceDetail, DeviceError>;
-    readonly action: (
-      input: DeviceActionInput,
-      caller?: { readonly threadId: ThreadId },
-    ) => Effect.Effect<DeviceDetail, DeviceError>;
+    readonly action: (input: DeviceActionInput) => Effect.Effect<DeviceDetail, DeviceError>;
     readonly screenshot: (input: {
       readonly hostId?: DeviceHostId | undefined;
       readonly deviceId: DeviceId;
@@ -517,15 +516,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
           ...(ready.hostId === LOCAL_DEVICE_HOST_ID ? { hostStatusDetail: detail } : {}),
           devices: [
             ...state.devices.filter((device) => device.hostId !== ready.hostId),
-            ...devices.map((device) => {
-              if (ready.remote) return device;
-              const streamRevision =
-                device.streamRevision ??
-                state.devices.find(
-                  (previous) => previous.hostId === device.hostId && previous.id === device.id,
-                )?.streamRevision;
-              return streamRevision === undefined ? device : { ...device, streamRevision };
-            }),
+            ...devices,
           ],
           externalSessions: [
             ...(state.externalSessions ?? []).filter((session) => session.hostId !== ready.hostId),
@@ -741,7 +732,10 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     return result.serial ?? result.id ?? device.id;
   });
 
-  const open: DeviceService["Service"]["open"] = Effect.fn("DeviceService.open")(function* (input) {
+  const open: DeviceService["Service"]["open"] = Effect.fn("DeviceService.open")(function* (
+    input,
+    memoryMode = "standard",
+  ) {
     const host = yield* resolveHost(input.hostId);
     yield* ensurePlatform(host, input.platform);
     const ready = yield* readiness(host.id);
@@ -778,14 +772,17 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
       }
     }
     if (ready.remote) {
-      const opened = yield* ready.remote.open(input);
+      const opened = yield* ready.remote.open(
+        input,
+        device.platform === "ios" ? memoryMode : "standard",
+      );
       state = yield* refresh(ready);
       device = findDevice(state, host.id, opened.deviceId);
       if (!device)
         return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: opened.deviceId });
     } else if (!device.booted && input.boot !== false) {
       const booting = { ...device, threadId: input.threadId };
-      yield* publish((current) => ({
+      const markBooting = publish((current) => ({
         ...current,
         bootingDevices: [
           ...(current.bootingDevices ?? []).filter(
@@ -793,8 +790,38 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
           ),
           booting,
         ],
-      }));
-      const bootedId = yield* boot(ready, device).pipe(
+      })).pipe(Effect.asVoid);
+      const bootedId = yield* Effect.gen(function* () {
+        // DeviceIdle serializes every lifecycle operation on this host/device.
+        const unclaimedAndStopped = refresh(ready).pipe(
+          Effect.map(
+            (current) =>
+              current.devices.some(
+                (value) => value.id === booting.id && value.hostId === host.id && !value.booted,
+              ) &&
+              !current.sessions.some(
+                (session) => session.hostId === host.id && session.deviceId === booting.id,
+              ),
+          ),
+        );
+        if (booting.platform === "ios" && (yield* unclaimedAndStopped))
+          yield* prepareSimulatorMemory(ready, booting.id, memoryMode, {
+            stillStopped: unclaimedAndStopped,
+            onMutationStart: markBooting,
+            onMutationError: shutdownDevice(host.id, booting.id, booting.platform).pipe(
+              Effect.ignore,
+            ),
+          });
+        // A tool outside styal can start the simulator during helper setup.
+        // Only claim idle-shutdown ownership when styal actually starts it.
+        if (
+          (yield* refresh(ready)).devices.some(
+            (value) => value.id === booting.id && value.hostId === host.id && !value.booted,
+          )
+        )
+          yield* markBooting;
+        return yield* boot(ready, booting);
+      }).pipe(
         Effect.ensuring(
           publish((current) => ({
             ...current,
@@ -866,7 +893,6 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
     hostId: DeviceHostId,
     deviceId: DeviceId,
     platform: DevicePlatform,
-    retainSessions = false,
   ) {
     const ready = yield* readiness(hostId);
     const postShutdown = (path: string, body: Record<string, string>) =>
@@ -909,7 +935,6 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
             ),
           )
         : postShutdown("/api/devices/shutdown", { platform, id: deviceId });
-    if (retainSessions) return;
     yield* publish((state) => ({
       ...state,
       devices: state.devices.map((device) =>
@@ -1026,121 +1051,26 @@ process.exitCode = result.error ? 1 : (result.status ?? 1);`,
     return { ready, device };
   });
 
-  const readRemoteDetail = Effect.fn("DeviceService.readRemoteDetail")(function* (
-    hostId: DeviceHostId,
-    value: DeviceDetail,
-  ) {
-    const current = (yield* SynchronizedRef.get(stateRef)).state.devices.find(
-      (device) => device.hostId === hostId && device.id === value.deviceId,
-    );
-    if (value.streamRevision !== undefined && value.streamRevision !== current?.streamRevision)
-      yield* publish((state) => ({
-        ...state,
-        devices: state.devices.map((device) =>
-          device.hostId === hostId && device.id === value.deviceId
-            ? {
-                ...device,
-                streamRevision: value.streamRevision,
-              }
-            : device,
-        ),
-      }));
-    return { ...value, hostId };
-  });
-
   const detail: DeviceService["Service"]["detail"] = Effect.fn("DeviceService.detail")(
     function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
-      if (ready.remote)
-        return yield* readRemoteDetail(ready.hostId, yield* ready.remote.detail(input));
+      if (ready.remote) return { ...(yield* ready.remote.detail(input)), hostId: ready.hostId };
       const read = yield* readDeviceDetail(ready, device.platform, device.id);
-      const memory =
-        device.platform === "ios"
-          ? yield* readSimulatorMemory(ready, device.id).pipe(Effect.result)
-          : undefined;
       return {
         hostId: ready.hostId,
         deviceId: device.id,
-        ...(device.streamRevision === undefined ? {} : { streamRevision: device.streamRevision }),
         settings: read.settings,
         foregroundApp: read.foregroundApp,
-        ...(memory?._tag === "Success" ? { memory: memory.success } : {}),
-        ...(memory?._tag === "Failure"
-          ? { memoryError: "Could not read simulator memory settings. Reopen Tools to retry." }
-          : {}),
         readAt: DateTime.formatIso(yield* DateTime.now),
       };
     },
   );
 
   const action: DeviceService["Service"]["action"] = Effect.fn("DeviceService.action")(
-    function* (input, caller) {
-      if (caller) {
-        // DeviceIdle holds the same lock as open/close here. Connected hosts repeat
-        // this check against their own sessions instead of trusting peer inventory.
-        const hostId = input.hostId ?? LOCAL_DEVICE_HOST_ID;
-        const sessions = (yield* SynchronizedRef.get(stateRef)).state.sessions.filter(
-          (session) => session.hostId === hostId && session.deviceId === input.deviceId,
-        );
-        if (!sessions.some((session) => session.threadId === caller.threadId))
-          return yield* new DeviceSessionRequiredError({ hostId, deviceId: input.deviceId });
-        const others = sessions.filter((session) => session.threadId !== caller.threadId);
-        if (others.length > 0)
-          return yield* new DeviceHeldError({
-            hostId,
-            deviceId: input.deviceId,
-            threadIds: [...new Set(others.map((session) => session.threadId))],
-          });
-        if (!(yield* readDeviceSettings).agentAccessEnabled)
-          return yield* new DeviceHostUnavailableError({
-            hostId,
-            reason: "Agent device access is turned off for this environment.",
-          });
-      }
+    function* (input) {
       const { ready, device } = yield* resolveDevice(input.hostId, input.deviceId);
-      if (ready.remote)
-        return yield* readRemoteDetail(
-          ready.hostId,
-          yield* ready.remote
-            .action(input, caller)
-            .pipe(
-              Effect.onError(() =>
-                input.type === "setMemoryProfile"
-                  ? refresh(ready).pipe(Effect.ignore)
-                  : Effect.void,
-              ),
-            ),
-        );
-      if (input.type === "setMemoryProfile" && device.platform === "ios") {
-        yield* configureSimulatorMemory(ready, input, (operation) =>
-          Effect.gen(function* () {
-            // Retire the capture session before SimSlim reboots; otherwise serve-sim keeps a stale stream.
-            yield* shutdownDevice(ready.hostId, device.id, device.platform, true);
-            const result = yield* operation.pipe(
-              Effect.onError(() => boot(ready, device).pipe(Effect.ignore)),
-            );
-            yield* boot(ready, device);
-            return result;
-          }).pipe(
-            Effect.ensuring(
-              crypto.randomUUIDv4().pipe(
-                Effect.orDie,
-                Effect.flatMap((streamRevision) =>
-                  publish((state) => ({
-                    ...state,
-                    devices: state.devices.map((current) =>
-                      current.hostId === ready.hostId && current.id === device.id
-                        ? { ...current, streamRevision }
-                        : current,
-                    ),
-                  })),
-                ),
-              ),
-            ),
-          ),
-        );
-        yield* refresh(ready);
-      } else yield* runDeviceAction(ready, device.platform, input);
+      if (ready.remote) return { ...(yield* ready.remote.action(input)), hostId: ready.hostId };
+      yield* runDeviceAction(ready, device.platform, input);
       return yield* detail({ hostId: ready.hostId, deviceId: device.id });
     },
   );

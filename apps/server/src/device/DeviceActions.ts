@@ -20,7 +20,6 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { DeviceHostReady } from "./DeviceHost.ts";
-import { configureSimulatorMemory } from "./SimulatorMemory.ts";
 
 type Runner = DeviceHostReady["run"];
 
@@ -32,8 +31,6 @@ const encodePushPayload = Schema.encodeUnknownEffect(
 );
 
 const IOS_ACTIONS: ReadonlySet<DeviceActionType> = new Set([
-  "prepareSimulatorMemory",
-  "setMemoryProfile",
   "setAppearance",
   "setTextSize",
   "setToggle",
@@ -213,9 +210,6 @@ const runIos = Effect.fn("DeviceActions.runIos")(function* (
   const udid = input.deviceId;
   const { run } = ready;
   switch (input.type) {
-    case "prepareSimulatorMemory":
-    case "setMemoryProfile":
-      return yield* configureSimulatorMemory(ready, input);
     case "setAppearance":
       yield* simctl(run, udid, ["ui", "appearance", input.value], "appearance");
       return;
@@ -440,8 +434,6 @@ const runAndroid = Effect.fn("DeviceActions.runAndroid")(function* (
       return;
     case "setLiquidGlass":
     case "setColorFilter":
-    case "prepareSimulatorMemory":
-    case "setMemoryProfile":
     case "shake":
     case "sendPush":
       return yield* new DeviceActionUnavailableError({

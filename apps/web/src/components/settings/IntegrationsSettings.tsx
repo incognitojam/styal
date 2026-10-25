@@ -5,6 +5,7 @@ import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
 import { EnvironmentDeviceHostsSettings } from "./EnvironmentDeviceHostsSettings";
 import { DeviceIdleShutdownSetting } from "./DeviceIdleShutdownSetting";
+import { SimulatorMemorySetting } from "./SimulatorMemorySetting";
 /**
  * Integrations settings - preferences for surfaces styal embeds rather than
  * owns. Browser is the first section: the defaults a preview tab opens at,
@@ -1060,6 +1061,7 @@ export function DeviceIntegrationControls({
         }
       />
       <DeviceIdleShutdownSetting disabled={projectScope || !environmentId || !enabled} />
+      <SimulatorMemorySetting />
       {environmentId ? (
         <DeviceHostUpdates
           state={{ ...state, hosts: state.hosts.filter((host) => host.kind === "local") }}

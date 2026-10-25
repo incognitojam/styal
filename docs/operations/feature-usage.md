@@ -60,6 +60,8 @@ Installations by installed provider: count distinct identities of `provider.inve
 
 ## Settings snapshot
 
+Servers with `simulatorMemoryUsageVersion = 1` also report `simulatorMemoryMode` (`standard` or `low-memory`) and `projectsWithLowMemoryMode` in `settings.snapshot`. These measure the saved startup preference, not applied profiles or memory savings. Project identifiers and capability lists are not reported.
+
 Servers with `settingsSnapshotUsageVersion = 1` send one `settings.snapshot` event two minutes after startup and then every 24 hours while the server runs. It is not a `feature.used` event. Every property below is sent on every report, whether or not it is at its default, so a missing property means an older server rather than an unchanged setting.
 
 - New threads: `defaultRuntimeMode`, `defaultThreadEnvMode` (`local`, `worktree`, or null to inherit the repository's styal.json or legacy t3.json), `defaultModelSelectionSet`, `responseStreamingMode`, `continueThreadsAfterServerUpdate`.
@@ -90,8 +92,6 @@ For the existing agent-browser adoption chart, count distinct reporting identiti
 This estimates adoption among active reporting identities, not every user. Telemetry opt-outs are absent, the identity may represent an account or an installation, and some active environments have no compatible desktop browser host. A low rate is evidence to investigate availability and discoverability before removing a feature. Track failed attempts separately from successful adoption; an unavailable feature can have demand without successful uses.
 
 For reliability, include every action and outcome, then break down failures and p50/p95 `durationMs` by action and server version. Browser snapshot outcomes include saving a requested screenshot, and recording-stop outcomes include transferring its artifact. Internal status requests for tool icons do not emit additional usage events.
-
-Simulator memory controls report `feature = devices` with `memory_inspect`, `prepareSimulatorMemory`, and `setMemoryProfile` actions. Filter on `simulatorMemoryUsageVersion = 1` for instrumentation coverage. Capability selections, app identities, device IDs, and profiles are not collected.
 
 ## Client settings snapshot
 

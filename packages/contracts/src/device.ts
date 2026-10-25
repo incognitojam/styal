@@ -13,10 +13,21 @@
 import { Schema } from "effect";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
-import { AuthSessionId, EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  AuthSessionId,
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 
 export const DevicePlatform = Schema.Literals(["ios", "android"]);
 export type DevicePlatform = typeof DevicePlatform.Type;
+
+export const SimulatorMemoryMode = Schema.Literals(["standard", "low-memory"]);
+export type SimulatorMemoryMode = typeof SimulatorMemoryMode.Type;
+export const SIMULATOR_MEMORY_DESCRIPTION =
+  "Applies when styal starts a stopped iOS simulator that no thread holds. Running simulators keep their current mode. Low memory keeps push notifications, purchases, universal links, iCloud, keychain sync, photos, contacts, and calendar. Use Standard for other OS integrations.";
 
 export const DeviceHostId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 export type DeviceHostId = typeof DeviceHostId.Type;
@@ -128,7 +139,6 @@ export const DeviceSummary = Schema.Struct({
   version: Schema.String,
   booted: Schema.Boolean,
   physical: Schema.Boolean,
-  streamRevision: Schema.optional(Schema.String),
 });
 export type DeviceSummary = typeof DeviceSummary.Type;
 
@@ -214,7 +224,6 @@ export const DeviceServiceState = Schema.Struct({
 export type DeviceServiceState = typeof DeviceServiceState.Type;
 
 export const DeviceListInput = Schema.Struct({
-  hostId: Schema.optional(DeviceHostId),
   updateTool: Schema.optional(Schema.Literals(["hub", "agent"])),
   inspectOnly: Schema.optional(Schema.Boolean),
   retryHostId: Schema.optional(DeviceHostId),
@@ -229,6 +238,7 @@ export const DeviceConfigureInput = Schema.Struct({
 export type DeviceConfigureInput = typeof DeviceConfigureInput.Type;
 
 export const DeviceOpenInput = Schema.Struct({
+  projectId: Schema.optional(ProjectId),
   threadId: ThreadId,
   hostId: Schema.optional(DeviceHostId),
   deviceId: DeviceId,
@@ -308,26 +318,11 @@ export const DeviceForegroundApp = Schema.Struct({
 });
 export type DeviceForegroundApp = typeof DeviceForegroundApp.Type;
 
-export const SimulatorMemoryState = Schema.Struct({
-  supported: Schema.Boolean,
-  installed: Schema.Boolean,
-  mode: Schema.Literals(["unknown", "standard", "low-memory"]),
-  disabledServices: Schema.optional(Schema.Int),
-  persistent: Schema.optional(Schema.Boolean),
-  capabilities: Schema.Array(
-    Schema.Struct({ id: Schema.String, name: Schema.String, enabled: Schema.Boolean }),
-  ),
-});
-export type SimulatorMemoryState = typeof SimulatorMemoryState.Type;
-
 export const DeviceDetail = Schema.Struct({
   hostId: DeviceHostId,
   deviceId: DeviceId,
   settings: DeviceSettings,
   foregroundApp: Schema.NullOr(DeviceForegroundApp),
-  memory: Schema.optional(SimulatorMemoryState),
-  memoryError: Schema.optional(Schema.String),
-  streamRevision: Schema.optional(Schema.String),
   readAt: Schema.String,
 });
 export type DeviceDetail = typeof DeviceDetail.Type;
@@ -353,18 +348,6 @@ const DeviceTarget = {
 };
 
 export const DeviceActionInput = Schema.Union([
-  Schema.Struct({ ...DeviceTarget, type: Schema.Literal("prepareSimulatorMemory") }),
-  Schema.Struct({
-    ...DeviceTarget,
-    type: Schema.Literal("setMemoryProfile"),
-    mode: Schema.Literal("standard"),
-  }),
-  Schema.Struct({
-    ...DeviceTarget,
-    type: Schema.Literal("setMemoryProfile"),
-    mode: Schema.Literal("low-memory"),
-    keepCapabilities: Schema.Array(TrimmedNonEmptyString),
-  }),
   Schema.Struct({
     ...DeviceTarget,
     type: Schema.Literal("setAppearance"),
@@ -462,15 +445,11 @@ export const DevicePeerCommand = Schema.Union([
     ]),
   }),
   Schema.Struct({ operation: Schema.Literal("open"), input: DeviceOpenInput }),
+  Schema.Struct({ operation: Schema.Literal("open-low-memory"), input: DeviceOpenInput }),
   Schema.Struct({ operation: Schema.Literal("close"), input: DeviceCloseInput }),
   Schema.Struct({ operation: Schema.Literal("shutdown"), input: DeviceShutdownInput }),
   Schema.Struct({ operation: Schema.Literal("detail"), input: DeviceDetailInput }),
   Schema.Struct({ operation: Schema.Literal("action"), input: DeviceActionInput }),
-  Schema.Struct({
-    operation: Schema.Literal("agent-action"),
-    input: DeviceActionInput,
-    threadId: ThreadId,
-  }),
   Schema.Struct({ operation: Schema.Literal("screenshot"), input: DeviceDetailInput }),
 ]);
 export type DevicePeerCommand = typeof DevicePeerCommand.Type;
@@ -539,11 +518,11 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
     operation: Schema.String,
     reason: Schema.Literals([
       "command_failed",
+      "unsupported_runtime",
       "request_failed",
       "invalid_payload",
       "settings_failed",
       "hub_rejected",
-      "unsupported_runtime",
     ]),
     exitCode: Schema.optional(Schema.Number),
     cause: Schema.Defect(),
@@ -552,12 +531,11 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
   override get message(): string {
     const explanation = {
       command_failed: `The device command failed${this.exitCode === undefined ? "" : ` (exit code ${this.exitCode})`}.`,
+      unsupported_runtime: "The simulator does not support this memory mode.",
       request_failed: "Could not communicate with device support. Try refreshing devices.",
       invalid_payload: "The device request could not be encoded.",
       settings_failed: "Could not read or save device settings.",
       hub_rejected: "The device hub could not complete the request.",
-      unsupported_runtime:
-        "Low-memory mode requires iOS 18.5 or newer. Standard services can still be restored.",
     }[this.reason];
     return `Device ${this.operation} failed: ${explanation}`;
   }
@@ -589,19 +567,9 @@ export class DeviceHeldError extends Schema.TaggedError<DeviceHeldError>()("Devi
   }
 }
 
-export class DeviceSessionRequiredError extends Schema.TaggedError<DeviceSessionRequiredError>()(
-  "DeviceSessionRequiredError",
-  { hostId: DeviceHostId, deviceId: DeviceId },
-) {
-  override get message(): string {
-    return `Open device ${this.deviceId} on host ${this.hostId} in this thread before changing its settings.`;
-  }
-}
-
 export const DeviceError = Schema.Union([
   DeviceHostUnavailableError,
   DeviceHeldError,
-  DeviceSessionRequiredError,
   DevicePlatformUnavailableError,
   DeviceNotFoundError,
   DeviceBootError,
@@ -680,23 +648,6 @@ export const DeviceToolTargetInput = Schema.Struct({
 });
 export type DeviceToolTargetInput = typeof DeviceToolTargetInput.Type;
 
-export const DeviceMemoryToolInput = Schema.Struct({
-  ...DeviceToolTargetInput.fields,
-  request: Schema.Union([
-    Schema.Struct({ operation: Schema.Literal("inspect") }),
-    Schema.Struct({ operation: Schema.Literal("prepare") }),
-    Schema.Struct({ operation: Schema.Literal("apply"), mode: Schema.Literal("standard") }),
-    Schema.Struct({
-      operation: Schema.Literal("apply"),
-      mode: Schema.Literal("low-memory"),
-      keepCapabilities: Schema.Array(TrimmedNonEmptyString).annotate({
-        description:
-          "Capability IDs from inspect to keep enabled for this app. Inspect its source and entitlements first.",
-      }),
-    }),
-  ]),
-});
-
 export const DeviceToolScreenshotResult = Schema.Struct({
   device: DeviceSummary,
   screenshot: Schema.Struct({
@@ -739,7 +690,6 @@ export const DeviceToolError = Schema.Union([
   DeviceToolUnavailableError,
   DeviceHostUnavailableError,
   DeviceHeldError,
-  DeviceSessionRequiredError,
   DevicePlatformUnavailableError,
   DeviceNotFoundError,
   DeviceBootError,

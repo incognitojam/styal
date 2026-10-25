@@ -7,8 +7,6 @@ import {
   DeviceToolOpenResult,
   DeviceToolScreenshotResult,
   DeviceToolTargetInput,
-  DeviceMemoryToolInput,
-  SimulatorMemoryState,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as FileSystem from "effect/FileSystem";
@@ -92,26 +90,7 @@ const DeviceCloseTool = Tool.make("device_close", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, true);
 
-const DeviceMemoryTool = Tool.make("device_memory", {
-  description:
-    "Inspect or configure an open iOS simulator's memory profile on its host Mac. Inspect returns guidance for choosing services from the app's source and test plan. Prepare installs the pinned helper without changing services. Apply restarts this simulator; low-memory mode disables services except the requested capabilities, and standard restores them. Requires this thread's device to be unshared.",
-  parameters: DeviceMemoryToolInput,
-  success: Schema.Struct({ memory: SimulatorMemoryState, guidance: Schema.String }),
-  failure: DeviceToolFailure,
-  dependencies,
-})
-  .annotate(Tool.Title, "Simulator memory")
-  .annotate(Tool.Readonly, false)
-  .annotate(Tool.Destructive, false)
-  .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, true);
-
-export const DeviceStandardToolkit = Toolkit.make(
-  DeviceListTool,
-  DeviceOpenTool,
-  DeviceCloseTool,
-  DeviceMemoryTool,
-);
+export const DeviceStandardToolkit = Toolkit.make(DeviceListTool, DeviceOpenTool, DeviceCloseTool);
 
 export const DeviceScreenshotToolkit = Toolkit.make(DeviceScreenshotTool);
 
@@ -120,5 +99,4 @@ export const DeviceToolkit = Toolkit.make(
   DeviceOpenTool,
   DeviceScreenshotTool,
   DeviceCloseTool,
-  DeviceMemoryTool,
 );

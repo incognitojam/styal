@@ -46,6 +46,8 @@ counts. Paths, branch prefixes, instructions, model choices, and per-project set
 collected; for those it reports only whether they were changed or how many projects have their own
 settings.
 
+Simulator memory reporting includes the environment's chosen mode and how many projects explicitly choose Low memory. Project names, identifiers, and app capabilities are not collected.
+
 Web and desktop apps also report their own settings once a day, such as the send shortcut, follow-up
 behavior, sidebar grouping and sorting, sounds, font sizes and browser defaults. Font names, browser
 profile names, and your projects are not collected; the app reports only whether you changed a font,
