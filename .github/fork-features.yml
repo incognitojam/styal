@@ -2758,6 +2758,7 @@ features:
       - packages/shared/src/keybindings.ts
     tests:
       - apps/web/src/components/Sidebar.logic.test.ts
+      - e2e/tests/thread-navigation.e2e.ts
     upstream:
       status: unassessed
       tracking: []
