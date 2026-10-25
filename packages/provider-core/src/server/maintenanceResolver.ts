@@ -89,7 +89,7 @@ export interface PackageManagedProviderMaintenanceDefinition {
     /**
      * The installer command that installs exactly `version` into the install
      * at `context`, when the provider's installer can pin one. Used only for
-     * paths `isCommandPath` proves, and never on Windows.
+     * paths `isCommandPath` proves; Windows needs `supportsWindowsPinning`.
      */
     readonly pinned?: (
       version: string,
@@ -101,6 +101,8 @@ export interface PackageManagedProviderMaintenanceDefinition {
       /** Shown instead of `<executable> <args>`, for a command run through a shell script. */
       readonly command?: string;
     };
+    /** Opt in only when the native installer can pin exactly on Windows too. */
+    readonly supportsWindowsPinning?: boolean;
     /**
      * Whether the provider's own updater still owns the install `pinned`
      * targets; null when that cannot be read. A cheap read-only file check.
@@ -434,7 +436,12 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     : manual;
   if (nativeUpdate?.isCommandPath && commandPaths.some(nativeUpdate.isCommandPath)) {
     const pinned = nativeUpdate.pinned;
-    if (!pinned || context.platform === "win32" || native.update === null) return native;
+    if (
+      !pinned ||
+      (context.platform === "win32" && nativeUpdate.supportsWindowsPinning !== true) ||
+      native.update === null
+    )
+      return native;
     const lockKey = native.update.lockKey;
     const selfUpdaterActive = nativeUpdate.selfUpdaterActive
       ? yield* nativeUpdate.selfUpdaterActive(context)
@@ -458,9 +465,10 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
           ...action,
           command:
             action.command ??
-            [action.executable, ...action.args]
-              .map((word) => quoteShellWord(word, context.platform))
-              .join(" "),
+            [
+              quoteUpdateExecutable(action.executable, context.platform),
+              ...action.args.map((word) => quoteShellWord(word, context.platform)),
+            ].join(" "),
           lockKey,
         };
       },

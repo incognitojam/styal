@@ -1238,7 +1238,7 @@ it("pins only owned package-manager installs and preserves their execution conte
   expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0; rm -rf /")).toBeNull();
 });
 
-it("pins a proven native install through its own installer on POSIX only", () =>
+it("pins a proven native install through its own installer, excluding Windows by default", () =>
   Effect.gen(function* () {
     const definition = {
       provider: driver("nativePackageTool"),
@@ -1300,7 +1300,7 @@ it("pins a proven native install through its own installer on POSIX only", () =>
     );
     expect(detected.selfUpdaterActive).toBe(true);
 
-    // Windows native installs cannot be held to a version.
+    // Native installers must opt into Windows pinning at the provider boundary.
     const windows = yield* resolve("win32", "C:/Users/Developer/.local/bin/native-package-tool");
     expect(windows.update?.args).toEqual(["update"]);
     expect(makeTargetedProviderUpdateAction(windows, "2.0.0")).toBeNull();
@@ -1311,3 +1311,43 @@ it("pins a proven native install through its own installer on POSIX only", () =>
     expect(unproven.update?.args).toEqual(["update"]);
     expect(makeTargetedProviderUpdateAction(unproven, "2.0.0")).toBeNull();
   }).pipe(Effect.provide(NodeServices.layer), Effect.runPromise));
+
+it.effect("does not expose a POSIX-only native installer or its updater controls on Windows", () =>
+  Effect.gen(function* () {
+    const binaryPath = "C:\\Users\\Developer\\.codex\\packages\\standalone\\bin\\codex.exe";
+    const capabilities = yield* resolvePackageManagedProviderMaintenance(
+      {
+        provider: driver("codex"),
+        npmPackageName: "@openai/codex",
+        nativeUpdate: {
+          args: ["update"],
+          isCommandPath: isNativeTestCommandPath("/packages/standalone/"),
+          pinned: (version) => ({ executable: "/bin/sh", args: ["install.sh", version] }),
+          selfUpdaterActive: () =>
+            Effect.die("An unsupported installer must not read updater state"),
+          selfUpdater: () => {
+            throw new Error("An unsupported installer must not expose updater controls");
+          },
+        },
+      },
+      {
+        binaryPath,
+        resolvedCommandPath: binaryPath,
+        realCommandPath: binaryPath,
+        env: {},
+        platform: "win32",
+      },
+    );
+    expect(capabilities.update?.args).toEqual(["update"]);
+    expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")).toBeNull();
+    expect(capabilities.selfUpdaterActive).toBeUndefined();
+    expect(capabilities.selfUpdater).toBeUndefined();
+    expect(
+      createProviderVersionAdvisory({
+        driver: driver("codex"),
+        currentVersion: "1.0.0",
+        maintenanceCapabilities: capabilities,
+      }).canInstallVersion,
+    ).toBe(false);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);

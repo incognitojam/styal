@@ -1,4 +1,5 @@
 import { describe, it, assert } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -12,7 +13,9 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
@@ -32,9 +35,11 @@ import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import { makeClaudeMaintenance } from "./Drivers/ClaudeDriver.ts";
 import {
   makeProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilities,
+  type ProviderMaintenanceResolverServices,
 } from "@t3tools/provider-core/server/maintenanceResolver";
 const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
 
@@ -138,7 +143,10 @@ function layerMockSpawner(
   handler: (
     command: string,
     args: ReadonlyArray<string>,
-    options: { readonly env?: NodeJS.ProcessEnv | undefined },
+    options: {
+      readonly env?: NodeJS.ProcessEnv | undefined;
+      readonly shell?: boolean | string | undefined;
+    },
   ) => {
     readonly stdout?: string;
     readonly stderr?: string;
@@ -152,7 +160,10 @@ function layerMockSpawner(
       const childProcess = command as unknown as {
         readonly command: string;
         readonly args: ReadonlyArray<string>;
-        readonly options: { readonly env?: NodeJS.ProcessEnv | undefined };
+        readonly options: {
+          readonly env?: NodeJS.ProcessEnv | undefined;
+          readonly shell?: boolean | string | undefined;
+        };
       };
       return Effect.succeed(
         mockHandle(handler(childProcess.command, childProcess.args, childProcess.options)),
@@ -1678,6 +1689,113 @@ describe("provider.update.finished", () => {
       );
     },
   );
+
+  it.effect("runs Windows Claude pins without a shell and preserves updater ownership", () => {
+    const events: Array<RecordedEvent> = [];
+    const binaryPath = "C:\\Users\\Dev Team's\\.local\\bin\\claude.exe";
+    const calls: Array<{ command: string; args: ReadonlyArray<string>; shell: unknown }> = [];
+    const lockKeys: string[] = [];
+    const childPids: number[] = [];
+    let installedVersion = "2.1.302";
+    return Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const services = yield* Effect.context<ProviderMaintenanceResolverServices>();
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "styal-windows-claude-runner-" });
+      const configDir = path.join(root, ".claude");
+      const settingsPath = path.join(configDir, "settings.json");
+      const resolve = makeClaudeMaintenance({
+        configDir,
+        accountConfigPath: path.join(root, ".claude.json"),
+      })
+        .resolve({
+          binaryPath,
+          resolvedCommandPath: binaryPath,
+          realCommandPath: binaryPath,
+          env: {},
+          platform: "win32",
+        })
+        .pipe(Effect.provideContext(services));
+      const driver = ProviderDriverKind.make("claudeAgent");
+      const { registry, providersRef } = yield* makeRegistry({
+        ...baseProvider,
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        driver,
+        version: installedVersion,
+      });
+      const makeRunner = (managedUpdates: boolean) =>
+        makeTestRunner(
+          {
+            ...registry,
+            getProviderMaintenanceCapabilitiesForInstance: () => resolve,
+            refreshInstance: () =>
+              Ref.updateAndGet(providersRef, (providers) =>
+                providers.map((provider) => ({ ...provider, version: installedVersion })),
+              ),
+          },
+          { version: 1, currentModels: {}, compatibility: [] },
+          {
+            tryRun: (lockKey, run) => {
+              lockKeys.push(lockKey);
+              return run((pid) => Effect.sync(() => void childPids.push(pid))).pipe(Effect.asSome);
+            },
+          },
+          events,
+          { autoUpdateProviders: managedUpdates },
+        );
+      const managed = yield* makeRunner(true);
+      const background = yield* managed.updateProvider({
+        provider: driver,
+        targetVersion: "2.1.303",
+        autoUpdate: { shouldStart: Effect.succeed(true) },
+      });
+      assert.strictEqual(background.providers[0]?.updateState?.status, "succeeded");
+      assert.strictEqual((yield* resolve).selfUpdaterActive, false);
+      const ownedSettings = yield* fs.readFileString(settingsPath);
+      const manualManaged = yield* managed.updateProvider(driver);
+      assert.strictEqual(manualManaged.providers[0]?.updateState?.status, "succeeded");
+      assert.strictEqual(yield* fs.readFileString(settingsPath), ownedSettings);
+      const unmanaged = yield* makeRunner(false);
+      const manual = yield* unmanaged.updateProvider(driver);
+      assert.strictEqual(manual.providers[0]?.updateState?.status, "succeeded");
+      assert.strictEqual((yield* resolve).selfUpdaterActive, true);
+      assert.deepStrictEqual(calls, [
+        { command: binaryPath, args: ["install", "2.1.303"], shell: false },
+        { command: binaryPath, args: ["update"], shell: false },
+        { command: binaryPath, args: ["update"], shell: false },
+      ]);
+      assert.deepStrictEqual(lockKeys, Array(3).fill("claudeAgent-native"));
+      assert.deepStrictEqual(childPids, [1, 1, 1]);
+      assert.deepStrictEqual(
+        events,
+        ["background", "manual", "manual"].map((source, index) =>
+          finished({
+            source,
+            driver: "claudeAgent",
+            fromVersion: index === 0 ? "2.1.302" : "2.1.303",
+            targetVersion: index === 0 ? "2.1.303" : null,
+            resultVersion: "2.1.303",
+            outcome: "success",
+          }),
+        ),
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          Layer.succeed(HostProcess.Platform, "win32"),
+          Layer.succeed(SpawnExecutableResolution, () => binaryPath),
+          layerLatestVersionHttpClient("2.1.303"),
+          layerMockSpawner((command, args, options) => {
+            calls.push({ command, args, shell: options.shell });
+            installedVersion = "2.1.303";
+            return { stdout: "installed" };
+          }),
+        ),
+      ),
+      Effect.scoped,
+    );
+  });
 
   it.effect("records an interrupted install once", () => {
     const events: Array<RecordedEvent> = [];

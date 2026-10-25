@@ -175,10 +175,11 @@ still install it yourself.
 
 Managed updates are on by default. Turn them on or off in **Settings → General**
 (**Settings → Maintenance** on mobile); they need provider update checks on.
-They cover providers installed with npm, Bun, pnpm, Yarn, Vite+, or Volta, and on
-macOS and Linux also Claude Code, Codex, and OpenCode 2 installed with their own
-installers. Homebrew, other native installers, and native installs on Windows keep
-updating the way they always have.
+They cover providers installed with npm, Bun, pnpm, Yarn, Vite+, or Volta, and
+Claude Code installed with its own installer on macOS, Linux, and Windows.
+Codex and OpenCode 2 native installs are covered on macOS and Linux.
+WinGet, Homebrew, unrecognized install locations, and other native installers
+keep updating the way they always have.
 
 For native Claude Code and Codex installs, styal manages updates in place of the
 provider's own updater. If one already has the tested version, styal reinstalls
