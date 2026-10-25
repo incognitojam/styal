@@ -351,6 +351,7 @@ overrides:
   app-builder-lib: 26.16.1
   react-native-reanimated: 4.7.1
   "@muse-code/sdk": 1.4.6
+  expo-video: 58.0.11
 
 packageExtensions:
   "@clerk/expo@*":
@@ -372,6 +373,7 @@ patchedDependencies:
   micromark-extension-gfm-table@2.1.1: patches/micromark-extension-gfm-table@2.1.1.patch
   alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
   expo-audio@58.0.9: patches/expo-audio@58.0.9.patch
+  expo-video@58.0.11: patches/expo-video@58.0.11.patch
   expo-network@58.0.3: patches/expo-network@58.0.3.patch
   "@clerk/expo-native-components@0.4.0": patches/@clerk__expo-native-components@0.4.0.patch
   # Staple retries never ran: the promise-retry callback ignored `retry`. Fixed in @electron/notarize 3.x, but electron-builder pins 2.5.0.
