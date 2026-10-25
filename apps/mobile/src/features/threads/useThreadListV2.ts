@@ -1,6 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { SidebarThreadTimestampMode } from "@t3tools/contracts/settings";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -62,10 +62,15 @@ export function useThreadListV2(input: {
   readonly timestampMode: SidebarThreadTimestampMode;
 }) {
   const { threads, workingShelfEnabled, archivedProjectKeys, projectGrouping } = input;
-  // Observed once per change to the threads: that is when a thread can stop working.
-  const inboxReturnAt = useMemo(
+  // A thread can stop working when the threads change, or when its exit grace expires.
+  const inboxVersion = useSyncExternalStore(
+    threadListInboxReturns.subscribe,
+    threadListInboxReturns.getSnapshot,
+  );
+  const inbox = useMemo(
     () => threadListInboxReturns.observe(workingShelfEnabled ? threads : null),
-    [threads, workingShelfEnabled],
+    // oxlint-disable-next-line react/memo-dependencies -- the version signals an expired grace
+    [threads, workingShelfEnabled, inboxVersion],
   );
   const layout = buildThreadListV2Items({
     pendingOrder: input.pendingOrder,
@@ -85,7 +90,8 @@ export function useThreadListV2(input: {
     now: input.now,
     workingShelfEnabled,
     workingShelfExpanded: input.workingShelfExpanded,
-    inboxReturnAt,
+    inboxReturnAt: inbox.returnedAt,
+    isWorking: inbox.isWorking,
     snoozedShelfExpanded: input.snoozedShelfExpanded,
     settledShelfExpanded: input.settledShelfExpanded,
     selectedThreadKey: input.selectedThreadKey,

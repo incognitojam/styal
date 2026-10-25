@@ -6,13 +6,14 @@ import {
   RuntimeRequestId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
+import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import { expect, it, vi } from "vite-plus/test";
 import { EMPTY_SHELL_STATE, type EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
 
-import { render, stubGlobal, type Screen } from "../../test/render";
+import { fakeTimers, render, stubGlobal, type Screen } from "../../test/render";
 
 const state = vi.hoisted(() => ({
   shell: {} as EnvironmentShellState,
@@ -143,11 +144,13 @@ function setup() {
 it("alerts once for a live completion using the persisted sample and opens its environment/thread", async () => {
   await using app = setup();
   await app.render();
+  using _timers = fakeTimers();
   expect(notifications).toHaveLength(0);
   state.shell = snapshot(true);
   await app.render();
   state.shell = snapshot(true);
   await app.render();
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
   expect(state.play).toHaveBeenCalledExactlyOnceWith("completion", expect.any(Function), "avanti");
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.title).toBe("Thread completed");
