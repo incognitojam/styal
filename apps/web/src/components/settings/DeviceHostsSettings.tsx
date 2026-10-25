@@ -66,10 +66,11 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
     if (!props.environmentId || projectScope) return;
     setBusy(true);
     const results = await Promise.allSettled(
-      environments.map(async (environment) => {
-        if (environment.connection.phase !== "connected" || !environment.serverConfig) {
-          throw new Error("Environment disconnected");
-        }
+      connectedEnvironments.map(async (environment) => {
+        if (!environment.serverConfig) return;
+        const hosts = environment.serverConfig.settings.deviceHosts;
+        const deviceHosts = updateDeviceHosts(hosts, host, remove, original);
+        if (deviceHosts === hosts) return;
         if (!readEnvironmentScope(environment.environmentId, AuthSettingsWriteScope)) {
           throw new Error("This connection cannot change device settings.");
         }
@@ -77,21 +78,16 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
           environmentId: environment.environmentId,
           input: {
             patch: {
-              deviceHosts: updateDeviceHosts(
-                environment.serverConfig.settings.deviceHosts,
-                host,
-                remove,
-                original,
-              ),
+              deviceHosts,
             },
           },
         });
       }),
     );
     setBusy(false);
-    const failed = environments.filter((_, index) => {
+    const failed = connectedEnvironments.filter((_, index) => {
       const result = results[index];
-      return result?.status !== "fulfilled" || result.value._tag === "Failure";
+      return result?.status !== "fulfilled" || result.value?._tag === "Failure";
     });
     if (failed.length === 0) {
       setEditing(null);
