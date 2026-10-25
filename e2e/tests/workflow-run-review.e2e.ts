@@ -50,8 +50,6 @@ describe("review a watched workflow deployment", () => {
 
   async function watch(run: FakeGitHubWorkflowRun) {
     await app.page.getByRole("button", { name: "New thread in demo-app", exact: true }).click();
-    // Typing before the new thread renders can lose the prompt when its editor replaces the old one.
-    await app.page.getByRole("heading", { name: "What should we build in demo-app?" }).waitFor();
     await sendMessage(app, `Watch ${run.name}`, `Watching ${run.name}.`);
     // A fresh server reads durable watches immediately, without waiting for its two-minute timer.
     await environment.restart();
