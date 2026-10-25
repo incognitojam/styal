@@ -3,11 +3,14 @@ import {
   DesktopUpdateChannelSchema,
   DesktopUpdateCheckResultSchema,
   DesktopUpdateStateSchema,
+  DesktopHostActivitySchema,
+  DesktopUpdateInstallInputSchema,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import * as DesktopUpdates from "../../updates/DesktopUpdates.ts";
+import * as DesktopShutdownGuard from "../../app/DesktopShutdownGuard.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 
@@ -43,11 +46,22 @@ export const downloadUpdate = DesktopIpc.makeIpcMethod({
 
 export const installUpdate = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.UPDATE_INSTALL_CHANNEL,
-  payload: Schema.Void,
+  payload: Schema.UndefinedOr(DesktopUpdateInstallInputSchema),
   result: DesktopUpdateActionResultSchema,
-  handler: Effect.fn("desktop.ipc.updates.install")(function* () {
+  handler: Effect.fn("desktop.ipc.updates.install")(function* (input) {
     const updates = yield* DesktopUpdates.DesktopUpdates;
-    return yield* updates.install;
+    return yield* input === undefined
+      ? updates.install
+      : updates.installPrepared(input.expectedVersion);
+  }),
+});
+
+export const getLocalHostActivity = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.UPDATE_GET_LOCAL_ACTIVITY_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Array(Schema.NullOr(DesktopHostActivitySchema)),
+  handler: Effect.fn("desktop.ipc.updates.getLocalHostActivity")(function* () {
+    return yield* (yield* DesktopShutdownGuard.DesktopShutdownGuard).inspect;
   }),
 });
 

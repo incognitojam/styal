@@ -11,7 +11,7 @@ import type {
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
-import { HostActivityThread } from "./environmentHttp.ts";
+import { HostActivity, HostActivityThread } from "./environmentHttp.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { DesktopDiscordPresenceStatus } from "./discordPresence.ts";
 import type { EditorId } from "./editor.ts";
@@ -1059,6 +1059,17 @@ export const DesktopShutdownConfirmationRequestSchema = Schema.Struct({
 export type DesktopShutdownConfirmationRequest =
   typeof DesktopShutdownConfirmationRequestSchema.Type;
 
+export const DesktopHostActivitySchema = Schema.Struct({
+  ...HostActivity.fields,
+  hostLabel: Schema.optionalKey(Schema.String),
+});
+export type DesktopHostActivity = typeof DesktopHostActivitySchema.Type;
+
+export const DesktopUpdateInstallInputSchema = Schema.Struct({
+  expectedVersion: TrimmedNonEmptyString,
+});
+export type DesktopUpdateInstallInput = typeof DesktopUpdateInstallInputSchema.Type;
+
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access", "notifications"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
@@ -1201,7 +1212,9 @@ export interface DesktopBridge {
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
-  installUpdate: () => Promise<DesktopUpdateActionResult>;
+  getLocalHostActivity?: () => Promise<ReadonlyArray<DesktopHostActivity | null>>;
+  /** A combined update confirmation pins the version and covers the local restart. */
+  installUpdate: (input?: DesktopUpdateInstallInput) => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
   /** Settings → `styal` command. Optional: older desktop builds lack it. */
   cliCommand?: {

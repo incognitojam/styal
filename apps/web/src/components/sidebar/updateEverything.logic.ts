@@ -1,5 +1,5 @@
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
-import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
+import type { ConfirmDialogThreadActivity, EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import { cliReleaseChannelOf } from "@t3tools/shared/cliRelease";
 
 import {
@@ -26,6 +26,13 @@ export interface UpdateEverythingMachine {
 export interface RestartingMachine {
   readonly environmentId: EnvironmentId;
   readonly continuesThreads: boolean;
+}
+
+export interface UpdateEverythingConfirmation {
+  readonly lines: ReadonlyArray<string>;
+  readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
+  /** The local version whose restart activity was included in this confirmation. */
+  readonly localVersion: string | null;
 }
 
 export function collectRestartingMachines(

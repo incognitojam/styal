@@ -27,7 +27,7 @@ import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
 import { SidebarWebUpdatePill } from "./SidebarWebUpdatePill";
 import { SidebarUpdateCapsule } from "./SidebarUpdateCapsule";
 import { UpdateEverythingDialog } from "./UpdateEverythingDialog";
-import type { UpdateRunLocalState } from "./updateEverything.logic";
+import type { UpdateEverythingConfirmation, UpdateRunLocalState } from "./updateEverything.logic";
 import {
   clearSavedUpdateEverythingResult,
   saveUpdateEverythingResult,
@@ -91,9 +91,13 @@ const toastUpdateError: ReportLocalUpdateError = (title, description) => {
 async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
+  expectedVersion?: string,
 ): Promise<boolean> {
   try {
-    const result = await bridge.installUpdate();
+    const result =
+      expectedVersion === undefined
+        ? await bridge.installUpdate()
+        : await bridge.installUpdate({ expectedVersion });
     if (!result.accepted) {
       showDesktopUpdateDownloadedToast(bridge, result.state);
       return false;
@@ -134,8 +138,7 @@ function SidebarUpdateControl() {
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
-  // The fork's running-work check for the servers a run updates; null while it runs.
-  const [serverCheck, setServerCheck] = useState<ReadonlyArray<string> | null>([]);
+  const [activityCheck, setActivityCheck] = useState<UpdateEverythingConfirmation | null>(null);
   const serverCheckRequest = useRef(0);
   const action = state ? resolveDesktopUpdateButtonAction(state) : "none";
   const showsLocalUpdate = shouldShowDesktopUpdateButton(state);
@@ -177,15 +180,19 @@ function SidebarUpdateControl() {
     if (isInteractionDisabled) return;
     if (runsEverything) {
       const request = ++serverCheckRequest.current;
-      setServerCheck(null);
+      setActivityCheck(null);
       setIsConfirmingEverything(true);
-      void everything.checkServers().then(
-        (lines) => {
-          if (serverCheckRequest.current === request) setServerCheck(lines);
+      void everything.checkActivity().then(
+        (activity) => {
+          if (serverCheckRequest.current === request) setActivityCheck(activity);
         },
         () => {
           if (serverCheckRequest.current === request) {
-            setServerCheck(["Could not check the servers for running work."]);
+            setActivityCheck({
+              lines: ["Could not check the servers for running work."],
+              threadActivity: [],
+              localVersion: null,
+            });
           }
         },
       );
@@ -204,7 +211,10 @@ function SidebarUpdateControl() {
     const result = await settlePromise(() =>
       everything.run(
         bridge && action === "install"
-          ? { installLocal: (reportError) => installLocalUpdate(bridge, reportError) }
+          ? {
+              installLocal: (reportError) =>
+                installLocalUpdate(bridge, reportError, activityCheck?.localVersion ?? undefined),
+            }
           : {},
       ),
     );
@@ -235,9 +245,8 @@ function SidebarUpdateControl() {
       onOpenChange={setIsConfirmingEverything}
       summary={everything.summary}
       lines={everything.lines}
-      restarts={everything.restarts}
       skipped={everything.skipped}
-      serverCheck={serverCheck}
+      activity={activityCheck}
       onConfirm={() => void runEverything()}
     />
   );

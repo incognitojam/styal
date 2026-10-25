@@ -136,16 +136,18 @@ async function checkServerUpdateHosts(
 
 /**
  * Checks servers for running work ahead of a confirmation the caller shows
- * itself, then passes `confirmed` to `useServerUpdates`. Resolves to the lines
- * describing what the updates would interrupt; none when nothing would be.
+ * itself, then passes `confirmed` to `useServerUpdates`.
  */
 export function useServerUpdateCheck() {
   const readHostActivity = useReadHostActivity();
-  return async (targets: ReadonlyArray<ServerUpdateTarget>): Promise<ReadonlyArray<string>> => {
-    if (targets.length === 0) return [];
-    const confirmation = await checkServerUpdateHosts(readHostActivity, targets);
+  return async (targets: ReadonlyArray<ServerUpdateTarget>) => {
+    const confirmation =
+      targets.length === 0 ? null : await checkServerUpdateHosts(readHostActivity, targets);
     // The first line repeats the question the caller's own confirmation asks.
-    return confirmation?.message.split("\n").slice(1) ?? [];
+    return {
+      lines: confirmation?.message.split("\n").slice(1) ?? [],
+      threadActivity: confirmation?.threadActivity ?? [],
+    };
   };
 }
 
