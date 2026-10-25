@@ -173,6 +173,7 @@ const SavedResult = Schema.Struct({
   updatedServers: Schema.Number,
   updatedProviders: Schema.Number,
   failures: Schema.Array(Schema.String),
+  skipped: Schema.optionalKey(Schema.Array(Schema.String)),
   handedOff: Schema.optional(Schema.Array(HandedOffServer)),
 });
 const decodeSavedResult = Schema.decodeUnknownOption(Schema.fromJsonString(SavedResult));
@@ -206,6 +207,7 @@ export function saveUpdateEverythingResult(result: UpdateEverythingResult): void
         updatedServers: result.updatedServers,
         updatedProviders: result.updatedProviders,
         failures: result.failures,
+        ...(result.skipped?.length ? { skipped: result.skipped } : {}),
         handedOff,
       } satisfies typeof SavedResult.Type),
     );

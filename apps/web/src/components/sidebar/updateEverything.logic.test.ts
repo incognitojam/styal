@@ -317,7 +317,6 @@ describe("update everything summary", () => {
       { label: "alvin", outcome: { status: "failed", message: "Download failed." } },
       { label: "box", outcome: { status: "updated" } },
       { label: "studio", outcome: { status: "updated" } },
-      { label: "busy", outcome: { status: "skipped" } },
     ],
     providers: [
       { status: "updated" },
@@ -362,6 +361,12 @@ describe("update everything summary", () => {
       getUpdateEverythingToastView({ ...empty, failures: ["alvin: offline"] }, "0.0.50"),
     ).toEqual({ type: "error", title: "Update failed", description: "alvin: offline" });
     expect(getUpdateEverythingToastView({ ...empty, failures: [] }, "0.0.50")).toBeNull();
+    expect(
+      getUpdateEverythingToastView(
+        { ...empty, failures: [], restarting: ["Build machine"] },
+        "0.0.50",
+      ),
+    ).toBeNull();
   });
 
   it("names servers still restarting when this app relaunched", () => {
@@ -374,6 +379,40 @@ describe("update everything summary", () => {
       type: "success",
       title: "Updated this app, 2 servers, and 1 provider",
       description: "alvin and zbook are still restarting.",
+    });
+  });
+
+  it.each([
+    { updated: true, failed: false, title: "Updated 1 server", type: "warning" },
+    { updated: false, failed: false, title: "No updates completed", type: "warning" },
+    { updated: false, failed: true, title: "Update failed", type: "error" },
+  ])("reports skipped machines when the outcome is $title", ({ updated, failed, title, type }) => {
+    const summary = collectUpdateEverythingResult({
+      localVersion: null,
+      localFailures: [],
+      servers: [
+        ...(updated ? [{ label: "Build machine", outcome: { status: "updated" as const } }] : []),
+        ...(failed
+          ? [
+              {
+                label: "Build machine",
+                outcome: { status: "failed" as const, message: "Download failed." },
+              },
+            ]
+          : []),
+        { label: "Test machine", outcome: { status: "skipped" } },
+      ],
+      providers: [],
+      skipped: [{ label: "Offline machine", reason: "not connected" }],
+    });
+    expect(getUpdateEverythingToastView(summary, "0.0.50")).toEqual({
+      type,
+      title,
+      description: [
+        ...(failed ? ["Build machine: Download failed."] : []),
+        "Skipped Offline machine: not connected.",
+        "Skipped Test machine: update did not start.",
+      ].join("\n"),
     });
   });
 });
