@@ -114,6 +114,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server accepts server.reportNetworkConditions. Clients keep reports on the
       device instead of sending them to servers that lack this. */
   networkReports: Schema.optionalKey(Schema.Boolean),
+  /** Honors `workspaceSnapshotsOnDemand`; older servers send every snapshot and drop them in the stream. */
+  providerWorkspaceSnapshotsOnDemand: Schema.optionalKey(Schema.Boolean),
   usagePriceOverrides: Schema.optionalKey(Schema.Boolean),
   usageModelAliases: Schema.optionalKey(Schema.Boolean),
   threadPinning: Schema.optionalKey(Schema.Boolean),
