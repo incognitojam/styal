@@ -2741,13 +2741,19 @@ function PullRequestDetailPanelBody({
                   )
                 }
                 head={
-                  <PullRequestCopyableCode
-                    key={detail.headBranch}
-                    value={detail.headBranch}
-                    target="branch name"
-                    copyLabel="Copy pull request branch"
-                    copiedLabel="Branch name copied"
-                  />
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <PullRequestCopyableCode
+                      key={detail.headBranch}
+                      value={detail.headBranch}
+                      target="branch name"
+                      copyLabel="Copy pull request branch"
+                      copiedLabel="Branch name copied"
+                      className={
+                        detail.headBranchState === "deleted" ? "[&_code]:line-through" : ""
+                      }
+                    />
+                    <PullRequestHeadBranchStatus detail={detail} environmentId={environmentId} />
+                  </span>
                 }
                 files={`${detail.changedFiles.toLocaleString()} ${detail.changedFiles === 1 ? "file" : "files"}`}
                 diffStat={
@@ -2762,9 +2768,6 @@ function PullRequestDetailPanelBody({
           </div>
         </div>
 
-        {detail ? (
-          <PullRequestHeadBranchStatus detail={detail} environmentId={environmentId} />
-        ) : null}
         {detail ? (
           <PullRequestDetailTabBar
             tabs={visibleTabs}

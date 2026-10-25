@@ -1,5 +1,6 @@
 import type { EnvironmentId, PullRequestDetail } from "@t3tools/contracts";
 import { pullRequestHeadBranchStatus } from "@t3tools/client-runtime/pull-request-branch";
+import { CircleHelpIcon, GitBranchIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { reportForkClientUsage } from "~/forkClientUsage";
@@ -25,5 +26,20 @@ export function PullRequestHeadBranchStatus({
     });
   }, [detail.url, detail.headBranchState, environmentId, label]);
   if (label === null) return null;
-  return <p className="px-4 pb-3 text-xs text-muted-foreground">Head branch: {label}</p>;
+  const Icon =
+    detail.headBranchState === "deleted"
+      ? Trash2Icon
+      : detail.headBranchState === "present"
+        ? GitBranchIcon
+        : CircleHelpIcon;
+  return (
+    <span
+      role="status"
+      aria-label={`Head branch: ${label}`}
+      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-sans text-xs text-muted-foreground"
+    >
+      <Icon aria-hidden className="size-3" />
+      {label}
+    </span>
+  );
 }
