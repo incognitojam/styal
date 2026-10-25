@@ -231,7 +231,7 @@ it.layer(layer)("V2 source history import", (it) => {
         assert.equal(projection.providerTurns[0]?.turnTokenUsage?.costUsd, 12.345);
         assert.equal(projection.messages[0]?.text, "Recorded answer");
         assert.equal(projection.messages[0]?.streaming, false);
-        assert.deepEqual(projection.turnItems[0], { ...source.turnItems[0], ordinal: 1000001 });
+        assert.deepEqual(projection.turnItems[0], { ...source.turnItems[0]!, ordinal: 1000001 });
         assert.deepEqual(projection.providerSessions, []);
         const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
         yield* maintenance.compactEventStore;
