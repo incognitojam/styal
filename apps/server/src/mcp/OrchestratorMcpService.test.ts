@@ -18,6 +18,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import {
@@ -37,6 +38,7 @@ import { buildUnavailableProviderSnapshot } from "../provider/unavailableProvide
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import { idleThreadProjection, liveThreadShell } from "./McpToolAccess.testkit.ts";
@@ -2135,6 +2137,206 @@ describe("OrchestratorMcpService provider resolution", () => {
         assert.equal(yield* Ref.get(upserted), 1);
         assert.equal(updated.scheduledTaskId, bound.id);
         assert.equal(updated.webhookUrl, undefined);
+      }),
+    );
+  });
+
+  describe("an agent limited to its own project", () => {
+    const callerId = ThreadId.make("thread:limited");
+    // Supervised, so another project's full-access task would also fail the
+    // mode check; the project refusal comes first.
+    const caller = liveThreadShell(callerId, { runtimeMode: "approval-required" });
+    const otherProjectId = ProjectId.make("project:other");
+    const scope: McpInvocationScope = {
+      environmentId: EnvironmentId.make("environment:limited"),
+      requestNamespace: "provider:limited",
+      thread: {
+        threadId: callerId,
+        providerSessionId: "provider:limited",
+        providerInstanceId: caller.providerInstanceId,
+      },
+      client: undefined,
+      capabilities: new Set(["orchestration"]),
+      issuedAt: 1,
+    };
+    const otherTask: ScheduledTask = {
+      id: ScheduledTaskId.make("scheduled-task:other"),
+      title: "Nightly",
+      prompt: "Check the build",
+      enabled: true,
+      schedule: { type: "interval", everyMs: 3_600_000 },
+      projectId: otherProjectId,
+      threadId: null,
+      workspaceStrategy: { type: "root" },
+      modelSelection: caller.modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdBy: "agent",
+      creationSource: "mcp",
+      createdAt: "2026-10-05T00:00:00.000Z",
+      updatedAt: "2026-10-05T00:00:00.000Z",
+      nextRunAt: null,
+      lastRunAt: null,
+      lastRunStatus: "never",
+      lastRunError: null,
+      runCount: 0,
+    };
+
+    it.effect(
+      "refuses another project's threads and scheduled tasks and records each refusal",
+      () =>
+        Effect.gen(function* () {
+          const recorded: Array<Readonly<Record<string, unknown>> | undefined> = [];
+          const changed = yield* Ref.make(0);
+          const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+            Effect.provide(
+              layerOrchestratorService.pipe(
+                Layer.provide(
+                  Layer.mergeAll(
+                    NodeServices.layer,
+                    Layer.mock(ThreadManagementService.ThreadManagementService)({
+                      getThreadShell: () => Effect.succeed(caller),
+                      getThreadRecords: () => Effect.succeed(idleThreadProjection(caller)),
+                      listProjectThreads: () => Effect.succeed([]),
+                    }),
+                    ServerSettings.layerTest({
+                      projectSettingsOverrides: {
+                        [caller.projectId]: { enableAgentCrossProjectAccess: false },
+                      },
+                    }),
+                    Layer.mock(ProviderRegistry.ProviderRegistry)({
+                      getProviders: Effect.succeed([]),
+                    }),
+                    Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+                      list: () => Effect.succeed([]),
+                    }),
+                    Layer.mock(ProjectService.ProjectService)({}),
+                    Layer.mock(SecretRequests.SecretRequests)({}),
+                    Layer.mock(ScheduledTaskService.ScheduledTaskService)({
+                      list: () => Effect.succeed({ tasks: [otherTask] }),
+                      upsert: () =>
+                        Ref.update(changed, (count) => count + 1).pipe(
+                          Effect.as({ task: otherTask }),
+                        ),
+                      delete: () =>
+                        Ref.update(changed, (count) => count + 1).pipe(
+                          Effect.as({ deleted: true } as never),
+                        ),
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          );
+          const refused = <A, E extends { readonly code: string }>(effect: Effect.Effect<A, E>) =>
+            effect.pipe(
+              Effect.flip,
+              Effect.map((error) => error.code),
+              Effect.provideService(AnalyticsService.AnalyticsService, {
+                record: (_event, properties) => Effect.sync(() => void recorded.push(properties)),
+                flush: Effect.void,
+              }),
+            );
+
+          assert.deepEqual(
+            [
+              yield* refused(mcp.listThreads(scope, { projectId: otherProjectId })),
+              yield* refused(mcp.listScheduledTasks(scope, { projectId: otherProjectId })),
+              yield* refused(
+                mcp.scheduleTask(scope, {
+                  prompt: "Check the build",
+                  schedule: { type: "interval", everyMs: 3_600_000 },
+                  projectId: otherProjectId,
+                }),
+              ),
+              yield* refused(
+                mcp.updateScheduledTask(scope, { scheduledTaskId: otherTask.id, prompt: "Other" }),
+              ),
+              yield* refused(mcp.deleteScheduledTask(scope, { scheduledTaskId: otherTask.id })),
+            ],
+            Array.from({ length: 5 }, () => "capability_denied"),
+          );
+          assert.equal(yield* Ref.get(changed), 0);
+          assert.deepEqual(
+            recorded.map((properties) => properties?.action),
+            ["read", "read", "write", "write", "write"],
+          );
+          assert.deepEqual(recorded[0], {
+            feature: "agent-cross-project",
+            action: "read",
+            source: "agent",
+            outcome: "refused",
+          });
+
+          const own = yield* mcp.listScheduledTasks(scope, {});
+          assert.deepEqual(own.tasks, []);
+          assert.equal((yield* mcp.listThreads(scope, {})).projectId, caller.projectId);
+        }),
+    );
+
+    it.effect("refuses replaying a request that scheduled a task in another project", () =>
+      Effect.gen(function* () {
+        const stored = yield* Ref.make<ReadonlyArray<ScheduledTask>>([]);
+        const serviceWith = (enableAgentCrossProjectAccess: boolean) =>
+          layerOrchestratorService.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                NodeServices.layer,
+                Layer.mock(ThreadManagementService.ThreadManagementService)({
+                  getThreadShell: () => Effect.succeed(caller),
+                  getThreadRecords: () => Effect.succeed(idleThreadProjection(caller)),
+                }),
+                ServerSettings.layerTest({ enableAgentCrossProjectAccess }),
+                Layer.mock(ProviderRegistry.ProviderRegistry)({
+                  getProviders: Effect.succeed([]),
+                }),
+                Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+                  list: () => Effect.succeed([]),
+                }),
+                Layer.mock(ProjectService.ProjectService)({
+                  getById: (id) =>
+                    Effect.succeed(Option.some({ id, workspaceRoot: "/projects/any" } as never)),
+                }),
+                Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(ScheduledTaskService.ScheduledTaskService)({
+                  list: () => Ref.get(stored).pipe(Effect.map((tasks) => ({ tasks }))),
+                  upsert: (input) =>
+                    Effect.gen(function* () {
+                      const task: ScheduledTask = {
+                        ...otherTask,
+                        id: ScheduledTaskId.make(`scheduled-task:${input.commandId}`),
+                        projectId: input.projectId,
+                        prompt: input.prompt,
+                        runtimeMode: input.runtimeMode,
+                      };
+                      yield* Ref.set(stored, [task]);
+                      return { task };
+                    }),
+                }),
+              ),
+            ),
+          );
+        const schedule = (projectId: ProjectId, prompt: string) =>
+          OrchestratorMcpService.OrchestratorMcpService.pipe(
+            Effect.flatMap((mcp) =>
+              mcp.scheduleTask(scope, {
+                prompt,
+                schedule: { type: "interval", everyMs: 3_600_000 },
+                projectId,
+                clientRequestId: "same-request",
+              }),
+            ),
+          );
+        yield* schedule(otherProjectId, "Check the build").pipe(Effect.provide(serviceWith(true)));
+        const error = yield* schedule(caller.projectId, "Something else").pipe(
+          Effect.provide(serviceWith(false)),
+          Effect.flip,
+        );
+        assert.deepInclude(error, { code: "capability_denied" });
+        assert.deepEqual(
+          (yield* Ref.get(stored)).map((task) => [task.projectId, task.prompt]),
+          [[otherProjectId, "Check the build"]],
+        );
       }),
     );
   });

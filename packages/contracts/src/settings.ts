@@ -975,6 +975,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "enableAgentBrowserAccess",
   "enableAgentDeviceAccess",
   "enableAgentHardwareAccess",
+  "enableAgentCrossProjectAccess",
   "textGenerationModelSelection",
   "sourceControlWriterModelSelection",
   "reviewGuideModelSelection",
@@ -1019,6 +1020,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentCrossProjectAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   reviewGuideModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
@@ -1216,6 +1218,16 @@ export const ServerSettings = Schema.Struct({
    * session is prepared, like `enableAgentDeviceAccess`.
    */
   enableAgentHardwareAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * Whether an agent running in a thread may read and act on threads and
+   * projects other than its own through the T3 MCP tools. The calling thread's
+   * project decides, and the check runs on each tool call, so a change applies
+   * without restarting the session. MCP clients signed in from outside a
+   * thread have no own project and are unaffected.
+   */
+  enableAgentCrossProjectAccess: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   /** Network devices on this environment; definitions live in project repositories. */
   hardwareDevices: HardwareDeviceConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   /**
@@ -1544,6 +1556,7 @@ export const ServerSettingsPatch = Schema.Struct({
   deviceHosts: Schema.optionalKey(SshDeviceHostConfigs),
   environmentDeviceHosts: Schema.optionalKey(EnvironmentDeviceHostConfigs),
   enableAgentHardwareAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentCrossProjectAccess: Schema.optionalKey(Schema.Boolean),
   hardwareDevices: Schema.optionalKey(HardwareDeviceConfigs),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),

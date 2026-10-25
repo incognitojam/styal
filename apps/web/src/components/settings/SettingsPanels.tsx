@@ -691,6 +691,10 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
       ? ["Agent browser access"]
       : []),
+    ...(settings.enableAgentCrossProjectAccess !==
+    DEFAULT_UNIFIED_SETTINGS.enableAgentCrossProjectAccess
+      ? ["Agent access to other projects"]
+      : []),
   ];
 
   const restoreDefaults = async () => {
@@ -821,6 +825,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
       pullRequestLinksOpenInApp: DEFAULT_UNIFIED_SETTINGS.pullRequestLinksOpenInApp,
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
+      enableAgentCrossProjectAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentCrossProjectAccess,
     });
     onRestored?.();
   };

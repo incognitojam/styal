@@ -72,6 +72,13 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   [revision 30afc56](https://github.com/pingdotgg/t3code/tree/30afc56076c86580d5d913897280bea660d44c79).
   [Permission modes](./permission-modes.md).
 
+- **Keep agents in their own project.** Turn off **Agent access to other projects**, for the
+  environment or one project, and an agent can no longer read, message, start or schedule threads
+  in other projects, while subagents and work in its own project keep working. T3 Code lets every
+  agent reach every project on the server with no setting to limit it, as of
+  [revision d53873b](https://github.com/pingdotgg/t3code/tree/d53873b6a4799e87afd63c8d288ef0089f5a3748).
+  [Keep agents in their own project](./project-settings.md#keep-agents-in-their-own-project).
+
 - **Separate Gemini model and reasoning choices.** Antigravity lists each Gemini generation once,
   with a separate reasoning effort control. Existing threads retain their selected effort.
   T3 Code lists thinking variants as separate models as of

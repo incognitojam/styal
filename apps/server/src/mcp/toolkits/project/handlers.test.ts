@@ -504,3 +504,123 @@ it.effect("a launch into a new worktree creates nothing when its base ref has no
     expect(launched).toHaveLength(1);
   }),
 );
+
+it.effect("an agent limited to its own project sees and launches only there", () =>
+  Effect.gen(function* () {
+    const sourceThreadId = ThreadId.make("source-thread");
+    const ownProjectId = ProjectId.make("project:own");
+    const otherProjectId = ProjectId.make("project:other");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const modelSelection = { instanceId: providerInstanceId, model: "gpt-5" };
+    const caller = {
+      id: sourceThreadId,
+      projectId: ownProjectId,
+      providerInstanceId,
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      activeRunId: "active-run",
+      archivedAt: null,
+      deletedAt: null,
+    } as OrchestrationV2ThreadShell;
+    const project = (id: ProjectId): ProjectRecord => ({
+      id,
+      title: id,
+      workspaceRoot: `/projects/${id}`,
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      deletedAt: null,
+    });
+    const launched: Array<ProjectId> = [];
+    let scratchEnsured = false;
+    const layerDependencies = Layer.mergeAll(
+      ServerSettings.layerTest({
+        projectSettingsOverrides: { [ownProjectId]: { enableAgentCrossProjectAccess: false } },
+      }),
+      NodeCrypto.layer,
+      Layer.succeed(McpInvocationContext.McpInvocationContext, {
+        environmentId: EnvironmentId.make("environment"),
+        requestNamespace: "session",
+        thread: { threadId: sourceThreadId, providerSessionId: "session", providerInstanceId },
+        client: undefined,
+        issuedAt: 0,
+        capabilities: new Set(["orchestration" as const]),
+      }),
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        getThreadShell: () => Effect.succeed(caller),
+      }),
+      Layer.mock(ThreadLaunch.ThreadLaunchService)({
+        launch: (input) => {
+          launched.push(input.projectId);
+          return Effect.succeed({
+            threadId: input.threadId,
+            projection: {
+              thread: { id: input.threadId, projectId: input.projectId, modelSelection },
+              runs: [],
+            },
+            resumed: false,
+          } as unknown as ThreadLaunch.ThreadLaunchResult);
+        },
+      }),
+      Layer.mock(Project.ProjectService)({
+        snapshot: Effect.succeed({
+          projects: [project(ownProjectId), project(otherProjectId)],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+        getById: (id) => Effect.succeed(Option.some(project(id))),
+      }),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        namedProjectsRoot: "/projects",
+        ensureScratchProject: Effect.sync(() => {
+          scratchEnsured = true;
+          return { projectId: ProjectId.make("project:scratch") };
+        }),
+      }),
+      Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+      NodeServices.layer,
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-limit-" }).pipe(
+        Layer.provide(NodeServices.layer),
+      ),
+    );
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+          Layer.provide(layerDependencies),
+        ),
+      ),
+    );
+    const run = <Name extends keyof typeof ProjectToolkit.tools>(
+      name: Name,
+      params: Parameters<typeof toolkit.handle<Name>>[1],
+    ) =>
+      toolkit.handle(name, params).pipe(
+        Stream.unwrap,
+        Stream.runCollect,
+        Effect.map((parts) => parts.at(-1)?.result),
+        Effect.provide(layerDependencies),
+      );
+
+    expect(yield* run("t3_project_list", {})).toMatchObject({
+      projects: [{ id: ownProjectId }],
+    });
+    expect(yield* run("t3_project_read", { projectId: otherProjectId })).toMatchObject({
+      code: "capability_denied",
+    });
+    expect(yield* run("t3_project_read", { projectId: ownProjectId })).toMatchObject({
+      id: ownProjectId,
+    });
+    expect(
+      yield* run("t3_thread_launch", { title: "Elsewhere", projectId: otherProjectId }),
+    ).toMatchObject({ code: "capability_denied" });
+    expect(yield* run("t3_thread_launch", { title: "Notes", scratch: true })).toMatchObject({
+      code: "capability_denied",
+    });
+    expect(scratchEnsured).toBe(false);
+    expect(yield* run("t3_thread_launch", { title: "Here" })).toMatchObject({
+      projectId: ownProjectId,
+    });
+    expect(launched).toEqual([ownProjectId]);
+  }),
+);
