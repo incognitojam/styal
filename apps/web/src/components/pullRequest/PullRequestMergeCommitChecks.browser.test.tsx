@@ -1,14 +1,21 @@
 import { EnvironmentId, type PullRequestMergeCommit } from "@t3tools/contracts";
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
-const { openLink, report } = vi.hoisted(() => ({ openLink: vi.fn(), report: vi.fn() }));
+const { openLink, report, openSourceCheck } = vi.hoisted(() => ({
+  openLink: vi.fn(),
+  report: vi.fn(),
+  openSourceCheck: vi.fn(),
+}));
 vi.mock("~/browser/useOpenLink", () => ({ useOpenLink: () => openLink }));
 vi.mock("~/forkClientUsage", () => ({ reportForkClientUsage: report }));
-
-import { PullRequestMergeCommitChecks } from "./PullRequestMergeCommitChecks";
+import { PullRequestChecksTab } from "./PullRequestChecksTab";
+import {
+  PullRequestMergeCommitChecks,
+  type PullRequestChecksScope,
+} from "./PullRequestMergeCommitChecks";
 
 const environmentId = EnvironmentId.make("merge-checks-test");
 const commit: PullRequestMergeCommit = {
@@ -18,6 +25,30 @@ const commit: PullRequestMergeCommit = {
     { name: "Deploy", status: "pending", description: null, url: "https://example.com/runs/1" },
   ],
 };
+function Harness({ value }: { value: PullRequestMergeCommit | null | undefined }) {
+  const [scope, setScope] = useState<PullRequestChecksScope>("merge-commit");
+  return (
+    <PullRequestMergeCommitChecks
+      commit={value}
+      headSha={"a".repeat(40)}
+      environmentId={environmentId}
+      scope={scope}
+      onScopeChange={setScope}
+    >
+      <PullRequestChecksTab
+        checks={[
+          {
+            name: "Source tests",
+            status: "success",
+            description: null,
+            url: "https://example.com/source",
+          },
+        ]}
+        onOpenCheck={openSourceCheck}
+      />
+    </PullRequestMergeCommitChecks>
+  );
+}
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -33,29 +64,35 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
+const render = (value: PullRequestMergeCommit | null | undefined) =>
+  act(async () => root.render(<Harness value={value} />));
+const scopeButton = (label: string) =>
+  Array.from(container.querySelectorAll("button")).find((button) => button.textContent === label)!;
+const checkButton = (name: string) =>
+  container.querySelector(`[aria-label="Open ${name} on the host"]`)!;
 
-const render = (value: PullRequestMergeCommit | null) =>
-  act(async () =>
-    root.render(<PullRequestMergeCommitChecks commit={value} environmentId={environmentId} />),
-  );
-
-it("opens the resulting commit and its own check details, and updates while expanded", async () => {
+it("switches scopes without mixing their check rows, SHAs or links", async () => {
   await render(commit);
-  expect(container.textContent).toContain("1 check pending");
-  expect(container.textContent).not.toContain("Deploy");
+  expect(container.textContent).toContain("Deploy");
+  expect(container.textContent).toContain("bbbbbbb");
+  expect(container.textContent).not.toContain("Source tests");
   await act(async () => userEvent.click(container.querySelector("a")!));
   expect(openLink).toHaveBeenLastCalledWith(commit.url);
-  await act(async () => userEvent.click(container.querySelector("button")!));
-  expect(container.textContent).toContain("Deploy");
-  const failed: PullRequestMergeCommit = {
+  await act(async () => userEvent.click(scopeButton("Pull request")));
+  expect(container.textContent).toContain("Source tests");
+  expect(container.textContent).toContain("aaaaaaa");
+  expect(container.textContent).not.toContain("Deploy");
+  await act(async () => userEvent.click(checkButton("Source tests")));
+  expect(openSourceCheck).toHaveBeenCalledExactlyOnceWith("https://example.com/source");
+  expect(report).toHaveBeenCalledTimes(1);
+  await act(async () => userEvent.click(scopeButton("Merge commit")));
+  await render({
     ...commit,
     checks: [{ ...commit.checks![0]!, status: "failure", description: "Deployment failed" }],
-  };
-  await render(failed);
-  expect(container.textContent).toContain("1 check failed");
-  expect(container.textContent).toContain("Deployment failed");
-  expect(container.textContent).not.toContain("pending");
-  await act(async () => userEvent.click(container.querySelectorAll("a")[1]!));
+  });
+  expect(container.textContent).toContain("Failed");
+  expect(container.textContent).not.toContain("Running");
+  await act(async () => userEvent.click(checkButton("Deploy")));
   expect(openLink).toHaveBeenLastCalledWith("https://example.com/runs/1");
   expect(report.mock.calls).toEqual([
     [
@@ -68,7 +105,7 @@ it("opens the resulting commit and its own check details, and updates while expa
     ],
   ]);
   openLink.mockRejectedValueOnce(new Error("Unavailable"));
-  await act(async () => userEvent.click(container.querySelectorAll("a")[1]!));
+  await act(async () => userEvent.click(checkButton("Deploy")));
   expect(report).toHaveBeenLastCalledWith(environmentId, {
     feature: "pull-request-merge-commit-checks",
     action: "open_check",
@@ -76,18 +113,28 @@ it("opens the resulting commit and its own check details, and updates while expa
   });
 });
 
-it("keeps commit links usable when checks are unavailable and updates when checks arrive", async () => {
+it("keeps unavailable and empty merge results distinct while retaining source checks and commit links", async () => {
   await render(null);
   expect(container.textContent).toContain("Merge commit unavailable");
   expect(container.querySelector("a")).toBeNull();
+  await act(async () => userEvent.click(scopeButton("Pull request")));
+  expect(container.textContent).toContain("Source tests");
+  await act(async () => userEvent.click(scopeButton("Merge commit")));
   await render({ ...commit, checks: null });
   expect(container.textContent).toContain("Checks unavailable");
+  expect(container.textContent).not.toContain("No checks reported");
   await act(async () => userEvent.click(container.querySelector("a")!));
   expect(openLink).toHaveBeenLastCalledWith(commit.url);
   await render({ ...commit, checks: [] });
   expect(container.textContent).toContain("No checks reported");
   await render(commit);
-  await act(async () => userEvent.click(container.querySelector("button")!));
   expect(container.textContent).toContain("Deploy");
   expect(container.textContent).toContain("Running");
+});
+
+it("preserves ordinary pull request checks when merge commit data is unsupported", async () => {
+  await render(undefined);
+  expect(container.textContent).toContain("Source tests");
+  expect(container.textContent).not.toContain("Merge commit");
+  expect(container.querySelector("a")).toBeNull();
 });

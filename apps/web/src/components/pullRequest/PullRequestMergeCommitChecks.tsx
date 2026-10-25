@@ -1,19 +1,18 @@
 import { mergeCommitChecksSummary } from "@t3tools/client-runtime/pull-request-merge-commit";
 import type { EnvironmentId, PullRequestMergeCommit } from "@t3tools/contracts";
 import { CircleHelpIcon, CircleDotIcon } from "lucide-react";
-import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
 import { reportForkClientUsage } from "~/forkClientUsage";
 import { cn } from "~/lib/utils";
 
-import { Button } from "../ui/button";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  PullRequestCheckStatusIcon,
-  pullRequestCheckStatusLabel,
-  pullRequestChecksStatePresentation,
-} from "./pullRequestPresentation";
+import { PullRequestChecksTab } from "./PullRequestChecksTab";
+import { pullRequestChecksStatePresentation } from "./pullRequestPresentation";
+
+export type PullRequestChecksScope = "merge-commit" | "pull-request";
 
 export function PullRequestMergeCommitStatus({
   commit,
@@ -45,17 +44,20 @@ export function PullRequestMergeCommitStatus({
 
 export function PullRequestMergeCommitChecks({
   commit,
+  headSha,
   environmentId,
-  expanded = false,
+  scope,
+  onScopeChange,
+  children,
 }: {
-  commit: PullRequestMergeCommit | null;
+  commit: PullRequestMergeCommit | null | undefined;
+  headSha: string | null;
   environmentId?: EnvironmentId | undefined;
-  expanded?: boolean;
+  scope: PullRequestChecksScope;
+  onScopeChange: (scope: PullRequestChecksScope) => void;
+  children: ReactNode;
 }) {
-  const [showChecks, setShowChecks] = useState(expanded);
   const openLink = useOpenLink(null);
-  const summary = mergeCommitChecksSummary(commit);
-  const keyOccurrences = new Map<string, number>();
   const open = (url: string, action: "open_commit" | "open_check") => {
     void openLink(url).then(
       () =>
@@ -72,76 +74,67 @@ export function PullRequestMergeCommitChecks({
         }),
     );
   };
+  if (commit === undefined) return children;
+  const mergeSelected = scope === "merge-commit";
+  const sha = mergeSelected ? commit?.oid : headSha;
   return (
-    <div className="rounded-lg border border-border/60 px-3 py-2.5">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-        <span className="font-medium">{commit === null ? summary.label : "Merge commit"}</span>
-        {commit ? (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
+        <ToggleGroup
+          aria-label="Checks for"
+          size="segmented"
+          variant="segmented"
+          value={[scope]}
+          onValueChange={(next) => {
+            if (next[0] === "merge-commit" || next[0] === "pull-request") onScopeChange(next[0]);
+          }}
+        >
+          <Toggle value="merge-commit">Merge commit</Toggle>
+          <Toggle value="pull-request">Pull request</Toggle>
+        </ToggleGroup>
+        {sha ? (
           <Tooltip>
             <TooltipTrigger
               render={
-                <a
-                  href={commit.url}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    open(commit.url, "open_commit");
-                  }}
-                  className="font-mono text-muted-foreground hover:underline"
-                />
-              }
-            >
-              {commit.oid.slice(0, 7)}
-            </TooltipTrigger>
-            <TooltipPopup>{commit.oid}</TooltipPopup>
-          </Tooltip>
-        ) : null}
-        {commit ? (
-          <span className="min-w-0 flex-1 text-muted-foreground">{summary.label}</span>
-        ) : null}
-        {!expanded && commit?.checks && commit.checks.length > 0 ? (
-          <Button
-            variant="ghost"
-            size="xs"
-            aria-expanded={showChecks}
-            onClick={() => setShowChecks(!showChecks)}
-          >
-            {showChecks ? "Hide details" : "Details"}
-          </Button>
-        ) : null}
-      </div>
-      {showChecks && commit?.checks && commit.checks.length > 0 ? (
-        <ul className="mt-2 divide-y divide-border/50">
-          {commit.checks.map((check) => {
-            const keyBase = `${check.name}:${check.url}:${check.status}:${check.description}`;
-            const occurrence = keyOccurrences.get(keyBase) ?? 0;
-            keyOccurrences.set(keyBase, occurrence + 1);
-            return (
-              <li key={`${keyBase}:${occurrence}`} className="flex items-center gap-2 py-2 text-xs">
-                <PullRequestCheckStatusIcon status={check.status} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate">{check.name}</p>
-                  {check.description ? (
-                    <p className="truncate text-muted-foreground">{check.description}</p>
-                  ) : null}
-                </div>
-                <span className="text-muted-foreground">{pullRequestCheckStatusLabel(check)}</span>
-                {check.url ? (
+                mergeSelected && commit ? (
                   <a
-                    className="text-muted-foreground hover:underline"
-                    href={check.url}
+                    href={commit.url}
+                    aria-label={`Open merge commit ${commit.oid.slice(0, 7)}`}
                     onClick={(event) => {
                       event.preventDefault();
-                      if (check.url) open(check.url, "open_check");
+                      open(commit.url, "open_commit");
                     }}
-                  >
-                    Details
-                  </a>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
+                    className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+                  />
+                ) : (
+                  <span className="font-mono text-xs text-muted-foreground" />
+                )
+              }
+            >
+              {sha.slice(0, 7)}
+            </TooltipTrigger>
+            <TooltipPopup>{sha}</TooltipPopup>
+          </Tooltip>
+        ) : null}
+      </div>
+      <section
+        aria-label={mergeSelected ? "Merge commit checks" : "Pull request checks"}
+        className="min-h-0 flex-1"
+      >
+        {!mergeSelected ? (
+          children
+        ) : commit === null || commit.checks === null ? (
+          <div className="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground">
+            <CircleHelpIcon aria-hidden className="size-3.5" />
+            {commit === null ? "Merge commit unavailable" : "Checks unavailable"}
+          </div>
+        ) : (
+          <PullRequestChecksTab
+            checks={commit.checks}
+            onOpenCheck={(url) => open(url, "open_check")}
+          />
+        )}
+      </section>
     </div>
   );
 }

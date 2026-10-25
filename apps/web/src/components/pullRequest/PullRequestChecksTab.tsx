@@ -208,7 +208,7 @@ export function PullRequestChecksTab({
   pendingFinding,
   fixCheckLabel = "Fix",
   onFixFinding,
-  embedded = false,
+  onOpenCheck,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
   /** Newer status contradicts `checks`; the runs are hidden until the detail is refreshed. */
@@ -230,7 +230,7 @@ export function PullRequestChecksTab({
   pendingFinding?: string | null;
   fixCheckLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
-  embedded?: boolean;
+  onOpenCheck?: (url: string) => void;
 }) {
   const state = pullRequestChecksState(checks);
   // Null for a set nobody can call passed or failed — every run skipped, say. The list still
@@ -276,7 +276,8 @@ export function PullRequestChecksTab({
   const keyOccurrences = new Map<string, number>();
 
   const openCheck = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
+    if (onOpenCheck) onOpenCheck(url);
+    else void readLocalApi()?.shell.openExternal(url);
   };
 
   if (stale) {
@@ -293,7 +294,7 @@ export function PullRequestChecksTab({
   }
 
   return (
-    <div className={embedded ? undefined : "h-full overflow-y-auto"}>
+    <div className="h-full overflow-y-auto">
       {mergePresentation || rollup || requiredBranchUpdate || waitingRuns.length > 0 ? (
         // The verdict rides the top of the scroll box the way the summary's section headings do,
         // so a long list of runs never scrolls its own answer out of sight.
@@ -387,7 +388,7 @@ export function PullRequestChecksTab({
           <CircleDashedIcon aria-hidden className="size-5 text-muted-foreground/60" />
           <p className="text-sm font-medium text-foreground">No checks reported.</p>
           <p className="max-w-md text-xs text-muted-foreground">
-            Runs appear here as soon as the host reports one for this branch.
+            Runs appear here as soon as the host reports one.
           </p>
         </div>
       ) : (

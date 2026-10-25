@@ -4019,7 +4019,7 @@ features:
     prs: [1074]
     invariants:
       - A merged GitHub pull request reads the resulting SHA reported after merging, including squash and rebase, without substituting a base tip or temporary test merge.
-      - Merge commit checks, commit links, and check details remain distinct from source-branch checks on web, desktop, and mobile; a merged status does not imply passing checks.
+      - Merge commit checks, commit links, and check details remain distinct from source-branch checks on web, desktop, and mobile; web and desktop switch between the two scopes in one shared checklist, and a merged status does not imply passing checks.
       - Pending checks, no reported checks, unavailable commits, and unreadable or incomplete checks remain distinct; visible views refresh through merging and later check updates.
     implementation_paths:
       - apps/mobile/src/features/pull-requests/PullRequestStatusRows.tsx

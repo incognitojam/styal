@@ -96,6 +96,7 @@ import { mergedPullRequestCommit } from "@t3tools/client-runtime/pull-request-me
 import {
   PullRequestMergeCommitChecks,
   PullRequestMergeCommitStatus,
+  type PullRequestChecksScope,
 } from "./PullRequestMergeCommitChecks";
 import {
   pullRequestEnvironment,
@@ -683,6 +684,20 @@ function PullRequestDetailPanelBody({
   const [threadPickerOpen, setThreadPickerOpen] = useState(false);
   const [openReviewRequest, setOpenReviewRequest] = useState(0);
   const [tab, setTab] = useState<DetailTab>("summary");
+  const [checksScopeSelection, setChecksScopeSelection] = useState<{
+    pullRequestKey: string;
+    scope: PullRequestChecksScope;
+  } | null>(null);
+  const checksScope =
+    checksScopeSelection?.pullRequestKey === pullRequestKey
+      ? checksScopeSelection.scope
+      : "merge-commit";
+  const selectChecksScope = (scope: PullRequestChecksScope) =>
+    setChecksScopeSelection({ pullRequestKey, scope });
+  const openMergeCommitChecks = () => {
+    selectChecksScope("merge-commit");
+    setTab("checks");
+  };
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
   const [codeCommitScope, setCodeCommitScope] = useState<{
     readonly pullRequestKey: string;
@@ -1946,7 +1961,7 @@ function PullRequestDetailPanelBody({
                 {mergeCommit !== undefined ? (
                   <PullRequestMergeCommitStatus
                     commit={mergeCommit}
-                    onSelect={() => setTab("checks")}
+                    onSelect={openMergeCommitChecks}
                   />
                 ) : mergeVerdict ? (
                   <span className="flex shrink-0 items-center gap-1 text-3xs text-muted-foreground">
@@ -2793,7 +2808,7 @@ function PullRequestDetailPanelBody({
                 {mergeCommit !== undefined ? (
                   <PullRequestMergeCommitStatus
                     commit={mergeCommit}
-                    onSelect={() => setTab("checks")}
+                    onSelect={openMergeCommitChecks}
                   />
                 ) : (
                   <PullRequestChecksNavButton
@@ -2947,31 +2962,17 @@ function PullRequestDetailPanelBody({
             ) : null}
             {mountedTabs.has("checks") ? (
               <div className={cn("absolute inset-0", tab !== "checks" && "invisible")}>
-                <div className="h-full overflow-y-auto">
-                  {mergeCommit !== undefined ? (
-                    <section aria-label="Merge commit" className="px-4 py-3">
-                      <PullRequestMergeCommitChecks
-                        commit={mergeCommit}
-                        environmentId={environmentId}
-                        expanded
-                      />
-                    </section>
-                  ) : null}
-                  {detail.state === "merged" ? (
-                    <h3 className="flex items-center gap-2 px-4 pt-3 text-xs font-medium">
-                      Pull request
-                      {detail.headSha ? (
-                        <span className="font-mono text-muted-foreground">
-                          {detail.headSha.slice(0, 7)}
-                        </span>
-                      ) : null}
-                    </h3>
-                  ) : null}
+                <PullRequestMergeCommitChecks
+                  commit={mergeCommit}
+                  headSha={detail.headSha ?? null}
+                  environmentId={environmentId}
+                  scope={checksScope}
+                  onScopeChange={selectChecksScope}
+                >
                   <PullRequestChecksTab
                     checks={detail.checks}
                     stale={checksStale}
                     onRefresh={refreshFromHost}
-                    embedded
                     isDraft={detail.state === "open" && detail.isDraft}
                     mergeReadiness={detail.state === "open" ? detail.mergeReadiness : undefined}
                     requiredBranchUpdate={requiredBranchUpdate}
@@ -2982,7 +2983,7 @@ function PullRequestDetailPanelBody({
                     fixCheckLabel={handoffLabels.fixCheck}
                     {...(canFixFindings ? { onFixFinding: startFixFinding } : {})}
                   />
-                </div>
+                </PullRequestMergeCommitChecks>
               </div>
             ) : null}
             {mountedTabs.has("guide") ? (
