@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { PullRequestLifecycleEvent } from "@t3tools/contracts";
-import { pullRequestLifecycleEvents, pullRequestLifecycleText } from "./pullRequestLifecycle";
+import { pullRequestLifecycleEvents, pullRequestLifecycleText } from "./pullRequestLifecycle.ts";
 
 const merge: PullRequestLifecycleEvent = {
   id: "ME_1",
