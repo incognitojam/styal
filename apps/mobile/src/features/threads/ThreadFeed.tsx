@@ -2168,6 +2168,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     worktreeSetup: props.worktreeSetup,
     setupWorkingStartedAt: props.setupWorkingStartedAt,
     dispatchingMessageId: props.dispatchingMessageId,
+    unsettledTurnId,
     turnUsageByTurnId: props.turnUsageByTurnId,
     copiedRowId,
     expandedWorkGroups,
