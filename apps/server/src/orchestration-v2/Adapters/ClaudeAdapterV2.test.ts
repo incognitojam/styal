@@ -14818,7 +14818,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           if (backgrounding === "never answers") {
             for (let repeat = 1; repeat <= 2; repeat++) {
               const again = yield* Effect.forkScoped(steer);
-              for (let tick = 0; tick < 100 && again.pollUnsafe() === undefined; tick++) {
+              // The steer reads skill files from disk before its 5 second
+              // wait starts, so a fixed number of ticks can all pass first.
+              while (again.pollUnsafe() === undefined) {
                 yield* TestClock.adjust("1 second");
                 yield* Effect.yieldNow;
               }
