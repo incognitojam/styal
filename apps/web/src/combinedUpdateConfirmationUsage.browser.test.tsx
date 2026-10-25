@@ -38,13 +38,15 @@ let root: Root;
 let container: HTMLDivElement;
 
 function support(id: EnvironmentId, version = FORK_CLIENT_USAGE_VERSION) {
-  state.configs.set(id, { environment: { capabilities: { forkClientUsageVersion: version } } });
+  state.configs = new Map(state.configs).set(id, {
+    environment: { capabilities: { forkClientUsageVersion: version } },
+  });
 }
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
-  state.configs.clear();
+  state.configs = new Map();
   state.primaryId = firstId;
   support(firstId);
   state.run.mockResolvedValue(AsyncResult.success(undefined));

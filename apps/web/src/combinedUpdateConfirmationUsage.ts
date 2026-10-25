@@ -24,7 +24,8 @@ export function useCombinedUpdateConfirmationUsage(open: boolean) {
       session.current = null;
       return;
     }
-    const current = (session.current ??= { environmentId: null, decided: false });
+    if (session.current === null) session.current = { environmentId: null, decided: false };
+    const current = session.current;
     if (!environmentId || current.environmentId || current.decided) return;
     current.environmentId = environmentId;
     void reportForkClientUsage(environmentId, {
