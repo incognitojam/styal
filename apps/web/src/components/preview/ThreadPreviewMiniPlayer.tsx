@@ -364,12 +364,14 @@ function MiniPlayerShell({
   const { width: sourceWidth, height: sourceHeight } = sourceSize;
   const reportPreview = canvas?.reportPreview;
   const clearPreview = canvas?.clearPreview;
+  const [dragging, setDragging] = useState(false);
   useLayoutEffect(() => {
     reportPreview?.({
       key: sourceKey,
       width: miniPlayer.width,
       position: miniPlayer.position,
       lastInteraction: miniPlayer.lastInteraction,
+      dragging,
       source: { width: sourceWidth, height: sourceHeight },
     });
   }, [
@@ -378,6 +380,7 @@ function MiniPlayerShell({
     miniPlayer.width,
     miniPlayer.position,
     miniPlayer.lastInteraction,
+    dragging,
     sourceWidth,
     sourceHeight,
   ]);
@@ -417,6 +420,7 @@ function MiniPlayerShell({
     gesture.moved = true;
     const store = usePreviewMiniPlayerStore.getState();
     if (gesture.direction === null) {
+      setDragging(true);
       store.move(
         threadRef,
         sourceKey,
@@ -435,7 +439,7 @@ function MiniPlayerShell({
       delta,
       source: sourceSize,
       container,
-      obstacles,
+      obstacles: canvas?.layout.resizeObstacles ?? obstacles,
     });
     store.resize(threadRef, sourceKey, next.width, { x: next.x, y: next.y });
   };
@@ -444,6 +448,7 @@ function MiniPlayerShell({
     const gesture = gestureRef.current;
     if (gesture?.pointerId !== event.pointerId) return;
     gestureRef.current = null;
+    setDragging(false);
     handleTappedRef.current =
       event.type === "pointerup" &&
       gesture.direction === null &&
