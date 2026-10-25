@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/device";
 import type { EnvironmentDeviceHostConfig } from "@t3tools/contracts";
 import { useState } from "react";
+import { reportForkClientUsage } from "~/forkClientUsage";
 import { deviceEnvironment, useDeviceState } from "../../state/device";
 import { desktopNetworkAccessStateAtom } from "../../state/desktopNetworkAccess";
 import {
@@ -38,12 +39,12 @@ export function EnvironmentDeviceHostsSettings() {
   );
   return (
     <SettingsRow
-      id="environment-device-hosts"
+      id={`environment-device-hosts-${connectedEnvironments[0]?.environmentId ?? "all"}`}
       forkFeature="device-environment-hosts"
       title="Share devices with other environments"
       serverScoped
       settingKeys={["environmentDeviceHosts"]}
-      description="Let agents on your other connected environments use this environment's simulators and emulators. Sharing turns on device hub and agent device access on both, and keeps working when you close this client."
+      description="Share this environment's simulators and emulators. Sharing enables device access on both environments and keeps working when you close this client."
     >
       <div className="pt-3 pb-2">
         {offlineShares.map(({ agent, host }) => (
@@ -103,6 +104,12 @@ function OfflineShare(props: {
         disabled={props.disabled || pending}
         aria-label={`Share ${props.host.label} devices with ${props.agent.label}`}
         onCheckedChange={() => {
+          void reportForkClientUsage(props.agent.environmentId, {
+            feature: "integration-settings",
+            action: "change_requested",
+            setting: "device_sharing",
+            settingScope: "environment",
+          });
           props.onError(null);
           setPending(true);
           void disconnect({
@@ -237,6 +244,12 @@ function SharingSwitch(props: {
           ? disconnect({ environmentId: agent.environmentId, input: { hostId: host.id } })
           : null;
     if (!action) return;
+    void reportForkClientUsage(agent.environmentId, {
+      feature: "integration-settings",
+      action: "change_requested",
+      setting: "device_sharing",
+      settingScope: "environment",
+    });
     setError(null);
     setPending(true);
     void action

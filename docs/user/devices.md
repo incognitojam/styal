@@ -22,7 +22,7 @@ Choose **Float device over chat** in the toolbar to keep watching the device in 
 small window while the right panel shows something else. The floating window is
 view-only: drag it from anywhere, resize it from any edge, and double-click it or
 use **Open in right panel** to tap and type on the device again.
-Turn off the device hub in **Settings → Integrations → Devices** to stop the
+In **Settings → Integrations**, turn off the device hub on its environment to stop the
 helper processes; simulators and emulators keep running until you power them
 off.
 
@@ -78,7 +78,7 @@ The applied mode persists across simulator boots, including boots outside styal.
 
 When an agent opens a device, it floats over the chat in web and desktop clients
 connected to the thread, the same way an agent-driven browser does. Turn off
-**Auto-show floating preview** in **Settings → Integrations → Browser** to switch the
+**Auto-show floating preview** in **Settings → Integrations → Browser preferences** to switch the
 right panel to it instead. Either way, every device the thread has open keeps a tab
 in the right panel unless you close that tab. In the mobile app, open the agent's thread and tap the
 device button above the composer to watch the live screen and control it.
@@ -98,12 +98,12 @@ once per server. Restart an existing agent session after granting access so it
 receives the device CLI environment.
 
 To keep agents away from simulators, turn off **Agent device access** in
-**Settings → Integrations → Devices**. This hides the device tools from agents
+**Settings → Integrations** on its environment. This hides the device tools from agents
 started from then on; your own Device panel is unaffected.
 
 ## Idle devices
 
-Agents hand a device back when they finish testing, so other threads can use it; it stays booted. A device held by a thread that is not working is handed to the next agent that needs one, so agents only take turns when devices run short; hand-over happens within an environment, not across connected environments. Archiving or deleting a thread releases its devices. Simulators and emulators styal started shut down once no working thread holds them and nobody has watched them for 10 minutes, even if one is still open in a Device panel tab; devices you started yourself keep running. Change the period or choose **Never** under **Shut down idle devices** in **Settings → Integrations → Devices**, or **Settings → Devices** in the mobile app.
+Agents hand a device back when they finish testing, so other threads can use it; it stays booted. A device held by a thread that is not working is handed to the next agent that needs one, so agents only take turns when devices run short; hand-over happens within an environment, not across connected environments. Archiving or deleting a thread releases its devices. Simulators and emulators styal started shut down once no working thread holds them and nobody has watched them for 10 minutes, even if one is still open in a Device panel tab; devices you started yourself keep running. Change the period or choose **Never** under **Shut down idle devices** in the environment’s **Device maintenance** section in **Settings → Integrations**, or **Settings → Devices** in the mobile app.
 
 ## Remote connections
 
@@ -114,7 +114,7 @@ still-image stream and Android cannot show video.
 
 ## Devices from another environment
 
-If the machine with your simulators already runs styal, connect both environments to your client. In **Settings → Integrations → Devices**, under the environment that has the simulators, turn on **Share with** for the environment whose agents should use them. In the native mobile app, use **Settings → Devices**. Both environment servers need a version that supports sharing.
+If the machine with your simulators already runs styal, connect both environments to your client. In **Settings → Integrations**, under the environment that has the simulators, turn on **Share with** for the environment whose agents should use them. In the native mobile app, use **Settings → Devices**. Both environment servers need a version that supports sharing.
 
 This enables device hub and agent access on both environments and grants the agent environment access to the other machine’s local devices. Access stays available after you close the browser or mobile app; it does not grant access to projects, files, or terminals. Turning off device hub or agent device access on either environment pauses sharing until it is turned back on. The device machine still needs Xcode for iOS or an Android SDK for Android. As with SSH hosts, a simulator on the device machine cannot reach Metro through the agent environment's localhost.
 
@@ -126,8 +126,8 @@ Shared inventory includes devices open in other environments’ threads. Use a s
 
 ## Existing SSH device hosts
 
-Previously configured SSH device hosts keep working. In **Settings → Integrations → Devices**,
-expand **Existing SSH device hosts** to test, edit, or remove them. For new remote
+Previously configured SSH device hosts keep working. In **Settings → Integrations**,
+find its environment and expand **Existing SSH device hosts** to test, edit, or remove them. For new remote
 device access, [connect and share the device environment](#devices-from-another-environment).
 
 SSH aliases, identity files, and ports resolve on the environment server, so use
@@ -154,6 +154,6 @@ localhost without forwarding or another reachable address.
 
 ## Device tool updates
 
-The connected T3 server manages the device hub and agent tools on its own machine and configured SSH hosts. Required versions install automatically the next time those tools are used. Settings → Integrations → Check device tool versions reads installed versions without installing tools or starting devices.
+The connected T3 server manages the device hub and agent tools on its own machine and configured SSH hosts. Required versions install automatically the next time those tools are used. Use the version controls in Settings → Integrations on the relevant environment to read installed versions without installing tools or starting devices.
 
 To receive newer tool versions on a remote environment, update that environment's T3 server. Updating only the browser or mobile app does not update the remote server. An offline host keeps its installed files, but an update needs network access before device support can start; T3 does not fall back to an older version. Reconnect the host and use Retry if installation fails. Existing device and agent-access settings are preserved.

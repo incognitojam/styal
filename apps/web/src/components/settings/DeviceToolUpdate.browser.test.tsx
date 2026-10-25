@@ -24,7 +24,8 @@ vi.mock("~/state/session", async (importOriginal) => ({
   useEnvironmentScope: () => true,
   readEnvironmentScope: () => true,
 }));
-vi.mock("./SettingsScopeContext", () => ({
+vi.mock("./SettingsScopeContext", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./SettingsScopeContext")>()),
   useSettingsScope: () => ({
     scope: { kind: "all", environmentIds: [] },
     search: {},

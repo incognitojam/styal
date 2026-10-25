@@ -44,13 +44,15 @@ import {
 
 /**
  * Pages whose every row is saved on this client, plus the import page, which
- * picks its own destination environment; they have no scope to pick.
+ * picks its own destination environment. Integrations lists its environments
+ * explicitly. These pages have no scope to pick.
  */
 export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/appearance",
   "/settings/snap-shot",
   "/settings/connections",
   "/settings/import",
+  "/settings/integrations",
 ]);
 
 interface SettingsScopeMenuProps {

@@ -124,9 +124,12 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
     onRemove: (host: SshDeviceHostConfig) => void save(host, true),
   };
   return (
-    <FoldedSettingsSection id="device-hosts" title="Existing SSH device hosts">
+    <FoldedSettingsSection
+      id={`device-hosts-${props.environmentId}`}
+      title="Existing SSH device hosts"
+    >
       <SettingsRow
-        id="saved-device-hosts"
+        id={`saved-device-hosts-${props.environmentId}`}
         title="Saved hosts"
         serverScoped
         settingKeys={["deviceHosts"]}

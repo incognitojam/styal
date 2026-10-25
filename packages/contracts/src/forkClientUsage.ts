@@ -140,6 +140,18 @@ export type WebBuildUpdateUsageAction = typeof WebBuildUpdateUsageAction.Type;
 /** Closed UI observations only: content, paths and identifiers stay in the client. */
 export const ForkClientUsageInput = Schema.Union([
   Schema.Struct({
+    feature: Schema.Literal("integration-settings"),
+    action: Schema.Literal("change_requested"),
+    setting: Schema.Literals([
+      "browser_access",
+      "device_support",
+      "device_access",
+      "device_idle_shutdown",
+      "device_sharing",
+    ]),
+    settingScope: Schema.Literals(["environment", "project"]),
+  }),
+  Schema.Struct({
     feature: Schema.Literal("pull-request-deployments"),
     action: Schema.Literals(["open_environment", "open_logs", "show_all"]),
     outcome: Schema.Literals(["success", "failure"]),
