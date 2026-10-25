@@ -4955,9 +4955,9 @@ features:
       - apps/server/src/device/SimulatorMemory.ts
       - apps/server/src/device/simslimHostScript.ts
       - apps/server/src/device/simulatorMemoryGuide.ts
-      - packages/client-runtime/src/device/simulatorStreamRecovery.ts
       - apps/web/src/components/device/SimulatorMemoryControls.tsx
       - packages/client-runtime/src/device/simulatorMemory.ts
+      - packages/client-runtime/src/device/simulatorStreamRecovery.ts
     upstream_paths:
       - apps/server/src/device/DeviceActions.ts
       - apps/server/src/device/DeviceHost.ts
@@ -4967,15 +4967,15 @@ features:
       - apps/web/src/components/device/DeviceToolsPanel.tsx
       - packages/contracts/src/device.ts
     tests:
-      - apps/server/src/device/DeviceService.test.ts
       - apps/server/src/device/DeviceIdle.test.ts
+      - apps/server/src/device/DeviceService.test.ts
       - apps/server/src/device/DeviceSharing.test.ts
       - apps/server/src/device/EnvironmentDeviceHost.test.ts
       - apps/server/src/device/SimulatorMemory.test.ts
       - apps/server/src/mcp/McpDeviceToolkit.test.ts
       - apps/web/src/components/device/DeviceStreamView.browser.test.tsx
-      - packages/client-runtime/src/device/simulatorStreamRecovery.test.ts
       - apps/web/src/components/device/SimulatorMemoryControls.browser.test.tsx
+      - packages/client-runtime/src/device/simulatorStreamRecovery.test.ts
     upstream:
       status: tracking
       tracking:
