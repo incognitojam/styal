@@ -108,13 +108,14 @@ Turn the switch off to revoke access, even after device hub or agent access has 
 
 Shared inventory includes devices open in other environments’ threads. Use a separate simulator or emulator for each agent working in parallel.
 
-## SSH device hosts
+## Existing SSH device hosts
 
-In Settings → Integrations → Devices, choose the environments that should use
-the host and add it under **SSH device hosts**. Enter an SSH alias or `user@host`, with
-an optional identity file and port. These resolve on the environment server,
-so use the SSH configuration and keys available there. Password prompts are
-not supported.
+Previously configured SSH device hosts keep working. In **Settings → Integrations → Devices**,
+expand **Existing SSH device hosts** to test, edit, or remove them. For new remote
+device access, [connect and share the device environment](#devices-from-another-environment).
+
+SSH aliases, identity files, and ports resolve on the environment server, so use
+the SSH configuration and keys available there. Password prompts are not supported.
 
 **Test connection** checks SSH, Node, npm, and platform tools without installing
 anything, with a result for each selected environment. Targets that resolve to

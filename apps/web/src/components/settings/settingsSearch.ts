@@ -758,17 +758,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["allow disable enable open drive preview tools sessions project override"],
   },
   {
-    id: "device-hosts",
-    title: "SSH device hosts",
-    to: "/settings/integrations",
-    searchTerms: ["ssh remote simulator emulator ios android mac mini identity key connection"],
-  },
-  {
     id: "environment-device-hosts",
     title: "Share devices with other environments",
     to: "/settings/integrations",
     searchTerms: [
-      "share sharing simulator emulator ios android another environment connected remote agent access revoke",
+      "share sharing simulator emulator ios android another environment connected remote device hosts mac mini agent access revoke",
     ],
   },
   {

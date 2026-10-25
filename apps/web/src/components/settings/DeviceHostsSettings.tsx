@@ -9,7 +9,6 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { AppleIcon, AndroidIcon } from "../Icons";
 import { Spinner } from "../ui/spinner";
 import type { EnvironmentId, SshDeviceHostConfig } from "@t3tools/contracts";
-import { randomUUID } from "../../lib/utils";
 import { useState } from "react";
 import { deviceEnvironment } from "../../state/device";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
@@ -21,7 +20,6 @@ import {
   ChevronDownIcon,
   CircleIcon,
   MoreVertical,
-  PlusIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -37,7 +35,6 @@ import {
   type DeviceHostGroup,
 } from "./deviceHostsSettings.logic";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
-import { EnvironmentDeviceHostsSettings } from "./EnvironmentDeviceHostsSettings";
 import { DeviceHostEditor } from "./DeviceHostEditor";
 import { useHostConnectionChecks } from "./useHostConnectionChecks";
 import { deviceHostConnectionKey } from "./deviceHostConnectionChecks";
@@ -63,6 +60,7 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
     labels: settingsScopeEnvironmentLabels(environment, connectedEnvironments),
     hosts: environment.serverConfig?.settings.deviceHosts ?? [],
   }));
+  if (!hostEnvironments.some((environment) => environment.hosts.length > 0)) return null;
   const groupedHosts = groupDeviceHosts(hostEnvironments);
   const save = async (host: SshDeviceHostConfig, remove = false, original = host) => {
     if (!props.environmentId || projectScope) return;
@@ -130,29 +128,13 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
     onRemove: (host: SshDeviceHostConfig) => void save(host, true),
   };
   return (
-    <>
-      <EnvironmentDeviceHostsSettings />
+    <FoldedSettingsSection id="device-hosts" title="Existing SSH device hosts">
       <SettingsRow
-        id="device-hosts"
-        title="SSH device hosts"
+        id="saved-device-hosts"
+        title="Saved hosts"
         serverScoped
         settingKeys={["deviceHosts"]}
-        description="Add remote machines with simulator or emulator runtimes installed, and the selected environments will connect over SSH and set up device tools automatically."
-        control={
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              !canConfigure || projectScope || busy || !props.environmentId || editing !== null
-            }
-            onClick={() => {
-              setOriginalHost(null);
-              setEditing({ id: randomUUID(), label: "", target: "" });
-            }}
-          >
-            <PlusIcon className="size-3.5" /> Add host
-          </Button>
-        }
+        description="Manage existing SSH connections. To use devices from another machine, connect its environment and share its devices above."
       >
         <div className="pt-3 pb-2">
           {!props.environmentId ? (
@@ -202,7 +184,7 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
                 <DeviceHostEditor
                   key={editing.id}
                   host={editing}
-                  isNew={originalHost === null}
+                  isNew={false}
                   targets={targets}
                   busy={busy}
                   onSave={(host) => void save(host, false, originalHost ?? host)}
@@ -213,7 +195,7 @@ export function DeviceHostsSettings(props: { environmentId: EnvironmentId | null
           )}
         </div>
       </SettingsRow>
-    </>
+    </FoldedSettingsSection>
   );
 }
 
