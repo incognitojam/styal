@@ -15256,10 +15256,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           const NESTED_TOOL_USE_ID = "toolu-steer-nested";
           const FINISHED_TOOL_USE_ID = "toolu-steer-finished";
           const calls: Array<string> = [];
+          const backgroundRequested = yield* Deferred.make<void>();
           let beforeAnswer: Effect.Effect<void> = Effect.void;
           const harness = yield* makeWakeHarnessWithOptions({
             backgroundTasks: (toolUseId) =>
               Effect.sync(() => calls.push(toolUseId)).pipe(
+                Effect.andThen(Deferred.succeed(backgroundRequested, undefined)),
                 Effect.andThen(
                   backgrounding === "answers after the turn ended" ||
                     backgrounding === "answers after the subagent ran again"
@@ -15432,7 +15434,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             backgrounding === "never answers" ||
             backgrounding === "answers after the steer went out"
           ) {
-            yield* awaitUntil(() => calls.length === 1, "background request");
+            // Skill discovery reads from disk before the background request starts.
+            yield* Deferred.await(backgroundRequested);
             assert.equal(harness.offeredMessages.length, offered);
             yield* TestClock.adjust("5 seconds");
           }
