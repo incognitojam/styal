@@ -1,9 +1,10 @@
 # styal mobile releases
 
-Mobile production builds use the styal-owned Expo project. iOS builds run on EAS
-Build and are submitted to TestFlight. Android builds run on GitHub Actions and
-produce signed APKs for direct installation; they are not submitted to Google Play.
-Both platforms receive over-the-air updates through EAS Update.
+Mobile production builds use the styal-owned Expo project and run on GitHub
+Actions rather than EAS Build, using the credentials and build number stored in
+EAS. iOS builds are submitted to TestFlight. Android builds produce signed APKs
+for direct installation; they are not submitted to Google Play. Both platforms
+receive over-the-air updates through EAS Update.
 
 ## Account setup
 
@@ -75,8 +76,16 @@ place of all `.gitignore` files, so keep its exclusions aligned when those chang
 ## Build and distribute
 
 Run **Mobile EAS Production** with `mode=build` and the desired platform. Selecting
-`all` schedules an iOS build with automatic TestFlight submission and runs an
-Android APK build.
+`all` runs an iOS build with TestFlight submission and an Android APK build.
+
+**Mobile iOS Build** runs `eas build --local` on GitHub's `xcode-27` macOS image
+with Xcode 27.1, submits the build to TestFlight with `eas submit`, records it as
+an annotated `ios-<version>-<build>` tag carrying its runtime version, then
+publishes an iOS over-the-air update. Mobile EAS Production calls it.
+Dispatching it directly builds and verifies the app with the `production-verify`
+profile, which leaves the build number alone, and submits nothing. The build
+needs the GitHub variable `APPLE_TEAM_ID` so eas-cli can sign in to App Store
+Connect with the API key stored in EAS.
 
 **Mobile Android Build** builds the production APK with `expo prebuild` and
 Gradle, publishes it as a GitHub release tagged `android-<version>-<versionCode>`,
@@ -116,8 +125,8 @@ installation uses registered devices; TestFlight uses production builds.
 Once enabled, relevant pushes to `main` start a production build for each
 platform when no build matches the current native fingerprint or its latest build
 has a different app version. For Android, the newest `android-*` release stands
-for the latest build. A failed iOS build requires a manual retry; a failed Android
-build is retried on the next relevant push. The workflow publishes an over-the-air
+for the latest build; for iOS, the `ios-*` tags and the EAS records of builds
+made before the move. A failed build is retried on the next relevant push. The workflow publishes an over-the-air
 update only when a finished build matches the current native fingerprint. Native changes require a compatible
 new binary; a JavaScript update cannot replace native code.
 

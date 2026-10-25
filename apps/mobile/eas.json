@@ -65,6 +65,10 @@
         "distribution": "internal",
         "buildType": "apk"
       }
+    },
+    "production-verify": {
+      "extends": "production",
+      "autoIncrement": false
     }
   },
   "submit": {
