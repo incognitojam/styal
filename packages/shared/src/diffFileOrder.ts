@@ -227,8 +227,14 @@ export function orderDiffFiles<T>(
   generatedPaths?: ReadonlyArray<string>,
 ): ReadonlyArray<T> {
   const generatedPathSet = generatedPaths === undefined ? undefined : new Set(generatedPaths);
-  const byPath = new Map<string, T>();
-  for (const file of files) byPath.set(accessors.path(file), file);
+  // A patch can list one path more than once; every entry stays, in its original relative order.
+  const byPath = new Map<string, T[]>();
+  for (const file of files) {
+    const path = accessors.path(file);
+    const entries = byPath.get(path);
+    if (entries) entries.push(file);
+    else byPath.set(path, [file]);
+  }
   const tiers = new Map<string, DiffFileTier>();
   for (const path of byPath.keys()) tiers.set(path, diffFileTier(path, generatedPathSet));
 
@@ -246,8 +252,15 @@ export function orderDiffFiles<T>(
 
   const imports = new Map<string, ReadonlySet<string>>();
   for (const path of sourcePaths) {
-    const file = byPath.get(path)!;
-    imports.set(path, importedPaths(path, accessors.changedLines(file), byModulePath, byBaseName));
+    imports.set(
+      path,
+      importedPaths(
+        path,
+        byPath.get(path)!.flatMap((file) => accessors.changedLines(file)),
+        byModulePath,
+        byBaseName,
+      ),
+    );
   }
   const orderedSource = orderByImports(sourcePaths, imports);
 
@@ -268,7 +281,9 @@ export function orderDiffFiles<T>(
     .filter((path) => tiers.get(path) === "generated")
     .sort((left, right) => left.localeCompare(right));
 
-  return [...orderedSource, ...orderedTests, ...orderedGenerated].map((path) => byPath.get(path)!);
+  return [...orderedSource, ...orderedTests, ...orderedGenerated].flatMap((path) =>
+    byPath.get(path)!,
+  );
 }
 
 const UNLOADED_FILE_ORDER_ACCESSORS = {

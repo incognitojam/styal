@@ -36,6 +36,11 @@ import { usePullRequestPermissions } from "./usePullRequestPermissions";
 import { usePullRequestAction } from "./usePullRequestAction";
 import { annotatePullRequestDiff, reviewPosition } from "./pullRequestDiffComments";
 import { usePullRequestFileFilter } from "./usePullRequestFileFilter";
+import {
+  handlePullRequestDiffDebugEvent,
+  pullRequestDiffInitialPosition,
+} from "./pullRequestDiffDebug";
+import { usePullRequestDiffHighlightFiles } from "./usePullRequestDiffHighlightFiles";
 import { isPullRequestTestFile } from "./pullRequestFileFilters";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { RegistryContext, useAtomRefresh } from "@effect/atom-react";
@@ -45,7 +50,7 @@ import { PullRequestOverviewLoading } from "./PullRequestOverviewLoading";
 import { copyPullRequestLink, sharePullRequestLink } from "./pullRequestLink";
 import { pullRequestStatus } from "./pullRequestStatus";
 import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import {
   Linking,
   Platform,
@@ -76,7 +81,6 @@ import { composerPullRequests } from "../../state/pull-requests";
 import { useEnvironmentQuery } from "../../state/query";
 import { usePullToRefresh } from "../../state/use-pull-to-refresh";
 import {
-  isNativeReviewDiffDrawEvent,
   resolveNativeReviewDiffView,
   type NativeReviewDiffViewHandle,
   type NativeReviewDiffViewProps,
@@ -828,12 +832,25 @@ export function PullRequestFileRouteScreen({
     !result.isPending &&
     !result.error;
   const activity = useEnvironmentQuery(composerPullRequests.activity(requestTarget(route.params)));
-  const baseData = buildNativeReviewDiffData(parsed);
-  const data = annotatePullRequestDiff(
-    baseData,
-    staleDiff || commit ? [] : (activity.data?.reviewThreads ?? []),
-    commit ? [] : reviewDraft.draft.comments,
-    diffHead.sha ?? undefined,
+  const baseData = useMemo(() => buildNativeReviewDiffData(parsed), [parsed]);
+  const highlightFiles = usePullRequestDiffHighlightFiles(route.params, parsed, baseData.files);
+  const data = useMemo(
+    () =>
+      annotatePullRequestDiff(
+        { ...baseData, files: highlightFiles },
+        staleDiff || commit ? [] : (activity.data?.reviewThreads ?? []),
+        commit ? [] : reviewDraft.draft.comments,
+        diffHead.sha ?? undefined,
+      ),
+    [
+      baseData,
+      highlightFiles,
+      staleDiff,
+      commit,
+      activity.data?.reviewThreads,
+      reviewDraft.draft.comments,
+      diffHead.sha,
+    ],
   );
   const viewedIds = data.files
     .filter((file) => (commit ? commitViewedPaths.has(file.path) : viewed.isViewed(file.path)))
@@ -878,7 +895,9 @@ export function PullRequestFileRouteScreen({
   const [collapsedIds, setCollapsedIds] = useState<readonly string[]>(EMPTY_IDS);
   const [visibleFileId, setVisibleFileId] = useState<string | null>(null);
   const nativeView = useRef<NativeReviewDiffViewHandle>(null);
-  const jumpStarted = useRef(false);
+  // Native applies the entry destination before its first viewport. Imperative
+  // jumps below are for subsequent selections and filter changes only.
+  const jumpStarted = useRef(true);
   const lastSelection = useRef({ path: route.params.path, id: route.params.fileSelectionId });
   useEffect(() => {
     if (
@@ -937,34 +956,18 @@ export function PullRequestFileRouteScreen({
   useEffect(() => {
     if (!targetFile) loadMore();
   }, [targetFile, loadMore]);
-  const { onDebug: updateVisibleRange } = bridge;
-  const onDebug: NonNullable<NativeReviewDiffViewProps["onDebug"]> = (event) => {
-    const drawn = isNativeReviewDiffDrawEvent(event.nativeEvent);
-    const decoded =
-      event.nativeEvent.message === "rows-decoded" && event.nativeEvent.rows === data.rows.length;
-    if (!drawn && !decoded) return;
-    // Filtering replaces the native row payload asynchronously. Old draw events
-    // must not consume the file jump or highlight the new payload's row indices.
-    if (
-      typeof event.nativeEvent.totalRows === "number" &&
-      event.nativeEvent.totalRows !== data.rows.length
-    )
-      return;
-    if (drawn) updateVisibleRange(event);
-    if (
-      targetFile &&
-      !jumpStarted.current &&
-      !awaitingReorder.current &&
-      nativeView.current &&
-      (Platform.OS !== "ios" || decoded)
-    ) {
-      jumpToTarget();
-      return;
-    }
-    if (!drawn) return;
-    const lastRow = event.nativeEvent.lastRowIndex;
-    if (typeof lastRow === "number" && lastRow >= data.rows.length - 40) loadMore();
-  };
+  const onDebug: NonNullable<NativeReviewDiffViewProps["onDebug"]> = (event) =>
+    handlePullRequestDiffDebugEvent(event, {
+      rowCount: data.rows.length,
+      targetFileId: targetFile?.id,
+      focusIndex,
+      isIos: Platform.OS === "ios",
+      nativeView,
+      jumpStarted,
+      awaitingReorder,
+      onDebug: bridge.onDebug,
+      loadMore,
+    });
   const jumpToTarget = () => {
     if (!targetFile || !nativeView.current) return;
     jumpStarted.current = true;
@@ -1177,7 +1180,7 @@ export function PullRequestFileRouteScreen({
         {NativeDiffView && data.rows.length && !seekingFile ? (
           <View className="flex-1" collapsable={false}>
             <NativeDiffView
-              initialRowIndex={focusIndex >= 0 ? Math.max(0, focusIndex - 3) : undefined}
+              {...pullRequestDiffInitialPosition(targetFile?.id, focusIndex)}
               nativeViewRef={nativeView}
               refreshing={result.refreshing}
               onPullToRefresh={result.onPullRefresh}

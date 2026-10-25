@@ -120,6 +120,16 @@ describe("orderDiffFiles", () => {
     expect(order([])).toEqual([]);
   });
 
+  it("keeps every entry of a path the patch lists more than once", () => {
+    const first = file("src/a.ts", ["first"]);
+    const second = file("src/a.ts", ["second"]);
+    expect(orderDiffFiles([second, file("src/a.test.ts"), first], accessors)).toEqual([
+      second,
+      first,
+      file("src/a.test.ts"),
+    ]);
+  });
+
   it("puts a dependency before what imports it", () => {
     expect(order([file("src/a.ts", ['import { b } from "./b";']), file("src/b.ts")])).toEqual([
       "src/b.ts",
