@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { AttachmentImage } from "~/components/media/AttachmentImage";
 import { PULL_REQUEST_STATE_PRESENTATION } from "~/components/pullRequest/pullRequestIcons";
 import type { PullRequestContextDisplayState } from "~/lib/composerContextRecords";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
@@ -189,7 +190,8 @@ export function ImageChipButton({
       {...props}
     >
       {previewUrl ? (
-        <img
+        <AttachmentImage
+          name={name}
           key={previewUrl}
           crossOrigin={corsFailedUrl === previewUrl ? undefined : "anonymous"}
           src={previewUrl}

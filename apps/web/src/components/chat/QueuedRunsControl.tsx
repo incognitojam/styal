@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 
+import { AttachmentImage } from "~/components/media/AttachmentImage";
 import { useAssetUrls } from "../../assets/assetUrls";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadProjection } from "../../state/entities";
@@ -37,6 +38,7 @@ export interface EditQueuedRunRequest {
 interface QueuedRowThumbnail {
   readonly key: string;
   readonly name: string;
+  readonly mimeType: string;
   readonly url: string | null;
 }
 
@@ -128,6 +130,7 @@ export function QueuedRunsControl({
         .map<QueuedRowThumbnail>((attachment) => ({
           key: attachment.id,
           name: attachment.name,
+          mimeType: attachment.mimeType,
           url: queuedImageUrlById.get(attachment.id) ?? null,
         })),
       pending: false,
@@ -144,6 +147,7 @@ export function QueuedRunsControl({
         .map<QueuedRowThumbnail>((attachment) => ({
           key: attachment.id,
           name: attachment.name,
+          mimeType: attachment.mimeType,
           url: attachment.previewUrl ?? null,
         })),
       pending: true,
@@ -353,7 +357,9 @@ export function QueuedRunsControl({
                             className="size-4 overflow-hidden rounded border border-border/70 bg-background"
                           >
                             {thumbnail.url ? (
-                              <img
+                              <AttachmentImage
+                                name={thumbnail.name}
+                                mimeType={thumbnail.mimeType}
                                 src={thumbnail.url}
                                 alt={thumbnail.name}
                                 className="size-full object-cover"

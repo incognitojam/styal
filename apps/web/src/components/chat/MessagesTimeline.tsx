@@ -6378,7 +6378,9 @@ function QuestionAnswerHistory({
                   className="text-sm underline"
                 >
                   {attachment.type === "image" && url ? (
-                    <img
+                    <AttachmentImage
+                      name={attachment.name}
+                      mimeType={attachment.mimeType}
                       src={url}
                       alt={attachment.name}
                       className="h-20 max-w-32 rounded object-contain"
