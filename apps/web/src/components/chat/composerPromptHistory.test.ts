@@ -136,6 +136,74 @@ describe("buildComposerPromptHistoryEntries", () => {
 });
 
 describe("stepComposerPromptHistory", () => {
+  it("keeps normalized recalls browsable in both directions until the composer is empty", () => {
+    const history = [
+      { id: "older", prompt: "older prompt" },
+      { id: "newer", prompt: "- [X] done" },
+    ];
+    const normalizePrompt = (prompt: string) => prompt.replace("[X]", "[x]");
+    const newest = stepComposerPromptHistory({
+      direction: "backward",
+      entries: history,
+      position: null,
+      currentPrompt: "",
+      normalizePrompt,
+    })!;
+    expect(newest).toEqual({
+      position: { entryId: "newer", recalled: "- [x] done" },
+      prompt: "- [x] done",
+    });
+    const older = stepComposerPromptHistory({
+      direction: "backward",
+      entries: history,
+      position: newest.position,
+      currentPrompt: newest.prompt,
+      normalizePrompt,
+    })!;
+    expect(older.prompt).toBe("older prompt");
+    const newer = stepComposerPromptHistory({
+      direction: "forward",
+      entries: history,
+      position: older.position,
+      currentPrompt: older.prompt,
+      normalizePrompt,
+    })!;
+    expect(newer).toEqual(newest);
+    expect(
+      stepComposerPromptHistory({
+        direction: "forward",
+        entries: history,
+        position: newer.position,
+        currentPrompt: newer.prompt,
+        normalizePrompt,
+      }),
+    ).toEqual({ position: null, prompt: "" });
+    expect(
+      stepComposerPromptHistory({
+        direction: "forward",
+        entries: history,
+        position: newer.position,
+        currentPrompt: `${newer.prompt} edited`,
+        normalizePrompt,
+      }),
+    ).toBeNull();
+  });
+
+  it("matches normalized text when duplicate collapse retires the recalled id", () => {
+    expect(
+      stepComposerPromptHistory({
+        direction: "backward",
+        entries: [
+          { id: "older", prompt: "older prompt" },
+          { id: "newer", prompt: "- [X] done" },
+        ],
+        position: { entryId: "retired", recalled: "- [x] done" },
+        currentPrompt: "- [x] done",
+        normalizePrompt: (prompt) => prompt.replace("[X]", "[x]"),
+      })?.prompt,
+    ).toBe("older prompt");
+  });
+
   it("does not start browsing from a non-empty draft", () => {
     expect(backward(null, "typing")).toBeNull();
   });

@@ -4288,6 +4288,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       entries: buildComposerPromptHistoryEntries(promptHistoryMessagesRef.current),
       position,
       currentPrompt: promptRef.current,
+      normalizePrompt: editor.normalizeValue,
     });
     if (!step) return false;
     promptHistoryPositionRef.current = step.position

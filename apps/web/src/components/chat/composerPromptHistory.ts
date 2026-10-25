@@ -27,10 +27,13 @@ export interface ComposerPromptHistoryPosition {
 function findActive(
   entries: ReadonlyArray<ComposerPromptHistoryEntry>,
   position: ComposerPromptHistoryPosition,
+  normalizePrompt?: (prompt: string) => string,
 ): number {
   const byId = entries.findIndex((entry) => entry.id === position.entryId);
   if (byId >= 0) return byId;
-  return entries.findLastIndex((entry) => entry.prompt === position.recalled);
+  return entries.findLastIndex(
+    (entry) => (normalizePrompt?.(entry.prompt) ?? entry.prompt) === position.recalled,
+  );
 }
 
 export interface ComposerPromptHistoryStep {
@@ -147,20 +150,25 @@ export function stepComposerPromptHistory(input: {
   readonly entries: ReadonlyArray<ComposerPromptHistoryEntry>;
   readonly position: ComposerPromptHistoryPosition | null;
   readonly currentPrompt: string;
+  readonly normalizePrompt?: (prompt: string) => string;
 }): ComposerPromptHistoryStep | null {
   const { entries, position, currentPrompt } = input;
   const activeIndex =
-    position && position.recalled === currentPrompt ? findActive(entries, position) : -1;
+    position && position.recalled === currentPrompt
+      ? findActive(entries, position, input.normalizePrompt)
+      : -1;
 
   if (input.direction === "backward") {
     if (activeIndex < 0 && currentPrompt.length > 0) return null;
     const entry = entries[activeIndex < 0 ? entries.length - 1 : activeIndex - 1];
     if (!entry) return null;
-    return { position: { entryId: entry.id, recalled: entry.prompt }, prompt: entry.prompt };
+    const prompt = input.normalizePrompt?.(entry.prompt) ?? entry.prompt;
+    return { position: { entryId: entry.id, recalled: prompt }, prompt };
   }
 
   if (activeIndex < 0) return null;
   const entry = entries[activeIndex + 1];
   if (!entry) return { position: null, prompt: "" };
-  return { position: { entryId: entry.id, recalled: entry.prompt }, prompt: entry.prompt };
+  const prompt = input.normalizePrompt?.(entry.prompt) ?? entry.prompt;
+  return { position: { entryId: entry.id, recalled: prompt }, prompt };
 }
