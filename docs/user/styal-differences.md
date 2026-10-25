@@ -184,6 +184,12 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
 
 ## Staying oriented while agents work
 
+- **Warnings for agents that may be stuck.** styal records prolonged startup or inactivity in
+  the thread's activity log and shows the warning on web, desktop, and mobile. The notice updates
+  when activity resumes or the turn ends; the agent is never automatically retried. Compared
+  with [T3 Code revision d53873b](https://github.com/pingdotgg/t3code/tree/d53873b6a4799e87afd63c8d288ef0089f5a3748),
+  checked October 24, 2026. [When an agent may be stuck](./activity-log.md#when-an-agent-may-be-stuck).
+
 - **Switch question answers on mobile without losing your draft.** Choosing a single answer
   keeps your custom text in its question field. The selected option is sent; tap your text to
   use it instead. Compared with

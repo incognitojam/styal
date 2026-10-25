@@ -17,3 +17,15 @@ Failed calls do not count as successful messages or creations. Waiting on a thre
 it finished, and an interrupt or cancellation request does not mean the thread stopped. When tool
 details are unavailable, summaries use a broader description instead of guessing how many threads
 were affected.
+
+## When an agent may be stuck
+
+styal adds a warning to the activity log if startup has not attached a provider turn after five
+minutes, or an attached turn has no recorded activity for ten minutes. This appears on web,
+desktop, and mobile. Known running tools, child agents, pending questions and approvals, and
+provider retry waits suppress the warning. Quiet reasoning can still be healthy; the warning
+does not stop or retry the agent.
+
+If the agent appears stuck, stop the turn and send a message to continue in the same thread.
+The warning clears when activity resumes, known work or a request appears, or the turn ends.
+The activity log retains a record of the incident.

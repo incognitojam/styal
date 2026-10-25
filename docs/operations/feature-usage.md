@@ -100,6 +100,17 @@ Font names, profile names and IDs, project keys, grouping overrides, load-balanc
 
 When adding a client setting, either report it here or list it with a reason in `NOT_REPORTED` in `apps/web/src/clientSettingsSnapshot.test.ts`; that test fails until you choose.
 
+## Provider stall detection
+
+Provider stall detection emits `provider.turn.stall` with `outcome = detected | activity | waiting |
+run_ended`, `phase = startup | provider_silent`, provider type, `quietDurationMs`, and
+`incidentDurationMs`. Each episode emits once when detected and once when cleared; repeated
+sweeps and reconnects do not emit again. Filter on `providerStallUsageVersion = 1` for rollout
+coverage. These are suspected stalls, not confirmed provider failures: quiet reasoning can
+resume normally. Compare detection counts and clearance outcomes by phase and server version;
+completion-only cohorts omit turns that never finish. Telemetry is best effort and follows the
+existing opt-out. Durable thread notices provide local evidence independently of telemetry.
+
 ## Measure a fork feature
 
 Measure use of a new or materially changed fork feature in the PR that ships it. Measure fork-maintained behavior only: usage of an upstream feature does not inform whether to keep a fork difference.

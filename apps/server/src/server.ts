@@ -135,6 +135,8 @@ import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as Observability from "./observability/Observability.ts";
 import * as HeapSnapshot from "./observability/HeapSnapshot.ts";
 import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
+import * as ProviderStallMonitor from "./orchestration-v2/ProviderStallMonitor.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { reportStalledShutdown, traceShutdown } from "./observability/OpenSpans.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
@@ -644,6 +646,15 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     }),
   ).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
   ProviderUsageLimitsIngestion.layer,
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      yield* (yield* ProviderStallMonitor.ProviderStallMonitor).start();
+    }),
+  ).pipe(
+    Layer.provide(ProviderStallMonitor.layer),
+    Layer.provide(ProjectionStoreV2.layer),
+    Layer.provide(IdAllocator.layer),
+  ),
   layerProviderInstallationRefresh,
   ProviderAutoUpdaterLive,
   SettingsSnapshot.layer,

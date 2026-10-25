@@ -208,6 +208,7 @@ export const make = Effect.gen(function* () {
           threadSettleReasonUsageVersion: 1,
           providerAnalyticsUsageVersion: 1,
           providerSendUsageVersion: 1,
+          providerStallUsageVersion: 1,
           settingsSnapshotUsageVersion: 1,
           desktopUpdateIdleRestartUsageVersion: 1,
           ...buildContext,

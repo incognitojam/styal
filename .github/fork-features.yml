@@ -3540,6 +3540,44 @@ features:
       tracking: []
       retire_when: Upstream retains environment-only provider configuration when adopting project-scoped settings.
 
+  - id: provider-stall-detection
+    title: Record and surface suspected provider stalls
+    status: maintained
+    prs: []
+    invariants:
+      - A server-owned monitor records prolonged startup and provider silence once per attempt and inactivity episode, independently of provider streams, clients, and blocked effect lanes.
+      - Known tools, child agents, pending requests, background work, and retry waits suppress warnings; streamed text and reasoning refresh activity without hiding a later freeze, and diagnostic notices never refresh provider activity.
+      - Detection commits only while the same run attempt, phase, and activity observation remain current; queued time and superseded attempt activity do not count toward startup or progress.
+      - Durable notices reach web, desktop, mobile, and agent thread reads, clear on activity or known work or run termination, and retain incident history without automatically interrupting or replaying provider work.
+      - Telemetry records detection and clearance outcomes with provider type, phase, and durations, without thread identifiers, prompts, output, commands, paths, or configured provider names, and honors the existing telemetry opt-out.
+    rationale: Silent provider stalls may never emit a terminal event, so completion analytics alone omit them. Local incident evidence and a shared warning make these failures visible while preserving long-running tools and avoiding duplicate external actions from automatic retries.
+    implementation_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
+      - apps/server/src/orchestration-v2/EventSink.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/orchestration-v2/ProviderStallMonitor.ts
+      - apps/server/src/server.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/web/src/session-logic.ts
+      - packages/contracts/src/orchestrationV2.ts
+    upstream_paths:
+      - apps/mobile/src/features/threads/thread-work-log.tsx
+      - apps/server/src/orchestration-v2/EventSink.ts
+      - apps/server/src/orchestration-v2/ProjectionStore.ts
+      - apps/server/src/server.ts
+      - apps/server/src/telemetry/AnalyticsService.ts
+      - apps/web/src/session-logic.ts
+      - packages/contracts/src/orchestrationV2.ts
+    tests:
+      - apps/server/src/orchestration-v2/ProviderStallMonitor.test.ts
+      - apps/web/src/session-logic.runtime-diagnostics.test.ts
+    upstream:
+      status: tracking
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/22513
+        - https://github.com/pingdotgg/t3code/pull/23898
+      retire_when: Upstream records suspected startup and provider-silence incidents on the server, clears them on resumed activity or termination, exposes them on every client and agent thread reads, and measures their outcomes without treating silence as permission to replay provider work.
+
   - id: provider-subscription-limits
     title: Keep provider usage limits across restarts and sign-out
     status: maintained
