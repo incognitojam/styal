@@ -3712,6 +3712,26 @@ features:
         - https://github.com/pingdotgg/t3code/pull/2829
       retire_when: Upstream derives Claude working and compaction state from the active turn rather than provider status messages, with equivalent post-compaction recovery.
 
+  - id: publish-push-failure-transport
+    title: Explain publish failures using the effective push transport
+    status: maintained
+    prs: []
+    invariants:
+      - Publish authentication failures use the effective push URL of the selected remote for SSH or Git credential guidance, including reused remotes and configured push URLs.
+      - Reading the push transport never changes remote selection, exposes remote credentials in the displayed explanation, or replaces the original push failure when URL lookup fails.
+    rationale: Upstream main at c5332bf14dfb335c9eb08966624d65328e82641a still classifies the requested publish URL, although ensureRemote can reuse a remote with another transport. This corrects existing failure guidance without adding an operation or changing the publish workflow.
+    implementation_paths:
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+    upstream_paths:
+      - apps/server/src/sourceControl/SourceControlRepositoryService.ts
+    tests:
+      - apps/server/src/sourceControl/SourceControlRepositoryService.test.ts
+    upstream:
+      status: partial
+      tracking:
+        - https://github.com/pingdotgg/t3code/pull/19219
+      retire_when: Upstream classifies publish push failures from the effective push URL of the selected remote rather than the requested protocol.
+
   - id: pull-request-association-continuity
     title: Keep worktrees associated with the correct pull request
     status: maintained

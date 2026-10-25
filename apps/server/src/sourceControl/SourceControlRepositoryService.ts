@@ -55,6 +55,7 @@ import { makeReferenceCache } from "./referenceCache.ts";
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isBitbucketRepositoryLocatorError = Schema.is(BitbucketApi.BitbucketRepositoryLocatorError);
@@ -240,15 +241,14 @@ function redactUrlCredentials(text: string): string {
 function publishPushFailureDetail(input: {
   readonly urls: SourceControlRepositoryCloneUrls;
   readonly remoteName: string;
-  readonly remoteUrl: string;
+  readonly usesSsh: boolean;
   readonly reason: GitCommandFailureReason | undefined;
 }): string {
   const created = `Created ${input.urls.nameWithOwner} and added it as remote "${input.remoteName}", but the push failed`;
   const switchToHttps = `git remote set-url ${input.remoteName} ${input.urls.url}`;
-  const usesSsh = input.remoteUrl === input.urls.sshUrl;
   switch (input.reason) {
     case "authentication_failed":
-      return usesSsh
+      return input.usesSsh
         ? `${created} because SSH authentication was rejected. Add an SSH key to your account, or switch the remote to HTTPS with "${switchToHttps}", then push again.`
         : `${created} because Git could not authenticate. Check your Git credentials, then push again.`;
     case "host_key_unverified":
@@ -809,19 +809,31 @@ export const make = Effect.gen(function* () {
       }
 
       const pushResult = yield* git.pushCurrentBranch(input.cwd, null, { remoteName }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new SourceControlRepositoryError({
+        Effect.catch((cause) =>
+          Effect.gen(function* () {
+            // Reused remotes, pushurl, and URL rewrites can override the requested transport.
+            const usesSsh = yield* git
+              .execute({
+                operation: "SourceControlRepositoryService.publishRepository.pushUrl",
+                cwd: input.cwd,
+                args: ["remote", "get-url", "--push", "--", remoteName],
+              })
+              .pipe(
+                Effect.map((result) => isSshRemoteUrl(result.stdout)),
+                Effect.orElseSucceed(() => false),
+              );
+            return yield* new SourceControlRepositoryError({
               operation: "publishRepository",
               provider: providerKind,
               detail: publishPushFailureDetail({
                 urls,
                 remoteName,
-                remoteUrl,
+                usesSsh,
                 reason: cause.reason,
               }),
               cause,
-            }),
+            });
+          }),
         ),
       );
 
