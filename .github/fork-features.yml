@@ -1636,7 +1636,7 @@ features:
       - During compaction, both composer actions queue follow-ups until the maintenance turn finishes; ordinary turns retain the steering default and same-turn completion lifecycle.
       - Mobile queues when the active provider cannot steer; web/desktop use the existing interrupt-and-restart fallback for providers without active steering. Provider execution and Claude message priority remain unchanged.
       - Web, desktop, and mobile show the same muted delivery label (From queue, or an arrow and Steer, with a promoted steer's queued origin kept in the tooltip or accessibility label) beside the timestamp beneath the message. Web and desktop reveal it with the rest of the metadata row on hover or focus; touch clients show that row, label included, at all times.
-    rationale: Ordinary follow-ups should reach ongoing work without waiting for the whole turn to finish. Retain the closed upstream proposal as a deliberate styal default.
+    rationale: Ordinary follow-ups should reach ongoing work without waiting for the whole turn to finish. Upstream now steers by default too; queueing during compaction, the mobile queue fallback for providers that cannot steer, and the muted delivery labels remain fork-only.
     implementation_paths:
       - apps/mobile/src/features/threads/ThreadFeed.tsx
       - apps/mobile/src/lib/followUpBehavior.ts
@@ -1653,10 +1653,11 @@ features:
       - packages/client-runtime/src/userMessage.test.ts
       - packages/contracts/src/settings.test.ts
     upstream:
-      status: tracking
+      status: partial
       tracking:
         - https://github.com/pingdotgg/t3code/pull/18226
-      retire_when: Upstream defaults to steering follow-ups across clients while preserving explicit Queue preferences and shows delivery labels as muted text beside the timestamp instead of above-message or colored badges.
+        - https://github.com/pingdotgg/t3code/pull/24718
+      retire_when: Upstream queues follow-ups during compaction, queues on mobile when the active provider cannot steer, and shows delivery labels as muted text beside the timestamp instead of above-message or colored badges.
 
   - id: fork-agent-integration-identity
     title: Identify styal to agents and MCP clients
