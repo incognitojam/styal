@@ -32,6 +32,7 @@ import {
   type ThreadRuntimeSummary,
 } from "./models.ts";
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";
+import { formatWorkflowRunDisplayName } from "./workflowRunDisplay.ts";
 
 const ACTIVITY_RUN_STATUSES = new Set(["preparing", "starting", "running", "waiting"]);
 const INTERRUPTIBLE_RUN_STATUSES = new Set(["preparing", "starting", "running"]);
@@ -282,6 +283,7 @@ export interface PendingBackgroundWorkItem {
   readonly taskId: string;
   readonly kind: BackgroundWorkKind;
   readonly label: string;
+  readonly fullLabel?: string;
   readonly childThreadId: ThreadId | undefined;
 }
 
@@ -307,10 +309,15 @@ export function presentPendingBackgroundWork(
       const label =
         task.kind === "subagent" && description !== undefined
           ? formatSubagentDisplayTitle(description).trim()
-          : description;
+          : task.kind === "monitor" && task.taskId.startsWith("workflow-run-watch:") && description
+            ? formatWorkflowRunDisplayName(description)
+            : description;
       return {
         taskId: task.taskId,
         kind: task.kind,
+        ...(task.kind === "monitor" && description !== undefined && label !== description
+          ? { fullLabel: description }
+          : {}),
         label:
           label === undefined || label.length === 0
             ? BACKGROUND_WORK_KINDS[task.kind].singular

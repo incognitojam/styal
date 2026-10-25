@@ -2,7 +2,7 @@ import type { EnvironmentId, ThreadId, ThreadWorkflowRunWatch } from "@t3tools/c
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
 import { ExternalLinkIcon, RocketIcon, ShieldQuestionIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -12,6 +12,7 @@ import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { toastManager } from "../ui/toast";
 import { ComposerBanner } from "./ComposerBanner";
+import { WorkflowRunLabel } from "./WorkflowRunLabel";
 
 type ReviewState = "approved" | "rejected";
 
@@ -23,6 +24,7 @@ export function WorkflowRunReviewPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly runs: ReadonlyArray<ThreadWorkflowRunWatch>;
+  readonly watchActions?: ReactNode;
 }) {
   const reviewed = props.runs.filter((run) => run.review !== undefined);
   const run = reviewed[0];
@@ -37,6 +39,7 @@ export function WorkflowRunReviewPanel(props: {
       run={run}
       environments={run.review.environments}
       waitingCount={reviewed.length}
+      watchActions={props.watchActions}
     />
   );
 }
@@ -47,6 +50,7 @@ function WorkflowRunReviewForm(props: {
   readonly run: ThreadWorkflowRunWatch;
   readonly environments: NonNullable<ThreadWorkflowRunWatch["review"]>["environments"];
   readonly waitingCount: number;
+  readonly watchActions?: ReactNode;
 }) {
   const { run, environments } = props;
   const canReview = useAtomValue(
@@ -101,10 +105,10 @@ function WorkflowRunReviewForm(props: {
           <ShieldQuestionIcon />
         </ComposerBanner.Icon>
         <ComposerBanner.Content>
-          <span className="shrink-0 font-medium text-muted-foreground">Deployment review</span>
-          <span className="min-w-0 truncate">{run.name}</span>
+          <WorkflowRunLabel name={run.name} />
         </ComposerBanner.Content>
         <ComposerBanner.Actions>
+          {props.watchActions}
           {props.waitingCount > 1 ? (
             <span className="text-3xs font-medium text-muted-foreground tabular-nums">
               1/{props.waitingCount}
@@ -121,6 +125,7 @@ function WorkflowRunReviewForm(props: {
         </ComposerBanner.Actions>
       </ComposerBanner.Row>
       <ComposerBanner.Body className="pe-1 pb-1">
+        <p className="font-medium text-muted-foreground">Deployment review</p>
         <p className="text-foreground/85">
           Waiting for your review to deploy to{" "}
           {environments.map((environment) => environment.name).join(", ")}.

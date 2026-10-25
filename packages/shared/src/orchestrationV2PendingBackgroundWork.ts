@@ -258,13 +258,19 @@ export function derivePendingBackgroundWork(input: {
   return Array.from(byTaskId.values());
 }
 
+export function workflowRunWatchTaskId(
+  run: Pick<ThreadWorkflowRunWatch, "host" | "repository" | "runId">,
+): string {
+  return `workflow-run-watch:${run.host.toLowerCase()}/${run.repository.toLowerCase()}/${run.runId}`;
+}
+
 /** Pull request and workflow run watches the server holds for the thread's agent. */
 function watchTasks(input: {
   readonly pullRequests?: ReadonlyArray<PendingBackgroundWorkPullRequest> | undefined;
   readonly workflowRuns?: ReadonlyArray<PendingBackgroundWorkWorkflowRun> | undefined;
 }): Array<PendingBackgroundWorkTask> {
   const runs = (input.workflowRuns ?? []).map((run) => ({
-    taskId: `workflow-run-watch:${run.host.toLowerCase()}/${run.repository.toLowerCase()}/${run.runId}`,
+    taskId: workflowRunWatchTaskId(run),
     description: `Watching ${run.name}`,
     kind: "monitor" as const,
   }));

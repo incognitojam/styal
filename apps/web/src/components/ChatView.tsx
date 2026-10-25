@@ -114,6 +114,8 @@ import {
   presentPendingBackgroundWork,
   presentProviderGoal,
 } from "@t3tools/client-runtime/state/thread-execution";
+import { workflowRunReviewCoversBackgroundWork } from "@t3tools/client-runtime/state/workflow-run-display";
+import { WorkflowRunLabel } from "./chat/WorkflowRunLabel";
 import {
   resolveWorkflowOpening,
   workflowOpeningParentThreadId,
@@ -5439,7 +5441,11 @@ export default function ChatView(props: ChatViewProps) {
           aria-hidden="true"
         />
       ),
-      title: presentation.title,
+      title: onlyItem?.fullLabel ? (
+        <WorkflowRunLabel name={onlyItem.fullLabel} />
+      ) : (
+        presentation.title
+      ),
       // A single item is already named in the title, so it only needs a way in.
       description:
         onlyItem !== undefined ? (
@@ -5461,7 +5467,7 @@ export default function ChatView(props: ChatViewProps) {
                 {index > 0 ? " " : null}
                 {childThreadId === undefined ? (
                   <>
-                    {item.label}
+                    {item.fullLabel ? <WorkflowRunLabel name={item.fullLabel} /> : item.label}
                     {separator}
                   </>
                 ) : (
@@ -5492,6 +5498,12 @@ export default function ChatView(props: ChatViewProps) {
       ),
     };
   })() as ComposerBannerStackItem | null;
+  const workflowRunReviewIncludesBackgroundWork =
+    activePendingApproval === null &&
+    workflowRunReviewCoversBackgroundWork(
+      activeBackgroundTasks,
+      activeThreadShell?.workflowRuns ?? [],
+    );
   // The relative times read the clock; nowMinute re-renders them on the minute.
   const snoozedUntil = activeThreadShell?.snoozedUntil ?? null;
   const settledAt = activeThreadShell?.settledAt ?? null;
@@ -5651,7 +5663,7 @@ export default function ChatView(props: ChatViewProps) {
     const backgroundWorkItems = [
       childInputBannerItem,
       goalBannerItem,
-      backgroundWorkBannerItem,
+      workflowRunReviewIncludesBackgroundWork ? null : backgroundWorkBannerItem,
     ].filter((item) => item !== null);
     const usageLimitsItems = usageLimitsBanner === null ? [] : [usageLimitsBanner];
     const projectCloneItems = projectCloneBannerItem === null ? [] : [projectCloneBannerItem];
@@ -8586,6 +8598,11 @@ export default function ChatView(props: ChatViewProps) {
                               pendingApprovals={pendingApprovals}
                               pendingUserInputs={pendingUserInputs}
                               workflowRuns={activeThreadShell?.workflowRuns}
+                              workflowRunReviewActions={
+                                workflowRunReviewIncludesBackgroundWork
+                                  ? backgroundWorkBannerItem?.actions
+                                  : undefined
+                              }
                               activePendingProgress={activePendingProgress}
                               activePendingResolvedAnswers={activePendingResolvedAnswers}
                               activePendingIsResponding={activePendingIsResponding}
