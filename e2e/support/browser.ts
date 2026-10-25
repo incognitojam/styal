@@ -195,6 +195,22 @@ export async function addEnvironment(page: Page, pairingUrl: string): Promise<vo
   await page.getByText(`${new URL(pairingUrl).origin}/ · Connected`).waitFor({ timeout: 60_000 });
 }
 
+/** Opens a project's draft and waits for its composer to replace the previous thread's. */
+export async function startNewThread(app: App, projectName: string): Promise<void> {
+  const { page, composer } = app;
+  const previousUrl = page.url();
+  const previousEditor = await composer.elementHandle();
+  await page.getByRole("button", { name: `New thread in ${projectName}`, exact: true }).click();
+  await page.waitForURL(/\/draft\/[^/]+$/);
+  // The URL can change while the draft route is still loading and the old editor is actionable.
+  // An already-open empty draft can be reused without replacing its editor.
+  if (page.url() !== previousUrl && previousEditor) {
+    await page.waitForFunction((editor) => !editor.isConnected, previousEditor);
+  }
+  await composer.waitFor();
+  await previousEditor?.dispose();
+}
+
 /**
  * Sends `text` from the composer and waits for `reply`, which defaults to fake-codex's echo,
  * and then for the turn to finish.
@@ -207,6 +223,7 @@ export async function sendMessage(
   const { page, composer } = app;
   await composer.click();
   await page.keyboard.type(text);
+  await composer.filter({ hasText: text }).waitFor();
   await page.getByRole("button", { name: "Submit message" }).click();
   await page.locator("[data-message-role=user]").filter({ hasText: text }).last().waitFor();
   await page.getByText(reply).last().waitFor();
