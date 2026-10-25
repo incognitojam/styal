@@ -813,7 +813,7 @@ features:
       - apps/server/src/orchestration-v2/legacy/orderLegacyHistory.test.ts
       - apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts
       - apps/server/src/persistence/ForkMigrations/009_RederiveLegacyActivityItems.test.ts
-      - apps/web/src/components/RelativeTime.browser.test.tsx
+      - apps/web/src/components/import/ImportDataView.browser.test.tsx
       - apps/web/src/components/import/useHistoryImport.browser.test.tsx
       - apps/web/src/components/import/useLegacyImport.browser.test.tsx
       - apps/web/src/components/settings/DataImportSettings.logic.test.ts
@@ -2339,7 +2339,6 @@ features:
       - apps/server/src/hardware/HardwareService.test.ts
       - apps/server/src/mcp/OrchestratorMcpToolkit.integration.test.ts
       - apps/server/src/telemetry/FeatureUsage.test.ts
-      - apps/web/src/components/RelativeTime.browser.test.tsx
       - apps/web/src/components/settings/hardwareSettings.logic.test.ts
       - packages/client-runtime/src/state/commandPermissions.test.ts
       - packages/client-runtime/src/state/hardware.test.ts
@@ -3820,7 +3819,6 @@ features:
     tests:
       - apps/server/src/pullRequest/PullRequestService.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
-      - apps/web/src/components/RelativeTime.browser.test.tsx
       - apps/web/src/components/pullRequest/PullRequestDeployments.browser.test.tsx
       - apps/web/src/components/pullRequest/pullRequestDeployments.logic.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts

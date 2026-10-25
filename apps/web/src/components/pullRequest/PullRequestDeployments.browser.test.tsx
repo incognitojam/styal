@@ -193,3 +193,17 @@ it("keeps links working on older servers and when analytics delivery fails", asy
   expect(openLink).toHaveBeenCalledTimes(3);
   expect(toast).not.toHaveBeenCalled();
 });
+
+it("keeps a deployment's age counting without new deployment data", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+  try {
+    vi.setSystemTime(new Date("2026-07-02T00:03:00Z"));
+    await render();
+    expect(container.textContent).toContain("3m ago");
+
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(container.textContent).toContain("4m ago");
+  } finally {
+    vi.useRealTimers();
+  }
+});
