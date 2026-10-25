@@ -19,6 +19,7 @@ import type { AsyncResult } from "effect/reactivity";
 import { sortPinnedProjectsFirst } from "@t3tools/client-runtime/state/project-organization";
 import { clusterByGroup } from "@t3tools/client-runtime/state/thread-project-groups";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
+import type { OlderSettled } from "@t3tools/client-runtime/state/threads";
 import {
   effectiveSnoozed,
   type ThreadSnoozeShell,
@@ -1573,4 +1574,21 @@ export function sortScopedProjectsForSidebar<
       left.environmentId.localeCompare(right.environmentId) ||
       left.id.localeCompare(right.id),
   );
+}
+
+/**
+ * Older settled threads of archived projects: the server counts them below the shell's cut, but
+ * archived projects' threads stay out of the list, so an all-projects Settled count drops them.
+ */
+export function archivedOlderSettledCount(
+  environments: ReadonlyMap<EnvironmentId, { readonly older: OlderSettled | null }>,
+  archivedProjectKeys: ReadonlySet<string>,
+): number {
+  let count = 0;
+  for (const [environmentId, { older }] of environments) {
+    for (const [projectId, projectCount] of older?.counts ?? []) {
+      if (archivedProjectKeys.has(`${environmentId}:${projectId}`)) count += projectCount;
+    }
+  }
+  return count;
 }

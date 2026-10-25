@@ -1,3 +1,4 @@
+import type { OlderSettled } from "@t3tools/client-runtime/state/threads";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
 import * as DateTime from "effect/DateTime";
 import { deriveActiveWorkStartedAt } from "../session-logic.ts";
@@ -5,6 +6,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
+  archivedOlderSettledCount,
   sidebarListItemId,
   resolveSidebarProjectDrop,
   sidebarMarkerId,
@@ -1642,5 +1644,37 @@ describe("pendingSidebarRouteReveal", () => {
     pendingSidebarRouteReveal(reveal, "env:a1");
     expect(pendingSidebarRouteReveal(reveal, null)).toBeNull();
     expect(pendingSidebarRouteReveal(reveal, "env:a1")).toBe("env:a1");
+  });
+});
+
+describe("archivedOlderSettledCount", () => {
+  it("counts only archived projects' older settled threads", () => {
+    const local = EnvironmentId.make("synthetic-local");
+    const remote = EnvironmentId.make("synthetic-remote");
+    const older = (
+      counts: ReadonlyArray<readonly [string, number]>,
+    ): { readonly older: OlderSettled | null } => ({
+      older: {
+        before: "2026-09-01T00:00:00.000Z",
+        beforeMs: Date.UTC(2026, 8, 1),
+        counts: new Map(counts.map(([projectId, count]) => [ProjectId.make(projectId), count])),
+      },
+    });
+    const environments = new Map([
+      [
+        local,
+        older([
+          ["archived", 4],
+          ["active", 7],
+        ]),
+      ],
+      [remote, older([["archived", 2]])],
+      [EnvironmentId.make("synthetic-unloaded"), { older: null }],
+    ]);
+
+    expect(
+      archivedOlderSettledCount(environments, new Set([`${local}:archived`, `${remote}:archived`])),
+    ).toBe(6);
+    expect(archivedOlderSettledCount(environments, new Set())).toBe(0);
   });
 });

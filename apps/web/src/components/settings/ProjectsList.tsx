@@ -16,7 +16,10 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useAtomValue } from "@effect/atom-react";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { unloadedOlderSettledCount } from "@t3tools/client-runtime/state/threads";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { getThreadSortTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import { Link } from "@tanstack/react-router";
 import {
@@ -28,6 +31,7 @@ import {
   PinOffIcon,
   SettingsIcon,
 } from "lucide-react";
+import { Atom } from "effect/reactivity";
 import { type ReactNode, useState } from "react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -38,6 +42,7 @@ import { normalizeSearchText } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironmentMachines, useEnvironments } from "../../state/environments";
 import { useThreadShells } from "../../state/entities";
+import { olderSettledThreads } from "../../state/threads";
 import { RelativeTime } from "../RelativeTime";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../../uiStateStore";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
@@ -53,6 +58,19 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
+
+// Shells leave older settled threads out, so counts add each environment's count of them.
+const olderSettledByEnvironmentAtom = Atom.family((environmentIdsKey: string) =>
+  Atom.make(
+    (get) =>
+      new Map(
+        (JSON.parse(environmentIdsKey) as EnvironmentId[]).map(
+          (environmentId) =>
+            [environmentId, get(olderSettledThreads.olderSettledAtom(environmentId))] as const,
+        ),
+      ),
+  ),
+);
 
 interface ProjectActivity {
   readonly threadCount: number;
@@ -106,8 +124,34 @@ export function ProjectsList() {
       ),
     ),
   );
+  const olderSettled = useAtomValue(
+    olderSettledByEnvironmentAtom(
+      JSON.stringify(environments.map((environment) => environment.environmentId).toSorted()),
+    ),
+  );
+  const visibleThreads = filterSidebarV2VisibleThreads(threads, null);
   const activity = new Map<string, { threadCount: number; lastThreadMs: number }>();
-  for (const thread of filterSidebarV2VisibleThreads(threads, null)) {
+  for (const group of projectGroups) {
+    const environmentIds = [...new Set(group.memberProjectRefs.map((ref) => ref.environmentId))];
+    const threadCount = unloadedOlderSettledCount({
+      olderSettled: (environmentId) => olderSettled.get(environmentId) ?? null,
+      scopes: environmentIds.map((environmentId) => ({
+        environmentId,
+        projectIds: group.memberProjectRefs.flatMap((ref) =>
+          ref.environmentId === environmentId ? [ref.projectId] : [],
+        ),
+      })),
+      threads: visibleThreads.filter(
+        (thread) =>
+          groupKeyByProjectRef.get(`${thread.environmentId}:${thread.projectId}`) ===
+          group.projectKey,
+      ),
+    });
+    if (threadCount > 0) {
+      activity.set(group.projectKey, { threadCount, lastThreadMs: Number.NEGATIVE_INFINITY });
+    }
+  }
+  for (const thread of visibleThreads) {
     const key = groupKeyByProjectRef.get(`${thread.environmentId}:${thread.projectId}`);
     if (!key) continue;
     const entry = activity.get(key) ?? { threadCount: 0, lastThreadMs: Number.NEGATIVE_INFINITY };
