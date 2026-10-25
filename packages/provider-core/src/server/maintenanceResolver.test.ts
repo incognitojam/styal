@@ -948,6 +948,29 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     }),
   );
 
+  it.effect("matches an npm-linked Windows wrapper across VP_HOME path casing", () =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("win32");
+      const files = new Map(
+        [...fixture.files].map(([file, contents]) => [file.toLowerCase(), contents]),
+      );
+      const capabilities = yield* resolveCustomVitePlus(
+        {
+          ...fixture,
+          fileSystem: FileSystem.makeNoop({
+            readFileString: (file) => Effect.succeed(files.get(file.toLowerCase()) ?? ""),
+            exists: (file) => Effect.succeed(files.has(file.toLowerCase())),
+          }),
+        },
+        { ...fixture.env, VP_HOME: fixture.home.toLowerCase() },
+      );
+      expect(capabilities.update?.executable.toLowerCase()).toBe(fixture.node.toLowerCase());
+      expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args.at(-1)).toBe(
+        "@example/package-tool@2.0.0",
+      );
+    }),
+  );
+
   it.effect("accepts a custom root with a trailing separator and Windows Path spelling", () =>
     Effect.gen(function* () {
       const fixture = customVitePlusFixture("win32");

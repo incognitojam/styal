@@ -402,9 +402,11 @@ const resolveCustomVitePlusMaintenance = Effect.fn("resolveCustomVitePlusMainten
       .readFileString(context.resolvedCommandPath)
       .pipe(Effect.orElseSucceed(() => ""));
     // Accept Vite+'s npm-link templates, never an arbitrary batch dispatcher.
-    const cmdWrapper = `@echo off\n"${target}" %*\nexit /b %ERRORLEVEL%\n`;
-    const shWrapper = `#!/bin/sh\nexec "${target}" "$@"\n`;
-    if (wrapper.replaceAll("\r\n", "\n") !== cmdWrapper && wrapper !== shWrapper) return manual;
+    const normalizedWrapper = wrapper.replaceAll("\r\n", "\n");
+    const wrappedTarget =
+      /^@echo off\n"([^"\n]+)" %\*\nexit \/b %ERRORLEVEL%\n$/.exec(normalizedWrapper)?.[1] ??
+      /^#!\/bin\/sh\nexec "([^"\n]+)" "\$@"\n$/.exec(normalizedWrapper)?.[1];
+    if (!wrappedTarget || !samePath(wrappedTarget, target)) return manual;
     if (!(yield* fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false)))) return manual;
   } else {
     const realPrefix = npmGlobalPrefixFromCommandPath(
