@@ -6907,7 +6907,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
                       >
                         {attachment.type === "image" && url ? (
-                          <img
+                          <AttachmentImage
+                            name={attachment.name}
+                            mimeType={attachment.mimeType}
                             src={url}
                             alt={attachment.name}
                             className="h-full w-full object-cover"

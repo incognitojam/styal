@@ -15,6 +15,12 @@ vi.mock(import("./ReadOnlySourcePreview"), async (original) => ({
   default: ({ text }: { text: string }) => <pre>{text}</pre>,
 }));
 
+vi.mock(import("../../lib/imageCompression"), async (original) => ({
+  ...(await original()),
+  prepareImageForAttachment: vi.fn(),
+}));
+
+import { prepareImageForAttachment } from "../../lib/imageCompression";
 import { AttachmentFilePreview } from "./AttachmentFilePreview";
 
 describe("attachment HTML preview recovery", () => {
@@ -113,5 +119,90 @@ describe("attachment HTML preview recovery", () => {
     await toggleMode("Show rendered page");
     expect(alert()).toBeNull();
     expect(container.querySelector("iframe")?.title).toBe("document.html");
+  });
+});
+
+describe("attachment image preview fallback", () => {
+  let root: Root;
+  let container: HTMLDivElement;
+  const sourceUrl = "data:application/octet-stream,heic";
+  const jpeg = new File(["jpeg"], "photo.jpg", { type: "image/jpeg" });
+
+  beforeEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    refresh.mockReset().mockResolvedValue(sourceUrl);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Blob(["heic"]))),
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:jpeg");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.mocked(prepareImageForAttachment).mockReset().mockResolvedValue({
+      ok: true,
+      file: jpeg,
+      recompressed: true,
+    });
+    container = document.body.appendChild(document.createElement("div"));
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(() => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const openImage = (name: string, mimeType: string) =>
+    act(() =>
+      root.render(
+        <AttachmentFilePreview
+          name={name}
+          mimeType={mimeType}
+          sizeBytes={100}
+          asset={{ environmentId: EnvironmentId.make("test-environment"), attachmentId: "photo" }}
+        />,
+      ),
+    );
+
+  const failDecode = () =>
+    act(() => {
+      const image = container.querySelector("img");
+      expect(image).not.toBeNull();
+      image!.dispatchEvent(new Event("error"));
+    });
+
+  it.each([
+    { name: "photo.HEIC", mimeType: "image/heic" },
+    { name: "photo", mimeType: "image/heif" },
+  ])("converts stored $name after native decoding fails", async ({ name, mimeType }) => {
+    await openImage(name, mimeType);
+    await failDecode();
+
+    expect(fetch).toHaveBeenCalledWith(
+      sourceUrl,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(prepareImageForAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({ name, type: "image/heic" }),
+      50 * 1024 * 1024,
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:jpeg");
+    expect(container.textContent).not.toContain("Unable to load image.");
+  });
+
+  it("shows the existing failure when HEIC conversion fails", async () => {
+    vi.mocked(prepareImageForAttachment).mockResolvedValue({ ok: false, reason: "unreadable" });
+    await openImage("photo.heic", "image/heic");
+    await failDecode();
+    expect(container.textContent).toContain("Unable to load image.");
+  });
+
+  it("shows PNG decoding failures without attempting HEIC conversion", async () => {
+    await openImage("photo.png", "image/png");
+    await failDecode();
+    expect(container.textContent).toContain("Unable to load image.");
+    expect(prepareImageForAttachment).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -173,6 +173,7 @@ features:
       - Web keeps send unavailable while attachment uploads are pending, exposes the recovery reason from the disabled send action, and retries failed image or generic-file uploads when sending.
       - Mobile retains local attachment bytes through draft, outbox, preview, upload, and signed-out account ownership; failed storage hydration or persistence must not authorize cleanup.
       - Dismissing an incoming-share task picker removes its durable inbox entry and releases attachments only after checking ownership by other inbox items, composer drafts, outbox messages, and previews.
+      - Web and desktop stored HEIC images use the shared decoding fallback in file previews, queued messages, answered questions, and image attachment chips.
     implementation_paths:
       - apps/mobile/plugins/withShareExtensionDisplayName.cjs
       - apps/mobile/src/features/sharing/IncomingShareProvider.tsx
@@ -192,6 +193,9 @@ features:
       - apps/web/src/components/chat/ChatComposer.tsx
       - apps/web/src/components/chat/ComposerPrimaryActions.tsx
       - apps/web/src/components/chat/MessagesTimeline.tsx
+      - apps/web/src/components/chat/QueuedRunsControl.tsx
+      - apps/web/src/components/contextChipParts.tsx
+      - apps/web/src/components/files/AttachmentFilePreview.tsx
       - apps/web/src/composerDraftStore.ts
       - packages/contracts/src/orchestrationV2.ts
       - packages/provider-core/src/server/attachmentPrompt.ts
@@ -226,6 +230,7 @@ features:
       - apps/server/src/orchestration-v2/ThreadMessageIntake.test.ts
       - apps/web/src/components/ChatView.logic.test.ts
       - apps/web/src/components/chat/ComposerPrimaryActions.browser.test.tsx
+      - apps/web/src/components/files/AttachmentFilePreview.browser.test.tsx
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/threadTranscript.test.ts
       - packages/contracts/src/orchestrationV2.test.ts
