@@ -31,6 +31,7 @@ export interface RestartingMachine {
 export interface UpdateEverythingConfirmation {
   readonly lines: ReadonlyArray<string>;
   readonly threadActivity: ReadonlyArray<ConfirmDialogThreadActivity>;
+  readonly interrupts: boolean;
   /** The local version whose restart activity was included in this confirmation. */
   readonly localVersion: string | null;
 }

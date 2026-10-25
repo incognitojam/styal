@@ -33,7 +33,8 @@ If a desktop app restarts on its old version, styal tells you the update did
 not apply. It does not install that version again on its own, on quit or when
 another device asks. Use the update button on that machine to retry.
 
-The combined confirmation lists affected threads by environment and project,
+When all affected work can continue, updating proceeds without another confirmation.
+Otherwise, the combined confirmation lists affected threads by environment and project,
 separating work that will continue from work that will be interrupted. Terminal
 commands and activity that could not be checked remain warnings. One confirmation
 covers the matching downloaded app update; older desktop apps can still ask at
@@ -46,7 +47,9 @@ terminal commands. Saved threads, settings, and project files remain. Before
 updating, styal checks the server for active agents, threads waiting for input,
 running terminal commands, and provider updates being installed, including work
 started from other devices. If
-work is running or the check fails, styal lists it and asks you to confirm.
+work would be interrupted or the check fails, styal lists it and asks you to confirm.
+Resumable agent turns do not need confirmation. Running terminal commands, waiting
+approvals or questions, provider installs, and devices used by another environment do.
 
 Updating a remote desktop app also checks its other hosted environments, including
 WSL. The confirmation lists threads from the environment you connected to and
@@ -61,6 +64,8 @@ different value, use **Apply to all** in Settings after it connects.
 styal must start again on that machine;
 the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
+Continuation does not preserve running processes: a command inside an agent turn
+may stop, and the resumed agent must check and recover unfinished work.
 A thread that finished its turn to wait on a monitor, subagent, or background task
 is woken and asked to restart the work it still needs. A background shell, such as
 a dev server, does not wake it; the thread learns about it with your next message.
@@ -127,7 +132,9 @@ through your existing deployment method. See
 ## If an update fails
 
 Keep the client open until it reconnects or reports a failure. A failed service
-update can roll back to the previous version. If the update still fails:
+update can roll back to the previous version. If work starts that would be interrupted
+while a remote update downloads, styal keeps running and retains the download. Retry
+to review the current work and confirm the restart. If the update still fails:
 
 1. Retry the offered action once.
 2. Check that you updated the server's machine, not only the device you are using.
@@ -215,8 +222,9 @@ versions.
 
 To update an environment from your phone, open **Settings → Environments** and
 select it. **Check for updates** finds the latest release on that environment's
-current release channel. Updating asks for confirmation first and lists any
-threads the update would interrupt or continue. Keep the app open while the
+current release channel. Updating asks for confirmation if work would be interrupted
+or could not be checked, listing affected threads and which can continue. Otherwise
+it proceeds directly. Keep the app open while the
 environment updates and reconnects. Hosts that cannot update remotely show instructions for updating on
 the machine instead.
 

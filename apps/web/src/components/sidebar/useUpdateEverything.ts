@@ -110,7 +110,9 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   });
 
   const checkLocalActivity = async (): Promise<UpdateEverythingConfirmation> => {
-    if (localUpdateVersion === null) return { lines: [], threadActivity: [], localVersion: null };
+    if (localUpdateVersion === null) {
+      return { lines: [], threadActivity: [], localVersion: null, interrupts: false };
+    }
     const inspect = window.desktopBridge?.getLocalHostActivity;
     if (!inspect) {
       // An older desktop bridge cannot inspect itself or pin the confirmed version,
@@ -131,7 +133,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     const checks = await inspect().catch(() => [null]);
     const activity =
       checks.length === 0
-        ? { lines: [], threadActivity: [] }
+        ? { lines: [], threadActivity: [], interrupts: false }
         : describeHostActivity(
             checks.map((check) => check && { ...check, hostLabel: check.hostLabel ?? "This app" }),
             {
@@ -148,6 +150,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
       lines: [...local.lines, ...remote.lines],
       threadActivity: [...local.threadActivity, ...remote.threadActivity],
       localVersion: local.localVersion,
+      interrupts: local.interrupts || remote.interrupts,
     };
   };
 
@@ -160,9 +163,12 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     run: async ({
       downloadLocal,
       installLocal,
+      confirmed = false,
     }: {
       downloadLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
       installLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
+      /** Explicit consent covers the activity shown before provider installations. */
+      confirmed?: boolean;
     }) => {
       const localFailures: Array<string> = [];
       const reportLocalError: ReportLocalUpdateError = (title, description) => {
@@ -241,9 +247,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             );
             return outcomes;
           },
-          // One batch the confirmation already checked for running work. Each
-          // server still settles on its own, so the pass can stop waiting for a
-          // server once it restarts into its update.
+          // Without explicit consent, check again after provider installations:
+          // a resumable turn may have started waiting for input in the meantime.
           updateServers: async () => {
             type FinishedServer = { label: string; outcome: ServerUpdateOutcome };
             const settlers = new Map<
@@ -261,7 +266,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
             );
             updateServers(servers, {
               quiet: true,
-              confirmed: true,
+              confirmed,
+              showActivityCheck: false,
               onSettled: (server, serverOutcome) => {
                 settleUpdateRunMachine(
                   server.environmentId,

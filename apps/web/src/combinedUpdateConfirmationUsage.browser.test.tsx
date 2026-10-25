@@ -71,7 +71,11 @@ async function render(open: boolean, ready = true, summary = "Update synthetic c
           summary={summary}
           lines={["Synthetic machine update"]}
           skipped={[]}
-          activity={ready ? { lines: [], threadActivity: [], localVersion: "1.2.0" } : null}
+          activity={
+            ready
+              ? { lines: [], threadActivity: [], localVersion: "1.2.0", interrupts: true }
+              : null
+          }
           onConfirm={onConfirm}
         />
       </StrictMode>,
@@ -99,10 +103,10 @@ it("counts one opening through StrictMode and activity rerenders, and one confir
   await render(false);
   expect(reports()).toEqual([]);
   await render(true, false);
-  expect(reports()).toEqual([report("shown")]);
+  expect(reports()).toEqual([]);
   await click("Update");
   expect(onConfirm).not.toHaveBeenCalled();
-  expect(reports()).toEqual([report("shown")]);
+  expect(reports()).toEqual([]);
   await render(true, true, "Updated synthetic summary");
   await render(true);
   expect(reports()).toEqual([report("shown")]);
@@ -119,6 +123,7 @@ it("counts Cancel and Escape per opening, but no decision for a programmatic clo
   await render(true, false);
   await click("Cancel");
   expect(onOpenChange).toHaveBeenLastCalledWith(false);
+  expect(reports()).toEqual([]);
   await render(false);
   await render(true);
   await act(async () => userEvent.keyboard("{Escape}"));
@@ -126,13 +131,7 @@ it("counts Cancel and Escape per opening, but no decision for a programmatic clo
   await render(false);
   await render(true);
   await render(false);
-  expect(reports()).toEqual([
-    report("shown"),
-    report("cancelled"),
-    report("shown"),
-    report("cancelled"),
-    report("shown"),
-  ]);
+  expect(reports()).toEqual([report("shown"), report("cancelled"), report("shown")]);
   expect(onConfirm).not.toHaveBeenCalled();
 });
 

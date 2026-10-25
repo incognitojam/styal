@@ -1,5 +1,6 @@
 import {
   ServerSelfUpdateError,
+  type HostActivity,
   type ServerSelfUpdateCapability,
   type ServerSelfUpdateInput,
   type ServerSelfUpdateProgressEvent,
@@ -8,6 +9,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { describeHostActivity } from "@t3tools/shared/hostActivity";
 import * as Config from "effect/Config";
 import * as Option from "effect/Option";
 import { HttpClient } from "effect/http";
@@ -170,7 +172,33 @@ export const withRunningThreadContinuation = Effect.fn(
   });
 });
 
-export const make = Effect.fn("cloud.server_self_update.make")(function* () {
+export const checkUpdateHandoffActivity = <E, R>(
+  input: ServerSelfUpdateInput,
+  inspect: Effect.Effect<HostActivity, E, R>,
+) =>
+  input.confirmed === true
+    ? Effect.void
+    : inspect.pipe(
+        Effect.timeout("4 seconds"),
+        Effect.catchCause(() => Effect.succeed(null)),
+        Effect.flatMap((activity) =>
+          describeHostActivity([activity], {
+            uncheckedHostsLine: "Could not check the server for running work.",
+            continueRunningThreads: input.continueRunningThreads === true,
+          }).interrupts
+            ? Effect.fail(
+                new ServerSelfUpdateError({
+                  reason:
+                    "Activity changed while the server update was preparing. Try updating again to review and confirm any running work. The downloaded update is ready to retry.",
+                }),
+              )
+            : Effect.void,
+        ),
+      );
+
+export const make = Effect.fn("cloud.server_self_update.make")(function* (
+  beforeHandoff: (input: ServerSelfUpdateInput) => Effect.Effect<void, ServerSelfUpdateError>,
+) {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
   const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
@@ -197,7 +225,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   )(function* (input, reportProgress = () => Effect.void, onHandoffAccepted = () => Effect.void) {
     if (capability === "desktop-managed") {
       if (desktopAppUpdate.available) {
-        return yield* desktopAppUpdate.run(reportProgress);
+        return yield* desktopAppUpdate.run(reportProgress, input.confirmed === true);
       }
       return yield* failWith(
         "This server is managed by the styal desktop app on its machine; update the desktop app to update it.",
@@ -307,6 +335,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
       );
 
       yield* reportProgress("installing");
+      yield* beforeHandoff(input);
       const updateId = yield* Effect.uninterruptible(
         launcher.requestUpdate({ targetVersion, dbPath: serverConfig.dbPath }).pipe(
           Effect.mapError((error) =>
@@ -337,9 +366,16 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   });
 });
 
-export const layer = Layer.effect(ServerSelfUpdate, make()).pipe(
-  Layer.provide(ProcessRunner.layer),
-);
+export const layer = <E, R>(inspect: Effect.Effect<HostActivity, E, R>) =>
+  Layer.effect(
+    ServerSelfUpdate,
+    Effect.gen(function* () {
+      const activityContext = yield* Effect.context<R>();
+      return yield* make((input) =>
+        checkUpdateHandoffActivity(input, inspect.pipe(Effect.provideContext(activityContext))),
+      );
+    }),
+  ).pipe(Layer.provide(ProcessRunner.layer));
 
 // The RPC stream used to own this fiber, so a dropped client socket interrupted
 // the download. Offers after the queue shuts down are ignored; the update

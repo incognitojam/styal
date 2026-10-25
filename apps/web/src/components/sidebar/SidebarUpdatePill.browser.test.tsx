@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const testState = vi.hoisted(() => ({
   hostActivity: vi.fn(),
-  desktopHostActivity: vi.fn(),
+  desktopActivity: vi.fn(),
   updateServer: vi.fn(),
   updateProvider: vi.fn(),
   localActivity: vi.fn(),
@@ -69,7 +69,7 @@ vi.mock(import("~/state/use-atom-command"), async (original) => {
     ...(await original()),
     useAtomCommand: ((command: unknown) => {
       if (command === serverEnvironment.hostActivity) return testState.hostActivity;
-      if (command === serverEnvironment.desktopHostActivity) return testState.desktopHostActivity;
+      if (command === serverEnvironment.desktopHostActivity) return testState.desktopActivity;
       if (command === serverEnvironment.updateProvider) return testState.updateProvider;
       if (command === serverEnvironment.updateServer) return testState.updateServer;
       throw new Error("Unexpected update command");
@@ -83,8 +83,11 @@ vi.mock(import("../ui/toast"), async (original) => {
 
 import {
   readConfirmDialogState,
+  subscribeConfirmDialog,
   registerConfirmDialogHost,
   resetConfirmDialogForTests,
+  respondToConfirmDialog,
+  completeConfirmDialogClose,
 } from "~/confirmDialog";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
@@ -202,6 +205,17 @@ const remoteActivity: HostActivity = {
   ],
 };
 
+const resumableActivity: HostActivity = {
+  ...idle,
+  activeSessions: 1,
+  continuableSessions: 1,
+  threads: [thread("Prepare release", "Release", ["running"], true)],
+};
+const safeLocalChecks: ReadonlyArray<DesktopHostActivity> = [
+  { ...resumableActivity, hostLabel: "Local Linux" },
+  { ...idle, hostLabel: "Local subsystem" },
+];
+
 const provider: ServerProvider = {
   instanceId: ProviderInstanceId.make("codex-build"),
   driver: ProviderDriverKind.make("codex"),
@@ -269,9 +283,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   testState.hostActivity.mockReset().mockResolvedValue(AsyncResult.success(idle));
-  testState.desktopHostActivity
-    .mockReset()
-    .mockResolvedValue(AsyncResult.success([{ ...idle, isRequestingEnvironment: true }]));
+  testState.desktopActivity.mockReset().mockResolvedValue(AsyncResult.success([idle]));
   testState.localActivity.mockReset().mockResolvedValue(localChecks);
   testState.updateServer.mockReset().mockResolvedValue(updated());
   testState.updateProvider.mockReset();
@@ -299,6 +311,7 @@ beforeEach(() => {
     ]),
   );
   vi.stubGlobal("desktopBridge", {
+    getLocalEnvironmentBootstraps: () => [],
     getUpdateState: async () => downloaded,
     onUpdateState: (listener: (state: DesktopUpdateState) => void) => {
       desktopListeners.add(listener);
@@ -327,6 +340,203 @@ afterEach(async () => {
 });
 
 describe("combined sidebar update", () => {
+  it.each([false, true])(
+    "keeps the later activity check silent and presents only a new blocker: %s",
+    async (blocked) => {
+      const providers =
+        deferred<AsyncResult.AsyncResult<{ providers: ReadonlyArray<ServerProvider> }>>();
+      const recheck = deferred<AsyncResult.AsyncResult<HostActivity>>();
+      testState.providers.set(EnvironmentId.make("remote-a"), [provider]);
+      testState.updateProvider.mockReturnValue(providers.promise);
+      testState.localActivity.mockResolvedValue(safeLocalChecks);
+      const presentations: Array<ReturnType<typeof readConfirmDialogState>> = [];
+      const unsubscribe = subscribeConfirmDialog(() =>
+        presentations.push(readConfirmDialogState()),
+      );
+      try {
+        await render();
+        await click(container.querySelector<HTMLButtonElement>("button")!);
+        testState.hostActivity.mockReturnValue(recheck.promise);
+        await act(async () => providers.resolve(AsyncResult.success({ providers: [] })));
+        expect(readConfirmDialogState().status).toBe("idle");
+        expect(testState.updateServer).not.toHaveBeenCalled();
+
+        await act(async () =>
+          recheck.resolve(
+            AsyncResult.success({ ...idle, terminalsRequiringConfirmation: blocked ? 1 : 0 }),
+          ),
+        );
+        if (blocked) {
+          expect(readConfirmDialogState()).toMatchObject({
+            status: "confirming",
+            message: expect.stringContaining("terminal"),
+          });
+          expect(testState.updateServer).not.toHaveBeenCalled();
+          await act(async () => respondToConfirmDialog(false));
+          expect(testState.updateServer).not.toHaveBeenCalled();
+        } else {
+          expect(readConfirmDialogState().status).toBe("idle");
+          expect(testState.updateServer).toHaveBeenCalledTimes(2);
+          expect(presentations).toEqual([]);
+        }
+        expect(
+          presentations.filter((state) => state.status === "confirming" && state.loading),
+        ).toEqual([]);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
+
+  it.each(["local", "remote"] as const)(
+    "automatically updates safe mixed hosts after %s inspection finishes first",
+    async (first) => {
+      const local = deferred<ReadonlyArray<DesktopHostActivity | null>>();
+      const remote = deferred<AsyncResult.AsyncResult<HostActivity>>();
+      const remoteA = deferred<ReturnType<typeof updated>>();
+      const remoteB = deferred<ReturnType<typeof updated>>();
+      testState.localActivity.mockReturnValue(local.promise);
+      testState.hostActivity.mockImplementation(({ environmentId }) =>
+        environmentId === "remote-a" ? remote.promise : Promise.resolve(AsyncResult.success(idle)),
+      );
+      testState.updateServer.mockImplementation(({ environmentId }) =>
+        environmentId === "remote-a" ? remoteA.promise : remoteB.promise,
+      );
+      await render();
+      await openConfirmation();
+      expect(button("Update", dialog()!).disabled).toBe(true);
+
+      await act(async () => {
+        if (first === "local") local.resolve(safeLocalChecks);
+        else remote.resolve(AsyncResult.success(resumableActivity));
+      });
+      expect(button("Update", dialog()!).disabled).toBe(true);
+      expect(testState.updateServer).not.toHaveBeenCalled();
+      expect(testState.install).not.toHaveBeenCalled();
+
+      await act(async () => {
+        local.resolve(safeLocalChecks);
+        remote.resolve(AsyncResult.success(resumableActivity));
+      });
+      expect(dialog()).toBeNull();
+      expect(readConfirmDialogState().status).toBe("idle");
+      expect(testState.updateServer.mock.calls.map(([target]) => target)).toEqual([
+        {
+          environmentId: "remote-a",
+          input: { targetVersion: localVersion, continueRunningThreads: true, confirmed: false },
+        },
+        { environmentId: "remote-b", input: { targetVersion: localVersion, confirmed: false } },
+      ]);
+      expect(testState.install).not.toHaveBeenCalled();
+
+      await act(async () => remoteB.resolve(updated()));
+      expect(testState.install).not.toHaveBeenCalled();
+      await act(async () => remoteA.resolve(updated()));
+      expect(testState.install).toHaveBeenCalledExactlyOnceWith({
+        expectedVersion: localVersion,
+        confirmed: false,
+      });
+      expect(testState.localActivity).toHaveBeenCalledTimes(1);
+      expect(testState.hostActivity.mock.calls.map(([target]) => target.environmentId)).toEqual([
+        "remote-a",
+        "remote-b",
+        "remote-a",
+        "remote-b",
+      ]);
+      expect(container.textContent).toContain("Restarting…");
+      expect(container.textContent).not.toContain("Restart in");
+      expect(testState.toast).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(
+    [
+      { name: "waiting requests or secrets", blocker: { waitingSessions: 1 } },
+      { name: "non-continuable turns", blocker: { activeSessions: 1 } },
+      { name: "terminal commands", blocker: { terminalsRequiringConfirmation: 1 } },
+      {
+        name: "unknown terminal activity",
+        blocker: { terminalsRequiringConfirmation: 1, terminalsWithUnknownActivity: 1 },
+      },
+      { name: "provider installs", blocker: { providerInstalls: 1 } },
+      { name: "shared devices", blocker: { environmentsUsingDevices: 1 } },
+      { name: "unknown host activity", blocker: null },
+    ].flatMap((scenario) =>
+      (["local", "remote"] as const).map((location) => ({ ...scenario, location })),
+    ),
+  )(
+    "requires consent for $name on a $location host despite other resumable work",
+    async ({ blocker, location }) => {
+      const blocked = blocker === null ? null : { ...idle, ...blocker };
+      testState.localActivity.mockResolvedValue(location === "local" ? [blocked] : safeLocalChecks);
+      testState.hostActivity.mockImplementation(({ environmentId }) =>
+        Promise.resolve(
+          environmentId === "remote-a"
+            ? AsyncResult.success(resumableActivity)
+            : location !== "remote"
+              ? AsyncResult.success(idle)
+              : blocked === null
+                ? AsyncResult.failure(Cause.fail(new Error("Inspection unavailable")))
+                : AsyncResult.success(blocked),
+        ),
+      );
+      await render();
+      await openConfirmation();
+      expect(dialog()!.textContent).not.toContain("Checking for running work…");
+      expect(button("Update", dialog()!).disabled).toBe(false);
+      expect(dialog()!.querySelector('[aria-label="Will continue"]')!.textContent).toContain(
+        "Prepare release",
+      );
+      expect(testState.updateServer).not.toHaveBeenCalled();
+      expect(testState.install).not.toHaveBeenCalled();
+      await click(button("Cancel", dialog()!));
+      expect(dialog()).toBeNull();
+      expect(testState.updateServer).not.toHaveBeenCalled();
+      expect(testState.install).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retains a safe remote host's continuing rows when another host needs consent", async () => {
+    testState.localActivity.mockResolvedValue(safeLocalChecks);
+    testState.hostActivity.mockImplementation(({ environmentId }) =>
+      Promise.resolve(
+        AsyncResult.success(
+          environmentId === "remote-a"
+            ? resumableActivity
+            : {
+                ...idle,
+                waitingSessions: 1,
+                threads: [thread("Approve deployment", "Deployment", ["approval"])],
+              },
+        ),
+      ),
+    );
+    await render();
+    await openConfirmation();
+    const hosts = [...dialog()!.querySelector('[aria-label="Affected threads"]')!.children];
+    expect(hosts.map((host) => host.querySelector("h3")?.textContent)).toEqual([
+      "Local Linux",
+      "Build machine",
+      "Test machine",
+    ]);
+    expect(hosts[1]!.querySelector('[aria-label="Will continue"]')!.textContent).toContain(
+      "Prepare releaseRunning",
+    );
+    expect(hosts[1]!.querySelector('[aria-label="Will be interrupted"]')).toBeNull();
+    expect(hosts[2]!.querySelector('[aria-label="Will be interrupted"]')!.textContent).toContain(
+      "Approve deploymentNeeds approval",
+    );
+    expect(testState.hostActivity).toHaveBeenCalledTimes(2);
+    expect(testState.install).not.toHaveBeenCalled();
+    await click(button("Update", dialog()!));
+    expect(testState.updateServer).toHaveBeenCalledTimes(2);
+    expect(testState.install).toHaveBeenCalledExactlyOnceWith({
+      expectedVersion: localVersion,
+      confirmed: true,
+    });
+    expect(readConfirmDialogState().status).toBe("idle");
+  });
+
   it.each(["local", "remote"] as const)(
     "waits for both activity snapshots when %s finishes first",
     async (first) => {
@@ -382,8 +592,7 @@ describe("combined sidebar update", () => {
       expect(sections(hosts[2]!, "Will be interrupted")).toContain("ReleaseReview releaseWaiting");
       expect(hosts[3]!.querySelector('[aria-label="Will continue"]')).toBeNull();
       expect(sections(hosts[3]!, "Will be interrupted")).toContain("Build releaseRunning");
-      expect(dialog()!.textContent).not.toContain("thread will continue after the restart.");
-      expect(dialog()!.textContent).not.toContain("threads will be interrupted.");
+      expect(dialog()!.textContent).not.toMatch(/\d+ threads? will (be interrupted|continue)/);
       expect(testState.install).not.toHaveBeenCalled();
     },
   );
@@ -405,9 +614,9 @@ describe("combined sidebar update", () => {
       expect(testState.updateServer.mock.calls.map(([target]) => target)).toEqual([
         {
           environmentId: "remote-a",
-          input: { targetVersion: localVersion, continueRunningThreads: true },
+          input: { targetVersion: localVersion, continueRunningThreads: true, confirmed: true },
         },
-        { environmentId: "remote-b", input: { targetVersion: localVersion } },
+        { environmentId: "remote-b", input: { targetVersion: localVersion, confirmed: true } },
       ]);
       expect(testState.install).not.toHaveBeenCalled();
       expect(readConfirmDialogState().status).toBe("idle");
@@ -430,7 +639,10 @@ describe("combined sidebar update", () => {
             targetVersion: localVersion,
           });
       });
-      expect(testState.install).toHaveBeenCalledExactlyOnceWith({ expectedVersion: localVersion });
+      expect(testState.install).toHaveBeenCalledExactlyOnceWith({
+        expectedVersion: localVersion,
+        confirmed: true,
+      });
       expect(container.textContent).toContain("Restarting…");
       expect(testState.toast).not.toHaveBeenCalled();
       expect(testState.localActivity).toHaveBeenCalledTimes(1);
@@ -439,7 +651,7 @@ describe("combined sidebar update", () => {
     },
   );
 
-  it("ignores canceled and superseded activity checks without reopening or restarting", async () => {
+  it("ignores late safe results from canceled and superseded checks without restarting", async () => {
     const stale = deferred<ReadonlyArray<DesktopHostActivity | null>>();
     const current = deferred<ReadonlyArray<DesktopHostActivity | null>>();
     testState.localActivity.mockReturnValueOnce(stale.promise).mockReturnValueOnce(current.promise);
@@ -448,11 +660,11 @@ describe("combined sidebar update", () => {
     await click(button("Cancel", dialog()!));
     expect(dialog()).toBeNull();
     await openConfirmation();
-    await act(async () => stale.resolve(localChecks));
+    await act(async () => stale.resolve(safeLocalChecks));
     expect(button("Update", dialog()!).disabled).toBe(true);
-    expect(dialog()!.textContent).not.toContain("Compile catalog");
+    expect(dialog()!.textContent).not.toContain("Prepare release");
     await click(button("Cancel", dialog()!));
-    await act(async () => current.resolve(localChecks));
+    await act(async () => current.resolve(safeLocalChecks));
     expect(dialog()).toBeNull();
     expect(testState.updateServer).not.toHaveBeenCalled();
     expect(testState.install).not.toHaveBeenCalled();
@@ -493,10 +705,59 @@ describe("combined sidebar update", () => {
       ),
     );
     expect(testState.updateServer).toHaveBeenCalledTimes(2);
-    expect(testState.install).toHaveBeenCalledExactlyOnceWith({ expectedVersion: localVersion });
+    expect(testState.install).toHaveBeenCalledExactlyOnceWith({
+      expectedVersion: localVersion,
+      confirmed: true,
+    });
     expect(readConfirmDialogState().status).toBe("idle");
     expect(testState.toast).not.toHaveBeenCalled();
   });
+
+  it.each(["terminal", "failed inspection"] as const)(
+    "rechecks unconfirmed hosts after provider installation and prompts for a new %s",
+    async (blocker) => {
+      const providers =
+        deferred<AsyncResult.AsyncResult<{ providers: ReadonlyArray<ServerProvider> }>>();
+      testState.providers.set(EnvironmentId.make("remote-a"), [provider]);
+      testState.updateProvider.mockReturnValue(providers.promise);
+      testState.localActivity.mockResolvedValue(safeLocalChecks);
+      await render();
+      await click(container.querySelector<HTMLButtonElement>("button")!);
+      expect(dialog()).toBeNull();
+      expect(testState.updateProvider).toHaveBeenCalledTimes(1);
+      expect(testState.updateServer).not.toHaveBeenCalled();
+
+      testState.hostActivity.mockImplementation(({ environmentId }) =>
+        Promise.resolve(
+          environmentId !== "remote-a"
+            ? AsyncResult.success(idle)
+            : blocker === "terminal"
+              ? AsyncResult.success({ ...idle, terminalsRequiringConfirmation: 1 })
+              : AsyncResult.failure(Cause.fail(new Error("Inspection unavailable"))),
+        ),
+      );
+      await act(async () => providers.resolve(AsyncResult.success({ providers: [] })));
+      const confirmation = readConfirmDialogState();
+      expect(confirmation.status).toBe("confirming");
+      expect(confirmation.status !== "idle" && confirmation.loading).toBeFalsy();
+      expect(confirmation.status !== "idle" && confirmation.message).toContain(
+        blocker === "terminal" ? "terminal" : "Could not check",
+      );
+      expect(testState.updateServer).not.toHaveBeenCalled();
+      expect(testState.install).not.toHaveBeenCalled();
+      expect(testState.hostActivity).toHaveBeenCalledTimes(4);
+
+      await act(async () => {
+        respondToConfirmDialog(true);
+        completeConfirmDialogClose();
+      });
+      expect(testState.updateServer).toHaveBeenCalledTimes(2);
+      expect(testState.install).toHaveBeenCalledExactlyOnceWith({
+        expectedVersion: localVersion,
+        confirmed: false,
+      });
+    },
+  );
 
   it("falls back to the connected local host on legacy bridges and keeps installation guarded", async () => {
     delete window.desktopBridge!.getLocalHostActivity;

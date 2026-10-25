@@ -1067,6 +1067,7 @@ export type DesktopHostActivity = typeof DesktopHostActivitySchema.Type;
 
 export const DesktopUpdateInstallInputSchema = Schema.Struct({
   expectedVersion: TrimmedNonEmptyString,
+  confirmed: Schema.optionalKey(Schema.Boolean),
 });
 export type DesktopUpdateInstallInput = typeof DesktopUpdateInstallInputSchema.Type;
 

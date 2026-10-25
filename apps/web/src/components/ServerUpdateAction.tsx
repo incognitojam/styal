@@ -162,6 +162,7 @@ export function useServerUpdateCheck() {
     return {
       lines: checked?.confirmation?.message.split("\n").slice(1) ?? checked?.activity.lines ?? [],
       threadActivity: checked?.activity.threadActivity ?? [],
+      interrupts: checked?.activity.interrupts ?? false,
     };
   };
 }
@@ -178,6 +179,7 @@ export function useServerUpdates() {
   const updateOne = async (
     target: ServerUpdateTarget,
     quiet: boolean,
+    confirmed: boolean,
   ): Promise<ServerUpdateOutcome> => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
     if (!canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))))
@@ -186,6 +188,7 @@ export function useServerUpdates() {
       environmentId,
       input: {
         targetVersion,
+        confirmed,
         ...(continuesRunningThreads(target) ? { continueRunningThreads: true } : {}),
       },
     });
@@ -218,11 +221,14 @@ export function useServerUpdates() {
     {
       quiet = false,
       confirmed = false,
+      showActivityCheck = true,
       onSettled,
     }: {
       readonly quiet?: boolean;
       /** The caller already confirmed, after showing `useServerUpdateCheck`'s result. */
       readonly confirmed?: boolean;
+      /** Combined updates already presented the initial activity inspection. */
+      readonly showActivityCheck?: boolean;
       readonly onSettled?: (target: ServerUpdateTarget, outcome: ServerUpdateOutcome) => void;
     } = {},
   ): Promise<ReadonlyArray<{ target: ServerUpdateTarget; outcome: ServerUpdateOutcome }>> => {
@@ -242,23 +248,44 @@ export function useServerUpdates() {
     if (claimed.length === 0) return skipAll(unclaimed);
     for (const target of claimed) pendingUpdateEnvironmentIds.add(target.environmentId);
     const result = await settlePromise(async () => {
+      let explicitConsent = confirmed;
       if (!confirmed) {
         // The remote machines restart without asking anyone there, so work
         // started from any client counts.
-        const prepare = async () =>
-          (await checkServerUpdateHosts(readHostActivity, claimed)).confirmation;
-        const confirmation = requestConfirmDialog(
-          `${serverUpdateQuestion(claimed.map(serverUpdateHost))}\nChecking for running work…`,
-          { confirmLabel: "Update" },
-          { prepare },
-        );
-        // No themed host mounted (undefined) means proceed: the click itself
-        // was the request.
-        if (confirmation === undefined) await prepare();
-        else if (!(await confirmation)) return skipAll(targets);
+        let requiresConfirmation = false;
+        const prepare = async () => {
+          const { confirmation } = await checkServerUpdateHosts(readHostActivity, claimed);
+          requiresConfirmation = confirmation !== null;
+          return confirmation;
+        };
+        if (showActivityCheck) {
+          const confirmation = requestConfirmDialog(
+            `${serverUpdateQuestion(claimed.map(serverUpdateHost))}\nChecking for running work…`,
+            { confirmLabel: "Update" },
+            { prepare },
+          );
+          // Without a dialog host, only a completed safe inspection can proceed.
+          if (confirmation === undefined) {
+            if ((await prepare()) !== null) return skipAll(targets);
+          } else if (!(await confirmation)) return skipAll(targets);
+        } else {
+          const content = await prepare();
+          if (
+            content !== null &&
+            !(await requestConfirmDialog(content.message, {
+              confirmLabel: "Update",
+              threadActivity: content.threadActivity,
+            }))
+          ) {
+            return skipAll(targets);
+          }
+        }
+        explicitConsent = requiresConfirmation;
       }
       const updated = await Promise.all(
-        claimed.map(async (target) => settle(target, await updateOne(target, quiet))),
+        claimed.map(async (target) =>
+          settle(target, await updateOne(target, quiet, explicitConsent)),
+        ),
       );
       return [...skipAll(unclaimed), ...updated];
     });
@@ -599,9 +626,17 @@ export function OutdatedServerUpdateAction({
   const handleUpdate = async () => {
     if (pendingUpdateEnvironmentIds.has(environmentId)) return;
     pendingUpdateEnvironmentIds.add(environmentId);
+    const confirmed = await requestConfirmDialog(
+      `Update the ${serverLabel} server?\nCould not check this outdated server for running work. Running threads and terminals may be interrupted.`,
+      { confirmLabel: "Update" },
+    );
+    if (confirmed !== true) {
+      pendingUpdateEnvironmentIds.delete(environmentId);
+      return;
+    }
     const result = await update({
       environmentId,
-      input: { targetVersion },
+      input: { targetVersion, confirmed },
       ...(fromVersion === undefined ? {} : { fromVersion }),
     });
     pendingUpdateEnvironmentIds.delete(environmentId);

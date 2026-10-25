@@ -32,7 +32,7 @@ export function UpdateEverythingDialog({
   activity,
   onConfirm,
 }: UpdateEverythingDialogProps) {
-  const reportDecision = useCombinedUpdateConfirmationUsage(open);
+  const reportDecision = useCombinedUpdateConfirmationUsage(open && activity !== null);
   const hasThreads = (activity?.threadActivity.length ?? 0) > 0;
   return (
     <AlertDialog

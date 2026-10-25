@@ -129,25 +129,24 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         readHostActivity({ environmentId, input: {} }),
         desktopManaged ? readDesktopHostActivity({ environmentId, input: {} }) : null,
       ]);
-      const confirmed = await requestServerUpdateConfirmation(
-        describeServerUpdate({
-          serverLabel: environment?.environmentLabel ?? "environment",
-          targetVersion,
-          desktopManaged,
-          activity: AsyncResult.isSuccess(activity) ? activity.value : null,
-          desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
-          continueRunningThreads,
+      const confirmation = describeServerUpdate({
+        serverLabel: environment?.environmentLabel ?? "environment",
+        targetVersion,
+        desktopManaged,
+        activity: activity?._tag === "Success" ? activity.value : null,
+        desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
+        continueRunningThreads,
+      });
+      const decision = await requestServerUpdateConfirmation(confirmation, (requestId) =>
+        navigation.navigate("SettingsSheet", {
+          screen: "SettingsContent",
+          params: {
+            screen: "SettingsServerUpdateConfirm",
+            params: { environmentId, requestId },
+          },
         }),
-        (requestId) =>
-          navigation.navigate("SettingsSheet", {
-            screen: "SettingsContent",
-            params: {
-              screen: "SettingsServerUpdateConfirm",
-              params: { environmentId, requestId },
-            },
-          }),
       );
-      if (!confirmed) return;
+      if (!decision.proceed) return;
       if (
         AsyncResult.isFailure(
           appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId)),
@@ -160,7 +159,11 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
         return;
       const result = await updateServer({
         environmentId,
-        input: { targetVersion, ...(continueRunningThreads ? { continueRunningThreads } : {}) },
+        input: {
+          targetVersion,
+          confirmed: decision.confirmed,
+          ...(continueRunningThreads ? { continueRunningThreads } : {}),
+        },
       });
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
       setRelease(null);

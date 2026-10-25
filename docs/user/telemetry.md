@@ -76,8 +76,9 @@ The server also counts when someone uses a feature from any client, such as laun
 
 Each call an agent makes to one of styal's own tools records the tool's name, the provider type of the calling agent, whether the call succeeded with a fixed error code when it failed, and how long it took. When the tool hands work to another thread, such as delegating a task, launching a thread or sending it a message, the event also records settings the agent chose, such as the workspace type or how many threads it started, and the provider type, model and modes of each agent involved. When a delegated task finishes, its final status, both agents' provider types and models, and its run time are recorded. Models are recorded only when they come from a provider's published list, not models you added yourself or from tools like OpenCode that list your own configuration. Provider instance names, thread identifiers, prompts, titles and tool arguments are not collected.
 
-Web and desktop apps record when the sidebar's combined update confirmation opens and whether
-you confirm or cancel it. These events follow one paired environment's telemetry setting.
+Web and desktop apps record when the sidebar's combined update confirmation shows affected
+work and whether you confirm or cancel it. Checks and updates that need no confirmation
+are not recorded. These events follow one paired environment's telemetry setting.
 Computer, provider and thread names, update versions and confirmation text are not collected.
 
 Each automatic thread settlement records its rule (a merged or closed pull request, or inactivity with the configured number of days), and un-settling a thread records which of those rules, or a manual settle, had settled it. Thread titles, pull request numbers and links are not collected.

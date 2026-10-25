@@ -2,7 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { ServerSelfUpdateError, ThreadId } from "@t3tools/contracts";
+import { ServerSelfUpdateError, ThreadId, type HostActivity } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -26,7 +26,17 @@ interface HarnessOptions {
   readonly beforeDownload?: Effect.Effect<void>;
   readonly requestUpdate?: ServiceLauncherClient.ServiceLauncherClient["Service"]["requestUpdate"];
   readonly desktopAppUpdate?: DesktopAppUpdate.DesktopAppUpdate["Service"];
+  readonly activity?: Effect.Effect<HostActivity>;
 }
+
+const idleActivity: HostActivity = {
+  activeSessions: 0,
+  continuableSessions: 0,
+  waitingSessions: 0,
+  terminalsRequiringConfirmation: 0,
+  terminalsWithUnknownActivity: 0,
+  environmentsUsingDevices: 0,
+};
 
 const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   options: HarnessOptions = {},
@@ -108,7 +118,12 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
       return HttpClientResponse.fromWeb(request, new Response(bytes));
     }),
   );
-  const selfUpdate = yield* ServerSelfUpdate.make().pipe(
+  const selfUpdate = yield* ServerSelfUpdate.make((input) =>
+    ServerSelfUpdate.checkUpdateHandoffActivity(
+      input,
+      options.activity ?? Effect.succeed(idleActivity),
+    ),
+  ).pipe(
     Effect.provideService(ProcessRunner.ProcessRunner, runner),
     Effect.provideService(HttpClient.HttpClient, httpClient),
     Effect.provideService(HostProcess.Platform, "linux"),
@@ -119,8 +134,8 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
       options.desktopAppUpdate ?? {
         available: false,
         inspectActivity: Effect.succeed([null]),
-        commit: () => Effect.never,
         run: () => Effect.die("unexpected desktop app update run"),
+        commit: () => Effect.never,
       },
     ),
     Effect.provideService(HostProcess.ExecutablePath, "/usr/bin/node"),
@@ -130,6 +145,118 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
+  it.effect.each([undefined, false] as const)(
+    "refuses new terminal and waiting work after download without consent (%s), then reuses the runtime on a consented retry",
+    (confirmed) =>
+      Effect.gen(function* () {
+        let activity = idleActivity;
+        let inspections = 0;
+        const { selfUpdate, order } = yield* makeHarness({
+          beforeDownload: Effect.sync(() => {
+            activity = { ...idleActivity, waitingSessions: 1, terminalsRequiringConfirmation: 1 };
+          }),
+          activity: Effect.sync(() => {
+            inspections += 1;
+            return activity;
+          }),
+        });
+        const refused = yield* selfUpdate
+          .update({
+            targetVersion: "1.1.0",
+            ...(confirmed === undefined ? {} : { confirmed }),
+          })
+          .pipe(Effect.flip);
+        expect(refused.reason).toContain("Activity changed");
+        expect(refused.reason).toContain("Try updating again");
+        expect(order).toEqual(["install", "preflight"]);
+        expect(inspections).toBe(1);
+        expect(
+          (yield* selfUpdate.update({ targetVersion: "1.1.0", confirmed: true })).updateId,
+        ).toBe("launcher-id");
+        expect(order).toEqual(["install", "preflight", "preflight", "accept"]);
+        expect(inspections).toBe(1);
+      }),
+  );
+
+  it.effect.each([
+    { name: "idle", activity: idleActivity, continues: false, safe: true },
+    {
+      name: "resumable",
+      activity: { ...idleActivity, activeSessions: 1, continuableSessions: 1 },
+      continues: true,
+      safe: true,
+    },
+    {
+      name: "continuation disabled",
+      activity: { ...idleActivity, activeSessions: 1, continuableSessions: 1 },
+      continues: false,
+      safe: false,
+    },
+    {
+      name: "non-continuable",
+      activity: { ...idleActivity, activeSessions: 1 },
+      continues: true,
+      safe: false,
+    },
+    {
+      name: "waiting",
+      activity: { ...idleActivity, waitingSessions: 1 },
+      continues: true,
+      safe: false,
+    },
+    {
+      name: "terminal",
+      activity: { ...idleActivity, terminalsRequiringConfirmation: 1 },
+      continues: true,
+      safe: false,
+    },
+    {
+      name: "unknown terminal",
+      activity: {
+        ...idleActivity,
+        terminalsRequiringConfirmation: 1,
+        terminalsWithUnknownActivity: 1,
+      },
+      continues: true,
+      safe: false,
+    },
+    {
+      name: "provider install",
+      activity: { ...idleActivity, providerInstalls: 1 },
+      continues: true,
+      safe: false,
+    },
+    {
+      name: "shared device",
+      activity: { ...idleActivity, environmentsUsingDevices: 1 },
+      continues: true,
+      safe: false,
+    },
+  ])(
+    "checks $name activity before activating a boot-service update",
+    ({ activity, continues, safe }) =>
+      Effect.gen(function* () {
+        const { selfUpdate, order } = yield* makeHarness({ activity: Effect.succeed(activity) });
+        const result = yield* selfUpdate
+          .update({ targetVersion: "1.1.0", continueRunningThreads: continues, confirmed: false })
+          .pipe(Effect.result);
+        expect(result._tag).toBe(safe ? "Success" : "Failure");
+        expect(order.includes("accept")).toBe(safe);
+      }),
+  );
+
+  it.effect("fails closed when final boot-service activity inspection fails", () =>
+    Effect.gen(function* () {
+      const { selfUpdate, order } = yield* makeHarness({
+        activity: Effect.die("activity unavailable"),
+      });
+      expect(
+        (yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason,
+      ).toContain("review and confirm");
+      expect(order).not.toContain("accept");
+    }),
+  );
+
   it.effect("marks running threads at the boot-service handoff", () =>
     Effect.gen(function* () {
       const events: string[] = [];
@@ -371,29 +498,37 @@ it.layer(NodeServices.layer)("server self update", (it) => {
     }),
   );
 
-  it.effect("delegates desktop-managed updates to the desktop app when available", () =>
-    Effect.gen(function* () {
-      const stages: string[] = [];
-      const { selfUpdate, order } = yield* makeHarness({
-        mode: "desktop",
-        desktopAppUpdate: {
-          available: true,
-          inspectActivity: Effect.succeed([null]),
-          run: (reportProgress) =>
-            reportProgress("downloading").pipe(
-              Effect.andThen(reportProgress("installing")),
-              Effect.as({ targetVersion: "1.2.0", method: "desktop-app" as const }),
-            ),
-          commit: () => Effect.never,
-        },
-      });
-      const result = yield* selfUpdate.update({ targetVersion: "1.1.0" }, (stage) =>
-        Effect.sync(() => void stages.push(stage)),
-      );
-      expect(result).toEqual({ targetVersion: "1.2.0", method: "desktop-app" });
-      expect(stages).toEqual(["downloading", "installing"]);
-      expect(order).toEqual([]);
-    }),
+  it.effect.each([undefined, false, true] as const)(
+    "delegates desktop-managed updates with explicit consent (%s)",
+    (confirmed) =>
+      Effect.gen(function* () {
+        const stages: string[] = [];
+        const confirmations: boolean[] = [];
+        const { selfUpdate, order } = yield* makeHarness({
+          mode: "desktop",
+          desktopAppUpdate: {
+            available: true,
+            inspectActivity: Effect.succeed([null]),
+            run: (reportProgress, consent = false) =>
+              Effect.sync(() => {
+                confirmations.push(consent);
+              }).pipe(
+                Effect.andThen(reportProgress("downloading")),
+                Effect.andThen(reportProgress("installing")),
+                Effect.as({ targetVersion: "1.2.0", method: "desktop-app" as const }),
+              ),
+            commit: () => Effect.never,
+          },
+        });
+        const result = yield* selfUpdate.update(
+          { targetVersion: "1.1.0", ...(confirmed === undefined ? {} : { confirmed }) },
+          (stage) => Effect.sync(() => void stages.push(stage)),
+        );
+        expect(result).toEqual({ targetVersion: "1.2.0", method: "desktop-app" });
+        expect(stages).toEqual(["downloading", "installing"]);
+        expect(confirmations).toEqual([confirmed === true]);
+        expect(order).toEqual([]);
+      }),
   );
 
   it.effect("preserves the preflight refusal reason", () =>

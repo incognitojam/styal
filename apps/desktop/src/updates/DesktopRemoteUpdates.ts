@@ -32,6 +32,7 @@ const PREPARED_UPDATE_TTL = Duration.minutes(5);
 interface PreparedUpdate {
   readonly requestId: string;
   readonly downloadedVersion: string;
+  readonly confirmed: boolean;
   readonly status: "prepared" | "committing" | "failed";
   readonly failureReason?: string;
   readonly expiresAt: number;
@@ -267,6 +268,7 @@ export const listen: Effect.Effect<
                   requestId: request.requestId,
                   downloadedVersion: state.downloadedVersion,
                   status: "prepared",
+                  confirmed: request.confirmed === true,
                   expiresAt:
                     (yield* Clock.currentTimeMillis) + Duration.toMillis(PREPARED_UPDATE_TTL),
                 }),
@@ -435,7 +437,9 @@ export const listen: Effect.Effect<
         }
         return;
       }
-      const result = yield* updates.installPrepared(claim.prepared.downloadedVersion);
+      const result = yield* updates.installPrepared(claim.prepared.downloadedVersion, {
+        requireSafeShutdown: !claim.prepared.confirmed,
+      });
       if (
         !result.accepted &&
         result.state.downloadedVersion === claim.prepared.downloadedVersion &&
@@ -452,7 +456,8 @@ export const listen: Effect.Effect<
         return;
       }
       if (!result.accepted || result.failed) {
-        const reason = result.state.message ?? "The desktop app could not start the install.";
+        const reason =
+          result.reason ?? result.state.message ?? "The desktop app could not start the install.";
         if (yield* recordPreparedFailure(commit.requestId, reason)) {
           yield* publishReport(result.state, { outcome: "failed", reason }, commit.requestId);
         }

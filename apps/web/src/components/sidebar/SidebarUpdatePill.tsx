@@ -92,12 +92,13 @@ async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
   expectedVersion?: string,
+  confirmed = false,
 ): Promise<boolean> {
   try {
     const result =
       expectedVersion === undefined
         ? await bridge.installUpdate()
-        : await bridge.installUpdate({ expectedVersion });
+        : await bridge.installUpdate({ expectedVersion, confirmed });
     if (!result.accepted) {
       showDesktopUpdateDownloadedToast(bridge, result.state);
       return false;
@@ -184,7 +185,9 @@ function SidebarUpdateControl() {
       setIsConfirmingEverything(true);
       void everything.checkActivity().then(
         (activity) => {
-          if (serverCheckRequest.current === request) setActivityCheck(activity);
+          if (serverCheckRequest.current !== request) return;
+          if (activity.interrupts) setActivityCheck(activity);
+          else void runEverything(activity, false);
         },
         () => {
           if (serverCheckRequest.current === request) {
@@ -192,6 +195,7 @@ function SidebarUpdateControl() {
               lines: ["Could not check the servers for running work."],
               threadActivity: [],
               localVersion: null,
+              interrupts: true,
             });
           }
         },
@@ -204,19 +208,26 @@ function SidebarUpdateControl() {
     void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
   };
 
-  const runEverything = async () => {
+  const runEverything = async (activity: UpdateEverythingConfirmation, confirmed: boolean) => {
+    ++serverCheckRequest.current;
     const bridge = window.desktopBridge;
     setIsConfirmingEverything(false);
     setIsActionPending(true);
     const result = await settlePromise(() =>
-      everything.run(
-        bridge && action === "install"
+      everything.run({
+        confirmed,
+        ...(bridge && action === "install"
           ? {
               installLocal: (reportError) =>
-                installLocalUpdate(bridge, reportError, activityCheck?.localVersion ?? undefined),
+                installLocalUpdate(
+                  bridge,
+                  reportError,
+                  activity.localVersion ?? undefined,
+                  confirmed,
+                ),
             }
-          : {},
-      ),
+          : {}),
+      }),
     );
     if (result._tag === "Failure") {
       const error = squashAtomCommandFailure(result);
@@ -242,12 +253,17 @@ function SidebarUpdateControl() {
   const confirmDialog = (
     <UpdateEverythingDialog
       open={isConfirmingEverything}
-      onOpenChange={setIsConfirmingEverything}
+      onOpenChange={(open) => {
+        if (!open) ++serverCheckRequest.current;
+        setIsConfirmingEverything(open);
+      }}
       summary={everything.summary}
       lines={everything.lines}
       skipped={everything.skipped}
       activity={activityCheck}
-      onConfirm={() => void runEverything()}
+      onConfirm={() => {
+        if (activityCheck) void runEverything(activityCheck, true);
+      }}
     />
   );
 

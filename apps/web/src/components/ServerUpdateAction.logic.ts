@@ -76,11 +76,12 @@ export function serverUpdateActivity(hosts: ReadonlyArray<ServerUpdateHost>) {
   );
 }
 
-/** Remote desktop relaunches always need explicit confirmation. */
+/** A manual update needs confirmation only when work could be interrupted. */
 export function serverUpdateConfirmation(
   hosts: ReadonlyArray<ServerUpdateHost>,
   activity = serverUpdateActivity(hosts),
 ) {
+  if (!activity.interrupts) return null;
   const { concern, lines, incomplete, threadActivity } = activity;
   const desktopApps = hosts.filter((host) => host.desktopApp);
   if (desktopApps.length > 0) {
@@ -97,7 +98,6 @@ export function serverUpdateConfirmation(
       threadActivity,
     };
   }
-  if (concern === null) return null;
   return {
     message: [
       serverUpdateQuestion(hosts, concern),

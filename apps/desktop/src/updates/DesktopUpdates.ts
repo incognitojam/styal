@@ -62,6 +62,7 @@ type UpdateAction = "check" | "download" | "install" | "install-recovery" | "cha
 
 interface DesktopPreparedUpdateInstallResult extends DesktopUpdateActionResult {
   readonly failed: boolean;
+  readonly reason?: string;
 }
 
 const AppUpdateYmlConfig = Schema.Record(Schema.String, Schema.String);
@@ -199,6 +200,11 @@ export class DesktopUpdates extends Context.Service<
     readonly installOnQuit: Effect.Effect<boolean>;
     readonly installPrepared: (
       expectedVersion: string,
+      options?: {
+        readonly confirmShutdown?: boolean;
+        /** Remote callers must get consent on their own client, never in a local native dialog. */
+        readonly requireSafeShutdown?: boolean;
+      },
     ) => Effect.Effect<DesktopPreparedUpdateInstallResult>;
   }
 >()("@t3tools/desktop/updates/DesktopUpdates") {}
@@ -740,7 +746,11 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const installDownloadedUpdate = (expectedVersion?: string) =>
+  const installDownloadedUpdate = (
+    expectedVersion?: string,
+    confirmShutdown = expectedVersion === undefined,
+    requireSafeShutdown = false,
+  ) =>
     Effect.scoped(
       Effect.gen(function* () {
         const actionCompletions = yield* PubSub.subscribe(finishedUpdateActions);
@@ -788,8 +798,21 @@ export const make = Effect.gen(function* () {
           return { accepted: false, completed: false, failed: false };
         }
 
+        if (requireSafeShutdown) {
+          const checks = yield* guard.inspect.pipe(Effect.catchCause(() => Effect.succeed([null])));
+          if (DesktopShutdownGuard.shutdownConfirmation(checks, "restart") !== null) {
+            yield* finishUpdateAction("install");
+            return {
+              accepted: false,
+              completed: false,
+              failed: false,
+              reason:
+                "Activity changed while the desktop update was preparing. Try updating again to review and confirm any running work. The downloaded update is ready to retry.",
+            };
+          }
+        }
         if (
-          expectedVersion === undefined &&
+          confirmShutdown &&
           !(yield* guard.confirm("restart", {
             title: "Install the downloaded update and restart styal?",
           }))
@@ -871,6 +894,8 @@ export const make = Effect.gen(function* () {
 
   const installWithExpectedVersion = Effect.fn("desktop.updates.install")(function* (
     expectedVersion?: string,
+    confirmShutdown = expectedVersion === undefined,
+    requireSafeShutdown = false,
   ) {
     if (yield* Ref.get(desktopState.quitting)) {
       return {
@@ -880,11 +905,16 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }
-    const result = yield* installDownloadedUpdate(expectedVersion);
+    const result = yield* installDownloadedUpdate(
+      expectedVersion,
+      confirmShutdown,
+      requireSafeShutdown,
+    );
     return {
       accepted: result.accepted,
       completed: result.completed,
       failed: result.failed,
+      ...(result.reason === undefined ? {} : { reason: result.reason }),
       state: yield* Ref.get(updateStateRef),
     };
   });
@@ -1289,7 +1319,12 @@ export const make = Effect.gen(function* () {
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
-    installPrepared: (expectedVersion) => installWithExpectedVersion(expectedVersion),
+    installPrepared: (expectedVersion, options) =>
+      installWithExpectedVersion(
+        expectedVersion,
+        options?.confirmShutdown,
+        options?.requireSafeShutdown,
+      ),
   });
 });
 
