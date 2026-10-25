@@ -1,3 +1,4 @@
+import "~/index.css";
 import {
   EnvironmentId,
   ProjectId,
@@ -99,6 +100,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   openLink.mockResolvedValue(undefined);
   container = document.createElement("div");
+  container.style.position = "fixed";
+  container.style.inset = "0";
   document.body.append(container);
   root = createRoot(container);
 });
@@ -125,13 +128,13 @@ const render = (value = detail, order: "newest" | "oldest" = "newest") =>
 
 it("opens the host-reported merge commit and preserves factual history in both orders", async () => {
   await render();
-  expect(container.innerText).toContain("merged commit 1234567 into release");
-  expect(container.innerText).toContain("deleted the feature branch");
-  expect(container.innerText).toContain("restored the branch");
-  expect(container.innerText).toContain("More activity is available on the provider.");
-  expect(container.innerText).not.toContain("Pull request merged");
-  expect(container.innerText.indexOf("restored")).toBeLessThan(
-    container.innerText.indexOf("deleted"),
+  expect(container.textContent ?? "").toContain("merged commit 1234567 into release");
+  expect(container.textContent ?? "").toContain("deleted the feature branch");
+  expect(container.textContent ?? "").toContain("restored the branch");
+  expect(container.textContent ?? "").toContain("More activity is available on the provider.");
+  expect(container.textContent ?? "").not.toContain("Pull request merged");
+  expect((container.textContent ?? "").indexOf("restored")).toBeLessThan(
+    (container.textContent ?? "").indexOf("deleted"),
   );
   expect(report).not.toHaveBeenCalled();
   await act(async () => userEvent.click(container.querySelector("button")!));
@@ -142,16 +145,31 @@ it("opens the host-reported merge commit and preserves factual history in both o
     outcome: "success",
   });
   await render(detail, "oldest");
-  expect(container.innerText.indexOf("deleted")).toBeLessThan(
-    container.innerText.indexOf("restored"),
+  expect((container.textContent ?? "").indexOf("deleted")).toBeLessThan(
+    (container.textContent ?? "").indexOf("restored"),
   );
   expect(report).toHaveBeenCalledTimes(1);
 });
 
 it("retains the legacy merge fallback without fabricating an actor or a commit link", async () => {
   await render({ ...detail, lifecycleEvents: undefined, lifecycleEventsTruncated: undefined });
-  expect(container.innerText).toContain("Pull request merged");
-  expect(container.innerText).not.toContain("maintainer");
-  expect(container.innerText).not.toContain("deleted the");
+  expect(container.textContent ?? "").toContain("Pull request merged");
+  expect(container.textContent ?? "").not.toContain("maintainer");
+  expect(container.textContent ?? "").not.toContain("deleted the");
   expect(container.querySelector("button")).toBeNull();
+});
+
+it("aligns the lifecycle marker with the primary text rather than its timestamp", async () => {
+  await render();
+  const icon = container.querySelector<SVGElement>("svg.lucide-trash-2")!;
+  const row = icon.closest("div.relative")!;
+  const primary = Array.from(row.querySelectorAll("span")).find(
+    (element) => element.textContent === "deleted the feature branch",
+  )!;
+  primary.scrollIntoView();
+  const iconRect = icon.getBoundingClientRect();
+  const textRect = primary.getBoundingClientRect();
+  expect(
+    Math.abs(iconRect.top + iconRect.height / 2 - textRect.top - textRect.height / 2),
+  ).toBeLessThanOrEqual(1);
 });

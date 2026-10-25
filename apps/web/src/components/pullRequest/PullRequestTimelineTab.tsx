@@ -385,6 +385,7 @@ function CommitEvent({
     >
       <ActorTimelineMarker
         actors={event.commitAuthors}
+        className="top-3.5"
         fallback={<GitCommitHorizontalIcon className="size-3.5" />}
       />
       <div className="flex min-w-0 items-center gap-2.5 py-1.5">
@@ -442,7 +443,7 @@ function LifecycleEvent({
 
   return (
     <div className="relative mb-5 pl-12 [contain-intrinsic-block-size:48px] [content-visibility:auto]">
-      <IconMarker icon={presentation.icon} />
+      <IconMarker icon={presentation.icon} className="top-3.5" />
       <div className="py-1.5 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           {event.actor ? <ActorName actor={event.actor} /> : null}
@@ -502,7 +503,7 @@ function ReviewVerdictEvent({
     <div className="group relative mb-5 pl-12 [contain-intrinsic-block-size:48px] [content-visibility:auto]">
       <ActorTimelineMarker
         actors={event.actor ? [event.actor] : []}
-        className="top-6"
+        className="top-3.5"
         fallback={<PullRequestReviewOutcomeIcon outcome={outcome} />}
       />
       <div className="flex min-w-0 flex-wrap items-start gap-2 py-1.5">

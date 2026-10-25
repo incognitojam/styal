@@ -3934,6 +3934,7 @@ features:
     invariants:
       - Web, desktop and mobile show host-reported merge actors, commits, target branches and times, and source-branch deletion and restoration events with stable host identities.
       - Historical events do not imply current branch existence; unavailable actors, commits and historical branch names are omitted rather than inferred.
+      - Compact lifecycle, commit and review timeline markers align with the primary text rather than the timestamp beneath it.
       - Actual merge events suppress the timestamp-only web fallback and the close entry recorded alongside a merge; older servers and unsupported providers retain existing behavior.
       - Lifecycle history has a bounded independent read and an incomplete-history notice on pagination limits or read errors, without preventing comments, reviews or deployments from loading.
       - Mobile lifecycle events appear in All activity, with bot and resolved-conversation filters leaving factual lifecycle history intact.
