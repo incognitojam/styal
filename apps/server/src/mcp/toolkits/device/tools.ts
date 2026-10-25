@@ -29,8 +29,9 @@ const DeviceToolFailure = Schema.Union([DeviceToolError, OrchestratorMcpFailure]
 
 const DeviceListTool = Tool.make("device_list", {
   description:
-    "List iOS Simulators and Android Emulators on this environment's device hosts, which platforms each host can run, which devices are already open in this thread's Device panel, and which thread holds each device other threads have open. Call this before device_open when you do not know a device id, and prefer a device no other thread has open.",
-  // Empty Struct emits object|array, which can make providers reject every server tool.
+    "List iOS Simulators and Android Emulators here, what each host can run, what is open in this thread's Device panel, and which thread holds each device other threads have open. Call before `device_open` when you do not know a device id. Prefer a device no other thread holds.",
+  // An empty struct serializes as `anyOf [object, array]`, which some
+  // providers reject and then drop every tool on the server with it.
   parameters: Schema.Struct({
     hostId: Schema.optional(
       Schema.String.annotate({ description: "Limit to one device host. Defaults to all hosts." }),
@@ -48,7 +49,7 @@ const DeviceListTool = Tool.make("device_list", {
 
 const DeviceOpenTool = Tool.make("device_open", {
   description:
-    "Open a simulator or emulator for this thread: boots it if needed, starts its live stream, and shows it in the user's Device panel so they can watch. Returns the agent-device CLI invocation pinned to the device; drive the device with that CLI afterwards. A device another thread holds but is not using is handed over; one in use by another thread fails with DeviceHeldError naming that thread unless takeOver is true.",
+    "Open a simulator or emulator for this thread. Boots it if needed and shows it in the user's Device panel. Returns the `agent-device` CLI call pinned to that device. Drive the device with that CLI. An idle device another thread holds is handed over. One in use fails with `DeviceHeldError` naming that thread, unless `takeOver`.",
   parameters: DeviceToolOpenInput,
   success: DeviceToolOpenResult,
   failure: DeviceToolFailure,
@@ -69,7 +70,7 @@ const DeviceOpenTool = Tool.make("device_open", {
 
 export const DeviceScreenshotTool = Tool.make("device_screenshot", {
   description:
-    "Capture the current screen of an open device as a PNG image. Use it to see what the user sees; for taps and text use the agent-device CLI.",
+    "Get a PNG of an open device's screen. For taps and text, use the `agent-device` CLI.",
   parameters: DeviceToolTargetInput,
   success: DeviceToolScreenshotResult,
   failure: DeviceToolFailure,
@@ -83,11 +84,9 @@ export const DeviceScreenshotTool = Tool.make("device_screenshot", {
 
 const DeviceCloseTool = Tool.make("device_close", {
   description:
-    "Hand a device back: release this thread's hold so other agents can use it, and remove it from the Device panel. It stays booted; pass shutdown=true to also power it off.",
+    "Hand a device back: release this thread's hold and remove it from the Device panel. It stays booted. `shutdown=true` also turns it off.",
   parameters: DeviceToolCloseInput,
-  success: Schema.Record(Schema.String, Schema.Never).annotate({
-    description: "The device was closed.",
-  }),
+  success: Schema.Record(Schema.String, Schema.Never),
   failure: DeviceToolFailure,
   dependencies,
 })

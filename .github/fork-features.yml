@@ -6309,6 +6309,7 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - e2e/tests/workflow-run-review.e2e.ts
       - packages/client-runtime/src/state/workflowRunDisplay.test.ts
+      - packages/provider-core/src/server/runtimeInstructions.test.ts
       - packages/shared/src/agentAwareness.test.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts

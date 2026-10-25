@@ -393,7 +393,7 @@ function assertReinjectedInstructions(
 ) {
   const text = blocks[0]?.text ?? "";
   assert.include(text, "styal interaction mode: Default");
-  assert.include(text, "styal collaborative browser");
+  assert.include(text, "## styal browser");
   assert.include(text, "styal orchestration");
   assert.include(text, `<user_request>\n${request}\n</user_request>`);
 }
@@ -980,7 +980,7 @@ describe("AcpAdapterV2", () => {
       const firstDefault = yield* runTurn(2, defaultPolicy, "First default request.");
       assert.equal(firstDefault.textBlockCount, 2);
       assert.include(firstDefault.prompt, "styal interaction mode: Default");
-      assert.include(firstDefault.prompt, "styal collaborative browser");
+      assert.include(firstDefault.prompt, "## styal browser");
       assert.include(firstDefault.prompt, "styal orchestration");
       assert.notInclude(
         firstDefault.methods,
