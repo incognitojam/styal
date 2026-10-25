@@ -456,6 +456,8 @@ export const PullRequestLinkedThreadsResult = Schema.Struct({
 export type PullRequestLinkedThreadsResult = typeof PullRequestLinkedThreadsResult.Type;
 
 export const PullRequestPreview = Schema.Struct({
+  autoMergeEnabled: Schema.optional(Schema.Boolean),
+  inMergeQueue: Schema.optional(Schema.Boolean),
   projectId: ProjectId,
   repository: TrimmedNonEmptyString,
   number: PositiveInt,

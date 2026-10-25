@@ -596,6 +596,10 @@ query PullRequestCheckContexts(
 query PullRequestPreview($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      autoMergeRequest {
+        enabledAt
+      }
+      isInMergeQueue
       number
       title
       url

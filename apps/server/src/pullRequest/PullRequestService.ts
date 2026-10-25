@@ -1820,6 +1820,8 @@ export const make = Effect.gen(function* () {
     );
 
   const previewFields = (value: PullRequestPreview): PullRequestPreview => ({
+    ...(value.autoMergeEnabled === undefined ? {} : { autoMergeEnabled: value.autoMergeEnabled }),
+    ...(value.inMergeQueue === undefined ? {} : { inMergeQueue: value.inMergeQueue }),
     projectId: value.projectId,
     repository: value.repository,
     number: value.number,

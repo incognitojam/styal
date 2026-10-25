@@ -177,14 +177,22 @@ it.effect("does not wait for an in-flight detail read to display a preview", () 
               Effect.andThen(Deferred.await(releaseDetail)),
               Effect.as(hostedChangeRequest("Description")),
             ),
-          getChangeRequestPreview: () => Effect.succeed(changeRequest(1, "2026-07-02T00:00:00Z")),
+          getChangeRequestPreview: () =>
+            Effect.succeed({
+              ...changeRequest(1, "2026-07-02T00:00:00Z"),
+              autoMergeEnabled: true,
+              inMergeQueue: true,
+            }),
         }),
       ],
     });
     const ref = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
     const detail = yield* Effect.forkChild(service.detail(ref));
     yield* Deferred.await(detailStarted);
-    assert.strictEqual((yield* service.preview(ref)).title, "Change request 1");
+    const preview = yield* service.preview(ref);
+    assert.strictEqual(preview.title, "Change request 1");
+    assert.strictEqual(preview.autoMergeEnabled, true);
+    assert.strictEqual(preview.inMergeQueue, true);
     yield* Deferred.succeed(releaseDetail, undefined);
     yield* Fiber.join(detail);
   }),

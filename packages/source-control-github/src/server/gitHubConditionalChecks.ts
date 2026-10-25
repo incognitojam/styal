@@ -21,6 +21,8 @@ const HeadSchema = Schema.Struct({
 });
 const decodeHead = Schema.decodeUnknownEffect(Schema.fromJsonString(HeadSchema));
 
+class ChecksUnavailable extends Schema.TaggedError<ChecksUnavailable>()("ChecksUnavailable", {}) {}
+
 type Validator = { etag: string | undefined; next: boolean; body: string };
 
 const UNSUPPORTED_STATUSES = new Set([404, 405, 501]);
@@ -83,7 +85,7 @@ export const makeChecksRevalidator = Effect.gen(function* () {
                     }),
                   GitHubApiResponseError: (error) =>
                     Effect.sync(() => {
-                      entry.supported = !UNSUPPORTED_STATUSES.has(error.status);
+                      entry.supported &&= !UNSUPPORTED_STATUSES.has(error.status);
                       return null;
                     }),
                 }),
@@ -120,15 +122,25 @@ export const makeChecksRevalidator = Effect.gen(function* () {
             `${root}/commits/${head.head.sha}/check-runs?filter=all`,
             `${root}/commits/${head.head.sha}/status`,
           ];
-          for (const endpoint of endpoints) {
-            for (let page = 1; ; page++) {
-              if (page > 100) return yield* fail(200);
-              const paged = `${endpoint}${endpoint.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
-              const next = yield* get(paged);
-              if (next === null) return yield* read;
-              if (!next) break;
-            }
-          }
+          // Each endpoint has its own cursor; only pages within one endpoint depend on each other.
+          // An unavailable endpoint interrupts the others so the fallback read starts at once.
+          const available = yield* Effect.forEach(
+            endpoints,
+            Effect.fn("gitHubConditionalChecks.revalidateEndpoint")(function* (endpoint) {
+              for (let page = 1; ; page++) {
+                if (page > 100) return yield* fail(200);
+                const paged = `${endpoint}${endpoint.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
+                const next = yield* get(paged);
+                if (next === null) return yield* new ChecksUnavailable();
+                if (!next) return;
+              }
+            }),
+            { concurrency: 3, discard: true },
+          ).pipe(
+            Effect.as(true),
+            Effect.catchTags({ ChecksUnavailable: () => Effect.succeed(false) }),
+          );
+          if (!available) return yield* read;
           const now = yield* Clock.currentTimeMillis;
           if (entry.value !== null && now - entry.readAt < 5 * 60_000) return entry.value;
           const fresh = yield* read;

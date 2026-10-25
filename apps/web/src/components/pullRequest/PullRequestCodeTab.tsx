@@ -150,13 +150,13 @@ const NO_SLICES: ReadonlyArray<PullRequestDiffSlice> = [];
 
 // Query results outlive the panel's slices, so their parses survive closing and reopening
 // without retaining anything beyond the query cache's lifetime.
-const sliceParses = new WeakMap<PullRequestDiffResult | PullRequestDiffSlice, Map<string, RenderablePatch | null>>();
+const sliceParses = new WeakMap<object, Map<string, RenderablePatch | null>>();
 
 function parseSlice(slice: PullRequestDiffSlice, cacheKey: string, ignoreWhitespace: boolean) {
   let parses = sliceParses.get(slice.source ?? slice);
   if (parses === undefined) {
     parses = new Map();
-    sliceParses.set(slice.source, parses);
+    sliceParses.set(slice.source ?? slice, parses);
   }
   if (parses.has(cacheKey)) return parses.get(cacheKey) ?? null;
   const parsed = getRenderablePatch(slice.patch, cacheKey, {

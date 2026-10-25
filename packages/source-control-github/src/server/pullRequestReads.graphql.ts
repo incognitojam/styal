@@ -251,14 +251,14 @@ export const ActorOther = Schema.Struct({
 export interface ActorOther extends Schema.Struct.Type<typeof ActorOther.fields> {}
 
 /** Represents an auto-merge request for a pull request */
-export const AutoMergeRequest = Schema.Struct({
+export const PullRequestCoreRepositoryPullRequestAutoMergeRequestAutoMergeRequest = Schema.Struct({
   /**
    * The merge method of the auto-merge request. If a merge queue is required by
    * the base branch, this value will be set by the merge queue when merging.
    */
   mergeMethod: GraphQL.enumLiterals(Shared.PullRequestMergeMethod.literals)
 })
-export interface AutoMergeRequest extends Schema.Struct.Type<typeof AutoMergeRequest.fields> {}
+export interface PullRequestCoreRepositoryPullRequestAutoMergeRequestAutoMergeRequest extends Schema.Struct.Type<typeof PullRequestCoreRepositoryPullRequestAutoMergeRequestAutoMergeRequest.fields> {}
 
 /** Represents a comparison between two commit revisions. */
 export const Comparison = Schema.Struct({
@@ -499,7 +499,7 @@ export const PullRequestCoreRepositoryPullRequestPullRequest = Schema.Struct({
     ActorOther
   ])),
   /** Returns the auto-merge request object if one exists for this pull request. */
-  autoMergeRequest: Schema.NullOr(AutoMergeRequest),
+  autoMergeRequest: Schema.NullOr(PullRequestCoreRepositoryPullRequestAutoMergeRequestAutoMergeRequest),
   /** Check if the current viewer can update this object. */
   viewerCanUpdate: Schema.Boolean,
   /** Did the viewer author this comment. */
@@ -663,7 +663,7 @@ export const PullRequestCoreWithoutDeploymentsRepositoryPullRequestPullRequest =
     ActorOther
   ])),
   /** Returns the auto-merge request object if one exists for this pull request. */
-  autoMergeRequest: Schema.NullOr(AutoMergeRequest),
+  autoMergeRequest: Schema.NullOr(PullRequestCoreRepositoryPullRequestAutoMergeRequestAutoMergeRequest),
   /** Check if the current viewer can update this object. */
   viewerCanUpdate: Schema.Boolean,
   /** Did the viewer author this comment. */
@@ -791,7 +791,7 @@ export const PullRequestCoreEnterpriseRepositoryPullRequestPullRequest = Schema.
     ActorOther
   ])),
   /** Returns the auto-merge request object if one exists for this pull request. */
-  autoMergeRequest: Schema.NullOr(AutoMergeRequest),
+  autoMergeRequest: Schema.NullOr(PullRequestCoreRepositoryPullRequestAutoMergeRequestAutoMergeRequest),
   /** Check if the current viewer can update this object. */
   viewerCanUpdate: Schema.Boolean,
   /** Did the viewer author this comment. */
@@ -924,7 +924,7 @@ export const PullRequestCoreEnterpriseWithoutDeploymentsRepositoryPullRequestPul
     ActorOther
   ])),
   /** Returns the auto-merge request object if one exists for this pull request. */
-  autoMergeRequest: Schema.NullOr(AutoMergeRequest),
+  autoMergeRequest: Schema.NullOr(PullRequestCoreRepositoryPullRequestAutoMergeRequestAutoMergeRequest),
   /** Check if the current viewer can update this object. */
   viewerCanUpdate: Schema.Boolean,
   /** Did the viewer author this comment. */
@@ -1094,6 +1094,13 @@ export declare namespace PullRequestCheckContexts {
   export type Result = typeof PullRequestCheckContexts.result.Type
 }
 
+/** Represents an auto-merge request for a pull request */
+export const PullRequestPreviewRepositoryPullRequestAutoMergeRequestAutoMergeRequest = Schema.Struct({
+  /** When was this auto-merge request was enabled. */
+  enabledAt: Schema.NullOr(Shared.DateTime)
+})
+export interface PullRequestPreviewRepositoryPullRequestAutoMergeRequestAutoMergeRequest extends Schema.Struct.Type<typeof PullRequestPreviewRepositoryPullRequestAutoMergeRequestAutoMergeRequest.fields> {}
+
 /** A user is an individual's account on GitHub that owns repositories and can make new content. */
 export const PullRequestPreviewRepositoryPullRequestAuthorUser = Schema.Struct({
   __typename: Schema.Literal("User"),
@@ -1108,6 +1115,10 @@ export interface PullRequestPreviewRepositoryPullRequestAuthorUser extends Schem
 
 /** A repository pull request. */
 export const PullRequestPreviewRepositoryPullRequestPullRequest = Schema.Struct({
+  /** Returns the auto-merge request object if one exists for this pull request. */
+  autoMergeRequest: Schema.NullOr(PullRequestPreviewRepositoryPullRequestAutoMergeRequestAutoMergeRequest),
+  /** Indicates whether the pull request is in a merge queue */
+  isInMergeQueue: Schema.Boolean,
   /** Identifies the pull request number. */
   number: Shared.Int,
   /** Identifies the pull request title. */
@@ -1144,7 +1155,7 @@ export const PullRequestPreview = GraphQL.query("PullRequestPreview", {
       { name: "number", body: "Int!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){number title url state isDraft createdAt author{__typename login avatarUrl...on User{name}}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){autoMergeRequest{enabledAt}isInMergeQueue number title url state isDraft createdAt author{__typename login avatarUrl...on User{name}}}}"] }
     ],
     fragments: []
   },

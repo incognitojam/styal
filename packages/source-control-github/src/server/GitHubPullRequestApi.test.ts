@@ -835,6 +835,8 @@ layer("GitHubPullRequestApi.layer", (it) => {
               data: {
                 repository: {
                   pullRequest: {
+                    autoMergeRequest: { enabledAt: "2026-07-01T00:00:00Z" },
+                    isInMergeQueue: true,
                     number: 7,
                     title: "Fast previews",
                     url: "https://github.example/acme/web/pull/7",
@@ -862,6 +864,8 @@ layer("GitHubPullRequestApi.layer", (it) => {
         number: 7,
       });
       expect(preview).toEqual({
+        autoMergeEnabled: true,
+        inMergeQueue: true,
         number: 7,
         title: "Fast previews",
         url: "https://github.example/acme/web/pull/7",

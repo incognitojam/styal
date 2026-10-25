@@ -386,8 +386,11 @@ export function toPullRequestPreview(
 ): Omit<PullRequestPreview, "projectId" | "repository"> | null {
   const pullRequest = result.repository?.pullRequest;
   if (pullRequest == null) return null;
+  const { autoMergeRequest, isInMergeQueue, ...fields } = pullRequest;
   return {
-    ...pullRequest,
+    ...fields,
+    autoMergeEnabled: autoMergeRequest != null,
+    inMergeQueue: isInMergeQueue,
     author: toActor(pullRequest.author),
     state: toState(pullRequest),
   };
