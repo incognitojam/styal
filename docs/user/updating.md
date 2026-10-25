@@ -144,8 +144,11 @@ next time you look at its window, with a link to that version's release notes.
 
 Before quitting or restarting, styal checks agents and terminal commands in the
 environments the desktop app hosts, including WSL and work started from other
-devices. If work is active or cannot be checked, styal lists it and lets you
-cancel or continue; cancelling keeps the downloaded update. If the confirmation
+devices. A restart proceeds directly when every check succeeds and all active
+threads can continue. Terminal commands, waiting requests and unchecked activity
+still require confirmation. Quit asks about active work even when threads can
+continue, because they resume only when styal next starts. You can cancel or
+continue; cancelling keeps the downloaded update. If the confirmation
 cannot be displayed and the app stays unresponsive, choose **Quit** again after
 five seconds to exit. This can interrupt running work.
 
