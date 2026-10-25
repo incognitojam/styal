@@ -5,11 +5,19 @@ describe("device host changes across environments", () => {
   const shared = { id: "shared", label: "Mac mini", target: "julius@macmini" };
   const local = { id: "other", label: "Android", target: "julius@android" };
 
-  it("adds to differing host lists without losing environment-specific hosts, including on retry", () => {
+  it("does not copy an edited host into environments without a matching saved host", () => {
     const environments = [[], [local], [shared, local]];
-    const saved = environments.map((hosts) => updateDeviceHosts(hosts, shared, false));
-    expect(saved).toEqual([[shared], [local, shared], [shared, local]]);
-    expect(saved.map((hosts) => updateDeviceHosts(hosts, shared, false))).toEqual(saved);
+    const edited = { ...shared, label: "Renamed device host" };
+    const saved = environments.map((hosts) => updateDeviceHosts(hosts, edited, false, shared));
+    expect(saved).toEqual([[], [local], [edited, local]]);
+    expect(saved[0]).toBe(environments[0]);
+    expect(saved[1]).toBe(environments[1]);
+    expect(saved.map((hosts) => updateDeviceHosts(hosts, edited, false, shared))).toEqual(saved);
+    expect(saved.map((hosts) => updateDeviceHosts(hosts, edited, true))).toEqual([
+      [],
+      [local],
+      [local],
+    ]);
   });
 
   it("edits and removes the shared host while preserving unrelated hosts", () => {
@@ -19,6 +27,13 @@ describe("device host changes across environments", () => {
     );
     expect(saved).toEqual([[edited], [local, edited]]);
     expect(saved.map((hosts) => updateDeviceHosts(hosts, edited, true))).toEqual([[], [local]]);
+  });
+
+  it("does not adopt an unrelated host when its destination matches the edited address", () => {
+    const edited = { ...shared, target: "builder@renamed.example.test" };
+    const unrelated = { ...local, target: edited.target };
+    const hosts = [unrelated];
+    expect(updateDeviceHosts(hosts, edited, false, shared)).toBe(hosts);
   });
 
   it("recognizes a host added separately on another environment and preserves its local ID", () => {
@@ -37,7 +52,6 @@ describe("device host changes across environments", () => {
     expect(updateDeviceHosts([anotherPort, anotherIdentity], shared, false)).toEqual([
       anotherPort,
       anotherIdentity,
-      shared,
     ]);
   });
 

@@ -72,13 +72,10 @@ export function updateDeviceHosts(
     return matches[0];
   };
   const existing =
-    hosts.find((candidate) => candidate.id === original.id) ??
-    findDestination(original) ??
-    (remove ? undefined : findDestination(host));
-  if (remove) return hosts.filter((candidate) => candidate.id !== existing?.id);
-  return existing
-    ? hosts.map((candidate) =>
-        candidate.id === existing.id ? { ...host, id: existing.id } : candidate,
-      )
-    : [...hosts, host];
+    hosts.find((candidate) => candidate.id === original.id) ?? findDestination(original);
+  if (!existing) return hosts;
+  if (remove) return hosts.filter((candidate) => candidate.id !== existing.id);
+  return hosts.map((candidate) =>
+    candidate.id === existing.id ? { ...host, id: existing.id } : candidate,
+  );
 }

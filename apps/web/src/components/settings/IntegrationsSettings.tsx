@@ -3,6 +3,7 @@ import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceHostsSettings } from "./DeviceHostsSettings";
+import { EnvironmentDeviceHostsSettings } from "./EnvironmentDeviceHostsSettings";
 import { DeviceIdleShutdownSetting } from "./DeviceIdleShutdownSetting";
 /**
  * Integrations settings - preferences for surfaces styal embeds rather than
@@ -1065,6 +1066,7 @@ export function DeviceIntegrationControls({
           environmentId={environmentId}
         />
       ) : null}
+      <EnvironmentDeviceHostsSettings />
       <DeviceHostsSettings environmentId={environmentId} />
     </>
   );

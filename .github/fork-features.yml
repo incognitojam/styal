@@ -1094,6 +1094,7 @@ features:
     status: maintained
     prs: [746, 805]
     invariants:
+      - New remote device setup in settings uses environment sharing. Web and desktop hide SSH host configuration unless selected connected environments have saved hosts, which remain editable and removable in a collapsed section. Editing or removing saved hosts only changes matching entries on connected environments; settings do not offer adding SSH hosts.
       - Web, desktop, and mobile clients with settings:write on both environments can authorize an already connected environment as a device host without SSH configuration; devices:operate stays in the legacy wire vocabulary for older clients.
       - Device-only credentials are stored in the source server's secret store and remain usable after client disconnects or server restarts.
       - Peer access is limited to local devices and expires. Removing a host revokes access when the target is reachable; offline removal reports how to revoke the remaining grant. Ordinary client credentials cannot use peer endpoints.
@@ -1111,7 +1112,10 @@ features:
       - apps/server/src/device/DeviceSharingHttp.ts
       - apps/server/src/device/EnvironmentDeviceHost.ts
       - apps/server/src/environment/HostActivity.ts
+      - apps/web/src/components/settings/DeviceHostsSettings.tsx
       - apps/web/src/components/settings/EnvironmentDeviceHostsSettings.tsx
+      - apps/web/src/components/settings/IntegrationsSettings.tsx
+      - apps/web/src/components/settings/settingsSearch.ts
       - packages/client-runtime/src/state/device.ts
       - packages/contracts/src/device.ts
     upstream_paths:
@@ -1125,6 +1129,7 @@ features:
       - apps/server/src/device/DeviceMultiHost.test.ts
       - apps/server/src/device/DeviceSharing.test.ts
       - apps/web/src/components/settings/ConnectionsSettings.logic.test.ts
+      - apps/web/src/components/settings/deviceHostsSettings.logic.test.ts
       - packages/client-runtime/src/state/deviceSharingAddress.test.ts
       - packages/client-runtime/src/state/offlineDeviceShares.test.ts
       - packages/contracts/src/device.test.ts
