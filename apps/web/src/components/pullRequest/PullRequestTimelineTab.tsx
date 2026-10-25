@@ -13,7 +13,7 @@ import {
   FileCode2Icon,
   GitCommitHorizontalIcon,
   MessageSquareIcon,
-  GitBranchIcon,
+  Trash2Icon,
   RotateCcwIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -432,7 +432,7 @@ function LifecycleEvent({
             label: "Pull request merged",
           }
         : event.kind === "head-ref-deleted"
-          ? { icon: <GitBranchIcon className="size-3.5" />, label: event.title }
+          ? { icon: <Trash2Icon className="size-3.5" />, label: event.title }
           : event.kind === "head-ref-restored"
             ? { icon: <RotateCcwIcon className="size-3.5" />, label: event.title }
             : {
