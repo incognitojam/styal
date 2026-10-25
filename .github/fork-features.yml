@@ -3930,7 +3930,7 @@ features:
   - id: pull-request-lifecycle-events
     title: Factual GitHub merge and source-branch history
     status: maintained
-    prs: []
+    prs: [1069]
     invariants:
       - Web, desktop and mobile show host-reported merge actors, commits, target branches and times, and source-branch deletion and restoration events with stable host identities.
       - Historical events do not imply current branch existence; unavailable actors, commits and historical branch names are omitted rather than inferred.
