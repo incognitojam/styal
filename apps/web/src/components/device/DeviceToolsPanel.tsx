@@ -126,20 +126,6 @@ export function DeviceToolsPanel(props: {
           </Section>
         ) : null}
 
-        {isIos && (detail?.memory || detail?.memoryError) ? (
-          <Section title="Memory">
-            {detail.memory ? (
-              <SimulatorMemoryControls
-                key={detail.readAt}
-                memory={detail.memory}
-                controls={controls}
-              />
-            ) : (
-              <p className="text-xs text-destructive">{detail.memoryError}</p>
-            )}
-          </Section>
-        ) : null}
-
         <Section title="App">
           <Row label="Foreground">
             <span className="truncate font-mono text-xs">{foregroundApp?.id ?? "—"}</span>
@@ -332,6 +318,20 @@ export function DeviceToolsPanel(props: {
             {!foregroundApp ? (
               <p className="text-xs text-muted-foreground">Open an app first.</p>
             ) : null}
+          </Section>
+        ) : null}
+
+        {isIos && (detail?.memory || detail?.memoryError) ? (
+          <Section title="Memory">
+            {detail.memory ? (
+              <SimulatorMemoryControls
+                key={detail.readAt}
+                memory={detail.memory}
+                controls={controls}
+              />
+            ) : (
+              <p className="text-xs text-destructive">{detail.memoryError}</p>
+            )}
           </Section>
         ) : null}
 

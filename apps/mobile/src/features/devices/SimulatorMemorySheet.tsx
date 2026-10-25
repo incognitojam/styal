@@ -54,25 +54,26 @@ export function SimulatorMemorySheet({
     };
   }, [environmentId, read, session.hostId, session.deviceId, update]);
 
-  const apply = async (input: DeviceActionInput) => {
+  const apply = (input: DeviceActionInput) => {
     if (busy.current) return;
     busy.current = true;
     setPending(true);
     setError(null);
-    try {
-      const result = await action({ environmentId, input });
-      if (result._tag === "Success") update(result.value.memory, result.value.memoryError);
-      else {
-        const refreshed = await read({ environmentId, input: target });
-        if (refreshed._tag === "Success")
-          update(refreshed.value.memory, refreshed.value.memoryError);
-        else setMemory(null);
-        setError(String(Cause.squash(result.cause)));
-      }
-    } finally {
-      busy.current = false;
-      setPending(false);
-    }
+    return action({ environmentId, input })
+      .then(async (result) => {
+        if (result._tag === "Success") update(result.value.memory, result.value.memoryError);
+        else {
+          const refreshed = await read({ environmentId, input: target });
+          if (refreshed._tag === "Success")
+            update(refreshed.value.memory, refreshed.value.memoryError);
+          else setMemory(null);
+          setError(String(Cause.squash(result.cause)));
+        }
+      })
+      .finally(() => {
+        busy.current = false;
+        setPending(false);
+      });
   };
 
   return (
