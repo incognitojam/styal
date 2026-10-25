@@ -5583,6 +5583,7 @@ features:
       - watch_workflow_run reads the GitHub Actions run first; a run that already completed is reported to the agent instead of watched, and an unreadable run is an error.
       - The server reads each watched run every 30 seconds, respecting host quota pauses, and wakes the agent once when it completes, naming its conclusion and the jobs of the latest attempt that did not pass, then ends the watch in the same step.
       - A watched run keeps the thread in the Working list as a monitor background task until the watch ends.
+      - Forks and subagent child threads start without workflow run watches; the parent's watches remain unchanged.
       - Settling, archiving, or stopping the thread ends its workflow run watches, and a finish read before that changes nothing and wakes no one. Subagents and settled or archived threads cannot start one.
       - Eight failed reads in a row end the watch with a wake saying so; a host rate limit only pauses it.
       - A watched run that waits on deployment environments the viewer may approve records them on the watch, which marks the thread as needing approval on every client and in push notifications until the run stops waiting. The user approves or rejects them from the thread, with an optional comment, and the server reads the run again at once; the agent has no tool to review them.
@@ -5597,6 +5598,7 @@ features:
       - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
       - apps/server/src/mcp/toolkits/pullRequests/tools.ts
       - apps/server/src/orchestration-v2/Orchestrator.ts
+      - apps/server/src/orchestration-v2/ThreadForkService.ts
       - apps/server/src/orchestration-v2/WorkflowRunWatchReactor.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.ts
       - apps/server/src/telemetry/ClientFeatureUsage.ts
@@ -5612,6 +5614,7 @@ features:
       - packages/client-runtime/src/state/workflowRunDisplay.ts
       - packages/contracts/src/threadPullRequest.ts
       - packages/provider-core/src/server/runtimeInstructions.ts
+      - packages/provider-core/src/server/subagentProjection.ts
       - packages/shared/src/agentAwareness.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
@@ -5629,6 +5632,8 @@ features:
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
     tests:
       - apps/server/src/mcp/toolkits/pullRequests/handlers.test.ts
+      - apps/server/src/orchestration-v2/SubagentProjection.test.ts
+      - apps/server/src/orchestration-v2/ThreadFork.execution.test.ts
       - apps/server/src/orchestration-v2/ThreadStop.test.ts
       - apps/server/src/orchestration-v2/runtimeLayer.test.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.test.ts

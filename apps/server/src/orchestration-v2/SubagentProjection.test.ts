@@ -117,6 +117,35 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   });
 });
 
+it("leaves workflow run watches with the parent when creating a subagent child", () => {
+  const workflowRuns = [
+    {
+      host: "github.com",
+      repository: "example/repo",
+      runId: 1,
+      url: "https://github.com/example/repo/actions/runs/1",
+      name: "CI #1",
+      startedAt: "2026-07-24T09:00:00.000Z",
+    },
+  ];
+  const parentThread = { ...makeParentThread(), workflowRuns };
+  const childThread = makeSubagentChildThread({
+    parentThread,
+    childThreadId,
+    parentNodeId: NodeId.make("node:subagent-parent"),
+    activeProviderThreadId: null,
+    providerInstanceId: childProviderInstanceId,
+    modelSelection: childModelSelection,
+    title: "Child without watches",
+    now: childCreatedAt,
+    createdBy: "agent",
+    creationSource: "provider",
+  });
+
+  assert.deepEqual(childThread.workflowRuns, []);
+  assert.deepEqual(parentThread.workflowRuns, workflowRuns);
+});
+
 it("attributes native subagent prompts to their parent thread", () => {
   for (const role of ["user", "assistant"] as const) {
     const artifacts = makeSubagentConversationArtifacts({

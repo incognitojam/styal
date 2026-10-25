@@ -203,6 +203,89 @@ it.effect("a persisted fork leaves PR watching with its parent until explicitly 
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 
+it.effect("a persisted fork leaves workflow run watching with its parent", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const now = yield* DateTime.now;
+    const { instanceId, modelSelection } = forkCases[0]!;
+    const sourceThreadId = ThreadId.make("fork-workflow-watch-source");
+    const targetThreadId = ThreadId.make("fork-workflow-watch-target");
+    const sourceRunId = RunId.make("fork-workflow-watch-source-run");
+
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("fork-workflow-watch-create"),
+      threadId: sourceThreadId,
+      projectId: ProjectId.make("fork-workflow-watch-project"),
+      title: "Watching source",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* eventSink.write({
+      events: [
+        {
+          id: EventId.make("fork-workflow-watch-source-run"),
+          type: "run.created",
+          threadId: sourceThreadId,
+          runId: sourceRunId,
+          occurredAt: now,
+          payload: {
+            id: sourceRunId,
+            threadId: sourceThreadId,
+            ordinal: 1,
+            providerInstanceId: instanceId,
+            modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make("fork-workflow-watch-source-message"),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "completed",
+            requestedAt: now,
+            startedAt: now,
+            completedAt: now,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+        },
+      ],
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.workflow-run.watch",
+      commandId: CommandId.make("fork-workflow-watch-parent-start"),
+      threadId: sourceThreadId,
+      host: "github.com",
+      repository: "example/repo",
+      runId: 1,
+      watching: true,
+      run: { url: "https://github.com/example/repo/actions/runs/1", name: "CI #1" },
+    });
+    const parentBefore = yield* orchestrator.getThreadShell(sourceThreadId);
+    assert.lengthOf(parentBefore?.workflowRuns ?? [], 1);
+    assert.lengthOf(parentBefore?.pendingBackgroundTasks ?? [], 1);
+
+    yield* orchestrator.dispatch({
+      type: "thread.fork",
+      commandId: CommandId.make("fork-workflow-watch-fork"),
+      sourceThreadId,
+      targetThreadId,
+      sourcePoint: { type: "run", runId: sourceRunId },
+      createdBy: "user",
+      creationSource: "mcp",
+    });
+    const fork = yield* orchestrator.getThreadShell(targetThreadId);
+    assert.isNotNull(fork);
+    assert.deepEqual(fork.workflowRuns, []);
+    assert.deepEqual(fork.pendingBackgroundTasks, []);
+    assert.deepEqual(yield* orchestrator.getThreadShell(sourceThreadId), parentBefore);
+  }).pipe(Effect.provide(forkCases[0]!.layer)),
+);
+
 it.effect.each(forkCases)(
   "bounds $driver context when continuing a fork of a $status run",
   ({ driver, status, instanceId, modelSelection, layer }) =>
