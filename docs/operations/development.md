@@ -15,6 +15,10 @@ a new browser.
 
 Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Code and Codespaces setup.
 
+## Upstream GitCafe mirror
+
+Upstream T3 Code also uses a GitCafe mirror. This fork uses GitHub `incognitojam/styal` for branches, pull requests, checks, and merging; keep `origin` pointed at the fork. Upstream instructions to push and track pull requests through GitCafe apply only to checkouts whose origin is git.cafe, not to this fork.
+
 ## Choosing a dev process
 
 Use `vp run dev` for server and web, or `vp run dev:desktop` for the Electron client.
