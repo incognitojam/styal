@@ -14,7 +14,12 @@ import {
 import { compareSemverVersions, satisfiesSemverRange } from "@t3tools/shared/semver";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { causeErrorTag } from "@t3tools/shared/observability";
-import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
+import {
+  mergePathValues,
+  resolveCommandPath,
+  resolveSpawnCommand,
+  setWindowsPath,
+} from "@t3tools/shared/shell";
 import * as Cache from "effect/Cache";
 import * as Config from "effect/Config";
 import * as DateTime from "effect/DateTime";
@@ -37,6 +42,7 @@ const LATEST_VERSION_TIMEOUT_MS = 4_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const PROBE_MAX_BYTES = 256 * 1_024;
 const MISE_WRAPPER_MAX_BYTES = 16 * 1_024;
+const VITE_PLUS_TRAMPOLINE_MAX_BYTES = 1_024 * 1_024;
 const PROVIDER_UPDATE_ACTION_TOAST_MESSAGE = "Install the update now or review provider settings.";
 
 const MAINTENANCE_CAPABILITIES_CACHE_TTL = Duration.hours(1);
@@ -56,6 +62,7 @@ const CommandLookupEnvConfig = Config.all({
   Path: Config.String("Path").pipe(Config.option),
   path: Config.String("path").pipe(Config.option),
   PATHEXT: Config.String("PATHEXT").pipe(Config.option),
+  VP_HOME: Config.String("VP_HOME").pipe(Config.option),
 }).pipe(Config.map(compactEnv));
 
 const readCommandLookupEnv = CommandLookupEnvConfig.pipe(Effect.orElseSucceed(() => ({})));
@@ -254,6 +261,220 @@ function isVitePlusGlobalCommandPath(commandPath: string): boolean {
   );
 }
 
+const VitePlusBinConfig = Schema.Struct({
+  name: Schema.String,
+  package: Schema.String,
+  nodeVersion: Schema.String,
+  source: Schema.optional(Schema.Literals(["vp", "npm"])),
+});
+const decodeVitePlusBinConfig = Schema.decodeUnknownOption(
+  Schema.fromJsonString(VitePlusBinConfig),
+);
+const decodePackageName = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ name: Schema.String })),
+);
+
+const readVitePlusTrampoline = Effect.fn("readVitePlusTrampoline")(
+  function* (commandPath: string) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const chunks = yield* Stream.runCollect(
+      fileSystem.stream(commandPath, {
+        bytesToRead: VITE_PLUS_TRAMPOLINE_MAX_BYTES + 1,
+      }),
+    );
+    const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+    if (size === 0 || size > VITE_PLUS_TRAMPOLINE_MAX_BYTES) return null;
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
+  },
+  Effect.orElseSucceed(() => null),
+);
+
+const resolveCustomVitePlusMaintenance = Effect.fn("resolveCustomVitePlusMaintenance")(function* (
+  definition: PackageManagedProviderMaintenanceDefinition,
+  context: ProviderMaintenanceResolutionContext,
+) {
+  const path = yield* Path.Path;
+  const home = nonEmptyString(context.env.VP_HOME);
+  // Vite+ ignores relative VP_HOME values. A Windows root-relative path is
+  // also insufficient to identify an installation independently of its cwd.
+  if (
+    !home ||
+    !path.isAbsolute(home) ||
+    (context.platform === "win32" && /^[/\\](?![/\\])/.test(home))
+  ) {
+    return null;
+  }
+  const samePath = (left: string, right: string) => {
+    const normalizedLeft = path.normalize(left);
+    const normalizedRight = path.normalize(right);
+    return context.platform === "win32"
+      ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+      : normalizedLeft === normalizedRight;
+  };
+  const manual = makeManualOnlyProviderMaintenanceCapabilities({
+    provider: definition.provider,
+    packageName: definition.npmPackageName,
+    installPath: context.realCommandPath,
+  });
+  if (!samePath(path.dirname(context.resolvedCommandPath), path.join(home, "bin"))) {
+    // A vp on PATH would use the override, not this other default installation.
+    return isVitePlusGlobalCommandPath(context.resolvedCommandPath) ? manual : null;
+  }
+  const fileSystem = yield* FileSystem.FileSystem;
+  const binName = path.basename(context.resolvedCommandPath).replace(/\.(?:cmd|exe)$/i, "");
+  const configText = yield* fileSystem
+    .readFileString(path.join(home, "bins", `${binName}.json`))
+    .pipe(Effect.orElseSucceed(() => ""));
+  const config = decodeVitePlusBinConfig(configText);
+  if (
+    Option.isNone(config) ||
+    config.value.name !== binName ||
+    config.value.package !== definition.npmPackageName ||
+    !/^\d+\.\d+\.\d+$/.test(config.value.nodeVersion)
+  ) {
+    return manual;
+  }
+  if (config.value.source !== "npm") {
+    const launcher = path.join(
+      home,
+      "current",
+      "bin",
+      context.platform === "win32" ? "vp.exe" : "vp",
+    );
+    if (context.platform === "win32") {
+      // Windows copies a trampoline rather than linking to vp.exe. Current
+      // copies pin their root in a sidecar; older copies derive it from bin/..
+      if (path.extname(context.resolvedCommandPath).toLowerCase() !== ".exe") return manual;
+      if (!(yield* fileSystem.exists(launcher).pipe(Effect.orElseSucceed(() => false))))
+        return manual;
+      const sidecar = path.join(path.dirname(context.resolvedCommandPath), `${binName}.shim`);
+      if (yield* fileSystem.exists(sidecar).pipe(Effect.orElseSucceed(() => true))) {
+        const pointer = yield* fileSystem
+          .readFileString(sidecar)
+          .pipe(Effect.orElseSucceed(() => ""));
+        const [header, ...lines] = pointer.trim().split(/\r?\n/);
+        const fields = new Map(
+          lines.flatMap((line) => {
+            const separator = line.indexOf("=");
+            return separator > 0
+              ? [[line.slice(0, separator), line.slice(separator + 1)] as const]
+              : [];
+          }),
+        );
+        const data = fields.get("data");
+        const bin = fields.get("bin");
+        if (
+          header !== "vite-plus-shim-v1" ||
+          fields.get("layout") !== "single-root" ||
+          !data ||
+          !samePath(path.join(data, "bin"), path.join(home, "bin")) ||
+          (bin !== undefined && !samePath(path.join(bin, "."), path.join(home, "bin")))
+        )
+          return manual;
+      } else {
+        const shim = yield* readVitePlusTrampoline(context.realCommandPath);
+        const template = yield* readVitePlusTrampoline(
+          path.join(home, "current", "bin", "vp-shim.exe"),
+        );
+        if (
+          !shim ||
+          !template ||
+          shim.byteLength !== template.byteLength ||
+          !shim.every((byte, index) => byte === template[index])
+        )
+          return manual;
+      }
+    } else {
+      const realLauncher = yield* fileSystem
+        .realPath(launcher)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (!realLauncher || !samePath(realLauncher, context.realCommandPath)) return manual;
+    }
+    return makeProviderMaintenanceCapabilities({
+      provider: definition.provider,
+      packageName: definition.npmPackageName,
+      updateExecutable: launcher,
+      updateArgs: ["i", "-g", definition.npmPackageName],
+      updateLockKey: "vite-plus-global",
+      platform: context.platform,
+      env: context.env,
+    });
+  }
+  // npm-linked bins have no vp package install. Updating with vp would create
+  // a separate copy, leaving the runtime prefix the wrapper runs untouched.
+  const prefix = path.join(home, "js_runtime", "node", config.value.nodeVersion);
+  const runtimeBin = context.platform === "win32" ? prefix : path.join(prefix, "bin");
+  let lockPrefix = prefix;
+  if (context.platform === "win32") {
+    const target = path.join(runtimeBin, `${binName}.cmd`);
+    const wrapper = yield* fileSystem
+      .readFileString(context.resolvedCommandPath)
+      .pipe(Effect.orElseSucceed(() => ""));
+    // Accept Vite+'s npm-link templates, never an arbitrary batch dispatcher.
+    const normalizedWrapper = wrapper.replaceAll("\r\n", "\n");
+    const wrappedTarget =
+      /^@echo off\n"([^"\n]+)" %\*\nexit \/b %ERRORLEVEL%\n$/.exec(normalizedWrapper)?.[1] ??
+      /^#!\/bin\/sh\nexec "([^"\n]+)" "\$@"\n$/.exec(normalizedWrapper)?.[1];
+    if (!wrappedTarget || !samePath(wrappedTarget, target)) return manual;
+    if (!(yield* fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false)))) return manual;
+  } else {
+    const realPrefix = npmGlobalPrefixFromCommandPath(
+      context.realCommandPath,
+      definition.npmPackageName,
+    );
+    const expectedPrefix = yield* fileSystem
+      .realPath(prefix)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (!realPrefix || !expectedPrefix || !samePath(realPrefix, expectedPrefix)) return manual;
+    lockPrefix = realPrefix;
+  }
+  const modules =
+    context.platform === "win32"
+      ? path.join(prefix, "node_modules")
+      : path.join(prefix, "lib", "node_modules");
+  const manifest = yield* fileSystem
+    .readFileString(path.join(modules, ...definition.npmPackageName.split("/"), "package.json"))
+    .pipe(Effect.orElseSucceed(() => ""));
+  const packageName = decodePackageName(manifest);
+  const node = path.join(runtimeBin, context.platform === "win32" ? "node.exe" : "node");
+  const npmCli = path.join(modules, "npm", "bin", "npm-cli.js");
+  if (
+    Option.isNone(packageName) ||
+    packageName.value.name !== definition.npmPackageName ||
+    !(yield* fileSystem.exists(node).pipe(Effect.orElseSucceed(() => false))) ||
+    !(yield* fileSystem.exists(npmCli).pipe(Effect.orElseSucceed(() => false)))
+  )
+    return manual;
+  const env = { ...context.env };
+  const runtimePath =
+    mergePathValues(runtimeBin, env.PATH ?? env.Path ?? env.path, context.platform) ?? runtimeBin;
+  if (context.platform === "win32") setWindowsPath(env, runtimePath);
+  else env.PATH = runtimePath;
+  return makeProviderMaintenanceCapabilities({
+    provider: definition.provider,
+    packageName: definition.npmPackageName,
+    updateExecutable: node,
+    updateArgs: [
+      npmCli,
+      "install",
+      "-g",
+      "--prefix",
+      prefix,
+      `--allow-scripts=${definition.npmPackageName}`,
+      `${definition.npmPackageName}@latest`,
+    ],
+    updateLockKey: `npm-global:${normalizeCommandPath(lockPrefix)}`,
+    platform: context.platform,
+    env,
+  });
+});
+
 function isBunGlobalCommandPath(commandPath: string): boolean {
   return normalizeCommandPath(commandPath).includes("/.bun/bin/");
 }
@@ -433,6 +654,9 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
   ) {
     return manual;
   }
+
+  const customVitePlus = yield* resolveCustomVitePlusMaintenance(definition, context);
+  if (customVitePlus) return customVitePlus;
 
   const nativeUpdate = definition.nativeUpdate;
   const native = nativeUpdate

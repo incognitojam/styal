@@ -3,14 +3,17 @@ import { expect, it } from "@effect/vitest";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodePathService from "@effect/platform-node/NodePath";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Crypto from "effect/Crypto";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
@@ -121,6 +124,64 @@ function stdoutSpawner(onSpawn: (command: string, args: ReadonlyArray<string>) =
       }),
     );
   });
+}
+
+function customVitePlusFixture(platform: "linux" | "win32", homeOverride?: string) {
+  const path = platform === "win32" ? NodePath.win32 : NodePath.posix;
+  const home =
+    homeOverride ?? (platform === "win32" ? "D:\\Custom Tools\\vite-plus" : "/opt/custom-vp");
+  const prefix = path.join(home, "js_runtime", "node", "24.21.0");
+  const runtimeBin = platform === "win32" ? prefix : path.join(prefix, "bin");
+  const modules = path.join(prefix, ...(platform === "win32" ? [] : ["lib"]), "node_modules");
+  const shim = path.join(home, "bin", platform === "win32" ? "package-tool.cmd" : "package-tool");
+  const real =
+    platform === "win32"
+      ? shim
+      : path.join(modules, "@example", "package-tool", "bin", "package-tool.js");
+  const node = path.join(runtimeBin, platform === "win32" ? "node.exe" : "node");
+  const npmCli = path.join(modules, "npm", "bin", "npm-cli.js");
+  const configPath = path.join(home, "bins", "package-tool.json");
+  const config = {
+    name: "package-tool",
+    package: "@example/package-tool",
+    nodeVersion: "24.21.0",
+    source: "npm",
+  };
+  const files = new Map([
+    [configPath, JSON.stringify(config)],
+    [
+      path.join(modules, "@example", "package-tool", "package.json"),
+      JSON.stringify({ name: "@example/package-tool" }),
+    ],
+    [node, ""],
+    [npmCli, ""],
+    [path.join(runtimeBin, "package-tool.cmd"), "@echo off\r\n"],
+    [
+      shim,
+      `@echo off\r\n"${path.join(runtimeBin, "package-tool.cmd")}" %*\r\nexit /b %ERRORLEVEL%\r\n`,
+    ],
+  ]);
+  return {
+    path,
+    platform,
+    home,
+    prefix,
+    runtimeBin,
+    modules,
+    shim,
+    real,
+    node,
+    npmCli,
+    files,
+    configPath,
+    config,
+    env: { VP_HOME: home, PATH: platform === "win32" ? "C:\\other-runtime" : "/other-runtime/bin" },
+    fileSystem: FileSystem.makeNoop({
+      readFileString: (file) => Effect.succeed(files.get(file) ?? ""),
+      exists: (file) => Effect.succeed(files.has(file)),
+      realPath: (file) => Effect.succeed(file === shim ? real : file),
+    }),
+  };
 }
 
 it.layer(NodeServices.layer)("providerMaintenance", (it) => {
@@ -396,12 +457,13 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     readonly resolved: string;
     readonly real: string;
     readonly platform?: NodeJS.Platform;
+    readonly env?: NodeJS.ProcessEnv;
   }) =>
     resolvePackageManagedProviderMaintenance(input.definition, {
       binaryPath: "claude",
       resolvedCommandPath: input.resolved,
       realCommandPath: input.real,
-      env: {},
+      env: input.env ?? {},
       platform: input.platform ?? "win32",
     }).pipe(
       Effect.provideService(HostProcess.Platform, input.platform ?? "win32"),
@@ -543,6 +605,536 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       });
 
       expect(capabilities.update).toBeNull();
+    }),
+  );
+
+  const resolveCustomVitePlus = (
+    fixture: ReturnType<typeof customVitePlusFixture>,
+    env: NodeJS.ProcessEnv = fixture.env,
+  ) =>
+    resolveInstall({
+      definition: {
+        provider: driver("packageTool"),
+        npmPackageName: "@example/package-tool",
+        nativeUpdate: { args: ["update"] },
+      },
+      resolved: fixture.shim,
+      real: fixture.real,
+      platform: fixture.platform,
+      env,
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fixture.fileSystem),
+      Effect.provide(
+        fixture.platform === "win32" ? NodePathService.layerWin32 : NodePathService.layerPosix,
+      ),
+    );
+
+  it.effect.each(["linux", "win32"] as const)(
+    "updates the npm runtime a custom VP_HOME shim runs on %s",
+    (platform) =>
+      Effect.gen(function* () {
+        const fixture = customVitePlusFixture(platform);
+        const capabilities = yield* resolveCustomVitePlus(fixture);
+        expect(capabilities.update).toMatchObject({
+          executable: fixture.node,
+          args: [
+            fixture.npmCli,
+            "install",
+            "-g",
+            "--prefix",
+            fixture.prefix,
+            "--allow-scripts=@example/package-tool",
+            "@example/package-tool@latest",
+          ],
+          lockKey: `npm-global:${normalizeCommandPath(fixture.prefix)}`,
+          env: {
+            VP_HOME: fixture.home,
+            PATH: `${fixture.runtimeBin}${platform === "win32" ? ";" : ":"}${fixture.env.PATH}`,
+          },
+        });
+        expect(
+          createProviderVersionAdvisory({
+            driver: driver("packageTool"),
+            currentVersion: "1.0.0",
+            latestVersion: "2.0.0",
+            maintenanceCapabilities: capabilities,
+          }).canInstallVersion,
+        ).toBe(true);
+        const pinned = makeTargetedProviderUpdateAction(capabilities, "2.0.0");
+        expect(pinned).toEqual({
+          ...capabilities.update,
+          args: [...capabilities.update!.args.slice(0, -1), "@example/package-tool@2.0.0"],
+          command: capabilities.update!.command.replace(
+            "@example/package-tool@latest",
+            "@example/package-tool@2.0.0",
+          ),
+        });
+      }),
+  );
+
+  it.effect.each(["owned", "unrelated"] as const)(
+    "checks the canonical npm prefix of a symlinked VP_HOME: %s",
+    (installation) =>
+      Effect.gen(function* () {
+        const fixture = customVitePlusFixture("linux");
+        const canonicalPrefix = "/volumes/tools/vite-plus/js_runtime/node/24.21.0";
+        const realPrefix = installation === "owned" ? canonicalPrefix : "/volumes/other-runtime";
+        const capabilities = yield* resolveCustomVitePlus({
+          ...fixture,
+          real: fixture.path.join(
+            realPrefix,
+            "lib/node_modules/@example/package-tool/bin/package-tool.js",
+          ),
+          fileSystem: {
+            ...fixture.fileSystem,
+            realPath: (file) => Effect.succeed(file === fixture.prefix ? canonicalPrefix : file),
+          },
+        });
+
+        if (installation === "unrelated") {
+          expect(capabilities.update).toBeNull();
+          return;
+        }
+        expect(capabilities.update).toMatchObject({
+          executable: fixture.node,
+          args: [
+            fixture.npmCli,
+            "install",
+            "-g",
+            "--prefix",
+            fixture.prefix,
+            "--allow-scripts=@example/package-tool",
+            "@example/package-tool@latest",
+          ],
+          lockKey: `npm-global:${normalizeCommandPath(canonicalPrefix)}`,
+          env: { VP_HOME: fixture.home },
+        });
+        expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args.at(-1)).toBe(
+          "@example/package-tool@2.0.0",
+        );
+      }),
+  );
+
+  it.effect("uses the proven custom Vite+ launcher for a POSIX managed package link", () =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("linux");
+      const launcher = fixture.path.join(fixture.home, "current", "bin", "vp");
+      fixture.files.set(fixture.configPath, JSON.stringify({ ...fixture.config, source: "vp" }));
+      const capabilities = yield* resolveCustomVitePlus({ ...fixture, real: launcher });
+      expect(capabilities.update).toMatchObject({
+        executable: launcher,
+        args: ["i", "-g", "@example/package-tool"],
+        env: fixture.env,
+        lockKey: "vite-plus-global",
+      });
+      expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args).toEqual([
+        "i",
+        "-g",
+        "@example/package-tool@2.0.0",
+      ]);
+    }),
+  );
+
+  const copiedVitePlusTrampoline = (home?: string) => {
+    const fixture = customVitePlusFixture("win32", home);
+    const shim = fixture.path.join(fixture.home, "bin", "package-tool.exe");
+    const launcher = fixture.path.join(fixture.home, "current", "bin", "vp.exe");
+    const sidecar = fixture.path.join(fixture.home, "bin", "package-tool.shim");
+    fixture.files.set(fixture.configPath, JSON.stringify({ ...fixture.config, source: "vp" }));
+    fixture.files.set(shim, "MZ synthetic copied trampoline");
+    fixture.files.set(launcher, "MZ synthetic Vite+ payload");
+    fixture.files.set(
+      sidecar,
+      `vite-plus-shim-v1\nlayout=single-root\ndata=${fixture.home}\ncache=${fixture.path.join(fixture.home, "cache")}\nbin=${fixture.path.join(fixture.home, "bin")}\n`,
+    );
+    const binaryReads: Array<{ file: string; limit: number }> = [];
+    return {
+      ...fixture,
+      shim,
+      real: shim,
+      launcher,
+      sidecar,
+      binaryReads,
+      fileSystem: FileSystem.makeNoop({
+        ...fixture.fileSystem,
+        stream: (file, options) => {
+          const content = fixture.files.get(file);
+          if (content === undefined) return fixture.fileSystem.stream(file, options);
+          const limit = typeof options?.bytesToRead === "number" ? options.bytesToRead : Infinity;
+          binaryReads.push({ file, limit });
+          const bytes = new TextEncoder().encode(content).subarray(0, limit);
+          return Stream.fromIterable([bytes.subarray(0, 8), bytes.subarray(8)]);
+        },
+      }),
+    };
+  };
+
+  it.effect.each([
+    "D:\\Custom Tools\\vite-plus",
+    "C:\\Users\\Synthetic\\AppData\\Local\\vite-plus",
+    "C:\\Users\\Synthetic\\.vite-plus",
+  ])("updates a copied Windows Vite+ trampoline at %s with VP_HOME set", (home) =>
+    Effect.gen(function* () {
+      const fixture = copiedVitePlusTrampoline(home);
+      expect(fixture.real).toBe(fixture.shim);
+      expect(fixture.real).not.toBe(fixture.launcher);
+      const capabilities = yield* resolveCustomVitePlus(fixture);
+      expect(capabilities.update).toMatchObject({
+        executable: fixture.launcher,
+        args: ["i", "-g", "@example/package-tool"],
+        env: fixture.env,
+        lockKey: "vite-plus-global",
+      });
+      expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args).toEqual([
+        "i",
+        "-g",
+        "@example/package-tool@2.0.0",
+      ]);
+    }),
+  );
+
+  it.effect(
+    "accepts a copied trampoline sidecar with BOM and CRLF without an optional bin field",
+    () =>
+      Effect.gen(function* () {
+        const fixture = copiedVitePlusTrampoline();
+        fixture.files.set(
+          fixture.sidecar,
+          `\uFEFFvite-plus-shim-v1\r\nlayout=single-root\r\ndata=${fixture.home}\r\n`,
+        );
+        expect((yield* resolveCustomVitePlus(fixture)).update?.executable).toBe(fixture.launcher);
+      }),
+  );
+
+  it.effect.each([
+    "D:\\Custom Tools\\vite-plus",
+    "C:\\Users\\Synthetic\\AppData\\Local\\vite-plus",
+    "C:\\Users\\Synthetic\\.vite-plus",
+  ])(
+    "updates a sidecar-free legacy copied trampoline at %s only when its payload matches",
+    (home) =>
+      Effect.gen(function* () {
+        const fixture = copiedVitePlusTrampoline(home);
+        fixture.files.delete(fixture.sidecar);
+        const template = fixture.path.join(fixture.home, "current", "bin", "vp-shim.exe");
+        fixture.files.set(template, fixture.files.get(fixture.shim)!);
+        const capabilities = yield* resolveCustomVitePlus(fixture);
+        expect(capabilities.update).toMatchObject({
+          executable: fixture.launcher,
+          env: fixture.env,
+          lockKey: "vite-plus-global",
+        });
+        expect(fixture.binaryReads).toEqual([
+          { file: fixture.shim, limit: 1_024 * 1_024 + 1 },
+          { file: template, limit: 1_024 * 1_024 + 1 },
+        ]);
+        const contents = fixture.files.get(fixture.shim)!;
+        fixture.files.set(fixture.shim, `${contents.slice(0, -1)}!`);
+        expect((yield* resolveCustomVitePlus(fixture)).update).toBeNull();
+      }),
+  );
+
+  it.effect.each(["empty", "oversized"])(
+    "rejects %s legacy trampoline bytes with bounded reads",
+    (failure) =>
+      Effect.gen(function* () {
+        const fixture = copiedVitePlusTrampoline();
+        fixture.files.delete(fixture.sidecar);
+        const contents = failure === "empty" ? "" : "M".repeat(1_024 * 1_024 + 2);
+        fixture.files.set(fixture.shim, contents);
+        fixture.files.set(
+          fixture.path.join(fixture.home, "current", "bin", "vp-shim.exe"),
+          contents,
+        );
+        expect((yield* resolveCustomVitePlus(fixture)).update).toBeNull();
+        expect(fixture.binaryReads.every((read) => read.limit === 1_024 * 1_024 + 1)).toBe(true);
+      }),
+  );
+
+  it.effect.each([
+    "missing sidecar",
+    "legacy sidecar",
+    "unknown header",
+    "another data root",
+    "another bin root",
+    "split layout",
+    "unknown layout",
+    "missing launcher",
+  ])("rejects an unproven copied Vite+ trampoline: %s", (failure) =>
+    Effect.gen(function* () {
+      const fixture = copiedVitePlusTrampoline();
+      const sidecar = fixture.files.get(fixture.sidecar)!;
+      switch (failure) {
+        case "missing sidecar":
+          fixture.files.delete(fixture.sidecar);
+          break;
+        case "legacy sidecar":
+          fixture.files.set(fixture.sidecar, `${fixture.home}\n`);
+          break;
+        case "unknown header":
+          fixture.files.set(
+            fixture.sidecar,
+            sidecar.replace("vite-plus-shim-v1", "vite-plus-shim-v2"),
+          );
+          break;
+        case "another data root":
+          fixture.files.set(
+            fixture.sidecar,
+            sidecar.replace(`data=${fixture.home}`, "data=C:\\another-vp"),
+          );
+          break;
+        case "another bin root":
+          fixture.files.set(
+            fixture.sidecar,
+            sidecar.replace(
+              `bin=${fixture.path.join(fixture.home, "bin")}`,
+              "bin=C:\\another-vp\\bin",
+            ),
+          );
+          break;
+        case "split layout":
+          fixture.files.set(fixture.sidecar, sidecar.replace("layout=single-root", "layout=split"));
+          break;
+        case "unknown layout":
+          fixture.files.set(
+            fixture.sidecar,
+            sidecar.replace("layout=single-root", "layout=unknown"),
+          );
+          break;
+        case "missing launcher":
+          fixture.files.delete(fixture.launcher);
+          break;
+      }
+      expect((yield* resolveCustomVitePlus(fixture)).update).toBeNull();
+    }),
+  );
+
+  it.effect.each([
+    "missing metadata",
+    "invalid metadata",
+    "another package",
+    "another binary",
+    "invalid runtime",
+    "another runtime",
+    "missing npm",
+    "missing node",
+    "another manifest",
+    "delegated wrapper",
+    "unproven managed shim",
+    "unknown installer",
+  ])("does not update an unproven custom Vite+ install: %s", (failure) =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("win32");
+      switch (failure) {
+        case "missing metadata":
+          fixture.files.delete(fixture.configPath);
+          break;
+        case "invalid metadata":
+          fixture.files.set(fixture.configPath, "{");
+          break;
+        case "another package":
+          fixture.files.set(
+            fixture.configPath,
+            JSON.stringify({ ...fixture.config, package: "@other/tool" }),
+          );
+          break;
+        case "another binary":
+          fixture.files.set(
+            fixture.configPath,
+            JSON.stringify({ ...fixture.config, name: "other" }),
+          );
+          break;
+        case "invalid runtime":
+          fixture.files.set(
+            fixture.configPath,
+            JSON.stringify({ ...fixture.config, nodeVersion: "../other" }),
+          );
+          break;
+        case "another runtime":
+          fixture.files.set(
+            fixture.configPath,
+            JSON.stringify({ ...fixture.config, nodeVersion: "22.0.0" }),
+          );
+          break;
+        case "missing npm":
+          fixture.files.delete(fixture.npmCli);
+          break;
+        case "missing node":
+          fixture.files.delete(fixture.node);
+          break;
+        case "another manifest":
+          fixture.files.set(
+            fixture.path.join(fixture.modules, "@example", "package-tool", "package.json"),
+            JSON.stringify({ name: "@other/tool" }),
+          );
+          break;
+        case "delegated wrapper":
+          fixture.files.set(
+            fixture.shim,
+            '@echo off\r\n"C:\\other-runtime\\package-tool.cmd" %*\r\nexit /b %ERRORLEVEL%\r\n',
+          );
+          break;
+        case "unproven managed shim":
+          fixture.files.set(
+            fixture.configPath,
+            JSON.stringify({ ...fixture.config, source: "vp" }),
+          );
+          break;
+        case "unknown installer":
+          fixture.files.set(
+            fixture.configPath,
+            JSON.stringify({ ...fixture.config, source: "other" }),
+          );
+          break;
+      }
+      expect((yield* resolveCustomVitePlus(fixture)).update).toBeNull();
+    }),
+  );
+
+  it.effect("does not treat a project bin below VP_HOME as a global shim", () =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("linux");
+      const capabilities = yield* resolveCustomVitePlus({
+        ...fixture,
+        shim: fixture.path.join(fixture.home, "project", "vite-plus", "bin", "package-tool"),
+        real: fixture.path.join(
+          fixture.home,
+          "project",
+          "vite-plus",
+          "node_modules",
+          "@example",
+          "package-tool",
+          "bin",
+          "package-tool.js",
+        ),
+      });
+      expect(capabilities.update).toBeNull();
+    }),
+  );
+
+  it.effect("does not send an old default install to a different VP_HOME", () =>
+    Effect.gen(function* () {
+      const capabilities = yield* resolveInstall({
+        definition: claudeUpdate,
+        resolved: "/home/synthetic/.vite-plus/bin/claude",
+        real: "/home/synthetic/.vite-plus/current/bin/vp",
+        platform: "linux",
+        env: { VP_HOME: "/opt/other-vp" },
+      });
+      expect(capabilities.update).toBeNull();
+    }),
+  );
+
+  it.effect("keeps POSIX VP_HOME ownership case sensitive", () =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("linux");
+      const capabilities = yield* resolveCustomVitePlus({
+        ...fixture,
+        shim: fixture.shim.toUpperCase(),
+        real: fixture.shim.toUpperCase(),
+      });
+      expect(capabilities.update?.lockKey).not.toMatch(/^(?:vite-plus|npm)-global/);
+    }),
+  );
+
+  it.effect("matches an npm-linked Windows wrapper across VP_HOME path casing", () =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("win32");
+      const files = new Map(
+        [...fixture.files].map(([file, contents]) => [file.toLowerCase(), contents]),
+      );
+      const capabilities = yield* resolveCustomVitePlus(
+        {
+          ...fixture,
+          fileSystem: FileSystem.makeNoop({
+            readFileString: (file) => Effect.succeed(files.get(file.toLowerCase()) ?? ""),
+            exists: (file) => Effect.succeed(files.has(file.toLowerCase())),
+          }),
+        },
+        { ...fixture.env, VP_HOME: fixture.home.toLowerCase() },
+      );
+      expect(capabilities.update?.executable.toLowerCase()).toBe(fixture.node.toLowerCase());
+      expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args.at(-1)).toBe(
+        "@example/package-tool@2.0.0",
+      );
+    }),
+  );
+
+  it.effect("accepts a custom root with a trailing separator and Windows Path spelling", () =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("win32");
+      const capabilities = yield* resolveCustomVitePlus(fixture, {
+        VP_HOME: `${fixture.home}\\`,
+        Path: "C:\\instance-runtime",
+      });
+      expect(capabilities.update?.executable).toBe(fixture.node);
+      expect(capabilities.update?.env?.PATH).toBe(`${fixture.runtimeBin};C:\\instance-runtime`);
+      expect(capabilities.update?.env).not.toHaveProperty("Path");
+    }),
+  );
+
+  it.effect.each(["relative/vp", "D:relative-vp", "\\root-relative-vp"])(
+    "ignores a non-absolute VP_HOME: %s",
+    (home) =>
+      Effect.gen(function* () {
+        const capabilities = yield* resolveInstall({
+          definition: claudeUpdate,
+          resolved: "C:\\Users\\Synthetic\\AppData\\Local\\vite-plus\\bin\\claude.cmd",
+          real: "C:\\Users\\Synthetic\\AppData\\Local\\vite-plus\\current\\bin\\vp.exe",
+          platform: "win32",
+          env: { VP_HOME: home },
+        }).pipe(Effect.provide(NodePathService.layerWin32));
+        expect(capabilities.update?.lockKey).toBe("vite-plus-global");
+      }),
+  );
+
+  it.effect("uses the effective VP_HOME and PATH instead of the ambient configuration", () =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("win32");
+      const fileSystem = yield* FileSystem.FileSystem;
+      const fileInfo = yield* fileSystem.stat(import.meta.filename);
+      const instanceEnv = {
+        VP_HOME: fixture.home,
+        PATH: fixture.path.join(fixture.home, "bin"),
+        PATHEXT: ".CMD",
+      };
+      const resolve = (
+        env?: NodeJS.ProcessEnv,
+        configuredEnv = {
+          VP_HOME: "C:\\ambient-vp",
+          PATH: "C:\\ambient-runtime",
+          PATHEXT: ".CMD",
+        },
+      ) =>
+        resolveProviderMaintenanceCapabilitiesEffect(packageToolUpdate, {
+          binaryPath: "package-tool",
+          ...(env ? { env } : {}),
+        }).pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: configuredEnv,
+              }),
+            ),
+          ),
+          Effect.provideService(HostProcess.Platform, "win32"),
+          Effect.provide(NodePathService.layerWin32),
+          Effect.provideService(
+            FileSystem.FileSystem,
+            FileSystem.makeNoop({
+              ...fixture.fileSystem,
+              stat: (file) =>
+                file === fixture.shim ? Effect.succeed(fileInfo) : fixture.fileSystem.stat(file),
+            }),
+          ),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
+        );
+      expect((yield* resolve()).update).toBeNull();
+      expect((yield* resolve(undefined, instanceEnv)).update?.executable).toBe(fixture.node);
+      const explicit = yield* resolve(instanceEnv);
+      expect(explicit.update?.executable).toBe(fixture.node);
+      expect(explicit.update?.env?.PATH).not.toContain("ambient");
+      expect(explicit.update?.env?.VP_HOME).toBe(fixture.home);
     }),
   );
 
