@@ -1,3 +1,4 @@
+import { resolvePullRequestDetailChecks } from "@t3tools/client-runtime/pull-request-checks";
 import {
   capitalizeTerm,
   sourceControlClients,
@@ -40,7 +41,6 @@ import {
   buildFixFindingsHandoff,
   buildResolveConflictsPrompt,
   classifyPullRequestChecks,
-  resolvePullRequestDetailChecks,
   describePullRequestChecks,
   isPullRequestConflicting,
   resolvePullRequestMergeMethod,
