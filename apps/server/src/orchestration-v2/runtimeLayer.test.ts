@@ -30,6 +30,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -365,6 +366,7 @@ const hostRun = (
   headBranch: "main",
   headSha: "a".repeat(40),
   event: "push",
+  reviewableEnvironments: [],
   failedJobs: [],
   ...overrides,
 });
@@ -411,22 +413,38 @@ const watchRunFromNewThread = (slug: string, runId: number) =>
     return { threadId, projectId, key, start };
   });
 
-/** A workflow run reactor reading runs through `workflowRun`, with its analytics events. */
+/**
+ * A workflow run reactor reading runs through `workflowRun`, with its analytics events and the
+ * types of the commands it dispatched.
+ */
 const workflowRunReactor = (
   workflowRun: PullRequestService.PullRequestService["Service"]["workflowRun"],
+  reviewWorkflowRun?: PullRequestService.PullRequestService["Service"]["reviewWorkflowRun"],
 ) =>
   Effect.gen(function* () {
     const usage: Array<Readonly<Record<string, unknown>>> = [];
+    const dispatched: Array<string> = [];
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
     const reactor = yield* WorkflowRunWatchReactor.make.pipe(
       Effect.provide(
         Layer.mergeAll(
           NodeServices.layer,
           analyticsInto(usage),
-          Layer.mock(PullRequestService.PullRequestService)({ workflowRun }),
+          Layer.mock(PullRequestService.PullRequestService)({
+            workflowRun,
+            ...(reviewWorkflowRun === undefined ? {} : { reviewWorkflowRun }),
+          }),
         ),
       ),
+      Effect.provideService(Orchestrator.OrchestratorV2, {
+        ...orchestrator,
+        dispatch: (command) => {
+          dispatched.push(command.type);
+          return orchestrator.dispatch(command);
+        },
+      }),
     );
-    return { reactor, usage };
+    return { reactor, usage, dispatched };
   });
 
 const notificationsOf = (threadId: ThreadId) =>
@@ -2769,6 +2787,88 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         usage.map((event) => event.endReason),
         ["unreadable"],
       );
+    }),
+  );
+
+  it.effect(
+    "shows a deployment review while a watched run waits for one, until it is reviewed",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const { threadId, projectId, key } = yield* watchRunFromNewThread("review", 9004);
+        const environment = { id: 21258525450, name: "upstream-intake-manual" };
+        let waiting = true;
+        const reviews: Array<unknown> = [];
+        const { reactor, dispatched } = yield* workflowRunReactor(
+          () =>
+            Effect.succeed(hostRun(9004, { reviewableEnvironments: waiting ? [environment] : [] })),
+          (input) =>
+            Effect.sync(() => {
+              reviews.push(input);
+              waiting = false;
+            }),
+        );
+        const reviewOf = () =>
+          orchestrator
+            .getThreadShell(threadId)
+            .pipe(Effect.map((thread) => thread?.workflowRuns?.[0]?.review));
+
+        yield* reactor.sweep;
+        assert.deepEqual(yield* reviewOf(), { environments: [environment] });
+        // A pass that sees the same review records nothing new.
+        yield* reactor.sweep;
+        assert.deepEqual(dispatched, ["thread.workflow-run-watch.review"]);
+
+        yield* reactor.review({
+          threadId,
+          ...key,
+          environmentIds: [environment.id],
+          state: "approved",
+          comment: "Ship it",
+        });
+        assert.deepEqual(reviews, [
+          {
+            projectId,
+            ...key,
+            environmentIds: [environment.id],
+            state: "approved",
+            comment: "Ship it",
+          },
+        ]);
+        // The review reads the run again at once, so the banner does not wait for a pass.
+        assert.isUndefined(yield* reviewOf());
+        assert.deepEqual(dispatched, [
+          "thread.workflow-run-watch.review",
+          "thread.workflow-run-watch.review",
+        ]);
+        assert.lengthOf((yield* orchestrator.getThreadShell(threadId))?.workflowRuns ?? [], 1);
+        assert.deepEqual(yield* notificationsOf(threadId), []);
+      }),
+  );
+
+  it.effect("refuses a deployment review for a run the thread does not watch", () =>
+    Effect.gen(function* () {
+      const { threadId, key } = yield* watchRunFromNewThread("review-unwatched", 9005);
+      let reviewed = false;
+      const { reactor } = yield* workflowRunReactor(
+        () => Effect.succeed(hostRun(9005)),
+        () =>
+          Effect.sync(() => {
+            reviewed = true;
+          }),
+      );
+      const exit = yield* Effect.exit(
+        reactor.review({
+          threadId,
+          ...key,
+          runId: 9999,
+          environmentIds: [1],
+          state: "rejected",
+          comment: "",
+        }),
+      );
+      assert.isTrue(Exit.isFailure(exit));
+      assert.isFalse(reviewed);
     }),
   );
 

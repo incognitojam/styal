@@ -51,6 +51,7 @@ export interface ProjectThreadAwarenessV2Input {
     | "status"
     | "title"
     | "updatedAt"
+    | "workflowRuns"
   >;
 }
 
@@ -90,8 +91,9 @@ function resolveThreadAwarenessPhaseV2(
     return "waiting_for_input";
   }
   if (
-    thread.pendingRuntimeRequest !== null &&
-    thread.pendingRuntimeRequest.kind !== "auth_refresh"
+    (thread.pendingRuntimeRequest !== null &&
+      thread.pendingRuntimeRequest.kind !== "auth_refresh") ||
+    (thread.workflowRuns ?? []).some((run) => run.review !== undefined)
   ) {
     return "waiting_for_approval";
   }

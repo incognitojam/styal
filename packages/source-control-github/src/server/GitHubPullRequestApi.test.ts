@@ -3151,6 +3151,61 @@ layer("GitHubPullRequestApi.layer", (it) => {
       }),
   );
 
+  it.effect("reads the deployments a waiting run holds for the viewer, and reviews them", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((call) =>
+        Effect.sync(() =>
+          output(
+            call.kind !== "rest"
+              ? ""
+              : call.path.endsWith("/pending_deployments") && call.method !== "POST"
+                ? encodeJson([
+                    {
+                      environment: { id: 21, name: "production" },
+                      current_user_can_approve: true,
+                    },
+                    {
+                      environment: { id: 22, name: "staging" },
+                      current_user_can_approve: false,
+                    },
+                  ])
+                : call.method === "POST"
+                  ? "[]"
+                  : encodeJson({
+                      name: "Promote",
+                      run_number: 3,
+                      status: "waiting",
+                      conclusion: null,
+                      html_url: "https://github.com/acme/web/actions/runs/40",
+                      head_branch: "main",
+                      head_sha: "abc123",
+                      event: "workflow_run",
+                    }),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const target = { cwd: "/w", repository: "acme/web", host: "github.com", runId: 40 };
+
+      const run = yield* cli.getWorkflowRun(target);
+      expect(run.completed).toBe(false);
+      // An environment the viewer may not approve is someone else's to review.
+      expect(run.reviewableEnvironments).toEqual([{ id: 21, name: "production" }]);
+
+      yield* cli.reviewWorkflowRun({
+        ...target,
+        environmentIds: [21],
+        state: "approved",
+        comment: "Ship it",
+      });
+      expect(
+        restCallsTo("actions/runs/40/pending_deployments")
+          .filter((call) => call.method === "POST")
+          .map((call) => call.body),
+      ).toEqual([{ environment_ids: [21], state: "approved", comment: "Ship it" }]);
+    }),
+  );
+
   it.effect("finds and approves every workflow waiting on a maintainer", () =>
     Effect.gen(function* () {
       workflowApprovalRoutes(() => crossRepositoryDetail(), heads([7]), workflowRuns([10, 11]));

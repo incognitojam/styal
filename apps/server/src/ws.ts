@@ -252,6 +252,7 @@ import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
+import * as WorkflowRunWatchReactor from "./orchestration-v2/WorkflowRunWatchReactor.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as OtlpEndpointCheck from "./observability/OtlpEndpointCheck.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
@@ -1274,6 +1275,7 @@ const layerWsRpc = (
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
+      const workflowRunWatch = yield* WorkflowRunWatchReactor.WorkflowRunWatchReactor;
       const deviceService = yield* ClientFeatureUsage.devices(clientAnalyticsProps);
       const hardware = yield* ClientFeatureUsage.hardware(clientAnalyticsProps);
       const deviceSharing = yield* DeviceSharing.DeviceSharing;
@@ -1343,6 +1345,8 @@ const layerWsRpc = (
         yield* ClientFeatureUsage.projectFileApprovals(clientAnalyticsProps);
       const observeWorkflowApprovals =
         yield* ClientFeatureUsage.workflowApprovals(clientAnalyticsProps);
+      const observeWorkflowRunReviews =
+        yield* ClientFeatureUsage.workflowRunReviews(clientAnalyticsProps);
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
@@ -3280,6 +3284,8 @@ const layerWsRpc = (
           withPullRequestViewer(input, pullRequests.labelCandidates(input)),
         [WS_METHODS.pullRequestsSetLabels]: (input) =>
           withPullRequestViewer(input, pullRequests.setLabels(input)),
+        [WS_METHODS.pullRequestsReviewWorkflowRun]: (input) =>
+          observeWorkflowRunReviews(input.state, workflowRunWatch.review(input)),
       });
       return Context.merge(
         yield* WsCoreRpcGroup.toHandlers(coreHandlers),

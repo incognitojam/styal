@@ -367,6 +367,11 @@ straight away instead of watched. The thread stays in the **Working** section wh
 ends when the run completes, after 8 failed reads in a row, when the thread settles or is archived,
 or when you press Stop.
 
+When a watched run waits for a reviewer to approve a deployment environment, and you are allowed to
+approve it, the thread shows **Pending Approval** and a review banner above the composer. Approve
+or reject the waiting environments there, with an optional comment, as you would in GitHub's
+**Review deployments** dialog. The agent does not review deployments itself.
+
 ## GitHub stacks
 
 The Pull Requests page shows each PR's position in its GitHub stack. Open the stack badge in a

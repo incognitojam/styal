@@ -126,6 +126,7 @@ import type {
   ThreadFeedLatestRun,
 } from "../../lib/threadActivity";
 import { PendingApprovalCard } from "./PendingApprovalCard";
+import { WorkflowRunReviewCard } from "./WorkflowRunReviewCard";
 import { ComposerErrorNotice } from "./ComposerErrorNotice";
 import { ComposerFeedback } from "./ComposerFeedback";
 import { ComposerUsageLimits } from "./ComposerUsageLimits";
@@ -563,6 +564,9 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   const [collapsedUserInputRequestId, setCollapsedUserInputRequestId] =
     useState<RuntimeRequestId | null>(null);
   const activeUserInputRequestId = props.activePendingUserInput?.requestId ?? null;
+  const reviewedWorkflowRuns = props.selectedThread.workflowRuns.filter(
+    (run) => run.review !== undefined,
+  );
   const composerSlotHidden =
     activeUserInputRequestId !== null || props.creationState?.kind === "failed";
   const [usageLimitsPanel, setUsageLimitsPanel] = useState<{
@@ -1267,6 +1271,22 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                         reason={props.creationState.reason}
                         onEditTask={props.creationState.onEditTask}
                       />
+                    </Animated.View>
+                  ) : null}
+                  {activeUserInputRequestId === null && reviewedWorkflowRuns.length > 0 ? (
+                    <Animated.View
+                      className="shrink-0 gap-3 px-4 pb-3"
+                      entering={FadeInDown.duration(220)}
+                      exiting={FadeOut.duration(140)}
+                    >
+                      {reviewedWorkflowRuns.map((run) => (
+                        <WorkflowRunReviewCard
+                          key={`${run.host}/${run.repository}/${run.runId}`}
+                          environmentId={props.environmentId}
+                          threadId={props.selectedThread.id}
+                          run={run}
+                        />
+                      ))}
                     </Animated.View>
                   ) : null}
                   {props.activePendingApproval || props.activePendingUserInput ? (

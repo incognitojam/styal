@@ -554,6 +554,13 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
+    reviewWorkflowRun: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pull-requests:review-workflow-run",
+      tag: WS_METHODS.pullRequestsReviewWorkflowRun,
+      execute: (input) => routedRequest(WS_METHODS.pullRequestsReviewWorkflowRun, input),
+      scheduler: commandScheduler,
+      concurrency: serialPerEnvironment,
+    }),
     update: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:update",
       tag: WS_METHODS.pullRequestsUpdate,

@@ -60,6 +60,12 @@ type FeatureUsage =
       readonly feature: "workflow-run-watch";
       readonly action: "watch" | "unwatch";
       readonly source: "agent";
+    }
+  | {
+      readonly feature: "workflow-run-watch";
+      readonly action: "review";
+      readonly source: "user";
+      readonly reviewState: "approved" | "rejected";
     };
 
 /** What a successful watch_workflow_run or unwatch_workflow_run call did. */
@@ -221,6 +227,9 @@ export const observe = <A, E, R>(
               : {}),
             ...(usage.feature === "hardware" && usage.hardwareTier
               ? { hardwareTier: usage.hardwareTier }
+              : {}),
+            ...(usage.feature === "workflow-run-watch" && usage.action === "review"
+              ? { reviewState: usage.reviewState }
               : {}),
             ...(watchResult !== undefined && Exit.isSuccess(exit)
               ? { watchResult: watchResult(exit.value) }

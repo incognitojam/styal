@@ -204,7 +204,7 @@ export const make = Effect.gen(function* () {
           hardwareUsageVersion: 1,
           projectFileApprovalsUsageVersion: 1,
           workflowApprovalsUsageVersion: 1,
-          workflowRunWatchUsageVersion: 1,
+          workflowRunWatchUsageVersion: 2,
           threadSettleReasonUsageVersion: 1,
           providerAnalyticsUsageVersion: 1,
           providerSendUsageVersion: 1,

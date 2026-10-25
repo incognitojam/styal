@@ -102,6 +102,7 @@ export interface EnvironmentThreadShell {
   readonly latestUserMessageAt: string | null;
   readonly latestMessageAt?: string | null;
   readonly latestUserAuthoredMessageAt?: string | null;
+  /** A provider approval request, or a watched workflow run's deployment review. */
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
@@ -129,6 +130,7 @@ export interface EnvironmentThreadShell {
   readonly pinOrderKey: string | null;
   readonly activeOrderKey: string | null;
   readonly pullRequests: ReadonlyArray<import("@t3tools/contracts").ThreadPullRequestLink>;
+  readonly workflowRuns: ReadonlyArray<import("@t3tools/contracts").ThreadWorkflowRunWatch>;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   readonly branchPullRequest?: ThreadLinkedPullRequest | null;
   /**
@@ -234,6 +236,7 @@ export function presentThreadShell(
     branch: thread.branch,
     worktreePath: thread.worktreePath,
     pullRequests: threadPullRequestsOf(thread),
+    workflowRuns: thread.workflowRuns ?? [],
     linkedPullRequest: thread.linkedPullRequest ?? null,
     branchPullRequest: thread.branchPullRequest ?? null,
     lineage: thread.lineage,
@@ -248,9 +251,10 @@ export function presentThreadShell(
       ? {}
       : { latestUserAuthoredMessageAt: nullableIso(thread.latestUserAuthoredMessageAt) }),
     hasPendingApprovals:
-      thread.pendingRuntimeRequest !== null &&
-      thread.pendingRuntimeRequest.kind !== "user_input" &&
-      thread.pendingRuntimeRequest.kind !== "auth_refresh",
+      (thread.pendingRuntimeRequest !== null &&
+        thread.pendingRuntimeRequest.kind !== "user_input" &&
+        thread.pendingRuntimeRequest.kind !== "auth_refresh") ||
+      (thread.workflowRuns ?? []).some((run) => run.review !== undefined),
     hasPendingUserInput: thread.pendingRuntimeRequest?.kind === "user_input",
     pendingSubagentRequest,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,

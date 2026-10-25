@@ -177,6 +177,7 @@ import { ProviderInstanceId, ProviderInstanceMutation } from "./providerInstance
 import { PullRequestReviewGuideResult } from "./pullRequestReviewGuide.ts";
 import {
   PullRequestActionInput,
+  WorkflowRunReviewInput,
   PullRequestActivity,
   PullRequestCommentInput,
   PullRequestCommentUpdateInput,
@@ -618,6 +619,7 @@ export const WS_METHODS = {
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
   pullRequestsLabelCandidates: "pullRequests.labelCandidates",
   pullRequestsSetLabels: "pullRequests.setLabels",
+  pullRequestsReviewWorkflowRun: "pullRequests.reviewWorkflowRun",
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
@@ -1258,6 +1260,12 @@ const WsPullRequestsLabelCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsLabelCa
 
 const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLabels, {
   payload: PullRequestLabelChangeInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+
+const WsPullRequestsReviewWorkflowRunRpc = Rpc.make(WS_METHODS.pullRequestsReviewWorkflowRun, {
+  payload: WorkflowRunReviewInput,
   success: Schema.Void,
   error: PullRequestRpcError,
 });
@@ -2188,6 +2196,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsRequestReviewersRpc,
   WsPullRequestsLabelCandidatesRpc,
   WsPullRequestsSetLabelsRpc,
+  WsPullRequestsReviewWorkflowRunRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,

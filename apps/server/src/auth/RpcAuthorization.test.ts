@@ -148,6 +148,12 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("requires source control writes to review a watched run's deployments", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsReviewWorkflowRun)).toBe(
+      AuthSourceControlWriteScope,
+    );
+  });
+
   it("separates preview control from observation", () => {
     for (const method of [
       WS_METHODS.previewOpen,

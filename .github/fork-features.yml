@@ -5554,7 +5554,8 @@ features:
       - A watched run keeps the thread in the Working list as a monitor background task until the watch ends.
       - Settling, archiving, or stopping the thread ends its workflow run watches, and a finish read before that changes nothing and wakes no one. Subagents and settled or archived threads cannot start one.
       - Eight failed reads in a row end the watch with a wake saying so; a host rate limit only pauses it.
-      - Each tool call and each watch end the server sees records one feature.used event with fixed categories (call result or failure reason; end reason, conclusion category and watched minutes), never run IDs, repositories, URLs, or workflow and job names.
+      - A watched run that waits on deployment environments the viewer may approve records them on the watch, which marks the thread as needing approval on every client and in push notifications until the run stops waiting. The user approves or rejects them from the thread, with an optional comment, and the server reads the run again at once; the agent has no tool to review them.
+      - Each tool call, each deployment review and each watch end the server sees records one feature.used event with fixed categories (call result or failure reason; review state; end reason, conclusion category and watched minutes), never run IDs, repositories, URLs, environments, comments, or workflow and job names.
     rationale: Agents waiting on CI outside a pull request (after a merge, deploys, releases, dispatched workflows) otherwise poll or hold a `gh run watch` process, which only some providers can wait on and which a server restart kills.
     implementation_paths:
       - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
@@ -5564,9 +5565,14 @@ features:
       - apps/server/src/orchestration-v2/workflowRunWatch.ts
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.ts
+      - apps/mobile/src/features/threads/WorkflowRunReviewCard.tsx
+      - apps/web/src/components/chat/WorkflowRunReviewBanner.tsx
       - packages/client-runtime/src/operations/commands.ts
+      - packages/client-runtime/src/state/models.ts
       - packages/contracts/src/threadPullRequest.ts
       - packages/provider-core/src/server/runtimeInstructions.ts
+      - packages/shared/src/agentAwareness.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.ts
     upstream_paths:
@@ -5587,7 +5593,10 @@ features:
       - apps/server/src/orchestration-v2/runtimeLayer.test.ts
       - apps/server/src/orchestration-v2/workflowRunWatch.test.ts
       - apps/server/src/telemetry/AnalyticsService.test.ts
+      - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - packages/shared/src/agentAwareness.test.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.test.ts
+      - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
     upstream:
       status: unassessed
       tracking: []

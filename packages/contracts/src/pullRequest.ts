@@ -793,6 +793,21 @@ export const PullRequestActionInput = Schema.Struct({
 });
 export type PullRequestActionInput = typeof PullRequestActionInput.Type;
 
+/**
+ * Approves or rejects the deployment environments a watched workflow run waits on, as the
+ * host's "Review deployments" dialog does. Named by the thread whose watch shows the review.
+ */
+export const WorkflowRunReviewInput = Schema.Struct({
+  threadId: ThreadId,
+  host: TrimmedNonEmptyString,
+  repository: TrimmedNonEmptyString,
+  runId: PositiveInt,
+  environmentIds: Schema.NonEmptyArray(PositiveInt),
+  state: Schema.Literals(["approved", "rejected"]),
+  comment: Schema.String.check(Schema.isMaxLength(65_536)),
+});
+export type WorkflowRunReviewInput = typeof WorkflowRunReviewInput.Type;
+
 // Not trimmed: the body is markdown, where leading spaces open a code block and two trailing
 // spaces are a line break.
 const CommentBody = Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536));

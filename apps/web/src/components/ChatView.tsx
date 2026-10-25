@@ -8,6 +8,7 @@ import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { NextUnreadChip } from "./chat/NextUnreadChip";
 import { useNextUnreadSummary } from "./sidebar/nextUnreadThreadBus";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
+import { workflowRunReviewBannerItems } from "./chat/WorkflowRunReviewBanner";
 import {
   isThreadWokeUnseen,
   mergeDirectPreviewAnnotation,
@@ -5637,6 +5638,14 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  const workflowRunReviewItems =
+    serverProjection === null
+      ? []
+      : workflowRunReviewBannerItems({
+          environmentId,
+          threadId: serverProjection.thread.id,
+          workflowRuns: serverProjection.thread.workflowRuns,
+        });
   const composerBannerItems = (() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const backgroundWorkItems = [
@@ -5649,6 +5658,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...feedbackBannerItems,
+        ...workflowRunReviewItems,
         ...limitRecoveryItems,
         ...usageLimitsItems,
         ...projectCloneItems,
@@ -5658,6 +5668,7 @@ export default function ChatView(props: ChatViewProps) {
     }
     return [
       ...feedbackBannerItems,
+      ...workflowRunReviewItems,
       ...limitRecoveryItems,
       ...usageLimitsItems,
       ...projectCloneItems,
