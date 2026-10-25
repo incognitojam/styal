@@ -32,7 +32,7 @@
       ],
       // esbuild stays in scripts/package.json as in upstream, whose deleted release
       // workflow was its only user, so upstream bumps to it apply cleanly.
-      "ignoreDependencies": ["esbuild"],
+      "ignoreDependencies": ["agent-device", "esbuild"],
       // The `@styal/cli` npm package's files: copied into the package, never imported.
       // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a
       // knip run beside it in check:changed must not report.
