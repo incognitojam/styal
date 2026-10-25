@@ -369,8 +369,8 @@ or when you press Stop.
 
 When a watched run waits for a reviewer to approve a deployment environment, and you are allowed to
 approve it, the thread shows **Pending Approval** and a deployment review above the composer.
-Choose **Approve and deploy** or **Reject**, add a comment if you want, and submit, as you would in
-GitHub's **Review deployments** dialog. The agent does not review deployments itself.
+Add a comment if you want, then press **Approve and deploy** or **Reject**, as you would in GitHub's
+**Review deployments** dialog. When several environments wait, untick any you do not want to review. The agent does not review deployments itself.
 
 ## GitHub stacks
 
