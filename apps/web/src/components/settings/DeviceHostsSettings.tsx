@@ -48,12 +48,10 @@ export function DeviceHostsSettings({ environmentId }: { environmentId: Environm
     const deviceHosts = updateDeviceHosts(hosts, host, remove, original);
     if (deviceHosts === hosts) return;
     setBusy(true);
-    try {
-      const result = await update({ environmentId, input: { patch: { deviceHosts } } });
-      if (result._tag !== "Failure") setEditing(null);
-    } finally {
-      setBusy(false);
-    }
+    const result = await update({ environmentId, input: { patch: { deviceHosts } } }).finally(() =>
+      setBusy(false),
+    );
+    if (result._tag !== "Failure") setEditing(null);
   };
   return (
     <FoldedSettingsSection id={`device-hosts-${environmentId}`} title="Existing SSH device hosts">

@@ -862,14 +862,10 @@ export function DeviceIntegrationControls({
       settingScope: "environment",
     });
     setPending(kind);
-    try {
-      await configure({
-        environmentId,
-        input: { ...input, ...(input.enabled ? { onboardingCompleted: true } : {}) },
-      });
-    } finally {
-      setPending(null);
-    }
+    await configure({
+      environmentId,
+      input: { ...input, ...(input.enabled ? { onboardingCompleted: true } : {}) },
+    }).finally(() => setPending(null));
   };
 
   const [updateError, setUpdateError] = useState<{ tool: "hub" | "agent"; message: string } | null>(
