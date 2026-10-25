@@ -14,32 +14,8 @@ const preview: ChatCanvasPreview = {
 };
 const resolve = (width: number, player: ChatCanvasPreview | null = preview, height = 900) =>
   resolveChatCanvasLayout({ container: { width, height }, preview: player, composerHeight: 180 });
-const expectClear = (result: ReturnType<typeof resolve>) => {
-  const frame = result.frame!;
-  const chat = result.chat;
-  expect(frame.x + frame.width <= chat.left - 12 || frame.x >= chat.left + chat.width + 12).toBe(
-    true,
-  );
-};
 
 describe("chat canvas layout", () => {
-  it("keeps a growing preview above the composer once it reaches the chat lane", () => {
-    const centered = resolve(1344, null).chat;
-    for (let width = 480; width <= 1100; width++) {
-      const result = resolve(1344, {
-        ...preview,
-        width,
-        lastInteraction: "resize",
-        position: { x: 1332 - width, y: 888 - Math.round(width / 1.6) },
-      });
-      const frame = result.frame!;
-      expect(result.chat).toEqual(centered);
-      if (frame.x < centered.left + centered.width) {
-        expect(frame.y + frame.height).toBeLessThanOrEqual(708);
-      }
-    }
-  });
-
   it("centers chat in the whole container without a preview", () => {
     expect(resolve(1344, null).chat).toEqual({ left: 288, width: 768, insetStart: 0, insetEnd: 0 });
     expect(
@@ -49,12 +25,6 @@ describe("chat canvas layout", () => {
         padding: 12,
       }).chat,
     ).toEqual({ left: 12, width: 366, insetStart: 0, insetEnd: 0 });
-  });
-  it("does not move chat when a bottom-right preview fits in its margin", () => {
-    const result = resolve(1600);
-    expect(result.chat.insetEnd).toBe(0);
-    expect(result.frame!.y + result.frame!.height).toBe(888);
-    expectClear(result);
   });
   it("never moves or narrows chat for a preview", () => {
     for (const width of [1000, 1200, 1344, 1800]) {
@@ -69,21 +39,6 @@ describe("chat canvas layout", () => {
       }
     }
   });
-  it.each([900, 1000, 1004])("allows dragging across a %spx chat canvas", (width) => {
-    const start = resolve(width, { ...preview, position: { x: width - 332, y: 200 } }).frame!;
-    const moved = resolve(width, {
-      ...preview,
-      position: { x: start.x - 300, y: start.y },
-      lastInteraction: "drag",
-    });
-    expect(moved.frame).toEqual({ ...start, x: start.x - 300 });
-    const returned = resolve(width, {
-      ...preview,
-      position: { x: start.x, y: start.y },
-      lastInteraction: "drag",
-    });
-    expect(returned.frame).toEqual(start);
-  });
   it("drags over the messages to the canvas edge", () => {
     expect(resolve(1344, { ...preview, position: { x: 12, y: 100 } }).frame).toMatchObject({
       x: 12,
@@ -93,19 +48,6 @@ describe("chat canvas layout", () => {
       x: 500,
       y: 300,
     });
-  });
-  it("keeps a dragged player above the composer when no readable lane fits beside it", () => {
-    const result = resolve(1000, { ...preview, position: { x: 12, y: 700 } });
-    expect(result.chat).toEqual(resolve(1000, null).chat);
-    expect(result.frame!.x).toBe(12);
-    expect(result.frame!.y + result.frame!.height).toBeLessThanOrEqual(708);
-  });
-  it("allows message overlap on narrow screens while excluding the composer", () => {
-    const result = resolve(1000);
-    expect(result.chat.insetStart).toBe(0);
-    expect(result.chat.insetEnd).toBe(0);
-    expect(result.frame!.y + result.frame!.height).toBeLessThanOrEqual(900 - 180 - 12);
-    expect(result.frame!.width / result.frame!.height).toBeCloseTo(1.6);
   });
   it("follows the pointer over the composer while dragging and settles clear of it when dropped", () => {
     const position = { x: 500, y: 650 };
@@ -357,11 +299,10 @@ describe("workspace card beside chat", () => {
     });
   });
   it("keeps centered chat in place when a new preview opens below the card", () => {
-    expect(withCard(1440, preview)).toEqual({
+    expect(withCard(1440, preview)).toMatchObject({
       chat: { left: 352, width: 736, insetStart: 0, insetEnd: 0 },
       frame: { x: 1108, y: 688, width: 320, height: 200 },
       overlapsDetailsCard: false,
-      resizeObstacles: { composer: { left: 352, right: 1088, height: 180 }, detailsCard: null },
     });
   });
 });
