@@ -57,7 +57,16 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("orderLegacyHistory",
         `;
       }
 
+      yield* sql`
+        INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+        VALUES ('unrelated-thread', 'unrelated-item', 42)
+      `;
       assert.equal(yield* orderLegacyHistory(sql, ["thread-1"]), 3);
+      assert.deepEqual(
+        yield* sql`SELECT ordinal FROM orchestration_v2_turn_item_positions
+          WHERE thread_id = 'unrelated-thread'`,
+        [{ ordinal: 42 }],
+      );
 
       const expected = [
         ["user", 1],
@@ -67,7 +76,7 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("orderLegacyHistory",
         ["native", 1_000_001],
       ];
       const positions = yield* sql<{ readonly id: string; readonly ordinal: number }>`
-        SELECT turn_item_id AS id, ordinal FROM orchestration_v2_turn_item_positions ORDER BY ordinal
+        SELECT turn_item_id AS id, ordinal FROM orchestration_v2_turn_item_positions WHERE thread_id = 'thread-1' ORDER BY ordinal
       `;
       assert.deepEqual(
         positions.map((row) => [row.id, row.ordinal]),
@@ -152,5 +161,56 @@ it.effect("reorders large payloads without rewriting their unchanged overflow pa
   }).pipe(
     Effect.provide(NodeSqliteClient.layer({ filename })),
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true }))),
+  );
+});
+
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("paged history ordering", (it) => {
+  it.effect("updates every page while preserving each event's own payload", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runAllMigrations();
+      for (let index = 1; index <= 45; index++) {
+        const id = `item-${index}`;
+        const startedAt = `2026-01-01T00:00:${String(46 - index).padStart(2, "0")}.000Z`;
+        const payload = yield* encodeJson({ id, ordinal: index, startedAt, body: "projection" });
+        const eventPayload = yield* encodeJson({ id, ordinal: index, startedAt, body: "event" });
+        yield* sql`
+          INSERT INTO orchestration_v2_projection_turn_items
+            (turn_item_id, thread_id, ordinal, type, status, updated_at, payload_json)
+          VALUES (${id}, 'paged-thread', ${index}, 'system_notice', 'completed', ${startedAt}, ${payload})
+        `;
+        yield* sql`
+          INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+          VALUES ('paged-thread', ${id}, ${index})
+        `;
+        yield* sql`
+          INSERT INTO orchestration_events (
+            event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+            actor_kind, payload_json, metadata_json, application_event_version
+          ) VALUES (${id}, 'thread', 'paged-thread', ${index}, 'turn-item.updated',
+            ${startedAt}, 'server', ${eventPayload}, '{}', 2)
+        `;
+      }
+      assert.equal(yield* orderLegacyHistory(sql, ["paged-thread"]), 44);
+      const projected = yield* sql<{ readonly payload_json: string; readonly ordinal: number }>`
+        SELECT payload_json, ordinal FROM orchestration_v2_projection_turn_items ORDER BY ordinal
+      `;
+      const events = yield* sql<{ readonly payload_json: string }>`
+        SELECT payload_json FROM orchestration_events ORDER BY sequence
+      `;
+      for (const [index, row] of projected.entries()) {
+        const payload = JSON.parse(row.payload_json);
+        assert.equal(row.ordinal, index + 1);
+        assert.equal(payload.ordinal, index + 1);
+        assert.equal(payload.id, `item-${45 - index}`);
+        assert.equal(payload.body, "projection");
+      }
+      for (const [index, row] of events.entries()) {
+        const payload = JSON.parse(row.payload_json);
+        assert.equal(payload.ordinal, 45 - index);
+        assert.equal(payload.body, "event");
+      }
+      assert.equal(yield* orderLegacyHistory(sql, ["paged-thread"]), 0);
+    }),
   );
 });
