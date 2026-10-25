@@ -35,7 +35,6 @@ export function PullRequestHeadBranchStatus({
   return (
     <span
       role="status"
-      aria-label={`Head branch: ${label}`}
       className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-sans text-xs text-muted-foreground"
     >
       <Icon aria-hidden className="size-3" />

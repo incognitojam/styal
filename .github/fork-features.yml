@@ -3750,12 +3750,11 @@ features:
     invariants:
       - GitHub detail reports present, deleted, or unknown source branch state independently of source-repository write access, including forks.
       - A missing or inaccessible source repository is unknown; failed reads and hosts that omit the field never establish deletion.
-      - Web, desktop, and mobile show the current state; refresh after deletion or recreation replaces it even for merged pull requests with unchanged updatedAt.
+      - Web, desktop, and mobile show the current state beside the branch name; refresh after deletion or recreation replaces it even for merged pull requests with unchanged updatedAt.
       - Delete branch retains its existing source-repository permissions and mutation guards; no restore action or historical lifecycle events are added.
       - Web and desktop record bounded branch-state exposure without branch or repository identifiers; mobile is outside measurement coverage.
     implementation_paths:
       - apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx
-      - apps/mobile/src/features/pull-requests/PullRequestStatusRows.tsx
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
@@ -3767,7 +3766,6 @@ features:
       - packages/source-control-github/src/server/gitHubPullRequestJson.ts
     upstream_paths:
       - apps/mobile/src/features/pull-requests/PullRequestRouteScreen.tsx
-      - apps/mobile/src/features/pull-requests/PullRequestStatusRows.tsx
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - packages/contracts/src/pullRequest.ts

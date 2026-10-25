@@ -1,3 +1,4 @@
+import { pullRequestHeadBranchStatus } from "@t3tools/client-runtime/pull-request-branch";
 import { Toolbar } from "../../components/ui/Toolbar";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { Chip } from "../../components/ui/Chip";
@@ -114,7 +115,6 @@ import {
   PullRequestStatusMenu,
   PullRequestChecksRow,
   PullRequestBranchRow,
-  PullRequestHeadBranchRow,
   PullRequestReviewersRow,
 } from "./PullRequestStatusRows";
 import { PullRequestMergeControls } from "./PullRequestMergeControls";
@@ -176,6 +176,8 @@ function PullRequestIdentity(props: {
 }) {
   const { pr } = props;
   const status = pullRequestStatus(pr);
+  const branchStatus = "capabilities" in pr ? pullRequestHeadBranchStatus(pr) : null;
+  const branchDeleted = "headBranchState" in pr && pr.headBranchState === "deleted";
   return (
     <View className="gap-3">
       <View className="flex-row flex-wrap items-center gap-2">
@@ -216,7 +218,7 @@ function PullRequestIdentity(props: {
           Updated {relativeTime(pr.updatedAt)} ago
         </Text>
       </View>
-      <View className="flex-row items-start gap-1.5">
+      <View className="flex-row flex-wrap items-center gap-x-1.5 gap-y-1">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Copy base branch ${pr.baseBranch}`}
@@ -236,8 +238,20 @@ function PullRequestIdentity(props: {
           className="min-w-0 shrink active:opacity-70"
           hitSlop={8}
         >
-          <Text className="font-mono text-2xs text-foreground-muted">{pr.headBranch}</Text>
+          <Text
+            className={`font-mono text-2xs text-foreground-muted${branchDeleted ? " line-through" : ""}`}
+          >
+            {pr.headBranch}
+          </Text>
         </Pressable>
+        {branchStatus ? (
+          <View className="flex-row items-center gap-1">
+            {branchDeleted ? (
+              <SymbolView name="trash" size={11} tintColorClassName="accent-icon-muted" />
+            ) : null}
+            <Text className="text-2xs text-foreground-muted">{branchStatus}</Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -259,7 +273,6 @@ function PullRequestOverview(props: {
       <PullRequestCardGroup>
         <PullRequestChecksRow pr={pr} params={props.params} />
         <PullRequestReviewersRow pr={pr} params={props.params} />
-        <PullRequestHeadBranchRow pr={pr} />
         <Animated.View layout={PR_ROW_LAYOUT}>
           <PullRequestBranchRow pr={pr} params={props.params} />
         </Animated.View>

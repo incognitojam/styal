@@ -1,5 +1,4 @@
 import { usePullRequestConnected } from "./usePullRequestConnected";
-import { pullRequestHeadBranchStatus } from "@t3tools/client-runtime/pull-request-branch";
 import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
@@ -31,11 +30,6 @@ import { usePullRequestAgentActions } from "./usePullRequestAgentActions";
 
 type RowProps = { readonly pr: PullRequestDetail; readonly params: PullRequestParams };
 
-export function PullRequestHeadBranchRow({ pr }: Pick<RowProps, "pr">) {
-  const label = pullRequestHeadBranchStatus(pr);
-  if (label === null) return null;
-  return <PullRequestCardRow title="Head branch" icon="arrow.branch" value={label} compact />;
-}
 const STATUS_ACTIONS: readonly PullRequestAction[] = [
   "ready",
   "draft",
