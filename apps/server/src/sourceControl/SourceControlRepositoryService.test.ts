@@ -1327,7 +1327,145 @@ it.effect("explains a rejected SSH push after creating the repository", () =>
       'Created octocat/t3code and added it as remote "origin", but the push failed because SSH authentication was rejected. Add an SSH key to your account, or switch the remote to HTTPS with "git remote set-url origin https://github.com/octocat/t3code", then push again.',
     );
     assert.instanceOf(error.cause, GitCommandError);
-  }).pipe(Effect.provide(layer({ git: failingPush("authentication_failed") }))),
+  }).pipe(
+    Effect.provide(
+      layer({
+        git: {
+          ...failingPush("authentication_failed"),
+          execute: () => Effect.succeed({ ...processOutput(), stdout: CLONE_URLS.sshUrl }),
+        },
+      }),
+    ),
+  ),
+);
+
+it.effect.each([
+  { protocol: "auto" as const, remoteUrl: CLONE_URLS.url, usesSsh: false },
+  { protocol: "ssh" as const, remoteUrl: CLONE_URLS.url, usesSsh: false },
+  { protocol: "https" as const, remoteUrl: CLONE_URLS.sshUrl, usesSsh: true },
+  {
+    protocol: "auto" as const,
+    remoteUrl: CLONE_URLS.sshUrl,
+    pushUrl: "https://synthetic-user:synthetic-token@github.com/octocat/t3code.git",
+    usesSsh: false,
+  },
+  {
+    protocol: "https" as const,
+    remoteUrl: CLONE_URLS.url,
+    pushUrl: "ssh://git@github.com/octocat/t3code.git",
+    usesSsh: true,
+  },
+])("explains publish authentication failures using the effective push transport: %j", (testCase) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const git = yield* GitVcsDriver.GitVcsDriver;
+    const cwd = yield* fs.makeTempDirectoryScoped({
+      directory: `${import.meta.dirname}/../../../../.scratch`,
+      prefix: "push-failure-transport-repo-",
+    });
+    for (const args of [
+      ["init"],
+      [
+        "-c",
+        "user.name=Synthetic Author",
+        "-c",
+        "user.email=author@example.test",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "Initial commit",
+      ],
+      ["remote", "add", "publish-target", testCase.remoteUrl],
+      ...(testCase.pushUrl
+        ? [["remote", "set-url", "--push", "publish-target", testCase.pushUrl]]
+        : []),
+    ]) {
+      yield* git.execute({ operation: "test.setup", cwd, args });
+    }
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const error = yield* Effect.flip(
+        service.publishRepository({
+          cwd,
+          provider: SourceControlProviderKind.make("github"),
+          repository: CLONE_URLS.nameWithOwner,
+          visibility: "private",
+          protocol: testCase.protocol,
+        }),
+      );
+      assert.include(error.detail, 'remote "publish-target"');
+      assert.include(
+        error.detail,
+        testCase.usesSsh ? "SSH authentication was rejected" : "Check your Git credentials",
+      );
+      if (!testCase.usesSsh) assert.notInclude(error.detail, "Add an SSH key");
+      assert.notInclude(error.detail, "synthetic-user");
+      assert.notInclude(error.detail, "synthetic-token");
+      assert.instanceOf(error.cause, GitCommandError);
+      const remotes = yield* git.execute({ operation: "test.remotes", cwd, args: ["remote"] });
+      assert.strictEqual(remotes.stdout.trim(), "publish-target");
+    }).pipe(
+      Effect.provide(
+        layer({
+          git: {
+            execute: git.execute,
+            ensureRemote: git.ensureRemote,
+            ...failingPush("authentication_failed"),
+          },
+        }),
+      ),
+    );
+  }).pipe(
+    Effect.provide(
+      GitVcsDriver.layer.pipe(
+        Layer.provide(
+          ServerConfig.layerTest(
+            process.cwd(),
+            `${import.meta.dirname}/../../../../.scratch/push-failure-transport-config`,
+          ),
+        ),
+        Layer.provideMerge(NodeServices.layer),
+      ),
+    ),
+  ),
+);
+
+it.effect("preserves the push failure when its effective URL cannot be read", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        repository: CLONE_URLS.nameWithOwner,
+        visibility: "private",
+        protocol: "ssh",
+      }),
+    );
+    assert.include(error.detail, "Check your Git credentials");
+    assert.instanceOf(error.cause, GitCommandError);
+    assert.strictEqual(error.cause.reason, "authentication_failed");
+  }).pipe(
+    Effect.provide(
+      layer({
+        git: {
+          ...failingPush("authentication_failed"),
+          execute: (input) =>
+            input.args[0] === "rev-parse"
+              ? Effect.succeed(processOutput())
+              : Effect.fail(
+                  new GitCommandError({
+                    operation: input.operation,
+                    command: "git",
+                    cwd: input.cwd,
+                    detail: "The remote could not be read.",
+                  }),
+                ),
+        },
+      }),
+    ),
+  ),
 );
 
 it.effect("says the repository exists when an unclassified publish push fails", () =>
