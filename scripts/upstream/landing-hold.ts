@@ -252,7 +252,7 @@ export function holdForPushedCandidate(
   branch: string,
   sha: string,
   options: { readonly dryRun?: boolean } = {},
-): boolean {
+): string | null {
   for (let attempt = 0; attempt < 24; attempt += 1) {
     const url = gh([
       "api",
@@ -262,11 +262,11 @@ export function holdForPushedCandidate(
     ]).trim();
     if (url) {
       updateLandingHold(repository, () => [{ branch, sha, url }], options);
-      return true;
+      return url;
     }
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5_000);
   }
-  return false;
+  return null;
 }
 
 function main() {
