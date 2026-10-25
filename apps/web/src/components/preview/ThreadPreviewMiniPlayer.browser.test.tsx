@@ -40,6 +40,12 @@ vi.mock(import("~/state/device"), async (original) => ({
   ...(await original()),
   useDeviceState: (() => ({ state: { devices: [], hosts: [] } })) as never,
 }));
+const reportForkClientUsage = vi.fn();
+vi.mock(import("~/forkClientUsage"), async (original) => ({
+  ...(await original()),
+  reportForkClientUsage: ((...args: unknown[]) => reportForkClientUsage(...args)) as never,
+}));
+import { PREVIEW_MINI_PLAYER_EDGE_GAP } from "./previewMiniPlayerLayout";
 import { ThreadPreviewMiniPlayer } from "./ThreadPreviewMiniPlayer";
 
 const threadRef = {
@@ -77,6 +83,16 @@ function Player() {
           container,
           preview: { ...miniPlayer, key, source: sourceSizes[miniPlayer.source.kind] },
         }),
+        resolvePreviewFrame: (position) =>
+          resolveChatCanvasLayout({
+            container,
+            preview: {
+              ...miniPlayer,
+              position,
+              key,
+              source: sourceSizes[miniPlayer.source.kind],
+            },
+          }).frame,
         reportPreview: () => {},
         clearPreview: () => {},
         registerTimeline: () => {},
@@ -95,6 +111,8 @@ let captured: Set<number>;
 
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // Reduced motion makes a release settle immediately instead of over animation frames.
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduced-motion") }));
   captured = new Set();
 });
 
@@ -138,6 +156,8 @@ async function pointer(element: Element, type: string, x: number, y: number) {
   await act(() => {
     const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
     Object.defineProperty(event, "pointerId", { value: 1 });
+    // Back-to-back synthetic events would otherwise read as a fling.
+    Object.defineProperty(event, "timeStamp", { value: 1 });
     element.dispatchEvent(event);
   });
 }
@@ -155,6 +175,24 @@ describe("floating browser preview gestures", () => {
     const released = frame();
     await pointer(surface, "pointermove", 300, 300);
     expect(frame()).toEqual(released);
+  });
+
+  it("settles flush against an edge it is dropped near and reports how it settled", async () => {
+    reportForkClientUsage.mockClear();
+    await mount();
+    const start = frame();
+    const surface = shield();
+    await pointer(surface, "pointerdown", 700, 550);
+    await pointer(surface, "pointermove", 700 - (start.x - 300), 550 - (start.y - 30));
+    expect(frame()).toMatchObject({ x: 300, y: 30 });
+    await pointer(surface, "pointerup", 700 - (start.x - 300), 550 - (start.y - 30));
+    expect(frame()).toMatchObject({ x: 300, y: PREVIEW_MINI_PLAYER_EDGE_GAP });
+    expect(reportForkClientUsage.mock.calls).toEqual([
+      [
+        threadRef.environmentId,
+        { feature: "floating-preview", action: "released", settle: "edge", preview: "browser" },
+      ],
+    ]);
   });
 
   it("keeps anchored edge resizing usable and stops a cancelled gesture", async () => {

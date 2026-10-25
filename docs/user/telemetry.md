@@ -54,10 +54,12 @@ mentioned time's explanation, which automatic settling rules you keep when finis
 you change the sidebar's project filter or start a thread while it is applied, when you reorder,
 pin, unpin, or archive a project from its header in the grouped sidebar, whether a project
 action you run is saved in styal or comes from the project's `styal.json`, and whether the project
-has a `styal.json`, a `t3.json` or neither. The web app records when a new-build notice is visible and
+has a `styal.json`, a `t3.json` or neither. When you let go of a floating browser or device
+preview after dragging it, they record whether it was flicked into a corner, pulled flush against
+an edge, or left where you dropped it. The web app records when a new-build notice is visible and
 when you choose Refresh. The desktop app records when its notice
 naming the version it updated to is shown and when you open that version's release notes. These events use the relevant paired environment's telemetry setting.
-File paths, written times, deployment identifiers, project names, action names and commands, and composer drafts are not collected.
+File paths, written times, deployment identifiers, project names, action names and commands, preview positions and pages, and composer drafts are not collected.
 
 Each automatic thread settlement records its rule (a merged or closed pull request, or inactivity with the configured number of days), and un-settling a thread records which of those rules, or a manual settle, had settled it. Thread titles, pull request numbers and links are not collected.
 

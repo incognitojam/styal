@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ComponentProps, type CSSPropert
 import { ChatCanvasContext } from "./ChatCanvasContext";
 import { resolveChatCanvasLayout, type ChatCanvasPreview } from "./chatCanvasLayout";
 import type { PreviewMiniPlayerObstacles } from "../preview/previewMiniPlayerLayout";
+import type { PreviewMiniPlayerPosition } from "~/previewMiniPlayerStore";
 import { observeResize } from "../../lib/observeResize";
 
 export function ChatCanvas({
@@ -103,16 +104,22 @@ export function ChatCanvas({
           bottom: measurements.findBarBottom,
         }
       : null;
+  const layoutFor = (nextPreview: ChatCanvasPreview | null) =>
+    resolveChatCanvasLayout({
+      ...measurements,
+      container,
+      preview: nextPreview,
+      detailsCard,
+      findBar,
+    });
   const context = {
     container,
     lane: { padding: measurements.padding, minChatWidth: measurements.minChatWidth },
-    layout: resolveChatCanvasLayout({
-      ...measurements,
-      container,
-      preview,
-      detailsCard,
-      findBar,
-    }),
+    layout: layoutFor(preview),
+    resolvePreviewFrame: (position: PreviewMiniPlayerPosition) =>
+      preview
+        ? layoutFor({ ...preview, position, lastInteraction: "drag", dragging: false }).frame
+        : null,
     previewKey: preview?.key ?? null,
     reportPreview,
     clearPreview,

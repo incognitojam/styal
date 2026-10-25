@@ -176,6 +176,13 @@ export const ForkClientUsageInput = Schema.Union([
     entryPoint: Schema.Literals(["shortcut", "command_palette", "chip"]),
   }),
   Schema.Struct({
+    feature: Schema.Literal("floating-preview"),
+    action: Schema.Literal("released"),
+    /** `corner` after a flick, `edge` when a drop near an edge pulled flush, `free` otherwise. */
+    settle: Schema.Literals(["corner", "edge", "free"]),
+    preview: Schema.Literals(["browser", "device"]),
+  }),
+  Schema.Struct({
     feature: Schema.Literal("desktop-update-notice"),
     action: Schema.Literals(["notice_shown", "release_notes_opened"]),
   }),
