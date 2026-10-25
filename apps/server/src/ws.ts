@@ -181,6 +181,7 @@ import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import { makeProviderInstallation } from "./provider/providerInstallation.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
+import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -1327,6 +1328,7 @@ export const layerWsRpc = (
       const providerAuth = yield* ProviderAuthService.ProviderAuthService;
       const providerInstallation = yield* makeProviderInstallation();
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
+      const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
@@ -2509,6 +2511,7 @@ export const layerWsRpc = (
             traceFilePath: config.serverTracePath,
             maxFiles: config.traceMaxFiles,
           }),
+        [WS_METHODS.serverGetDesktopHostActivity]: () => desktopAppUpdate.inspectActivity,
         [WS_METHODS.serverGetHostActivity]: (_input) =>
           inspectHostActivity.pipe(Effect.withSpan("server.hostActivity")),
         [WS_METHODS.serverGetProcessDiagnostics]: (_input) => processDiagnostics.read,
@@ -3282,6 +3285,7 @@ export const layer = Layer.unwrap(
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
+    const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const composerDrafts = yield* ComposerDrafts.ComposerDraftRepository;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
@@ -3366,6 +3370,7 @@ export const layer = Layer.unwrap(
               Layer.provide(CommandOutputQuery.layer),
               Layer.provide(AgentSessionScanner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
+              Layer.provide(Layer.succeed(DesktopAppUpdate.DesktopAppUpdate, desktopAppUpdate)),
               Layer.provide(LegacyImportPreview.layer),
               Layer.provide(LegacyImport.layer),
               // One server-lifetime service means clients share the same PR caches, and a WS

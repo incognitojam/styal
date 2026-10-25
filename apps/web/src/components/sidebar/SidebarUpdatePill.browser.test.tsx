@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const testState = vi.hoisted(() => ({
   hostActivity: vi.fn(),
+  desktopHostActivity: vi.fn(),
   updateServer: vi.fn(),
   updateProvider: vi.fn(),
   localActivity: vi.fn(),
@@ -68,6 +69,7 @@ vi.mock(import("~/state/use-atom-command"), async (original) => {
     ...(await original()),
     useAtomCommand: ((command: unknown) => {
       if (command === serverEnvironment.hostActivity) return testState.hostActivity;
+      if (command === serverEnvironment.desktopHostActivity) return testState.desktopHostActivity;
       if (command === serverEnvironment.updateProvider) return testState.updateProvider;
       if (command === serverEnvironment.updateServer) return testState.updateServer;
       throw new Error("Unexpected update command");
@@ -267,6 +269,9 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   testState.hostActivity.mockReset().mockResolvedValue(AsyncResult.success(idle));
+  testState.desktopHostActivity
+    .mockReset()
+    .mockResolvedValue(AsyncResult.success([{ ...idle, isRequestingEnvironment: true }]));
   testState.localActivity.mockReset().mockResolvedValue(localChecks);
   testState.updateServer.mockReset().mockResolvedValue(updated());
   testState.updateProvider.mockReset();

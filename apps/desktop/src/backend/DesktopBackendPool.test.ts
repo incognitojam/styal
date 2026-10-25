@@ -51,6 +51,8 @@ function layerPool(labelRef: Ref.Ref<string>): Layer.Layer<DesktopBackendPool.De
           handleControlForSource: () => Effect.void,
           removeControlSource: () => Effect.void,
           publishUpdateReport: () => Effect.void,
+          publishUpdateActivity: () => Effect.void,
+          updateActivityRequests: Stream.empty,
           publishFeatureUsage: () => Effect.void,
           updateRequests: Stream.empty,
           updateCommits: Stream.empty,

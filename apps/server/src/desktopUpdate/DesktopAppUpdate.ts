@@ -1,6 +1,8 @@
 import {
   ServerSelfUpdateError,
   type DesktopUpdateState,
+  type DesktopUpdateActivity,
+  summarizeDesktopUpdateActivity,
   type DesktopUpdateStatusReport,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
@@ -16,6 +18,7 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
+import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
 import * as DesktopTelemetryReceiver from "../resourceTelemetry/DesktopTelemetryReceiver.ts";
 
 const DESKTOP_UPDATE_TIMEOUT = Duration.minutes(20);
@@ -40,6 +43,8 @@ export class DesktopAppUpdate extends Context.Service<
   DesktopAppUpdate,
   {
     readonly available: boolean;
+    /** Null entries and an empty pool require confirmation, including on older desktop apps. */
+    readonly inspectActivity: Effect.Effect<ReadonlyArray<DesktopUpdateActivity | null>>;
     readonly run: (
       reportProgress: (
         stage: ServerSelfUpdateProgressStage,
@@ -58,6 +63,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
   const config = yield* ServerConfig.ServerConfig;
   const crypto = yield* Crypto.Crypto;
   const receiver = yield* DesktopTelemetryReceiver.DesktopTelemetryReceiver;
+  const identity = yield* ServerEnvironmentIdentity;
   const inFlight = yield* Ref.make(false);
 
   const available = config.mode === "desktop" && config.desktopTelemetryControlFd !== undefined;
@@ -216,7 +222,38 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
     );
   });
 
-  return DesktopAppUpdate.of({ available, run, commit });
+  const inspectActivity = Effect.scoped(
+    Effect.gen(function* () {
+      if (!available) return [null];
+      const requestId = yield* crypto.randomUUIDv4();
+      const reports = yield* receiver.updateActivity;
+      yield* receiver.requestUpdateActivity(requestId, yield* identity.getEnvironmentId);
+      const report = yield* reports.pipe(
+        Stream.filter((report) => report.requestId === requestId),
+        Stream.runHead,
+      );
+      return Option.isSome(report)
+        ? report.value.hosts.map(
+            (host) =>
+              host && {
+                ...summarizeDesktopUpdateActivity(host),
+                ...(host.isRequestingEnvironment === undefined
+                  ? {}
+                  : {
+                      isRequestingEnvironment: host.isRequestingEnvironment,
+                    }),
+              },
+          )
+        : [null];
+    }),
+  ).pipe(
+    // Each pool member's inspection has a three-second deadline. Older apps
+    // ignore this request, so bound the wait and retain unknown coverage.
+    Effect.timeout("4 seconds"),
+    Effect.catchCause(() => Effect.succeed([null])),
+  );
+
+  return DesktopAppUpdate.of({ available, run, commit, inspectActivity });
 });
 
 export const layer = Layer.effect(DesktopAppUpdate, make());

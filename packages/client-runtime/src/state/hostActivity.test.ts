@@ -3,6 +3,7 @@ import {
   OrchestrationV2GetShellSnapshotError,
   WS_METHODS,
   type HostActivity,
+  type DesktopUpdateActivity,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -38,9 +39,12 @@ const ACTIVITY: HostActivity = {
   environmentsUsingDevices: 0,
 };
 
-const makeHarness = Effect.fn("HostActivityTest.makeHarness")(function* () {
+const makeHarness = Effect.fn("HostActivityTest.makeHarness")(function* (desktop = false) {
   const started = yield* Queue.unbounded<EnvironmentId>();
-  const completion = yield* Deferred.make<HostActivity, OrchestrationV2GetShellSnapshotError>();
+  const completion = yield* Deferred.make<
+    HostActivity | ReadonlyArray<DesktopUpdateActivity | null>,
+    OrchestrationV2GetShellSnapshotError
+  >();
   const reads: EnvironmentId[] = [];
   const entries = yield* SubscriptionRef.make<ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>>(
     new Map(),
@@ -57,7 +61,9 @@ const makeHarness = Effect.fn("HostActivityTest.makeHarness")(function* () {
             const session = yield* SubscriptionRef.make(
               Option.some({
                 client: {
-                  [WS_METHODS.serverGetHostActivity]: () =>
+                  [desktop
+                    ? WS_METHODS.serverGetDesktopHostActivity
+                    : WS_METHODS.serverGetHostActivity]: () =>
                     Effect.gen(function* () {
                       reads.push(environmentId);
                       yield* Queue.offer(started, environmentId);
@@ -90,9 +96,10 @@ const makeHarness = Effect.fn("HostActivityTest.makeHarness")(function* () {
       }),
     ),
   );
-  const command = createServerEnvironmentAtoms(runtime, {
+  const server = createServerEnvironmentAtoms(runtime, {
     initialConfigValueAtom: () => Atom.make(null),
-  }).hostActivity;
+  });
+  const command = desktop ? server.desktopHostActivity : server.hostActivity;
   const registry = yield* Effect.acquireRelease(Effect.sync(AtomRegistry.make), (registry) =>
     Effect.sync(() => registry.dispose()),
   );
@@ -100,7 +107,7 @@ const makeHarness = Effect.fn("HostActivityTest.makeHarness")(function* () {
     started,
     completion,
     reads,
-    read: (environmentId = LAB) => command.run(registry, { environmentId, input: {} }),
+    read: async (environmentId = LAB) => command.run(registry, { environmentId, input: {} }),
   };
 });
 
@@ -157,5 +164,17 @@ it.effect("checks separate environments independently", () =>
     expect((yield* Effect.promise(() => lab))._tag).toBe("Success");
     expect((yield* Effect.promise(() => office))._tag).toBe("Success");
     expect(h.reads).toEqual([LAB, OFFICE]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("reads anonymous desktop pool activity from the selected environment", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness(true);
+    const pending = h.read(OFFICE);
+    expect(yield* Queue.take(h.started)).toBe(OFFICE);
+    const counts = [{ ...ACTIVITY, isRequestingEnvironment: true }, null];
+    yield* Deferred.succeed(h.completion, counts);
+    expect(yield* Effect.promise(() => pending)).toMatchObject({ _tag: "Success", value: counts });
+    expect(h.reads).toEqual([OFFICE]);
   }).pipe(Effect.scoped),
 );

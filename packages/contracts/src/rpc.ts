@@ -341,6 +341,7 @@ import {
   ServerUpsertKeybindingResult,
 } from "./server.ts";
 import {
+  DesktopUpdateActivity,
   HostResourcesSnapshot,
   ResourceTelemetryHistory,
   ResourceTelemetryHistoryInput,
@@ -558,6 +559,7 @@ export const WS_METHODS = {
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetHostResources: "server.getHostResources",
   serverGetHostActivity: "server.getHostActivity",
+  serverGetDesktopHostActivity: "server.getDesktopHostActivity",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
@@ -946,6 +948,12 @@ const WsServerGetProcessDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetProcessDia
 const WsServerGetHostResourcesRpc = Rpc.make(WS_METHODS.serverGetHostResources, {
   payload: Schema.Struct({}),
   success: HostResourcesSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsServerGetDesktopHostActivityRpc = Rpc.make(WS_METHODS.serverGetDesktopHostActivity, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(Schema.NullOr(DesktopUpdateActivity)),
   error: EnvironmentAuthorizationError,
 });
 
@@ -2138,6 +2146,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetProcessDiagnosticsRpc,
   WsServerGetHostResourcesRpc,
   WsServerGetHostActivityRpc,
+  WsServerGetDesktopHostActivityRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,
   WsServerRetryResourceTelemetryRpc,

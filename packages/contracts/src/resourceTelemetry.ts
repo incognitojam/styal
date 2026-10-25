@@ -1,7 +1,13 @@
 import * as Schema from "effect/Schema";
 
-import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  EnvironmentId,
+  NonNegativeInt,
+  PositiveInt,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { HostPowerSnapshot } from "./background.ts";
+import { HostActivity } from "./environmentHttp.ts";
 import { DesktopUpdateStateSchema } from "./ipc.ts";
 
 export const RESOURCE_MONITOR_PROTOCOL_VERSION = 3 as const;
@@ -355,10 +361,48 @@ export const DesktopFeatureUsageReport = Schema.Union([
 ]);
 export type DesktopFeatureUsageReport = typeof DesktopFeatureUsageReport.Type;
 
+/** Pool checks cross environment boundaries; sibling activity stays anonymous. */
+export const DesktopUpdateActivity = Schema.Struct({
+  /** Only identifies the requesting environment, never a sibling. Absent on older hosts. */
+  isRequestingEnvironment: Schema.optionalKey(Schema.Boolean),
+  activeSessions: HostActivity.fields.activeSessions,
+  continuableSessions: HostActivity.fields.continuableSessions,
+  waitingSessions: HostActivity.fields.waitingSessions,
+  terminalsRequiringConfirmation: HostActivity.fields.terminalsRequiringConfirmation,
+  terminalsWithUnknownActivity: HostActivity.fields.terminalsWithUnknownActivity,
+  environmentsUsingDevices: HostActivity.fields.environmentsUsingDevices,
+  providerInstalls: HostActivity.fields.providerInstalls,
+});
+export type DesktopUpdateActivity = typeof DesktopUpdateActivity.Type;
+
+export function summarizeDesktopUpdateActivity(activity: HostActivity): DesktopUpdateActivity {
+  return {
+    activeSessions: activity.activeSessions,
+    continuableSessions: activity.continuableSessions,
+    waitingSessions: activity.waitingSessions,
+    terminalsRequiringConfirmation: activity.terminalsRequiringConfirmation,
+    terminalsWithUnknownActivity: activity.terminalsWithUnknownActivity,
+    environmentsUsingDevices: activity.environmentsUsingDevices,
+    ...(activity.providerInstalls === undefined
+      ? {}
+      : { providerInstalls: activity.providerInstalls }),
+  };
+}
+
+export const DesktopUpdateActivityReport = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("desktopUpdateActivity"),
+  requestId: TrimmedNonEmptyString,
+  /** Every backend the desktop app will stop, including sibling WSL environments. */
+  hosts: Schema.Array(Schema.NullOr(DesktopUpdateActivity)),
+});
+export type DesktopUpdateActivityReport = typeof DesktopUpdateActivityReport.Type;
+
 export const DesktopHostTelemetryMessage = Schema.Union([
   DesktopHostTelemetryHello,
   DesktopHostTelemetrySnapshot,
   DesktopUpdateStatusReport,
+  DesktopUpdateActivityReport,
   DesktopFeatureUsageReport,
 ]);
 export type DesktopHostTelemetryMessage = typeof DesktopHostTelemetryMessage.Type;
@@ -405,10 +449,20 @@ export const DesktopTelemetryCancelDesktopUpdate = Schema.Struct({
 });
 export type DesktopTelemetryCancelDesktopUpdate = typeof DesktopTelemetryCancelDesktopUpdate.Type;
 
+export const DesktopTelemetryRequestUpdateActivity = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("requestDesktopUpdateActivity"),
+  requestId: TrimmedNonEmptyString,
+  requestingEnvironmentId: Schema.optionalKey(EnvironmentId),
+});
+export type DesktopTelemetryRequestUpdateActivity =
+  typeof DesktopTelemetryRequestUpdateActivity.Type;
+
 export const DesktopTelemetryControlMessage = Schema.Union([
   DesktopTelemetrySetDiagnosticsDemand,
   DesktopTelemetrySetHostPowerIntervals,
   DesktopTelemetryRequestDesktopUpdate,
+  DesktopTelemetryRequestUpdateActivity,
   DesktopTelemetryCommitDesktopUpdate,
   DesktopTelemetryCancelDesktopUpdate,
 ]);

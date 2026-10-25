@@ -66,6 +66,9 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const readHostActivity = useAtomCommand(serverEnvironment.hostActivity, {
     reportFailure: false,
   });
+  const readDesktopHostActivity = useAtomCommand(serverEnvironment.desktopHostActivity, {
+    reportFailure: false,
+  });
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
   const [connectionExpanded, setConnectionExpanded] = useState(false);
@@ -121,13 +124,18 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     // The server applies each project's continuation setting to its activity report.
     const continueRunningThreads = capabilities.threadRestartContinuation === true;
     void run("server", async () => {
-      const activity = await readHostActivity({ environmentId, input: {} });
+      const desktopManaged = capabilities.serverSelfUpdate === "desktop-managed";
+      const [activity, desktopActivity] = await Promise.all([
+        readHostActivity({ environmentId, input: {} }),
+        desktopManaged ? readDesktopHostActivity({ environmentId, input: {} }) : null,
+      ]);
       const confirmed = await requestServerUpdateConfirmation(
         describeServerUpdate({
           serverLabel: environment?.environmentLabel ?? "environment",
           targetVersion,
-          desktopManaged: capabilities.serverSelfUpdate === "desktop-managed",
+          desktopManaged,
           activity: AsyncResult.isSuccess(activity) ? activity.value : null,
+          desktopActivity: desktopActivity?._tag === "Success" ? desktopActivity.value : null,
           continueRunningThreads,
         }),
         (requestId) =>

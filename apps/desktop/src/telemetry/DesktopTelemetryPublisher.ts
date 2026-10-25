@@ -7,6 +7,8 @@ import {
   type DesktopTelemetryCommitDesktopUpdate,
   type DesktopTelemetryRequestDesktopUpdate,
   type DesktopUpdateStatusReport,
+  type DesktopUpdateActivityReport,
+  type DesktopTelemetryRequestUpdateActivity,
   type HostPowerSnapshot,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -70,6 +72,8 @@ export class DesktopTelemetryPublisher extends Context.Service<
       message: DesktopTelemetryControlMessage,
     ) => Effect.Effect<void>;
     readonly removeControlSource: (sourceId: string) => Effect.Effect<void>;
+    readonly publishUpdateActivity: (report: DesktopUpdateActivityReport) => Effect.Effect<void>;
+    readonly updateActivityRequests: Stream.Stream<DesktopTelemetryRequestUpdateActivity>;
     readonly publishUpdateReport: (report: DesktopUpdateStatusReport) => Effect.Effect<void>;
     /** Queues a usage observation until one attached backend takes it, so
         an observation made before any backend attaches is still sent once. */
@@ -177,6 +181,8 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
   const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
   const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
   const featureUsageQueue = yield* Queue.unbounded<DesktopFeatureUsageReport>();
+  const activityReports = yield* PubSub.unbounded<DesktopUpdateActivityReport>();
+  const activityRequests = yield* Queue.unbounded<DesktopTelemetryRequestUpdateActivity>();
   const updateRequestQueue = yield* Queue.unbounded<DesktopTelemetryRequestDesktopUpdate>();
   const updateCommitQueue = yield* Queue.unbounded<DesktopTelemetryCommitDesktopUpdate>();
   const updateCancellationQueue = yield* Queue.unbounded<DesktopTelemetryCancelDesktopUpdate>();
@@ -349,6 +355,8 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
           active: Duration.millis(message.activeIntervalMs),
           idle: Duration.millis(message.idleIntervalMs),
         }).pipe(Effect.andThen(Queue.offer(sampleTriggers, undefined)), Effect.asVoid);
+      case "requestDesktopUpdateActivity":
+        return Queue.offer(activityRequests, message).pipe(Effect.asVoid);
       case "requestDesktopUpdate":
         return Queue.offer(updateRequestQueue, message).pipe(Effect.asVoid);
       case "commitDesktopUpdate":
@@ -406,7 +414,7 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
       electronPid: process.pid,
     } as const),
     Stream.merge(
-      Stream.merge(snapshots, updateReports),
+      Stream.merge(Stream.merge(snapshots, updateReports), Stream.fromPubSub(activityReports)),
       // A queue, not a PubSub: each observation goes to one backend.
       Stream.fromQueue(featureUsageQueue),
     ),
@@ -427,6 +435,8 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
     handleControlForSource,
     removeControlSource,
     publishUpdateReport,
+    publishUpdateActivity: (report) => PubSub.publish(activityReports, report).pipe(Effect.asVoid),
+    updateActivityRequests: Stream.fromQueue(activityRequests),
     publishFeatureUsage: (report) => Queue.offer(featureUsageQueue, report).pipe(Effect.asVoid),
     updateRequests: Stream.fromQueue(updateRequestQueue),
     updateCommits: Stream.fromQueue(updateCommitQueue),

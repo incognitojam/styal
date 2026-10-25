@@ -43,6 +43,12 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("requires maintenance access to inspect the desktop pool for an update", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverGetDesktopHostActivity)).toBe(
+      AuthEnvironmentMaintainScope,
+    );
+  });
+
   it("authorizes background policy reporting and observation deliberately", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.serverReportClientActivity)).toBe(
       AuthOrchestrationReadScope,
@@ -222,7 +228,11 @@ it("requires operate permission for tool updates even alongside a read-only chec
 });
 
 describe("RPC scope middleware", () => {
-  const tested = [WS_METHODS.serverProbe, WS_METHODS.serverRetryResourceTelemetry] as const;
+  const tested = [
+    WS_METHODS.serverProbe,
+    WS_METHODS.serverRetryResourceTelemetry,
+    WS_METHODS.serverGetDesktopHostActivity,
+  ] as const;
   const group = WsRpcGroup.omit(
     ...[...WsRpcGroup.requests.keys()].filter(
       (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
@@ -247,6 +257,7 @@ describe("RPC scope middleware", () => {
         Effect.provide(
           Layer.mergeAll(
             group.toLayerHandler(WS_METHODS.serverProbe, () => Effect.succeed({})),
+            group.toLayerHandler(WS_METHODS.serverGetDesktopHostActivity, () => Effect.succeed([])),
             group.toLayerHandler(WS_METHODS.serverRetryResourceTelemetry, () =>
               Effect.sync(() => handled.push("retry")).pipe(Effect.andThen(Effect.never)),
             ),
@@ -274,6 +285,7 @@ describe("RPC scope middleware", () => {
           Layer.mergeAll(
             group.toLayerHandler(WS_METHODS.serverProbe, () => Effect.succeed({})),
             group.toLayerHandler(WS_METHODS.serverRetryResourceTelemetry, () => Effect.never),
+            group.toLayerHandler(WS_METHODS.serverGetDesktopHostActivity, () => Effect.succeed([])),
             RpcAuthorization.layer([AuthOrchestrationReadScope], (method) =>
               Effect.sync(() => void observed.push(method)),
             ),
@@ -284,6 +296,33 @@ describe("RPC scope middleware", () => {
       yield* client[WS_METHODS.serverProbe]({});
       yield* client[WS_METHODS.serverRetryResourceTelemetry]({}).pipe(Effect.flip);
       expect(observed).toEqual([WS_METHODS.serverProbe]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("rejects read-only desktop pool inspection before reading sibling activity", () =>
+    Effect.gen(function* () {
+      let inspected = false;
+      const client = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            group.toLayerHandler(WS_METHODS.serverProbe, () => Effect.succeed({})),
+            group.toLayerHandler(WS_METHODS.serverRetryResourceTelemetry, () => Effect.never),
+            group.toLayerHandler(WS_METHODS.serverGetDesktopHostActivity, () =>
+              Effect.sync(() => {
+                inspected = true;
+                return [];
+              }),
+            ),
+            RpcAuthorization.layer([AuthOrchestrationReadScope]),
+          ),
+        ),
+      );
+      expect(
+        yield* client[WS_METHODS.serverGetDesktopHostActivity]({}).pipe(Effect.flip),
+      ).toMatchObject({
+        requiredPermission: AuthEnvironmentMaintainScope,
+      });
+      expect(inspected).toBe(false);
     }).pipe(Effect.scoped),
   );
 });

@@ -14,6 +14,7 @@ type SessionResult = AsyncResult.AsyncResult<AuthSessionState, Error>;
 const testState = vi.hoisted(() => ({
   updateServer: vi.fn(),
   hostActivity: vi.fn(),
+  desktopHostActivity: vi.fn(),
   toast: vi.fn(),
   copy: vi.fn(),
   sessionAtom: null as unknown,
@@ -40,7 +41,9 @@ vi.mock(import("~/state/use-atom-command"), async (original) => {
     useAtomCommand: ((command: unknown) =>
       command === serverEnvironment.hostActivity
         ? testState.hostActivity
-        : testState.updateServer) as never,
+        : command === serverEnvironment.desktopHostActivity
+          ? testState.desktopHostActivity
+          : testState.updateServer) as never,
   };
 });
 vi.mock(import("./ui/toast"), async (original) => {
@@ -148,6 +151,10 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   testState.updateServer.mockReset();
   testState.hostActivity.mockReset();
+  testState.desktopHostActivity.mockReset();
+  testState.desktopHostActivity.mockResolvedValue(
+    AsyncResult.success([{ ...idleActivity, isRequestingEnvironment: true }]),
+  );
   testState.hostActivity.mockResolvedValue(AsyncResult.success(idleActivity));
   testState.toast.mockReset();
   testState.copy.mockReset();

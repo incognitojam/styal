@@ -150,6 +150,8 @@ export function makeNativeUpdatesFakes(
     handleControlForSource: () => Effect.void,
     removeControlSource: () => Effect.void,
     publishUpdateReport: () => Effect.void,
+    publishUpdateActivity: () => Effect.void,
+    updateActivityRequests: Stream.empty,
     publishFeatureUsage: (report) =>
       Effect.sync(() => {
         idleRestart.reports.push(report);

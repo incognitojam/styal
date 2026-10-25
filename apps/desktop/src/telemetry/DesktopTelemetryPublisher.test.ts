@@ -1,4 +1,4 @@
-import { DesktopHostTelemetryMessage } from "@t3tools/contracts";
+import { DesktopHostTelemetryMessage, EnvironmentId } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -23,6 +23,10 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as DesktopTelemetryPublisher from "./DesktopTelemetryPublisher.ts";
 import * as DesktopRendererHistory from "./DesktopRendererHistory.ts";
+
+const decodeUpdateActivityMessage = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(DesktopHostTelemetryMessage),
+);
 
 const layerHistory = Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
   register: () => Effect.void,
@@ -413,7 +417,7 @@ describe("DesktopTelemetryPublisher", () => {
     }),
   );
 
-  it.effect("routes requestDesktopUpdate control messages and replays update reports", () =>
+  it.effect("routes update and activity requests and replays update reports", () =>
     Effect.gen(function* () {
       const layerPower = Layer.succeed(
         ElectronPowerMonitor.ElectronPowerMonitor,
@@ -443,6 +447,56 @@ describe("DesktopTelemetryPublisher", () => {
         });
         const received = yield* Fiber.join(requestFiber);
         assert.equal(Option.getOrThrow(received).requestId, "req-9");
+
+        const activityAttached = yield* Deferred.make<void>();
+        const activityReply = yield* publisher.encoded.pipe(
+          Stream.mapEffect((bytes) =>
+            decodeUpdateActivityMessage(new TextDecoder().decode(bytes).trim()),
+          ),
+          Stream.tap((message) =>
+            message.type === "desktopTelemetry"
+              ? Deferred.succeed(activityAttached, undefined)
+              : Effect.void,
+          ),
+          Stream.filter((message) => message.type === "desktopUpdateActivity"),
+          Stream.runHead,
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Deferred.await(activityAttached);
+        yield* publisher.handleControlForSource("test", {
+          version: 1,
+          type: "requestDesktopUpdateActivity",
+          requestId: "activity-9",
+          requestingEnvironmentId: EnvironmentId.make("selected-environment"),
+        });
+        const activityRequest = Option.getOrThrow(
+          yield* Stream.runHead(publisher.updateActivityRequests),
+        );
+        assert.equal(activityRequest.requestId, "activity-9");
+        assert.equal(activityRequest.requestingEnvironmentId, "selected-environment");
+        const hosts = [
+          {
+            activeSessions: 0,
+            continuableSessions: 0,
+            waitingSessions: 0,
+            terminalsRequiringConfirmation: 1,
+            terminalsWithUnknownActivity: 0,
+            environmentsUsingDevices: 0,
+          },
+          null,
+        ];
+        yield* publisher.publishUpdateActivity({
+          version: 1,
+          type: "desktopUpdateActivity",
+          requestId: activityRequest.requestId,
+          hosts,
+        });
+        assert.deepEqual(Option.getOrThrow(yield* Fiber.join(activityReply)), {
+          version: 1,
+          type: "desktopUpdateActivity",
+          requestId: "activity-9",
+          hosts,
+        });
 
         const report = {
           version: 1,
