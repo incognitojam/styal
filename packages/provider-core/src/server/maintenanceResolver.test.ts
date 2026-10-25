@@ -626,6 +626,49 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       }),
   );
 
+  it.effect.each(["owned", "unrelated"] as const)(
+    "checks the canonical npm prefix of a symlinked VP_HOME: %s",
+    (installation) =>
+      Effect.gen(function* () {
+        const fixture = customVitePlusFixture("linux");
+        const canonicalPrefix = "/volumes/tools/vite-plus/js_runtime/node/24.21.0";
+        const realPrefix = installation === "owned" ? canonicalPrefix : "/volumes/other-runtime";
+        const capabilities = yield* resolveCustomVitePlus({
+          ...fixture,
+          real: fixture.path.join(
+            realPrefix,
+            "lib/node_modules/@example/package-tool/bin/package-tool.js",
+          ),
+          fileSystem: {
+            ...fixture.fileSystem,
+            realPath: (file) => Effect.succeed(file === fixture.prefix ? canonicalPrefix : file),
+          },
+        });
+
+        if (installation === "unrelated") {
+          expect(capabilities.update).toBeNull();
+          return;
+        }
+        expect(capabilities.update).toMatchObject({
+          executable: fixture.node,
+          args: [
+            fixture.npmCli,
+            "install",
+            "-g",
+            "--prefix",
+            fixture.prefix,
+            "--allow-scripts=@example/package-tool",
+            "@example/package-tool@latest",
+          ],
+          lockKey: `npm-global:${normalizeCommandPath(canonicalPrefix)}`,
+          env: { VP_HOME: fixture.home },
+        });
+        expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args.at(-1)).toBe(
+          "@example/package-tool@2.0.0",
+        );
+      }),
+  );
+
   it.effect("uses the proven custom Vite+ launcher for a POSIX managed package link", () =>
     Effect.gen(function* () {
       const fixture = customVitePlusFixture("linux");

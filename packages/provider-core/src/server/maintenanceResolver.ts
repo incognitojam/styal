@@ -396,6 +396,7 @@ const resolveCustomVitePlusMaintenance = Effect.fn("resolveCustomVitePlusMainten
   // a separate copy, leaving the runtime prefix the wrapper runs untouched.
   const prefix = path.join(home, "js_runtime", "node", config.value.nodeVersion);
   const runtimeBin = context.platform === "win32" ? prefix : path.join(prefix, "bin");
+  let lockPrefix = prefix;
   if (context.platform === "win32") {
     const target = path.join(runtimeBin, `${binName}.cmd`);
     const wrapper = yield* fileSystem
@@ -413,7 +414,11 @@ const resolveCustomVitePlusMaintenance = Effect.fn("resolveCustomVitePlusMainten
       context.realCommandPath,
       definition.npmPackageName,
     );
-    if (!realPrefix || !samePath(realPrefix, prefix)) return manual;
+    const expectedPrefix = yield* fileSystem
+      .realPath(prefix)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (!realPrefix || !expectedPrefix || !samePath(realPrefix, expectedPrefix)) return manual;
+    lockPrefix = realPrefix;
   }
   const modules =
     context.platform === "win32"
@@ -450,7 +455,7 @@ const resolveCustomVitePlusMaintenance = Effect.fn("resolveCustomVitePlusMainten
       `--allow-scripts=${definition.npmPackageName}`,
       `${definition.npmPackageName}@latest`,
     ],
-    updateLockKey: `npm-global:${normalizeCommandPath(prefix)}`,
+    updateLockKey: `npm-global:${normalizeCommandPath(lockPrefix)}`,
     platform: context.platform,
     env,
   });
