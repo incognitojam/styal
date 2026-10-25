@@ -1,4 +1,4 @@
-import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
+import { managedRelayAuthLoadAtom, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
 import * as Effect from "effect/Effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -9,7 +9,7 @@ import {
 } from "./managedAuth";
 
 vi.mock("@clerk/react", () => ({
-  useAuth: vi.fn(),
+  useClerk: vi.fn(),
 }));
 
 vi.mock("../lib/runtime", () => ({
@@ -30,7 +30,9 @@ afterEach(() => {
 
 describe("managed relay authentication", () => {
   it("clears all token access synchronously before account cleanup can fail", async () => {
+    appAtomRegistry.set(managedRelayAuthLoadAtom, "loading");
     activateManagedRelayAuthentication("account-1", async () => "account-1-token");
+    expect(appAtomRegistry.get(managedRelayAuthLoadAtom)).toBe("loaded");
     expect(appAtomRegistry.get(managedRelaySessionAtom)?.accountId).toBe("account-1");
     const token = await Effect.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)).pipe(
       Effect.flatMap((session) => session.readClerkToken()),
@@ -38,7 +40,9 @@ describe("managed relay authentication", () => {
     );
     expect(token).toBe("account-1-token");
 
+    appAtomRegistry.set(managedRelayAuthLoadAtom, "failed");
     deactivateManagedRelayAuthentication();
+    expect(appAtomRegistry.get(managedRelayAuthLoadAtom)).toBe("loaded");
     const cleanup = Promise.reject(new Error("Persistence removal failed.")).catch(() => undefined);
 
     expect(appAtomRegistry.get(managedRelaySessionAtom)).toBeNull();
