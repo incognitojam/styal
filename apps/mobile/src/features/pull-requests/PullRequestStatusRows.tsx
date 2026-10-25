@@ -1,4 +1,8 @@
 import { usePullRequestConnected } from "./usePullRequestConnected";
+import {
+  mergedPullRequestCommit,
+  mergeCommitChecksSummary,
+} from "@t3tools/client-runtime/pull-request-merge-commit";
 import { PullRequestMergeIntentIcon } from "./PullRequestMergeIntentIcon";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
@@ -21,6 +25,7 @@ import {
   checkStatus,
   pullRequestBranchSummary,
   pullRequestChecksSummary,
+  pullRequestChecksStatus,
   pullRequestReviewSummary,
   pullRequestStatus,
 } from "./pullRequestStatus";
@@ -110,7 +115,12 @@ export function PullRequestChecksRow(props: RowProps) {
   return (
     <Animated.View layout={PR_ROW_LAYOUT}>
       <PullRequestCardRow
-        title={checks.title}
+        title={props.pr.state === "merged" ? "Pull request" : checks.title}
+        detail={
+          props.pr.state === "merged"
+            ? `${props.pr.headSha?.slice(0, 7) ?? props.pr.headBranch} · ${checks.label}`
+            : undefined
+        }
         icon={checks.icon}
         tint={checks.tint}
         value={checks.count}
@@ -173,6 +183,66 @@ export function PullRequestChecksRow(props: RowProps) {
               )
             }
           />
+        </Animated.View>
+      ) : null}
+    </Animated.View>
+  );
+}
+
+export function PullRequestMergeCommitRow(props: RowProps) {
+  const [expanded, setExpanded] = useState(false);
+  const commit = mergedPullRequestCommit(props.pr);
+  if (commit === undefined) return null;
+  const summary = mergeCommitChecksSummary(commit);
+  const keyOccurrences = new Map<string, number>();
+  const status = summary.state === null ? null : pullRequestChecksStatus(summary.state);
+  return (
+    <Animated.View layout={PR_ROW_LAYOUT}>
+      <PullRequestCardRow
+        title="Merge commit"
+        icon={status?.icon ?? "git.commit"}
+        tint={status?.tint}
+        value={commit?.oid.slice(0, 7)}
+        detail={summary.label}
+        accessibilityLabel={
+          commit ? `Merge commit, ${commit.oid.slice(0, 7)}, ${summary.label}` : summary.label
+        }
+        expanded={commit ? expanded : undefined}
+        onPress={commit ? () => setExpanded(!expanded) : undefined}
+      />
+      {expanded ? (
+        <Animated.View
+          layout={PR_ROW_LAYOUT}
+          entering={PR_DISCLOSURE_ENTER}
+          exiting={PR_ROW_EXIT}
+          className="pl-8"
+        >
+          {commit ? (
+            <PullRequestCardRow
+              title={commit.oid.slice(0, 7)}
+              icon="git.commit"
+              value="Details"
+              onPress={() => void Linking.openURL(commit.url)}
+            />
+          ) : null}
+          {commit?.checks?.map((check) => {
+            const status = checkStatus(check);
+            const url = check.url;
+            const keyBase = `${check.name}:${url}:${check.status}:${check.description}`;
+            const occurrence = keyOccurrences.get(keyBase) ?? 0;
+            keyOccurrences.set(keyBase, occurrence + 1);
+            return (
+              <PullRequestCardRow
+                key={`${keyBase}:${occurrence}`}
+                title={check.name}
+                icon={status.icon}
+                tint={status.tint}
+                value={check.url ? `${status.label} · Details` : status.label}
+                detail={check.description ?? undefined}
+                onPress={url ? () => void Linking.openURL(url) : undefined}
+              />
+            );
+          })}
         </Animated.View>
       ) : null}
     </Animated.View>

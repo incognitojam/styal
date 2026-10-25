@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema"
 import * as Shared from "../../schema/github.graphql.ts"
 
 /** Represents an individual commit status context */
-export const StatusContext = Schema.Struct({
+export const CommitCheckContextStatusContext = Schema.Struct({
   __typename: Schema.Literal("StatusContext"),
   /** The name of this status context. */
   context: Schema.String,
@@ -15,11 +15,9 @@ export const StatusContext = Schema.Struct({
   /** Identifies the date and time when the object was created. */
   createdAt: Shared.DateTime,
   /** The description for this status context. */
-  description: Schema.NullOr(Schema.String),
-  /** Whether this is required to pass before merging for a specific pull request. */
-  isRequired: Schema.optionalKey(Schema.Boolean)
+  description: Schema.NullOr(Schema.String)
 })
-export interface StatusContext extends Schema.Struct.Type<typeof StatusContext.fields> {}
+export interface CommitCheckContextStatusContext extends Schema.Struct.Type<typeof CommitCheckContextStatusContext.fields> {}
 
 /** A workflow contains meta information about an Actions workflow file. */
 export const Workflow = Schema.Struct({
@@ -43,7 +41,7 @@ export const CheckSuiteCheckSuite = Schema.Struct({
 export interface CheckSuiteCheckSuite extends Schema.Struct.Type<typeof CheckSuiteCheckSuite.fields> {}
 
 /** A check run. */
-export const CheckRun = Schema.Struct({
+export const CommitCheckContextCheckRun = Schema.Struct({
   __typename: Schema.Literal("CheckRun"),
   /** The name of the check for this check run. */
   name: Schema.String,
@@ -57,12 +55,10 @@ export const CheckRun = Schema.Struct({
   completedAt: Schema.NullOr(Shared.DateTime),
   /** The URL from which to find full details of the check run on the integrator's site. */
   detailsUrl: Schema.NullOr(Shared.URI),
-  /** Whether this is required to pass before merging for a specific pull request. */
-  isRequired: Schema.optionalKey(Schema.Boolean),
   /** The check suite that this run is a part of. */
   checkSuite: CheckSuiteCheckSuite
 })
-export interface CheckRun extends Schema.Struct.Type<typeof CheckRun.fields> {}
+export interface CommitCheckContextCheckRun extends Schema.Struct.Type<typeof CommitCheckContextCheckRun.fields> {}
 
 /** Types that can be inside a StatusCheckRollup context. */
 export const StatusCheckRollupContextOther = Schema.Struct({
@@ -71,13 +67,65 @@ export const StatusCheckRollupContextOther = Schema.Struct({
 export interface StatusCheckRollupContextOther extends Schema.Struct.Type<typeof StatusCheckRollupContextOther.fields> {}
 
 /**
+ * `fragment CommitCheckContext on StatusCheckRollupContext`
+ *
+ * Types that can be inside a StatusCheckRollup context.
+ */
+export const CommitCheckContext = Schema.Union([
+  CommitCheckContextStatusContext,
+  CommitCheckContextCheckRun,
+  StatusCheckRollupContextOther
+])
+export type CommitCheckContext = typeof CommitCheckContext.Type
+
+/** Represents an individual commit status context */
+export const CheckContextStatusContext = Schema.Struct({
+  __typename: Schema.Literal("StatusContext"),
+  /** The name of this status context. */
+  context: Schema.String,
+  /** The state of this status context. */
+  state: GraphQL.enumLiterals(Shared.StatusState.literals),
+  /** The URL for this status context. */
+  targetUrl: Schema.NullOr(Shared.URI),
+  /** Identifies the date and time when the object was created. */
+  createdAt: Shared.DateTime,
+  /** The description for this status context. */
+  description: Schema.NullOr(Schema.String),
+  /** Whether this is required to pass before merging for a specific pull request. */
+  isRequired: Schema.optionalKey(Schema.Boolean)
+})
+export interface CheckContextStatusContext extends Schema.Struct.Type<typeof CheckContextStatusContext.fields> {}
+
+/** A check run. */
+export const CheckContextCheckRun = Schema.Struct({
+  __typename: Schema.Literal("CheckRun"),
+  /** The name of the check for this check run. */
+  name: Schema.String,
+  /** The current status of the check run. */
+  status: GraphQL.enumLiterals(Shared.CheckStatusState.literals),
+  /** The conclusion of the check run. */
+  conclusion: Schema.NullOr(GraphQL.enumLiterals(Shared.CheckConclusionState.literals)),
+  /** Identifies the date and time when the check run was started. */
+  startedAt: Schema.NullOr(Shared.DateTime),
+  /** Identifies the date and time when the check run was completed. */
+  completedAt: Schema.NullOr(Shared.DateTime),
+  /** The URL from which to find full details of the check run on the integrator's site. */
+  detailsUrl: Schema.NullOr(Shared.URI),
+  /** The check suite that this run is a part of. */
+  checkSuite: CheckSuiteCheckSuite,
+  /** Whether this is required to pass before merging for a specific pull request. */
+  isRequired: Schema.optionalKey(Schema.Boolean)
+})
+export interface CheckContextCheckRun extends Schema.Struct.Type<typeof CheckContextCheckRun.fields> {}
+
+/**
  * `fragment CheckContext on StatusCheckRollupContext`
  *
  * Types that can be inside a StatusCheckRollup context.
  */
 export const CheckContext = Schema.Union([
-  StatusContext,
-  CheckRun,
+  CheckContextStatusContext,
+  CheckContextCheckRun,
   StatusCheckRollupContextOther
 ])
 export type CheckContext = typeof CheckContext.Type
@@ -172,6 +220,89 @@ export const ActorAvatars = GraphQL.query("ActorAvatars", {
 export declare namespace ActorAvatars {
   export type Variables = typeof ActorAvatars.variables.Type
   export type Result = typeof ActorAvatars.result.Type
+}
+
+/** Information about pagination in a connection. */
+export const ContextsPageInfoPageInfo = Schema.Struct({
+  /** When paginating forwards, are there more items? */
+  hasNextPage: Schema.Boolean,
+  /** When paginating forwards, the cursor to continue. */
+  endCursor: Schema.NullOr(Schema.String)
+})
+export interface ContextsPageInfoPageInfo extends Schema.Struct.Type<typeof ContextsPageInfoPageInfo.fields> {}
+
+/** The connection type for StatusCheckRollupContext. */
+export const ObjectStatusCheckRollupContextsStatusCheckRollupContextConnection = Schema.Struct({
+  /** A list of nodes. */
+  nodes: Schema.NullOr(Schema.Array(Schema.NullOr(CommitCheckContext))),
+  /** Information to aid in pagination. */
+  pageInfo: ContextsPageInfoPageInfo
+})
+export interface ObjectStatusCheckRollupContextsStatusCheckRollupContextConnection extends Schema.Struct.Type<typeof ObjectStatusCheckRollupContextsStatusCheckRollupContextConnection.fields> {}
+
+/** Represents the rollup for both the check runs and status for a commit. */
+export const ObjectStatusCheckRollupStatusCheckRollup = Schema.Struct({
+  /** A list of status contexts and check runs for this commit. */
+  contexts: ObjectStatusCheckRollupContextsStatusCheckRollupContextConnection
+})
+export interface ObjectStatusCheckRollupStatusCheckRollup extends Schema.Struct.Type<typeof ObjectStatusCheckRollupStatusCheckRollup.fields> {}
+
+/** Represents a Git commit. */
+export const CommitCheckContextsRepositoryObjectCommit = Schema.Struct({
+  __typename: Schema.Literal("Commit"),
+  /** The Git object ID */
+  oid: Shared.GitObjectID,
+  /** Check and Status rollup information for this commit. */
+  statusCheckRollup: Schema.NullOr(ObjectStatusCheckRollupStatusCheckRollup)
+})
+export interface CommitCheckContextsRepositoryObjectCommit extends Schema.Struct.Type<typeof CommitCheckContextsRepositoryObjectCommit.fields> {}
+
+/** Represents a Git object. */
+export const GitObjectOther = Schema.Struct({
+  __typename: GraphQL.otherTypename<Shared.Typename.GitObject>()(["Commit"])
+})
+export interface GitObjectOther extends Schema.Struct.Type<typeof GitObjectOther.fields> {}
+
+/** A repository contains the content for a project. */
+export const CommitCheckContextsRepositoryRepository = Schema.Struct({
+  /** A Git object in the repository */
+  object: Schema.NullOr(Schema.Union([
+    CommitCheckContextsRepositoryObjectCommit,
+    GitObjectOther
+  ]))
+})
+export interface CommitCheckContextsRepositoryRepository extends Schema.Struct.Type<typeof CommitCheckContextsRepositoryRepository.fields> {}
+
+/** `query CommitCheckContexts` */
+export const CommitCheckContexts = GraphQL.query("CommitCheckContexts", {
+  document: {
+    variables: [
+      { name: "owner", body: "String!" },
+      { name: "name", body: "String!" },
+      { name: "oid", body: "GitObjectID!" },
+      { name: "after", body: "String" }
+    ],
+    selections: [
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){object(oid:$", "oid", "){__typename...on Commit{oid statusCheckRollup{contexts(first:100 after:$", "after", "){nodes{__typename...CommitCheckContext}pageInfo{hasNextPage endCursor}}}}}}"] }
+    ],
+    fragments: [
+      { name: "CommitCheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description}...on CheckRun{name status conclusion startedAt completedAt detailsUrl checkSuite{workflowRun{workflow{name}}}}}"] }
+    ]
+  },
+  variables: {
+    owner: Schema.String,
+    name: Schema.String,
+    oid: Shared.GitObjectID,
+    after: Schema.optional(Schema.NullOr(Schema.String))
+  },
+  result: Schema.Struct({
+    /** Lookup a given repository by the owner and repository name. */
+    repository: Schema.NullOr(CommitCheckContextsRepositoryRepository)
+  })
+})
+export declare namespace CommitCheckContexts {
+  export type Variables = typeof CommitCheckContexts.variables.Type
+  export type Result = typeof CommitCheckContexts.result.Type
 }
 
 /** Represents an owner of a Repository. */
@@ -521,7 +652,8 @@ export const PullRequestCore = GraphQL.query("PullRequestCore", {
     ],
     fragments: [
       { name: "Deployment", body: ["on Deployment{id environment state commitOid createdAt updatedAt latestStatus{state updatedAt description environmentUrl logUrl}}"] },
-      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
+      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...CommitCheckContext...on StatusContext{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}}"] },
+      { name: "CommitCheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description}...on CheckRun{name status conclusion startedAt completedAt detailsUrl checkSuite{workflowRun{workflow{name}}}}}"] }
     ]
   },
   variables: {
@@ -673,7 +805,8 @@ export const PullRequestCoreWithoutDeployments = GraphQL.query("PullRequestCoreW
       { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission pullRequest(number:$", "number", "){isInMergeQueue@include(if:$", "required", ")mergeStateStatus viewerCanEnableAutoMerge@include(if:$", "required", ")viewerCanDisableAutoMerge@include(if:$", "required", ")number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
     ],
     fragments: [
-      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
+      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...CommitCheckContext...on StatusContext{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}}"] },
+      { name: "CommitCheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description}...on CheckRun{name status conclusion startedAt completedAt detailsUrl checkSuite{workflowRun{workflow{name}}}}}"] }
     ]
   },
   variables: {
@@ -801,7 +934,8 @@ export const PullRequestCoreEnterprise = GraphQL.query("PullRequestCoreEnterpris
     ],
     fragments: [
       { name: "Deployment", body: ["on Deployment{id environment state commitOid createdAt updatedAt latestStatus{state updatedAt description environmentUrl logUrl}}"] },
-      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
+      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...CommitCheckContext...on StatusContext{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}}"] },
+      { name: "CommitCheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description}...on CheckRun{name status conclusion startedAt completedAt detailsUrl checkSuite{workflowRun{workflow{name}}}}}"] }
     ]
   },
   variables: {
@@ -926,7 +1060,8 @@ export const PullRequestCoreEnterpriseWithoutDeployments = GraphQL.query("PullRe
       { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission pullRequest(number:$", "number", "){mergeStateStatus number title url body state isDraft mergeable reviewDecision additions deletions changedFiles createdAt updatedAt mergedAt closedAt headRefName baseRefName headRefOid isCrossRepository headRepositoryOwner{__typename login}headRepository{nameWithOwner viewerPermission}headRef{id}author{__typename login avatarUrl...on User{id name}}autoMergeRequest{mergeMethod}viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch baseRef{compare(headRef:$", "headRef", "){behindBy}}reviewRequests(first:100){nodes{requestedReviewer{__typename...on User{login name}...on Bot{login}...on Team{slug combinedSlug teamName:name teamAvatarUrl:avatarUrl}}}}labels(first:100){nodes{name color}}commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage}}}}}}}}"] }
     ],
     fragments: [
-      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
+      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...CommitCheckContext...on StatusContext{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}}"] },
+      { name: "CommitCheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description}...on CheckRun{name status conclusion startedAt completedAt detailsUrl checkSuite{workflowRun{workflow{name}}}}}"] }
     ]
   },
   variables: {
@@ -945,15 +1080,6 @@ export declare namespace PullRequestCoreEnterpriseWithoutDeployments {
   export type Variables = typeof PullRequestCoreEnterpriseWithoutDeployments.variables.Type
   export type Result = typeof PullRequestCoreEnterpriseWithoutDeployments.result.Type
 }
-
-/** Information about pagination in a connection. */
-export const ContextsPageInfoPageInfo = Schema.Struct({
-  /** When paginating forwards, are there more items? */
-  hasNextPage: Schema.Boolean,
-  /** When paginating forwards, the cursor to continue. */
-  endCursor: Schema.NullOr(Schema.String)
-})
-export interface ContextsPageInfoPageInfo extends Schema.Struct.Type<typeof ContextsPageInfoPageInfo.fields> {}
 
 /** The connection type for StatusCheckRollupContext. */
 export const PullRequestCheckContextsRepositoryPullRequestCommitsNodesCommitStatusCheckRollupContextsStatusCheckRollupContextConnection = Schema.Struct({
@@ -1022,7 +1148,8 @@ export const PullRequestCheckContexts = GraphQL.query("PullRequestCheckContexts"
       { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){headRefOid commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100 after:$", "after", "){nodes{__typename...", "CheckContext", "}pageInfo{hasNextPage endCursor}}}}}}}}"] }
     ],
     fragments: [
-      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{name status conclusion startedAt completedAt detailsUrl isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")checkSuite{workflowRun{workflow{name}}}}}"] }
+      { name: "CheckContext", body: ["on StatusCheckRollupContext{__typename...CommitCheckContext...on StatusContext{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}...on CheckRun{isRequired(pullRequestNumber:$", "number", ")@include(if:$", "required", ")}}"] },
+      { name: "CommitCheckContext", body: ["on StatusCheckRollupContext{__typename...on StatusContext{context state targetUrl createdAt description}...on CheckRun{name status conclusion startedAt completedAt detailsUrl checkSuite{workflowRun{workflow{name}}}}}"] }
     ]
   },
   variables: {
@@ -2114,24 +2241,18 @@ export const CheckSuiteConnection = Schema.Struct({
 export interface CheckSuiteConnection extends Schema.Struct.Type<typeof CheckSuiteConnection.fields> {}
 
 /** Represents a Git commit. */
-export const ObjectCommit = Schema.Struct({
+export const WorkflowApprovalSuitesRepositoryObjectCommit = Schema.Struct({
   __typename: Schema.Literal("Commit"),
   /** The check suites associated with a commit. */
   checkSuites: Schema.NullOr(CheckSuiteConnection)
 })
-export interface ObjectCommit extends Schema.Struct.Type<typeof ObjectCommit.fields> {}
-
-/** Represents a Git object. */
-export const GitObjectOther = Schema.Struct({
-  __typename: GraphQL.otherTypename<Shared.Typename.GitObject>()(["Commit"])
-})
-export interface GitObjectOther extends Schema.Struct.Type<typeof GitObjectOther.fields> {}
+export interface WorkflowApprovalSuitesRepositoryObjectCommit extends Schema.Struct.Type<typeof WorkflowApprovalSuitesRepositoryObjectCommit.fields> {}
 
 /** A repository contains the content for a project. */
 export const WorkflowApprovalSuitesRepositoryRepository = Schema.Struct({
   /** A Git object in the repository */
   object: Schema.NullOr(Schema.Union([
-    ObjectCommit,
+    WorkflowApprovalSuitesRepositoryObjectCommit,
     GitObjectOther
   ]))
 })
@@ -2168,4 +2289,4 @@ export declare namespace WorkflowApprovalSuites {
 }
 
 /** Every operation in pullRequestReads.graphql. */
-export const PullRequestReadsGraphQLGroup = GraphQLGroup.make(ActorAvatars, PullRequestCore, PullRequestCoreWithoutDeployments, PullRequestCoreEnterprise, PullRequestCoreEnterpriseWithoutDeployments, PullRequestCheckContexts, PullRequestPreview, PullRequestActivity, PullRequestHeads, PullRequestNodeId, PullRequestSubject, ViewerPermissions, ReviewerCandidates, LabelCandidates, PullRequestFilesViewed, PullRequestMergeMessage, PullRequestActionState, PullRequestBranchToDelete, PullRequestSourceBranch, AutoMergePermissions, BranchProtectionRequiredChecks, WorkflowApprovalSuites)
+export const PullRequestReadsGraphQLGroup = GraphQLGroup.make(ActorAvatars, CommitCheckContexts, PullRequestCore, PullRequestCoreWithoutDeployments, PullRequestCoreEnterprise, PullRequestCoreEnterpriseWithoutDeployments, PullRequestCheckContexts, PullRequestPreview, PullRequestActivity, PullRequestHeads, PullRequestNodeId, PullRequestSubject, ViewerPermissions, ReviewerCandidates, LabelCandidates, PullRequestFilesViewed, PullRequestMergeMessage, PullRequestActionState, PullRequestBranchToDelete, PullRequestSourceBranch, AutoMergePermissions, BranchProtectionRequiredChecks, WorkflowApprovalSuites)

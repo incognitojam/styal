@@ -581,6 +581,23 @@ describe("review verdicts", () => {
 });
 
 describe("pull request timeline", () => {
+  it("links the merged lifecycle event to the resulting commit even when its checks failed", () => {
+    const mergeCommit = {
+      oid: "b".repeat(40),
+      url: `https://github.com/acme/web/commit/${"b".repeat(40)}`,
+      checks: [{ name: "Deploy", status: "failure" as const, description: null, url: null }],
+    };
+    const merged = buildPullRequestTimeline({
+      ...TIMELINE_SOURCE,
+      mergedAt: "2026-07-03T00:00:00Z",
+      baseBranch: "main",
+      mergeCommit,
+    }).find((event) => event.kind === "merged");
+    expect(merged).toMatchObject({
+      title: "merged commit bbbbbbb into main",
+      url: mergeCommit.url,
+    });
+  });
   it("orders creation, commits and comments newest first", () => {
     expect(buildPullRequestTimeline(TIMELINE_SOURCE).map((event) => event.id)).toEqual([
       "c1",

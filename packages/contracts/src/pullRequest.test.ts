@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   PullRequestActionInput,
   PullRequestCapabilities,
+  PullRequestDetail,
   PullRequestInvalidateInput,
   PullRequestFilesViewedResult,
   PullRequestListInput,
@@ -22,6 +23,23 @@ const decodeReviewerRequest = Schema.decodeUnknownSync(PullRequestReviewerReques
 const decodeAction = Schema.decodeUnknownSync(PullRequestActionInput);
 const decodeSetFilesViewed = Schema.decodeUnknownSync(PullRequestSetFilesViewedInput);
 const decodeFilesViewed = Schema.decodeUnknownSync(PullRequestFilesViewedResult);
+
+it("preserves unsupported, unavailable and empty merge checks through the RPC codec", () => {
+  const schema = Schema.Struct({ mergeCommit: PullRequestDetail.fields.mergeCommit });
+  const codec = Schema.toCodecJson(schema);
+  const commit = {
+    oid: "a".repeat(40),
+    url: "https://github.com/acme/web/commit/" + "a".repeat(40),
+  };
+  for (const value of [
+    {},
+    { mergeCommit: null },
+    { mergeCommit: { ...commit, checks: null } },
+    { mergeCommit: { ...commit, checks: [] } },
+  ]) {
+    expect(Schema.decodeSync(codec)(Schema.encodeUnknownSync(codec)(value))).toEqual(value);
+  }
+});
 
 const LIST_RESULT: PullRequestListResult = {
   viewers: { "github.com": "bilal", "gitlab.com": "bilal.hassan" },

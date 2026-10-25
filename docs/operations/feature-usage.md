@@ -12,6 +12,8 @@ Upstream's `mcp.tool.invoked` records one event per agent MCP tool call with `to
 
 Additional measured operations are:
 
+- `pull-request-merge-commit-checks`, `source = user`: `open_commit` and `open_check` record explicit links from the merge commit section on web and desktop with `outcome = success | failure`. Success means the browser accepted the handoff. Reports require client vocabulary version 11; display and refresh do not count. Only the action, outcome, and existing client attribution are sent. Mobile does not report these interactions, so these counts cannot establish whole-feature adoption.
+
 - `pull-request-deployments`, `source = user`: `open_environment`, `open_logs`, and `show_all` record explicit deployment panel actions with `outcome = success | failure`. Link success means the browser accepted the handoff, not that the destination loaded. Display, polling, rerenders and Show less do not emit events. Reports require client vocabulary version 2 and go to the PR's environment without names, URLs, repositories, PR numbers or commit hashes.
 
 - `devices`, `source = user`: Device panel open, close, shutdown and device actions from a client that reports its surface. Requests forwarded from another environment and older clients without a surface remain unattributed instead of being counted again as manual use.

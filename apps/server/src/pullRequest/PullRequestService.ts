@@ -1637,6 +1637,9 @@ export const make = Effect.gen(function* () {
             reviewers: changeRequest.reviewers,
             labels: changeRequest.labels,
             checks: changeRequest.checks,
+            ...(changeRequest.mergeCommit === undefined
+              ? {}
+              : { mergeCommit: changeRequest.mergeCommit }),
             ...(changeRequest.deployments === undefined
               ? {}
               : { deployments: changeRequest.deployments }),

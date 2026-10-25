@@ -4013,6 +4013,43 @@ features:
         - https://github.com/pingdotgg/t3code/pull/9496
       retire_when: Upstream's automatic pull request refresh reads fresh host state rather than the held detail value, without unnecessary activity reads or invalidating cached diffs.
 
+  - id: pull-request-merge-commit-checks
+    title: Inspect checks on a merged GitHub pull request's resulting commit
+    status: maintained
+    prs: []
+    invariants:
+      - A merged GitHub pull request reads the resulting SHA reported after merging, including squash and rebase, without substituting a base tip or temporary test merge.
+      - Merge commit checks, commit links, and check details remain distinct from source-branch checks on web, desktop, and mobile; a merged status does not imply passing checks.
+      - Pending checks, no reported checks, unavailable commits, and unreadable or incomplete checks remain distinct; visible views refresh through merging and later check updates.
+    implementation_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestStatusRows.tsx
+      - apps/mobile/src/features/pull-requests/usePullRequestMergeCommitRefresh.ts
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - apps/web/src/components/pullRequest/PullRequestMergeCommitChecks.tsx
+      - packages/client-runtime/src/pullRequestMergeCommit.ts
+      - packages/contracts/src/pullRequest.ts
+      - packages/source-control-github/src/server/GitHubPullRequestApi.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+    upstream_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestStatusRows.tsx
+      - apps/server/src/pullRequest/PullRequestService.ts
+      - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+      - packages/contracts/src/pullRequest.ts
+      - packages/source-control-github/src/server/GitHubPullRequestApi.ts
+      - packages/source-control-github/src/server/pullRequestReads.graphql
+    tests:
+      - apps/mobile/src/features/pull-requests/usePullRequestMergeCommitRefresh.test.tsx
+      - apps/server/src/pullRequest/PullRequestService.test.ts
+      - apps/web/src/components/pullRequest/PullRequestMergeCommitChecks.browser.test.tsx
+      - packages/client-runtime/src/pullRequestMergeCommit.test.ts
+      - packages/contracts/src/pullRequest.test.ts
+      - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream separately displays and refreshes the actual resulting commit's checks for merged GitHub pull requests on web, desktop, and mobile, preserving unavailable states.
+
   - id: pull-request-merge-controls-during-refresh
     title: Keep pull request merge controls visible while the stack lookup refreshes
     status: maintained

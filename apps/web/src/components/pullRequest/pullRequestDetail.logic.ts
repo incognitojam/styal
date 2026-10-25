@@ -543,8 +543,9 @@ export function visibleBody(body: string): string | null {
 export function buildPullRequestTimeline(
   detail: Pick<
     PullRequestDetailView,
-    "createdAt" | "author" | "commits" | "comments" | "mergedAt" | "closedAt"
-  >,
+    "createdAt" | "author" | "commits" | "comments" | "mergedAt" | "closedAt" | "mergeCommit"
+  > &
+    Partial<Pick<PullRequestDetailView, "baseBranch">>,
 ): ReadonlyArray<PullRequestTimelineEvent> {
   return [
     {
@@ -601,10 +602,12 @@ export function buildPullRequestTimeline(
             id: "merged",
             at: detail.mergedAt,
             kind: "merged" as const,
-            title: "Pull request merged",
+            title: detail.mergeCommit
+              ? `merged commit ${detail.mergeCommit.oid.slice(0, 7)}${detail.baseBranch ? ` into ${detail.baseBranch}` : ""}`
+              : "Pull request merged",
             body: null,
             markdown: false,
-            url: null,
+            url: detail.mergeCommit?.url ?? null,
             actor: null,
             commitAuthors: [],
             additions: null,

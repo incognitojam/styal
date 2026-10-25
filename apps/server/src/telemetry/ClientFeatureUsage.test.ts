@@ -11,6 +11,57 @@ const decode = Schema.decodeUnknownEffect(ForkClientUsageInput);
 const isUsage = Schema.is(ForkClientUsageInput);
 
 it.effect(
+  "records merge commit links once with an outcome and excludes commit and check content",
+  () =>
+    Effect.gen(function* () {
+      const events: unknown[] = [];
+      const report = yield* ClientFeatureUsage.reporter({ surface: "web" }).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, {
+          record: (event, properties) =>
+            Effect.sync(() => {
+              events.push({ event, properties });
+            }),
+          flush: Effect.void,
+        }),
+      );
+      for (const action of ["open_commit", "open_check"] as const) {
+        for (const outcome of ["success", "failure"] as const) {
+          yield* report(
+            yield* decode({
+              feature: "pull-request-merge-commit-checks",
+              action,
+              outcome,
+              oid: "b".repeat(40),
+              url: "https://example.com/check",
+              name: "Deploy",
+              number: 7,
+            }),
+          );
+          expect(events.at(-1)).toEqual({
+            event: "feature.used",
+            properties: {
+              feature: "pull-request-merge-commit-checks",
+              action,
+              outcome,
+              source: "user",
+              surface: "web",
+              forkClientUsageVersion: FORK_CLIENT_USAGE_VERSION,
+            },
+          });
+        }
+      }
+      expect(events).toHaveLength(4);
+      expect(
+        isUsage({
+          feature: "pull-request-merge-commit-checks",
+          action: "rerun",
+          outcome: "success",
+        }),
+      ).toBe(false);
+    }),
+);
+
+it.effect(
   "records deployment interactions with bounded outcomes and no PR or environment content",
   () =>
     Effect.gen(function* () {

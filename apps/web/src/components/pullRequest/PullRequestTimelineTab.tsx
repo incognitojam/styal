@@ -407,7 +407,13 @@ function CommitEvent({
   );
 }
 
-function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
+function LifecycleEvent({
+  event,
+  onOpen,
+}: {
+  event: PullRequestTimelineEvent;
+  onOpen: (url: string) => void;
+}) {
   const presentation =
     event.kind === "opened"
       ? {
@@ -417,7 +423,7 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
       : event.kind === "merged"
         ? {
             icon: <PullRequestGlyph.merged className="size-3.5" />,
-            label: "Pull request merged",
+            label: event.title,
           }
         : {
             icon: <PullRequestGlyph.closed className="size-3.5" />,
@@ -430,7 +436,19 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
       <div className="py-1.5 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           {event.actor ? <ActorName actor={event.actor} /> : null}
-          <span className="font-semibold text-foreground">{presentation.label}</span>
+          {event.url ? (
+            <button
+              type="button"
+              className="cursor-pointer font-semibold text-foreground hover:underline"
+              onClick={() => {
+                if (event.url) onOpen(event.url);
+              }}
+            >
+              {presentation.label}
+            </button>
+          ) : (
+            <span className="font-semibold text-foreground">{presentation.label}</span>
+          )}
         </div>
         <div className="mt-0.5 text-2xs text-muted-foreground">
           <RelativeTime timestamp={event.at} />
@@ -600,7 +618,7 @@ export function PullRequestTimelineTab({
                 />
               );
             }
-            return <LifecycleEvent key={event.id} event={event} />;
+            return <LifecycleEvent key={event.id} event={event} onOpen={openOnHost} />;
           })}
         </div>
 

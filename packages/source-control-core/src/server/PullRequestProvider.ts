@@ -19,6 +19,7 @@ import type {
   PullRequestListFilters,
   PullRequestListState,
   PullRequestMergeCapabilities,
+  PullRequestMergeCommit,
   PullRequestMergeMethod,
   PullRequestMergeReadiness,
   PullRequestMergeability,
@@ -186,6 +187,7 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly closedAt: string | null;
   readonly reviewers: ReadonlyArray<PullRequestActor>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
+  readonly mergeCommit?: PullRequestMergeCommit | null;
   readonly deployments?: ReadonlyArray<PullRequestDeployment>;
   readonly deploymentsTruncated?: boolean;
   readonly mergeCapabilities: PullRequestMergeCapabilities;

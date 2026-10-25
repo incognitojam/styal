@@ -161,6 +161,11 @@ works. This overview focuses on desktop and web; the mobile app is a work in pro
   update methods. [Code review](./source-control.md#review-and-merge).
   Compared with [T3 Code revision a493946](https://github.com/pingdotgg/t3code/tree/a493946bb42ab16e1d18285dac3e9e4603651330),
   checked September 23, 2026.
+- **Checks on the merge commit.** Merged GitHub pull requests show the resulting commit and its
+  checks separately from the pull request's checks on web, desktop, and mobile, with links to the
+  commit and individual checks. [Code review](./source-control.md#review-and-merge).
+  Compared with [T3 Code revision d0b9e9d](https://github.com/pingdotgg/t3code/tree/d0b9e9d3c72b83bb92670fc1fa3afac5bf60e4e8),
+  checked October 25, 2026, which reads the last pull request commit's checks.
 - **Workflows waiting for approval on release pull requests.** T3 Code shows and approves fork
   workflows waiting for a maintainer. styal also finds runs GitHub holds on pull requests a
   workflow opened with `GITHUB_TOKEN`, such as Changesets release pull requests, offers

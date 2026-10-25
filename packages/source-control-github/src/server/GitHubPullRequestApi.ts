@@ -30,6 +30,7 @@ import {
   type PullRequestListFilters,
   type PullRequestListState,
   type PullRequestMergeMethod,
+  type PullRequestMergeCommit,
   type PullRequestOmittedFileStat,
   type PullRequestReaction,
   type PullRequestReactionContent,
@@ -77,6 +78,7 @@ import {
   toLabelCandidates,
   toPullRequestActivityPage,
   toPullRequestCheckContextsPage,
+  toCommitCheckContextsPage,
   toPullRequestCore,
   toPullRequestFilesViewedPage,
   toPullRequestHeads,
@@ -1583,10 +1585,80 @@ export const make = Effect.gen(function* () {
                 })),
               ),
           ),
+          Effect.flatMap((core) =>
+            core.state !== "merged"
+              ? Effect.succeed(core)
+              : readMergeCommit(input, allowReserve).pipe(
+                  Effect.map((mergeCommit) => ({ ...core, mergeCommit })),
+                ),
+          ),
         );
       }),
     );
   };
+
+  const decodeMergeResult = decodeJsonResult(
+    Schema.Struct({
+      merged: Schema.Boolean,
+      merge_commit_sha: Schema.NullOr(TrimmedNonEmptyString),
+    }),
+  );
+  const readMergeCommit = Effect.fnUntraced(function* (
+    input: Parameters<GitHubPullRequestApi["Service"]["getPullRequestDetail"]>[0],
+    allowReserve: boolean,
+  ) {
+    const { owner, name } = parseRepositorySelector(input.repository);
+    const target = { ...input, operation: "getPullRequestDetail", allowReserve };
+    // REST defines this field for merge, squash and rebase. Before merging it names a temporary
+    // test commit, so both the core and this response must independently confirm the merge.
+    const result = yield* api
+      .rest({
+        ...target,
+        path: `repos/${owner}/${name}/pulls/${input.number}`,
+      })
+      .pipe(
+        Effect.flatMap((response) =>
+          response.truncated
+            ? Effect.succeed(null)
+            : decodeWith(input.cwd, target.operation, decodeMergeResult, response.body),
+        ),
+        Effect.orElseSucceed(() => null),
+      );
+    const oid = result?.merged ? result.merge_commit_sha : null;
+    if (oid == null || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(oid)) return null;
+    const checks = yield* readPages(
+      GraphQLClient.pages(client.CommitCheckContexts, {
+        variables: { owner, name, oid },
+        connection: (result) => {
+          const page = toCommitCheckContextsPage(result);
+          return page === null
+            ? null
+            : {
+                ...page,
+                pageInfo: { hasNextPage: page.nextCursor !== null, endCursor: page.nextCursor },
+              };
+        },
+      }),
+      {
+        ...target,
+        maxPages: CHECK_CONTEXT_PAGES,
+        hasNextPage: (page) => page.nextCursor !== null,
+      },
+    ).pipe(
+      graphql(target),
+      Effect.map(({ pages, truncated }) =>
+        truncated || pages.length === 0 || pages.some((page) => page.oid !== oid)
+          ? null
+          : pullRequestChecksFromContexts(pages.flatMap((page) => page.contexts)).checks,
+      ),
+      Effect.orElseSucceed(() => null),
+    );
+    return {
+      oid,
+      url: `https://${input.host}/${owner}/${name}/commit/${oid}`,
+      checks,
+    } satisfies PullRequestMergeCommit;
+  });
 
   const workflowApprovalLimit = 1_000;
 

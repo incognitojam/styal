@@ -1,4 +1,5 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { mergedPullRequestCommit } from "@t3tools/client-runtime/pull-request-merge-commit";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type {
   EnvironmentId,
@@ -29,6 +30,7 @@ import { RelativeTime } from "~/components/RelativeTime";
 import { Button } from "../ui/button";
 import { PullRequestEditButton } from "./PullRequestEditButton";
 import { PullRequestDeployments } from "./PullRequestDeployments";
+import { PullRequestMergeCommitChecks } from "./PullRequestMergeCommitChecks";
 import { pullRequestDeploymentsTitle } from "./pullRequestDeployments.logic";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
@@ -716,6 +718,15 @@ export function PullRequestSummaryTab({
           ) : null}
         </div>
       </section>
+
+      {mergedPullRequestCommit(detail) !== undefined ? (
+        <section aria-label="Merge commit" className="px-4 py-2">
+          <PullRequestMergeCommitChecks
+            commit={mergedPullRequestCommit(detail) ?? null}
+            environmentId={environmentId}
+          />
+        </section>
+      ) : null}
 
       {detail.deployments && detail.deployments.length > 0 ? (
         <Section

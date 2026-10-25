@@ -128,6 +128,15 @@ export const PullRequestCheck = Schema.Struct({
 });
 export type PullRequestCheck = typeof PullRequestCheck.Type;
 
+export const PullRequestMergeCommit = Schema.Struct({
+  /** The resulting commit reported by the host after merging, including squash and rebase. */
+  oid: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  /** Null when checks could not be read completely; an empty array means no checks reported. */
+  checks: Schema.NullOr(Schema.Array(PullRequestCheck)),
+});
+export type PullRequestMergeCommit = typeof PullRequestMergeCommit.Type;
+
 export const PullRequestReactionContent = Schema.Literals([
   "thumbs-up",
   "thumbs-down",
@@ -636,6 +645,8 @@ export const PullRequestDetail = Schema.Struct({
   reviewers: Schema.Array(PullRequestActor),
   labels: Schema.Array(PullRequestLabel),
   checks: Schema.Array(PullRequestCheck),
+  /** Absent on unsupported hosts/older servers; null when the resulting commit is unavailable. */
+  mergeCommit: Schema.optional(Schema.NullOr(PullRequestMergeCommit)),
   /** Latest deployment per environment, where the host reports deployments for this PR. */
   deployments: Schema.optional(Schema.Array(PullRequestDeployment)),
   deploymentsTruncated: Schema.optional(Schema.Boolean),

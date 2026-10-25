@@ -208,6 +208,7 @@ export function PullRequestChecksTab({
   pendingFinding,
   fixCheckLabel = "Fix",
   onFixFinding,
+  embedded = false,
 }: {
   checks: ReadonlyArray<PullRequestCheck>;
   /** Newer status contradicts `checks`; the runs are hidden until the detail is refreshed. */
@@ -229,6 +230,7 @@ export function PullRequestChecksTab({
   pendingFinding?: string | null;
   fixCheckLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
+  embedded?: boolean;
 }) {
   const state = pullRequestChecksState(checks);
   // Null for a set nobody can call passed or failed — every run skipped, say. The list still
@@ -291,7 +293,7 @@ export function PullRequestChecksTab({
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className={embedded ? undefined : "h-full overflow-y-auto"}>
       {mergePresentation || rollup || requiredBranchUpdate || waitingRuns.length > 0 ? (
         // The verdict rides the top of the scroll box the way the summary's section headings do,
         // so a long list of runs never scrolls its own answer out of sight.

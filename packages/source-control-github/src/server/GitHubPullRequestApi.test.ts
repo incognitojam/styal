@@ -767,6 +767,278 @@ it.effect(
 );
 
 layer("GitHubPullRequestApi.layer", (it) => {
+  const mergedOid = "b".repeat(40);
+  const mergeInput = { cwd: "/w", repository: "acme/web", host: "github.com", number: 7 };
+  const commitChecksPage = (checks: ReadonlyArray<unknown>, after: string | null = null) => ({
+    data: {
+      repository: {
+        object: {
+          __typename: "Commit",
+          oid: mergedOid,
+          statusCheckRollup: {
+            contexts: {
+              nodes: checks,
+              pageInfo: { hasNextPage: after !== null, endCursor: after },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  it.effect(
+    "keeps checks on the resulting merge, squash or rebase SHA separate from a deleted source branch",
+    () =>
+      Effect.gen(function* () {
+        for (const method of ["merge", "squash", "rebase"]) {
+          const oid = { merge: "b", squash: "c", rebase: "d" }[method]!.repeat(40);
+          mockedExecute.mockImplementation((call) => {
+            if (call.kind === "rest")
+              return Effect.succeed(output(encodeJson({ merged: true, merge_commit_sha: oid })));
+            if (call.operationName === "CommitCheckContexts")
+              return Effect.succeed(
+                output(
+                  encodeJson({
+                    data: {
+                      repository: {
+                        object: {
+                          ...commitChecksPage([
+                            checkRun({
+                              name: "Deploy",
+                              conclusion: "FAILURE",
+                              detailsUrl: "https://example.com/runs/merge",
+                            }),
+                          ]).data.repository.object,
+                          oid,
+                        },
+                      },
+                    },
+                  }),
+                ),
+              );
+            return Effect.succeed(
+              output(
+                encodeJson(
+                  coreResponse({
+                    state: "MERGED",
+                    mergedAt: "2026-07-02T00:00:00Z",
+                    headRef: null,
+                    baseRef: null,
+                    commits: {
+                      nodes: [
+                        {
+                          commit: {
+                            statusCheckRollup: {
+                              contexts: {
+                                nodes: [checkRun({ name: "Tests", conclusion: "SUCCESS" })],
+                                pageInfo: { hasNextPage: false },
+                              },
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  }),
+                ),
+              ),
+            );
+          });
+          const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+          const detail = yield* cli.getPullRequestDetail(mergeInput);
+          expect(detail.state).toBe("merged");
+          expect(detail.checks.map((check) => check.status)).toEqual(["success"]);
+          expect(detail.mergeCommit).toEqual({
+            oid,
+            url: `https://github.com/acme/web/commit/${oid}`,
+            checks: [
+              {
+                name: "Deploy",
+                status: "failure",
+                description: null,
+                url: "https://example.com/runs/merge",
+              },
+            ],
+          });
+          expect(variablesOf("CommitCheckContexts").at(-1)?.["oid"]).toBe(oid);
+        }
+        expect(
+          mockedExecute.mock.calls
+            .filter(([call]) => call.kind === "rest")
+            .every(
+              ([call]) =>
+                call.kind === "rest" &&
+                call.path === "repos/acme/web/pulls/7" &&
+                (call.method === undefined || call.method === "GET"),
+            ),
+        ).toBe(true);
+      }),
+  );
+
+  it.effect("reads merge checks after an open PR merges and checks are reported later", () =>
+    Effect.gen(function* () {
+      let merged = false;
+      let checks: ReadonlyArray<unknown> = [];
+      mockedExecute.mockImplementation((call) =>
+        Effect.succeed(
+          output(
+            encodeJson(
+              call.kind === "rest"
+                ? { merged, merge_commit_sha: mergedOid }
+                : call.operationName === "CommitCheckContexts"
+                  ? commitChecksPage(checks)
+                  : coreResponse({
+                      state: merged ? "MERGED" : "OPEN",
+                      mergedAt: merged ? "2026-07-02T00:00:00Z" : null,
+                    }),
+            ),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      expect((yield* cli.getPullRequestDetail(mergeInput)).mergeCommit).toBeUndefined();
+      expect(mockedExecute.mock.calls.some(([call]) => call.kind === "rest")).toBe(false);
+      merged = true;
+      expect((yield* cli.getPullRequestDetail(mergeInput)).mergeCommit?.checks).toEqual([]);
+      checks = [checkRun({ name: "Deploy", status: "IN_PROGRESS" })];
+      expect((yield* cli.getPullRequestDetail(mergeInput)).mergeCommit?.checks?.[0]?.status).toBe(
+        "pending",
+      );
+      checks = [checkRun({ name: "Deploy", conclusion: "FAILURE" })];
+      expect((yield* cli.getPullRequestDetail(mergeInput)).mergeCommit?.checks?.[0]?.status).toBe(
+        "failure",
+      );
+    }),
+  );
+
+  it.effect(
+    "does not use a temporary test merge SHA or invent a commit when host data is unavailable",
+    () =>
+      Effect.gen(function* () {
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        for (const response of [
+          { merged: false, merge_commit_sha: mergedOid },
+          { merged: true, merge_commit_sha: null },
+          {},
+        ]) {
+          mockedExecute.mockImplementation((call) =>
+            Effect.succeed(
+              output(
+                encodeJson(call.kind === "rest" ? response : coreResponse({ state: "MERGED" })),
+              ),
+            ),
+          );
+          expect((yield* cli.getPullRequestDetail(mergeInput)).mergeCommit).toBeNull();
+        }
+        expect(variablesOf("CommitCheckContexts")).toEqual([]);
+      }),
+  );
+
+  it.effect(
+    "retains the resulting commit when checks are unreadable rather than claiming no checks",
+    () =>
+      Effect.gen(function* () {
+        mockedExecute.mockImplementation((call) =>
+          Effect.succeed(
+            output(
+              encodeJson(
+                call.kind === "rest"
+                  ? { merged: true, merge_commit_sha: mergedOid }
+                  : call.operationName === "CommitCheckContexts"
+                    ? { data: { repository: { object: null } } }
+                    : coreResponse({ state: "MERGED" }),
+              ),
+            ),
+          ),
+        );
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        const detail = yield* cli.getPullRequestDetail(mergeInput);
+        expect(detail.mergeCommit).toEqual({
+          oid: mergedOid,
+          url: `https://github.com/acme/web/commit/${mergedOid}`,
+          checks: null,
+        });
+      }),
+  );
+
+  it.effect(
+    "keeps unreadable and incomplete merge checks unavailable, with the commit still linked",
+    () =>
+      Effect.gen(function* () {
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        for (const scenario of ["rest-error", "checks-error", "incomplete"] as const) {
+          mockedExecute.mockImplementation((call) => {
+            if (call.kind === "rest")
+              return scenario === "rest-error"
+                ? Effect.fail(
+                    new GitHubRequestPolicy.GitHubApiResponseError({
+                      host: call.host,
+                      operation: call.operation,
+                      status: 403,
+                    }),
+                  )
+                : Effect.succeed(output(encodeJson({ merged: true, merge_commit_sha: mergedOid })));
+            if (call.operationName === "CommitCheckContexts")
+              return scenario === "checks-error"
+                ? Effect.fail(
+                    new GitHubRequestPolicy.GitHubApiResponseError({
+                      host: call.host,
+                      operation: call.operation,
+                      status: 403,
+                    }),
+                  )
+                : Effect.succeed(
+                    output(
+                      encodeJson(
+                        commitChecksPage(
+                          [checkRun({ name: "Tests", conclusion: "SUCCESS" })],
+                          "repeated-cursor",
+                        ),
+                      ),
+                    ),
+                  );
+            return Effect.succeed(output(encodeJson(coreResponse({ state: "MERGED" }))));
+          });
+          const detail = yield* cli.getPullRequestDetail(mergeInput);
+          expect(detail.state).toBe("merged");
+          if (scenario === "rest-error") expect(detail.mergeCommit).toBeNull();
+          else
+            expect(detail.mergeCommit).toEqual({
+              oid: mergedOid,
+              url: `https://github.com/acme/web/commit/${mergedOid}`,
+              checks: null,
+            });
+        }
+      }),
+  );
+
+  it.effect("includes failures beyond the first page of merge checks", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((call) =>
+        Effect.succeed(
+          output(
+            encodeJson(
+              call.kind === "rest"
+                ? { merged: true, merge_commit_sha: mergedOid }
+                : call.operationName === "CommitCheckContexts"
+                  ? call.variables?.["after"]
+                    ? commitChecksPage([checkRun({ name: "Deploy", conclusion: "FAILURE" })])
+                    : commitChecksPage([checkRun({ name: "Tests", conclusion: "SUCCESS" })], "next")
+                  : coreResponse({ state: "MERGED" }),
+            ),
+          ),
+        ),
+      );
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      expect(
+        (yield* cli.getPullRequestDetail(mergeInput)).mergeCommit?.checks?.map(
+          (check) => check.status,
+        ),
+      ).toEqual(["success", "failure"]);
+      expect(
+        variablesOf("CommitCheckContexts").map((variables) => variables["after"] ?? null),
+      ).toEqual([null, "next"]);
+    }),
+  );
   it.effect("holds background previews once an answer reports the reserve, until it resets", () =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;

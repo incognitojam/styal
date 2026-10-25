@@ -73,6 +73,8 @@ Each time the desktop app starts, it records how long its local server and windo
 
 Pull request deployment controls record whether someone opens an environment, opens deployment logs, or expands the environment list, and whether the action succeeded. Environment names, URLs, repositories, pull request numbers, and commit hashes are not collected.
 
+On web and desktop, links in a pull request's merge commit section record whether someone opens the commit or a check's details, and whether the browser accepted the link. Commit hashes, check names, URLs, repositories, and pull request numbers are not collected.
+
 Usage events do not include prompts, responses, file contents, authentication tokens, conversation
 IDs, raw provider events, or child-agent output. Child-agent token use is excluded from the totals.
 

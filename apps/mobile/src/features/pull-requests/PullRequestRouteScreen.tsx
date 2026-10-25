@@ -34,6 +34,7 @@ import { usePullRequestReviewDraft } from "./usePullRequestReviewDraft";
 import { usePullRequestFilesViewed } from "./usePullRequestFilesViewed";
 import { usePullRequestPermissions } from "./usePullRequestPermissions";
 import { usePullRequestAction } from "./usePullRequestAction";
+import { usePullRequestMergeCommitRefresh } from "./usePullRequestMergeCommitRefresh";
 import { annotatePullRequestDiff, reviewPosition } from "./pullRequestDiffComments";
 import { usePullRequestFileFilter } from "./usePullRequestFileFilter";
 import { isPullRequestTestFile } from "./pullRequestFileFilters";
@@ -113,6 +114,7 @@ import { PullRequestMarkdownRepository } from "./PullRequestMarkdown";
 import {
   PullRequestStatusMenu,
   PullRequestChecksRow,
+  PullRequestMergeCommitRow,
   PullRequestBranchRow,
   PullRequestReviewersRow,
 } from "./PullRequestStatusRows";
@@ -256,6 +258,7 @@ function PullRequestOverview(props: {
     <View className="gap-5">
       <PullRequestStackCard params={props.params} state={props.stack} />
       <PullRequestCardGroup>
+        <PullRequestMergeCommitRow pr={pr} params={props.params} />
         <PullRequestChecksRow pr={pr} params={props.params} />
         <PullRequestReviewersRow pr={pr} params={props.params} />
         <Animated.View layout={PR_ROW_LAYOUT}>
@@ -348,6 +351,7 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
   const { refresh: refreshDetail } = result;
   useFocusEffect(() => refreshDetail());
   const pr = result.data;
+  usePullRequestMergeCommitRefresh(params, pr?.provider === "github" && pr.state !== "closed");
   const summary = params.initialSummary;
   const identity = pr ?? summary;
   const permissions = usePullRequestPermissions(params, pr);

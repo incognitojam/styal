@@ -204,6 +204,12 @@ GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding
 after auto-merge is on are merged too, unless the host turns auto-merge off. GitHub also supports
 approving waiting workflows and opening a revert pull request for a merged change.
 
+For a merged GitHub pull request, **Merge commit** shows the resulting commit and its own checks
+in Summary and Checks on web and desktop, and in the mobile overview. Open the commit SHA or a
+check's **Details** to inspect it on GitHub. Pull request checks remain separate: their passing
+result does not say whether the merge commit passed. Squash and rebase merges show the resulting
+commit GitHub reports. Missing commit data or unreadable checks are shown as unavailable.
+
 GitHub holds some workflow runs until someone with write access approves them: runs from fork
 pull requests, depending on the repository's settings, and runs on a pull request that a workflow
 opened or updated with `GITHUB_TOKEN`, such as a Changesets or release-please release pull request.

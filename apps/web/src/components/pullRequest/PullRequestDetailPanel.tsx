@@ -92,6 +92,11 @@ import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import { mergedPullRequestCommit } from "@t3tools/client-runtime/pull-request-merge-commit";
+import {
+  PullRequestMergeCommitChecks,
+  PullRequestMergeCommitStatus,
+} from "./PullRequestMergeCommitChecks";
 import {
   pullRequestEnvironment,
   pullRequestListEntryToSummary,
@@ -914,6 +919,7 @@ function PullRequestDetailPanelBody({
   // different pull request every time it is opened.
   useLiveRefresh(() => void refreshDetailFromHost("detail"), {
     key: `pull-request:${environmentId}:${pullRequestKey}`,
+    ...(detail?.provider === "github" && detail.state !== "closed" ? { intervalMs: 60_000 } : {}),
   });
   const [isInvalidating, setIsInvalidating] = useState(false);
   const refreshing = isInvalidating || detailQuery.isPending;
@@ -1595,14 +1601,16 @@ function PullRequestDetailPanelBody({
           (entry) => entry.outcome === "approved" && !entry.stale,
         ).length
       : 0;
-  const mergeVerdict = detail
-    ? pullRequestMergeVerdict({
-        checks: detail.checks,
-        isDraft: detail.isDraft,
-        mergeReadiness: detail.mergeReadiness,
-        compact: true,
-      })
-    : null;
+  const mergeCommit = detail === null ? undefined : mergedPullRequestCommit(detail);
+  const mergeVerdict =
+    detail && detail.state !== "merged"
+      ? pullRequestMergeVerdict({
+          checks: detail.checks,
+          isDraft: detail.isDraft,
+          mergeReadiness: detail.mergeReadiness,
+          compact: true,
+        })
+      : null;
   const checksMark =
     detail && checksState !== null ? (
       <PullRequestChecksPopover
@@ -1935,7 +1943,12 @@ function PullRequestDetailPanelBody({
                   />
                   <TooltipPopup side="top">{detail.title}</TooltipPopup>
                 </Tooltip>
-                {mergeVerdict ? (
+                {mergeCommit !== undefined ? (
+                  <PullRequestMergeCommitStatus
+                    commit={mergeCommit}
+                    onSelect={() => setTab("checks")}
+                  />
+                ) : mergeVerdict ? (
                   <span className="flex shrink-0 items-center gap-1 text-3xs text-muted-foreground">
                     {mergeVerdict.policy === null ? (
                       checksMark
@@ -2777,13 +2790,20 @@ function PullRequestDetailPanelBody({
             {tab === "summary" ? (
               <span className="ml-auto inline-flex shrink-0 items-center gap-2">
                 {approveWorkflowsButton}
-                <PullRequestChecksNavButton
-                  checks={detail.checks}
-                  isDraft={detail.isDraft}
-                  mergeReadiness={detail.mergeReadiness}
-                  {...(checksStale ? { staleChecksState: checksState } : {})}
-                  onSelect={() => setTab("checks")}
-                />
+                {mergeCommit !== undefined ? (
+                  <PullRequestMergeCommitStatus
+                    commit={mergeCommit}
+                    onSelect={() => setTab("checks")}
+                  />
+                ) : (
+                  <PullRequestChecksNavButton
+                    checks={detail.checks}
+                    isDraft={detail.state === "open" && detail.isDraft}
+                    mergeReadiness={detail.state === "open" ? detail.mergeReadiness : undefined}
+                    {...(checksStale ? { staleChecksState: checksState } : {})}
+                    onSelect={() => setTab("checks")}
+                  />
+                )}
               </span>
             ) : tab === "timeline" ? (
               <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
@@ -2927,20 +2947,42 @@ function PullRequestDetailPanelBody({
             ) : null}
             {mountedTabs.has("checks") ? (
               <div className={cn("absolute inset-0", tab !== "checks" && "invisible")}>
-                <PullRequestChecksTab
-                  checks={detail.checks}
-                  stale={checksStale}
-                  onRefresh={refreshFromHost}
-                  isDraft={detail.isDraft}
-                  mergeReadiness={detail.mergeReadiness}
-                  requiredBranchUpdate={requiredBranchUpdate}
-                  workflowApprovalAction={approveWorkflowsButton}
-                  actionPending={actionPending}
-                  onUpdateBranch={(method) => void perform("update-branch", undefined, method)}
-                  pendingFinding={handoff}
-                  fixCheckLabel={handoffLabels.fixCheck}
-                  {...(canFixFindings ? { onFixFinding: startFixFinding } : {})}
-                />
+                <div className="h-full overflow-y-auto">
+                  {mergeCommit !== undefined ? (
+                    <section aria-label="Merge commit" className="px-4 py-3">
+                      <PullRequestMergeCommitChecks
+                        commit={mergeCommit}
+                        environmentId={environmentId}
+                        expanded
+                      />
+                    </section>
+                  ) : null}
+                  {detail.state === "merged" ? (
+                    <h3 className="flex items-center gap-2 px-4 pt-3 text-xs font-medium">
+                      Pull request
+                      {detail.headSha ? (
+                        <span className="font-mono text-muted-foreground">
+                          {detail.headSha.slice(0, 7)}
+                        </span>
+                      ) : null}
+                    </h3>
+                  ) : null}
+                  <PullRequestChecksTab
+                    checks={detail.checks}
+                    stale={checksStale}
+                    onRefresh={refreshFromHost}
+                    embedded
+                    isDraft={detail.state === "open" && detail.isDraft}
+                    mergeReadiness={detail.state === "open" ? detail.mergeReadiness : undefined}
+                    requiredBranchUpdate={requiredBranchUpdate}
+                    workflowApprovalAction={approveWorkflowsButton}
+                    actionPending={actionPending}
+                    onUpdateBranch={(method) => void perform("update-branch", undefined, method)}
+                    pendingFinding={handoff}
+                    fixCheckLabel={handoffLabels.fixCheck}
+                    {...(canFixFindings ? { onFixFinding: startFixFinding } : {})}
+                  />
+                </div>
               </div>
             ) : null}
             {mountedTabs.has("guide") ? (

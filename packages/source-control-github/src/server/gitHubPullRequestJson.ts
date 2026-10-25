@@ -16,6 +16,7 @@ import type {
   PullRequestFileViewedState,
   PullRequestLabel,
   PullRequestMergeCapabilities,
+  PullRequestMergeCommit,
   PullRequestMergeMethod,
   PullRequestMergeReadiness,
   PullRequestOmittedFileStat,
@@ -58,7 +59,8 @@ import type {
   Deployment,
   WorkflowApprovalSuites,
   ActorAvatars,
-  CheckContext,
+  CommitCheckContext,
+  CommitCheckContexts,
   LabelCandidates,
   PullRequestActivity,
   PullRequestCheckContexts,
@@ -540,6 +542,7 @@ export interface GitHubPullRequestDetail extends GitHubPullRequestListItem {
   readonly mergedAt: string | null;
   readonly closedAt: string | null;
   readonly checks: ReadonlyArray<PullRequestCheck>;
+  readonly mergeCommit?: PullRequestMergeCommit | null;
   readonly deployments?: ReadonlyArray<PullRequestDeployment>;
   readonly deploymentsTruncated?: boolean;
   /** Absent where GitHub did not report its repository-policy-aware verdict. */
@@ -1576,12 +1579,25 @@ export function toPullRequestActivityPage(
 /** A check context as the rollup reports it; opaque outside this module. */
 export type GitHubCheckContext = CheckFields;
 
-function toCheckContexts(nodes: ReadonlyArray<CheckContext>): ReadonlyArray<GitHubCheckContext> {
+function toCheckContexts(
+  nodes: ReadonlyArray<CommitCheckContext>,
+): ReadonlyArray<GitHubCheckContext> {
   return nodes.map((check) =>
     check.__typename === "CheckRun"
       ? { ...check, workflowName: check.checkSuite.workflowRun?.workflow.name ?? null }
       : check,
   );
+}
+
+export function toCommitCheckContextsPage(result: CommitCheckContexts.Result) {
+  const commit = result.repository?.object;
+  if (commit?.__typename !== "Commit") return null;
+  const contexts = commit.statusCheckRollup?.contexts;
+  return {
+    oid: commit.oid,
+    contexts: toCheckContexts(nodesOf(contexts)),
+    nextCursor: nextCursorOf(contexts?.pageInfo),
+  };
 }
 
 /** One page of the head commit's check contexts; null for a pull request GitHub did not find. */

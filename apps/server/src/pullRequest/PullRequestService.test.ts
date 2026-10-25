@@ -178,6 +178,66 @@ it.effect("refreshes deployment status and environment links with PR detail", ()
   }),
 );
 
+it.effect(
+  "refreshes a merged PR's resulting commit checks independently of unchanged passing PR checks",
+  () =>
+    Effect.gen(function* () {
+      let phase: "open" | "no-checks" | "pending" | "failure" | "unavailable" = "open";
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/w", repository: "acme/web" }),
+        ],
+        providers: [
+          fakeProvider(SourceControlProviderKind.make("github"), {
+            getChangeRequest: () =>
+              Effect.succeed({
+                ...changeRequestDetail(1),
+                state: phase === "open" ? "open" : "merged",
+                checks: [{ name: "Tests", status: "success", description: null, url: null }],
+                ...(phase === "open"
+                  ? {}
+                  : {
+                      mergeCommit:
+                        phase === "unavailable"
+                          ? null
+                          : {
+                              oid: "b".repeat(40),
+                              url: "https://github.com/acme/web/commit/" + "b".repeat(40),
+                              checks:
+                                phase === "no-checks"
+                                  ? []
+                                  : [
+                                      {
+                                        name: "Deploy",
+                                        status: phase,
+                                        description: null,
+                                        url: null,
+                                      },
+                                    ],
+                            },
+                    }),
+              }),
+          }),
+        ],
+      });
+      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+      assert.strictEqual((yield* service.detail(reference)).mergeCommit, undefined);
+      for (const next of ["no-checks", "pending", "failure", "unavailable"] as const) {
+        phase = next;
+        yield* service.invalidate({ reference, scope: "detail" });
+        const detail = yield* service.detail(reference);
+        assert.strictEqual(detail.state, "merged");
+        assert.strictEqual(detail.checks[0]?.status, "success");
+        if (next === "unavailable") assert.strictEqual(detail.mergeCommit, null);
+        else
+          assert.deepStrictEqual(
+            detail.mergeCommit?.checks?.map((check) => check.status),
+            next === "no-checks" ? [] : [next],
+          );
+      }
+    }),
+);
+
 it.effect("caches narrow previews and invalidates them after refresh or mutation", () =>
   Effect.gen(function* () {
     let reads = 0;

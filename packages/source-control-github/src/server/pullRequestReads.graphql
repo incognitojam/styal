@@ -14,16 +14,14 @@ query ActorAvatars($ids: [ID!]!) {
   }
 }
 
-# A check context of the head commit. `isRequired` is asked for on github.com only (`$required`):
-# an older Enterprise server may not know it, and an unknown field fails the whole read.
-fragment CheckContext on StatusCheckRollupContext {
+# Check details shared by pull-request heads and resulting commits.
+fragment CommitCheckContext on StatusCheckRollupContext {
   ... on StatusContext {
     context
     state
     targetUrl
     createdAt
     description
-    isRequired(pullRequestNumber: $number) @include(if: $required)
   }
   ... on CheckRun {
     name
@@ -32,11 +30,42 @@ fragment CheckContext on StatusCheckRollupContext {
     startedAt
     completedAt
     detailsUrl
-    isRequired(pullRequestNumber: $number) @include(if: $required)
     checkSuite {
       workflowRun {
         workflow {
           name
+        }
+      }
+    }
+  }
+}
+
+fragment CheckContext on StatusCheckRollupContext {
+  ...CommitCheckContext
+  ... on StatusContext {
+    isRequired(pullRequestNumber: $number) @include(if: $required)
+  }
+  ... on CheckRun {
+    isRequired(pullRequestNumber: $number) @include(if: $required)
+  }
+}
+
+# Read an immutable resulting SHA, never the current base tip or refs/pull/<number>/merge.
+query CommitCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) {
+      ... on Commit {
+        oid
+        statusCheckRollup {
+          contexts(first: 100, after: $after) {
+            nodes {
+              ...CommitCheckContext
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
         }
       }
     }
