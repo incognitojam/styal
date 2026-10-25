@@ -5567,7 +5567,7 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
-      - apps/web/src/components/chat/WorkflowRunReviewBanner.tsx
+      - apps/web/src/components/chat/WorkflowRunReviewPanel.tsx
       - packages/client-runtime/src/operations/commands.ts
       - packages/client-runtime/src/state/models.ts
       - packages/contracts/src/threadPullRequest.ts
