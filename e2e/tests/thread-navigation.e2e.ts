@@ -1,15 +1,13 @@
-import type { Page } from "playwright-core";
 import { afterAll, beforeAll, describe, it } from "vite-plus/test";
 
-import { type App, addProject, openApp, sendMessage } from "../support/browser.ts";
+import {
+  type App,
+  addProject,
+  expectConversation,
+  openApp,
+  sendMessage,
+} from "../support/browser.ts";
 import { type Environment, startEnvironment } from "../support/environment.ts";
-
-/** Waits until the chat shows `shown` and no longer shows `hidden`. */
-async function expectConversation(page: Page, shown: string, hidden: string): Promise<void> {
-  const userMessages = page.locator("[data-message-role=user]");
-  await userMessages.filter({ hasText: shown }).first().waitFor();
-  await userMessages.filter({ hasText: hidden }).first().waitFor({ state: "detached" });
-}
 
 describe("move between threads", () => {
   let environment: Environment;
