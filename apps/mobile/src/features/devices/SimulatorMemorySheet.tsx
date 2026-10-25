@@ -1,4 +1,7 @@
-import { simulatorMemorySelection } from "@t3tools/client-runtime/device/simulator-memory";
+import {
+  simulatorMemoryConfirmation,
+  simulatorMemorySelection,
+} from "@t3tools/client-runtime/device/simulator-memory";
 import type {
   DeviceActionInput,
   DeviceSession,
@@ -12,6 +15,7 @@ import { ScrollView, View } from "react-native";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import * as Dialog from "../../components/ui/Dialog";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { Sheet } from "../../components/ui/Sheet";
 import { deviceEnvironment } from "../../state/device";
@@ -76,6 +80,21 @@ export function SimulatorMemorySheet({
       });
   };
 
+  const confirmProfile = (mode: "standard" | "low-memory") => {
+    const confirmation = simulatorMemoryConfirmation(mode);
+    Dialog.confirm({
+      title: confirmation.title,
+      message: confirmation.message,
+      confirmText: confirmation.confirmLabel,
+      onConfirm: () =>
+        void apply(
+          mode === "standard"
+            ? { ...target, type: "setMemoryProfile", mode }
+            : { ...target, type: "setMemoryProfile", mode, keepCapabilities: keep },
+        ),
+    });
+  };
+
   return (
     <Sheet title="Simulator memory" onClose={onClose}>
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-4 p-4">
@@ -125,10 +144,6 @@ export function SimulatorMemorySheet({
                 />
               ))}
             </View>
-            <AppText className="text-foreground-muted">
-              Applying restarts this simulator and affects every app on it. The profile stays across
-              reboots until restored or the simulator is erased.
-            </AppText>
             {memory.persistent === false ? (
               <AppText>Low-memory profiles require iOS 18.5 or newer.</AppText>
             ) : null}
@@ -136,19 +151,12 @@ export function SimulatorMemorySheet({
               label="Apply low-memory profile"
               loading={pending}
               disabled={memory.persistent === false}
-              onPress={() =>
-                void apply({
-                  ...target,
-                  type: "setMemoryProfile",
-                  mode: "low-memory",
-                  keepCapabilities: keep,
-                })
-              }
+              onPress={() => confirmProfile("low-memory")}
             />
             <Button
               label="Restore standard services"
               disabled={pending}
-              onPress={() => void apply({ ...target, type: "setMemoryProfile", mode: "standard" })}
+              onPress={() => confirmProfile("standard")}
             />
             {memory.capabilities
               .filter((capability) => !capability.enabled)

@@ -1,10 +1,14 @@
-import { simulatorMemorySelection } from "@t3tools/client-runtime/device/simulator-memory";
+import {
+  simulatorMemoryConfirmation,
+  simulatorMemorySelection,
+} from "@t3tools/client-runtime/device/simulator-memory";
 import type { SimulatorMemoryState } from "@t3tools/contracts";
 import { useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
+import { requestConfirmDialog } from "~/confirmDialog";
 import type { DeviceControls } from "./useDeviceControls";
 
 export function SimulatorMemoryControls({
@@ -88,21 +92,23 @@ export function SimulatorMemoryControls({
           Low-memory profiles require iOS 18.5 or newer. You can still restore standard services.
         </p>
       ) : null}
-      <p className="text-xs text-muted-foreground">
-        Applying restarts this simulator and affects every app on it. The profile stays across
-        reboots until restored or the simulator is erased.
-      </p>
       <Button
         size="xs"
         variant="outline"
         disabled={controls.disabled || (mode === "low-memory" && memory.persistent === false)}
-        onClick={() =>
+        onClick={async () => {
+          const confirmation = simulatorMemoryConfirmation(mode);
+          const confirmed = await requestConfirmDialog(
+            `${confirmation.title}\n${confirmation.message}`,
+            { confirmLabel: confirmation.confirmLabel },
+          );
+          if (!confirmed) return;
           void controls.act(
             mode === "standard"
               ? { type: "setMemoryProfile", mode }
               : { type: "setMemoryProfile", mode, keepCapabilities: keep },
-          )
-        }
+          );
+        }}
       >
         {mode === "standard" ? "Restore standard services" : "Apply low-memory profile"}
       </Button>
