@@ -42,6 +42,7 @@ const LATEST_VERSION_TIMEOUT_MS = 4_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const PROBE_MAX_BYTES = 256 * 1_024;
 const MISE_WRAPPER_MAX_BYTES = 16 * 1_024;
+const VITE_PLUS_TRAMPOLINE_MAX_BYTES = 1_024 * 1_024;
 const PROVIDER_UPDATE_ACTION_TOAST_MESSAGE = "Install the update now or review provider settings.";
 
 const MAINTENANCE_CAPABILITIES_CACHE_TTL = Duration.hours(1);
@@ -259,6 +260,27 @@ const decodePackageName = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ name: Schema.String })),
 );
 
+const readVitePlusTrampoline = Effect.fn("readVitePlusTrampoline")(
+  function* (commandPath: string) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const chunks = yield* Stream.runCollect(
+      fileSystem.stream(commandPath, {
+        bytesToRead: VITE_PLUS_TRAMPOLINE_MAX_BYTES + 1,
+      }),
+    );
+    const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+    if (size === 0 || size > VITE_PLUS_TRAMPOLINE_MAX_BYTES) return null;
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
+  },
+  Effect.orElseSucceed(() => null),
+);
+
 const resolveCustomVitePlusMaintenance = Effect.fn("resolveCustomVitePlusMaintenance")(function* (
   definition: PackageManagedProviderMaintenanceDefinition,
   context: ProviderMaintenanceResolutionContext,
@@ -311,10 +333,55 @@ const resolveCustomVitePlusMaintenance = Effect.fn("resolveCustomVitePlusMainten
       "bin",
       context.platform === "win32" ? "vp.exe" : "vp",
     );
-    const realLauncher = yield* fileSystem
-      .realPath(launcher)
-      .pipe(Effect.orElseSucceed(() => null));
-    if (!realLauncher || !samePath(realLauncher, context.realCommandPath)) return manual;
+    if (context.platform === "win32") {
+      // Windows copies a trampoline rather than linking to vp.exe. Current
+      // copies pin their root in a sidecar; older copies derive it from bin/..
+      if (path.extname(context.resolvedCommandPath).toLowerCase() !== ".exe") return manual;
+      if (!(yield* fileSystem.exists(launcher).pipe(Effect.orElseSucceed(() => false))))
+        return manual;
+      const sidecar = path.join(path.dirname(context.resolvedCommandPath), `${binName}.shim`);
+      if (yield* fileSystem.exists(sidecar).pipe(Effect.orElseSucceed(() => true))) {
+        const pointer = yield* fileSystem
+          .readFileString(sidecar)
+          .pipe(Effect.orElseSucceed(() => ""));
+        const [header, ...lines] = pointer.trim().split(/\r?\n/);
+        const fields = new Map(
+          lines.flatMap((line) => {
+            const separator = line.indexOf("=");
+            return separator > 0
+              ? [[line.slice(0, separator), line.slice(separator + 1)] as const]
+              : [];
+          }),
+        );
+        const data = fields.get("data");
+        const bin = fields.get("bin");
+        if (
+          header !== "vite-plus-shim-v1" ||
+          fields.get("layout") !== "single-root" ||
+          !data ||
+          !samePath(path.join(data, "bin"), path.join(home, "bin")) ||
+          (bin !== undefined && !samePath(path.join(bin, "."), path.join(home, "bin")))
+        )
+          return manual;
+      } else {
+        const shim = yield* readVitePlusTrampoline(context.realCommandPath);
+        const template = yield* readVitePlusTrampoline(
+          path.join(home, "current", "bin", "vp-shim.exe"),
+        );
+        if (
+          !shim ||
+          !template ||
+          shim.byteLength !== template.byteLength ||
+          !shim.every((byte, index) => byte === template[index])
+        )
+          return manual;
+      }
+    } else {
+      const realLauncher = yield* fileSystem
+        .realPath(launcher)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (!realLauncher || !samePath(realLauncher, context.realCommandPath)) return manual;
+    }
     return makeProviderMaintenanceCapabilities({
       provider: definition.provider,
       packageName: definition.npmPackageName,

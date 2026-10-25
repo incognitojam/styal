@@ -126,9 +126,10 @@ function stdoutSpawner(onSpawn: (command: string, args: ReadonlyArray<string>) =
   });
 }
 
-function customVitePlusFixture(platform: "linux" | "win32") {
+function customVitePlusFixture(platform: "linux" | "win32", homeOverride?: string) {
   const path = platform === "win32" ? NodePath.win32 : NodePath.posix;
-  const home = platform === "win32" ? "D:\\Custom Tools\\vite-plus" : "/opt/custom-vp";
+  const home =
+    homeOverride ?? (platform === "win32" ? "D:\\Custom Tools\\vite-plus" : "/opt/custom-vp");
   const prefix = path.join(home, "js_runtime", "node", "24.21.0");
   const runtimeBin = platform === "win32" ? prefix : path.join(prefix, "bin");
   const modules = path.join(prefix, ...(platform === "win32" ? [] : ["lib"]), "node_modules");
@@ -625,31 +626,198 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
       }),
   );
 
-  it.effect.each(["linux", "win32"] as const)(
-    "uses the proven custom Vite+ launcher for managed packages on %s",
-    (platform) =>
+  it.effect("uses the proven custom Vite+ launcher for a POSIX managed package link", () =>
+    Effect.gen(function* () {
+      const fixture = customVitePlusFixture("linux");
+      const launcher = fixture.path.join(fixture.home, "current", "bin", "vp");
+      fixture.files.set(fixture.configPath, JSON.stringify({ ...fixture.config, source: "vp" }));
+      const capabilities = yield* resolveCustomVitePlus({ ...fixture, real: launcher });
+      expect(capabilities.update).toMatchObject({
+        executable: launcher,
+        args: ["i", "-g", "@example/package-tool"],
+        env: fixture.env,
+        lockKey: "vite-plus-global",
+      });
+      expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args).toEqual([
+        "i",
+        "-g",
+        "@example/package-tool@2.0.0",
+      ]);
+    }),
+  );
+
+  const copiedVitePlusTrampoline = (home?: string) => {
+    const fixture = customVitePlusFixture("win32", home);
+    const shim = fixture.path.join(fixture.home, "bin", "package-tool.exe");
+    const launcher = fixture.path.join(fixture.home, "current", "bin", "vp.exe");
+    const sidecar = fixture.path.join(fixture.home, "bin", "package-tool.shim");
+    fixture.files.set(fixture.configPath, JSON.stringify({ ...fixture.config, source: "vp" }));
+    fixture.files.set(shim, "MZ synthetic copied trampoline");
+    fixture.files.set(launcher, "MZ synthetic Vite+ payload");
+    fixture.files.set(
+      sidecar,
+      `vite-plus-shim-v1\nlayout=single-root\ndata=${fixture.home}\ncache=${fixture.path.join(fixture.home, "cache")}\nbin=${fixture.path.join(fixture.home, "bin")}\n`,
+    );
+    const binaryReads: Array<{ file: string; limit: number }> = [];
+    return {
+      ...fixture,
+      shim,
+      real: shim,
+      launcher,
+      sidecar,
+      binaryReads,
+      fileSystem: FileSystem.makeNoop({
+        ...fixture.fileSystem,
+        stream: (file, options) => {
+          const content = fixture.files.get(file);
+          if (content === undefined) return fixture.fileSystem.stream(file, options);
+          const limit = typeof options?.bytesToRead === "number" ? options.bytesToRead : Infinity;
+          binaryReads.push({ file, limit });
+          const bytes = new TextEncoder().encode(content).subarray(0, limit);
+          return Stream.fromIterable([bytes.subarray(0, 8), bytes.subarray(8)]);
+        },
+      }),
+    };
+  };
+
+  it.effect.each([
+    "D:\\Custom Tools\\vite-plus",
+    "C:\\Users\\Synthetic\\AppData\\Local\\vite-plus",
+    "C:\\Users\\Synthetic\\.vite-plus",
+  ])("updates a copied Windows Vite+ trampoline at %s with VP_HOME set", (home) =>
+    Effect.gen(function* () {
+      const fixture = copiedVitePlusTrampoline(home);
+      expect(fixture.real).toBe(fixture.shim);
+      expect(fixture.real).not.toBe(fixture.launcher);
+      const capabilities = yield* resolveCustomVitePlus(fixture);
+      expect(capabilities.update).toMatchObject({
+        executable: fixture.launcher,
+        args: ["i", "-g", "@example/package-tool"],
+        env: fixture.env,
+        lockKey: "vite-plus-global",
+      });
+      expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args).toEqual([
+        "i",
+        "-g",
+        "@example/package-tool@2.0.0",
+      ]);
+    }),
+  );
+
+  it.effect(
+    "accepts a copied trampoline sidecar with BOM and CRLF without an optional bin field",
+    () =>
       Effect.gen(function* () {
-        const fixture = customVitePlusFixture(platform);
-        const launcher = fixture.path.join(
-          fixture.home,
-          "current",
-          "bin",
-          platform === "win32" ? "vp.exe" : "vp",
+        const fixture = copiedVitePlusTrampoline();
+        fixture.files.set(
+          fixture.sidecar,
+          `\uFEFFvite-plus-shim-v1\r\nlayout=single-root\r\ndata=${fixture.home}\r\n`,
         );
-        fixture.files.set(fixture.configPath, JSON.stringify({ ...fixture.config, source: "vp" }));
-        const capabilities = yield* resolveCustomVitePlus({ ...fixture, real: launcher });
+        expect((yield* resolveCustomVitePlus(fixture)).update?.executable).toBe(fixture.launcher);
+      }),
+  );
+
+  it.effect.each([
+    "D:\\Custom Tools\\vite-plus",
+    "C:\\Users\\Synthetic\\AppData\\Local\\vite-plus",
+    "C:\\Users\\Synthetic\\.vite-plus",
+  ])(
+    "updates a sidecar-free legacy copied trampoline at %s only when its payload matches",
+    (home) =>
+      Effect.gen(function* () {
+        const fixture = copiedVitePlusTrampoline(home);
+        fixture.files.delete(fixture.sidecar);
+        const template = fixture.path.join(fixture.home, "current", "bin", "vp-shim.exe");
+        fixture.files.set(template, fixture.files.get(fixture.shim)!);
+        const capabilities = yield* resolveCustomVitePlus(fixture);
         expect(capabilities.update).toMatchObject({
-          executable: launcher,
-          args: ["i", "-g", "@example/package-tool"],
+          executable: fixture.launcher,
           env: fixture.env,
           lockKey: "vite-plus-global",
         });
-        expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0")?.args).toEqual([
-          "i",
-          "-g",
-          "@example/package-tool@2.0.0",
+        expect(fixture.binaryReads).toEqual([
+          { file: fixture.shim, limit: 1_024 * 1_024 + 1 },
+          { file: template, limit: 1_024 * 1_024 + 1 },
         ]);
+        const contents = fixture.files.get(fixture.shim)!;
+        fixture.files.set(fixture.shim, `${contents.slice(0, -1)}!`);
+        expect((yield* resolveCustomVitePlus(fixture)).update).toBeNull();
       }),
+  );
+
+  it.effect.each(["empty", "oversized"])(
+    "rejects %s legacy trampoline bytes with bounded reads",
+    (failure) =>
+      Effect.gen(function* () {
+        const fixture = copiedVitePlusTrampoline();
+        fixture.files.delete(fixture.sidecar);
+        const contents = failure === "empty" ? "" : "M".repeat(1_024 * 1_024 + 2);
+        fixture.files.set(fixture.shim, contents);
+        fixture.files.set(
+          fixture.path.join(fixture.home, "current", "bin", "vp-shim.exe"),
+          contents,
+        );
+        expect((yield* resolveCustomVitePlus(fixture)).update).toBeNull();
+        expect(fixture.binaryReads.every((read) => read.limit === 1_024 * 1_024 + 1)).toBe(true);
+      }),
+  );
+
+  it.effect.each([
+    "missing sidecar",
+    "legacy sidecar",
+    "unknown header",
+    "another data root",
+    "another bin root",
+    "split layout",
+    "unknown layout",
+    "missing launcher",
+  ])("rejects an unproven copied Vite+ trampoline: %s", (failure) =>
+    Effect.gen(function* () {
+      const fixture = copiedVitePlusTrampoline();
+      const sidecar = fixture.files.get(fixture.sidecar)!;
+      switch (failure) {
+        case "missing sidecar":
+          fixture.files.delete(fixture.sidecar);
+          break;
+        case "legacy sidecar":
+          fixture.files.set(fixture.sidecar, `${fixture.home}\n`);
+          break;
+        case "unknown header":
+          fixture.files.set(
+            fixture.sidecar,
+            sidecar.replace("vite-plus-shim-v1", "vite-plus-shim-v2"),
+          );
+          break;
+        case "another data root":
+          fixture.files.set(
+            fixture.sidecar,
+            sidecar.replace(`data=${fixture.home}`, "data=C:\\another-vp"),
+          );
+          break;
+        case "another bin root":
+          fixture.files.set(
+            fixture.sidecar,
+            sidecar.replace(
+              `bin=${fixture.path.join(fixture.home, "bin")}`,
+              "bin=C:\\another-vp\\bin",
+            ),
+          );
+          break;
+        case "split layout":
+          fixture.files.set(fixture.sidecar, sidecar.replace("layout=single-root", "layout=split"));
+          break;
+        case "unknown layout":
+          fixture.files.set(
+            fixture.sidecar,
+            sidecar.replace("layout=single-root", "layout=unknown"),
+          );
+          break;
+        case "missing launcher":
+          fixture.files.delete(fixture.launcher);
+          break;
+      }
+      expect((yield* resolveCustomVitePlus(fixture)).update).toBeNull();
+    }),
   );
 
   it.effect.each([
