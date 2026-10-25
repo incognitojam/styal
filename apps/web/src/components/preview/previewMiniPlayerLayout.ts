@@ -241,6 +241,7 @@ export interface PreviewMiniPlayerPointerSample extends PreviewMiniPlayerPositio
 }
 
 const VELOCITY_WINDOW_MS = 80;
+const RELEASE_PAUSE_MS = 100;
 const FLICK_MIN_SPEED = 0.5;
 // An axis carrying this share of a flick's speed follows the throw; a weaker
 // axis takes the corner nearest where the flick would have carried it.
@@ -248,15 +249,24 @@ const FLICK_AXIS_SHARE = 0.4;
 const FLICK_PROJECTION_MS = 300;
 const EDGE_SNAP_DISTANCE = 40;
 
-/** Pixels per millisecond over the last moments before `releaseTime`; a pause before release reads as still. */
+/**
+ * Pixels per millisecond over the moves leading up to the last one, or at
+ * least the move before it when frames are slow. The release event repeats the
+ * last position, so it is not a sample; only a gap clearly longer than the
+ * pointer's own pace before `releaseTime` reads as a pause.
+ */
 export function estimatePreviewMiniPlayerVelocity(
   samples: ReadonlyArray<PreviewMiniPlayerPointerSample>,
   releaseTime: number,
 ): PreviewMiniPlayerPosition {
-  const recent = samples.filter((sample) => releaseTime - sample.time <= VELOCITY_WINDOW_MS);
-  const first = recent[0];
-  const last = recent.at(-1);
-  if (!first || !last || last.time <= first.time) return { x: 0, y: 0 };
+  const last = samples.at(-1);
+  const previous = samples.at(-2);
+  if (!last || !previous || last.time <= previous.time) return { x: 0, y: 0 };
+  const pace = last.time - previous.time;
+  if (releaseTime - last.time > Math.max(RELEASE_PAUSE_MS, pace * 2)) return { x: 0, y: 0 };
+  const first =
+    samples.find((sample) => last.time - sample.time <= VELOCITY_WINDOW_MS && sample !== last) ??
+    previous;
   const elapsed = last.time - first.time;
   return { x: (last.x - first.x) / elapsed, y: (last.y - first.y) / elapsed };
 }

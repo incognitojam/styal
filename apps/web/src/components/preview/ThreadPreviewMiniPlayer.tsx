@@ -486,7 +486,6 @@ function MiniPlayerShell({
       container &&
       frame
     ) {
-      gesture.samples.push({ x: event.clientX, y: event.clientY, time: event.timeStamp });
       // Targets go through the canvas layout so the animation ends where the
       // frame comes to rest, clear of the composer and details card.
       const reach = (position: PreviewMiniPlayerPosition): PreviewMiniPlayerPosition => {

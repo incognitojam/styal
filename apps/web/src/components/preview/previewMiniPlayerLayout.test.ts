@@ -439,7 +439,7 @@ describe("clampPreviewMiniPlayerPosition", () => {
 });
 
 describe("estimatePreviewMiniPlayerVelocity", () => {
-  it("measures the motion just before release", () => {
+  it("measures the moves leading up to a release that comes a frame later", () => {
     expect(
       estimatePreviewMiniPlayerVelocity(
         [
@@ -448,9 +448,22 @@ describe("estimatePreviewMiniPlayerVelocity", () => {
           { x: 120, y: 10, time: 240 },
           { x: 160, y: 30, time: 280 },
         ],
-        280,
+        324,
       ),
     ).toEqual({ x: 1, y: 0.5 });
+  });
+
+  it("still measures a flick when frames arrive slower than the window", () => {
+    expect(
+      estimatePreviewMiniPlayerVelocity(
+        [
+          { x: 0, y: 0, time: 0 },
+          { x: 120, y: 0, time: 120 },
+          { x: 240, y: 0, time: 240 },
+        ],
+        360,
+      ),
+    ).toEqual({ x: 1, y: 0 });
   });
 
   it("reads a pause before release as still", () => {
@@ -459,7 +472,6 @@ describe("estimatePreviewMiniPlayerVelocity", () => {
         [
           { x: 0, y: 0, time: 0 },
           { x: 200, y: 0, time: 100 },
-          { x: 200, y: 0, time: 400 },
         ],
         400,
       ),
