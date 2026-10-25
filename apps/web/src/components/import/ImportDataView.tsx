@@ -14,7 +14,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
 import { splitOnboardingProjectPath } from "../../onboarding/projectImport.logic";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { RelativeTime } from "../RelativeTime";
 import { ClaudeAI, OpenAI, type Icon } from "../Icons";
 import { Button } from "../ui/button";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -447,12 +447,15 @@ function ImportRowMeta({
   detail?: string | undefined;
   lastActiveAt: string | null;
 }) {
-  const age = lastActiveAt === null ? "" : formatRelativeTimeLabel(lastActiveAt);
   return (
     <span className="ml-auto flex max-w-[52%] shrink-0 flex-wrap justify-end gap-x-1.5 text-right text-xs tabular-nums text-muted-foreground">
       <span className="whitespace-nowrap">{summary}</span>
       {detail ? <ImportRowMetaPart>{detail}</ImportRowMetaPart> : null}
-      {age ? <ImportRowMetaPart>{age}</ImportRowMetaPart> : null}
+      {lastActiveAt !== null ? (
+        <ImportRowMetaPart>
+          <RelativeTime timestamp={lastActiveAt} />
+        </ImportRowMetaPart>
+      ) : null}
     </span>
   );
 }

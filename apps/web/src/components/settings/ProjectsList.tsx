@@ -38,7 +38,7 @@ import { normalizeSearchText } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironmentMachines, useEnvironments } from "../../state/environments";
 import { useThreadShells } from "../../state/entities";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { RelativeTime } from "../RelativeTime";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../../uiStateStore";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -407,11 +407,6 @@ function ProjectListRow({
         ? group.workspaceRoot
         : `${group.memberProjects.length} checkouts`,
     `${threadCount} ${threadCount === 1 ? "thread" : "threads"}`,
-    archived && group.archivedAt
-      ? `Archived ${formatRelativeTimeLabel(group.archivedAt)}`
-      : activity?.lastThreadAt
-        ? `Last thread ${formatRelativeTimeLabel(activity.lastThreadAt)}`
-        : null,
   ].filter((value) => value !== null);
 
   return (
@@ -434,7 +429,22 @@ function ProjectListRow({
           </Link>
         </span>
       }
-      description={details.join(" · ")}
+      description={
+        <>
+          {details.join(" · ")}
+          {archived && group.archivedAt ? (
+            <>
+              {" · Archived "}
+              <RelativeTime timestamp={group.archivedAt} />
+            </>
+          ) : activity?.lastThreadAt ? (
+            <>
+              {" · Last thread "}
+              <RelativeTime timestamp={activity.lastThreadAt} />
+            </>
+          ) : null}
+        </>
+      }
       control={
         <div className="flex items-center gap-1">
           {environments.length > 1 ? (

@@ -35,6 +35,7 @@ import { serverEnvironment } from "~/state/server";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
+import { RelativeTime } from "../RelativeTime";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { reportHardwareResult } from "../hardware/reportHardwareResult";
 import {
@@ -349,7 +350,7 @@ function HardwareDeviceRow({
           </div>
           <p className="truncate text-xs text-muted-foreground">
             {state
-              ? hardwareHealthLine(state.health, formatRelativeTimeLabel)
+              ? hardwareHealthLine(state.health, (iso) => formatRelativeTimeLabel(iso, nowMs))
               : loaded
                 ? "Waiting for the server…"
                 : "Loading…"}
@@ -799,7 +800,7 @@ function HardwareActivity({
                   dateTime={entry.lastOccurredAt}
                   className="w-16 shrink-0 text-muted-foreground tabular-nums"
                 >
-                  {formatRelativeTimeLabel(entry.lastOccurredAt)}
+                  <RelativeTime timestamp={entry.lastOccurredAt} />
                 </time>
                 <span className="font-mono">{entry.event}</span>
                 {entry.action ? <span className="font-mono">{entry.action}</span> : null}
