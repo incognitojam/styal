@@ -4937,7 +4937,7 @@ features:
   - id: simulator-memory-profiles
     title: Choose app-specific simulator memory profiles
     status: maintained
-    prs: []
+    prs: [1056]
     invariants:
       - Memory profiles are opt-in per iOS simulator on an Apple Silicon Mac; inspection never installs a helper or changes services, and setup installs only the pinned checksum-verified helper.
       - Web, desktop, mobile, and agents execute the same typed device actions on the simulator's owning host, including SSH and connected-environment hosts.
