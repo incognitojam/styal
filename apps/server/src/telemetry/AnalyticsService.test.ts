@@ -246,7 +246,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
               event.properties.t3CodeRepository === "incognitojam/styal" &&
               event.properties.featureUsageVersion === 1 &&
               event.properties.deviceUsageVersion === 1 &&
-              event.properties.workflowRunWatchUsageVersion === 1 &&
+              event.properties.workflowRunWatchUsageVersion === 2 &&
               event.properties.providerAnalyticsUsageVersion === 1 &&
               event.properties.settingsSnapshotUsageVersion === 1 &&
               event.properties.buildKind === "test" &&

@@ -56,6 +56,7 @@ import {
   ThreadPullRequestStack,
   ThreadPullRequestWatch,
   ThreadWorkflowRunKey,
+  ThreadWorkflowRunReview,
   ThreadWorkflowRunWatch,
 } from "./threadPullRequest.ts";
 import {
@@ -3185,6 +3186,15 @@ const OrchestrationV2InternalCommand = Schema.Union([
         notification: OrchestrationV2Notification,
       }),
     ),
+  }),
+  /** Records the deployment review a watched run waits on, or that it no longer waits. */
+  Schema.Struct({
+    type: Schema.Literal("thread.workflow-run-watch.review"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    ...ThreadWorkflowRunKey.fields,
+    startedAt: IsoDateTime,
+    review: Schema.NullOr(ThreadWorkflowRunReview),
   }),
   Schema.Struct({
     type: Schema.Literal("checkpoint.rollback.fail"),

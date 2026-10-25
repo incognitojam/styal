@@ -298,6 +298,40 @@ it.effect("observes workflow approvals once each, only from a user surface", () 
   }),
 );
 
+it.effect("observes deployment reviews with their state only, from a user surface", () =>
+  Effect.gen(function* () {
+    const events: Array<Record<string, unknown> | undefined> = [];
+    const analytics = {
+      record: (_event: string, properties: Record<string, unknown> | undefined) =>
+        Effect.sync(() => {
+          events.push(properties);
+        }),
+      flush: Effect.void,
+    };
+    const wrap = (surface?: "web") =>
+      ClientFeatureUsage.workflowRunReviews(surface ? { surface } : {}).pipe(
+        Effect.provideService(AnalyticsService.AnalyticsService, analytics),
+      );
+    const observed = yield* wrap("web");
+    yield* observed("approved", Effect.void);
+    yield* Effect.flip(observed("rejected", Effect.fail("not watched")));
+    const relayed = yield* wrap();
+    yield* relayed("approved", Effect.void);
+    expect(
+      events.map((properties) => [
+        properties?.feature,
+        properties?.action,
+        properties?.source,
+        properties?.reviewState,
+        properties?.outcome,
+      ]),
+    ).toEqual([
+      ["workflow-run-watch", "review", "user", "approved", "success"],
+      ["workflow-run-watch", "review", "user", "rejected", "failure"],
+    ]);
+  }),
+);
+
 it.effect(
   "records a client settings snapshot as its own event without project or profile content",
   () =>

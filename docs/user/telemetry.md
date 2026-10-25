@@ -21,8 +21,9 @@ Approving a pull request's waiting workflows records that you did and its outcom
 pull requests and workflow names are not collected.
 Agent workflow run watches record whether each watch or unwatch call started, stopped, or
 found a run already finished, and how each watch ended: the run's conclusion, a failure to read
-it, or being stopped, with how many minutes it was watched. Repositories, run links, and workflow
-or job names are not collected.
+it, or being stopped, with how many minutes it was watched. Approving or rejecting a watched run's
+deployments records which of the two it was and its outcome. Repositories, run links, environments,
+comments, and workflow or job names are not collected.
 
 Once after startup and then daily, the server reports each configured provider: its type, whether
 it is the default or an added instance, whether it is installed, enabled and healthy, its version

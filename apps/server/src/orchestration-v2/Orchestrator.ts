@@ -473,6 +473,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.pull-request-watch.sync":
     case "thread.workflow-run.watch":
     case "thread.workflow-run-watch.finish":
+    case "thread.workflow-run-watch.review":
     case "thread.pull-request.sync":
     case "thread.title.regeneration.complete":
     case "thread.runtime-mode.set":
@@ -2428,7 +2429,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const dispatchWatchUpdate = Effect.fn("orchestrationV2.dispatch.watchUpdate")(function* (
     command: Extract<
       OrchestrationV2ServerCommand,
-      { readonly type: "thread.pull-request-watch.sync" | "thread.workflow-run-watch.finish" }
+      {
+        readonly type:
+          | "thread.pull-request-watch.sync"
+          | "thread.workflow-run-watch.finish"
+          | "thread.workflow-run-watch.review";
+      }
     >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
@@ -2453,7 +2459,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       thread.settledOverride === "settled" ||
       thread.settledAt !== null ||
       isProviderNativeSubagentThread(thread);
-    if (watchStartedAt !== command.startedAt || (command.wake && inactive)) {
+    const wake = command.type === "thread.workflow-run-watch.review" ? undefined : command.wake;
+    if (watchStartedAt !== command.startedAt || (wake && inactive)) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
@@ -2461,15 +2468,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     yield* dispatchThreadMutation(command, events, effects);
-    if (command.wake === undefined) return;
+    if (wake === undefined) return;
     yield* dispatchMessage(
       {
         type: "message.dispatch",
         commandId: command.commandId,
         threadId: command.threadId,
-        messageId: command.wake.messageId,
-        text: command.wake.text,
-        notification: command.wake.notification,
+        messageId: wake.messageId,
+        text: wake.text,
+        notification: wake.notification,
         attachments: [],
         dispatchMode: { type: "queue_after_active" },
         createdBy: "agent",
@@ -2505,6 +2512,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.pull-request-watch.sync"
           | "thread.workflow-run.watch"
           | "thread.workflow-run-watch.finish"
+          | "thread.workflow-run-watch.review"
           | "thread.pull-request.sync"
           | "thread.title.regeneration.complete"
           | "thread.runtime-mode.set"
@@ -3254,6 +3262,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             updatedAt: command.type === "thread.pull-request.watch" ? now : thread.updatedAt,
           };
         }
+        case "thread.workflow-run-watch.review": {
+          const runs = thread.workflowRuns ?? [];
+          const existing = runs.find((run) => workflowRunKeysEqual(run, command));
+          if (existing?.startedAt !== command.startedAt) return thread;
+          const { review: _review, ...watch } = existing;
+          const next = command.review === null ? watch : { ...watch, review: command.review };
+          return {
+            ...thread,
+            workflowRuns: runs.map((run) => (run === existing ? next : run)),
+          };
+        }
         case "thread.workflow-run.watch":
         case "thread.workflow-run-watch.finish": {
           const runs = thread.workflowRuns ?? [];
@@ -3401,6 +3420,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         // decode it, and settlement looks at the thread again when a watch ends.
         case "thread.workflow-run.watch":
         case "thread.workflow-run-watch.finish":
+        case "thread.workflow-run-watch.review":
           return "thread.pull-request-synced" as const;
         case "thread.runtime-mode.set":
           return "thread.runtime-mode-updated" as const;
@@ -11116,6 +11136,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "thread.pull-request-watch.sync":
       case "thread.workflow-run-watch.finish":
+      case "thread.workflow-run-watch.review":
         yield* dispatchWatchUpdate(command, events, effects);
         break;
       case "provider-session.detach":

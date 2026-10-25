@@ -1,8 +1,11 @@
 import {
   CommandId,
   MessageId,
+  PullRequestOperationError,
   type OrchestrationV2Notification,
+  type ThreadWorkflowRunReview,
   type ThreadWorkflowRunWatch,
+  type WorkflowRunReviewInput,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -50,10 +53,15 @@ interface WatchTarget {
 const targetKey = ({ thread, watch }: WatchTarget) =>
   `${thread.id} ${watch.host}/${watch.repository}/${watch.runId} ${watch.startedAt}`;
 
+const reviewKey = (review: ThreadWorkflowRunReview | null | undefined) =>
+  review?.environments.map((environment) => `${environment.id}:${environment.name}`).join(",") ??
+  "";
+
 /**
  * Wakes a thread's agent once when a CI workflow run it watches (`watch_workflow_run`)
  * completes, and ends the watch in the same step. A pass every two minutes reads each watched
- * run. Settling, archiving, or stopping a thread ends its watches in the orchestrator.
+ * run, and records on the watch when the run waits for the user's deployment review. Settling,
+ * archiving, or stopping a thread ends its watches in the orchestrator.
  */
 export class WorkflowRunWatchReactor extends Context.Service<
   WorkflowRunWatchReactor,
@@ -61,6 +69,10 @@ export class WorkflowRunWatchReactor extends Context.Service<
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     /** One pass over every watched workflow run. */
     readonly sweep: Effect.Effect<void>;
+    /** Submits the user's deployment review for a watched run, then reads the run again. */
+    readonly review: (
+      input: WorkflowRunReviewInput,
+    ) => Effect.Effect<void, PullRequestService.PullRequestError>;
   }
 >()("@styal/cli/orchestration-v2/WorkflowRunWatchReactor") {}
 
@@ -140,7 +152,23 @@ export const make = Effect.gen(function* () {
       return yield* Effect.failCause(read.cause);
     }
     readFailures.delete(key);
-    if (!read.value.completed) return;
+    if (!read.value.completed) {
+      const [first, ...rest] = read.value.reviewableEnvironments;
+      const review: ThreadWorkflowRunReview | null =
+        first === undefined ? null : { environments: [first, ...rest] };
+      if (reviewKey(review) === reviewKey(target.watch.review)) return;
+      const uuid = yield* crypto.randomUUIDv4();
+      return yield* engine.dispatch({
+        type: "thread.workflow-run-watch.review",
+        commandId: CommandId.make(`server:workflow-run-watch:${target.thread.id}:${uuid}`),
+        threadId: target.thread.id,
+        host: target.watch.host,
+        repository: target.watch.repository,
+        runId: target.watch.runId,
+        startedAt: target.watch.startedAt,
+        review,
+      });
+    }
     yield* finish(target, workflowRunCompletedMessage(target.watch, read.value));
     yield* recordEnd(key, { reason: "completed", conclusion: read.value.conclusion });
   });
@@ -190,7 +218,52 @@ export const make = Effect.gen(function* () {
       sweep.pipe(Effect.repeat(Schedule.spaced(`${SWEEP_MINUTES} minutes`)), Effect.asVoid),
     );
 
-  return { start, sweep } satisfies WorkflowRunWatchReactor["Service"];
+  const review: WorkflowRunWatchReactor["Service"]["review"] = Effect.fn(
+    "WorkflowRunWatchReactor.review",
+  )(function* (input) {
+    const unwatched = new PullRequestOperationError({
+      operation: "reviewWorkflowRun",
+      detail: "This workflow run is no longer watched.",
+    });
+    const thread = yield* projections
+      .getThread(input.threadId)
+      .pipe(Effect.mapError(() => unwatched));
+    const watch = (thread.workflowRuns ?? []).find(
+      (run) =>
+        run.host.toLowerCase() === input.host.toLowerCase() &&
+        run.repository.toLowerCase() === input.repository.toLowerCase() &&
+        run.runId === input.runId,
+    );
+    if (watch === undefined) return yield* unwatched;
+    yield* pullRequests.reviewWorkflowRun({
+      projectId: thread.projectId,
+      host: watch.host,
+      repository: watch.repository,
+      runId: watch.runId,
+      environmentIds: input.environmentIds,
+      state: input.state,
+      comment: input.comment,
+    });
+    // The review is done; a failed read only leaves the banner until the next pass.
+    yield* check({
+      thread: {
+        id: thread.id,
+        projectId: thread.projectId,
+        settledOverride: thread.settledOverride,
+        settledAt: thread.settledAt,
+        workflowRuns: thread.workflowRuns ?? [],
+      },
+      watch,
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.logWarning("workflow run read after review failed", { cause }),
+      ),
+    );
+  });
+
+  return { start, sweep, review } satisfies WorkflowRunWatchReactor["Service"];
 });
 
 export const layer = Layer.effect(WorkflowRunWatchReactor, make);

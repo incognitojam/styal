@@ -28,6 +28,7 @@ describe("projectThreadAwarenessV2", () => {
         | "pendingBackgroundTasks"
         | "pendingRuntimeRequest"
         | "lineage"
+        | "workflowRuns"
       >
     > = {},
   ) => ({
@@ -120,6 +121,27 @@ describe("projectThreadAwarenessV2", () => {
         }),
       }),
     ).toMatchObject({ phase: "waiting_for_input", headline: "Waiting for input" });
+  });
+
+  it("asks for approval while a watched run waits for the user's deployment review", () => {
+    const watch = {
+      host: "github.com",
+      repository: "acme/web",
+      runId: 40,
+      url: "https://github.com/acme/web/actions/runs/40",
+      name: "Promote #3",
+      startedAt: NOW,
+    };
+    const awareness = (workflowRuns: OrchestrationV2ThreadShell["workflowRuns"]) =>
+      projectThreadAwarenessV2({
+        environmentId: "env-1" as EnvironmentId,
+        project,
+        thread: v2Thread({ status: "completed", workflowRuns }),
+      });
+    expect(
+      awareness([{ ...watch, review: { environments: [{ id: 21, name: "production" }] } }]),
+    ).toMatchObject({ phase: "waiting_for_approval", headline: "Approval needed" });
+    expect(awareness([watch])).toMatchObject({ phase: "completed" });
   });
 
   it("does not present authentication refreshes as user approvals", () => {

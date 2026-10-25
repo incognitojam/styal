@@ -45,6 +45,7 @@ import type {
   SnapShotSource,
 } from "@t3tools/contracts";
 import {
+  type ThreadWorkflowRunWatch,
   EnvironmentRequestInvalidError,
   AuthOrchestrationOperateScope,
   ProviderDriverKind,
@@ -293,6 +294,7 @@ import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
+import { WorkflowRunReviewPanel } from "./WorkflowRunReviewPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import {
@@ -1544,6 +1546,8 @@ export interface ChatComposerProps {
   activePendingApproval: PendingApproval | null;
   pendingApprovals: PendingApproval[];
   pendingUserInputs: PendingUserInput[];
+  /** Watched workflow runs; one waiting for a deployment review takes the question slot. */
+  workflowRuns?: ReadonlyArray<ThreadWorkflowRunWatch> | undefined;
   activePendingProgress: {
     questionIndex: number;
     isLastQuestion: boolean;
@@ -1936,6 +1940,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingApproval: incomingPendingApproval,
     pendingApprovals,
     pendingUserInputs: incomingPendingUserInputs,
+    workflowRuns,
     activePendingProgress: incomingPendingProgress,
     activePendingResolvedAnswers,
     activePendingIsResponding: incomingPendingIsResponding,
@@ -2900,9 +2905,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const pendingQuestionPlaceholder = activePendingProgress?.activeQuestion?.multiSelect
     ? "Add another answer, or leave this blank to use the selected options"
     : "Type your own answer, or leave this blank to use the selected option";
+  const hasWorkflowRunReview = (workflowRuns ?? []).some((run) => run.review !== undefined);
   const showComposerTopDrawer =
     isComposerApprovalState ||
     pendingUserInputs.length > 0 ||
+    hasWorkflowRunReview ||
     (!isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan !== null);
   const showCollapsedMobilePromptRow = isComposerCollapsedMobile && !isComposerApprovalState;
   const showComposerAttachAction =
@@ -4978,7 +4985,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const toggleTasksDrawerStable = useStableCallback(toggleTasksDrawer);
   const hasBannerItems = bannerItems.length > 0;
   const hasBlockingComposerTopDrawer =
-    activePendingApproval !== null || pendingUserInputs.length > 0;
+    activePendingApproval !== null || pendingUserInputs.length > 0 || hasWorkflowRunReview;
   const showInlineTasksBadge =
     activeTasksProgress !== null &&
     activeTaskSteps !== null &&
@@ -6645,7 +6652,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             <ComposerBanner.Attachment>
               <ComposerBanner.Root
                 data-chat-composer-top-drawer="true"
-                variant={activePendingApproval ? "warning" : "info"}
+                variant={activePendingApproval || hasWorkflowRunReview ? "warning" : "info"}
                 density={activePendingApproval ? "spacious" : "default"}
               >
                 {activePendingApproval ? (
@@ -6675,6 +6682,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       />
                     </ComposerBanner.Actions>
                   </ComposerBanner.Row>
+                ) : hasWorkflowRunReview && activeThreadId && workflowRuns ? (
+                  <WorkflowRunReviewPanel
+                    environmentId={environmentId}
+                    threadId={activeThreadId}
+                    runs={workflowRuns}
+                  />
                 ) : pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
                     cwd={gitCwd ?? undefined}

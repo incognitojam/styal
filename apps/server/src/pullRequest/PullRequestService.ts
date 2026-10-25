@@ -220,6 +220,15 @@ export class PullRequestService extends Context.Service<
         readonly runId: number;
       },
     ) => Effect.Effect<ProviderWorkflowRun, PullRequestError>;
+    /** Approves or rejects deployment environments a workflow run waits on. */
+    readonly reviewWorkflowRun: (
+      input: Pick<PullRequestRef, "projectId" | "host" | "repository"> & {
+        readonly runId: number;
+        readonly environmentIds: ReadonlyArray<number>;
+        readonly state: "approved" | "rejected";
+        readonly comment: string;
+      },
+    ) => Effect.Effect<void, PullRequestError>;
     readonly watchFingerprint: (
       input: PullRequestRef,
     ) => Effect.Effect<ProviderChangeRequestWatchFingerprint | null, PullRequestError>;
@@ -538,6 +547,9 @@ function withRateLimitBackoff(
     ...(api.getWorkflowRun === undefined
       ? {}
       : { getWorkflowRun: wrap("getWorkflowRun", api.getWorkflowRun) }),
+    ...(api.reviewWorkflowRun === undefined
+      ? {}
+      : { reviewWorkflowRun: wrap("reviewWorkflowRun", api.reviewWorkflowRun) }),
     getChangeRequestActivity: wrap("getChangeRequestActivity", api.getChangeRequestActivity),
     ...(api.getReviewThreadComments === undefined
       ? {}
@@ -1734,6 +1746,30 @@ export const make = Effect.gen(function* () {
           host: project.host,
           runId: input.runId,
         }).pipe(Effect.mapError(toPullRequestError("workflowRun")));
+      }),
+    );
+
+  const reviewWorkflowRun: PullRequestService["Service"]["reviewWorkflowRun"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
+        const review = project.api.reviewWorkflowRun;
+        if (review === undefined) {
+          return Effect.fail(
+            new PullRequestOperationError({
+              operation: "reviewWorkflowRun",
+              detail: "Only GitHub Actions deployments can be reviewed.",
+            }),
+          );
+        }
+        return review({
+          cwd: project.project.workspaceRoot,
+          repository: project.repository,
+          host: project.host,
+          runId: input.runId,
+          environmentIds: input.environmentIds,
+          state: input.state,
+          comment: input.comment,
+        }).pipe(Effect.mapError(toPullRequestError("reviewWorkflowRun")));
       }),
     );
 
@@ -3496,6 +3532,7 @@ export const make = Effect.gen(function* () {
     ),
     activity: credentialCached(activity),
     workflowRun,
+    reviewWorkflowRun,
     preview: credentialCached(preview),
     threadComments,
     diff: credentialCached(diff),

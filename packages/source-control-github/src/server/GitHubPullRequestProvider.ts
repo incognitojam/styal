@@ -360,6 +360,9 @@ export const make = Effect.gen(function* () {
     getWorkflowRun: (input) =>
       cli.getWorkflowRun(input).pipe(Effect.mapError(fail("getWorkflowRun"))),
 
+    reviewWorkflowRun: (input) =>
+      cli.reviewWorkflowRun(input).pipe(Effect.mapError(fail("reviewWorkflowRun"))),
+
     getChangeRequestPreview: (input) =>
       cli.getPullRequestPreview(input).pipe(Effect.mapError(fail("getChangeRequestPreview"))),
 

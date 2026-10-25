@@ -268,12 +268,28 @@ export interface ProviderWorkflowRun {
   readonly headBranch: string | null;
   readonly headSha: string;
   readonly event: string;
+  /**
+   * Deployment environments the run waits on that the viewer may approve. Empty unless the run
+   * is held for review.
+   */
+  readonly reviewableEnvironments: ReadonlyArray<{ readonly id: number; readonly name: string }>;
   /** Jobs of the latest attempt that did not succeed or skip; read only once the run completed. */
   readonly failedJobs: ReadonlyArray<{
     readonly name: string;
     readonly conclusion: string | null;
     readonly url: string | null;
   }>;
+}
+
+/** Approves or rejects deployment environments a workflow run waits on. */
+export interface ProviderWorkflowRunReviewInput {
+  readonly cwd: string;
+  readonly repository: string;
+  readonly host: string;
+  readonly runId: number;
+  readonly environmentIds: ReadonlyArray<number>;
+  readonly state: "approved" | "rejected";
+  readonly comment: string;
 }
 
 export interface ProviderRepositoryRef {
@@ -396,6 +412,11 @@ export interface PullRequestProviderApi {
   readonly getWorkflowRun?: (
     input: ProviderRepositoryRef & { readonly runId: number },
   ) => Effect.Effect<ProviderWorkflowRun, PullRequestProviderError>;
+
+  /** Optional, like `getWorkflowRun`. */
+  readonly reviewWorkflowRun?: (
+    input: ProviderWorkflowRunReviewInput,
+  ) => Effect.Effect<void, PullRequestProviderError>;
 
   readonly getChangeRequestStack?: (
     input: ProviderRepositoryRef & { readonly includeDetails?: boolean; readonly number: number },

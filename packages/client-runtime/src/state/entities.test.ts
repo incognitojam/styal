@@ -96,6 +96,27 @@ describe("V2 client presentation", () => {
     expect(shell.branchPullRequest).toEqual(branchPullRequest);
   });
 
+  it("asks for approval while a watched workflow run waits for the user's deployment review", () => {
+    const watch = {
+      host: "github.com",
+      repository: "acme/web",
+      runId: 40,
+      url: "https://github.com/acme/web/actions/runs/40",
+      name: "Promote #3",
+      startedAt: "2026-06-20T01:00:00.000Z",
+    };
+    const waiting = presentThreadShell(environmentId, {
+      ...v2ThreadShell,
+      workflowRuns: [{ ...watch, review: { environments: [{ id: 21, name: "production" }] } }],
+    });
+    expect(waiting.hasPendingApprovals).toBe(true);
+    expect(waiting.hasPendingUserInput).toBe(false);
+    expect(
+      presentThreadShell(environmentId, { ...v2ThreadShell, workflowRuns: [watch] })
+        .hasPendingApprovals,
+    ).toBe(false);
+  });
+
   it("presents provider errors carried by failed thread shells", () => {
     const runId = RunId.make("run-failed");
     const shell = presentThreadShell(environmentId, {

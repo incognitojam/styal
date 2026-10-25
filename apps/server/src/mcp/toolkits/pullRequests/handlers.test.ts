@@ -624,6 +624,7 @@ const runningRun: ProviderWorkflowRun = {
   headBranch: "main",
   headSha: "a".repeat(40),
   event: "push",
+  reviewableEnvironments: [],
   failedJobs: [],
 };
 

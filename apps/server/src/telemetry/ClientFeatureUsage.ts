@@ -173,6 +173,21 @@ export const projectFileApprovals = Effect.fnUntraced(function* (
   });
 });
 
+/** Observe the user reviewing the deployments a watched workflow run waits on. */
+export const workflowRunReviews = Effect.fnUntraced(function* (
+  client: FeatureUsage.ClientDimensions,
+) {
+  const analytics = yield* AnalyticsService.AnalyticsService;
+  return <A, E, R>(reviewState: "approved" | "rejected", effect: Effect.Effect<A, E, R>) =>
+    client.surface
+      ? FeatureUsage.observe(
+          { feature: "workflow-run-watch", action: "review", source: "user", reviewState },
+          effect,
+          client,
+        ).pipe(Effect.provideService(AnalyticsService.AnalyticsService, analytics))
+      : effect;
+});
+
 /** Observe the user starting Actions runs a pull request's head left waiting for approval. */
 export const workflowApprovals = Effect.fnUntraced(function* (
   client: FeatureUsage.ClientDimensions,

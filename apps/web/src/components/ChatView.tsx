@@ -8575,6 +8575,7 @@ export default function ChatView(props: ChatViewProps) {
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}
                               pendingUserInputs={pendingUserInputs}
+                              workflowRuns={activeThreadShell?.workflowRuns}
                               activePendingProgress={activePendingProgress}
                               activePendingResolvedAnswers={activePendingResolvedAnswers}
                               activePendingIsResponding={activePendingIsResponding}

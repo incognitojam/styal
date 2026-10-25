@@ -115,6 +115,7 @@ import type {
   ProviderChangeRequestSummary,
   ProviderListCursor,
   ProviderWorkflowRun,
+  ProviderWorkflowRunReviewInput,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 
 export class GitHubPullRequestReadError extends Schema.TaggedError<GitHubPullRequestReadError>()(
@@ -538,6 +539,10 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly runId: number;
     }) => Effect.Effect<ProviderWorkflowRun, GitHubPullRequestApiError>;
 
+    readonly reviewWorkflowRun: (
+      input: ProviderWorkflowRunReviewInput,
+    ) => Effect.Effect<void, GitHubPullRequestApiError>;
+
     readonly revalidateChecks: Effect.Success<typeof makeChecksRevalidator>;
 
     readonly getPullRequestDetail: (input: {
@@ -809,6 +814,15 @@ const decodeGitHubWorkflowRunJson = decodeJsonResult(
     head_sha: Schema.String,
     event: Schema.String,
   }),
+);
+/** A waiting run's deployment environments, with whether the viewer may review each. */
+const decodeGitHubPendingDeploymentsJson = decodeJsonResult(
+  Schema.Array(
+    Schema.Struct({
+      environment: Schema.Struct({ id: Schema.Int, name: Schema.String }),
+      current_user_can_approve: Schema.Boolean,
+    }),
+  ),
 );
 const decodeGitHubWorkflowRunJobsJson = decodeJsonResult(
   Schema.Struct({
@@ -1862,6 +1876,11 @@ export const make = Effect.gen(function* () {
         );
       const run = yield* readJson(endpoint, decodeGitHubWorkflowRunJson);
       const completed = run.status === "completed";
+      // "waiting" is GitHub's status for a run held by an environment's protection rules.
+      const pending =
+        run.status === "waiting"
+          ? yield* readJson(`${endpoint}/pending_deployments`, decodeGitHubPendingDeploymentsJson)
+          : [];
       const jobs =
         completed && run.conclusion !== "success"
           ? yield* readJson(
@@ -1877,6 +1896,9 @@ export const make = Effect.gen(function* () {
         headBranch: run.head_branch,
         headSha: run.head_sha,
         event: run.event,
+        reviewableEnvironments: pending
+          .filter((deployment) => deployment.current_user_can_approve)
+          .map(({ environment }) => ({ id: environment.id, name: environment.name })),
         failedJobs: (jobs?.jobs ?? [])
           .filter(
             (job) =>
@@ -1886,6 +1908,22 @@ export const make = Effect.gen(function* () {
           )
           .map((job) => ({ name: job.name, conclusion: job.conclusion, url: job.html_url })),
       } satisfies ProviderWorkflowRun;
+    });
+
+  const reviewWorkflowRun: GitHubPullRequestApi["Service"]["reviewWorkflowRun"] = (input) =>
+    Effect.gen(function* () {
+      const { owner, name } = parseRepositorySelector(input.repository);
+      yield* api.rest({
+        host: input.host,
+        operation: "reviewWorkflowRun",
+        method: "POST",
+        path: `repos/${owner}/${name}/actions/runs/${input.runId}/pending_deployments`,
+        body: {
+          environment_ids: input.environmentIds,
+          state: input.state,
+          comment: input.comment,
+        },
+      });
     });
 
   return GitHubPullRequestApi.of({
@@ -2138,6 +2176,7 @@ export const make = Effect.gen(function* () {
     getPullRequestSummary,
     getPullRequestWatchFingerprint,
     getWorkflowRun,
+    reviewWorkflowRun,
 
     getPullRequestDetail,
     getPullRequestPreview: (input) => {

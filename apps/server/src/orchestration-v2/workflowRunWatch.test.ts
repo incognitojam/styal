@@ -12,6 +12,7 @@ const run = (overrides: Partial<ProviderWorkflowRun>): ProviderWorkflowRun => ({
   headBranch: "main",
   headSha: "0123456789abcdef0123456789abcdef01234567",
   event: "push",
+  reviewableEnvironments: [],
   failedJobs: [],
   ...overrides,
 });

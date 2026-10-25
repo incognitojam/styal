@@ -112,6 +112,23 @@ export const ThreadPullRequestLink = Schema.Struct({
 });
 export type ThreadPullRequestLink = typeof ThreadPullRequestLink.Type;
 
+/** A deployment environment whose protection rules hold a workflow run for a reviewer. */
+export const ThreadWorkflowRunReviewEnvironment = Schema.Struct({
+  /** The host's environment id, which a review names. */
+  id: PositiveInt,
+  name: TrimmedNonEmptyString,
+});
+export type ThreadWorkflowRunReviewEnvironment = typeof ThreadWorkflowRunReviewEnvironment.Type;
+
+/**
+ * The deployment environments a watched run waits on that the user may approve. The user reviews
+ * them; the agent does not, since the rule exists to hold the run for a person.
+ */
+export const ThreadWorkflowRunReview = Schema.Struct({
+  environments: Schema.NonEmptyArray(ThreadWorkflowRunReviewEnvironment),
+});
+export type ThreadWorkflowRunReview = typeof ThreadWorkflowRunReview.Type;
+
 /**
  * A CI workflow run the server watches for a thread's agent, present only while watched. The
  * server wakes the agent once when the run completes and drops the watch in the same step.
@@ -124,6 +141,8 @@ export const ThreadWorkflowRunWatch = Schema.Struct({
   /** The workflow and run number as the host names them, such as "CI #812". */
   name: TrimmedNonEmptyString,
   startedAt: IsoDateTime,
+  /** Present while the run waits for the user's deployment review. */
+  review: Schema.optional(ThreadWorkflowRunReview),
 });
 export type ThreadWorkflowRunWatch = typeof ThreadWorkflowRunWatch.Type;
 
