@@ -5,14 +5,9 @@ import { BRAND_ASSET_PATHS } from "@t3tools/shared/brandAssets";
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
- * The classic macOS icon safe area, at 1024pt: an opaque 824x824 body inset 100px
- * on every side, with only a soft drop shadow extending into the margin.
- *
- * Icon Composer cannot export this. Its command line has no pre-Tahoe rendering,
- * and since macOS 27 the GUI's `macOS pre-Tahoe` preset exports full bleed. So the
- * body is exported by hand at 824pt and `addMacOsIconMargin` places it on the
- * canvas. A wrong export still yields a plausible PNG that looks fine in a diff,
- * which is why the tracked files are also checked against this safe area.
+ * Icon Composer cannot export the classic safe area (since macOS 27 its pre-Tahoe preset exports
+ * full bleed), so the body is exported by hand at 824pt and placed by `addMacOsIconMargin`. A
+ * wrong export still looks plausible in a diff, so tracked files are checked against this area.
  */
 export const MACOS_ICON_CANVAS_SIZE = 1024;
 export const MACOS_ICON_BODY_SIZE = 824;

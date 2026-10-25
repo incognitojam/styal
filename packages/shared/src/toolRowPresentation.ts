@@ -9,21 +9,9 @@ import {
 } from "./reviewFindings.ts";
 
 /**
- * Display vocabulary for tool rows in the chat timeline, shared by web, mobile
- * and the agent panel so every provider reads the same way.
- *
- * This is derived at RENDER time and must never be written back onto an
- * activity's `title`, `label` or `detail`. Those three fields are the identity
- * a tool row collapses on — the server drops superseded rows from snapshots
- * using the same triple (`toolLifecycleIdentity`), so a client that renamed
- * them would desync from the server's dedup and stop folding update rows into
- * their completions.
- *
- * It lives client-side rather than in the adapters because the fork rebases on
- * upstream: adapters and contracts are hot files, and persisted rows already
- * carry the generic titles, so only a render-time derivation fixes existing
- * history. If upstream ever emits a canonical presentation field, this module
- * should give way to it.
+ * Derived at render time only: `title`, `label` and `detail` are the identity the server dedups
+ * tool rows on (`toolLifecycleIdentity`), so rewriting them would desync folding. Render time
+ * also fixes persisted history, which already carries the generic titles.
  */
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -342,11 +330,9 @@ function askedQuestions(input: Record<string, unknown> | undefined): ReadonlyArr
 }
 
 /**
- * The whole prompt lives in this tool's input, so the generic row shows only
- * the tool's name. Name the act instead, and let the question itself be the
- * argument — or, when several were asked at once, their headers, since no one
- * question fits. The input is empty until the call completes, so the pending
- * row falls back to the singular phrasing.
+ * The generic row would show only the tool's name, so the question (or the headers of several)
+ * is the argument. The input is empty until the call completes, so the pending row uses the
+ * singular phrasing.
  */
 function askUserQuestionPresentation(
   input: Record<string, unknown> | undefined,
@@ -641,11 +627,8 @@ function argumentForItemType(
 }
 
 /**
- * Titles that carry no information beyond "a tool ran". These are the three
- * adapters' fixed vocabularies — the strings that make one thread say
- * "Command run" and the next "Ran command" for the same action. A title
- * outside this set was chosen for a specific call (an ACP tool's own title, a
- * Codex `server · tool`) and outranks anything derived here.
+ * The adapters' fixed titles that say only "a tool ran". A title outside this set was chosen
+ * for a specific call and outranks anything derived here.
  */
 const GENERIC_LABELS = new Set([
   "tool",

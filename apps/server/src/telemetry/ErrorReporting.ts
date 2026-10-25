@@ -1,12 +1,7 @@
 /**
- * Server error reporting to PostHog error tracking.
- *
- * Every Error or Fatal log entry becomes a `$exception` event delivered through
- * {@link AnalyticsService}, so it shares telemetry identity, opt-out and
- * delivery. The logger only queues the entry; building, scrubbing and rate
- * limiting happen on a background fiber so logging stays cheap.
- *
- * @module ErrorReporting
+ * Error and Fatal log entries go through {@link AnalyticsService}, sharing its identity, opt-out
+ * and delivery. The logger only queues the entry; building, scrubbing and rate limiting happen
+ * on a background fiber so logging stays cheap.
  */
 import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";

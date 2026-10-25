@@ -1,10 +1,7 @@
 /**
- * GitHub's autolinked references — `#123`, `GH-123`, `owner/repo#123`, and bare issue or pull
- * request URLs relabelled as that shorthand. Neither is GFM, so remark leaves them as text.
- *
- * Links are addressed at `/issues/{n}` either way, since the host redirects that to `/pull/{n}`.
- * Inert without a context, which keeps `#2` in a chat message plain text. The matching rules are
- * GitHub's own; the tests spell them out.
+ * GitHub autolinked references are not GFM, so remark leaves them as text. Links use `/issues/{n}`
+ * because the host redirects that to `/pull/{n}`. Inert without a context, which keeps `#2` in a
+ * chat message plain text.
  */
 
 /** The repository a bare `#123` belongs to, spelled as the repository identity spells it. */

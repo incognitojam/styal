@@ -72,10 +72,7 @@ export function selectOnboardingProvidersByDriver(
   return providersByDriver;
 }
 
-/**
- * Official standalone installers. Neither needs Node or npm. Standalone Codex
- * updates remain manual until the native updater is available in this fork.
- */
+// These need no Node/npm. Standalone Codex updates stay manual until styal has the native updater.
 const NATIVE_INSTALL_COMMANDS = {
   claudeAgent: {
     windows: "irm https://claude.ai/install.ps1 | iex",

@@ -2,20 +2,9 @@
 // @effect-diagnostics nodeBuiltinImport:off - Argument parsing and file checks for an isolated fixture home.
 
 /**
- * Fills an isolated, already-migrated server home with a large synthetic history shaped like a
- * long-lived real server: about a thousand threads whose runs, turn items, messages and provider
- * turns follow the same skewed distributions and payload sizes, written in time order so each
- * thread's rows are scattered through the file the way months of interleaved work leave them.
- *
- * Writes go through the server's own EventSink, so events, projections, turn item positions and
- * projection metadata stay consistent and startup verification does not rebuild them. Migrations
- * are deliberately not run: the home may belong to an older published server, and its schema must
- * stay the one that server created. If this checkout's projector no longer fits that schema, the
- * write fails instead of drifting.
- *
- * The default 1,000 threads take about a minute on a desktop-class Linux CPU; 1,300 matches the
- * server this was calibrated against. Stop the server that owns the home before running this. All
- * content is generated.
+ * Fills an isolated, already-migrated home with about a thousand synthetic threads shaped like a
+ * long-lived real server. Writes go through EventSink but skip migrations: the home's schema must
+ * stay the one its (possibly older) server created. Stop the server that owns the home first.
  */
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";

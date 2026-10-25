@@ -1,14 +1,8 @@
 import type { PackUserConfig } from "vite-plus/pack";
 
 /**
- * Bundle plugins that upload server source maps to PostHog error tracking.
- *
- * The PostHog plugin stamps each chunk with a stable chunk id, which the error
- * reporter attaches to that chunk's frames at runtime, then uploads the maps.
- * Release CI sets the key, project, and `posthog-cli` path; any other build
- * gets no plugins and bundles as before. The plugin package loads only then,
- * so reading this config does not need it installed, as in jobs that install
- * only the scripts workspace.
+ * Only release CI sets the PostHog key, project, and CLI path; other builds get no plugins.
+ * The plugin package is imported lazily so jobs without it installed can still read this config.
  */
 export function posthogSourcemapPlugins(input: {
   readonly version: string;

@@ -13,11 +13,9 @@ const NO_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
 
 export interface ProjectConfigState {
   /**
-   * - `valid`: the file in effect exists and decoded.
-   * - `partial`: it decoded after invalid or unknown values were ignored.
+   * - `partial`: the file in effect decoded after invalid or unknown values were ignored.
    * - `invalid`: it is malformed or its root is not an object.
    * - `missing`: neither styal.json nor t3.json is readable at the root.
-   * - `loading`: a file query that decides the outcome has not settled yet.
    */
   status: "loading" | "missing" | "invalid" | "partial" | "valid";
   /** The file the configuration came from; null while loading or missing. */

@@ -68,23 +68,10 @@ export class ConnectionDriver extends Context.Service<
 >()("@t3tools/client-runtime/connection/driver/ConnectionDriver") {}
 
 /**
- * Connects over the first route, in preference order, that is worth trying.
- * Every route is checked at once, but a route only waits for its own check,
- * so a reachable LAN address connects without waiting on a silent tailnet
- * one. A silent route is skipped on the first pass so a LAN address from
- * another network costs one short check, not a connection timeout. A route
- * that fails to connect moves on to the next: a signed-out T3 Connect must
- * not hide a working LAN. Silent routes are tried last, since a check is not
- * proof, unless an attempted route already failed transiently: then the
- * network itself is likely slow, and the supervisor's retry checks every
- * route again sooner than full attempts on routes that did not answer. A route
- * whose check answered only after the head start is still tried.
- *
- * The reported error is a transient one when any route failed transiently,
- * so the supervisor keeps retrying a route that may come back; a blocked
- * error is reported only when every attempted route was blocked. Each route
- * that fails or goes unanswered is also reported on its own, because the one
- * error names a single route.
+ * Each route waits only for its own check, so a reachable LAN address never waits on a silent
+ * tailnet one, and a failed route falls through so a signed-out styal Link cannot hide a working
+ * LAN. Silent routes go last unless a route already failed transiently. Any transient failure
+ * makes the result transient so the supervisor keeps retrying.
  */
 export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")(function* <R>(
   entry: ConnectionCatalogEntry,
@@ -165,7 +152,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
   );
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const resolver = yield* ConnectionResolver.ConnectionResolver;
   const sessions = yield* RpcSession.RpcSessionFactory;

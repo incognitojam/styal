@@ -2,11 +2,9 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 /**
- * Early V1 history imports turned runtime bookkeeping (context window updates, turn usage,
- * checkpoint and task lifecycle rows, bare tool starts) into turn items, which render as
- * warning notices. Drop the imported items made only of those kinds, with their events and
- * positions, so existing histories match what the importer now writes. The kind list is
- * frozen here deliberately; later importer changes must not alter what this migration did.
+ * Early V1 imports turned runtime bookkeeping into turn items that render as warning notices;
+ * drop those items with their events and positions. The kind list is frozen so later importer
+ * changes cannot alter what this migration did.
  */
 const UNDISPLAYED_ACTIVITY_KINDS = [
   "checkpoint.captured",

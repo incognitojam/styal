@@ -141,9 +141,8 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly cwd: string;
   readonly async: boolean;
   /**
-   * Resolves when the script's terminal process exits. The exit code is null
-   * when the terminal was closed, restarted or failed before the process
-   * exited. Only present when `observeCompletion` was requested.
+   * Null exit code means the terminal closed, restarted or failed before the process exited.
+   * Only present when `observeCompletion` was requested.
    */
   readonly completion?: Effect.Effect<ProjectSetupScriptCompletion>;
 }
@@ -268,7 +267,7 @@ function stripTerminalControl(text: string): string {
   );
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const terminalManager = yield* TerminalManager.TerminalManager;
@@ -588,9 +587,7 @@ export const make = Effect.gen(function* () {
         switch (event.type) {
           case "output": {
             lineBuffer += event.data;
-            // A bare carriage return is how installers redraw a progress line in
-            // place; each redraw becomes a short line of its own instead of
-            // being glued into one long one.
+            // Bare CR redraws progress in place; split redraws instead of growing one line.
             const lines = lineBuffer.split(/\r\n|\r|\n/);
             lineBuffer = lines.pop() ?? "";
             // A script that never prints a newline must not grow this forever.

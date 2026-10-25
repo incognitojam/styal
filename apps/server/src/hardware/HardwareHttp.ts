@@ -1,12 +1,6 @@
 /**
- * HardwareHttp - the per-lease proxy scripts use to reach a leased device.
- *
- * `GET /api/hardware/proxy/<token>/calibrate/led?n=3` runs the device's
- * `GET /calibrate/led` action for the thread holding that lease, with the same
- * tier checks as `hardware_call`. The token is the only credential: it is
- * random, belongs to one lease, and stops working when the lease ends.
- *
- * @module HardwareHttp
+ * The proxy token is the only credential: it is random, belongs to one lease, and stops working
+ * when the lease ends. Calls get the same tier checks as `hardware_call`.
  */
 import * as Effect from "effect/Effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";

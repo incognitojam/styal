@@ -33,7 +33,6 @@ export type PersistentTerminalLaunchContext = {
   readonly worktreePath: string | null;
 };
 
-/** Same terminal ids (order ignored) — avoids reconcile when only server session ordering differs. */
 function terminalIdListsEqual(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) {
     return false;

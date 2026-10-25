@@ -442,12 +442,9 @@ export function routesAfterRemoving(
 }
 
 /**
- * The paired route to drop when the route in use signs in with a pairing that
- * predates granular permissions and the environment can also be reached
- * through T3 Connect. T3 Connect grants the current permissions, and the
- * addresses it reports are learned again with its credential, so the pairing
- * adds nothing. Returns null when the route in use does not sign in with a
- * pairing the user saved, or there is no T3 Connect route to fall back to.
+ * A pairing that predates granular permissions adds nothing once styal Link can reach the
+ * environment: styal Link grants the current permissions and its addresses are learned again
+ * with its own credential.
  */
 export function legacyPairingRouteId(
   entry: ConnectionCatalogEntry,

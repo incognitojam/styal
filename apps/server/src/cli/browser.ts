@@ -1,14 +1,8 @@
 /**
- * `styal browser setup` - prepares a Linux host for styal's headless browser, which
- * server browser tabs and HTML render previews share. It is the fix every
- * browser host error names, so it does the whole job in one run:
- *
- * - installs the AppArmor profile that lets Chrome's sandbox run where the host
- *   restricts unprivileged user namespaces (Ubuntu 23.10+), and
- * - installs the Debian packages for any libraries the browser cannot load.
- *
- * Both need root. Without it, the command prints what it would change and the
- * `sudo` line to run. It is safe to run again; it skips what is already done.
+ * `styal browser setup` is the fix every browser host error names, so one run installs the
+ * AppArmor profile Chrome's sandbox needs where unprivileged user namespaces are restricted
+ * and any missing Debian libraries. Both need root; without it the command prints the `sudo`
+ * line. It skips what is already done.
  */
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Console from "effect/Console";
@@ -51,10 +45,7 @@ const runStep = Effect.fn("browserSetup.runStep")(function* (
   }
 });
 
-/**
- * The T3 home to check. Under `sudo` the process home is root's, so an
- * unspecified home falls back to the invoking user's `~/.styal`.
- */
+/** Under sudo, an unspecified home uses the invoking user's ~/.styal. */
 const setupBaseDir = Effect.fn("browserSetup.baseDir")(function* (explicit: Option.Option<string>) {
   const env = yield* HostProcess.Environment;
   const raw = Option.getOrUndefined(explicit) ?? env.STYAL_HOME;

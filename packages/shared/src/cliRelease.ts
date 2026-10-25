@@ -7,12 +7,7 @@ export const CLI_NPM_DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${CLI
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
 export const CLI_RELEASE_BASE_URL_ENV = "STYAL_RELEASE_BASE_URL";
 
-/**
- * The archives a release attaches. Kept in step with the build_linux_cli
- * matrix in .github/workflows/fork-cli-archives.yml: a key here without a build there produces
- * download URLs that 404, and a build there without a key here is
- * unreachable from every installer.
- */
+// Keep archive keys aligned with the build_linux_cli matrix in .github/workflows/fork-cli-archives.yml.
 // Intel macOS is outside the supported platform set.
 const CLI_ARCHIVE_PLATFORM_KEYS = [
   "darwin-arm64",
@@ -31,11 +26,7 @@ export function cliArchivePlatformKey(
   return CLI_ARCHIVE_PLATFORM_KEYS.find((candidate) => candidate === key);
 }
 
-/**
- * Windows ships bsdtar in System32, which reads both formats; a Git-for-Windows
- * GNU tar earlier on PATH cannot open the zip, so the system copy is named by
- * absolute path.
- */
+/** Use System32 bsdtar on Windows; Git-for-Windows GNU tar cannot open zip archives. */
 export function cliArchiveTarCommand(
   platform: NodeJS.Platform,
   env: Readonly<Record<string, string | undefined>>,

@@ -1,23 +1,7 @@
 /**
- * HardwareService - network devices that agents lease and call through the
- * server.
- *
- * One thread holds a device at a time. `read` actions need no lease;
- * `operate` actions need the caller to hold it; `approve` actions also wait
- * for the user, through the same approval card a provider approval uses.
- * Every way a lease ends runs the definition's release hooks, so a crashed
- * calibration run does not leave the device in calibration mode.
- *
- * A lease survives turns: a busy thread keeps it, and an idle one keeps it
- * for `idleMinutes` after its last activity, up to a hard cap the user can
- * lift. Scripts reach the device through a loopback proxy URL whose token
- * dies with the lease.
- *
- * The device's own API usually accepts anyone on the network, so until its
- * firmware requires the credential stored here, the lease only holds while
- * agents use these paths.
- *
- * @module HardwareService
+ * Every way a lease ends runs the definition's release hooks, so a crashed run does not leave the
+ * device in a special mode. The device's own API usually accepts anyone on the network, so until
+ * its firmware requires the stored credential, the lease only holds while agents use these paths.
  */
 import {
   CommandId,

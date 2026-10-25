@@ -1,8 +1,6 @@
 /**
- * Reads `turn.usage` activities for the model and token count under each agent
- * turn and the thread total in the composer, and formats them identically on
- * web and mobile. The server uses {@link sumThreadTokenUsage} to write that
- * total.
+ * Shared so web and mobile format usage identically; the server writes the thread total with
+ * {@link sumThreadTokenUsage}.
  *
  * @module turnUsage
  */
@@ -426,11 +424,8 @@ function sameShape(previous: string, next: string): boolean {
 }
 
 /**
- * Splits a new reading into wheels against the previous one. When the number
- * keeps its shape, each changed digit rolls on its own, lined up from the right
- * as meter wheels are, and a new leading digit rolls in from blank. When the
- * shape or unit changes, such as "998K" becoming "1.00M", the number and unit
- * roll together. Symbols around the number never roll.
+ * Digits line up from the right and each changed one rolls alone while the number keeps its
+ * shape; when the shape or unit changes ("998K" to "1.00M") the number and unit roll together.
  */
 export function meterWheels(previous: string, text: string): ReadonlyArray<MeterWheel> {
   const was = METER_READING.exec(previous);

@@ -13,11 +13,8 @@ const SERVER_OWNED_ENV_KEYS = new Set([
 ]);
 
 /**
- * True for variables that configure this server process: its settings
- * (`T3CODE_*`, `STYAL_HOME`), variables set by the service launcher or
- * Electron, and the dev web build's `VITE_*` and `PORT`. A styal server started
- * from a child process that inherits them would use this server's port, state
- * directory, and Tailscale Serve mapping.
+ * A styal server started from a child process that inherits these would use this server's
+ * port, state directory, and Tailscale Serve mapping.
  */
 function isServerOwnedEnvKey(key: string): boolean {
   const normalizedKey = key.toUpperCase();

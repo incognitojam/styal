@@ -1,18 +1,9 @@
 import type { tokenCache } from "@clerk/expo/token-cache";
 
-// Clerk's headless (React Native) startup has failure modes that leave
-// `useAuth().isLoaded` false until the app is restarted:
-//
-// - React Native on Android sets no connect or read timeout on `fetch`, so the
-//   initial environment/client request can stall indefinitely on a network that
-//   is still coming up.
-// - Expo awaits the saved client token before running our request timeout hook.
-//   A stalled native storage read never reaches fetch or reports a load failure.
-// - When the initial load fails, `@clerk/react` reports status "error" and never
-//   calls `load()` again.
-//
-// Both hooks below use Clerk internals that are not in its public types, so each
-// checks for the member at runtime and does nothing when a Clerk upgrade removes it.
+// Clerk can stay unloaded until restart: Android `fetch` has no timeout, Expo awaits a saved-token
+// read that can stall before our timeout hook runs, and `@clerk/react` never retries a failed load.
+// Both hooks use Clerk internals missing from its public types, so each checks for the member at
+// runtime and does nothing when a Clerk upgrade removes it.
 
 export const CLERK_REQUEST_TIMEOUT_MS = 15_000;
 export const CLERK_TOKEN_READ_TIMEOUT_MS = 15_000;

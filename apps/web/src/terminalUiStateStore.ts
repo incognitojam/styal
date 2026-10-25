@@ -19,7 +19,6 @@ interface ThreadTerminalUiState {
   activeTerminalGroupId: string;
 }
 
-// The v1 suffix identifies the persisted terminal drawer schema.
 const TERMINAL_UI_STATE_STORAGE_KEY = "styal:terminal-state:v1";
 
 interface PersistedTerminalUiStateStoreState {

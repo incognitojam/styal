@@ -144,11 +144,9 @@ function layerGrokProviderAdapterRegistryReplay(
                             !promptId.startsWith("task-completed-")
                           )
                             return;
-                          // The recorded wake arrives inside the root's 3s
-                          // debounce. Do not simulate a quiet gap while its
-                          // remaining frames are still crossing real child IO.
-                          // This receipt follows the adapter callback, so the
-                          // whole native wake has reached its completion boundary.
+                          // The recorded wake arrives inside the root's 3s debounce, so no quiet
+                          // gap is simulated while frames still cross child IO. This receipt
+                          // follows the adapter callback, so the whole wake has completed.
                           wakeDrained = true;
                           if (pendingFinish !== undefined) {
                             replayGate?.recordFinishArmed(pendingFinish);

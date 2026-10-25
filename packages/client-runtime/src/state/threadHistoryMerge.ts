@@ -73,11 +73,8 @@ export function mergeOlderHistoryIntoProjection(
     ) {
       const currentItem = turnItemById.get(String(row.sourceItemId));
       if (currentItem !== undefined) {
-        // The bounded snapshot keeps interrupt requests and still-running
-        // background work outside its visible window; they take their place
-        // when their history page arrives, with their live state. A live event
-        // may instead have hidden the item while the page was in flight; do
-        // not resurrect the stale page copy.
+        // A live event may have hidden the item while the page was in flight; do not
+        // resurrect the stale page copy.
         if (
           !isOrchestrationV2TurnItemVisible({
             item: currentItem,

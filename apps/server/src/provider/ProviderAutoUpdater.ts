@@ -1,22 +1,8 @@
 /**
- * ProviderAutoUpdater — installs provider CLI updates in the background when
- * `autoUpdateProviders` is on.
- *
- * It installs only a version the provider canary verified for this styal
- * release (`autoUpdates` in the manifest's compatibility policy), read from a
- * copy of the manifest fetched from `main` in the last two days. Only
- * installers that can pin an exact version take part; native self-updaters
- * and Homebrew cannot be held to the verified version. A pinnable native
- * install whose own updater is still on is reinstalled at the verified
- * version even when it already has it, which turns that updater off.
- *
- * A CLI is skipped while a thread whose provider instance runs it is
- * preparing, starting, running or waiting on the user; threads on other CLIs
- * never hold it back. A question still pending an hour after its run finished
- * no longer counts: the agent is done, and the user may never see it. The runner checks again under the machine-wide install
- * lock, where new turns on that CLI wait for the install, so a CLI is not
- * replaced under a turn. Dev servers never run it: they share the host's
- * provider CLIs with the developer's real install.
+ * Installs only canary-verified versions through pinnable installers; a native install whose own
+ * updater is on is reinstalled to turn it off. A CLI waits while its threads are busy, except a
+ * question pending an hour after its run, and is rechecked under the install lock. Dev servers
+ * never run it because they share the host's provider CLIs.
  */
 import type {
   OrchestrationV2ThreadShell,

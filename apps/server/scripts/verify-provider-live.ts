@@ -1,24 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off globalFetch:off globalConsole:off globalConsoleInEffect:off globalDateInEffect:off preferSchemaOverJson:off - Host-side process verifier retains raw wire evidence and owns deadline timers.
 /**
- * Real provider turn verifier, used by the provider canary before a provider
- * release is allowed for automatic updates. Run from the repository root:
- *
- *   node apps/server/scripts/verify-provider-live.ts --provider claudeAgent \
- *     --model claude-haiku-5-5 [--timeout 180] [--expect-version 2.1.300] \
- *     [--scenario cold-resume,approval]
- *
- * Boots a real server with a fresh T3 home and a disposable Git project and
- * drives real provider turns over the WebSocket RPC API. The provider uses the
- * CLI authentication available to this process (logins in HOME or API key
- * variables). Evidence is retained in the printed directory.
- *
- * The scenarios target breakages past provider releases caused: resume decode
- * failures that only show after a server restart, native subagent items the
- * adapter could not read, extra or missing turn results that left threads
- * working, unhandled approval requests, removed rollback methods, and an Auto
- * mode that asks about routine work or is no longer accepted. The rewind
- * scenario also runs on pull requests that change rollback code, since a
- * rollback can be accepted while the provider keeps the rewound turn.
+ * Real provider turn verifier that gates automatic provider updates in the canary. Boots a real
+ * server with a fresh T3 home and drives provider turns with this process's CLI credentials.
+ * Scenarios target breakages past provider releases caused, such as resume decode failures that
+ * only show after a restart, unhandled approvals, and rollbacks the provider silently ignores.
  */
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
@@ -432,11 +417,9 @@ async function mintSocketUrl(headers: Record<string, string>): Promise<string> {
 }
 
 /**
- * Builds a fresh RPC protocol for the current server. The RPC client reconnects
- * after an idle drop, so each connection attempt mints its own ticket; a reused
- * ticket would never open. A busy CI runner can take longer than the default
- * ten seconds to open a socket while a provider is starting, so opens get more
- * time and a failed open is retried instead of failing every open request.
+ * Each reconnect mints its own ticket because a reused ticket never opens. Busy CI runners can
+ * exceed the default ten-second open timeout while a provider starts, so opens get more time
+ * and a failed open is retried.
  */
 async function connect(headers: Record<string, string>) {
   const socketUrl = Effect.promise(() => mintSocketUrl(headers));

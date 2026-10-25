@@ -1,14 +1,5 @@
-/**
- * Every check the host reported for one pull request, as a tab of its own.
- *
- * It used to be a fold under the summary, where it sat between the description and the
- * conversation and was scrolled past more often than it was read. A tab makes the answer to
- * "is this green?" one press away wherever the reader is, and gives the list room to say what
- * it knows: the rollup rides the top of the scroll box, and the runs read beneath it.
- *
- * Deliberately hook-free — it draws what the detail already holds, so the panel keeps it mounted
- * behind the other tabs for nothing.
- */
+// Hook-free: it draws what the detail already holds, so the panel keeps it mounted behind the
+// other tabs at no cost.
 import type {
   PullRequestCheck,
   PullRequestChecksState,

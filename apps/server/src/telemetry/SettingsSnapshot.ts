@@ -1,16 +1,7 @@
 /**
- * Settings snapshot: the current values of a server's preferences, so
- * maintainers can see which defaults installations change.
- *
- * `settings.snapshot` reports a fixed allowlist of server settings once after
- * startup and then daily. Every allowlisted key is sent on every report, at its default or
- * not, so a missing key always means an older server. Values are booleans,
- * enum literals and small integers only: never paths, names, prefixes,
- * instructions, model or instance ids, or the contents of per-project and
- * other record settings, which are reported as counts or as "customized".
- *
- * Client settings such as the send shortcut or sidebar sorting live on each
- * device, not on the server, so they are not part of this snapshot.
+ * Every allowlisted key is sent on every report, so a missing key means an older server. Values
+ * are booleans, enum literals and small integers only; record settings are reported as counts or
+ * "customized", never their contents, paths, names, or ids.
  */
 import {
   DEFAULT_SERVER_SETTINGS,

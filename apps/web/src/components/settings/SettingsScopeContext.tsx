@@ -23,13 +23,7 @@ type ProjectFileMember = readonly [
   physicalProjectKey: string,
 ];
 
-/**
- * Each member's project configuration (styal.json, or a legacy t3.json), so
- * file-backed settings show the file as a layer in the inheritance chain. A
- * member is only present once both reads have settled; the query atoms
- * cache per (environment, cwd). Keyed by the members' identifying fields so
- * each render reads the same atom.
- */
+// A member is present only once both reads (styal.json and legacy t3.json) have settled.
 const memberProjectFilesAtom = Atom.family((membersKey: string) => {
   const members = JSON.parse(membersKey) as ReadonlyArray<ProjectFileMember>;
   return Atom.make((get) => {

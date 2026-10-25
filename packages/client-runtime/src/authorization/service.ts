@@ -536,12 +536,10 @@ export const make = Effect.gen(function* () {
       if (endpoint !== undefined && cachedSocket.failure._tag !== "EnvironmentAuthInvalidError") {
         return yield* mapDpopSocketError(cachedSocket.failure);
       }
-      // When the retry also times out, keep the token and fail as transient. The relay returns
-      // the same hostname for an environment, so a new credential would only add an auth
-      // session on that slow server. Leave out the network hint: the relay and tunnel answered
-      // for this token before. At the limit, drop the token and ask the relay again in case
-      // the endpoint moved. That mint runs in the service scope, so it lands even if this
-      // attempt times out.
+      // The relay returns the same hostname for an environment, so a new credential would only
+      // add an auth session on that slow server; keep the token until the limit, then mint
+      // again in case the endpoint moved. The mint runs in the service scope, so it lands even
+      // if this attempt times out.
       if (cachedSocket.failure._tag === "RemoteEnvironmentAuthTimeoutError") {
         const accessToken = cachedToken.accessToken;
         const previous = cachedTicketTimeouts.get(input.expectedEnvironmentId);

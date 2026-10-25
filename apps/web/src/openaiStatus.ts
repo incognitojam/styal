@@ -9,11 +9,8 @@ export const OPENAI_STATUS_SUMMARY_URL = `${OPENAI_STATUS_PAGE_URL}/api/v2/summa
 export const OPENAI_STATUS_COMPONENTS_URL = `${OPENAI_STATUS_PAGE_URL}/api/v2/components.json`;
 
 /**
- * Surfaces a local Codex turn never calls: consumer and enterprise ChatGPT
- * features, API products other than Responses, and the other Codex clients.
- * What a turn does depend on stays visible: Responses, Codex API, CLI, and
- * Login. A shared outage still shows through those, and anything unnamed,
- * new or renamed, still shows.
+ * Surfaces a local Codex turn never calls. Responses, Codex API, CLI, and Login stay visible, so a
+ * shared outage still shows, and any new or renamed component still shows.
  */
 const OPENAI_IGNORED_COMPONENTS = [
   "Ads API",

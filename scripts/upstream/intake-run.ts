@@ -2,20 +2,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
 
 /**
- * Applies upstream commits to an intake branch, resolving the conflicts that follow from known
- * fork differences and stopping on the rest. See docs/operations/upstream-tracking.md.
- *
- *   intake-run.ts apply (--count <n> | --through <upstream-sha> | --commits <sha,...>) [--branch <name>]
- *   intake-run.ts continue [--note <text>] [--feature <id,id>]
- *   intake-run.ts auto --branch <name> [--max <n>] [--push] [--hold-queued] [--no-rerere]
- *   intake-run.ts push [--hold-queued]
- *   intake-run.ts survey [--base HEAD] [--count 100 | --through <sha>] [--json]
- *   intake-run.ts review-brief [--base origin/main] [--out <file>]
- *   intake-run.ts fix-trailers [--base origin/main]
- *   intake-run.ts fix-references [--base origin/main]
- *   intake-run.ts verify [--base origin/main] [--all-tests | --quick]
- *   intake-run.ts replay <promoted-candidate-sha> [--base <fork-sha>] [--skip-lockfile] [--json] [--dump <dir>]
- *   intake-run.ts score <dump-dir> [--exclude <sha-prefixes>] [--verbose]
+ * Resolves the conflicts that follow from known fork differences and stops on the rest.
+ * See docs/operations/upstream-tracking.md.
  */
 
 import * as NodeChildProcess from "node:child_process";
@@ -2205,11 +2193,9 @@ export interface PlannedTestRun {
 }
 
 /**
- * Packages whose config runs test files one at a time, and the parallelism verify runs them with
- * instead. One file at a time leaves most of a local machine idle for the longest step of verify.
- * Fork CI runs each server shard with three workers. On the shared 11-core intake machine, with
- * other agents holding its load average between 7 and 25, five workers ran the server tests of a
- * 55-commit batch in a median 296s against 406s with three, with no new failures.
+ * These packages' configs run one test file at a time, leaving most of a local machine idle. On the
+ * shared 11-core intake machine, five workers ran a 55-commit batch's server tests in a median 296s
+ * against 406s with three (Fork CI's per-shard count), with no new failures.
  */
 const PARALLEL_TEST_ARGS: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
   ["apps/server", ["--fileParallelism", "--maxWorkers=5"]],
@@ -2324,12 +2310,9 @@ function verifyTestRuns(
 const VERIFY_CONCURRENCY = 2;
 
 /**
- * Installs once, then typechecks every package the batch touches, lints its changed files, runs
- * the tests related to the batch (the whole suite of every touched package with `allTests`),
- * checks formatting, and checks the ledger. Steps after install only read the tree, so they run
- * side by side, longest first. Prints one line per step as it finishes, with its wall time, and
- * the failing lines of each failed step.
- * Whole suites run in Fork CI, which every candidate must pass before promotion.
+ * Steps after install only read the tree, so they run side by side, longest first. By default
+ * only tests related to the batch run; whole suites run in Fork CI, which every candidate must
+ * pass before promotion.
  */
 async function verify(
   cwd: string,

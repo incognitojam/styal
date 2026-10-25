@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { readClaudeSessionHistory } from "./provider/claudeSessionHistory.ts";
 
-// Nothing here may run on import: the executable also hosts the history worker.
+// Bundled import.meta.main is always true; imports must have no side effects.
 const decodeHistoryOptions = Schema.decodeSync(
   Schema.fromJsonString(
     Schema.Struct({

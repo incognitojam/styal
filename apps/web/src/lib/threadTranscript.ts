@@ -43,11 +43,9 @@ function section(
 }
 
 /**
- * Serialize a thread's conversation as markdown for sharing or pasting into a
- * new chat as context. It reads the same projected turn items the timeline
- * renders, so the server decides what is a message: completions that woke the
- * agent arrive as notification items and are left out with tool calls and
- * reasoning. A message still streaming is skipped rather than copied half-done.
+ * Reads the same projected turn items the timeline renders, so the server decides what is a
+ * message: completions that woke the agent arrive as notification items and are left out. A
+ * message still streaming is skipped rather than copied half-done.
  */
 export function buildThreadTranscript(
   title: string,

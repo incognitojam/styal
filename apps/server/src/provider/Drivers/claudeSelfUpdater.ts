@@ -6,17 +6,10 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 /**
- * Native Claude Code's background updater, and styal's switch for it.
- *
- * `claude install <version>` marks a native install `autoUpdatesProtectedForNative`,
- * so Claude ignores `autoUpdates: false` and keeps self-updating. Only the
- * `DISABLE_AUTOUPDATER` environment variable stops it, and manual
- * `claude update` / `claude install` keep working with it set. styal sets it in
- * the `env` block of the instance's user settings (`<config dir>/settings.json`)
- * together with `STYAL_MANAGED_UPDATES`, which records that styal set it.
- * Handing updates back removes both, and only when that record is there, so a
- * value the user set is never touched. The record lives in the same file, so
- * every styal server on the machine sees it and it is written in the same rename.
+ * Native installs ignore `autoUpdates: false`; only `DISABLE_AUTOUPDATER` stops self-updates.
+ * styal writes it to the settings `env` block with `STYAL_MANAGED_UPDATES` as an ownership
+ * record, and removes both only when that record is present, so a user's own value is never
+ * touched. Both land in one atomic rename that every styal server on the machine sees.
  */
 const CLAUDE_UPDATER_ENV = "DISABLE_AUTOUPDATER";
 const CLAUDE_UPDATER_OWNER_ENV = "STYAL_MANAGED_UPDATES";

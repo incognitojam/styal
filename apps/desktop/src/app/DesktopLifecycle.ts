@@ -291,7 +291,7 @@ function quitFromSignal(
   );
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = DesktopLifecycle.of({
   relaunch: Effect.fn("desktop.lifecycle.relaunch")(function* (reason, options) {
     const electronApp = yield* ElectronApp.ElectronApp;

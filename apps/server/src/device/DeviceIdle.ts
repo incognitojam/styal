@@ -1,24 +1,8 @@
 /**
- * Hands devices back on demand and shuts down the ones nobody uses, so agents
- * sharing a machine's simulators and emulators take turns instead of keeping
- * every device they ever opened.
- *
- * An agent holds a device through two records: the service's session and the
- * agent-device session `device_open` handed out, whose device claim stops other
- * threads from driving it. The daemon owning that claim never exits while the
- * server runs, so nothing else releases it. Closing a device releases both.
- * A hold whose thread is not working is released when another agent opens the
- * device, so idle holds cost nothing until a device is actually needed. An agent
- * opening a device a working thread holds, or someone watches, is refused unless
- * it asks to take the device over; archived and deleted threads lose their
- * sessions on the next sweep. A
- * device this server booted that nobody watches and no working thread holds
- * shuts down after `deviceIdleShutdownMinutes`; devices booted outside styal
- * are never shut down.
- *
- * Sessions the user opened from the Device panel carry no claim. Lives beside
- * `DeviceService` rather than inside it: the layer wraps the service's
- * lifecycle methods and drives everything else through its public interface.
+ * The agent-device daemon never releases a device claim while the server runs, so closing a
+ * device here releases both the service session and the claim. Idle holds yield to another
+ * agent's open; holds of working or watched devices need an explicit takeover. Only devices
+ * this server booted are shut down when idle.
  */
 import {
   DeviceHeldError,

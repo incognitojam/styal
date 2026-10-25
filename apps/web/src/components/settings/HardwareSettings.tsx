@@ -1,11 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 /**
- * Hardware settings - network devices agents lease through the server, such
- * as a microcontroller with an HTTP API. Instances live in server settings;
- * definitions live in each project's repository under `.styal/hardware/`.
- *
- * Mounting the device list subscribes to hardware state, which makes the
- * server probe device health, so nothing here is rendered off this page.
+ * Mounting the device list subscribes to hardware state, which makes the server probe device
+ * health, so nothing here is rendered off this page.
  *
  * @module HardwareSettings
  */

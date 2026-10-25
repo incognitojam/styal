@@ -103,9 +103,7 @@ export function stableProviderVersion(
   version: string | null | undefined,
 ): string | null {
   const unprefixed = version?.replace(/^v/, "");
-  // Cursor appends a build hash to its date; Google's ACP runtime uses a release prefix;
-  // Muse appends a release revision. Strip only these driver-specific forms, keeping
-  // semver prereleases unknown.
+  // Strip Cursor build hashes, Google ACP release prefixes and Muse revisions; leave semver prereleases unknown.
   const stable =
     driver === "cursor"
       ? unprefixed?.replace(/^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/, "$1")
@@ -118,12 +116,9 @@ export function stableProviderVersion(
 }
 
 /**
- * Whether a styal build at `version` contains the code of the published build
- * `tested`. Nightlies are cut from ever newer commits on main, so a later
- * nightly contains an earlier one. A stable release is rebuilt from some
- * nightly of its own version, possibly older than `tested`, so it contains a
- * nightly only of an earlier version (a stable 0.1.2 contains every
- * 0.1.1-nightly). It contains a stable release at or before it.
+ * Later nightlies contain earlier ones. A stable release is rebuilt from some nightly of its own
+ * version, possibly older than `tested`, so it contains only nightlies of earlier versions (stable
+ * 0.1.2 contains every 0.1.1-nightly) and stable releases at or before it.
  */
 export function styalBuildContains(version: string, tested: string): boolean {
   const isNightly = (value: string) => value.includes("-");

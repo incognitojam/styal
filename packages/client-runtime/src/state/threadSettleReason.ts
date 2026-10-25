@@ -4,11 +4,7 @@ function dayCount(days: number): string {
   return days === 1 ? "1 day" : `${days} days`;
 }
 
-/**
- * Short label for a thread the server settled automatically, such as
- * "PR #123 merged" or "Idle 3 days". Null for explicit settles and settles
- * recorded before reasons existed.
- */
+/** Null for explicit settles and settles recorded before reasons existed. */
 export function settleReasonLabel(
   reason: OrchestrationV2ThreadSettleReason | null | undefined,
 ): string | null {

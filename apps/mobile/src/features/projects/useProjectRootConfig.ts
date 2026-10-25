@@ -27,10 +27,8 @@ const contentsOf = (data: ProjectReadFileResult | null) =>
   data === null || data.exists === false || data.truncated ? null : data.contents;
 
 /**
- * The project's configuration (styal.json, or a legacy t3.json without one),
- * read from {@link projectConfigRoot}. `pending` stays true until the result
- * is final: while file access is unknown, and without styal.json contents
- * until its read settles, so a legacy file never decides ahead of its
+ * Reads styal.json, or a legacy t3.json without one. `pending` stays true while file access is
+ * unknown and until the styal.json read settles, so a legacy file never decides ahead of its
  * replacement.
  */
 export function useProjectRootConfig(

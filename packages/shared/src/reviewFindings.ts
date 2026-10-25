@@ -1,10 +1,6 @@
 /**
- * Code-review findings reported through Claude Code's `ReportFindings` tool.
- *
- * The tool's input is the review's deliverable: the agent's closing message
- * only points back at it ("the findings above"). Clients render it as a card
- * instead of a tool row, so this module reads the projected input and formats
- * it as markdown that each client's own renderer turns into file links.
+ * The `ReportFindings` tool input is the review's deliverable; Claude Code's closing message
+ * only points back at it, so clients render it as a card instead of a tool row.
  */
 
 const REPORT_FINDINGS_TOOL_NAME = "ReportFindings";
@@ -153,12 +149,9 @@ function formatFindingDetails(finding: ReviewFinding, index: number): string {
 }
 
 /**
- * The findings in reported order (most severe first). Collapsed, each is one
- * paragraph: a bold numbered title and its location. With details, each is a
- * title followed by top-level paragraphs; a list item holding several
- * paragraphs would be simpler, but mobile's native markdown text runs them
- * together. Locations are relative links with `#L` anchors, which both
- * clients' markdown renderers resolve against the thread's workspace.
+ * Details use top-level paragraphs rather than a multi-paragraph list item, which mobile's
+ * native markdown runs together. Locations are relative `#L` links that both clients resolve
+ * against the thread's workspace.
  */
 export function formatReviewFindingsMarkdown(
   report: ReviewFindingsReport,

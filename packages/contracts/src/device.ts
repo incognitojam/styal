@@ -1,12 +1,6 @@
 /**
- * Device - Schemas for first-class iOS Simulator and Android Emulator support.
- *
- * The server owns device discovery, the streaming helper (expo-device-hub),
- * and the agent driver (agent-device). Clients render the live screen from the
- * server-proxied stream, and agents reach devices through the `device_*` MCP
- * tools plus the `agent-device` CLI the server preconfigures for them.
- *
- * Devices live on the local machine, an SSH host, or a connected environment.
+ * The server owns discovery, streaming (expo-device-hub), and the agent driver (agent-device);
+ * clients render the server-proxied stream.
  *
  * @module Device
  */

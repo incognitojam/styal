@@ -62,12 +62,10 @@ export function makeNativeUpdatesFakes(
     /** Contents of the pending file that outlives the process. */
     pendingFile: undefined as string | undefined,
   };
-  // Squirrel.Mac (8d80880) as electron-updater 6.8.9's MacUpdater drives it.
-  // Every update-downloaded follows a setFeedURL, which creates a fresh native
-  // updater. Staging writes ShipItState.plist (`request`) and then submits the
-  // ShipIt job, once per native updater. On exit, ShipIt installs `request`.
-  // MacUpdater's `staged` flag is set by any successful staging and never
-  // reset; quitAndInstall stages first only while it is unset.
+  // Squirrel.Mac (8d80880) under electron-updater 6.8.9: each setFeedURL makes a fresh native
+  // updater that writes ShipItState.plist (`request`) and submits ShipIt once; ShipIt installs
+  // `request` on exit. MacUpdater's `staged` flag is never reset, and quitAndInstall stages
+  // first only while it is unset.
   const squirrel = {
     feedVersion: undefined as string | undefined,
     feedSubmitted: false,

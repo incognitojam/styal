@@ -1,13 +1,7 @@
 /**
- * ProviderInstallGate — keeps provider CLI installs and turn starts apart.
- *
- * An install holds the machine-wide lock for its installer
- * (`ProviderInstallLock`) and marks its CLI as installing on this server. A
- * turn start for an instance that runs that CLI waits until the install
- * finishes, so a CLI is never replaced while it launches. Turns on other CLIs
- * are not held back. Another server's install is seen only through its lock,
- * which names the installer but not the package, so those waits cover every
- * CLI that installer owns.
+ * Turn starts wait for an install of their CLI so it is never replaced while launching. Another
+ * server's install is seen only through its lock, which names the installer but not the package,
+ * so those waits cover every CLI that installer owns.
  */
 import type { ProviderInstanceId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -67,7 +61,7 @@ export class ProviderInstallGate extends Context.Service<
   }
 >()("@styal/cli/provider/ProviderInstallGate") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const lock = yield* ProviderInstallLock.ProviderInstallLock;
   const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;

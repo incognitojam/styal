@@ -11,11 +11,9 @@ import {
 import * as Schema from "effect/Schema";
 
 /**
- * A turn item repeats a body its record already carries: message text, checkpoint files, a
- * subagent's prompt and result. For clients that opt in, the server blanks the repeat and marks
- * the field (`textOmitted`, `filesOmitted`, `promptOmitted`, `resultOmitted`), and the client
- * copies the value back from the record it already holds. Only a body equal to the record's is
- * blanked, so the restore is exact.
+ * The server blanks a turn item body that repeats its record (marked `textOmitted`,
+ * `filesOmitted`, `promptOmitted`, `resultOmitted`). Only a body equal to the record's is
+ * blanked, so copying it back from the record is exact.
  */
 export interface DedupedBodySource {
   readonly messageText: (id: MessageId) => string | undefined;

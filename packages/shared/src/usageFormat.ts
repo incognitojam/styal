@@ -13,13 +13,8 @@ const CURRENCY = new Intl.NumberFormat("en-US", {
 const INTEGER = new Intl.NumberFormat("en-US");
 
 /**
- * Directional operational-emissions assumptions for frontier-model inference.
- *
- * Oviedo et al. estimate 0.31 Wh for a representative query with 300 median
- * output tokens. The IEA projects global grid intensity of 415 g CO2/kWh for
- * 2026. Output tokens are the best local proxy because the study finds decode
- * energy dominates and provider transcripts do not expose measured energy.
- *
+ * 0.31 Wh per 300-output-token query (decode energy dominates, so output tokens are the proxy)
+ * at the IEA's projected 415 g CO2/kWh for 2026. Directional only.
  * https://arxiv.org/abs/2509.20241
  * https://www.iea.org/reports/electricity-mid-year-update-2025/emissions-power-generation-co2-emissions-are-plateauing
  */
@@ -295,9 +290,7 @@ export function makeWindow(
       untilTime: untilTime.toISOString(),
     };
   }
-  // Subtracting fixed milliseconds from `now` lands on the wrong calendar day
-  // around a DST transition. The window start is pure calendar arithmetic on
-  // the local end day, done in UTC where days are uniform.
+  // Use calendar arithmetic in UTC; fixed millisecond subtraction crosses DST days incorrectly.
   const [year = 0, month = 1, dayOfMonth = 1] = untilDay
     .split("-")
     .map((part) => Number.parseInt(part, 10));

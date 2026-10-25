@@ -1,17 +1,8 @@
 /**
- * Keeps physical Android devices awake while a thread holds them, and
- * optionally dark. A sleeping phone streams a black screen and ignores input,
- * and the hub's own scrcpy session never asks the device to stay awake;
- * simulators and emulators do not sleep, so only physical devices need this.
- * With `keepPhysicalAndroidScreensOff`, the panel is also powered off through
- * scrcpy's display power control, the same mechanism as
- * `scrcpy --turn-screen-off`, while the display keeps compositing for the
- * hub's mirror.
- *
- * Each device gets its own control-only scrcpy server alongside the hub's.
- * scrcpy restores the display and the stay-awake setting when that server
- * exits, including when styal dies and its socket closes, so nothing here has
- * to undo device state.
+ * A sleeping phone streams a black screen and ignores input, and the hub's scrcpy session never
+ * keeps it awake. A control-only scrcpy server per held device keeps it awake (and optionally
+ * powers the panel off); scrcpy restores both when that server exits, even if styal dies, so
+ * nothing here undoes device state.
  */
 import * as NodeNet from "node:net";
 

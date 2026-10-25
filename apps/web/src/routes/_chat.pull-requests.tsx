@@ -58,9 +58,8 @@ export const Route = createFileRoute("/_chat/pull-requests")({
     ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
       ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
       : {}),
-    // Always an own key: the router lays this result over the parent route's unvalidated
-    // search, so leaving out a `q` would let the raw value through. The URL parser reads
-    // `?q=13565` as a number and `?q=true` as a boolean; keep them as the text that was typed.
+    // Always include q to override the parent route's unvalidated search, where the URL parser
+    // reads `?q=13565` as a number and `?q=true` as a boolean.
     q:
       (typeof raw.q === "string" || typeof raw.q === "number" || typeof raw.q === "boolean") &&
       String(raw.q)

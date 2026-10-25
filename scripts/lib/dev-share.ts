@@ -1,16 +1,4 @@
-/**
- * Shares a running dev server on the local tailnet via `tailscale serve`, so it
- * can be opened from a phone, another laptop, or by whoever is reviewing the
- * work.
- *
- * Thin wrapper over `@t3tools/tailscale` (the same client the server's own
- * `--tailscale-serve` uses). What it adds is dev-share error reporting and
- * lifecycle cleanup for the exact mapping this dev server owns.
- *
- * Because browser dev is single-origin (Vite proxies the backend — see
- * `resolveDevProxyTarget` in apps/web/vite.config.ts), one proxy rule covering
- * the web port is enough; the backend needs no mapping of its own.
- */
+/** Vite proxies the backend, so only the web port needs a share mapping. */
 
 import {
   buildTailscaleHttpsBaseUrl,
@@ -24,11 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { ChildProcessSpawner } from "effect/process";
 
-/**
- * Human-readable gloss for each diagnostic. Deliberately our own words rather
- * than the CLI's: tailscale prints auth keys and node names into stderr, and
- * this string is logged.
- */
+/** Log fixed diagnostics; tailscale stderr can contain auth keys and node names. */
 const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefined> = {
   "no-existing-handler": "no mapping existed for that port",
   "not-logged-in": "this machine is not logged into a tailnet — run `tailscale up`",
@@ -94,11 +78,8 @@ export type DevShareError =
   | DevServeFailedError;
 
 /**
- * Removes the matching local mapping for `webPort`, preserving other handlers.
- *
- * Runs uninterruptibly: this is called from a finalizer on the way out of an
- * interrupted program, and cancelling the cleanup subprocess would leave
- * exactly the stale mapping it exists to remove.
+ * Preserves other handlers on the port. Finalizer cleanup must be uninterruptible or cancellation
+ * can leave stale mappings.
  */
 export const unshareDevServer = (
   webPort: number,
@@ -156,10 +137,7 @@ export const shareDevServer = Effect.fn("devShare.shareDevServer")(function* (in
     return yield* new TailnetNameMissingError();
   }
 
-  // Proxy to the hostname Vite binds rather than the package default of
-  // 127.0.0.1. Vite listens on `localhost`, which Node 17+ resolves to `::1`
-  // first, so it only binds the IPv6 loopback and a 127.0.0.1 target has
-  // nothing behind it (tailscale answers 502).
+  // Vite's localhost can bind only ::1; a 127.0.0.1 proxy target would return 502.
   yield* ensureTailscaleServe({
     localPort: input.localTarget?.port ?? input.webPort,
     servePort: input.webPort,

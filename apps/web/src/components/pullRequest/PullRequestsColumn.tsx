@@ -151,13 +151,8 @@ export function PullRequestsColumn({
     observer.observe(marker);
     return () => observer.disconnect();
   }, [scrollRef]);
-  // Typing into the topbar search narrows the list, and a short enough list un-scrolls the
-  // page — which dissolves the condensed topbar and unmounts the very input being typed in.
-  // The two inputs are one search to the reader, so the focus follows the value into the
-  // in-flow bar with the same caret or selection, and the edit continues in place.
-  // Mod+F belongs to this page's own search: the desktop shell binds no find-in-page, so the
-  // shortcut would otherwise do nothing. Condensed, it unfolds the topbar search; at the top,
-  // it focuses the in-flow bar and selects the query the way a find field would.
+  // Mod+F belongs to this page's search: the desktop shell binds no find-in-page, so the shortcut
+  // would otherwise do nothing.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;

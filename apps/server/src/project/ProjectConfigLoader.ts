@@ -1,13 +1,7 @@
 /**
- * ProjectConfigLoader - Effect service that loads a project's checked-in
- * configuration: `styal.json`, or a legacy `t3.json` when there is none.
- *
- * Loading is best-effort and never fails: missing files resolve to the
- * `missing` state, unreadable files are logged and treated as missing, and
- * malformed or non-object files resolve to `invalid`. Invalid fields and
- * actions are ignored independently so callers can still use the rest.
- *
- * @module ProjectConfigLoader
+ * Reads `styal.json`, or a legacy `t3.json` when there is none. Loading never fails: unreadable
+ * files count as missing, and invalid fields and actions are ignored independently so callers
+ * can still use the rest.
  */
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -52,7 +46,7 @@ const logProjectConfigLoadError = (error: ProjectConfigLoadError) =>
     }),
   );
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;

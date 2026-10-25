@@ -14,17 +14,9 @@ export const FORK_NOTE =
   "Note: this thread is a fork of another thread. The earlier conversation was copied from that thread up to the response the user forked from. Work may have continued in that thread since then. Background work started before the fork, such as commands, monitors and subagents, belongs to that thread and will not report back here.";
 
 /**
- * Whether the starting turn carries `FORK_NOTE`: on a forked thread, until one
- * of its provider turns completes. Delivery is best effort, so a turn that is
- * refused or restarted sends the note again with the next one.
- *
- * A restart continuation resumes natively and a message the provider created
- * is never sent back to it, so neither carries the note; every other message,
- * including one an agent sends into the fork, does.
- *
- * A provider command such as /compact or /goal must stay at the start of its
- * text, so it is sent without the note; if that command's turn completes, the
- * fork gets no note.
+ * Sent until a forked thread's provider turn completes, so a refused or restarted turn resends it.
+ * Restart continuations and provider-created messages skip it. Provider commands such as /compact
+ * must start their text, so they skip it too; if that turn completes, the fork gets no note.
  */
 export function shouldSendForkNote(input: {
   readonly threadId: string;

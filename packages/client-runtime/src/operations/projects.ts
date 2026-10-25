@@ -123,12 +123,9 @@ export function getDefaultCloneUrl(
 }
 
 /**
- * GitHub, including Enterprise hosts, serves an owner's avatar at `/<login>.png`,
- * so one remote URL is enough to show who owns a repository without an API call.
- * The URL may be either transport, since clone flows carry the SSH one. Other
- * providers have no such path, so this returns null rather than sending the
- * client after a guaranteed 404; callers fall back to the provider icon, which
- * is also what they should do when the image fails to load.
+ * GitHub, including Enterprise hosts, serves an owner's avatar at `/<login>.png`. Other
+ * providers have no such path, so this returns null instead of a guaranteed 404; callers fall
+ * back to the provider icon, also when the image fails to load.
  */
 export function repositoryOwnerAvatarUrl(input: {
   readonly repositoryUrl: string;
@@ -155,11 +152,9 @@ function preferredRemoteRank(remoteName: string): number {
 }
 
 /**
- * The repositories to offer when an existing checkout is added as a project, one
- * remote each, in the order repository identity ranks them, so the first is the
- * one that applies until a default is set. Empty when there is nothing to ask: a
- * default is already set (`gh repo set-default`), or the remotes name at most
- * one GitHub repository.
+ * Ranked like repository identity, so the first choice is the one that applies until a default
+ * is set. Empty when a default is set (`gh repo set-default`) or there is at most one GitHub
+ * repository.
  */
 export function addProjectDefaultRepositoryChoices(
   state: SourceControlDefaultRepositoryState,

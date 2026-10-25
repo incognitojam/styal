@@ -1,3 +1,2 @@
-// Background services and service updaters from older releases start the npm
-// package from this path with Node, so it stays as an entry into the launcher.
+// Legacy background services and service updaters still enter the npm package through this path.
 import "../bin/styal.mjs";

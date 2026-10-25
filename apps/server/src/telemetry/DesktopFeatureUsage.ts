@@ -39,11 +39,8 @@ const toAnalyticsEvent = (report: DesktopFeatureUsageReport) => {
 };
 
 /**
- * Records the desktop app's observations as analytics events: idle restart
- * measurements as `feature.used` and launch timing as `desktop.launched`. The
- * desktop main process has no analytics of its own, so it reports through the
- * telemetry pipe of the backend it spawned, under that server's identity and
- * telemetry setting.
+ * The desktop main process has no analytics of its own, so it reports through the telemetry
+ * pipe of the backend it spawned, under that server's identity and telemetry setting.
  */
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {

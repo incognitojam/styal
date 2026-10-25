@@ -221,12 +221,9 @@ const VcsStatusLocalShape = {
   isRepo: Schema.Boolean,
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
   /**
-   * Whether HEAD resolves to a commit. A repository initialized but never
-   * committed to still reports `isRepo` and a `refName` (git names the unborn
-   * branch it would create), so this is the only way to tell that ref apart
-   * from a real one. Worktrees and branch operations need a commit to point at.
-   * Independent of `refName`, which is null on a detached HEAD that does have
-   * commits. Optional for old servers, which are treated as having one.
+   * An unborn branch still reports `isRepo` and a `refName`, so this is the only way to tell
+   * it apart; worktrees and branch operations need a commit. Absent from old servers, which
+   * are treated as having one.
    */
   hasHeadCommit: Schema.optional(Schema.Boolean),
   hasPrimaryRemote: Schema.Boolean,
@@ -314,11 +311,7 @@ export const GitPreparePullRequestThreadResult = Schema.Struct({
   pullRequest: GitResolvedPullRequest,
   branch: TrimmedNonEmptyStringSchema,
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
-  /**
-   * False when the checkout could not be brought to the pull request head — a reused worktree
-   * holding local commits or uncommitted changes keeps its own state, so the code being handed
-   * over is older than the pull request.
-   */
+  /** False when local commits or edits prevented a reused worktree from reaching the PR head. */
   isOnPullRequestHead: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 export type GitPreparePullRequestThreadResult = typeof GitPreparePullRequestThreadResult.Type;

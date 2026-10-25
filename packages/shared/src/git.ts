@@ -10,12 +10,9 @@ import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 
 export const WORKTREE_BRANCH_PREFIX = "styal";
-// Canonical form is `styal/<8 hex>`. `styal-<8 hex>` is the fallback when a plain
-// `styal` branch blocks the namespace. The matcher also accepts every legacy shape, so
-// existing threads stay eligible for branch regeneration: `t3code/<8 hex>` and
-// `t3code-<8 hex>` from before the rename, and `<prefix>/<uuid>` from older mobile
-// builds that used Crypto.randomUUID() (always RFC 4122 v4, so version nibble `4` and
-// variant nibble `[89ab]`). Nothing looser than what was generated.
+// The matcher also accepts legacy shapes so existing threads stay eligible for branch
+// regeneration: `t3code` names from before the rename and v4 UUIDs from older mobile builds.
+// Nothing looser than what was generated.
 const TEMP_WORKTREE_HEX_TOKEN = "[0-9a-f]{8}";
 const TEMP_WORKTREE_UUID_V4_TOKEN =
   "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
@@ -114,10 +111,7 @@ export function buildTemporaryWorktreeBranchName(
   return `${WORKTREE_BRANCH_PREFIX}/${token}`;
 }
 
-/**
- * Git stores refs as paths, so a plain `styal` branch makes every `styal/<hex>`
- * ref impossible. This moves a temporary name to the flat `styal-<hex>` sibling.
- */
+/** Flatten temporary styal/<hex> refs because an existing styal branch blocks nested refs. */
 export function flattenTemporaryWorktreeBranchName(refName: string): string {
   const normalized = refName.trim().toLowerCase();
   const tokenStart = normalized.search(/[-/]/) + 1;
@@ -262,14 +256,11 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
   let section: string | null = null;
   let originUrl: string | null = null;
   let firstRemoteUrl: string | null = null;
-  // A trailing backslash continues the value on the next line.
   const joined = configText.replace(/\\\r?\n[ \t]*/g, "");
   for (const rawLine of joined.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (line.length === 0 || line.startsWith("#") || line.startsWith(";")) continue;
-    // Both `[remote "origin"]` and the legacy `[remote.origin]` form, with an
-    // optional trailing comment. Git keeps quoted subsections case-sensitive
-    // but folds the dotted form to lowercase.
+    // Git preserves case in quoted remote subsections but lowercases legacy dotted ones.
     const header = /^\[\s*remote(?:\s+"([^"]+)"|\.([^\]\s]+))\s*\](?:\s*[#;].*)?$/i.exec(line);
     if (header) {
       section = header[1] ?? header[2]?.toLowerCase() ?? null;
@@ -313,9 +304,7 @@ function deriveLocalBranchNameCandidatesFromRemoteRef(
   return [...candidates];
 }
 
-// Only the whitespace git actually rejects is replaced — git accepts U+00A0 and
-// friends, and rewriting those would silently create a ref the user never asked
-// for.
+// Replace only Git-rejected whitespace; nonbreaking spaces are valid ref characters.
 export function sanitizeNewRefName(rawName: string): string {
   return rawName.trim().replace(/[ \t\n\r\f\v]+/g, "-");
 }

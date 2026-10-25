@@ -4,13 +4,8 @@ import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
 /**
- * Hosts the styal web app on Cloudflare, alongside the relay stack rather than
- * on a second vendor.
- *
- * This is a rolling deployment of `main`, not a release artifact: styal has no
- * stable desktop release yet, so gating the hosted app on one (upstream's
- * model) would mean never deploying it. Desktop builds stay versioned and
- * promoted; the web app simply tracks the patch stack.
+ * A rolling deployment of `main`, not a release artifact: styal has no stable desktop
+ * release to gate the hosted web app on.
  */
 export default Alchemy.Stack(
   "StyalWeb",

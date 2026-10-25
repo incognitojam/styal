@@ -32,13 +32,9 @@ interface InstallFlags {
 }
 
 /**
- * macOS background staging for DesktopUpdates. Once Squirrel.Mac stages a
- * download, its ShipIt job installs it whenever the app exits. Checks continue
- * while it waits; a newer release discards it before downloading, so the
- * restart installs the latest build rather than the first one downloaded.
- * Staging cannot be cancelled, so the lock is held until Squirrel's own
- * terminal event; checks, the handoff and channel changes wait for it. On
- * other platforms every method leaves the updater's own behaviour in place.
+ * Squirrel.Mac's ShipIt job installs a staged download whenever the app exits, so a newer release
+ * discards it before downloading. Staging cannot be cancelled: the lock is held until Squirrel's
+ * terminal event. Other platforms keep the updater's own behaviour.
  */
 export const make = Effect.fn("desktop.updates.makeNativeUpdateStaging")(function* (options: {
   readonly enabled: boolean;
@@ -139,11 +135,8 @@ export const make = Effect.fn("desktop.updates.makeNativeUpdateStaging")(functio
           )
         : Effect.void,
 
-    /** Hands a ready download to the installer. On macOS this waits for
-        staging in progress and installs only the staged selected-channel
-        download. When background staging failed or was skipped, it stages now
-        on the same native updater (quit-time staging), waiting for Squirrel's
-        outcome: MacUpdater's own quitAndInstall waits only for success. */
+    /** Stages at quit time when background staging failed or was skipped, waiting for
+        Squirrel's outcome: MacUpdater's own quitAndInstall waits only for success. */
     handOffToInstaller: (flags: InstallFlags) =>
       options.enabled
         ? lock.withPermits(1)(

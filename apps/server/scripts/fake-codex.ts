@@ -2,59 +2,10 @@
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalDate:off globalTimers:off globalFetch:off - standalone fake CLI with no workspace imports.
 /* oxlint-disable t3code/no-global-process-runtime -- standalone fake CLI process has no Effect runtime. */
 /**
- * A fake `codex` CLI for tests and local verification. Point a Codex
- * provider's binary path at a launcher from `install` and the server runs
- * real sessions against it without an OpenAI account:
- *
- *   node apps/server/scripts/fake-codex.ts install <dir> [--scenario <file>] [--request-log <file>] [--rpc-log <file>]
- *
- * `app-server` answers the provider status check (signed in with an API key,
- * one `fake-codex` model) and runs turns. `exec` answers text generation with
- * placeholder values for the requested output schema.
- *
- * A scenario file scripts turns by prompt text. The first turn whose `match`
- * appears in the prompt runs, and a turn without `match` accepts any prompt.
- * When nothing matches, the reply echoes the prompt.
- *
- *   { "turns": [{ "match": "add a test", "steps": [
- *       { "type": "reasoning", "text": "Looking at the tests." },
- *       { "type": "command", "command": "vp test", "output": "1 passed", "exitCode": 0 },
- *       { "type": "writeFile", "path": "src/a.test.ts", "content": "..." },
- *       { "type": "message", "text": "Added the test." }
- *   ] }] }
- *
- * `writeFile` writes inside the session's working directory, so checkpoints
- * and diffs see a real change. A `hold` step keeps the turn running until it
- * is interrupted or steered. Steering replies with the received text and finishes
- * the held turn. `"error": "..."` on a turn fails it after its steps.
- * An `approval` step requests command approval, emits the command after acceptance,
- * and stops with a denial message when declined.
- * A `backgroundCommand` step takes `command`, `processId`, and optional `output`;
- * it stays running after the turn completes until backgroundTerminals/terminate.
- *
- * A `question` step asks the user and waits for the answers, like Codex's
- * request_user_input tool. Questions use Codex's wire shape, and a later
- * message can quote an answer with `{{answer:<question id>}}`:
- *
- *   { "type": "question", "questions": [{ "id": "store", "header": "Store",
- *       "question": "Where should the cache live?", "options": [
- *         { "label": "Memory", "description": "Fastest." }] }] },
- *   { "type": "message", "text": "Using {{answer:store}}." }
- *
- * An `mcpCall` step calls a tool on the session's injected styal MCP server and
- * fails the turn if the call fails, exercising real agent-to-server behavior.
- *
- * Steps start 250 ms apart, like a provider waiting on its model. The server
- * captures the pre-turn checkpoint while the turn starts, so a file written
- * instantly would already be in that baseline and the turn diff would be
- * empty. Set `"stepDelayMs"` on the scenario to change the spacing.
- *
- * With `--request-log`, every turn appends one JSON line with its thread id and
- * the turn's input items, so a test can check what the provider received.
- * `--rpc-log` records incoming request methods and parameters.
- *
- * This file only imports Node built-ins so it can run from any checkout,
- * including an upstream T3 Code checkout that generates import fixtures.
+ * Fake `codex` CLI for tests: `install <dir>` writes a launcher to use as a Codex binary path.
+ * Scenario files script turns by prompt text (see `Step`); an unmatched prompt is echoed back.
+ * Steps start 250 ms apart so file writes land after the pre-turn checkpoint is captured.
+ * Imports only Node built-ins so it runs from any checkout, including upstream T3 Code.
  */
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";

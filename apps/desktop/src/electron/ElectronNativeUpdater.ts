@@ -80,7 +80,7 @@ const shipItJobLabel = async () => {
 const LAUNCHCTL_REMOVE_NO_SUCH_JOB = 3;
 const LAUNCHCTL_PRINT_NO_SUCH_JOB = 113;
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = ElectronNativeUpdater.of({
   canStageInBackground: Effect.sync(() => {
     const bundlePath = runningAppBundlePath();

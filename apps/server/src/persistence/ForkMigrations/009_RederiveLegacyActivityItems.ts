@@ -15,13 +15,10 @@ const ITEM_EVENT_MARKER = ":item:import:v1:activity:";
 const PAGE_SIZE = 200;
 
 /**
- * Earlier V1 history imports showed informational activity as warning notices and took a
- * tool's status from an in-progress update logged alongside its completion. Re-derive those
- * items through the current converter from the V1 activity each one retains: rewrite changed
- * items in their event and projection, and drop ones the converter now skips. Events and
- * projection rows store the same encoded item, so both take the same payload. Imported
- * history is then ordered by time rather than after the thread's messages. The rewrite moves
- * the history fence as fork migration 8 does, so cached threads refresh.
+ * Earlier V1 imports misclassified informational activity and tool status. Re-derive those items
+ * from their retained V1 activity, rewriting event and projection with the same payload and
+ * dropping ones the converter now skips. The rewrite moves the history fence as fork migration 8
+ * does, so cached threads refresh.
  */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

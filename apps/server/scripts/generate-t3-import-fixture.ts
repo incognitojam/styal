@@ -1,25 +1,10 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off globalDate:off globalTimers:off globalFetch:off - standalone generator with no workspace imports.
 /**
- * Generates the T3 Code data directory that the import end-to-end test reads.
- *
- *   node apps/server/scripts/generate-t3-import-fixture.ts \
- *     --server <checkout> --out <dir> [--root <isolated-scratch-directory>]
- *
- * `--server` is a T3 Code or styal checkout with dependencies installed. The
- * script starts that checkout's server in a new home under `--root`, points
- * Codex at `fake-codex.ts`, and builds projects, turns, and thread states
- * through the server's V2 RPC and HTTP APIs, so every stored row comes from that server.
- * `--root` becomes part of the stored paths; the default keeps them neutral.
- *
- * `--out` receives:
- *   state.sql      the server's database as SQL, without auth tables
- *   attachments/   uploaded attachment files
- *   settings.json  the server's settings file
- *   t3-view.json   the server's own snapshot and thread details before shutdown
- *   manifest.json  source revision and the scenario's expected thread states
- *
- * Only Node built-ins are imported so the script runs against any checkout.
+ * Generates the T3 Code data directory the import end-to-end test reads, by driving a T3 Code or
+ * styal checkout's own server over its APIs so every stored row comes from that server.
+ * `--root` becomes part of the stored paths. Only Node built-ins are imported so the script
+ * runs against any checkout.
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";

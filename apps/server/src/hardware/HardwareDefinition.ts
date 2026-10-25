@@ -1,15 +1,7 @@
 /**
- * HardwareDefinition - which actions a device offers and which tier each runs
- * at, given what the repository says and what the user last accepted.
- *
- * The default branch is the source of truth, but it may only tighten on its
- * own. Anything looser than the accepted definition (a new action, a lowered
- * tier, a changed path, changed hooks or health probe) waits for the user and
- * runs at `approve` meanwhile. A worktree's own copy can describe endpoints a
- * branch adds, but never below `approve` for anything the default branch does
- * not already allow.
- *
- * @module HardwareDefinition
+ * The default branch may only tighten the accepted definition on its own; anything looser waits
+ * for the user and runs at `approve` meanwhile. A worktree's copy may add endpoints, but never
+ * below `approve` for anything the default branch does not already allow.
  */
 import {
   type HardwareActionDefinition,

@@ -8,18 +8,9 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
-// Packaged Windows builds ship the server tree inside resources/server.asar
-// (see scripts/build-desktop-artifact.ts). The Windows primary reads it in
-// place through the asar-aware ELECTRON_RUN_AS_NODE runtime, but the WSL
-// backend launches plain `wsl.exe -- node`, which cannot read an asar
-// archive. This service materializes the archive into a real, version-keyed
-// directory the first time the WSL backend starts, and reuses it afterwards —
-// so only users who enable WSL ever pay for a loose copy of the server tree.
-//
-// Reading through Electron's patched fs also transparently returns the
-// contents of files that electron-builder/asar left in the server.asar.unpacked
-// sibling (native binaries), so a single walk of the archive yields the
-// complete tree.
+// WSL's plain Node cannot read server.asar, so the first WSL start extracts it to a version-keyed
+// directory; only users who enable WSL pay for the loose copy. Electron's patched fs also reads
+// its unpacked native siblings.
 
 export type WslServerTreeResult =
   | { readonly ok: true; readonly root: string }
@@ -105,7 +96,7 @@ const copyTree = (
       }),
   );
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fs = yield* FileSystem.FileSystem;
@@ -150,9 +141,7 @@ export const make = Effect.gen(function* () {
   const extract = Effect.gen(function* () {
     yield* Effect.log(`[wsl-server-tree] Extracting ${serverRoot} to ${versionDir}...`);
     yield* fs.makeDirectory(treeRoot, { recursive: true });
-    // Keep the temporary tree beside the target so rename is atomic. Cleanup
-    // is owned explicitly because a scoped temp-directory finalizer treats the
-    // successful rename (and therefore missing original path) as an error.
+    // A sibling temp directory permits atomic rename; explicit cleanup avoids a scoped finalizer failing after the move.
     const partialDir = yield* fs.makeTempDirectory({
       directory: treeRoot,
       prefix: `.${version}.extract-`,
@@ -179,10 +168,7 @@ export const make = Effect.gen(function* () {
     .withPermits(1)(
       needsExtraction
         ? Effect.gen(function* () {
-            // Invalidate completeness before recursive deletion. Windows can
-            // remove part of a tree and then fail on a locked file; without
-            // this ordering, a surviving marker makes ensure reuse that
-            // half-deleted fallback instead of extracting it again.
+            // Delete completeness first: a locked Windows file can leave a half-deleted tree that must not be reused.
             yield* fs.remove(join(versionDir, MARKER_FILE_NAME), { force: true });
             yield* fs.remove(join(versionDir, LEGACY_MARKER_FILE_NAME), { force: true });
             yield* fs.remove(treeRoot, { recursive: true, force: true });

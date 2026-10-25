@@ -6,13 +6,9 @@ import { useSyncExternalStore } from "react";
 import { isAppUpdateCheckAvailable, shouldRecheckAppUpdateOnForeground } from "./app-updates";
 
 /**
- * Android installs come from GitHub releases rather than a store, and an
- * over-the-air update only reaches binaries with the same runtime version
- * (native fingerprint). When the newest release carries a different runtime,
- * this install has stopped receiving updates until the user installs that APK.
- *
- * .github/scripts/publish-android-release.sh publishes the release tags and
- * the manifest asset read here.
+ * Android installs come from GitHub releases, and OTA updates only reach binaries with the same
+ * runtime version, so a newer release with a different runtime needs its APK installed.
+ * .github/scripts/publish-android-release.sh publishes the tags and manifest asset read here.
  */
 const RELEASE_REPOSITORY = "incognitojam/styal";
 const RELEASE_TAGS_URL = `https://api.github.com/repos/${RELEASE_REPOSITORY}/git/matching-refs/tags/android-`;

@@ -16,15 +16,8 @@ import { openUrlInPreview } from "./openFileInPreview";
 const NO_MODIFIER = { metaKey: false, ctrlKey: false } as const;
 
 /**
- * Opens a URL where the "Open links in" setting says, for buttons that sit
- * beside a thread but are not markdown anchors: CI check details, a pull
- * request that has no project to open in the panel. Without a thread there is
- * nowhere to put an in-app tab, so the link goes to the system browser.
- *
- * An in-app open that fails falls back to the system browser rather than
- * dropping the click: the user asked for the link, and the setting only says
- * where it should go first. The returned promise rejects only when that
- * fallback fails too, the same way `shell.openExternal` does.
+ * Without a thread there is nowhere for an in-app tab, so links go to the system browser. A failed
+ * in-app open also falls back to the system browser; the promise rejects only if that fails too.
  */
 export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
   url: string,

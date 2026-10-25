@@ -1,14 +1,7 @@
 /**
- * Hardware - schemas for network devices agents lease and call through the
- * server, such as a microcontroller with an HTTP API.
- *
- * A device has two halves. Its definition (actions, tiers, health probe,
- * lifecycle hooks) lives in the project repository under `.styal/hardware/`
- * and is read from the remote default branch, so changing it takes a merge.
- * Its instance (address, credential header, the definition last accepted by
- * the user) lives in server settings, because addresses and secrets are local.
- *
- * Kept apart from `device.ts`, which models simulators and emulators.
+ * A device definition lives under `.styal/hardware/` and is read from the remote default
+ * branch, so changing it takes a merge. Its address and credential live in server settings,
+ * because they are local to the machine.
  *
  * @module Hardware
  */

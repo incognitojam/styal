@@ -1,15 +1,10 @@
 import type { OrchestratorFixtureInput } from "../shared.ts";
 import { GROK_BACKGROUND_BASH_PROMPT } from "../grok_background_bash/input.ts";
 
-// Same prompt as grok_background_bash, recorded from Grok 1.0.44. Older Grok
-// (1.0.41) waited about a minute after `x.ai/task_completed` before starting
-// its `task-completed-*` reply; 1.0.44 starts it within ~2s, inside the finish
-// debounce while run 1 is still held for the command. The harness preserves
-// root prompt settlement before task completion, then wake frames replay
-// ungated. Finish receipts wait for the native wake completion callback before
-// advancing simulated time, so child-process IO cannot create a false quiet gap.
-// The reply must settle run 1 and open a continuation run instead of streaming
-// into the held root run.
+// Recorded from Grok 1.0.44, which starts its `task-completed-*` reply within ~2s, inside the
+// finish debounce while run 1 is still held. Finish receipts wait for the wake completion callback
+// so child IO cannot create a false quiet gap. The reply must settle run 1 and open a
+// continuation run instead of streaming into the held root run.
 export function grokBackgroundBashFastWakeInput(): OrchestratorFixtureInput {
   return {
     steps: [

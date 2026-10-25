@@ -251,13 +251,9 @@ const upsertAnonymousId = Effect.gen(function* () {
 });
 
 /**
- * getTelemetryIdentifier - Users are "identified" by finding the first match of the following, then hashing the value.
- * 1. ~/.codex/auth.json tokens.account_id
- * 2. ~/.claude.json userID
- * 3. ~/.styal/telemetry/anonymous-id
- *
- * A missing file or an API-key-only Codex auth.json falls through quietly. Only
- * unreadable or malformed files warn.
+ * The telemetry identifier hashes the first of Codex's tokens.account_id, Claude's userID, or
+ * ~/.styal/telemetry/anonymous-id. A missing file or an API-key-only Codex auth.json falls
+ * through quietly; only unreadable or malformed files warn.
  */
 const readProviderLogins = Effect.fn("TelemetryIdentity.readProviderLogins")(function* (
   homeDirectory: string,
@@ -280,15 +276,10 @@ const readProviderLogins = Effect.fn("TelemetryIdentity.readProviderLogins")(fun
 });
 
 /**
- * `distinctId` keeps the rule every earlier build used, so analytics stay
- * continuous: the hashed Codex `account_id`, else the Claude machine `userID`,
- * else the install's anonymous id. It can change when someone logs in, and a
- * Codex Team shares one. `installId` is the hashed anonymous id, which never
- * changes for an install; count installs and people with it.
- *
- * A null `distinctId` turns telemetry off. A missing file falls through quietly,
- * and so does an API-key-only Codex auth.json. Only unreadable or malformed
- * files warn.
+ * `distinctId` preserves legacy priority: hashed Codex account_id, Claude userID, then anonymous id.
+ * It can change on login or be shared by a Codex Team; hashed `installId` stays stable per install.
+ * A null `distinctId` disables telemetry. Missing files and API-key-only Codex auth fall through;
+ * only unreadable or malformed files warn.
  */
 export const getTelemetryIdentityForHome = Effect.fn("getTelemetryIdentityForHome")(function* (
   homeDirectory: string,

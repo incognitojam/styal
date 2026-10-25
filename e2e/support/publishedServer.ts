@@ -20,13 +20,9 @@ export interface PublishedServer {
 }
 
 /**
- * Runs a published `@styal/cli` version the way an installed background service does: its
- * `__service-launcher` supervises the server, so the server offers in-app updates. The
- * launcher, its runtimes, and the server's state live in a temporary styal home, and no
- * system service is installed. Every provider is off.
- *
- * Needs the network: npm supplies the launcher package, and GitHub releases the runtime
- * archive for `version` and for any version an update installs.
+ * Runs a published `@styal/cli` under its `__service-launcher`, so the server offers in-app
+ * updates, in a temporary styal home without installing a system service. Needs the network:
+ * npm supplies the launcher and GitHub releases supply the runtime archives.
  */
 export async function startPublishedServer(version: string): Promise<PublishedServer> {
   const state = stateResources("styal-e2e-published-");

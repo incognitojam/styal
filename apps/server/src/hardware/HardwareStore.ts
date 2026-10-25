@@ -1,11 +1,6 @@
 /**
- * HardwareStore - leases and the audit trail, in SQLite.
- *
- * Leases outlive turns and restarts, so they are persisted, and a failed lease
- * write fails the operation rather than leaving memory and disk disagreeing
- * about who holds a device. Only the audit trail is best-effort.
- *
- * @module HardwareStore
+ * Leases outlive turns and restarts, so a failed lease write fails the operation rather than
+ * leaving memory and disk disagreeing about who holds a device. Only the audit trail is best-effort.
  */
 import {
   HardwareActionDefinition,

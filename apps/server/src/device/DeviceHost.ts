@@ -1,11 +1,7 @@
 /**
- * A device host is a machine with simulators or emulators on it. The service
- * layer talks to this interface for local, SSH, and connected-environment hosts.
- *
- * Every ready host presents an origin where expo-device-hub answers.
- * Hosts add an agent-device daemon endpoint only after agent access is granted.
- * SSH hosts forward local endpoints; connected environments expose authenticated
- * proxies and execute typed device operations on the owning server.
+ * Every ready host presents an origin where expo-device-hub answers, and adds an agent-device
+ * daemon endpoint only after agent access is granted. SSH hosts forward local endpoints;
+ * connected environments run typed device operations on the owning server.
  */
 import type {
   DeviceBootError,

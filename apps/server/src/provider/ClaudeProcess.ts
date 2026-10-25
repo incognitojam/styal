@@ -57,22 +57,17 @@ export interface ClaudeProcessHandle {
 }
 
 /**
- * Builds the `spawnClaudeCodeProcess` option for one SDK query. The SDK's
- * own transport neither reports the CLI's exit nor keeps its stderr once the
- * stream has ended, so a session that dies looks like "Claude runtime stream
- * failed." with nothing to go on. Spawning the CLI here keeps a handle to
- * the process and its stderr tail while leaving the SDK in charge of stdin,
- * stdout and shutdown signalling.
+ * The SDK's own transport neither reports the CLI's exit nor keeps its stderr after the stream
+ * ends, so a dead session has no diagnosis. Spawning here keeps the process and its stderr tail
+ * while the SDK still owns stdin, stdout and shutdown signalling.
  */
 export function makeClaudeProcessSpawner(input?: {
   readonly observer?: ClaudeProcessObserver;
   readonly spawn?: SpawnClaudeChild;
   /**
-   * Starts the CLI as the leader of its own process group. When the CLI exits it
-   * stops the MCP servers it started, but not their children: a plugin's
-   * `bun run start` wrapper dies and its `bun server.ts` keeps running. Those stay
-   * in the CLI's group, so the rest of the group gets SIGKILL once the CLI exits.
-   * Commands the agent runs through its Bash tool start their own groups.
+   * The CLI stops the MCP servers it started but not their children, which stay in its process
+   * group. Leading its own group lets the rest get SIGKILL once the CLI exits. Commands from the
+   * agent's Bash tool start their own groups.
    */
   readonly processGroup?: boolean;
 }): {

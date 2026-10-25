@@ -15,11 +15,8 @@ import {
   useCopyToClipboard,
 } from "./useCopyToClipboard";
 
-// Shared across hook instances (sidebar and chat header dispatch through
-// separate instances): only the most recent copy request may touch the
-// clipboard. The clipboard epoch cannot order two pending transcript fetches
-// (neither has written yet), so this id covers transcript-vs-transcript while
-// the epoch covers transcript-vs-everything-else.
+// Shared across hook instances so only the latest copy request touches the clipboard. The
+// clipboard epoch cannot order two pending transcript fetches, since neither has written yet.
 let latestRequestId = 0;
 
 function nextRequestId() {

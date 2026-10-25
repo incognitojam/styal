@@ -86,13 +86,8 @@ export interface Environment {
 }
 
 /**
- * Starts an isolated server for one test file: a fresh home and base dir, a git project with
- * a GitHub remote, Codex backed by fake-codex with every other provider off, a fake `gh` that
- * hands out a token, and a fake GitHub API the server sends its GitHub requests to. The server
- * serves the prebuilt web bundle on its own port.
- *
- * The server runs with an allowlisted environment and a throwaway HOME, so it cannot read
- * the developer's provider credentials, `gh` login, or git config. Its login shell reads the
+ * The server runs with an allowlisted environment and a throwaway HOME, so it cannot read the
+ * developer's provider credentials, `gh` login, or git config. Its login shell reads the
  * throwaway HOME's profile, which puts the fake `gh` ahead of any real one on PATH.
  */
 export async function startEnvironment(options: EnvironmentOptions = {}): Promise<Environment> {

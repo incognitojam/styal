@@ -1,11 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off - e2e harness runs plain Node outside any Effect runtime.
 /**
- * A fake GitHub API for e2e tests. The server sends its GitHub requests here when started with
- * `T3CODE_TEST_GITHUB_API_URL` set to `url`. It answers the GraphQL issue list and issue reads
- * from `issues`, plus pull request reads and mutations and workflow deployment reviews, and
- * reports no pull requests for the branch lookups the server makes on its own. Any other
- * request gets an error answer and is printed, so a test that reaches one fails visibly instead
- * of talking to GitHub.
+ * The server sends its GitHub requests here when started with `T3CODE_TEST_GITHUB_API_URL` set
+ * to `url`. Unhandled requests get an error answer and are printed, so a test that reaches one
+ * fails visibly instead of talking to GitHub.
  */
 import * as NodeHttp from "node:http";
 import type * as NodeNet from "node:net";

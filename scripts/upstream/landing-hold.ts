@@ -1,17 +1,9 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalDate:off - Synchronous CI and maintainer CLI.
 /**
- * Sets the `Intake landing hold` commit status that keeps fork pull requests from merging while
- * an intake candidate is landing. A candidate lands by fast-forwarding main to the exact SHA Fork
- * CI tested, so any merge in the meantime makes it rebase and test again. Main's required checks
- * include this status: it is pending on pull requests while an intake branch runs Fork CI or
- * waits for promotion, and success otherwise, so auto-merge lands them once the hold lifts. Every
- * open pull request gets it, not only those into main: each layer of a stack is checked against
- * main's rules, because merging the stack lands it on main. The candidate itself gets success,
- * because promotion pushes it to main. See
- * docs/operations/upstream-tracking.md.
- *
- *   landing-hold.ts [--dry-run]
+ * A candidate lands by fast-forwarding main to the exact SHA Fork CI tested, so any merge in the
+ * meantime forces a rebase and retest. Every open pull request gets the hold, since each stack
+ * layer is checked against main's rules. See docs/operations/upstream-tracking.md.
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";

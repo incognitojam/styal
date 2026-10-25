@@ -223,9 +223,7 @@ describe("AttachmentClaims", () => {
 
       const copyTarget = yield* Deferred.make<string>();
       const copyDone = yield* Deferred.make<void>();
-      // A file write cannot be cancelled: the write runs on a separate fiber
-      // while the claim's sink only observes its completion, so the file
-      // still lands after the awaiting effect is interrupted.
+      // A file write cannot be cancelled; its separate writer must finish after the awaiting effect is interrupted.
       const gatedFileSystem = Object.create(fileSystem, {
         sink: {
           value: (to: string) =>

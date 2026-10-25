@@ -19,11 +19,9 @@ export type ClaudeSessionHistoryMessage = typeof ClaudeSessionHistoryMessage.Typ
 
 const decodeMessage = Schema.decodeUnknownOption(ClaudeSessionHistoryMessage);
 
-// getSessionMessages reconstructs one parent chain and can omit saved prompts
-// and replies. The SDK's import API reads the full transcript without guessing
-// its path; collect only main-session messages, in memory, for exact rewind.
-// The import API is alpha; the native SDK regression guards its file-order
-// assumption when upgrading the SDK.
+// getSessionMessages follows one parent chain and can omit saved prompts and replies, so read
+// the full transcript through the import API for exact rewind. That API is alpha; the native SDK
+// regression guards its file-order assumption on SDK upgrades.
 export async function readClaudeSessionHistory(sessionId: string, options: { dir?: string }) {
   const messages: Array<ClaudeSessionHistoryMessage> = [];
   await importSessionToStore(

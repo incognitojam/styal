@@ -78,18 +78,9 @@ export function hasExplicitComposerModelSelection(
 }
 
 /**
- * Which affordance is asking, because the sidebar's project filter outranks
- * different things for each.
- *
- * `"sidebar"` is the new thread button inside the filtered list: the filter
- * beats the thread you are viewing, so the new draft always appears in the
- * list you are looking at.
- *
- * `"contextual"` is chat.newLocal and its command palette twin — "start
- * another one right here". The thread you are viewing beats the filter, or
- * there would be no way to open a thread beside your current work while the
- * sidebar is narrowed elsewhere. The filter still beats the fallback default,
- * so with nothing open these land in the project on screen.
+ * `"sidebar"`: the project filter beats the viewed thread, so the draft appears in the visible list.
+ * `"contextual"` (chat.newLocal): the viewed thread beats the filter, so a thread can open beside
+ * current work while the sidebar is narrowed elsewhere; the filter still beats the fallback default.
  */
 export type NewThreadOrigin = "sidebar" | "contextual";
 

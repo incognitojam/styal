@@ -11,11 +11,9 @@ import { connectionRouteId, connectionRoutes, legacyPairingRouteId, routeEntry }
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
 
 /**
- * Drops the old pairing that `checked` signs in with when T3 Connect can stand
- * in for it. Dropping the pairing ends a working connection, so T3 Connect must
- * first sign in and open a socket to the environment; an expired sign-in, an
- * unreachable relay, or a network that refuses WebSocket upgrades keeps the
- * pairing. Returns whether the pairing was dropped.
+ * Dropping the pairing ends a working connection, so styal Link must first sign in and open a
+ * socket to the environment; an expired sign-in, an unreachable relay, or a network that
+ * refuses WebSocket upgrades keeps the pairing.
  */
 export const retireLegacyPairing = Effect.fn("clientRuntime.connection.retireLegacyPairing")(
   function* (environmentId: EnvironmentId, checked: PreparedConnection) {

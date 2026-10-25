@@ -52,8 +52,7 @@ const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
 
 const UPDATE_TIMEOUT_MS = 5 * 60_000;
 const UPDATE_OUTPUT_MAX_BYTES = 10_000;
-// Every progress publish resends the provider list to each client, so the
-// installer's output is sampled rather than forwarded line by line.
+// Sample installer output because every progress update resends the provider list to all clients.
 const UPDATE_PROGRESS_INTERVAL = Duration.seconds(1);
 const UPDATE_PROGRESS_MAX_LENGTH = 200;
 // An installer may write for minutes without a line ending; only its tail matters.
@@ -77,13 +76,9 @@ export interface ProviderMaintenanceRunnerShape {
           readonly instanceId?: ProviderInstanceId | undefined;
           readonly targetVersion?: string | undefined;
           /**
-           * Background update of `targetVersion`, which must be set and which
-           * the installer must be able to pin. `shouldStart` runs inside the
-           * machine-wide install lock, with turn starts on this CLI held, just
-           * before the install; when it yields false, or another process holds
-           * the lock, the update is dropped without publishing a state.
-           * `takeover` reinstalls the installed version to turn off the
-           * provider's own updater; it verifies only once that updater is off.
+           * Requires a pinnable `targetVersion`. `shouldStart` runs under the install lock with
+           * turn starts held; false, or a lock held elsewhere, drops the update without a state.
+           * `takeover` reinstalls to turn off the provider's own updater and verifies once it is off.
            */
           readonly autoUpdate?:
             | { readonly shouldStart: Effect.Effect<boolean>; readonly takeover?: boolean }
@@ -121,9 +116,7 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
   }) {
     const collectCommandResult = Effect.fn("ProviderMaintenanceRunner.collectCommandResult")(
       function* () {
-        // On Windows the update tools are batch shims (e.g. `npm` -> `npm.cmd`), which a bare
-        // ChildProcess.spawn cannot launch (spawn npm ENOENT); resolveSpawnCommand finds the
-        // real `.cmd` and routes it through the shell.
+        // Windows batch shims require shell dispatch through resolveSpawnCommand.
         const resolved = yield* resolveSpawnCommand(input.command, input.args);
         const child = yield* input.spawner
           .spawn(
@@ -326,7 +319,7 @@ function makeUpdateState(input: {
   };
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const manifestService = yield* ModelManifest.ModelManifest;
@@ -495,9 +488,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               ).pipe(Effect.asVoid);
             yield* setRunningMessage("Checking for the latest version");
 
-            // The cached capabilities chose the lock; re-derive ownership
-            // now so the command that runs matches the executable as it is
-            // at click time, not as it was at the last health refresh.
+            // Recheck ownership after acquiring the cached lock in case the executable changed.
             const fresh = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
               instanceId,
               provider,
@@ -608,11 +599,9 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               verified,
               instanceId,
             );
-            // "Succeeded" needs the provider to still be installed: an
-            // installer that exits 0 and leaves the binary missing is not a
-            // success. A missing version alone is not held against it, since
-            // Cursor's `about` probe can fail transiently on a healthy binary.
-            // A takeover only took effect once the provider's own updater is off.
+            // An installer can exit 0 and leave the binary missing. Cursor about probes can fail
+            // transiently, so a missing version alone does not imply failure. A takeover succeeds
+            // only once the provider's own updater is off.
             const couldNotVerify =
               verifiedProviders.length === 0 ||
               (autoUpdate?.takeover === true && verified.selfUpdaterActive !== false) ||

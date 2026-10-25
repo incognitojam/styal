@@ -1,13 +1,7 @@
 /**
- * ProjectFileActionApprovals - the user's approvals of styal.json actions
- * that run on their own, on worktree creation or when a thread settles.
- *
- * Approval covers one exact command, read here from the project's own file
- * rather than taken from the client, so approving cannot be pointed at a
- * command the user did not see. Only user clients reach `setApproved`; agent
- * tools never do, so an agent that edits styal.json cannot approve itself.
- *
- * @module ProjectFileActionApprovals
+ * Approval covers one exact command read from the project's own file, not from the client, so
+ * it cannot be pointed at a command the user did not see. Only user clients reach `setApproved`,
+ * so an agent that edits styal.json cannot approve itself.
  */
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -60,7 +54,7 @@ export class ProjectFileActionApprovals extends Context.Service<
   }
 >()("@styal/cli/project/ProjectFileActionApprovals") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;

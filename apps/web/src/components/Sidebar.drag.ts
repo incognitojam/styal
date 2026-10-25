@@ -29,13 +29,9 @@ export function restrictBelowSidebarLabel(
   return transform.y < minimumY ? { ...transform, y: minimumY } : transform;
 }
 
-/** Place a lifted project header among the other projects. Its rows
- * collapse while it is lifted, so rest rects no longer match what is drawn:
- * compare the header's center with the other projects' midpoints as drawn
- * without the lifted project, and name the header whose slot it takes. The
- * pinned projects divider takes a slot of its own, and its label pushes the
- * projects below it down while dragging. `labelHeight` is the unscaled label
- * space; headers are 32px unscaled. */
+/** A lifted header's rows collapse, so rest rects no longer match what is drawn: compare its
+ * center with the other projects' drawn midpoints. The pinned divider takes its own slot and its
+ * label pushes later projects down. `labelHeight` is unscaled; headers are 32px unscaled. */
 export function createSidebarProjectCollisionDetection(
   items: readonly SidebarListItem[],
   activeGroup: string,
@@ -134,9 +130,7 @@ export function createSidebarCollisionDetection(
       ?.getBoundingClientRect();
     if (items && boundary && source?.kind === "thread" && pointer) {
       boundarySection ??= source.section === "pinned" ? "pinned" : "active";
-      // Use the visible divider row, including its sortable translation.
-      // Only pointer movement can change sections: opening the destination
-      // moves this row, but must not toggle a stationary gesture back.
+      // Only pointer movement changes sections; opening the destination moves rows under stationary gestures.
       const previousY = previousPointerY ?? pointer.y;
       previousPointerY = pointer.y;
       if (pointer.x >= boundary.left && pointer.x <= boundary.right) {

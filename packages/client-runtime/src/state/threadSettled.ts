@@ -32,11 +32,8 @@ interface QueuedThreadShell {
 }
 
 /**
- * A queued turn start lives for at most this long: session adoption takes
- * seconds, so a user message still unadopted after the grace window is a
- * failed start (or stale data — shells from older servers can carry user
- * messages with no latestTurn at all), not pending work. Without this bound
- * such threads would be permanently unsettleable.
+ * Failed starts and stale shells from older servers can leave user messages unadopted.
+ * Bound the pending window so those threads can eventually settle.
  */
 export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -84,12 +81,9 @@ export interface SettledShelfFocus {
 }
 
 /**
- * An expanded settled shelf is a browsing state that closes once the user
- * moves on: opening a thread outside the shelf, or a new user message in the
- * open thread. Un-settling alone never collapses it, so several settled
- * threads can be un-settled in a row. Leaving threads entirely (settings,
- * home) keeps the previous focus, so returning to the same thread is not a
- * move. Callers keep the returned focus as the next `previous`.
+ * The shelf collapses when the user opens a thread outside it or sends a message in the open
+ * thread, never on un-settle alone, so several threads can be un-settled in a row. Leaving
+ * threads entirely keeps the previous focus. Callers keep the returned focus as `previous`.
  */
 export function advanceSettledShelfFocus(
   previous: SettledShelfFocus,

@@ -83,14 +83,8 @@ import { toastManager } from "../ui/toast";
 import { cn } from "../../lib/utils";
 
 /**
- * First-run welcome wizard. Rendered over the workspace at `/welcome` on a
- * fresh install (no completed-onboarding flag, empty workspace). Flow per the
- * onboarding overhaul spec: connection choice → sign-in/pair (remote paths) →
- * managed Codex setup or an inline CLI terminal → projects → optional preferences →
- * automatic settlement → main screen.
- * Projects and Preferences each import when the user moves past them.
- * Every step past the connection gate is skippable; the whole wizard is
- * re-runnable by clearing the flag.
+ * Projects and Preferences each import when the user moves past them. Every step past the
+ * connection gate is skippable; clearing the completed-onboarding flag reruns the wizard.
  */
 
 type WizardStep = "connection" | "agents" | "projects" | "preferences" | "workflow";
@@ -1141,9 +1135,8 @@ function AgentInstallTerminal({
   >("preparing");
   const terminalReady = setupState === "ready" || setupState === "writeFailed";
 
-  // In Strict Mode, a canceled open can finish after the replacement setup
-  // starts; it must not close or pre-type into the replacement session that
-  // shares this terminal id.
+  // StrictMode can finish a cancelled open after replacement setup; it must not close or pre-type into that
+  // session.
   useEffect(() => {
     const generation = setupGenerationRef.current + 1;
     setupGenerationRef.current = generation;
@@ -1186,8 +1179,7 @@ function AgentInstallTerminal({
     });
 
     // User-driven exits confirm server-reported activity before unmounting.
-    // Cleanup also releases the PTY after a natural session exit, but only while
-    // this connection still has terminal access; revocation leaves it running.
+    // Revocation leaves the PTY running; close only while terminal access remains.
     return () => {
       if (activeSetupGenerationRef.current === generation) {
         activeSetupGenerationRef.current = null;

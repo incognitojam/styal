@@ -49,8 +49,7 @@ function AppSettingsSection() {
   // EAS assigns build numbers remotely; read the installed binary rather than app.config.
   const build = Application.nativeBuildVersion;
   const versionWithBuild = build ? `${version} (${build})` : version;
-  // Fall back to "production" to match resolveAppVariant in app.config.ts, so a
-  // missing variant never mislabels a production build as development.
+  // Match app.config.ts's production fallback to avoid mislabeling builds as development.
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";
   const variantLabel = variant === "production" ? "" : capitalize(variant);
   const versionLabel = variantLabel ? `${versionWithBuild} · ${variantLabel}` : versionWithBuild;
@@ -65,8 +64,7 @@ function AppSettingsSection() {
   }, [updateState]);
 
   async function checkForUpdate() {
-    // `disabled={busy}` only takes effect on the next render, so two taps in the
-    // same frame would both get through. The ref closes that window.
+    // disabled updates next render; the ref blocks same-frame double taps.
     if (updateInFlight.current) return;
     updateInFlight.current = true;
     // Failures arrive through onFailure; the settled result only matters for unlocking.

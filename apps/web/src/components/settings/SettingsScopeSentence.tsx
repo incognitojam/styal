@@ -64,11 +64,8 @@ interface SettingsScopeMenuProps {
 }
 
 /**
- * "Applying settings for <project> across <environment>" above the settings,
- * reduced to its two pickers when docked in the toolbar. The pickers are the
- * targets a change is written to. A project is the same project on every
- * environment, so the environment alone decides where a project override is
- * written.
+ * The pickers are the targets a change is written to. A project is the same on every
+ * environment, so the environment alone decides where a project override is written.
  */
 export function SettingsScopeSentence({ compact = false }: { compact?: boolean }) {
   const scope = useOptionalSettingsScope();

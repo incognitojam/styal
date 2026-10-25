@@ -57,12 +57,7 @@ export function applyPullRequestDiffPage(
   return { key: scopeKey, cursor, slices: [...slices.slice(0, index), next], refreshing: false };
 }
 
-/**
- * A thread naming a file is not the same as a thread the diff can show: its line may have moved
- * out of the change, or sit in a hunk the host withheld. Pinning it anyway would put the remark
- * against whatever code now occupies that line number, and silently dropping it would lose the
- * conversation, so the answer decides which of the two lists it belongs in.
- */
+/** Only rendered hunks can anchor comments; list others off-diff. */
 export function isLineInFileDiff(
   file: FileDiffMetadata,
   side: PullRequestDiffSide,
@@ -78,9 +73,8 @@ export function isLineInFileDiff(
 export type DiffFoldOverride = "expanded" | "folded" | null;
 
 /**
- * The fold a file starts from, before the reader toggles it: the toolbar's last choice, or else
- * the saved default. When the saved default opens files, generated files such as lockfiles still
- * start folded. `generatedPaths` carries the repository's `linguist-generated` attributions.
+ * When the saved default opens files, generated files such as lockfiles still start folded.
+ * `generatedPaths` carries the repository's `linguist-generated` attributions.
  */
 export function fileDiffFoldDefault(
   path: string,
@@ -94,14 +88,7 @@ export function fileDiffFoldDefault(
     : "expanded";
 }
 
-/**
- * Whether a file is drawn folded.
- *
- * A diff arrives a slice at a time, so the reader's own choices are kept as the difference from
- * what the toolbar last said rather than as the set of folded files: a file that has not loaded
- * yet cannot be in a set, and would otherwise land expanded moments after the reader folded
- * everything.
- */
+/** Keep fold choices relative to the toolbar so later pages inherit Fold all. */
 export function isFileDiffCollapsed(
   fileKey: string,
   foldOverride: DiffFoldOverride,

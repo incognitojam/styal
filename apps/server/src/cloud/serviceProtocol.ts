@@ -1,15 +1,16 @@
 import type { ServerSelfUpdateOutcome } from "@t3tools/contracts";
 import { SERVICE_LAUNCHER_CONTEXT_ENV } from "@t3tools/shared/serverOwnedEnvironment";
 
-/** Protocol 4 requires isolated styal executable archives. Protocol 3 selected npm runtimes. */
+/**
+ * Bump for incompatible runtime layout changes; launchers survive self-updates.
+ * Protocol 4 requires isolated styal executable archives.
+ */
 export const SERVICE_LAUNCHER_PROTOCOL = 4 as const;
 export { SERVICE_LAUNCHER_CONTEXT_ENV };
 export const SERVICE_RESTART_PENDING_FILE = ".restart-pending";
 export const SERVICE_ENV_FILE = "service.env";
 export const SERVICE_STATE_FILE = "service-state.json";
-/** Written by the launcher just before an explicit stop kills its child, so
-    the child can tell "the service is going away" from "the launcher is about
-    to start my replacement" while a pending update is recorded. */
+/** Written before explicit stop to distinguish shutdown from update handoff. */
 export const SERVICE_STOP_MARKER_FILE = ".service-stopping";
 
 export interface PendingServiceUpdate {

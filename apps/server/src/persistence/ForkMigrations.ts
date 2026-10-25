@@ -103,12 +103,10 @@ const releaseMisplacedLatestMessageMigration = Effect.fn("releaseMisplacedLatest
 const UPSTREAM_V1_HISTORY_DROP_MIGRATION_ID = 63;
 
 /**
- * Upstream migration 63 drops the V1 activity and turn projections, but the lazy V1 thread
- * import still reads tool history, usage and checkpoints from them. Renaming them to fork-owned
- * tables before it runs lets that migration stay verbatim; its `DROP TABLE IF EXISTS` then finds
- * nothing. A rename keeps the tables' indexes, so a large database pays no index rebuild. A
- * database another build took past 63 has lost this history and gets empty tables, so readers
- * need no existence checks.
+ * Upstream migration 63 drops V1 projections the lazy V1 thread import still reads. Renaming them
+ * to fork-owned tables first keeps that migration verbatim and keeps their indexes. A database
+ * another build took past 63 has lost this history and gets empty tables, so readers need no
+ * existence checks.
  */
 const keepV1HistoryTables = Effect.fn("keepV1HistoryTables")(function* () {
   const sql = yield* SqlClient.SqlClient;

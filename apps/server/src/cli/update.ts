@@ -82,11 +82,8 @@ export const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(
 );
 
 /**
- * The launcher the install scripts leave behind: a symlink at `<bin>/styal` on
- * POSIX, a `styal.cmd` shim on Windows. `styal update` repoints it so the next `styal`
- * invocation is the new version. Only a launcher that already points into
- * this home's `runtime/styal-executable/versions` tree is touched; a plain copy of the
- * executable, or a launcher for some other install, is left alone.
+ * Only a launcher that already points into this home's `runtime/styal-executable/versions` tree
+ * is touched; a plain copy of the executable, or a launcher for some other install, is left alone.
  */
 export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function* (input: {
   readonly launchedAs: string | undefined;
@@ -139,12 +136,7 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
   return Option.some(input.launchedAs);
 });
 
-/**
- * The path the executable was started through. Node keeps the shell's
- * spelling in argv0: a launcher symlink or `./styal` resolves against the
- * working directory, while a bare `styal` was found on PATH and has to be
- * looked up there again, or the launcher symlink is never seen.
- */
+/** Node preserves argv0's spelling; resolve bare names on PATH to find the launcher symlink. */
 export const resolveLauncherPath = Effect.gen(function* () {
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
@@ -166,11 +158,7 @@ export const resolveLauncherPath = Effect.gen(function* () {
   return undefined;
 });
 
-/**
- * On Windows a `.cmd` shim is what PATH resolves, but the executable it runs
- * only ever sees its own path. Walk PATH for a `styal.cmd` whose target is the
- * running executable; that is the launcher the install script wrote.
- */
+/** Windows executables see their own path, so find the installer shim by matching styal.cmd targets on PATH. */
 export const findWindowsShim = Effect.fn("cli.update.find_windows_shim")(function* (
   executablePath: string,
 ) {
@@ -253,14 +241,8 @@ export const updateCommand = Command.make("update", {
 );
 
 /**
- * A `styal serve` or `styal` someone started by hand, as opposed to the one the
- * background service supervises. The server records its pid on startup; a
- * stale file from a crashed server is ignored by checking the pid is alive.
- *
- * Servers from before `serviceManaged` was recorded cannot be told apart by
- * the file alone, so the launcher-supervised case is also recognised by
- * lineage: a service server's parent is the launcher, and on Linux that
- * launcher runs inside the unit's cgroup.
+ * Servers from before `serviceManaged` was recorded are told apart by lineage: a service
+ * server's parent is the launcher, which on Linux runs inside the unit's cgroup.
  */
 const findForegroundServer = Effect.fn("cli.update.find_foreground_server")(function* (input: {
   readonly serverRuntimeStatePath: string;
@@ -365,9 +347,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   }
 
   const status = yield* service.status;
-  // The unit name is per user, not per T3 home. Only touch the service when it
-  // serves the home this update targets; otherwise it belongs to another
-  // install on this machine and restarting it would take that server down.
+  // Service names are per user, so another home's unit belongs to a different install.
   const servesThisHome =
     status.installedBaseDir !== undefined &&
     path.resolve(status.installedBaseDir) === path.resolve(input.baseDir);

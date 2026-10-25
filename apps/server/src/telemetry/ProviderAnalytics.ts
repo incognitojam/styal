@@ -1,12 +1,6 @@
 /**
- * Provider analytics: which providers an installation has, and whether their
- * updates work.
- *
- * `provider.inventory` reports each configured provider instance once after
- * startup and then daily. `provider.update.finished` reports each manual or
- * background update that reached a result. Both send structural fields only:
- * never instance names or IDs a user chose, paths, commands, installer output
- * or error messages.
+ * Both events send structural fields only: never instance names or IDs a user chose, paths,
+ * commands, installer output or error messages.
  */
 import {
   defaultInstanceIdForDriver,

@@ -2,13 +2,9 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 
-// GitHub's Windows runners hand out the temp directory by its 8.3 short name
-// (C:\Users\RUNNER~1\...). Anything that canonicalises a path, such as git or
-// realpath, reports the long form, so equality checks between a temp path and
-// its canonical form fail. Node reads TEMP/TMP on every os.tmpdir() call, so
-// pointing them at the long form fixes every temp directory the suite makes.
-// This is host setup, before the test runtime exists. Avoid loading Effect in
-// every worker just to check whether Windows path normalization is needed.
+// Windows runner temp paths use 8.3 names; canonicalize to long names before equality checks.
+// Node reads TEMP/TMP on every os.tmpdir() call, so setting them covers every suite temp dir.
+// Host setup before the test runtime exists, so it avoids loading Effect in every worker.
 // oxlint-disable-next-line t3code/no-global-process-runtime
 if (process.platform === "win32") {
   try {

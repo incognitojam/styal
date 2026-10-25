@@ -26,11 +26,10 @@ function foldedCommandOutput(
 }
 
 /**
- * Imports before references replaced copies embedded every V1 activity row in each item,
- * and V2 stores each item twice, as an event and a projection row. This rewrites those
- * items one thread per transaction after startup, so a large history never delays readiness.
- * Each event and projection row is rewritten from its own payload, mostly in SQL. The history fence moves once the pass
- * finishes, since folded output can change a command's failure state.
+ * Older imports embedded every V1 activity row in each item, stored as both an event and a
+ * projection row. Rewrites one thread per transaction after startup so a large history never
+ * delays readiness. The history fence moves once the pass finishes, since folded output can
+ * change a command's failure state.
  */
 export const slimImportedHistory = Effect.fn("slimImportedHistory")(function* (
   sql: SqlClient.SqlClient,

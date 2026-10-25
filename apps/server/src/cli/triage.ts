@@ -1,13 +1,6 @@
 /**
- * `styal triage` - hand a misbehaving install to the user's own coding agent.
- *
- * The command is deliberately thin: it writes a `context.md` with machine facts
- * (versions, paths, server liveness), then launches claude or codex
- * interactively, seeded with the playbook from `triagePrompt.ts`. The agent
- * asks the user what went wrong, investigates, and files the issue; the
- * harness's own permission prompts gate anything it wants to run. With no
- * agent CLI installed, the prompt and context are written to disk for the user
- * to paste into whatever agent they do have.
+ * Kept thin on purpose: the agent harness's own permission prompts gate what it runs. With no
+ * agent CLI installed, the prompt and context are written to disk for the user to paste.
  */
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeChildProcess from "node:child_process";
@@ -130,15 +123,13 @@ const runInteractiveSession = (input: {
   Effect.callback<number, TriageAgentSpawnError>((resume) => {
     const child = NodeChildProcess.spawn(input.command, [...input.args], {
       cwd: input.cwd,
-      // The agent reads the user's terminal; under the desktop app's Windows
-      // launcher that is the reopened console, not the (missing) inherited stdin.
+      // The Windows desktop launcher supplies terminal input through the reopened console.
       stdio: [interactiveStdin(), "inherit", "inherit"],
       shell: input.shell,
     });
     child.once("error", (cause) =>
       resume(Effect.fail(new TriageAgentSpawnError({ command: input.command, cause }))),
     );
-    // Signal death has no exit code; report failure rather than success.
     child.once("exit", (code, signal) => resume(Effect.succeed(code ?? (signal === null ? 0 : 1))));
   });
 
@@ -225,18 +216,14 @@ export const triageCommand = Command.make("triage", {
       } else if (installed.length === 1) {
         selected = installed[0];
       } else if (installed.length > 1) {
-        // Both streams must be terminals: with stdout redirected the picker
-        // prompt is invisible and the command would hang waiting on it.
+        // The picker needs terminal output too, or its invisible prompt hangs.
         if (!process.stdin.isTTY || !process.stdout.isTTY) {
           return yield* new TriageAgentChoiceRequiredError();
         }
         selected = yield* pickAgent(installed);
       }
 
-      // The agent is launched with a one-line pointer at it: Windows `.cmd`
-      // shims run through cmd.exe, which cannot carry the multiline playbook as
-      // an argv string, and with no agent installed the same file is the
-      // paste-anywhere fallback.
+      // Windows .cmd shims cannot carry multiline argv; keep the playbook on disk for both launch and paste fallback.
       const promptFilePath = path.join(scratchDir, "prompt.md");
       yield* fs.writeFileString(promptFilePath, buildTriageSeedPrompt(contextFilePath));
 

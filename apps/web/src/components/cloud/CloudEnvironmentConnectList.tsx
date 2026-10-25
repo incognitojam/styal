@@ -69,11 +69,8 @@ function RemoteEnvironmentRowsSkeleton() {
 }
 
 /**
- * The user's styal Link environments from relay discovery, each with a
- * Connect button. The primary environment is always excluded; already-saved
- * environments are hidden unless `showSavedEnvironments` renders them with
- * their live connection state (used by onboarding, where the full device mesh
- * should be visible).
+ * The primary environment is always excluded. Saved environments are hidden unless
+ * `showSavedEnvironments` renders them with their live connection state, as onboarding does.
  */
 export function CloudEnvironmentConnectRows({
   primaryEnvironmentId,
@@ -191,9 +188,7 @@ export function CloudEnvironmentConnectRows({
     return false;
   };
 
-  // During onboarding selection a machine saved over another route already
-  // has its own row elsewhere, and selecting it must not add a T3 Connect
-  // route as a side effect, so it is left out here.
+  // Omit machines saved over other routes; onboarding selection must not add a T3 Connect route.
   const isVisibleEnvironment = (environmentId: EnvironmentId) =>
     environmentId !== primaryEnvironmentId &&
     (showSavedEnvironments || !savedById.has(environmentId)) &&

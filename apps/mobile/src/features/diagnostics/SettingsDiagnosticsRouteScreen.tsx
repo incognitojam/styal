@@ -20,8 +20,7 @@ import {
 } from "./crash-log-model";
 import { NetworkReportsSection } from "./NetworkReportsSection";
 
-// expo-updates keeps its persistent log this long. Reading any further back
-// returns nothing, so this is the whole available window.
+// expo-updates retains only seven days of logs.
 const LOG_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type CrashLogState =

@@ -30,8 +30,7 @@ const DeviceToolFailure = Schema.Union([DeviceToolError, OrchestratorMcpFailure]
 const DeviceListTool = Tool.make("device_list", {
   description:
     "List iOS Simulators and Android Emulators on this environment's device hosts, which platforms each host can run, which devices are already open in this thread's Device panel, and which thread holds each device other threads have open. Call this before device_open when you do not know a device id, and prefer a device no other thread has open.",
-  // An empty struct serializes as `anyOf [object, array]`, which some
-  // providers reject and then drop every tool on the server with it.
+  // Empty Struct emits object|array, which can make providers reject every server tool.
   parameters: Schema.Struct({
     hostId: Schema.optional(
       Schema.String.annotate({ description: "Limit to one device host. Defaults to all hosts." }),

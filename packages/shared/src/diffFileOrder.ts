@@ -146,13 +146,9 @@ function heapPop(heap: Array<number>): number {
 }
 
 /**
- * Source files with what they import ahead of what imports them.
- *
- * Kahn's, but every step takes the lowest ready path rather than any ready node, so the same
- * change always reads the same way and files of one directory stay together. A cycle leaves nothing
- * ready: the lowest path still standing is taken anyway, which is the alphabetical order the tier
- * would have had without a graph. Ready paths wait in a min-heap of sorted ranks; this runs
- * synchronously on the UI thread, so it must stay near-linear even for an enormous diff.
+ * Kahn's, always taking the lowest ready path so the order is stable and directories stay
+ * together; a cycle takes the lowest remaining path. Runs synchronously on the UI thread, so it
+ * must stay near-linear even for an enormous diff.
  */
 function orderByImports(
   paths: ReadonlyArray<string>,

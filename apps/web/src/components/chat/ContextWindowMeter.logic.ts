@@ -15,18 +15,14 @@ import {
 } from "../../providerInstances";
 import { getTriggerDisplayModelName, type ModelEsque } from "./providerIconUtils";
 
-// Used when the provider did not report its cache TTL. Claude Code writes its
-// prompt cache with a one-hour TTL on a subscription, so a resume after an hour
-// resends the whole history uncached. Claude Code's own prompt waits 70
+// Fallback TTL: Claude Code's one-hour subscription cache. Claude Code's own prompt waits 70
 // minutes; the banner offers compaction as soon as the cache has expired.
 const CLAUDE_PROMPT_CACHE_FALLBACK_MS = 60 * 60_000;
 // Below this, resending the history uncached costs too little to interrupt.
 const CLAUDE_LARGE_CONTEXT_TOKENS = 100_000;
-// Claude Code sends effort inside the conversation for these models, so an
-// effort change keeps the cached history. On other models it sends effort as
-// a request parameter and an effort change resends the history uncached.
-// Claude Code enables this per model: add a model once its transcripts record
-// `perTurnEffort` on assistant entries.
+// Claude Code sends effort inside the conversation for these models, so an effort change keeps
+// the cached history; elsewhere it is a request parameter and resends it uncached. Add a model
+// once its transcripts record `perTurnEffort` on assistant entries.
 const CLAUDE_PER_TURN_EFFORT_MODELS: ReadonlySet<string> = new Set([
   "claude-fable-5-1",
   "claude-opus-5-5",
@@ -103,11 +99,8 @@ export function shouldOfferResumeCompaction(input: {
 export type ClaudeCacheLossChange = "model" | "effort" | "fastMode";
 
 /**
- * Which pending composer change would make the next Claude turn resend the
- * thread's history uncached, or `null` when the cache survives it or has
- * already expired. `current` is the selection the last turn was sent with;
- * `capabilities` belong to the pending model and resolve unset options to
- * their defaults, so writing a default out explicitly is not a change.
+ * `null` when the cache survives the change or has already expired. `capabilities` belong to the
+ * pending model and resolve unset options to their defaults, so an explicit default is not a change.
  */
 export function claudeSelectionCacheLoss(input: {
   readonly provider: string | null | undefined;

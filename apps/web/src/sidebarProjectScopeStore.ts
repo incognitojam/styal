@@ -1,12 +1,6 @@
 /**
- * The sidebar's project filter, read outside the sidebar tree.
- *
- * The filter is persisted in the UI state store. Two consumers sit where
- * sidebar component state could not reach them: the responsive sidebar
- * remounts when it swaps its desktop container for the mobile sheet, and the
- * command palette mounts at the root, above the sidebar. Every new-thread
- * entry point reads this so a chosen project decides where the next thread
- * lands.
+ * Lives outside sidebar component state because the responsive sidebar remounts when it swaps to
+ * the mobile sheet, and the command palette mounts above the sidebar.
  */
 
 import { useUiStateStore } from "./uiStateStore";

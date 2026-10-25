@@ -9,14 +9,9 @@ import * as Stream from "effect/Stream";
 const permissionBits = (mode: number) => mode & 0o7777;
 
 /**
- * Copies a file by streaming its bytes instead of calling `fs.copyFile`.
- *
- * On Linux `fs.copyFile` uses `copy_file_range`, which OpenZFS 2.2+ turns into a block clone.
- * With `zfs_bclone_wait_dirty` set, cloning a file written since the last transaction group sync
- * waits for that sync, which can take seconds to minutes on a busy pool. Node's clone flags take
- * the same path, so no `copyFile` mode avoids it.
- *
- * A new target gets the source's permission bits, as with `copyFile`, so a private file stays private.
+ * Streams bytes instead of `fs.copyFile`: on OpenZFS 2.2+ with `zfs_bclone_wait_dirty`, its
+ * `copy_file_range` block clone of a recently written file waits for the next transaction group
+ * sync, which can take minutes. A new target gets the source's permission bits, as with `copyFile`.
  */
 export const copyFileBytes = (
   fileSystem: FileSystem.FileSystem,

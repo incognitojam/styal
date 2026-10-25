@@ -16,16 +16,9 @@ const CODEX_PINNED_INSTALL_SCRIPT = [
 ].join("\n");
 
 /**
- * Installs exactly `version` into a standalone Codex install the way
- * `codex update` does, against the tree under the shared `CODEX_HOME`.
- *
- * The script's `CODEX_INSTALL_IF_CURRENT` compare-and-swap guard is not used:
- * it refuses every pinned release ("Daemon selection changed"), so the
- * updater's fresh version check under the install lock stands in for it.
- * The script is pointed at the directory of the `codex` on PATH, with that
- * directory on its PATH, so it does not add a PATH block to a shell profile.
- * A pinned install removes Codex's self-update marker, so Codex's own
- * latest-channel updater stays off until the next `codex update`.
+ * `CODEX_INSTALL_IF_CURRENT` refuses every pinned release, so the updater's version check under
+ * the install lock replaces it. Putting the target directory on PATH stops the script editing a
+ * shell profile. A pinned install removes Codex's self-update marker until the next `codex update`.
  */
 export function makeCodexPinnedInstall(sharedHomePath: string) {
   return (
@@ -55,11 +48,9 @@ export function makeCodexPinnedInstall(sharedHomePath: string) {
 }
 
 /**
- * Whether Codex's own scheduled updater owns the standalone install under
- * `sharedHomePath`. The install script writes the release directory name to
- * `auto-update-version` for a latest-channel install and removes it for a
- * pinned one; Codex self-updates only while it names the release `current`
- * points at. Null when the files cannot be read.
+ * The install script writes `auto-update-version` for a latest-channel install and removes it
+ * for a pinned one; Codex self-updates only while it names the release `current` points at.
+ * Null when the files cannot be read.
  */
 export const codexSelfUpdaterActive = Effect.fn("codexSelfUpdaterActive")(function* (
   sharedHomePath: string,

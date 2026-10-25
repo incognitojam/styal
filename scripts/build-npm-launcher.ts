@@ -1,17 +1,5 @@
 #!/usr/bin/env node
-/**
- * Builds the `@styal/cli` npm package behind `npx @styal/cli` /
- * `npm i -g @styal/cli`: a launcher with no dependencies that downloads this
- * exact version's CLI archive from the GitHub Release on first run
- * (scripts/npm-launcher/styal.mjs).
- * The executables are not published to npm. npm accepts large platform
- * packages and then holds them unreadable while it scans them, for up to an
- * hour, and every install in that window ran a launcher with nothing to
- * launch.
- *
- * Output: `<output-dir>/cli/` (the package tree) and `<output-dir>/cli.tgz`,
- * which is what gets published.
- */
+// GitHub archives avoid npm scanning delays; output <output-dir>/cli/ and publishable cli.tgz.
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -44,7 +32,7 @@ export class NpmLauncherCommandFailedError extends Schema.TaggedError<NpmLaunche
   }
 }
 
-/** package.json for the launcher. `engines` asks for `import.meta.dirname` and `fetch`. */
+/** engines requires import.meta.dirname and fetch. */
 export function npmLauncherPackageManifest(version: string) {
   return {
     name: CLI_PACKAGE_NAME,

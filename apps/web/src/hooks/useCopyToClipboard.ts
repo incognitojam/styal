@@ -55,11 +55,8 @@ export class ClipboardReadError extends Schema.TaggedError<ClipboardReadError>()
   }
 }
 
-// Monotonic count of clipboard writes observable from inside the app: every
-// successful write through this module, plus any DOM copy (Cmd+C on a
-// selection, copy-on-selection handlers) once tracking is installed. An
-// asynchronous copy captures the epoch when it starts and drops its result if
-// the epoch moved, so a slow fetch can never stomp something copied later.
+// Counts this module's writes and, once tracking is installed, DOM copy events. An async copy
+// drops its result if the epoch moved, so a slow fetch cannot overwrite something copied later.
 let clipboardWriteCount = 0;
 
 export function clipboardWriteEpoch(): number {
@@ -257,7 +254,6 @@ export function useCopyToClipboard<TContext = void>({
 } = {}): { copyToClipboard: (value: string, ctx: TContext) => void; isCopied: boolean } {
   const [isCopied, setIsCopied] = React.useState(false);
   const timeoutIdRef = React.useRef<NodeJS.Timeout | null>(null);
-  // Callers pass inline onCopy/onError but key callbacks and effects on this function.
   const copyToClipboard = useStableCallback((value: string, ctx: TContext): void => {
     void writeTextToClipboard(value, target, extraFlavors).then(
       (didCopy) => {

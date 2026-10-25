@@ -50,8 +50,7 @@ export function PullRequestRowGlyph({
           autoMergeEnabled={autoMergeEnabled}
           inMergeQueue={inMergeQueue}
         />
-        {/* The wrapper takes the offset, not the icon, so the tooltip trigger inside keeps the
-            badge's size and anchors the popup to it. */}
+        {/* Offset the wrapper to keep the badge-sized tooltip trigger anchored. */}
         <span className="absolute -right-1 -bottom-1 inline-flex">
           <PullRequestConflictGlyph
             state={state}

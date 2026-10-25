@@ -147,11 +147,9 @@ export function hardwareAuditDetailSummary(entry: HardwareAuditEntry): string | 
 }
 
 /**
- * Add, replace or remove one device. `originalId` is the id before an edit,
- * so renaming the id replaces the entry rather than adding a second one. The
- * accepted definition is server-owned: it survives edits to the address or
- * credential header, and is dropped when the definition source (project or
- * file) changes, so the new file has to be reviewed.
+ * `originalId` is the id before an edit, so a rename replaces the entry. The accepted
+ * definition is server-owned: it survives address or credential edits and is dropped when the
+ * definition source changes, so the new file has to be reviewed.
  */
 export function updateHardwareDevices(
   devices: ReadonlyArray<HardwareDeviceConfig>,

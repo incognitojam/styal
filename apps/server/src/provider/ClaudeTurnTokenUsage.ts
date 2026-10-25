@@ -23,11 +23,9 @@ export interface ClaudeModelUsageCounts {
 }
 
 /**
- * One result's share of `modelUsage`, summed over models. The SDK keeps
- * `modelUsage` as a running total for the whole query() session, covering the
- * main loop, subagents and internal calls such as compaction. A count that
- * went down means the total restarted (a resume or `/clear`), so the new
- * total is this result's alone.
+ * The SDK keeps `modelUsage` as a running total for the whole query() session, including
+ * subagents and compaction. A count that went down means the total restarted (a resume or
+ * `/clear`), so the new total is this result's alone.
  */
 export function claudeModelUsageDelta(
   previous: Readonly<Record<string, ModelUsage>> | undefined,
@@ -135,8 +133,7 @@ function addKnownCount(finalCount: unknown, earlierCounts: ReadonlyArray<unknown
   );
 }
 
-// A steer ends the running segment with an aborted result, and the SDK scopes
-// each result's usage to its own segment.
+// Steering aborts the current segment; each SDK result reports only that segment's usage.
 function withEarlierSegmentUsage(
   usage: Record<string, unknown>,
   earlierSegmentUsage: ReadonlyArray<unknown>,

@@ -42,15 +42,9 @@ import {
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 
 /**
- * The remote half of the sidebar update button: outdated providers on every
- * connected machine, except those styal managed updates installs, and servers
- * behind the version this client runs or is about to install
- * (`localUpdateVersion`). Servers that install from npm appear
- * only once npm confirms that version. `run` performs the whole pass, including
- * this app's own download and install when given. It updates quietly, tracks
- * each machine in the run state, and reports one summary toast at the end.
- * This app relaunches once every server restarts into its update. The summary waits for the
- * relaunch, and servers still restarting are followed after it.
+ * Skips providers that styal's managed updates install. This app relaunches once every server
+ * restarts into its update; the summary toast waits for the relaunch, and servers still
+ * restarting are followed after it.
  */
 export function useUpdateEverything(localUpdateVersion: string | null) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
@@ -74,8 +68,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     machines,
     targetVersion,
   );
-  // A desktop-managed server installs from its own app's update feed, so only
-  // servers that download @styal/cli from npm wait for npm to publish the version.
+  // Desktop-managed servers use their app feed; only npm installs need to wait for publication.
   const needsNpm = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
   const published = useNpmReleasePublished(needsNpm ? targetVersion : null);
   const servers = published

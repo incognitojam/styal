@@ -9,11 +9,10 @@ import {
 const PAYLOAD_PAGE_SIZE = 20;
 
 /**
- * V1 imports write a thread's messages before its activity, so every imported tool call and
- * notice would follow the thread's last message. Re-ranks the thread's run-less items, which
- * hold all imported history, by start time. Ordinals change in positions, projection rows and
- * item events together, so a projection rebuild keeps the order. Runs own separate ordinal
- * bands and are untouched. Returns how many items moved.
+ * V1 imports write messages before activity, so imported tool calls would follow the last
+ * message. Re-ranks run-less items by start time, changing ordinals in positions, projection rows
+ * and item events together so a projection rebuild keeps the order. Runs own separate ordinal
+ * bands and are untouched.
  */
 export const orderLegacyHistory = Effect.fn("orderLegacyHistory")(function* (
   sql: SqlClient.SqlClient,

@@ -36,14 +36,9 @@ function incomingShareIdOfParams(params: object | undefined): string | null {
 }
 
 /**
- * The share id the new-task flow is carrying, if a draft thread or the project
- * picker is anywhere in the root stack. Routes pushed above them (a draft
- * picker, Add environment, a notification tap) do not close the flow, so they
- * must not read as a dismissal. A draft without a project hands the share to
- * the project picker, and sending the draft clears its `draft` params.
- * Choosing a project pushes the draft above the picker, and sending it leaves
- * the picker behind, so a picker below a live thread belongs to a finished
- * flow; a draft below one is still open.
+ * Routes pushed above a draft or the project picker do not close the new-task flow, so they must
+ * not read as a dismissal. Sending a draft leaves the picker behind, so a picker below a live
+ * thread belongs to a finished flow; a draft below one is still open.
  */
 export function incomingShareIdOfNewTaskRoutes(state: {
   readonly routes: ReadonlyArray<RouteLike>;
@@ -71,15 +66,10 @@ export function incomingShareIdOfNewTaskRoutes(state: {
 }
 
 /**
- * Decides when the pending inbox share opens the new-task draft and when the
- * user has walked away from it. A share counts as dismissed only after the
- * sheet was seen carrying it and then left the stack; until then a missing
- * sheet means the navigation never landed (container not ready, another route
- * won the race) and the request is simply repeated. Dismissal discards the
- * share so that sharing the same content again yields a fresh handoff instead
- * of a silent no-op. The tracked share survives a newer pending one arriving
- * while its sheet is still up, so closing that sheet discards it rather than
- * letting it resurface after the newer share is handled.
+ * A share is dismissed only after its sheet was seen and then left the stack; before that a
+ * missing sheet means navigation never landed, so the request repeats. Dismissal discards the
+ * share so sharing the same content again starts fresh. A tracked share outlives a newer pending
+ * one so closing its sheet discards it instead of letting it resurface.
  */
 export function transitionIncomingSharePresentation(
   state: IncomingSharePresentationState,

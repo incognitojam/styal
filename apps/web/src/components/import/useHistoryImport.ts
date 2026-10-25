@@ -110,13 +110,9 @@ export function useHistoryImport(environmentId: EnvironmentId, busy = false) {
     };
     const importedProjects = importedProjectsRef.current;
     const projectAttempts = projectAttemptsRef.current;
-    // Interrupted imports are neither failures nor successes — the command was
-    // superseded or the environment dropped — but they still didn't land, so
-    // they must not read as "imported everything". Retries skip paths that
-    // already landed this session (re-creating them would only trip the
-    // duplicate-root invariant and read as a failure).
-    // Successful rows are deselected after each run. An explicit re-selection
-    // may import remaining history before finishing setup.
+    // Interrupted imports did not land, so they must not read as "imported everything". Retries
+    // skip paths that already landed this session, which would trip the duplicate-root invariant.
+    // Successful rows are deselected; an explicit re-selection may import remaining history.
     for (const candidate of selection) importedProjects.delete(candidate.key);
     let importedProjectsCount = 0;
     let importedThreadCount = 0;

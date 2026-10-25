@@ -164,11 +164,9 @@ function isErrorImpact(impact: string): boolean {
 }
 
 /**
- * Words that read as plain infrastructure once the vendor is known from the
- * icon, so "Claude API" can shorten to "API". Everything else keeps its vendor
- * word, because in "Claude Code" and "Claude Cowork" it names the product
- * rather than namespacing it. Unlisted means untouched, so a new component can
- * only ever be too long, never renamed into something that does not exist.
+ * Words that read as plain infrastructure once the icon shows the vendor, so "Claude API" can
+ * shorten to "API". Other names keep the vendor word, as in "Claude Code", so a new component can
+ * only be too long, never renamed into something that does not exist.
  */
 const GENERIC_COMPONENT_NAMES = new Set(["api", "console", "dashboard", "platform"]);
 
@@ -202,11 +200,8 @@ function activeIncidentsDescription(incidents: ReadonlyArray<StatusPageIncidentI
 }
 
 /**
- * Narrows a status page to the parts styal actually depends on. Vendors run
- * far more surfaces than we drive, and an incident confined to one of them is
- * noise the sidebar should not spend a row on. Ignoring is opt-in per name, so
- * a surface the vendor adds or renames still shows up: the failure mode is a
- * notice that did not matter, never a silent one that did.
+ * Ignoring is opt-in per name, so a surface the vendor adds or renames still shows up: the
+ * failure mode is a notice that did not matter, never a missed one that did.
  */
 export interface StatusPageRelevance {
   /** Component names, hostname suffix optional, whose disruption cannot reach styal. */

@@ -12,8 +12,7 @@ export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
 const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 export const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
 
-// Annotations go on the encoded (string) side so they survive into the
-// published JSON Schema; decoding still trims and re-validates non-emptiness.
+// Encoded-side annotations survive into JSON Schema; decoding still trims and rejects empty strings.
 const trimmedNonEmpty = (annotations: { readonly description: string }, maxLength?: number) => {
   const annotated = Schema.String.annotate(annotations);
   const encoded =

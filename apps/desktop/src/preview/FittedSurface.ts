@@ -1,9 +1,7 @@
 /**
- * CDP for a fitted preview tab: one whose emulated viewport is scaled down into
- * a smaller <webview>. Chromium only has that on-screen surface's pixels, so a
- * CDP screenshot of the logical viewport tiles the surface instead of rendering
- * beyond it, and CDP mouse input lands on the scaled surface rather than at the
- * page coordinates locators report.
+ * A fitted tab scales its emulated viewport into a smaller <webview>. Chromium only has that
+ * surface's pixels, so CDP screenshots tile it and CDP mouse input lands on the scaled surface
+ * rather than at the page coordinates locators report.
  */
 
 const SURFACE_INPUT = new Set(["Input.dispatchMouseEvent", "Input.dispatchDragEvent"]);

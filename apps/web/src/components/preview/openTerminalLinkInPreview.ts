@@ -38,13 +38,9 @@ interface OpenTerminalLinkInPreviewInput<E> {
 }
 
 /**
- * Opens a terminal link, in the integrated browser where it is a loopback one, unless a
- * Cmd/Ctrl-click explicitly requests the system browser.
- *
- * A loopback URL names a port on the machine the terminal runs on, which in a remote environment
- * is not the machine the system browser runs on, and only the integrated browser resolves it
- * against the environment, so it opens there rather than asking which browser to use; the preview
- * chrome carries the way back out. Other web links follow the configured browser preference.
+ * A loopback URL names a port on the terminal's machine, which in a remote environment is not the
+ * system browser's machine; only the integrated browser resolves it against the environment.
+ * Cmd/Ctrl-click still forces the system browser.
  */
 export async function openTerminalLinkInPreview<E>(
   input: OpenTerminalLinkInPreviewInput<E>,

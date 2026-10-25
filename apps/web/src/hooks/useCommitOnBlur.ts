@@ -10,22 +10,9 @@ interface PendingCommit {
 }
 
 /**
- * Buffer text input locally so keystrokes don't cause a settings-wide
- * re-render (and optionally a server RPC round-trip) on every character.
- * `onCommit` fires on blur and on Enter.
- *
- * The draft resynchronizes from the upstream `value` only when the input
- * is not focused, so an external push (e.g. a reset to defaults) doesn't
- * clobber an in-progress edit.
- *
- * When `onCommit` returns a promise, the committed text stays visible until
- * `value` changes, instead of showing the old value while the save is in
- * flight. If the promise resolves to `false`, the input returns to `value`.
- *
- * Returns a bag of props that should be spread onto an `<Input>`:
- *
- *   const bag = useCommitOnBlur(instance.displayName ?? "", (next) => {...});
- *   <Input {...bag} placeholder="e.g. Work" />
+ * Buffers input so keystrokes do not re-render settings or send an RPC per character. The draft
+ * resyncs from `value` only while unfocused, so an external reset cannot clobber an edit. A
+ * promise from `onCommit` keeps the committed text shown until `value` changes; `false` reverts.
  */
 export function useCommitOnBlur(
   value: string,

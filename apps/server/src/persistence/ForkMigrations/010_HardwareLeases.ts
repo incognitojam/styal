@@ -2,11 +2,9 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 /**
- * Hardware leases and their audit trail. Leases survive a restart because a
- * thread may keep a device across turns. A lease that ended keeps its row,
- * with `releasing_until` set, until its release hooks succeed or give up, so
- * a crash mid-cleanup resumes it. The audit log answers "what touched this
- * device", with repeated identical calls coalesced into one row.
+ * Leases persist because a thread may keep a device across turns. An ended lease keeps its row,
+ * with `releasing_until` set, until its release hooks succeed or give up, so a crash mid-cleanup
+ * resumes it. Repeated identical audit calls coalesce into one row.
  */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

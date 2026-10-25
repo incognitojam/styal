@@ -1,11 +1,9 @@
 import type { DevicePlatform, ForkClientUsageInput } from "@t3tools/contracts";
 
 /**
- * Counts what a device stream viewer experiences, so lag and dropouts can be
- * told apart: a growing delay behind the device means frames are queueing
- * somewhere between the device and this viewer, decoder resets mean the
- * viewer could not decode fast enough, and stalls or reconnects point at the
- * connection itself.
+ * Separates lag from dropouts: growing delay means frames queue between device and viewer,
+ * decoder resets mean the viewer could not decode fast enough, and stalls or reconnects point
+ * at the connection.
  */
 export type DeviceStreamTransport = "h264" | "avcc" | "mjpeg";
 
@@ -18,11 +16,9 @@ export interface DeviceStreamStats {
   /** Video received in the last second, in kilobits per second; null for MJPEG. */
   readonly receivedKbps: number | null;
   /**
-   * How far video in the last second lags behind the smallest lag seen since
-   * the stream (re)started, from device timestamps: the least-delayed frame in
-   * that second, because a queue delays every frame. Null while the screen is
-   * still, when the encoder holds each sparse frame until the next and the
-   * picture is not changing anyway, and when the stream carries no timestamps.
+   * Lag of the least-delayed frame in the last second over the smallest lag since the stream
+   * (re)started, because a queue delays every frame. Null on a still screen, where the encoder
+   * holds sparse frames, and when the stream carries no timestamps.
    */
   readonly addedDelayMs: number | null;
   readonly maxAddedDelayMs: number | null;

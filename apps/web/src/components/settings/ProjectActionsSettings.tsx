@@ -63,12 +63,8 @@ interface ActionsCheckout {
 }
 
 /**
- * A project's actions on each selected checkout. With several checkouts
- * selected, each one lists the actions it actually offers (its saved actions
- * and its own styal.json), and edits in a group change only that checkout.
- * Adding from the section header adds the action to every checkout.
- * Shortcuts are environment-wide, so the same action id shares its binding
- * on an environment.
+ * Each checkout lists the actions it offers, and edits in a group change only that checkout;
+ * adding from the section header adds to every checkout. Shortcuts are environment-wide.
  */
 export function ProjectActionsSettings() {
   const { scope, targets, projectFiles } = useSettingsScope();
@@ -87,9 +83,8 @@ export function ProjectActionsSettings() {
         environment,
         saved: target.settings.defaultProjectScripts,
         keybindings: serverConfig.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
-        // An older server ignores the override record, so a project edit
-        // there would report success and vanish; the legacy per-project
-        // map keeps serving those environments.
+        // Older servers ignore override records; exclude them from edits and retain their legacy
+        // per-project map.
         writeTarget:
           serverConfig.environment?.capabilities.projectSettingsOverrides === true
             ? {

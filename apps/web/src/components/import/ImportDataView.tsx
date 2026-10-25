@@ -614,12 +614,8 @@ function summaryText(summary: ComputerImportSummary): string {
 }
 
 /**
- * The import surface itself: a heading that names what is under review — the
- * source while projects are picked, Preferences on its own step; one scroller for
- * the chosen computer; one footer that always states the whole selection and
- * commits it. Setup and Settings render the shared content; setup reaches this
- * view once per top-level step and commits each step as it is left, Settings shows
- * every section on one page.
+ * Setup reaches this view once per top-level step and commits each step as it is left; Settings
+ * shows every section on one page. The footer always states and commits the whole selection.
  */
 export function ImportDataView({
   computers,

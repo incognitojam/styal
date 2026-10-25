@@ -105,17 +105,9 @@ export function parseStyalProjectFileResult(contents: string): StyalProjectFileP
 }
 
 /**
- * What styal makes of a project's checked-in configuration.
- *
- * - `missing`: neither `styal.json` nor `t3.json` is readable.
- * - `invalid`: the file in effect is malformed or its root is not an object.
- *   An invalid `styal.json` still hides `t3.json`, so fixing the new file is
- *   never silently undone by the old one.
- * - `partial`: the file decoded after invalid or unknown fields were ignored.
- * - `valid`: the file decoded cleanly.
- *
- * `legacyScripts` carries a `t3.json`'s scripts, which styal never runs; the
- * migration to `styal.json` offers them instead.
+ * An invalid `styal.json` still hides `t3.json`, so the old file never silently replaces the
+ * new one. `partial` means invalid or unknown fields were ignored. `legacyScripts` are never
+ * run; the migration to `styal.json` offers them.
  */
 export type ProjectConfigState =
   | { readonly status: "missing"; readonly config: null; readonly legacyScripts: readonly [] }

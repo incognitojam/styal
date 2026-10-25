@@ -426,9 +426,8 @@ export type DesktopTelemetrySetHostPowerIntervals =
   typeof DesktopTelemetrySetHostPowerIntervals.Type;
 
 /**
- * Server -> desktop main: run the app's own update flow now (check ->
- * download -> prepared install) without a local dialog. Only explicit remote
- * confirmation permits interrupting work at the final install handoff.
+ * Runs check/download/prepared install without a local dialog; only explicit remote confirmation
+ * permits interrupting work at the final install handoff.
  */
 export const DesktopTelemetryRequestDesktopUpdate = Schema.Struct({
   version: Schema.Literal(1),

@@ -70,13 +70,8 @@ function parseProto(buf: Uint8Array): Map<number, ProtoField[]> {
 }
 
 /**
- * Decodes the generation metadata protobuf row from Antigravity's trajectory SQLite DB (`gen_metadata.data`).
- * Field 1: generation metadata submessage
- *   Field 4: token counts submessage
- *     Field 2: uncached input tokens (varint)
- *     Field 3: output tokens (varint)
- *     Field 5: cached input tokens (varint, optional)
- *     Field 9: reasoning / thinking tokens (varint, optional)
+ * Decodes `gen_metadata.data` from Antigravity's trajectory DB. Field 1 > field 4 holds varint
+ * token counts: 2 uncached input, 3 output, 5 cached input (optional), 9 reasoning (optional).
  */
 export function decodeAntigravityStepTokens(data: Uint8Array): AntigravityStepTokens | undefined {
   try {

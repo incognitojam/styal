@@ -47,15 +47,9 @@ function versionCore(version: string): string {
 }
 
 /**
- * The skew a user can act on: the connected server runs an older styal than
- * this client (or than `clientVersion`, the version this client is about to
- * update to), so the server is the side that needs updating.
- *
- * Two nightly builds compare their full versions, including the date and run.
- * Other combinations compare their core `major.minor.patch` only, so a stable
- * build and a nightly build with the same core do not cause an update warning.
- * A server ahead of the client does not need an update. Versions that do not
- * parse as semver fall back to plain string inequality.
+ * Two nightly builds compare full versions; other pairs compare `major.minor.patch` only, so a
+ * stable and a nightly with the same core do not warn. A server ahead of the client needs no
+ * update. Versions that do not parse as semver fall back to string inequality.
  */
 export function resolveVersionMismatch(
   serverVersion: string | null | undefined,

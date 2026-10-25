@@ -139,12 +139,9 @@ export class EnvironmentRegistry extends Context.Service<
       | PlatformEnvironmentRemovalError
     >;
     /**
-     * Drops the paired route the `checked` connection signs in with, when the
-     * caller found that connection's session predates granular permissions and
-     * the environment can also be reached through T3 Connect. Nothing is
-     * dropped once the pairing holds a different token than `checked` used.
-     * Returns whether a route was dropped. Use `retireLegacyPairing` from
-     * `legacyPairing.ts`, which first confirms T3 Connect signs in.
+     * Nothing is dropped once the pairing holds a different token than `checked` used.
+     * Call `retireLegacyPairing` from `legacyPairing.ts`, which first confirms styal Link
+     * signs in.
      */
     readonly retireLegacyPairing: (
       environmentId: EnvironmentId,
@@ -221,7 +218,7 @@ interface EnvironmentServiceScope {
   readonly scope: Scope.Closeable;
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const registryScope = yield* Scope.Scope;
   const storage = yield* Persistence.ConnectionTargetStore;

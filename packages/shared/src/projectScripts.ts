@@ -54,14 +54,9 @@ export type ResolvedProjectAction = ProjectScript & {
 };
 
 /**
- * Every action the project offers: its saved actions in their own order, then
- * the styal.json actions no saved action overrides. `config` must come from
- * the project root, not a thread's worktree, so every thread of a project
- * sees the same file actions.
- *
- * A file action only runs on worktree creation or on settle once the user
- * has approved its exact command for that role; until then it runs only
- * when started by hand and lists the roles it is `awaitingApproval` for.
+ * `config` must come from the project root so every thread sees the same file actions. A file
+ * action runs automatically for a role only after the user approves its exact command; until
+ * then it lists that role in `awaitingApproval`.
  */
 export function resolveProjectActions(
   settings: ProjectScriptSettings & Pick<ServerSettings, "projectFileActionApprovals">,
@@ -186,11 +181,9 @@ export function setupProjectScript(scripts: readonly ProjectScript[]): ProjectSc
 }
 
 /**
- * A setup script is written against a fresh worktree: its cwd is the worktree and
- * `$STYAL_PROJECT_ROOT` names a different directory. Where those are the same
- * directory - a thread on the main checkout - a line like
- * `ln -sf "$STYAL_PROJECT_ROOT/.env" .env` replaces the file it meant to link to.
- * Callers refuse the run instead of falling back to the project root.
+ * On the main checkout the cwd and `$STYAL_PROJECT_ROOT` are the same directory, so a line like
+ * `ln -sf "$STYAL_PROJECT_ROOT/.env" .env` replaces the file it meant to link to. Callers refuse
+ * the run instead of falling back to the project root.
  */
 export function isSetupScriptOutsideWorktree(input: {
   script: Pick<ProjectScript, "runOnWorktreeCreate">;

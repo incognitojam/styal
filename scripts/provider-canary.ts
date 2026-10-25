@@ -1,25 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalConsole:off globalDate:off preferSchemaOverJson:off
 /**
- * Provider canary: decides which provider releases need verification,
- * records verified ones in the model manifest's `autoUpdates`, and keeps one
- * GitHub issue listing what failed.
- *
- *   node scripts/provider-canary.ts plan [--provider <id>] [--force] [--build <version>=<ref>]
- *     [--pending <manifest> --pending-base <manifest>] [--json <path>]
- *   node scripts/provider-canary.ts record --provider <id> --package <npm> --version <x.y.z>
- *     --styal <build> [...] [--pending <manifest> --pending-base <manifest>]
- *   node scripts/provider-canary.ts report --run-url <url> [--plan <json>] [--outcomes <dir>]
- *     [--plan-result <result>] [--record-result <result>] [--dry-run]
- *   node scripts/provider-canary.ts merge-guard --base <manifest> --head <manifest>
- *   node scripts/provider-canary.ts rewind-plan --changed <file list> [--json <path>]
- *
- * It verifies published styal builds, not main: each verification checks out
- * a release tag, so a recorded entry names the exact build it passed on.
- *
- * The workflow in .github/workflows/provider-canary.yml runs them around
- * apps/server/scripts/verify-provider-live.ts. `rewind-plan` is the exception:
- * .github/workflows/provider-rewind.yml uses it to rewind real conversations
- * with the pull request's own code.
+ * Verifies published styal builds, not main: each verification checks out a release tag, so a
+ * recorded `autoUpdates` entry names the exact build it passed on. `rewind-plan` instead serves
+ * .github/workflows/provider-rewind.yml, which runs the pull request's own code.
  */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -298,11 +281,8 @@ export type ProviderPlan =
   | { readonly kind: "blocked"; readonly provider: string; readonly reason: string };
 
 /**
- * Plans one provider on one styal build from the npm `latest` version of each
- * of its packages. The newest version in a supported range is verified when
- * the build may not install it yet, or always with `force`. A release that
- * failed on this build within `FAILURE_RETRY_HOURS` is held instead, unless
- * forced.
+ * The newest supported version is verified when the build may not install it yet, or always with
+ * `force`. A release that failed on this build within `FAILURE_RETRY_HOURS` is held unless forced.
  */
 export function planProvider(
   canary: CanaryProvider,
@@ -509,11 +489,9 @@ const withoutAutoUpdates = (manifest: Manifest) => ({
 });
 
 /**
- * Why a canary pull request turning `base` into `head` must not merge on its
- * own, or undefined when it may. It may only when the two differ in nothing
- * but `updatedAt`, which moves forward, and `autoUpdates` arrays that adding
- * the new entries to the base with `addAutoUpdate` reproduces exactly, for
- * packages the canary verifies.
+ * A canary pull request may merge on its own only when it changes nothing but a forward
+ * `updatedAt` and `autoUpdates` arrays that `addAutoUpdate` reproduces exactly from the base,
+ * for packages the canary verifies.
  */
 export function autoMergeBlocker(baseText: string, headText: string): string | undefined {
   const base: Manifest = JSON.parse(baseText);

@@ -33,11 +33,7 @@ export interface CloudLinkDesiredState {
   readonly holdWebhooksWhileOffline?: boolean;
 }
 
-/**
- * The local tunnel config can outlive a relay link that drifted to
- * publish-only, and clients then get `endpoint_provider_not_managed`. So when
- * relay discovery has this environment's record, it must also say managed.
- */
+// Require managed discovery: stale tunnel config after a publish-only switch causes endpoint_provider_not_managed.
 function isManagedTunnelActive(
   linkState: EnvironmentCloudLinkStateResult,
   relayProviderKind: RelayManagedEndpointProviderKind | undefined,
@@ -51,13 +47,8 @@ function isManagedTunnelActive(
 }
 
 /**
- * Drives the primary environment's styal Link. styal Link (managed
- * tunnel) and agent-activity publishing are independent capabilities backed by
- * a single relay link, so consumers express the full desired state and
- * `reconcileCloudState` applies it: unlink when neither is wanted, otherwise
- * (re)link with the mode the managed-tunnel bit implies and set the publish
- * preference. Re-linking only happens when the managed-tunnel mode actually
- * changes, so flipping publish alone is cheap.
+ * The managed tunnel and agent-activity publishing share one relay link, so callers pass the full
+ * desired state. Re-linking happens only when the tunnel mode changes; toggling publish alone is cheap.
  */
 export function useCloudLinkController() {
   const { getToken, isSignedIn } = useAuth();
@@ -144,13 +135,9 @@ export function useCloudLinkController() {
     const tokenResult = await settlePromise(() => getToken(resolveRelayClerkTokenOptions()));
     if (!canManageLink()) return false;
 
-    // A failure after this point may follow a partially applied mutation (e.g.
-    // the link succeeded but the preference update did not), so every exit —
-    // success or failure — refreshes the rendered state to whatever the server
-    // actually holds now.
+    // A failed mutation may have partially applied, so refresh server state on every exit.
     if (!wantsLink) {
-      // Unlink works without a relay token — a failed token read must not
-      // leave the user unable to turn styal Link off.
+      // Unlink needs no relay token; failed token reads must still allow it.
       const unlinkResult = await unlinkPrimaryEnvironment({
         target,
         clerkToken: tokenResult._tag === "Success" ? (tokenResult.value ?? null) : null,

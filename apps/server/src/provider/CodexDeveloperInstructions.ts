@@ -12,11 +12,7 @@ import {
   renderProviderToolInstructions,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 
-/**
- * Codex cuts the middle out of any `additionalContext` value over 1,000 tokens,
- * which it counts as UTF-8 bytes divided by four. It does this silently, so
- * every value built here has to fit.
- */
+/** Codex silently truncates additionalContext values over 1,000 tokens, counted as UTF-8 bytes / 4. */
 export const CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES = 4_000;
 
 const browserToolInstructionBlock = (mcpServerName: McpServerName): string =>
@@ -39,12 +35,7 @@ const normalizeAvailability = (
 ): T3CodeToolAvailability =>
   typeof availability === "boolean" ? { browser: availability, device: false } : availability;
 
-/**
- * Describing `preview_*` or `device_*` tools that aren't in the turn's tool list would be worse
- * than saying nothing: the instructions actively steer the model away from Playwright,
- * agent-browser, and raw simctl/adb, so leaving them in would talk it out of the only automation
- * it still has.
- */
+/** Instructions for unavailable tools would steer the model away from its remaining automation. */
 const toolInstructions = (
   availability: boolean | T3CodeToolAvailability,
   mcpServerName: McpServerName,
@@ -214,13 +205,8 @@ export function buildCodexDeveloperInstructions(interactionMode: ProviderInterac
 }
 
 /**
- * styal context for `turn/start.additionalContext`. Codex renders each entry
- * as a `<key>value</key>` developer message and resends it only when the value
- * changes.
- *
- * This must stay out of the collaboration mode: when the model catalog ships
- * its own text for a mode, as newer models do, Codex uses that text and drops
- * the client's `developer_instructions` entirely.
+ * Codex resends each `additionalContext` entry only when its value changes. Keep this outside
+ * collaboration mode; model-catalog mode text overrides client developer_instructions.
  */
 export function buildCodexAdditionalContext(
   runtime: CodexRuntimeInfo,
@@ -256,8 +242,7 @@ export function buildCodexAdditionalContext(
     }
     if (value) addPart();
   }
-  // Separate keys keep each value under Codex's per-entry cap. Codex emits
-  // entries in key order, so the numbering preserves the authored order.
+  // Split values to fit per-entry caps; number keys because Codex emits them in key order.
   return {
     ...Object.fromEntries(
       T3_CODE_ORCHESTRATION_SECTIONS.map((section, index) => [

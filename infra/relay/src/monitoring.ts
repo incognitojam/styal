@@ -49,9 +49,8 @@ interface RelayMonitor {
   readonly alertOnNoData?: boolean;
 }
 
-// Thresholds come from upstream T3 Code's 2026-10-16..19 relay prod data: the
-// worst healthy window, and its #16810 outage (Cloudflare API 429s stalling
-// every provision). They assume that traffic volume, not styal Link's.
+// Thresholds come from upstream T3 Code's 2026-10-16..19 relay prod data (the worst healthy
+// window and an outage of Cloudflare API 429s), so they assume that traffic, not styal Link's.
 // Paging monitors need two bad runs in a row; warnings catch the slow
 // degradations an outage threshold has to ignore.
 const relayMonitors: ReadonlyArray<RelayMonitor> = [

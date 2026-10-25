@@ -121,10 +121,7 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
-    /**
-     * The caller checks the owner against what comes back, so a host that cannot search
-     * `owner:branch` can drop those selectors without losing anything.
-     */
+    /** The caller verifies owners, so hosts may drop unsupported `owner:branch` selectors. */
     readonly headBranchProbe?: (input: {
       readonly headSelectors: ReadonlyArray<string>;
       readonly state: "open" | "all";
@@ -133,10 +130,7 @@ export class SourceControlProvider extends Context.Service<
       readonly cwd: string;
       readonly treeish: string;
     }) => Effect.Effect<Option.Option<string>>;
-    /**
-     * The repository's `owner/name` from a remote URL, for a host whose remote paths can carry
-     * more than that (Forgejo's HTTP installation mount). Absent means the whole path.
-     */
+    /** Strip installation mounts from remote paths; absent means use the whole path. */
     readonly repositoryNameFromRemoteUrl?: (url: string) => string | null;
     readonly refineRepositoryIdentity?: (input: {
       readonly identity: RepositoryIdentity;
@@ -241,12 +235,8 @@ export class SourceControlProvider extends Context.Service<
 >()("@t3tools/source-control-core/server/SourceControlProvider") {}
 
 /**
- * Issue browsing only ships for GitHub today. Every other provider reuses this
- * so the capability gap is a typed, explainable failure instead of a missing
- * method.
- *
- * Resolving references belongs here too, answering empty rather than failing: no reference
- * resolved is exactly right for a host whose bodies do not write GitHub's shorthand.
+ * Makes the missing issue support a typed, explainable failure. Resolving references answers
+ * empty rather than failing, which is correct for hosts that do not write GitHub's shorthand.
  */
 export function unsupportedIssueOperations(
   kind: SourceControlProviderKind,

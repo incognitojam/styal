@@ -1,14 +1,8 @@
 // @effect-diagnostics globalDate:off -- Wall-clock times are resolved against IANA zones through Intl and UTC calendar arithmetic.
 /**
- * Times an agent mentions in prose: `14:20 UTC`, `Sunday 17:00`, `2026-09-29T20:30Z`,
- * `49 minutes ago`, `due in about 18 minutes`. Detection is pure text matching; resolution needs
- * the moment the message was written and the time zone of the environment the agent ran in, since
- * that is the clock an agent reads when it writes a time without a zone.
- *
- * Matching is deliberately conservative. Durations ("finished in 36 seconds", "times out after 15
- * seconds") read like times but are not moments, so a forward offset needs a word that makes it
- * one ("due in", "again in"), and a zone-less clock needs a two-digit hour or am/pm to stay clear
- * of elapsed times such as `2:48`.
+ * Zone-less times resolve in the environment's time zone, the clock the agent read. Durations
+ * look like times, so a forward offset needs a word such as "due in", and a zone-less clock
+ * needs a two-digit hour or am/pm to stay clear of elapsed times such as `2:48`.
  */
 
 /**

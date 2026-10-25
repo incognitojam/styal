@@ -1,10 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off preferSchemaOverJson:off - standalone fake CLI with no workspace imports.
 /**
- * A fake `gh` for e2e tests. The server only asks `gh` for its version, its logins and a token;
- * GitHub data comes from the fake GitHub API (e2e/support/fake-github-api.ts). It reports a
- * signed-in github.com account and hands out a fake token. Every call is appended to
- * `E2E_GH_CALL_LOG`. Commands it does not know exit 1, so a test that reaches one fails visibly
- * instead of talking to GitHub.
+ * A fake `gh` that reports a signed-in github.com account and a fake token; GitHub data comes
+ * from e2e/support/fake-github-api.ts. Calls are appended to `E2E_GH_CALL_LOG`. Unknown commands
+ * exit 1 so a test that reaches one fails visibly instead of talking to GitHub.
  */
 import * as NodeFS from "node:fs";
 

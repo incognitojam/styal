@@ -1,11 +1,8 @@
 const { withAppBuildGradle } = require("expo/config-plugins");
 
-// Every preview build has a new version code and name. R8 takes the packaged
-// manifest and BuildConfig as inputs, so a changing version alone makes CI rerun
-// R8 (about six minutes) even when no native code changed. Gradle therefore
-// builds previews with a fixed version, and aapt2 writes the real one into the
-// APK's manifest when it links resources. Nothing reads BuildConfig's version
-// fields; the app reads its version from the installed package.
+// R8 reruns (about six minutes) whenever the version changes, so Gradle builds previews with a
+// fixed version and aapt2 writes the real one into the APK manifest. Nothing reads BuildConfig's
+// version fields; the app reads its version from the installed package.
 const MARKER = "withAndroidPreviewApkVersion";
 
 module.exports = function withAndroidPreviewApkVersion(config) {

@@ -191,12 +191,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
   });
   const displayName = branding.displayName;
   const identity = DESKTOP_INSTALL_IDENTITIES[installVariant];
-  // Electron keys OS credential storage on app.name: the macOS Keychain
-  // service, and the libsecret/kwallet collection on Linux. There is no API to
-  // name those entries directly, so app.name is an identity slug rather than a
-  // display string. It matches the Electron profile directory, keeping secrets in the
-  // same namespace as the state they protect. Anything user-visible reads
-  // displayName instead.
+  // Electron keys the macOS Keychain service and Linux libsecret/kwallet collection on app.name,
+  // with no API to name them directly. app.name is therefore the identity slug that also names
+  // the profile directory; anything user-visible reads displayName instead.
   const safeStorageName = identity.slug;
   const stateDir = resolveDesktopStateDir({
     baseDir,

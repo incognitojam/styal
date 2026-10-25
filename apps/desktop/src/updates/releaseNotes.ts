@@ -30,8 +30,6 @@ const HTML_ENTITY_REPLACEMENTS: Readonly<Record<string, string>> = {
 };
 
 function decodeCodePoint(codePoint: number, entity: string): string {
-  // String.fromCodePoint throws RangeError outside the valid Unicode range, and
-  // Number.isFinite alone lets oversized values (e.g. &#9999999999;) through.
   if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
     return `&${entity};`;
   }
@@ -86,11 +84,9 @@ function isCommitListHeading(line: string): boolean {
   return normalized === "what's changed" || normalized === "whats changed";
 }
 
-// Labels GitHub appends to a generated release body, as a heading ("New
-// Contributors") or a labelled link ("**Full Changelog**: <url>"). Matching the
-// label rather than the link matters: electron-updater hands us the HTML form,
-// where stripMarkup() drops the anchor href and leaves behind the link text,
-// e.g. "Full Changelog: pingdotgg/t3code@4c51b4c...4c51b4c".
+// Match GitHub's generated footer labels, not links: electron-updater sends HTML, where
+// stripMarkup() drops the href and leaves link text such as
+// "Full Changelog: pingdotgg/t3code@4c51b4c...4c51b4c".
 const GENERATED_FOOTER_LABELS = ["full changelog", "new contributors", "compare"];
 
 function isGeneratedFooterLine(normalized: string): boolean {
@@ -145,12 +141,7 @@ interface NormalizedDesktopUpdateReleaseNotes {
   readonly omittedReleaseCount: number;
 }
 
-/**
- * With `fullChangelog` on (nightly), electron-updater collects every GitHub
- * release whose version is semver-greater than the running one, whatever train
- * it belongs to; a maintainers' `-preview.` cut sorts above every `-nightly.`
- * of the same base version and would lead the list.
- */
+/** fullChangelog includes all greater semvers, so preview cuts sort above nightlies of the same base version. */
 export function normalizeDesktopUpdateReleaseNotes(
   releaseNotes: unknown,
   fallbackVersion: string,

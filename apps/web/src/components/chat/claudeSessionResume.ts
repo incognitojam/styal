@@ -7,12 +7,9 @@ type ContinuationProvider = Pick<
 >;
 
 /**
- * Whether the next turn resumes the thread's native Claude session, which
- * resends its whole history. Switching from another provider, or to a Claude
- * instance with separate history, hands off a bounded summary instead, so the
- * thread's current context usage says nothing about what the next turn sends.
- * `currentInstanceId` is the instance the last turn ran on; `next` is the
- * instance that will run the next one.
+ * Resuming the native Claude session resends its whole history. Switching from another provider,
+ * or to a Claude instance with separate history, hands off a bounded summary instead, so the
+ * thread's context usage says nothing about what the next turn sends.
  */
 export function resumesClaudeSession(
   entries: ReadonlyArray<ContinuationProvider>,

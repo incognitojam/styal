@@ -33,15 +33,9 @@ async function readProjectFileContents(
 }
 
 /**
- * Read and resolve the project's checked-in configuration: `styal.json`, or a
- * legacy `t3.json` when there is none.
- *
- * Imperative counterpart to `useProjectConfigState` for the new-thread path,
- * which resolves defaults at call time rather than render time. The file
- * query atoms cache per (environment, cwd), so repeat calls don't re-fetch.
- * Optimistic in-app writes overlay the query result, matching what
- * `useProjectFileQuery` renders. Missing, truncated, or invalid files
- * resolve to null.
+ * Imperative counterpart to `useProjectConfigState` for the new-thread path, which resolves
+ * defaults at call time. Optimistic in-app writes overlay the query result, matching what
+ * `useProjectFileQuery` renders.
  */
 export async function readProjectConfig(
   environmentId: EnvironmentId,

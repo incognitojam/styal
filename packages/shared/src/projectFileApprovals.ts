@@ -10,12 +10,9 @@ import {
 import { normalizeProjectPathForComparison } from "./path.ts";
 
 /**
- * The key approvals of a project's styal.json actions are stored under: the
- * repository (a fork's own remote first, so a fork never shares approvals
- * with its upstream) plus the project's path inside it, so two projects of
- * one monorepo with their own styal.json keep separate approvals. A project
- * at the repository root keeps the bare repository key. Without a known
- * repository the approvals belong to the project alone.
+ * A fork's own remote ranks first so a fork never shares approvals with its upstream, and the
+ * path inside the repository keeps monorepo projects apart. Without a known repository the
+ * approvals belong to the project alone.
  */
 export function projectFileApprovalKey(project: {
   readonly id: ProjectId;

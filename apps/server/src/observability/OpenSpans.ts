@@ -42,11 +42,9 @@ export const trackOpenSpans = (tracer: Tracer.Tracer) => {
   };
 };
 
-// The desktop app kills its backend two seconds after asking it to stop, and
-// the service launcher after five. Reports at 1.5, 3 and 4.5 seconds land
-// before each kill, and the later ones cover steps that start after the
-// provider stop. Stopping a Claude session can take two seconds on its own,
-// so a report is not always a fault.
+// The desktop app kills its backend two seconds after asking it to stop, and the service
+// launcher after five, so reports at 1.5, 3 and 4.5 seconds land before each kill. Stopping a
+// Claude session can take two seconds on its own, so a report is not always a fault.
 const STALLED_SHUTDOWN_REPORT_INTERVAL = Duration.millis(1_500);
 const STALLED_SHUTDOWN_REPORTS = 3;
 const MAX_REPORTED_SPANS = 40;

@@ -5,9 +5,7 @@ import { supportsAgentAwarenessPush } from "./capabilities";
 
 export const DEFAULT_ATTENDED_ALERT_DELAY_SECONDS = 600;
 
-// Development builds are Xcode-signed and receive sandbox APNs tokens;
-// preview and production builds are distribution-signed and use production
-// APNs. The relay routes each device's pushes accordingly.
+// Development builds use sandbox APNs; distribution builds use production APNs.
 export function resolveApsEnvironment(appVariant: unknown): "sandbox" | "production" {
   return appVariant === "development" ? "sandbox" : "production";
 }

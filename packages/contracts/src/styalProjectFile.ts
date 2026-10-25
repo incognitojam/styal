@@ -136,13 +136,9 @@ export type ProjectConfigAction = StyalProjectFileAction & {
 };
 
 /**
- * Settings a repository can also declare in its project file. A key here must
- * be nullable on `ServerSettings` (null means inherit) so both the project
- * override and the environment value can defer to the file; `field` names
- * the file field carrying the same value and `builtIn` is what applies when
- * every tier is unset. `resolveProjectSettings` walks project override,
- * environment value, file, built-in, so listing a key here is the whole
- * change for a new file-backed setting.
+ * A key here must be nullable on `ServerSettings` (null means inherit) so the project override
+ * and environment value can defer to the file. Listing a key here is the whole change for a new
+ * file-backed setting.
  */
 export const PROJECT_FILE_BACKED_SETTINGS = {
   // Clients use the current checkout when the project is not a Git repo or
@@ -150,9 +146,7 @@ export const PROJECT_FILE_BACKED_SETTINGS = {
   defaultThreadEnvMode: { field: "defaultThreadEnvMode", builtIn: "worktree" },
   worktreeSubmodules: { field: "worktreeSubmodules", builtIn: "recursive" },
 } as const satisfies {
-  // `providerInstances` is scoped per project but overrides field by field
-  // rather than replacing a whole `ServerSettings` value (see its doc comment
-  // in settings.ts), so it cannot be file-backed and is excluded here.
+  // providerInstances overrides individual fields, so it cannot use whole-setting file inheritance.
   readonly [K in ProjectScopedServerSettingKey & keyof ServerSettings]?: {
     readonly field: {
       readonly [F in keyof ProjectConfig]: ProjectConfig[F] extends
