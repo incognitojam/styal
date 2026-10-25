@@ -10,7 +10,7 @@ import type {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ScrollView, View } from "react-native";
+import { Platform, ScrollView, View } from "react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText } from "../../components/ui/AppText";
@@ -97,7 +97,12 @@ export function SimulatorMemorySheet({
 
   return (
     <Sheet title="Simulator memory" onClose={onClose}>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerClassName="gap-4 p-4">
+      <ScrollView
+        nestedScrollEnabled
+        className="flex-1"
+        contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
+        contentContainerClassName="gap-4 p-4"
+      >
         {error ? (
           <AppText selectable className="text-danger">
             {error}
