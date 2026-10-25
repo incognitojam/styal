@@ -195,12 +195,20 @@ export async function addEnvironment(page: Page, pairingUrl: string): Promise<vo
   await page.getByText(`${new URL(pairingUrl).origin}/ · Connected`).waitFor({ timeout: 60_000 });
 }
 
-/** Opens a project's draft and waits for its composer to replace the previous thread's. */
-export async function startNewThread(app: App, projectName: string): Promise<void> {
+/**
+ * Opens a project's draft with its New thread button, or with the sidebar's New thread button
+ * when `projectName` is omitted, and waits for its composer to replace the previous thread's.
+ */
+export async function startNewThread(app: App, projectName?: string): Promise<void> {
   const { page, composer } = app;
   const previousUrl = page.url();
   const previousEditor = await composer.elementHandle();
-  await page.getByRole("button", { name: `New thread in ${projectName}`, exact: true }).click();
+  const button = projectName
+    ? page.getByRole("button", { name: `New thread in ${projectName}`, exact: true })
+    : page
+        .getByRole("navigation", { name: "Threads" })
+        .getByRole("button", { name: "New thread", exact: true });
+  await button.click();
   await page.waitForURL(/\/draft\/[^/]+$/);
   // The URL can change while the draft route is still loading and the old editor is actionable.
   // An already-open empty draft can be reused without replacing its editor.
@@ -209,6 +217,13 @@ export async function startNewThread(app: App, projectName: string): Promise<voi
   }
   await composer.waitFor();
   await previousEditor?.dispose();
+}
+
+/** Waits until the chat shows `shown` and no longer shows `hidden`. */
+export async function expectConversation(page: Page, shown: string, hidden: string): Promise<void> {
+  const userMessages = page.locator("[data-message-role=user]");
+  await userMessages.filter({ hasText: shown }).first().waitFor();
+  await userMessages.filter({ hasText: hidden }).first().waitFor({ state: "detached" });
 }
 
 /**

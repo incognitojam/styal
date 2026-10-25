@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
-import { type App, addProject, openApp, sendMessage } from "../support/browser.ts";
+import { type App, addProject, openApp, sendMessage, startNewThread } from "../support/browser.ts";
 import { type Environment, PROJECT_NAME, startEnvironment } from "../support/environment.ts";
 
 describe("filter the sidebar by project", () => {
@@ -45,13 +45,17 @@ describe("filter the sidebar by project", () => {
     await demoThreads.waitFor();
 
     // The sidebar's New thread follows the filter, not the open thread.
-    await sidebar.getByRole("button", { name: "New thread", exact: true }).click();
-    await page.waitForURL(/\/draft\/[^/]+$/);
+    await startNewThread(app);
     await sendMessage(app, "Second demo task");
     await demoThreads.nth(1).waitFor();
     expect(environment.codexTurns()).toHaveLength(3);
 
-    await chooseFilter(`Filter threads by project: ${PROJECT_NAME}`, "All projects");
+    // Switching straight to another project replaces the filter.
+    await chooseFilter(`Filter threads by project: ${PROJECT_NAME}`, "other-app");
+    await otherThread.waitFor();
+    await demoThreads.first().waitFor({ state: "detached" });
+
+    await chooseFilter("Filter threads by project: other-app", "All projects");
     await sidebar
       .getByRole("combobox", { name: "Filter threads by project", exact: true })
       .waitFor();
