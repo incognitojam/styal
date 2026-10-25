@@ -336,6 +336,9 @@ describe("next unread thread", () => {
     expect(
       resolveSidebarThreadAttention({ status: "approval", isUnread: true, isWoke: true }),
     ).toBe("approval");
+    expect(
+      resolveSidebarThreadAttention({ status: "request", isUnread: false, isWoke: true }),
+    ).toBe("request");
     expect(resolveSidebarThreadAttention({ status: "working", isUnread: true, isWoke: true })).toBe(
       null,
     );
@@ -433,6 +436,19 @@ describe("resolveSidebarThreadStatus", () => {
         runtime,
       }),
     ).toBe("approval");
+  });
+
+  it("shows a waiting guest message as a Request, below the agent's own requests", () => {
+    expect(resolveSidebarThreadStatus({ ...idle, pendingGuestMessageCount: 1, runtime })).toBe(
+      "request",
+    );
+    expect(
+      resolveSidebarThreadStatus({
+        ...idle,
+        hasPendingUserInput: true,
+        pendingGuestMessageCount: 1,
+      }),
+    ).toBe("input");
   });
 
   it("keeps usage-limit stops Limited and visible until the thread recovers", () => {

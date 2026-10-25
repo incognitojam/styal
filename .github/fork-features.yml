@@ -3170,7 +3170,7 @@ features:
     status: maintained
     prs: []
     invariants:
-      - "`thread.nextUnread` (`mod+shift+u` by default, outside terminals) and the command palette's Go to next unread thread open the pinned, active or Working thread with the most urgent attention, in the row status precedence: approval, input, usage limit, failed run, woke, then an unread completion. Among the same kind, the thread waiting longest opens first: since it last came back to the inbox, or since it woke for a woken thread. Equal times keep sidebar order."
+      - "`thread.nextUnread` (`mod+shift+u` by default, outside terminals) and the command palette's Go to next unread thread open the pinned, active or Working thread with the most urgent attention, in the row status precedence: approval, input, a waiting guest message, usage limit, failed run, woke, then an unread completion. Among the same kind, the thread waiting longest opens first: since it last came back to the inbox, or since it woke for a woken thread. Equal times keep sidebar order."
       - The open thread is skipped, so repeating the command moves to the next waiting thread. Snoozed and settled threads are not candidates.
       - With nothing waiting, it opens nothing and shows a "No unread threads" toast.
       - While a pinned, active or Working thread other than the open one is waiting, a button above the composer, beside Scroll to end when that shows, shows how many are waiting, the status icon of the one it would open, and the shortcut, and opening from it does the same. It is hidden on a new draft's empty state, during thread find, and with the legacy sidebar.

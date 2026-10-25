@@ -27,6 +27,7 @@ const defaultSnapshot = {
   sidebarAutoSettleKeepPullRequests: false,
   snoozeLimitedThreads: false,
   autoResumeLimitedThreads: false,
+  guestSharingEnabled: false,
   idleCompaction: "onReturn",
   branchNamingMode: "static",
   branchNamePrefixCustomized: false,

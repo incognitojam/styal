@@ -59,6 +59,7 @@ import {
 } from "./MessagesTimeline.logic";
 import { cn } from "~/lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
+import { CommandOutputPanel } from "./CommandOutputPanel";
 import { FetchedToolOutput, V2ItemInspector } from "./V2ItemInspector";
 import { SubagentNotificationLink } from "./V2LifecycleRow";
 import {
@@ -158,12 +159,14 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
   showCommand: boolean;
 }) {
   const { workEntry, showCommand } = props;
-  const { activeThreadEnvironmentId, threadRef } = use(TimelineRowCtx);
+  const { activeThreadEnvironmentId, threadRef, turnItemSource } = use(TimelineRowCtx);
   const pending = workEntry.toolLifecycleStatus === "inProgress";
   // An action waiting for approval never ran, so it has no output to fetch.
   const awaitingApproval = fileActionReviewRequestOf(workEntry.structuredPayload) !== null;
+  // A guest has no environment connection; the guest page serves output through its own route.
+  const sourcedItem = turnItemSource ? workEntry.projectedItem : undefined;
   const query = useCommandOutput({
-    environmentId: pending || awaitingApproval ? null : activeThreadEnvironmentId,
+    environmentId: pending || awaitingApproval || sourcedItem ? null : activeThreadEnvironmentId,
     threadId: threadRef?.threadId ?? null,
     activityId: EventId.make(workEntry.id),
   });
@@ -177,6 +180,19 @@ const CommandOutputExpandedBody = memo(function CommandOutputExpandedBody(props:
 
   // An action waiting for approval has nothing to show beyond its command.
   if (awaitingApproval) return commandBlock;
+  if (turnItemSource && sourcedItem) {
+    return (
+      <>
+        {commandBlock}
+        <CommandOutputPanel
+          environmentId={activeThreadEnvironmentId}
+          threadId={sourcedItem.sourceThreadId}
+          itemId={sourcedItem.sourceItemId}
+          source={turnItemSource.commandOutput}
+        />
+      </>
+    );
+  }
   if (pending) {
     return (
       <>
@@ -727,6 +743,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               onOpenTurnDiff={ctx.onOpenTurnDiff}
               onRollbackCheckpoint={ctx.onRollbackCheckpoint}
               onImageExpand={ctx.onImageExpand}
+              source={ctx.turnItemSource}
             />
           ) : (
             <>
@@ -738,6 +755,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   projectedItem={workEntry.projectedItem}
                   environmentId={ctx.activeThreadEnvironmentId}
                   onImageExpand={onImageExpand}
+                  source={ctx.turnItemSource}
                 />
               ) : null}
             </>

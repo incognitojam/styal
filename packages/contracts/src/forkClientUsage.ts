@@ -33,7 +33,7 @@ import {
 } from "./settings.ts";
 
 /** Bump when extending the vocabulary; clients require the complete version before reporting. */
-export const FORK_CLIENT_USAGE_VERSION = 18;
+export const FORK_CLIENT_USAGE_VERSION = 19;
 
 /**
  * One device's client preferences, reported daily so we can see which defaults
@@ -270,7 +270,15 @@ export const ForkClientUsageInput = Schema.Union([
     feature: Schema.Literal("next-unread-thread"),
     action: Schema.Literal("opened"),
     /** What the opened thread was waiting for. */
-    attention: Schema.Literals(["approval", "input", "limited", "failed", "woke", "done"]),
+    attention: Schema.Literals([
+      "approval",
+      "input",
+      "request",
+      "limited",
+      "failed",
+      "woke",
+      "done",
+    ]),
     entryPoint: Schema.Literals(["shortcut", "command_palette", "chip"]),
   }),
   Schema.Struct({

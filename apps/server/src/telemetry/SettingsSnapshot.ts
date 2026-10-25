@@ -60,6 +60,7 @@ function settingsSnapshotProperties(settings: ServerSettings) {
     sidebarAutoSettleKeepPullRequests: settings.sidebarAutoSettleKeepPullRequests,
     snoozeLimitedThreads: settings.snoozeLimitedThreads,
     autoResumeLimitedThreads: settings.autoResumeLimitedThreads,
+    guestSharingEnabled: settings.guestSharingEnabled,
     idleCompaction: globalIdleCompaction(settings),
     // Source control writing
     branchNamingMode: settings.branchNamingMode,
