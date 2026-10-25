@@ -128,6 +128,7 @@ export const DeviceSummary = Schema.Struct({
   version: Schema.String,
   booted: Schema.Boolean,
   physical: Schema.Boolean,
+  streamRevision: Schema.optional(Schema.String),
 });
 export type DeviceSummary = typeof DeviceSummary.Type;
 
@@ -213,6 +214,7 @@ export const DeviceServiceState = Schema.Struct({
 export type DeviceServiceState = typeof DeviceServiceState.Type;
 
 export const DeviceListInput = Schema.Struct({
+  hostId: Schema.optional(DeviceHostId),
   updateTool: Schema.optional(Schema.Literals(["hub", "agent"])),
   inspectOnly: Schema.optional(Schema.Boolean),
   retryHostId: Schema.optional(DeviceHostId),
@@ -325,6 +327,7 @@ export const DeviceDetail = Schema.Struct({
   foregroundApp: Schema.NullOr(DeviceForegroundApp),
   memory: Schema.optional(SimulatorMemoryState),
   memoryError: Schema.optional(Schema.String),
+  streamRevision: Schema.optional(Schema.String),
   readAt: Schema.String,
 });
 export type DeviceDetail = typeof DeviceDetail.Type;
@@ -463,6 +466,11 @@ export const DevicePeerCommand = Schema.Union([
   Schema.Struct({ operation: Schema.Literal("shutdown"), input: DeviceShutdownInput }),
   Schema.Struct({ operation: Schema.Literal("detail"), input: DeviceDetailInput }),
   Schema.Struct({ operation: Schema.Literal("action"), input: DeviceActionInput }),
+  Schema.Struct({
+    operation: Schema.Literal("agent-action"),
+    input: DeviceActionInput,
+    threadId: ThreadId,
+  }),
   Schema.Struct({ operation: Schema.Literal("screenshot"), input: DeviceDetailInput }),
 ]);
 export type DevicePeerCommand = typeof DevicePeerCommand.Type;
@@ -581,9 +589,19 @@ export class DeviceHeldError extends Schema.TaggedError<DeviceHeldError>()("Devi
   }
 }
 
+export class DeviceSessionRequiredError extends Schema.TaggedError<DeviceSessionRequiredError>()(
+  "DeviceSessionRequiredError",
+  { hostId: DeviceHostId, deviceId: DeviceId },
+) {
+  override get message(): string {
+    return `Open device ${this.deviceId} on host ${this.hostId} in this thread before changing its settings.`;
+  }
+}
+
 export const DeviceError = Schema.Union([
   DeviceHostUnavailableError,
   DeviceHeldError,
+  DeviceSessionRequiredError,
   DevicePlatformUnavailableError,
   DeviceNotFoundError,
   DeviceBootError,
@@ -721,6 +739,7 @@ export const DeviceToolError = Schema.Union([
   DeviceToolUnavailableError,
   DeviceHostUnavailableError,
   DeviceHeldError,
+  DeviceSessionRequiredError,
   DevicePlatformUnavailableError,
   DeviceNotFoundError,
   DeviceBootError,

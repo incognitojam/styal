@@ -2976,7 +2976,9 @@ const layerWsRpc = (
                   ? deviceService.updateTool(input.updateTool)
                   : input.retryHostId
                     ? deviceService.retryHost(input.retryHostId)
-                    : deviceService.list,
+                    : input.hostId
+                      ? deviceService.listHost(input.hostId)
+                      : deviceService.list,
               ),
         [WS_METHODS.deviceOpen]: (input) => deviceService.open(input),
         [WS_METHODS.deviceClose]: (input) => deviceService.close(input),

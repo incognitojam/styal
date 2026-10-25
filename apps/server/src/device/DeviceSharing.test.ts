@@ -444,6 +444,32 @@ it.effect("persists device-only access and reconnects a host without client cred
   }).pipe(Effect.scoped),
 );
 
+it.effect("checks agent ownership on the owning host after peer inventory becomes stale", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* f.connect;
+    const host = yield* f.host;
+    const ready = yield* host.ensureReady(() => Effect.void);
+    const threadId = ThreadId.make("memory-agent");
+    const deviceId = "emulator-5554";
+    yield* ready.remote!.open({ threadId, deviceId, platform: "android" });
+    const cached = yield* ready.remote!.list;
+    expect(cached.sessions).toHaveLength(1);
+    const other = ThreadId.make("local-user");
+    yield* f.targetDevices.open({ threadId: other, deviceId, platform: "android" });
+    const error = yield* ready
+      .remote!.action({ deviceId, type: "prepareSimulatorMemory" }, { threadId })
+      .pipe(Effect.flip);
+    expect(error).toMatchObject({ _tag: "DeviceHeldError", hostId: host.id, threadIds: [other] });
+    expect(f.peerRequests.at(-1)?.operation).toBe("agent-action");
+    yield* ready.remote!.close({ threadId });
+    const missing = yield* ready
+      .remote!.action({ deviceId, type: "prepareSimulatorMemory" }, { threadId })
+      .pipe(Effect.flip);
+    expect(missing._tag).toBe("DeviceSessionRequiredError");
+  }).pipe(Effect.scoped),
+);
+
 it.effect.each(["enableDeviceSupport", "enableAgentDeviceAccess"] as const)(
   "revokes a saved share after %s is disabled",
   (setting) =>

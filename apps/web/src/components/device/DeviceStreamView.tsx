@@ -82,6 +82,8 @@ export function DeviceStreamView(props: {
   readonly deviceDescription?: string;
   readonly visible: boolean;
   readonly hostId: string;
+  readonly streamRevision?: string | undefined;
+  readonly onStatus?: (status: DeviceStreamStatus) => void;
   readonly allowPhoneView?: boolean;
   readonly renderControls?: (view: DeviceViewControls) => ReactNode;
   readonly axOverlay?: boolean;
@@ -132,7 +134,7 @@ export function DeviceStreamView(props: {
   const [inputState, setInputState] = useState<{ connected: boolean; detail?: string }>({
     connected: false,
   });
-  const { onHandle, onScreen } = props;
+  const { onHandle, onScreen, onStatus } = props;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -149,6 +151,7 @@ export function DeviceStreamView(props: {
         onDuoUnavailable: onPhoneUnavailable,
         onStatus: (next, nextDetail) => {
           setStatus(next);
+          onStatus?.(next);
           if (next === "streaming") setHasFrame(true);
           setDetail(nextDetail);
           if (next !== "connecting") setShowRestartNotice(false);
@@ -196,9 +199,13 @@ export function DeviceStreamView(props: {
     onHandle,
     onPhoneUnavailable,
     onScreen,
+    onStatus,
     props.deviceId,
     props.environmentId,
     props.platform,
+    // Restart completion replaces a client that exhausted video retries.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+    props.streamRevision,
     props.visible,
   ]);
 

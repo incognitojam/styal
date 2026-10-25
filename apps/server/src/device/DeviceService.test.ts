@@ -676,11 +676,17 @@ it.effect.each(["shutdown", "close", "low-memory", "standard", "profile-failure"
         if (operation === "profile-failure") expect(changed._tag).toBe("Failure");
         else {
           expect(changed._tag).toBe("Success");
-          if (changed._tag === "Success") expect(changed.success.memory?.mode).toBe(operation);
+          if (changed._tag === "Success") {
+            expect(changed.success.memory?.mode).toBe(operation);
+            expect(changed.success.streamRevision).toEqual(expect.any(String));
+          }
         }
         expect(capture).toBe(2);
         expect(booted).toBe(true);
         expect((yield* service.state).sessions).toHaveLength(1);
+        const streamRevision = (yield* service.state).devices[0]?.streamRevision;
+        expect(streamRevision).toEqual(expect.any(String));
+        expect((yield* service.list).devices[0]?.streamRevision).toBe(streamRevision);
         return;
       }
       if (operation === "shutdown") yield* service.shutdown(input);

@@ -177,13 +177,14 @@ async function setup(h264 = false) {
       close() {}
     },
   );
-  const view = (visible: boolean) => (
+  const view = (visible: boolean, streamRevision = "") => (
     <DeviceStreamView
       hostId="local"
       environmentId={EnvironmentId.make("test")}
       deviceId="test"
       platform="ios"
       visible={visible}
+      streamRevision={streamRevision}
       allowPhoneView={h264}
     />
   );
@@ -298,6 +299,24 @@ it("starts exactly one new stream per Reconnect press", async () => {
   });
   expect(primes).toBe(1);
   await reconnect();
+  expect(primes).toBe(2);
+});
+
+it("receives video after a profile restart outlasts the stream deadline", async () => {
+  const { images, view } = await setup();
+  await publishFrame(images[0]!);
+  await act(async () => {
+    images[0]!.dispatchEvent(new Event("error"));
+    await vi.advanceTimersByTimeAsync(90_000);
+  });
+  expect(alert()).not.toBeNull();
+  expect(images[0]!.src).toBe("");
+  await act(async () => root.render(view(true, "restart-1")));
+  expect(alert()).toBeNull();
+  expect(images.at(-1)!.src).toContain("stream.mjpeg");
+  await publishFrame(images.at(-1)!);
+  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(alert()).toBeNull();
   expect(primes).toBe(2);
 });
 

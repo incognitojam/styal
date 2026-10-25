@@ -12,6 +12,7 @@ export function threadDevicePreviews(state: DeviceServiceState | null, threadId:
       return {
         key: JSON.stringify([session.hostId, session.deviceId]),
         session,
+        streamRevision: device?.streamRevision ?? "",
         name: device?.name ?? (session.platform === "ios" ? "iOS Simulator" : "Android Emulator"),
         description: [device?.version, host?.label].filter(Boolean).join(" · "),
       };

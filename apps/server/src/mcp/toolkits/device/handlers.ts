@@ -189,37 +189,25 @@ const handlers = {
         return yield* new DeviceToolUnavailableError({
           reason: "Open this simulator with device_open before configuring its memory profile.",
         });
-      const state = yield* devices.state;
-      if (
-        input.request.operation !== "inspect" &&
-        [...state.sessions, ...(state.externalSessions ?? [])].some(
-          (session) =>
-            session.hostId === target.hostId &&
-            session.deviceId === target.deviceId &&
-            session.threadId !== scope.thread.threadId,
-        )
-      ) {
-        return yield* new DeviceToolUnavailableError({
-          reason:
-            "This simulator is shared with another thread. Use an unshared simulator before changing its memory profile.",
-        });
-      }
       const detail =
         input.request.operation === "inspect"
           ? yield* devices.detail(target)
-          : yield* devices.action({
-              hostId: target.hostId,
-              deviceId: target.deviceId,
-              ...(input.request.operation === "prepare"
-                ? { type: "prepareSimulatorMemory" as const }
-                : input.request.mode === "standard"
-                  ? { type: "setMemoryProfile" as const, mode: "standard" as const }
-                  : {
-                      type: "setMemoryProfile" as const,
-                      mode: "low-memory" as const,
-                      keepCapabilities: input.request.keepCapabilities,
-                    }),
-            });
+          : yield* devices.action(
+              {
+                hostId: target.hostId,
+                deviceId: target.deviceId,
+                ...(input.request.operation === "prepare"
+                  ? { type: "prepareSimulatorMemory" as const }
+                  : input.request.mode === "standard"
+                    ? { type: "setMemoryProfile" as const, mode: "standard" as const }
+                    : {
+                        type: "setMemoryProfile" as const,
+                        mode: "low-memory" as const,
+                        keepCapabilities: input.request.keepCapabilities,
+                      }),
+              },
+              { threadId: scope.thread.threadId },
+            );
       if (!detail.memory)
         return yield* new DeviceToolUnavailableError({
           reason:

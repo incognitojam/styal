@@ -739,8 +739,10 @@ export const make = Effect.fn("DeviceIdle.make")(function* (
       open,
       close,
       shutdown,
-      action: (input) =>
-        inner.action(input).pipe(withDevice(input.hostId ?? LOCAL_DEVICE_HOST_ID, input.deviceId)),
+      action: (input, caller) =>
+        inner
+          .action(input, caller)
+          .pipe(withDevice(input.hostId ?? LOCAL_DEVICE_HOST_ID, input.deviceId)),
     }),
     activity,
     sweep,

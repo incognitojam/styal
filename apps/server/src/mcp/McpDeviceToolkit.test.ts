@@ -139,7 +139,7 @@ const layerTest = McpHttpServer.layerDeviceToolkit.pipe(
 );
 
 it.effect.each([false, true])(
-  "memory configuration distinguishes the caller's peer session from another thread (other=%s)",
+  "memory authorization uses the caller and owning service despite stale inventory (blocked=%s)",
   (other) => {
     const own = {
       threadId,
@@ -153,21 +153,29 @@ it.effect.each([false, true])(
         ...state,
         sessions: [own],
         externalSessions: [
-          { ...own, threadId: other ? ThreadId.make("device-peer-other:thread") : threadId },
+          { ...own, threadId: other ? threadId : ThreadId.make("device-peer-other:thread") },
         ],
       }),
       sessionsForThread: () => Effect.succeed([own]),
-      action: () =>
-        other
-          ? Effect.die("Must not change another thread's simulator")
-          : Effect.succeed({
-              hostId: "local",
-              deviceId: own.deviceId,
-              settings: {},
-              foregroundApp: null,
-              readAt: own.openedAt,
-              memory: { supported: true, installed: true, mode: "standard", capabilities: [] },
-            }),
+      action: (_input, caller) =>
+        caller?.threadId !== threadId
+          ? Effect.die("Memory changes require the authenticated caller")
+          : other
+            ? Effect.fail(
+                new DeviceHeldError({
+                  hostId: "local",
+                  deviceId: own.deviceId,
+                  threadIds: [ThreadId.make("other")],
+                }),
+              )
+            : Effect.succeed({
+                hostId: "local",
+                deviceId: own.deviceId,
+                settings: {},
+                foregroundApp: null,
+                readAt: own.openedAt,
+                memory: { supported: true, installed: true, mode: "standard", capabilities: [] },
+              }),
     });
     return Effect.gen(function* () {
       const server = yield* McpServer.McpServer;

@@ -9,7 +9,7 @@ import {
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import * as Haptics from "expo-haptics";
 import { Accelerometer } from "expo-sensors";
 import { AppState, BackHandler, Pressable, StatusBar, View } from "react-native";
@@ -39,6 +39,8 @@ import {
 } from "./threadDevicePreviews";
 import { createShakeDetector } from "./shakeDetector";
 import { SimulatorMemorySheet } from "./SimulatorMemorySheet";
+import type { DeviceStreamStatus } from "@t3tools/client-runtime/device/stream";
+import { watchSimulatorRestart } from "@t3tools/client-runtime/device/simulator-stream-recovery";
 
 const OVERLAY_ENTERING = FadeIn.duration(160).reduceMotion(ReduceMotion.System);
 const OVERLAY_EXITING = FadeOut.duration(120).reduceMotion(ReduceMotion.System);
@@ -91,10 +93,10 @@ function DevicePreviewScreen({
   const state = useEnvironmentQuery(deviceEnvironment.state({ environmentId, input: {} }));
   const previews = threadDevicePreviews(state.data, threadId);
   const preview = selectedThreadDevicePreview(previews, selectedKey);
-  const onInputConnected = async (connected: boolean) => {
+  const onInputConnected = useCallback(async (connected: boolean) => {
     setInputConnected(connected);
     if (connected) setControlsVisible(false);
-  };
+  }, []);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) =>
       setForeground(state !== "background"),
@@ -279,7 +281,7 @@ function DevicePreviewScreen({
       <StatusBar hidden animated />
       {preview && focused && foreground ? (
         <OpenDevicePreview
-          key={`${preview.key}:${streamAttempt}`}
+          key={`${preview.key}:${preview.streamRevision}:${streamAttempt}`}
           environmentId={environmentId}
           preview={preview}
           streamRef={streamRef}
@@ -382,6 +384,32 @@ function OpenDevicePreview({
   readonly onInputConnected: (connected: boolean) => Promise<void>;
 }) {
   const { session } = preview;
+  const [streamStatus, setStreamStatus] = useState<DeviceStreamStatus>("connecting");
+  const list = useAtomCommand(deviceEnvironment.list, { reportFailure: false });
+  useEffect(() => {
+    if (
+      streamStatus !== "error" ||
+      session.platform !== "ios" ||
+      !session.hostId.startsWith("environment-")
+    )
+      return;
+    return watchSimulatorRestart(preview.streamRevision, async () => {
+      const result = await list({ environmentId, input: { hostId: session.hostId } });
+      return result._tag === "Success"
+        ? result.value.devices.find(
+            (device) => device.hostId === session.hostId && device.id === session.deviceId,
+          )?.streamRevision
+        : undefined;
+    });
+  }, [
+    list,
+    environmentId,
+    session.hostId,
+    session.deviceId,
+    session.platform,
+    preview.streamRevision,
+    streamStatus,
+  ]);
   const { themeVariables } = useAppearancePreferences();
   const { access, error, refresh } = useDeviceHubAccess(environmentId, session.hostId);
   const onUnauthorized = async () => refreshDeviceHubAccess(environmentId);
@@ -405,6 +433,7 @@ function OpenDevicePreview({
       }}
       onUnauthorized={onUnauthorized}
       onInputConnected={onInputConnected}
+      onStatus={setStreamStatus}
     />
   ) : (
     <View className="flex-1 items-center justify-center gap-4 px-6">

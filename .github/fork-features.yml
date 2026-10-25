@@ -4943,7 +4943,10 @@ features:
       - Web, desktop, mobile, and agents execute the same typed device actions on the simulator's owning host, including SSH and connected-environment hosts.
       - Low-memory profiles keep every service mapped to the selected app capabilities, verify those required services after applying, and report actual capability availability rather than category-wide warnings.
       - Client users confirm the restart before applying or restoring a profile. The operation retires the old capture session, restarts only the selected simulator, and attaches its stream again. Device lifecycle operations serialize with profile changes.
+      - Profile restart completion or failure advances the device stream revision so web and mobile viewers retry even after their no-video deadline. Connected-host memory deadlines cover helper installation, service changes, boot, and readback.
+      - Failed visible iOS viewers on connected hosts refresh only that host's inventory while waiting for a restart revision, with no overlapping requests and a thirty-minute limit; hidden, closed, and healthy viewers do not poll.
       - Agents load app-specific selection guidance on demand and may change only a device open in their thread that no other thread holds. Unknown capabilities and unsupported persistence runtimes fail before changing services.
+      - Agent ownership is rechecked under the device lifecycle lock on the owning host with the authenticated peer's namespaced thread identity, independent of cached inventory.
       - Restoring standard services re-enables SimSlim-managed services. Profile state is read from the simulator and survives supported-runtime reboots. Overrides are keyed by device ID on the host and can survive erasing simulator data; newly created devices start with standard services.
     rationale: Parallel agents need separate active simulators, and reducing each simulator's background services complements idle shutdown without forcing every app to give up the same OS capabilities.
     implementation_paths:
@@ -4952,6 +4955,7 @@ features:
       - apps/server/src/device/SimulatorMemory.ts
       - apps/server/src/device/simslimHostScript.ts
       - apps/server/src/device/simulatorMemoryGuide.ts
+      - packages/client-runtime/src/device/simulatorStreamRecovery.ts
       - apps/web/src/components/device/SimulatorMemoryControls.tsx
       - packages/client-runtime/src/device/simulatorMemory.ts
     upstream_paths:
@@ -4964,8 +4968,13 @@ features:
       - packages/contracts/src/device.ts
     tests:
       - apps/server/src/device/DeviceService.test.ts
+      - apps/server/src/device/DeviceIdle.test.ts
+      - apps/server/src/device/DeviceSharing.test.ts
+      - apps/server/src/device/EnvironmentDeviceHost.test.ts
       - apps/server/src/device/SimulatorMemory.test.ts
       - apps/server/src/mcp/McpDeviceToolkit.test.ts
+      - apps/web/src/components/device/DeviceStreamView.browser.test.tsx
+      - packages/client-runtime/src/device/simulatorStreamRecovery.test.ts
       - apps/web/src/components/device/SimulatorMemoryControls.browser.test.tsx
     upstream:
       status: tracking
