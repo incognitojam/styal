@@ -91,6 +91,8 @@ jobs:
         run: vp install --ignore-scripts --filter '@t3tools/web...'
 
       - name: Build web app
+        env:
+          VITE_RELEASE_CHANNEL: preview
         run: vp run --filter @t3tools/web build
 
       - name: Upload web build
