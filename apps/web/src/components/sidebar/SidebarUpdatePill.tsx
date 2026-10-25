@@ -4,6 +4,7 @@ import { type ComponentProps, useEffect, useId, useRef, useState } from "react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { flushSync } from "react-dom";
 import { isElectron } from "../../env";
+import { installDesktopUpdate } from "../../desktopUpdateRestart";
 import { cn } from "../../lib/utils";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -93,7 +94,7 @@ async function installLocalUpdate(
   reportError: ReportLocalUpdateError = toastUpdateError,
 ): Promise<boolean> {
   try {
-    const result = await bridge.installUpdate();
+    const result = await installDesktopUpdate(() => bridge.installUpdate());
     if (!result.accepted) {
       showDesktopUpdateDownloadedToast(bridge, result.state);
       return false;

@@ -1300,6 +1300,54 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect.each([true, false])(
+    "reports the current attempt after retrying a failed install (succeeds: %j)",
+    (succeeds) => {
+      let attempts = 0;
+      const installError = new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+        channel: "latest",
+        isSilent: true,
+        isForceRunAfter: true,
+        cause: new Error("Installer refused"),
+      });
+      const harness = makeHarness({
+        quitAndInstall: Effect.suspend(() => {
+          attempts += 1;
+          return attempts === 1 || !succeeds ? Effect.fail(installError) : Effect.void;
+        }),
+      });
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const desktopState = yield* DesktopState.DesktopState;
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+
+          const first = yield* updates.install;
+          assert.isTrue(first.accepted);
+          assert.equal(first.state.errorContext, "install");
+          assert.equal(first.state.message, installError.message);
+          assert.isFalse(yield* Ref.get(desktopState.quitting));
+          assert.equal(harness.updateRestartMarkers.size, 0);
+
+          const retry = yield* updates.install;
+          assert.equal(attempts, 2);
+          assert.isTrue(retry.accepted);
+          assert.isFalse(retry.completed);
+          assert.equal(retry.state.status, "downloaded");
+          assert.equal(retry.state.downloadedVersion, "1.2.4");
+          assert.equal(retry.state.errorContext, succeeds ? null : "install");
+          assert.equal(retry.state.message, succeeds ? null : installError.message);
+          assert.deepEqual(retry.state, yield* updates.getState);
+          assert.equal(yield* Ref.get(desktopState.quitting), succeeds);
+          assert.equal(harness.updateRestartMarkers.size, succeeds ? 1 : 0);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
+
   it.effect("keeps the disabled primary stopped when quitAndInstall fails", () => {
     const harness = makeHarness({
       backendDesiredRunning: false,

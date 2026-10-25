@@ -125,6 +125,7 @@ import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
+import { installDesktopUpdate } from "../desktopUpdateRestart";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import { projectEnvironment } from "../state/projects";
@@ -3548,8 +3549,7 @@ export default function LegacySidebar() {
     }
 
     if (desktopUpdateButtonAction === "install") {
-      void bridge
-        .installUpdate()
+      void installDesktopUpdate(() => bridge.installUpdate())
         .then((result) => {
           if (!shouldToastDesktopUpdateActionResult(result)) return;
           const actionError = getDesktopUpdateActionError(result);

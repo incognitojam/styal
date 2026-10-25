@@ -16,9 +16,11 @@ import {
 import { AppRoot } from "./AppRoot";
 import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 import { cleanupAbandonedHostedBrowserStorage } from "./hostedStorageCleanup";
+import { restoreDesktopUpdateReturnRoute } from "./desktopUpdateRestart";
 
 void cleanupAbandonedHostedBrowserStorage();
 
+restoreDesktopUpdateReturnRoute();
 prepareProviderAuthDelivery();
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.

@@ -79,6 +79,7 @@ import {
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { isElectron } from "../../env";
+import { installDesktopUpdate } from "../../desktopUpdateRestart";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
 import {
@@ -374,8 +375,7 @@ function AboutVersionSection() {
     if (action === "install") {
       if (isUpdateActionPending) return;
       setIsUpdateActionPending(true);
-      void bridge
-        .installUpdate()
+      void installDesktopUpdate(() => bridge.installUpdate())
         .catch((error: unknown) => {
           toastManager.add(
             stackedThreadToast({

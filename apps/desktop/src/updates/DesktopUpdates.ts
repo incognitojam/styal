@@ -798,6 +798,13 @@ export const make = Effect.gen(function* () {
         yield* Ref.set(installRunningBackendsRef, []);
 
         return yield* Effect.gen(function* () {
+          // IPC callers use this state to distinguish the current attempt's failure.
+          yield* updateState((current) => ({
+            ...current,
+            status: "downloaded",
+            message: null,
+            errorContext: null,
+          }));
           yield* writeUpdateRestartMarker;
           const { downloadedVersion } = yield* Ref.get(updateStateRef);
           if (downloadedVersion !== null) yield* writeInstallRecord(downloadedVersion);
