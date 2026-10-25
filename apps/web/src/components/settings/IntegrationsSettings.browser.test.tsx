@@ -1,4 +1,11 @@
-import { DEFAULT_CLIENT_SETTINGS, DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_UNIFIED_SETTINGS,
+  EnvironmentId,
+} from "@t3tools/contracts";
+import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
+import * as Option from "effect/Option";
+import type { EnvironmentPresentation } from "../../state/environments";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -26,7 +33,7 @@ vi.mock(import("../preview/previewBridge"), async (original) => {
 vi.mock(import("../../env"), async (original) => ({ ...(await original()), isElectron: true }));
 vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
-  useEnvironments: (() => ({ environments: [], isReady: true })) as never,
+  useEnvironments: (() => ({ environments, isReady: true })) as never,
   usePrimaryEnvironment: () => null,
   usePrimaryEnvironmentId: () => null,
 }));
@@ -57,10 +64,12 @@ import { IntegrationsSettingsPanel } from "./IntegrationsSettings";
 
 let root: Root;
 let container: HTMLDivElement;
+let environments: EnvironmentPresentation[];
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   listBrowserImportSources.mockClear();
+  environments = [];
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -108,4 +117,42 @@ describe("Integrations browser discovery", () => {
     await openSettings();
     expect(listBrowserImportSources).not.toHaveBeenCalled();
   });
+});
+
+it("distinguishes a saved connection from an offline environment and links to connection management", async () => {
+  environments = (["available", "offline", "reconnecting"] as const).map((phase) => {
+    const environmentId = EnvironmentId.make(phase);
+    return {
+      environmentId,
+      label: `Device host ${phase}`,
+      displayUrl: null,
+      relayManaged: false,
+      entry: {
+        target: new PrimaryConnectionTarget({
+          environmentId,
+          label: `Device host ${phase}`,
+          httpBaseUrl: "http://localhost:1234",
+          wsBaseUrl: "ws://localhost:1234",
+        }),
+        profile: Option.none(),
+        enabled: phase !== "available",
+      },
+      connection: { phase, error: null, traceId: null },
+      serverConfig: null,
+    } satisfies EnvironmentPresentation;
+  });
+  await openSettings();
+
+  const saved = container.querySelector("#integration-environment-available")!;
+  expect(saved.textContent).toContain("Not connected");
+  expect(saved.textContent).not.toContain("Offline");
+  expect(saved.textContent).toContain("Connect this environment");
+  expect(saved.querySelector("a")?.getAttribute("href")).toBe("/settings/connections");
+  expect(container.querySelector("#integration-environment-offline")?.textContent).toContain(
+    "Offline",
+  );
+  expect(container.querySelector("#integration-environment-reconnecting")?.textContent).toContain(
+    "Connecting",
+  );
+  expect(container.querySelectorAll("section[aria-label$='integrations']")).toHaveLength(3);
 });

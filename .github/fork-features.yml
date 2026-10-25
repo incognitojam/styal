@@ -1130,6 +1130,7 @@ features:
       - apps/web/src/routes/__root.tsx
     tests:
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
+      - apps/web/src/components/settings/DeviceHostsSettings.browser.test.tsx
       - apps/web/src/desktopUpdatedNotice.test.ts
     upstream:
       status: unassessed
@@ -1165,7 +1166,7 @@ features:
     status: maintained
     prs: [746, 805]
     invariants:
-      - New remote device setup in settings uses environment sharing. Web and desktop hide SSH host configuration unless selected connected environments have saved hosts, which remain editable and removable in a collapsed section. Editing or removing saved hosts only changes matching entries on connected environments; settings do not offer adding SSH hosts.
+      - New remote device setup in settings uses environment sharing. Web and desktop hide SSH host configuration unless their connected environment has saved hosts, which remain editable and removable in a collapsed section. Editing or removing saved hosts only changes matching entries on connected environments; settings do not offer adding SSH hosts.
       - Web, desktop, and mobile clients with settings:write on both environments can authorize an already connected environment as a device host without SSH configuration; devices:operate stays in the legacy wire vocabulary for older clients.
       - Device-only credentials are stored in the source server's secret store and remain usable after client disconnects or server restarts.
       - Peer access is limited to local devices and expires. Removing a host revokes access when the target is reachable; offline removal reports how to revoke the remaining grant. Ordinary client credentials cannot use peer endpoints.
@@ -4710,7 +4711,8 @@ features:
       - Each connected environment owns its browser access, device status, tool versions, ordinary settings writes, and maintenance controls. Sharing still enables device access at both ends by explicit choice.
       - Client browser preferences appear once. Settings search opens that folded section; environment settings search targets the environment list. Repeated environment controls have distinct anchors.
       - Project browser and device overrides remain editable and resettable under Projects, with existing values preserved. Following an overriding project from an environment's source indicator opens that project's settings on that environment.
-      - Disconnected environments remain visible with a connection-management link. Saved shares from disconnected or removed device environments remain removable from connected agent environments.
+      - Disconnected environments remain visible with a connection-management link; saved connections that are not enabled are labeled Not connected. Saved shares from disconnected or removed device environments remain removable from connected agent environments.
+      - Device installation progress, failures, and retry controls remain visible while maintenance preferences are collapsed.
       - Explicit setting change requests report only an allowlisted control category and environment or project scope through the existing client usage reporter; they contain no values, names, addresses, or identifiers and do not claim that a write succeeded.
     rationale: A page-wide scope mixes client preferences with environment setup and can show one machine's device status beside controls that write to several machines. Explicit ownership keeps the displayed setup and write destination together.
     implementation_paths:
