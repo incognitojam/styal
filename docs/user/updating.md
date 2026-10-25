@@ -66,9 +66,10 @@ the setting does not enable automatic startup. Terminal commands may still be
 interrupted, and threads without saved provider resume state need a new message.
 Continuation does not preserve running processes: a command inside an agent turn
 may stop, and the resumed agent must check and recover unfinished work.
-A thread that finished its turn to wait on a monitor, subagent, or background task
-is woken and asked to restart the work it still needs. A background shell, such as
-a dev server, does not wake it; the thread learns about it with your next message.
+A thread that finished its turn to wait on a subagent, a background task, or a
+command or monitor the agent said it was waiting on is woken and asked to restart the
+work it still needs. Other background shells and monitors, such as a dev server and
+its watchdog, do not wake it; the thread learns about them with your next message.
 A thread whose turn continues shows **Continued after server restart** where
 the agent picked up again, and a thread asked to restart background work shows
 **Asked to restart background work after server restart**.

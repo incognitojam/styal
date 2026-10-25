@@ -6133,6 +6133,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           taskId: "pull-request-watch:github.com/pingdotgg/t3code#7",
           description: "Watching pull request #7",
           kind: "monitor",
+          awaited: true,
         },
       ]);
       assert.equal(yield* phase, "running");
@@ -6165,7 +6166,9 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         lastRunOrdinal: 1,
         handoffIds: [],
         forkedFrom: null,
-        pendingBackgroundTasks: [{ taskId: "watch", kind: "monitor" as const }],
+        pendingBackgroundTasks: [
+          { taskId: "watch", kind: "monitor" as const, awaited: true as const },
+        ],
         createdAt: completedAt,
         updatedAt: completedAt,
       };
