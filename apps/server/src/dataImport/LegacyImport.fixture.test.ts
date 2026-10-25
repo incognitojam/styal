@@ -308,7 +308,7 @@ for (const fixture of fixtures) {
           assert.notInclude(JSON.stringify(settings.providerInstances), sourceCodexBinaryPath!);
           assert.deepEqual(settings.providerInstances, destinationSettingsBefore.providerInstances);
           const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
-          yield* maintenance.compactEventStore;
+          yield* maintenance.compactEventStore();
           assert.isTrue((yield* maintenance.rebuild).valid);
           for (const [id, projection] of before)
             assert.deepEqual(yield* store.getThreadProjection(ThreadId.make(id)), projection);

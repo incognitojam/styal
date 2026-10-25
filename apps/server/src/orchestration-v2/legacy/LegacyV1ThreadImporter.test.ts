@@ -330,7 +330,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         assert.closeTo(before.legacyTurnUsage!.thread.costUsd!, 0.00821, 1e-12);
         yield* importer.reconcileShells;
         yield* importer.ensureTranscript(threadId);
-        yield* maintenance.compactEventStore;
+        yield* maintenance.compactEventStore();
         assert.isTrue((yield* maintenance.rebuild).valid);
         const after = yield* projections.getThreadProjection(threadId);
         assert.deepEqual(after.providerThreads, before.providerThreads);

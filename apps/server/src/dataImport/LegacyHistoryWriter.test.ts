@@ -388,7 +388,7 @@ it.layer(testLayer)("LegacyHistoryWriter", (it) => {
       yield* write(events, options);
       const after = yield* projections.getThreadProjection(threadId);
       assert.deepEqual(after, before);
-      yield* maintenance.compactEventStore;
+      yield* maintenance.compactEventStore();
       assert.isTrue((yield* maintenance.rebuild).valid);
       yield* write(events, options);
       assert.deepEqual(yield* projections.getThreadProjection(threadId), before);
@@ -421,7 +421,7 @@ it.layer(testLayer)("LegacyHistoryWriter", (it) => {
         "repaired-turn",
       );
       assert.deepEqual(repaired.legacyTurnUsage, before.legacyTurnUsage);
-      yield* maintenance.compactEventStore;
+      yield* maintenance.compactEventStore();
       assert.isTrue((yield* maintenance.rebuild).valid);
       yield* write(repair);
       assert.deepEqual(yield* projections.getThreadProjection(threadId), repaired);

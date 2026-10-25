@@ -615,7 +615,7 @@ it.layer(importLayer)("LegacyImport V2 destination", (it) => {
         assert.isFalse(settingsAfter.newWorktreesStartFromOrigin);
         assert.notInclude(JSON.stringify(settingsAfter.providerInstances), "/synthetic/provider");
         const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-        yield* maintenance.compactEventStore;
+        yield* maintenance.compactEventStore();
         yield* maintenance.rebuild;
         assert.deepEqual(
           yield* projections.getThreadProjection(ThreadId.make("thread-import")),

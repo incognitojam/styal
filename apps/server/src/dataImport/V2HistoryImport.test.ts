@@ -234,7 +234,7 @@ it.layer(layer)("V2 source history import", (it) => {
         assert.deepEqual(projection.turnItems[0], { ...source.turnItems[0]!, ordinal: 1000001 });
         assert.deepEqual(projection.providerSessions, []);
         const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
-        yield* maintenance.compactEventStore;
+        yield* maintenance.compactEventStore();
         const rebuilt = yield* maintenance.rebuild;
         assert.deepEqual(rebuilt.valid ? true : rebuilt, true);
         yield* write(snapshot, ProjectId.make("target-project"));
@@ -422,7 +422,7 @@ it.layer(layer)("V2 fork history import", (it) => {
         "Failure",
       );
       const maintenance = yield* Maintenance.ProjectionMaintenanceV2;
-      yield* maintenance.compactEventStore;
+      yield* maintenance.compactEventStore();
       const rebuilt = yield* maintenance.rebuild;
       assert.deepEqual(yield* store.getThreadProjection(childId), projection);
       assert.isTrue(rebuilt.valid);
