@@ -100,6 +100,7 @@ export function makeClaudeMaintenance(paths: ClaudeUpdaterPaths) {
     nativeUpdate: {
       args: ["update"],
       isCommandPath: isClaudeNativeCommandPath,
+      supportsWindowsPinning: true,
       // Moves the native install to exactly `version` without `--force`.
       pinned: (version, context) => ({
         executable: context.resolvedCommandPath,
