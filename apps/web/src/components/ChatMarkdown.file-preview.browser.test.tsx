@@ -56,7 +56,6 @@ vi.mock(import("../editorPreferences"), async (original) => ({
 }));
 vi.mock(import("~/lib/openPullRequestLink"), async (original) => ({
   ...(await original()),
-  findProjectOnChangeRequestHost: () => undefined,
   useOpenChangeRequestLink: vi.fn(() => vi.fn()) as never,
 }));
 vi.mock(import("@t3tools/client-runtime/change-request-links"), async (original) => ({
