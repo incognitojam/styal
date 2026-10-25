@@ -888,6 +888,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "browser-search-engine",
     title: "Search engine",
     to: "/settings/integrations",
+    targetId: "browser",
     searchTerms: ["address bar duckduckgo google bing brave kagi ecosia custom"],
   },
   {

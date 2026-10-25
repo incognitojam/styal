@@ -409,6 +409,14 @@ describe("searchSettings", () => {
     expect(result).toHaveProperty("targetId", "browser");
   });
 
+  it("opens browser preferences for search engine results", () => {
+    expect(searchSettings("search engine")[0]).toMatchObject({
+      id: "browser-search-engine",
+      to: "/settings/integrations",
+      targetId: "browser",
+    });
+  });
+
   it("routes where links open to integrations", () => {
     expect(searchSettings("open links in")[0]).toMatchObject({
       id: "browser-link-target",

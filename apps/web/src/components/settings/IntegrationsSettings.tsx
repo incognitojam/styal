@@ -34,7 +34,6 @@ import {
   DEFAULT_BROWSER_VIEWPORT,
   DEFAULT_PREVIEW_APPEARANCE,
   DEFAULT_PREVIEW_ZOOM_FACTOR,
-  DEFAULT_SERVER_SETTINGS,
   FILL_PREVIEW_VIEWPORT,
   PREVIEW_VIEWPORT_MAX_AREA,
   PREVIEW_VIEWPORT_MAX_DIMENSION,
@@ -1028,46 +1027,6 @@ export function DeviceIntegrationControls({
       </FoldedSettingsSection>
       <DeviceHostsSettings environmentId={environmentId} />
     </>
-  );
-}
-
-function AgentBrowserAccessSetting() {
-  const { scope } = useSettingsScope();
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
-
-  return (
-    <SettingsRow
-      serverScoped
-      settingKeys={["enableAgentBrowserAccess"]}
-      {...searchableSetting("agent-browser-access")}
-      description={
-        isProjectScope
-          ? "Allow agents in this project to use the shared browser. Applies when the agent session next starts."
-          : "Allow agents to use the shared browser. Projects can override it."
-      }
-      resetAction={
-        settings.enableAgentBrowserAccess !== DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess ? (
-          <SettingResetButton
-            label="default browser access"
-            onClick={() =>
-              updateSettings({
-                enableAgentBrowserAccess: DEFAULT_SERVER_SETTINGS.enableAgentBrowserAccess,
-              })
-            }
-          />
-        ) : null
-      }
-      control={
-        <ScopedSwitch
-          settingKeys={["enableAgentBrowserAccess"]}
-          aria-label="Agent browser access"
-          checked={settings.enableAgentBrowserAccess}
-          onCheckedChange={(enabled) => updateSettings({ enableAgentBrowserAccess: enabled })}
-        />
-      }
-    />
   );
 }
 

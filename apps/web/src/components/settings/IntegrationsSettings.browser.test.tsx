@@ -98,14 +98,16 @@ async function openSettings() {
 }
 
 describe("Integrations browser discovery", () => {
-  it("keeps agent browser access in the single Browser section", async () => {
+  it("keeps client browser preferences, including search engine, in one folded section", async () => {
     await openSettings();
 
-    expect(page.getByRole("heading", { name: "Browser", exact: true }).elements()).toHaveLength(1);
-    const access = page.getByRole("switch", { name: "Agent browser access", exact: true });
-    await expect.element(access).toBeVisible();
-    expect(access.element().closest("section")).toBe(container.querySelector("section#browser"));
-    expect(access.element().closest("#agent-browser-access")).not.toBeNull();
+    expect(container.querySelectorAll("section#browser")).toHaveLength(1);
+    await act(async () => page.getByRole("button", { name: /Browser preferences/ }).click());
+    const searchEngine = page.getByRole("combobox", { name: "Search engine", exact: true });
+    await expect.element(searchEngine).toBeVisible();
+    expect(searchEngine.element().closest("section")).toBe(
+      container.querySelector("section#browser"),
+    );
   });
 
   it("does not scan browser files when entering or revisiting settings", async () => {
