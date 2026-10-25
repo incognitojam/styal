@@ -4016,7 +4016,7 @@ features:
   - id: pull-request-merge-commit-checks
     title: Inspect checks on a merged GitHub pull request's resulting commit
     status: maintained
-    prs: []
+    prs: [1074]
     invariants:
       - A merged GitHub pull request reads the resulting SHA reported after merging, including squash and rebase, without substituting a base tip or temporary test merge.
       - Merge commit checks, commit links, and check details remain distinct from source-branch checks on web, desktop, and mobile; a merged status does not imply passing checks.
