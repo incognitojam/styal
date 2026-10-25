@@ -671,6 +671,7 @@ features:
     invariants:
       - Mobile pending messages stay visible through upload and acknowledgment; editing persists their text and attachments into the existing draft before removing the queued copy.
       - Existing-thread draft text and settings synchronize without overwriting newer local edits; attachments remain client-owned, and a draft holding attachments or context records stays on its device.
+      - Restored web and desktop rich-text drafts persist the displayed document's Markdown separators before sending, keeping paragraphs after quotes outside the quote without requiring another edit; plain-text input and literal question answers keep their source text.
       - The latest issued draft autosave cannot restore sent text through its own subscription echo, including after transport failure, or block another device's changes to a clean composer; delayed responses cannot roll back newer revisions.
       - Returning to a thread after sending cannot restore that message from a pending autosave; the client keeps its send marker until a newer cleared revision arrives.
       - Autosave timers and draft acknowledgments read live composer state on web, desktop, and mobile, so a send clear or newer edit takes effect before React renders it.
@@ -694,6 +695,7 @@ features:
       - apps/mobile/src/state/use-composer-drafts.ts
       - apps/server/src/persistence/ComposerDrafts.ts
       - apps/server/src/persistence/ForkMigrations/001_ComposerDrafts.ts
+      - apps/web/src/components/ComposerPromptEditorTiptap.tsx
       - apps/web/src/components/Sidebar.tsx
       - apps/web/src/composerDraftStore.ts
       - apps/web/src/lib/discardComposerDraft.ts
@@ -720,6 +722,7 @@ features:
       - apps/mobile/src/state/use-composer-drafts.test.ts
       - apps/server/src/persistence/ComposerDrafts.test.ts
       - apps/server/src/persistence/ForkMigrations.test.ts
+      - apps/web/src/components/ComposerPromptEditorTiptap.restoredDraft.browser.test.tsx
       - apps/web/src/composerDraftStore.test.ts
       - apps/web/src/lib/discardComposerDraft.test.ts
       - apps/web/src/state/composerDrafts.browser.test.tsx

@@ -1567,12 +1567,18 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     }
     queueMicrotask(() => {
       isApplyingControlledUpdateRef.current = false;
+      // Restored drafts can lack the Markdown separators the displayed blocks need.
+      // Persist the serialized document before sending, even without another edit.
+      if (richText && map.value !== value && latestValueRef.current === value) {
+        handleEditorChange(editor);
+      }
     });
   }, [
     clampEditorCursor,
     cursor,
     editor,
     expandEditorCursor,
+    handleEditorChange,
     literalText,
     richText,
     skillLabelFor,
