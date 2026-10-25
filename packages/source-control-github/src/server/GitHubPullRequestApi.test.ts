@@ -960,6 +960,40 @@ layer("GitHubPullRequestApi.layer", (it) => {
       }),
   );
 
+  it.effect("keeps merge checks unavailable when a nameless context could be dropped", () =>
+    Effect.gen(function* () {
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      for (const hidden of [
+        checkRun({ name: "", conclusion: "FAILURE" }),
+        checkRun({ name: "  ", status: "IN_PROGRESS" }),
+      ]) {
+        for (const checks of [
+          [hidden],
+          [checkRun({ name: "Tests", conclusion: "SUCCESS" }), hidden],
+        ]) {
+          mockedExecute.mockImplementation((call) =>
+            Effect.succeed(
+              output(
+                encodeJson(
+                  call.kind === "rest"
+                    ? { merged: true, merge_commit_sha: mergedOid }
+                    : call.operationName === "CommitCheckContexts"
+                      ? commitChecksPage(checks)
+                      : coreResponse({ state: "MERGED" }),
+                ),
+              ),
+            ),
+          );
+          expect((yield* cli.getPullRequestDetail(mergeInput)).mergeCommit).toEqual({
+            oid: mergedOid,
+            url: `https://github.com/acme/web/commit/${mergedOid}`,
+            checks: null,
+          });
+        }
+      }
+    }),
+  );
+
   it.effect(
     "keeps unreadable and incomplete merge checks unavailable, with the commit still linked",
     () =>

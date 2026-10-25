@@ -1646,11 +1646,14 @@ export const make = Effect.gen(function* () {
       },
     ).pipe(
       graphql(target),
-      Effect.map(({ pages, truncated }) =>
-        truncated || pages.length === 0 || pages.some((page) => page.oid !== oid)
+      Effect.map(({ pages, truncated }) => {
+        if (truncated || pages.length === 0 || pages.some((page) => page.oid !== oid)) return null;
+        const contexts = pages.flatMap((page) => page.contexts);
+        // Dropping unnamed contexts could hide a failed or pending check from the summary.
+        return contexts.some((context) => !(context.name?.trim() || context.context?.trim()))
           ? null
-          : pullRequestChecksFromContexts(pages.flatMap((page) => page.contexts)).checks,
-      ),
+          : pullRequestChecksFromContexts(contexts).checks;
+      }),
       Effect.orElseSucceed(() => null),
     );
     return {
