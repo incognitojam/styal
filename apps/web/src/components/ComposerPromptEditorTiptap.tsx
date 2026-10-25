@@ -132,6 +132,7 @@ export interface ComposerPromptEditorHandle {
     expandedCursor: number;
     contextIds: string[];
   };
+  normalizeValue: (value: string) => string;
   isCaretOnVisualEdge: (edge: "start" | "end") => boolean;
 }
 
@@ -1663,6 +1664,13 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         }
       },
       readSnapshot,
+      normalizeValue: (value) => {
+        if (!editor || !richText) return value;
+        const doc = editor.schema.nodeFromJSON(
+          buildDocJson(value, skillLabelFor, { styling: richText, literalText }),
+        );
+        return serializeEditorDoc(doc).value;
+      },
       isCaretOnVisualEdge: (edge) => {
         const snapshot = readSnapshot();
         if (snapshot.value.length === 0) return true;
@@ -1694,7 +1702,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
           : edgeRect.bottom - caretRect.bottom < threshold;
       },
     }),
-    [editor, focusAt, literalText, readSnapshot],
+    [editor, focusAt, literalText, readSnapshot, richText, skillLabelFor],
   );
 
   const handleCopyCut = (event: React.ClipboardEvent, cut: boolean) => {
