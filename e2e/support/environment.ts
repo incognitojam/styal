@@ -70,6 +70,11 @@ export interface Environment {
   readonly createProject: (name: string, options?: { readonly git?: boolean }) => string;
   /** Turns fake-codex has started, oldest first. */
   readonly codexTurns: () => ReadonlyArray<CodexTurnRequest>;
+  /** Requests the server sent to fake-codex, including native background-terminal control. */
+  readonly codexRpcRequests: () => ReadonlyArray<{
+    readonly method: string;
+    readonly params: Readonly<Record<string, unknown>>;
+  }>;
   /** Argument lists of every `gh` call, oldest first. */
   readonly ghCalls: () => ReadonlyArray<ReadonlyArray<string>>;
   /** Every request the server sent to the fake GitHub API, oldest first. */
@@ -113,6 +118,7 @@ async function setupEnvironment(
   const bin = NodePath.join(root, "bin");
   const projectDir = NodePath.join(root, "workspace", PROJECT_NAME);
   const codexRequestLog = NodePath.join(root, "codex-requests.jsonl");
+  const codexRpcLog = NodePath.join(root, "codex-rpc.jsonl");
   const ghCallLog = NodePath.join(root, "gh-calls.jsonl");
   const serverLogPath = NodePath.join(root, "server.log");
   for (const directory of [home, bin, NodePath.join(baseDir, "userdata")]) {
@@ -148,7 +154,17 @@ async function setupEnvironment(
   NodeFS.writeFileSync(scenarioPath, JSON.stringify(options.scenario ?? { turns: [] }));
   const codexLauncher = NodeChildProcess.execFileSync(
     process.execPath,
-    [FAKE_CODEX, "install", bin, "--scenario", scenarioPath, "--request-log", codexRequestLog],
+    [
+      FAKE_CODEX,
+      "install",
+      bin,
+      "--scenario",
+      scenarioPath,
+      "--request-log",
+      codexRequestLog,
+      "--rpc-log",
+      codexRpcLog,
+    ],
     { encoding: "utf8" },
   ).trim();
 
@@ -228,6 +244,7 @@ async function setupEnvironment(
     projectDir,
     createProject,
     codexTurns: () => readJsonLines<CodexTurnRequest>(codexRequestLog),
+    codexRpcRequests: () => readJsonLines(codexRpcLog),
     ghCalls: () => readJsonLines<ReadonlyArray<string>>(ghCallLog),
     gitHubApiRequests: gitHubApi.requests,
     serverLog: readServerLog,
