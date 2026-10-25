@@ -576,6 +576,31 @@ function ThreadRouteContent(
   const handleOpenConnectionEditor = () => {
     void navigation.navigate("Connections");
   };
+  const stoppingBackgroundWorkRef = useRef<string | null>(null);
+  const [stoppingBackgroundWork, setStoppingBackgroundWork] = useState<string | null>(null);
+  const handleStopBackgroundWork = async () => {
+    if (
+      !selectedThread ||
+      !readEnvironmentScope(selectedThread.environmentId, AuthOrchestrationOperateScope)
+    ) {
+      return;
+    }
+    const key = scopedThreadKey(selectedThread.environmentId, selectedThread.id);
+    if (stoppingBackgroundWorkRef.current === key) return;
+    stoppingBackgroundWorkRef.current = key;
+    setStoppingBackgroundWork(key);
+    try {
+      await interruptThreadTurn({
+        environmentId: selectedThread.environmentId,
+        input: { threadId: selectedThread.id },
+      });
+    } finally {
+      if (stoppingBackgroundWorkRef.current === key) {
+        stoppingBackgroundWorkRef.current = null;
+        setStoppingBackgroundWork(null);
+      }
+    }
+  };
   const handleStopThread = () => {
     if (
       !selectedThread ||
@@ -1007,6 +1032,11 @@ function ThreadRouteContent(
           onRemoveDraftImage={composer.onRemoveDraftImage}
           serverConfig={serverConfig}
           onStopThread={awaitingBootstrapTurn ? handleCancelWorktreeSetup : handleStopThread}
+          onStopBackgroundWork={() => void handleStopBackgroundWork()}
+          isStoppingBackgroundWork={
+            stoppingBackgroundWork ===
+            scopedThreadKey(selectedThread.environmentId, selectedThread.id)
+          }
           onSendMessage={composer.onSendMessage}
           onReconnectEnvironment={handleReconnectEnvironment}
           canSwitchThreadProvider={composer.canSwitchThreadProvider}

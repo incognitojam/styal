@@ -43,6 +43,7 @@ import {
   presentPendingBackgroundWork,
   presentProviderGoal,
 } from "@t3tools/client-runtime/state/thread-execution";
+import { workflowRunReviewCoversBackgroundWork } from "@t3tools/client-runtime/state/workflow-run-display";
 import { resolveSubagentPillSegment } from "@t3tools/client-runtime/state/thread-subagents";
 import {
   formatModelSelectionEffort,
@@ -220,6 +221,8 @@ export interface ThreadDetailScreenProps {
   readonly onNativePasteText: (paste: ComposerTextPaste) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
+  readonly onStopBackgroundWork: () => void;
+  readonly isStoppingBackgroundWork: boolean;
   readonly onSendMessage: (followUp?: ActiveTurnComposerAction) => Promise<MessageId | null>;
   readonly onReconnectEnvironment: () => void;
   readonly canSwitchThreadProvider: boolean;
@@ -449,6 +452,13 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
   const pendingBackgroundWork = presentPendingBackgroundWork(
     props.selectedThread.pendingBackgroundTasks,
   );
+  const workflowRunReviewIncludesBackgroundWork =
+    props.activePendingApproval === null &&
+    props.activePendingUserInput === null &&
+    workflowRunReviewCoversBackgroundWork(
+      props.selectedThread.pendingBackgroundTasks,
+      props.selectedThread.workflowRuns,
+    );
   const floatingStatus = ((): FloatingWorkingStatus | null => {
     const connectionStatus = connectionFloatingStatus({
       connectionError: props.connectionError,
@@ -497,11 +507,12 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
       return { kind: "working", startedAt: props.activeWorkStartedAt };
     }
     if (pendingBackgroundWork !== null && contentPresentationKind === "ready") {
+      if (workflowRunReviewIncludesBackgroundWork) return null;
       return {
         kind: "background",
         label: pendingBackgroundWork.title,
         accessibilityLabel: `${pendingBackgroundWork.title}: ${pendingBackgroundWork.items
-          .map((item) => item.label)
+          .map((item) => item.fullLabel ?? item.label)
           .join(", ")}`,
         waiting: pendingBackgroundWork.waiting,
       };
@@ -1234,6 +1245,15 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                           environmentId={props.environmentId}
                           threadId={props.selectedThread.id}
                           run={run}
+                          stopWatching={
+                            workflowRunReviewIncludesBackgroundWork
+                              ? {
+                                  disabled:
+                                    !props.canOperateThread || props.isStoppingBackgroundWork,
+                                  onPress: props.onStopBackgroundWork,
+                                }
+                              : undefined
+                          }
                         />
                       ))}
                     </Animated.View>

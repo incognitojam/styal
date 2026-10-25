@@ -5562,9 +5562,13 @@ features:
       - Settling, archiving, or stopping the thread ends its workflow run watches, and a finish read before that changes nothing and wakes no one. Subagents and settled or archived threads cannot start one.
       - Eight failed reads in a row end the watch with a wake saying so; a host rate limit only pauses it.
       - A watched run that waits on deployment environments the viewer may approve records them on the watch, which marks the thread as needing approval on every client and in push notifications until the run stops waiting. The user approves or rejects them from the thread, with an optional comment, and the server reads the run again at once; the agent has no tool to review them.
+      - Compact workflow labels shorten full commit hashes to eight characters while retaining the complete name in accessible descriptions or tooltips. A sole watched run with a deployment review shares one panel with its Stop action; unrelated or multiple background tasks keep their own monitor row on web, desktop, and mobile.
+      - Mobile can stop a workflow watch after the agent becomes idle; Stop checks thread operation permission, prevents duplicate submissions, and stays disabled while the request is pending.
       - Each tool call, each deployment review and each watch end the server sees records one feature.used event with fixed categories (call result or failure reason; review state; end reason, conclusion category and watched minutes), never run IDs, repositories, URLs, environments, comments, or workflow and job names.
     rationale: Agents waiting on CI outside a pull request (after a merge, deploys, releases, dispatched workflows) otherwise poll or hold a `gh run watch` process, which only some providers can wait on and which a server restart kills.
     implementation_paths:
+      - apps/mobile/src/features/threads/ThreadDetailScreen.tsx
+      - apps/mobile/src/features/threads/ThreadRouteScreen.tsx
       - apps/mobile/src/features/threads/WorkflowRunReviewCard.tsx
       - apps/server/src/mcp/toolkits/pullRequests/handlers.ts
       - apps/server/src/mcp/toolkits/pullRequests/tools.ts
@@ -5574,9 +5578,14 @@ features:
       - apps/server/src/telemetry/ClientFeatureUsage.ts
       - apps/server/src/telemetry/FeatureUsage.ts
       - apps/server/src/telemetry/WorkflowRunWatchUsage.ts
+      - apps/web/src/components/ChatView.tsx
+      - apps/web/src/components/chat/ChatComposer.tsx
+      - apps/web/src/components/chat/WorkflowRunLabel.tsx
       - apps/web/src/components/chat/WorkflowRunReviewPanel.tsx
       - packages/client-runtime/src/operations/commands.ts
       - packages/client-runtime/src/state/models.ts
+      - packages/client-runtime/src/state/threadExecution.ts
+      - packages/client-runtime/src/state/workflowRunDisplay.ts
       - packages/contracts/src/threadPullRequest.ts
       - packages/provider-core/src/server/runtimeInstructions.ts
       - packages/shared/src/agentAwareness.ts
@@ -5602,6 +5611,7 @@ features:
       - apps/server/src/telemetry/AnalyticsService.test.ts
       - apps/server/src/telemetry/ClientFeatureUsage.test.ts
       - e2e/tests/workflow-run-review.e2e.ts
+      - packages/client-runtime/src/state/workflowRunDisplay.test.ts
       - packages/shared/src/agentAwareness.test.ts
       - packages/shared/src/orchestrationV2PendingBackgroundWork.test.ts
       - packages/source-control-github/src/server/GitHubPullRequestApi.test.ts

@@ -36,6 +36,12 @@ describe("review a watched workflow deployment", () => {
     ],
     reviewError: { status: 403, message: "Deployment review is temporarily unavailable" },
   };
+  const stopped: FakeGitHubWorkflowRun = {
+    id: 7104,
+    name: "Promote release at 1234567890abcdef1234567890abcdef12345678",
+    status: "waiting",
+    environments: [{ id: 51, name: "production" }],
+  };
 
   const reviews = (run: FakeGitHubWorkflowRun) =>
     environment
@@ -59,7 +65,7 @@ describe("review a watched workflow deployment", () => {
   }
 
   beforeAll(async () => {
-    const runs = [single, multiple, retry];
+    const runs = [single, multiple, retry, stopped];
     environment = await startEnvironment({
       workflowRuns: runs,
       scenario: {
@@ -93,6 +99,34 @@ describe("review a watched workflow deployment", () => {
     } finally {
       await environment?.stop();
     }
+  });
+
+  it("stops the sole watch from its compact review panel while the agent is idle", async () => {
+    const { page } = app;
+    await watch(stopped);
+    await page.getByText("Promote release at 12345678 #7104", { exact: true }).waitFor();
+    const label = page.getByLabel(`${stopped.name} #7104`, { exact: true });
+    await label.hover();
+    await page
+      .locator('[data-slot="tooltip-popup"]')
+      .filter({ hasText: `${stopped.name} #7104` })
+      .waitFor();
+    const stop = page.getByRole("button", { name: "Stop", exact: true });
+    expect(await stop.count()).toBe(1);
+    const turns = environment.codexTurns().length;
+    await stop.click();
+    await page.getByText("Deployment review", { exact: true }).waitFor({ state: "hidden" });
+    await stop.waitFor({ state: "hidden" });
+    await sidebar().getByText("Approval", { exact: true }).waitFor({ state: "hidden" });
+    expect(environment.codexTurns()).toHaveLength(turns);
+
+    stopped.status = "completed";
+    stopped.conclusion = "success";
+    stopped.environments = [];
+    await environment.restart();
+    await page.reload();
+    await page.getByText(`Watching ${stopped.name}.`, { exact: true }).waitFor();
+    expect(environment.codexTurns()).toHaveLength(turns);
   });
 
   it("restores the review after a restart, approves one environment directly, and wakes once on completion", async () => {

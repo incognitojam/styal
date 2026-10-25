@@ -1555,6 +1555,7 @@ export interface ChatComposerProps {
   pendingUserInputs: PendingUserInput[];
   /** Watched workflow runs; one waiting for a deployment review takes the question slot. */
   workflowRuns?: ReadonlyArray<ThreadWorkflowRunWatch> | undefined;
+  workflowRunReviewActions?: ReactNode;
   activePendingProgress: {
     questionIndex: number;
     isLastQuestion: boolean;
@@ -6711,6 +6712,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     environmentId={environmentId}
                     threadId={activeThreadId}
                     runs={workflowRuns}
+                    watchActions={props.workflowRunReviewActions}
                   />
                 ) : pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel

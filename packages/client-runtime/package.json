@@ -331,6 +331,10 @@
       "types": "./src/state/threadExecution.ts",
       "default": "./src/state/threadExecution.ts"
     },
+    "./state/workflow-run-display": {
+      "types": "./src/state/workflowRunDisplay.ts",
+      "default": "./src/state/workflowRunDisplay.ts"
+    },
     "./state/thread-requests": {
       "types": "./src/state/threadRequests.ts",
       "default": "./src/state/threadRequests.ts"

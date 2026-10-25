@@ -4,6 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId, ThreadWorkflowRunWatch } from "@t3tools/contracts";
+import { formatWorkflowRunDisplayName } from "@t3tools/client-runtime/state/workflow-run-display";
 import { useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 
@@ -25,6 +26,7 @@ export function WorkflowRunReviewCard(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly run: ThreadWorkflowRunWatch;
+  readonly stopWatching?: { readonly disabled: boolean; readonly onPress: () => void } | undefined;
 }) {
   const { run } = props;
   const canReview = useAtomValue(
@@ -85,13 +87,20 @@ export function WorkflowRunReviewCard(props: {
   const locked = !canReview || submitting;
   return (
     <View className="gap-2.5 rounded-[20px] border border-border bg-card-alt p-4">
-      <View className="gap-2.5">
-        <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-foreground-secondary">
-          Deployment review
-        </Text>
-        <Text className="font-t3-bold text-lg text-foreground" numberOfLines={2}>
-          {run.name}
-        </Text>
+      <View className="flex-row items-start gap-2.5">
+        <View className="flex-1 gap-2.5">
+          <Text className="font-t3-bold text-xs text-foreground-secondary">Deployment review</Text>
+          <Text
+            accessibilityLabel={run.name}
+            className="font-t3-bold text-lg text-foreground"
+            numberOfLines={2}
+          >
+            {formatWorkflowRunDisplayName(run.name)}
+          </Text>
+        </View>
+        {props.stopWatching ? (
+          <RequestActionButton label="Stop" tone="secondary" {...props.stopWatching} />
+        ) : null}
       </View>
       <Text className="font-sans text-sm leading-5 text-foreground-secondary">
         Waiting for your review to deploy to{" "}
