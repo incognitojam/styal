@@ -3,6 +3,7 @@ import "~/index.css";
 import { expect, it, vi } from "vite-plus/test";
 
 vi.mock("~/hooks/useSettings", () => ({
+  useClientSettings: () => false,
   useEnvironmentIdentificationMode: () => "none",
 }));
 vi.mock("../SidebarStageBackdrop", () => ({

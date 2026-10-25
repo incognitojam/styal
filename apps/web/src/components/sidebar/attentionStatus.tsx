@@ -15,10 +15,10 @@ export const SIDEBAR_ATTENTION_STATUS = {
   approval: { label: "Approval", icon: "approval", className: "text-warning-foreground" },
   input: { label: "Input", icon: "input", className: "text-indigo-600 dark:text-indigo-300" },
   request: { label: "Request", icon: "request", className: "text-guest-foreground" },
-  limited: { label: "Limited", icon: "failed", className: "text-warning" },
-  failed: { label: "Failed", icon: "failed", className: "text-error" },
-  woke: { label: "Woke", icon: "woke", className: "text-warning" },
-  done: { label: "Done", icon: "done", className: "text-success" },
+  limited: { label: "Limited", icon: "failed", className: "text-warning-foreground" },
+  failed: { label: "Failed", icon: "failed", className: "text-error-foreground" },
+  woke: { label: "Woke", icon: "woke", className: "text-warning-foreground" },
+  done: { label: "Done", icon: "done", className: "text-success-foreground" },
 } as const satisfies Record<
   SidebarThreadAttention,
   { label: string; icon: string; className: string }

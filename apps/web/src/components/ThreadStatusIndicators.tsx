@@ -308,7 +308,7 @@ function PullRequestBadge({
             Icon={presentation.Icon}
             mergeIntent={presentation.mergeIntent}
           />
-          <span>{presentation.text}</span>
+          <span className="redesign:text-secondary-label">{presentation.text}</span>
         </span>
       </TooltipTrigger>
       <TooltipPopup
@@ -851,7 +851,7 @@ export function ThreadWorktreeIndicator({
           />
         }
       >
-        <FolderGit2Icon className="size-3 text-muted-foreground/40" />
+        <FolderGit2Icon className="size-3.5 shrink-0 text-icon-muted" />
       </TooltipTrigger>
       <TooltipPopup side="top">{tooltip}</TooltipPopup>
     </Tooltip>

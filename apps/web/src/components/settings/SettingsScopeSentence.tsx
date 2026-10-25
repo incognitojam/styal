@@ -7,7 +7,7 @@ import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ProjectFavicon } from "../ProjectFavicon";
-import { InlineButton } from "../ui/button";
+import { Button } from "../ui/button";
 import {
   Combobox,
   ComboboxEmpty,
@@ -84,7 +84,7 @@ export function SettingsScopeSentence({ compact = false }: { compact?: boolean }
       className={
         compact
           ? "flex min-w-0 items-center gap-3 text-sm text-muted-foreground"
-          : "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-base text-muted-foreground sm:px-4"
+          : "flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 px-3 text-sm text-muted-foreground sm:px-4"
       }
     >
       {scope.singleEnvironment ? null : (
@@ -156,12 +156,16 @@ function ScopeMenu({
   const trigger = (
     <Trigger
       aria-label={`${ariaLabel}: ${label}`}
-      render={<InlineButton tone="picker" />}
+      render={<Button variant="outline" size="sm" />}
       className="min-w-0 max-w-72 shrink"
     >
       {icon}
       <span className="min-w-0 truncate">{label}</span>
-      <ChevronDownIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <ChevronDownIcon
+        aria-hidden
+        strokeWidth={1.75}
+        className="-me-0.5 size-3.5 shrink-0 text-muted-foreground opacity-70"
+      />
     </Trigger>
   );
   const choices = allOption ? [allOption, ...options] : options;

@@ -40,6 +40,8 @@ export function clientSettingsSnapshot(
     timestampFormat: settings.timestampFormat,
     loadBalancingEnabled: settings.loadBalancingEnabled,
     legacySidebarEnabled: settings.legacySidebarEnabled,
+    redesignEnabled: settings.redesignEnabled,
+    sidebarProjectIconColors: settings.sidebarProjectIconColors,
     sidebarWorkingShelfEnabled: settings.sidebarWorkingShelfEnabled,
     sidebarThreadGrouping: settings.sidebarThreadGrouping,
     sidebarProjectGroupingMode: settings.sidebarProjectGroupingMode,

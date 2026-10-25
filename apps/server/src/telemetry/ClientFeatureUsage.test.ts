@@ -496,6 +496,8 @@ const snapshot = {
   timestampFormat: "locale",
   loadBalancingEnabled: false,
   legacySidebarEnabled: false,
+  redesignEnabled: true,
+  sidebarProjectIconColors: false,
   sidebarWorkingShelfEnabled: true,
   sidebarThreadGrouping: "project",
   sidebarProjectGroupingMode: "repository",

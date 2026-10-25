@@ -530,6 +530,10 @@ const ClientSettingsFields = Schema.Struct({
   // Opt-in TeX typesetting in rendered Markdown. Off keeps math parsing and
   // KaTeX out of the render path entirely.
   mathRenderingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Sidebar project icons rest in grayscale so titles lead; this keeps their colors.
+  sidebarProjectIconColors: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Beta: the quieter sidebar, composer and panel design. Off keeps the current look.
+  redesignEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 // Read the original fields before defaults erase the distinction between a fresh
 // install and an existing sound preference. Explicit notification modes always win.
@@ -1835,5 +1839,7 @@ export const ClientSettingsPatch = Schema.Struct({
   snapShotAnimations: Schema.optionalKey(Schema.Boolean),
   wordWrap: Schema.optionalKey(Schema.Boolean),
   mathRenderingEnabled: Schema.optionalKey(Schema.Boolean),
+  sidebarProjectIconColors: Schema.optionalKey(Schema.Boolean),
+  redesignEnabled: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

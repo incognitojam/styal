@@ -5,6 +5,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode } from "react";
 import { cn } from "~/lib/utils";
+import { useClientSettings } from "../../hooks/useSettings";
 import {
   animateSidebarLayoutChanges,
   sidebarMarkerId,
@@ -104,6 +105,8 @@ export function SidebarDragBoundary(props: {
 export function SidebarSectionHeader(props: {
   marker: "working-header" | "snoozed-header" | "settled-header";
   label: string;
+  /** Shown as a muted trailing count while the shelf is collapsed. */
+  count: number;
   className?: string;
   dragging?: boolean;
   isDropTarget?: boolean;
@@ -115,7 +118,8 @@ export function SidebarSectionHeader(props: {
       : props.marker === "snoozed-header"
         ? "snoozed"
         : "settled";
-  const snoozed = shelf === "snoozed";
+  const redesign = useClientSettings((s) => s.redesignEnabled);
+  const collapsedCount = props.toggle.expanded ? null : props.count;
   return (
     <SortableSidebarMarker
       marker={props.marker}
@@ -125,12 +129,16 @@ export function SidebarSectionHeader(props: {
       <CollapsibleSectionHeader
         onClick={props.toggle.onToggle}
         expanded={props.toggle.expanded}
-        tone={
-          props.isDropTarget ? "accent" : props.dragging ? "emphasized" : snoozed ? "info" : "muted"
-        }
+        tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
         data-testid={`sidebar-${shelf}-shelf-toggle`}
+        accessory={
+          redesign && collapsedCount !== null ? (
+            <span className="font-normal tabular-nums">{collapsedCount}</span>
+          ) : null
+        }
       >
         {props.label}
+        {!redesign && collapsedCount !== null ? ` (${collapsedCount})` : null}
       </CollapsibleSectionHeader>
     </SortableSidebarMarker>
   );
@@ -153,6 +161,7 @@ export function SidebarProjectGroupHeader(props: {
     disabled: { draggable: !props.draggable },
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
+  const projectIconColors = useClientSettings((s) => s.sidebarProjectIconColors);
   return (
     <li
       ref={setNodeRef}
@@ -185,13 +194,20 @@ export function SidebarProjectGroupHeader(props: {
           listeners?.onKeyDown?.(event);
         }}
         className={cn(
-          "flex h-6 min-w-0 items-center gap-2 rounded-md px-(--sidebar-row-content-inset) text-secondary-label text-xs font-medium outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          "group/sidebar-project-header flex h-6 min-w-0 items-center gap-2 rounded-md px-(--sidebar-row-content-inset) text-secondary-label text-xs font-medium outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring redesign:font-normal",
           props.draggable && "cursor-grab",
           isDragging && "cursor-grabbing bg-sidebar-row-hover",
         )}
       >
         {props.project ? (
-          <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+          <ProjectFavicon
+            project={props.project}
+            className={cn(
+              "size-4 shrink-0",
+              !projectIconColors &&
+                "redesign:opacity-60 redesign:grayscale redesign:group-focus-visible/sidebar-project-header:opacity-100 redesign:group-focus-visible/sidebar-project-header:grayscale-0 redesign:group-any-hover/sidebar-project-header:opacity-100 redesign:group-any-hover/sidebar-project-header:grayscale-0",
+            )}
+          />
         ) : null}
         <span className="min-w-0 truncate">{props.label}</span>
         {props.pinned ? (
