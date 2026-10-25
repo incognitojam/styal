@@ -25,10 +25,13 @@ export function NextUnreadChip() {
       size="xs"
       variant="glass"
     >
-      <SidebarAttentionIcon attention={summary.attention} />
-      {summary.count} unread
+      {/* The pill's rounded ends crowd the icon and shortcut, so inset them further than the default button padding. */}
+      <span className="flex items-center gap-1.5 pl-1 pr-0.5">
+        <SidebarAttentionIcon attention={summary.attention} />
+        {summary.count} unread
+      </span>
       {shortcut ? (
-        <span className="max-sm:hidden">
+        <span className="mr-0.5 ml-1 max-sm:hidden">
           <Kbd>{shortcut}</Kbd>
         </span>
       ) : null}
