@@ -1,3 +1,4 @@
+import { useCombinedUpdateConfirmationUsage } from "../../combinedUpdateConfirmationUsage";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -31,9 +32,16 @@ export function UpdateEverythingDialog({
   activity,
   onConfirm,
 }: UpdateEverythingDialogProps) {
+  const reportDecision = useCombinedUpdateConfirmationUsage(open);
   const hasThreads = (activity?.threadActivity.length ?? 0) > 0;
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) reportDecision("cancelled");
+        onOpenChange(nextOpen);
+      }}
+    >
       <AlertDialogPopup>
         <div
           className={
@@ -63,7 +71,13 @@ export function UpdateEverythingDialog({
         {hasThreads ? <HostActivityThreadList activity={activity!.threadActivity} /> : null}
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-          <Button disabled={activity === null} onClick={onConfirm}>
+          <Button
+            disabled={activity === null}
+            onClick={() => {
+              reportDecision("confirmed");
+              onConfirm();
+            }}
+          >
             Update
           </Button>
         </AlertDialogFooter>

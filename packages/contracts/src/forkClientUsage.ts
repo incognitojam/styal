@@ -161,6 +161,10 @@ export const ForkClientUsageInput = Schema.Union([
     action: WebBuildUpdateUsageAction,
   }),
   Schema.Struct({
+    feature: Schema.Literal("combined-update-confirmation"),
+    action: Schema.Literals(["shown", "confirmed", "cancelled"]),
+  }),
+  Schema.Struct({
     feature: Schema.Literal("diff-file-review-order"),
     action: Schema.Literals(["relevance_selected", "alphabetical_selected"]),
     view: Schema.Literals(["changes", "pull_request"]),
