@@ -61,6 +61,10 @@
       "reason": "Makes upstream's repository identity honour gh repo set-default, which the fork's resolver has done since fork #123, including `owner/repo` values. When it merges, take upstream's version and keep the fork's rule that the branch's tracking remote does not count (ledger pull-request-association-continuity)."
     },
     {
+      "pr": 14319,
+      "reason": "Refreshes provider discovery after CLI updates and allows a freshly probed signed-out installation to verify successfully. Needed before separating managed provider updates from authentication. Take at chronological intake; reconcile styal's additional blanket health-error check and preserve genuine executable/probe failure detection, since cached auth and version can outlive a failed health check."
+    },
+    {
       "pr": 14445,
       "reason": "Imported early from its unmerged commits: Claude Haiku 4.5 shows thinking On by default, matching Claude Code, and Claude text generation sends a thinking setting only when one was chosen. When it merges, the queue takes it and must reconcile with that import; the fork's manifest copy was reapplied with its own updatedAt, so expect a conflict there only."
     },
