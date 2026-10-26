@@ -193,6 +193,7 @@ type Section = {
 
 type HostGroup = {
   key: string;
+  environmentId: ConfirmDialogThreadActivity["environmentId"];
   label: string | null;
   sections: Section[];
 };
@@ -216,7 +217,12 @@ export function groupHostActivityThreads(
     const hostKey = item.environmentId ?? item.hostLabel ?? "";
     let host = hosts.get(hostKey);
     if (!host) {
-      host = { key: hostKey, label: item.hostLabel, sections: [] };
+      host = {
+        key: hostKey,
+        environmentId: item.environmentId,
+        label: item.hostLabel,
+        sections: [],
+      };
       hosts.set(hostKey, host);
     }
     const continues = item.continuesAfterRestart;
