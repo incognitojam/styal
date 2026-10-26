@@ -28,6 +28,7 @@ import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as ServerConfig from "./config.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
@@ -507,8 +508,9 @@ const make = (options?: StartupOptions) =>
     const commandGate = yield* makeCommandGate;
     const httpListening = yield* Deferred.make<void>();
     const effectWorkerFiber = yield* Ref.make<Fiber.Fiber<void, never> | null>(null);
+    const shutdownPrepared = yield* SynchronizedRef.make(false);
 
-    const shutdownPreparation = commandGate
+    const prepareShutdown = commandGate
       .failCommandReady(
         new ServerRuntimeStartupError({
           mode: serverConfig.mode,
@@ -528,6 +530,11 @@ const make = (options?: StartupOptions) =>
           }),
         ),
       );
+    // The early provider stop and this service's finalizer share one successful
+    // capture. Keep failures retryable and concurrent callers behind worker stop.
+    const shutdownPreparation = SynchronizedRef.updateEffect(shutdownPrepared, (prepared) =>
+      prepared ? Effect.succeed(true) : prepareShutdown.pipe(Effect.as(true)),
+    );
 
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {

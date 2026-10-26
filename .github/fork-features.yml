@@ -4471,6 +4471,7 @@ features:
     invariants:
       - Server shutdown stops provider sessions before any other shutdown step, so a launcher kill after a stalled step cannot leave a provider CLI working on its own.
       - The early shutdown step closes command admission and stops the effect worker before saving restart continuation intent, so the stopping process cannot consume intent meant for its successor.
+      - Early provider teardown and the runtime finalizer share one successful shutdown preparation; concurrent callers wait for worker stop and continuation capture, and failed preparation remains retryable.
       - Shutdown logs when it starts and, while it is still running at 1.5, 3, and 4.5 seconds, lists the open spans with their ages, newest first.
       - Each runtime layer group tears down inside a shutdown.<group> span, so a report names the group that is still tearing down even when its own finalizers are untraced.
     implementation_paths:
