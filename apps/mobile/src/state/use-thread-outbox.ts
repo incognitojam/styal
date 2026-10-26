@@ -12,7 +12,7 @@ export const dispatchingQueuedMessageIdAtom = Atom.make<MessageId | null>(null).
   Atom.withLabel("mobile:thread-outbox:dispatching-message-id"),
 );
 
-const threadOutboxShellStatusesAtom = Atom.make(
+export const threadOutboxShellStatusesAtom = Atom.make(
   (get): ReadonlyMap<EnvironmentId, EnvironmentShellStatus> => {
     const statuses = new Map<EnvironmentId, EnvironmentShellStatus>();
     for (const queue of Object.values(get(threadOutboxManager.queuedMessagesByThreadKeyAtom))) {
@@ -67,8 +67,4 @@ export const queuedThreadKeysAtom = Atom.make((get): ReadonlySet<string> => {
 
 export function useQueuedThreadKeys(): ReadonlySet<string> {
   return useAtomValue(queuedThreadKeysAtom);
-}
-
-export function useThreadOutboxShellStatuses() {
-  return useAtomValue(threadOutboxShellStatusesAtom);
 }

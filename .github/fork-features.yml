@@ -233,8 +233,8 @@ features:
       - apps/mobile/src/lib/attachmentUpload.test.ts
       - apps/mobile/src/lib/composerAttachmentUploadQueue.test.ts
       - apps/mobile/src/state/edit-pending-thread-message.test.ts
+      - apps/mobile/src/state/threadOutboxDelivery.test.ts
       - apps/mobile/src/state/use-composer-drafts.test.ts
-      - apps/mobile/src/state/use-thread-outbox-drain.test.ts
       - apps/server/src/assets/AssetAccess.test.ts
       - apps/server/src/attachmentStore.test.ts
       - apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts
