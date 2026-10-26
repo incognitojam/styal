@@ -35,6 +35,8 @@ import { legacyProviderContinuation } from "../orchestration-v2/legacy/LegacyPro
 import { createEmptyReadModel, projectEvent } from "./LegacyEventProjection.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
+const decodeThreadMessageSentPayload = Schema.decodeEffect(ThreadMessageSentPayload);
 
 export interface HistoricalProviderContinuation {
   readonly threadId: ThreadId;
@@ -59,7 +61,7 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
   ) {
     if (sourceInput.length === 0 && options?.continuation === undefined) return;
     const source = yield* Effect.forEach(sourceInput, (event, index) =>
-      Schema.decodeUnknownEffect(OrchestrationEvent)({ ...event, sequence: index + 1 }),
+      decodeOrchestrationEvent({ ...event, sequence: index + 1 }),
     );
     const initialAt = source[0]?.occurredAt ?? options?.continuation?.lastSeenAt;
     if (initialAt === undefined) return;
@@ -260,7 +262,7 @@ export const makeLegacyHistoryWriter = Effect.gen(function* () {
       const payload =
         event.type === "thread.turn-prompt-linked"
           ? event.payload
-          : yield* Schema.decodeEffect(ThreadMessageSentPayload)(event.payload);
+          : yield* decodeThreadMessageSentPayload(event.payload);
       const projection = yield* projections.getThreadProjection(payload.threadId);
       const message = projection.messages.find((message) => message.id === payload.messageId);
       if (message !== undefined)

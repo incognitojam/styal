@@ -147,6 +147,14 @@ const decodeStoredThread = Schema.decodeUnknownOption(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
 );
 const decodeMessageContext = Schema.decodeUnknownOption(OrchestrationMessageContext);
+const decodeProviderDriverKind = Schema.decodeOption(ProviderDriverKind);
+const decodeTurnTokenUsage = Schema.decodeUnknownOption(TurnTokenUsage);
+const decodeTurnModel = Schema.decodeUnknownOption(TurnModel);
+const decodeThreadTokenUsageTotal = Schema.decodeUnknownOption(
+  Schema.Struct({ thread: ThreadTokenUsage }),
+);
+const decodeThreadActivity = Schema.decodeUnknownEffect(OrchestrationThreadActivity);
+const decodeCheckpointSummary = Schema.decodeUnknownEffect(OrchestrationCheckpointSummary);
 
 function parseJson(json: string): unknown {
   try {
@@ -373,7 +381,7 @@ const make = Effect.gen(function* () {
     `;
     const row = rows[0];
     if (row === undefined || row.resume_cursor_json === null) return null;
-    const driver = Schema.decodeOption(ProviderDriverKind)(row.provider_name);
+    const driver = decodeProviderDriverKind(row.provider_name);
     if (Option.isNone(driver)) return null;
     const instanceId =
       row.provider_instance_id === null
@@ -405,8 +413,8 @@ const make = Effect.gen(function* () {
     `;
     const records = rows.flatMap((row) => {
       const payload = parseJson(row.payload_json);
-      const usage = Option.getOrNull(Schema.decodeUnknownOption(TurnTokenUsage)(payload));
-      const model = Option.getOrNull(Schema.decodeUnknownOption(TurnModel)(payload));
+      const usage = Option.getOrNull(decodeTurnTokenUsage(payload));
+      const model = Option.getOrNull(decodeTurnModel(payload));
       return usage === null && model === null
         ? []
         : [{ turnId: TurnId.make(row.turn_id), usage, model }];
@@ -416,13 +424,7 @@ const make = Effect.gen(function* () {
     `;
     const latestTotal = rows
       .toReversed()
-      .map((row) =>
-        Option.getOrNull(
-          Schema.decodeUnknownOption(Schema.Struct({ thread: ThreadTokenUsage }))(
-            parseJson(row.payload_json),
-          ),
-        ),
-      )
+      .map((row) => Option.getOrNull(decodeThreadTokenUsageTotal(parseJson(row.payload_json))))
       .find((total) => total !== null)?.thread;
     const thread =
       latestTotal ??
@@ -888,7 +890,7 @@ const make = Effect.gen(function* () {
             ORDER BY created_at, sequence, activity_id
           `;
             const activities = yield* Effect.forEach(activityRows, (row) =>
-              Schema.decodeUnknownEffect(OrchestrationThreadActivity)({
+              decodeThreadActivity({
                 id: row.activity_id,
                 tone: row.tone,
                 kind: row.kind,
@@ -914,7 +916,7 @@ const make = Effect.gen(function* () {
             ORDER BY checkpoint_turn_count, completed_at
           `;
             const checkpoints = yield* Effect.forEach(checkpointRows, (row) =>
-              Schema.decodeUnknownEffect(OrchestrationCheckpointSummary)({
+              decodeCheckpointSummary({
                 turnId: row.turn_id,
                 checkpointTurnCount: row.checkpoint_turn_count,
                 checkpointRef: row.checkpoint_ref,

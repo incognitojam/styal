@@ -1224,6 +1224,9 @@ const encodeTimelineSources = Schema.encodeEffect(
   ),
 );
 const encodeIdList = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
+const LegacyTurnUsageJson = Schema.fromJsonString(LegacyTurnUsage);
+const encodeLegacyTurnUsage = Schema.encodeEffect(LegacyTurnUsageJson);
+const decodeLegacyTurnUsage = Schema.decodeEffect(LegacyTurnUsageJson);
 
 // Empty filters still scan SQLite rows; short-circuit them, including turnItemTypes: [].
 const matchesNothing = (...filters: ReadonlyArray<ReadonlyArray<unknown> | undefined>) =>
@@ -2103,9 +2106,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         function* (event) {
           switch (event.type) {
             case "legacy-usage.imported": {
-              const payloadJson = yield* Schema.encodeEffect(
-                Schema.fromJsonString(LegacyTurnUsage),
-              )(event.payload);
+              const payloadJson = yield* encodeLegacyTurnUsage(event.payload);
               yield* sql`
               INSERT INTO styal_projection_legacy_turn_usage (thread_id, payload_json)
               VALUES (${event.threadId}, ${payloadJson})
@@ -3737,9 +3738,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         const legacyTurnUsage =
           legacyUsageRows[0] === undefined
             ? undefined
-            : yield* Schema.decodeEffect(Schema.fromJsonString(LegacyTurnUsage))(
-                legacyUsageRows[0].payload_json,
-              );
+            : yield* decodeLegacyTurnUsage(legacyUsageRows[0].payload_json);
         const projection = {
           ...(legacyTurnUsage === undefined ? {} : { legacyTurnUsage }),
           thread,

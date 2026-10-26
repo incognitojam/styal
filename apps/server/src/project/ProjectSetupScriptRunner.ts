@@ -75,6 +75,8 @@ const SetupRunActivityPayload = Schema.Struct({
   ),
 });
 const decodeSetupRunActivityPayload = Schema.decodeUnknownOption(SetupRunActivityPayload);
+const decodeSetupRunActivityPayloadEffect = Schema.decodeUnknownEffect(SetupRunActivityPayload);
+const decodeTurnItemJson = Schema.decodeEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson));
 
 type ProjectScriptTrigger = "setup" | "settle";
 
@@ -287,7 +289,7 @@ export const make = Effect.gen(function* () {
     readonly createdAt: string;
     readonly payload: Record<string, unknown>;
   }) {
-    const metadata = yield* Schema.decodeUnknownEffect(SetupRunActivityPayload)(input.payload);
+    const metadata = yield* decodeSetupRunActivityPayloadEffect(input.payload);
     const threadId = ThreadId.make(input.threadId);
     const id = TurnItemId.make(`setup:${input.runId}`);
     const rows = yield* sql<{ readonly payload_json: string }>`
@@ -295,11 +297,7 @@ export const make = Effect.gen(function* () {
       WHERE thread_id = ${threadId} AND turn_item_id = ${id}
     `;
     const previous =
-      rows[0] === undefined
-        ? undefined
-        : yield* Schema.decodeEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson))(
-            rows[0].payload_json,
-          );
+      rows[0] === undefined ? undefined : yield* decodeTurnItemJson(rows[0].payload_json);
     const finished =
       input.kind === "setup-script.completed" || input.kind === "setup-script.failed";
     const stopped = ["server-restarted", "terminal-closed", "terminal-restarted"].includes(
@@ -501,9 +499,7 @@ export const make = Effect.gen(function* () {
           AND json_type(payload_json, '$.setupScript') = 'object'
       `;
       const items = yield* Effect.forEach(rows, (row) =>
-        Schema.decodeEffect(Schema.fromJsonString(OrchestrationV2TurnItemJson))(
-          row.payload_json,
-        ).pipe(Effect.map((item) => ({ row, item }))),
+        decodeTurnItemJson(row.payload_json).pipe(Effect.map((item) => ({ row, item }))),
       );
       const activities = items.flatMap(({ row, item }) =>
         item.type !== "command_execution" || item.setupScript === undefined

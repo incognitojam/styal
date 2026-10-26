@@ -42,10 +42,11 @@ it("keeps recorded cost and totals through a later update that omits finished us
   };
   const { turnTokenUsage: _usage, threadTokenUsage: _total, ...later } = previous;
   const stored = upsertProviderTurn([previous], later)[0]!;
-  const encoded = Schema.encodeSync(Schema.fromJsonString(OrchestrationV2ProviderTurnJson))(stored);
-  const decoded = Schema.decodeSync(Schema.fromJsonString(OrchestrationV2ProviderTurnJson))(
-    encoded,
-  );
+  const ProviderTurnJson = Schema.fromJsonString(OrchestrationV2ProviderTurnJson);
+  const encodeProviderTurn = Schema.encodeSync(ProviderTurnJson);
+  const decodeProviderTurn = Schema.decodeSync(ProviderTurnJson);
+  const encoded = encodeProviderTurn(stored);
+  const decoded = decodeProviderTurn(encoded);
   assert.equal(decoded.turnTokenUsage?.costUsd, 0.00123);
   assert.deepEqual(decoded.threadTokenUsage, previous.threadTokenUsage);
 });

@@ -240,9 +240,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
   it.effect("an older client's on/off switch sets the mode and still decodes the result", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
-      const patch = yield* Schema.decodeEffect(Schema.fromJsonString(ServerSettingsPatch))(
-        `{ "compactIdleThreads": true }`,
-      );
+      const decodeSettingsPatch = Schema.decodeEffect(Schema.fromJsonString(ServerSettingsPatch));
+      const patch = yield* decodeSettingsPatch(`{ "compactIdleThreads": true }`);
       const settings = yield* service.updateSettings(patch);
       assert.equal(settings.idleCompaction, "beforeCacheExpires");
 
@@ -251,10 +250,12 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         ...ServerSettings.fields,
         compactIdleThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
       });
-      const encoded = yield* Schema.encodeEffect(Schema.toCodecJson(ServerSettings))(settings);
-      const olderClientView = yield* Schema.decodeEffect(
+      const encodeSettings = Schema.encodeEffect(Schema.toCodecJson(ServerSettings));
+      const decodeOlderClientSettings = Schema.decodeEffect(
         Schema.toCodecJson(OlderClientServerSettings),
-      )(encoded);
+      );
+      const encoded = yield* encodeSettings(settings);
+      const olderClientView = yield* decodeOlderClientSettings(encoded);
       assert.strictEqual(olderClientView.compactIdleThreads, true);
     }).pipe(Effect.provide(layerServerSettings())),
   );
@@ -1766,10 +1767,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         runOnWorktreeCreate: false,
       };
       const model = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.5");
-      const modelJson = yield* Schema.encodeEffect(Schema.fromJsonString(ModelSelection))(model);
-      const scriptsJson = yield* Schema.encodeEffect(
+      const encodeModelSelection = Schema.encodeEffect(Schema.fromJsonString(ModelSelection));
+
+      const modelJson = yield* encodeModelSelection(model);
+      const encodeProjectScripts = Schema.encodeEffect(
         Schema.fromJsonString(Schema.Array(ProjectScript)),
-      )([script]);
+      );
+
+      const scriptsJson = yield* encodeProjectScripts([script]);
       for (const [projectId, modelColumn, envMode, autoPull, scripts] of [
         [legacyProject, modelJson, "worktree", 1, scriptsJson],
         [scriptedProject, null, null, 0, scriptsJson],

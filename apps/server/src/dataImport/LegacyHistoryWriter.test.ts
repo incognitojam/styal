@@ -25,6 +25,8 @@ const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer, ProjectSt
 const testLayer = Layer.mergeAll(EventSink.layer, ProjectionMaintenance.layer).pipe(
   Layer.provideMerge(stores),
 );
+const decodeEvent = Schema.decodeUnknownSync(OrchestrationEvent);
+
 it.layer(testLayer)("LegacyHistoryWriter", (it) => {
   it.effect("imports history, frozen costs and a resumable conversation once", () =>
     Effect.gen(function* () {
@@ -39,7 +41,7 @@ it.layer(testLayer)("LegacyHistoryWriter", (it) => {
         payload: unknown,
         id: string,
       ): Omit<OrchestrationEvent, "sequence"> =>
-        Schema.decodeUnknownSync(OrchestrationEvent)({
+        decodeEvent({
           sequence: 0,
           eventId: EventId.make(id),
           type,

@@ -143,6 +143,7 @@ let authenticated = !requiresAuthentication;
 let promptCount = 0;
 let overlappingFirstPromptId: string | undefined;
 const cancelledSessions = new Set<string>();
+const decodeSessionNotification = Schema.decodeUnknownEffect(AcpSchema.SessionNotification);
 let configuredProvider: AcpSchema.ProviderCurrentConfig | null = null;
 
 function promptIdFromRequestMeta(
@@ -2591,7 +2592,7 @@ const program = Effect.gen(function* () {
 
   yield* agent.handleUnknownExtRequest((method, params) => {
     if (method === "_test/xai-update") {
-      return Schema.decodeUnknownEffect(AcpSchema.SessionNotification)(params).pipe(
+      return decodeSessionNotification(params).pipe(
         Effect.orDie,
         Effect.tap((notification) =>
           Effect.sync(() => writeJsonRpcNotification("session/update", notification)),

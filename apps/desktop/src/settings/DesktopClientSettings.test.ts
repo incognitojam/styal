@@ -126,12 +126,13 @@ describe("DesktopClientSettings", () => {
           const environment = yield* DesktopEnvironment.DesktopEnvironment;
           const fileSystem = yield* FileSystem.FileSystem;
           const settings = yield* DesktopClientSettings.DesktopClientSettings;
+          const encodeLegacySettings = Schema.encodeEffect(
+            Schema.fromJsonString(Schema.Struct({ completionSound: Schema.String })),
+          );
           yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
           yield* fileSystem.writeFileString(
             environment.clientSettingsPath,
-            yield* Schema.encodeEffect(
-              Schema.fromJsonString(Schema.Struct({ completionSound: Schema.String })),
-            )({ completionSound: legacy }),
+            yield* encodeLegacySettings({ completionSound: legacy }),
           );
           const migrated = Option.getOrThrow(yield* settings.get);
           assert.equal(migrated.completionSound, expected);
