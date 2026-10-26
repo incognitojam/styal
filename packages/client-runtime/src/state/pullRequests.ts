@@ -13,6 +13,7 @@ import {
   type EnvironmentId,
   type PullRequestActor,
   type PullRequestActionInput,
+  type PullRequestListInput,
   type PullRequestDetail,
   type PullRequestLabel,
   type PullRequestLabelCandidateList,
@@ -38,6 +39,7 @@ import {
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentQueryAtomFamily,
+  type QueryAnswerHandler,
 } from "./runtime.ts";
 import { createPullRequestRouter } from "./pullRequestRouting.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
@@ -138,6 +140,7 @@ function createPullRequestRefreshAtomFamily<R, E>(
 export function createLinkedPullRequestSummaryAtomFamily<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
   refreshes = createPullRequestRefreshAtomFamily(runtime),
+  onAnswer?: QueryAnswerHandler<PullRequestRef, PullRequestSummary>,
 ) {
   const routedRequest = createPullRequestRouter();
   return createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -149,7 +152,15 @@ export function createLinkedPullRequestSummaryAtomFamily<R, E>(
     idleTtlMs: LINKED_PULL_REQUEST_IDLE_TTL_MS,
     refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     isFinal: (summary) => summary.state === "merged",
+    ...(onAnswer === undefined ? {} : { onAnswer }),
   });
+}
+
+/** Lets a client record what each answer says where it lands, rather than watching the data. */
+export interface PullRequestAnswerHandlers {
+  readonly list?: QueryAnswerHandler<PullRequestListInput, PullRequestListResult>;
+  readonly detail?: QueryAnswerHandler<PullRequestRef, PullRequestDetail>;
+  readonly checks?: QueryAnswerHandler<PullRequestRef, PullRequestChecks | null>;
 }
 
 export function createPullRequestStackAtomFamily<R, E>(
@@ -194,6 +205,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     EnvironmentRegistry | PullRequestDiffLoader.PullRequestDiffLoader | R,
     E
   >,
+  onAnswer: PullRequestAnswerHandlers = {},
 ) {
   const refreshes = createPullRequestRefreshAtomFamily(runtime);
   const commandScheduler = createAtomCommandScheduler();
@@ -220,6 +232,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       execute: (input) => routedRequest(WS_METHODS.pullRequestsDetail, input),
       staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+      ...(onAnswer.detail === undefined ? {} : { onAnswer: onAnswer.detail }),
     }),
   );
   const preview = writableQueryFamily(
@@ -486,6 +499,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       staleTimeMs: 30_000,
       refreshTrigger: ({ environmentId, input }) =>
         input.cursors === undefined ? refreshes({ environmentId, input: {} }) : undefined,
+      ...(onAnswer.list === undefined ? {} : { onAnswer: onAnswer.list }),
     }),
     /**
      * Its own query because the listing is quicker without them — measured over twelve
@@ -515,6 +529,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
         execute: (input) => routedRequest(WS_METHODS.pullRequestsChecks, input),
         staleTimeMs: 45_000,
         refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+        ...(onAnswer.checks === undefined ? {} : { onAnswer: onAnswer.checks }),
       }),
     ),
     activity,
