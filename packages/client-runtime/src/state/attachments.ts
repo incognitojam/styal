@@ -14,9 +14,11 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
   executeAtomQuery,
+  isAtomCommandInterrupted,
   runAtomCommand,
   squashAtomCommandFailure,
   type AtomCommand,
+  type AtomCommandResult,
 } from "./runtime.ts";
 
 /** Checks the complete message before uploads or transferring draft ownership. */
@@ -64,6 +66,17 @@ export function isAssetAttachmentNotFoundFailure(error: unknown): boolean {
   );
 }
 
+/**
+ * An RPC is interrupted when its connection closes mid-request. Squashing that cause yields a
+ * generic "All fibers interrupted without error", which callers cannot tell apart from a real
+ * failure, so report it as the disconnect it is.
+ */
+function attachmentRpcFailure(result: AtomCommandResult<unknown, unknown>): unknown {
+  return isAtomCommandInterrupted(result)
+    ? new Error("The environment is not connected.")
+    : squashAtomCommandFailure(result);
+}
+
 export type PersistedAttachmentVerification =
   | { readonly status: "verified" }
   | { readonly status: "missing" }
@@ -94,7 +107,7 @@ export async function verifyPersistedAttachmentUpload<A, E>(input: {
   if (result._tag === "Success") {
     return { status: "verified" };
   }
-  const error = squashAtomCommandFailure(result);
+  const error = attachmentRpcFailure(result);
   return isAssetAttachmentNotFoundFailure(error)
     ? { status: "missing" }
     : { status: "failed", error };
@@ -169,7 +182,7 @@ export async function runAttachmentUploadCycle<E, RE>(input: {
       status: "failed",
       step: "mint",
       attachmentId: null,
-      error: squashAtomCommandFailure(minted),
+      error: attachmentRpcFailure(minted),
     };
   }
   const attachmentId = minted.value.attachmentId;

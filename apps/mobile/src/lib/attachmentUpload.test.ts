@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
   createEnvironmentRpcCommand: () => Symbol("rpc-command"),
   executeAtomQuery: mocks.executeAtomQuery,
+  isAtomCommandInterrupted: () => false,
   runAtomCommand: mocks.runAtomCommand,
   squashAtomCommandFailure: (result: { readonly error: unknown }) => result.error,
 }));
