@@ -269,7 +269,7 @@ const make = Effect.gen(function* () {
                     return yield* toLockError(new Error("Provider install lock ownership expired"));
                   }
                 }).pipe(Effect.mapError(toLockError), Effect.uninterruptible),
-              ).pipe(Effect.map(Option.some)),
+              ).pipe(Effect.asSome),
         (ownerState) =>
           ownerState === undefined
             ? Effect.void
