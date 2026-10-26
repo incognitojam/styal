@@ -2950,6 +2950,7 @@ features:
       - The web composer shows no unavailable banner for a relay environment while the sign-in loads, offers Reload when Clerk failed to load, and offers Sign in only when the user is signed out.
     implementation_paths:
       - apps/mobile/src/features/cloud/clerkLoadRecovery.ts
+      - apps/mobile/src/features/cloud/cloudAccountService.ts
     upstream_paths:
       - apps/mobile/src/connection/platform.ts
       - apps/mobile/src/features/cloud/CloudAuthProvider.tsx
