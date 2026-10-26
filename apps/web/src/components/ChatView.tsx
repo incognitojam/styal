@@ -22,7 +22,8 @@ import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useCh
 import { useComposerSend } from "./chat/useComposerSend";
 import { useComposerResume } from "./chat/useComposerResume";
 import { useImplementPlanInNewThread } from "./chat/useProposedPlanSend";
-import { ThreadFind, ThreadFindCanvas, type ThreadFindControls } from "./chat/ThreadFindProvider";
+import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
+import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { NextUnreadChip } from "./chat/NextUnreadChip";
 import { useNextUnreadSummary } from "./sidebar/nextUnreadThreadBus";
@@ -2766,10 +2767,9 @@ export default function ChatView(props: ChatViewProps) {
   const timelineSkills = activeProviderStatus
     ? resolveProviderSkillsForCwd(activeProviderStatus, gitCwd)
     : EMPTY_PROVIDER_SKILLS;
-  const threadFindControlsRef = useRef<ThreadFindControls | null>(null);
-  const [isThreadFindActive, setIsThreadFindActive] = useState(false);
-  const openThreadFind = () => threadFindControlsRef.current?.open();
-  const closeThreadFind = () => threadFindControlsRef.current?.close();
+  const threadFindEnabled =
+    isServerThread && serverConfig?.threadFind === true && !paintOnlyDisplayedTimeline;
+  const isThreadFindActive = useThreadFindOpen(activeThreadRef, threadFindEnabled);
 
   useChatShortcuts({
     enabled: activeThreadId !== null && !backgroundThread,
@@ -2791,8 +2791,9 @@ export default function ChatView(props: ChatViewProps) {
         if (!event.repeat) copyActiveThreadReference();
       },
       "chat.find": () => {
-        if (!isServerThread || serverConfig?.threadFind !== true) return false;
-        openThreadFind();
+        if (!isServerThread || serverConfig?.threadFind !== true || activeThreadKey === null)
+          return false;
+        openThreadFind(activeThreadKey);
       },
       "composer.cycleHost": ({ event }) => {
         if (!canChangeEnvironment) return false;
@@ -3313,11 +3314,8 @@ export default function ChatView(props: ChatViewProps) {
               skills: timelineSkills,
               progressive: serverConfig?.threadFindProgressive === true,
               thread: activeThreadRef,
-              enabled:
-                isServerThread && serverConfig?.threadFind === true && !paintOnlyDisplayedTimeline,
+              enabled: threadFindEnabled,
             }}
-            controlsRef={threadFindControlsRef}
-            onOpenChange={setIsThreadFindActive}
             detailsCardTopInset={isThreadFindActive ? THREAD_FIND_BAR_RESERVED_HEIGHT : 0}
             composerOverlayElement={isDraftHeroState ? null : composerOverlayElement}
             data-chat-workspace-drop-target="true"

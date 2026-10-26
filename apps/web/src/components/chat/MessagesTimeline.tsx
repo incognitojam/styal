@@ -91,7 +91,6 @@ import {
 } from "./MessagesTimeline.logic";
 import { type ThreadFindMatch } from "./threadFind";
 import { useThreadFindNavigation } from "./useThreadFindNavigation";
-import type { ThreadFindPositionReader } from "./threadFind";
 import { Tooltip, TooltipPopup, TooltipTrigger, TooltipScrollDismissArea } from "../ui/tooltip";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
 import { useExternalLinkContextMenu } from "~/hooks/useExternalLinkContextMenu";
@@ -303,7 +302,6 @@ interface MessagesTimelineProps {
   topFadeEnabled?: boolean;
   historyControls?: MessagesTimelineHistoryControls | undefined;
   loadEarlier?: CitationHistoryPage | null;
-  findPositionReaderRef?: React.RefObject<ThreadFindPositionReader | null>;
   findExpanded?: boolean;
   findQuery?: string;
   activeFindMatch?: ThreadFindMatch | null;
@@ -353,7 +351,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
   findQuery = "",
   activeFindMatch = null,
   findNavigationId = 0,
-  findPositionReaderRef,
   latestRun,
   announcedRun = null,
   detailBehindShell = false,
@@ -1077,7 +1074,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   };
 
   useThreadFindPositionReader({
-    findPositionReaderRef,
+    threadKey: listIdentityKey,
     timelineViewportElement,
     findFoldRunIds,
     timelineEntries,
