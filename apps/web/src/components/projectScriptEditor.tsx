@@ -24,13 +24,7 @@ import {
   RocketIcon,
   WrenchIcon,
 } from "lucide-react";
-import React, {
-  type FormEvent,
-  type KeyboardEvent,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import {
   keybindingValueForCommand,
@@ -196,13 +190,18 @@ export function ProjectScriptEditorDialog({
   const setValidationError = (message: string | null) => {
     if (request !== null) setErrorState({ request, message });
   };
+  // The last opened request stays shown while the dialog animates closed. Each
+  // new request mounts a fresh form, which drops the previous request's save.
+  const [shown, setShown] = useState<{
+    readonly request: ProjectScriptEditorRequest;
+    readonly key: number;
+  } | null>(request === null ? null : { request, key: 0 });
+  if (request !== null && request !== shown?.request) {
+    setShown({ request, key: (shown?.key ?? 0) + 1 });
+  }
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useComposerMenuState(!canEditActions);
   const [deleteName, setDeleteName] = useState("");
-  const [lastRequest, setLastRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  if (request !== null && request !== lastRequest) setLastRequest(request);
-  // Keep the outgoing copy stable while DialogPopup plays its close animation.
-  const displayedRequest = request ?? lastRequest;
-  const source = displayedRequest?.source ?? "local";
+  const source = shown?.request.source ?? "local";
 
   return (
     <>
@@ -214,21 +213,23 @@ export function ProjectScriptEditorDialog({
       >
         {/* The form owns its fields so a keystroke re-renders it, not the dialog chrome. */}
         <DialogPopup>
-          <ProjectScriptEditorForm
-            environmentId={environmentId}
-            editScope={editScope}
-            request={request}
-            displayedRequest={displayedRequest}
-            scripts={scripts}
-            validationError={validationError}
-            onValidationError={setValidationError}
-            onSubmit={onSubmit}
-            onRequestDelete={(name) => {
-              setDeleteName(name);
-              setDeleteConfirmOpen(true);
-            }}
-            onClose={onClose}
-          />
+          {shown ? (
+            <ProjectScriptEditorForm
+              key={shown.key}
+              environmentId={environmentId}
+              editScope={editScope}
+              request={shown.request}
+              scripts={scripts}
+              validationError={validationError}
+              onValidationError={setValidationError}
+              onSubmit={onSubmit}
+              onRequestDelete={(name) => {
+                setDeleteName(name);
+                setDeleteConfirmOpen(true);
+              }}
+              onClose={onClose}
+            />
+          ) : null}
         </DialogPopup>
       </Dialog>
 
@@ -275,7 +276,6 @@ function ProjectScriptEditorForm({
   environmentId,
   editScope,
   request,
-  displayedRequest,
   scripts,
   validationError,
   onValidationError: setValidationError,
@@ -285,8 +285,7 @@ function ProjectScriptEditorForm({
 }: {
   environmentId: EnvironmentId;
   editScope: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
-  request: ProjectScriptEditorRequest | null;
-  displayedRequest: ProjectScriptEditorRequest | null;
+  request: ProjectScriptEditorRequest;
   scripts: ReadonlyArray<ProjectScript>;
   validationError: string | null;
   onValidationError: (error: string | null) => void;
@@ -300,62 +299,42 @@ function ProjectScriptEditorForm({
   const canEditActions = useEnvironmentScope(environmentId, editScope);
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const formId = React.useId();
-  const [name, setName] = useState("");
-  const [command, setCommand] = useState("");
-  const [icon, setIcon] = useState<ProjectScriptIcon>("play");
+  const [name, setName] = useState(request.initial.name);
+  const [command, setCommand] = useState(request.initial.command);
+  const [icon, setIcon] = useState<ProjectScriptIcon>(request.initial.icon);
   const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditActions);
-  const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
-  const [waitForSetup, setWaitForSetup] = useState(false);
-  const [runOnSettle, setRunOnSettle] = useState(false);
-  const [keybinding, setKeybinding] = useState("");
-  const [savingRequest, setSavingRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  const pendingSubmissionRef = useRef<{ request: ProjectScriptEditorRequest } | null>(null);
-
-  const isEditing = displayedRequest?.scriptId != null;
-  const source = displayedRequest?.source ?? "local";
-  const isSaving = request !== null && savingRequest === request;
-  const replacedSetupScript = runOnWorktreeCreate
-    ? scripts.find(
-        (script) => script.runOnWorktreeCreate && script.id !== displayedRequest?.scriptId,
-      )
-    : null;
-  const isEnablingSetup =
-    runOnWorktreeCreate && (!isEditing || !displayedRequest?.initial.runOnWorktreeCreate);
-  const replacedSettleScript = runOnSettle
-    ? scripts.find(
-        (script) => script.runOnSettle === true && script.id !== displayedRequest?.scriptId,
-      )
-    : null;
-  const isEnablingSettle = runOnSettle && (!isEditing || !displayedRequest?.initial.runOnSettle);
-
-  useLayoutEffect(
+  const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(
+    request.initial.runOnWorktreeCreate,
+  );
+  const [waitForSetup, setWaitForSetup] = useState(request.initial.waitForSetup);
+  const [runOnSettle, setRunOnSettle] = useState(request.initial.runOnSettle);
+  const [keybinding, setKeybinding] = useState(request.initial.keybinding ?? "");
+  const [isSaving, setIsSaving] = useState(false);
+  const pendingSubmissionRef = useRef<object | null>(null);
+  // A save that settles after this form is replaced must not close or error
+  // the request that replaced it.
+  useEffect(
     () => () => {
-      if (pendingSubmissionRef.current?.request === request) {
-        pendingSubmissionRef.current = null;
-      }
+      pendingSubmissionRef.current = null;
     },
-    [request],
+    [],
   );
 
-  const [formRequest, setFormRequest] = useState<ProjectScriptEditorRequest | null>(null);
-  if (request !== formRequest) {
-    setFormRequest(request);
-    if (request) {
-      setName(request.initial.name);
-      setCommand(request.initial.command);
-      setIcon(request.initial.icon);
-      setIconPickerOpen(false);
-      setRunOnWorktreeCreate(request.initial.runOnWorktreeCreate);
-      setWaitForSetup(request.initial.waitForSetup);
-      setRunOnSettle(request.initial.runOnSettle);
-      setKeybinding(request.initial.keybinding ?? "");
-      setSavingRequest(null);
-    }
-  }
+  const isEditing = request.scriptId != null;
+  const source = request.source ?? "local";
+  const replacedSetupScript = runOnWorktreeCreate
+    ? scripts.find((script) => script.runOnWorktreeCreate && script.id !== request?.scriptId)
+    : null;
+  const isEnablingSetup =
+    runOnWorktreeCreate && (!isEditing || !request?.initial.runOnWorktreeCreate);
+  const replacedSettleScript = runOnSettle
+    ? scripts.find((script) => script.runOnSettle === true && script.id !== request?.scriptId)
+    : null;
+  const isEnablingSettle = runOnSettle && (!isEditing || !request?.initial.runOnSettle);
 
   const close = () => {
     pendingSubmissionRef.current = null;
-    setSavingRequest(null);
+    setIsSaving(false);
     setIconPickerOpen(false);
     onClose();
   };
@@ -376,7 +355,7 @@ function ProjectScriptEditorForm({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!request || pendingSubmissionRef.current !== null) return;
+    if (pendingSubmissionRef.current !== null) return;
     if (!readEnvironmentScope(environmentId, editScope)) {
       setValidationError("This connection cannot change project actions.");
       return;
@@ -428,9 +407,9 @@ function ProjectScriptEditorForm({
       return;
     }
 
-    const submission = { request };
+    const submission = {};
     pendingSubmissionRef.current = submission;
-    setSavingRequest(request);
+    setIsSaving(true);
     setIconPickerOpen(false);
     try {
       const result = await onSubmit(request.scriptId, payload);
@@ -451,7 +430,7 @@ function ProjectScriptEditorForm({
     }
     if (pendingSubmissionRef.current === submission) {
       pendingSubmissionRef.current = null;
-      setSavingRequest(null);
+      setIsSaving(false);
     }
   };
 
