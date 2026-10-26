@@ -25,7 +25,8 @@ export function handlePullRequestDiffDebugEvent(
     readonly focusIndex: number;
     readonly isIos: boolean;
     readonly nativeView: RefObject<NativeReviewDiffViewHandle | null>;
-    readonly jumpStarted: RefObject<boolean>;
+    readonly jumpStarted: () => boolean;
+    readonly setJumpStarted: (started: boolean) => void;
     /** Set while Android has not yet reported the visible file of a reordered payload. */
     readonly awaitingReorder?: RefObject<boolean>;
     readonly onDebug: NonNullable<NativeReviewDiffViewProps["onDebug"]>;
@@ -48,15 +49,15 @@ export function handlePullRequestDiffDebugEvent(
   if (drawn) input.onDebug(event);
   if (
     input.targetFileId &&
-    !input.jumpStarted.current &&
+    !input.jumpStarted() &&
     !input.awaitingReorder?.current &&
     input.nativeView.current &&
     (!input.isIos || decoded)
   ) {
-    input.jumpStarted.current = true;
+    input.setJumpStarted(true);
     if (input.focusIndex >= 0) return;
     void input.nativeView.current.scrollToFile(input.targetFileId, false).catch(() => {
-      input.jumpStarted.current = false;
+      input.setJumpStarted(false);
     });
     return;
   }
