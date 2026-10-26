@@ -1349,6 +1349,7 @@ features:
     rationale: Remote viewers saw lag and dropouts with nothing to tell a slow connection from a slow decoder or a stalled stream; the device hub's own health numbers describe its connection to the styal server, not to the viewer.
     implementation_paths:
       - apps/web/src/components/device/DeviceStreamStatsOverlay.tsx
+      - apps/web/src/components/device/deviceStreamSession.ts
       - packages/client-runtime/src/device/streamStats.ts
     upstream_paths:
       - apps/mobile/src/features/devices/DevicePreviewRouteScreen.tsx

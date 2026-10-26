@@ -9,10 +9,20 @@ const { list } = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => (command === "list" ? list : vi.fn()),
 }));
-vi.mock("~/state/device", () => ({
-  deviceEnvironment: { list: "list", configure: "configure" },
-  useDeviceState: () => ({ state: deviceState, loaded: true }),
-}));
+vi.mock("~/state/device", async () => {
+  const { AsyncResult, Atom } = await import("effect/reactivity");
+  return {
+    deviceEnvironment: { list: "list", configure: "configure" },
+    useDeviceState: () => ({ state: deviceState, loaded: true }),
+    deviceHostProbeAtom: Atom.family((_environmentId: string) =>
+      Atom.make(AsyncResult.initial<void, never>()),
+    ),
+    NO_DEVICE_PROBE_ATOM: Atom.make(AsyncResult.initial<void, never>()),
+    deviceEasAccountCheck: Atom.family((_key: unknown) =>
+      Atom.make(AsyncResult.initial<never, never>()),
+    ),
+  };
+});
 vi.mock("~/state/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/state/session")>()),
   useEnvironmentScope: () => true,
