@@ -39,6 +39,7 @@ describe("clipboardWriteEpoch", () => {
     let contents: Record<string, Promise<Blob>> = {};
     vi.stubGlobal(
       "ClipboardItem",
+      // oxlint-disable-next-line typescript/no-extraneous-class -- This constructor-only mock implements the browser ClipboardItem API.
       class {
         constructor(value: Record<string, Promise<Blob>>) {
           contents = value;
