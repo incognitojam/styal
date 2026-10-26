@@ -1504,7 +1504,7 @@ it.effect("shares only repository label metadata while another PR refreshes or f
             if (input.number === 2) {
               yield* started.open;
               yield* release.await;
-              return yield* Effect.fail(new MutationRefused());
+              return yield* new MutationRefused();
             }
             return {
               candidates: [
