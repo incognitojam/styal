@@ -219,6 +219,7 @@ export default defineConfig({
       perf: "warn",
     },
     rules: {
+      "react/no-object-type-as-default-prop": "off",
       "react/jsx-no-constructed-context-values": "off",
       "react/immutability": "error",
       "react/no-array-index-key": "error",
