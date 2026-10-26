@@ -191,6 +191,7 @@ export interface PullRequestAnswerHandlers {
   readonly list?: QueryAnswerHandler<PullRequestListInput, PullRequestListResult>;
   readonly detail?: QueryAnswerHandler<PullRequestRef, PullRequestDetail>;
   readonly checks?: QueryAnswerHandler<PullRequestRef, PullRequestChecks | null>;
+  readonly reviewGuide?: QueryAnswerHandler<PullRequestRef, PullRequestReviewGuideResult>;
 }
 
 export function createPullRequestStackAtomFamily<R, E>(
@@ -335,6 +336,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       execute: (input) => routedRequest(WS_METHODS.pullRequestsReviewGuide, input),
       staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+      ...(onAnswer.reviewGuide === undefined ? {} : { onAnswer: onAnswer.reviewGuide }),
     }),
   );
   const reviewerCandidates = writableQueryFamily(

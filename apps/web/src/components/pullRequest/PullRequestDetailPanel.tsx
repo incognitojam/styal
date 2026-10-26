@@ -278,6 +278,11 @@ type PullRequestDetailPanelProps = {
   reference: PullRequestRef;
   listEntry?: PullRequestListEntry | null;
   refreshToken?: number;
+  /**
+   * The pull requests page's panel: its tab lives in the guide run store, where a review guide
+   * notification can switch it.
+   */
+  tabOnPage?: boolean;
   onActed?: (action?: PullRequestAction, phase?: "sent" | "done" | "failed") => void;
   onClose?: () => void;
   context?: "page" | "thread";
@@ -317,6 +322,7 @@ function PullRequestDetailPanelBody({
   reference: requestedReference,
   listEntry = null,
   refreshToken: forcedRefreshToken = 0,
+  tabOnPage = false,
   onActed,
   onClose,
   context = "page",
@@ -377,9 +383,33 @@ function PullRequestDetailPanelBody({
   useEnvironmentQuery(pullRequestEnvironment.changeBreakdown({ environmentId, input: reference }));
   const [threadPickerOpen, setThreadPickerOpen] = useState(false);
   const [openReviewRequest, setOpenReviewRequest] = useState(0);
-  const [tab, setTab] = useState<PullRequestDetailTab>(initialTab);
+  const {
+    canWriteSourceControl,
+    detailQuery,
+    activityQuery,
+    activity,
+    sharedSummary,
+    coreDetail,
+    detail,
+  } = usePullRequestDetail(environmentId, reference, matchingListEntry);
+  const [selectedTab, setTab] = useState<PullRequestDetailTab>(initialTab);
+  const reviewGuidesEnabled = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.reviewGuidesEnabled,
+  );
+  const guideKey = guideRunKey(environmentId, reference);
+  const pageTab = useGuideRunStore((state) =>
+    tabOnPage && state.pageDetailTab?.key === guideKey ? state.pageDetailTab.tab : null,
+  );
+  const requestedTab = tabOnPage ? (pageTab ?? initialTab) : selectedTab;
+  const isTabAvailable = (value: PullRequestDetailTab) =>
+    (value !== "code" || detail === null || detail.capabilities.diff) &&
+    (value !== "guide" || reviewGuidesEnabled);
+  // An unavailable tab falls back without overwriting the saved selection.
+  const tab = isTabAvailable(requestedTab) ? requestedTab : "summary";
   const selectTab = (next: PullRequestDetailTab) => {
-    setTab(next);
+    if (tabOnPage) useGuideRunStore.getState().showPageDetailTab(guideKey, next);
+    else setTab(next);
     onTabChange?.(next);
   };
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
@@ -406,15 +436,6 @@ function PullRequestDetailPanelBody({
     void loadCodeTab();
     selectTab("code");
   };
-  const guideOpenRequested = useGuideRunStore(
-    (state) => state.openRequestKey === guideRunKey(environmentId, reference),
-  );
-  if (guideOpenRequested && tab !== "guide") setTab("guide");
-  useEffect(() => {
-    if (!guideOpenRequested) return;
-    useGuideRunStore.getState().requestOpen(null);
-    onTabChange?.("guide");
-  }, [guideOpenRequested, onTabChange]);
   const tabScopeKey = `${environmentId}:${pullRequestKey}`;
   const [tabMountState, setTabMountState] = useState(() => ({
     key: tabScopeKey,
@@ -482,15 +503,6 @@ function PullRequestDetailPanelBody({
     setMergeMethodSelection({ pullRequestKey, method });
   };
   const [handoff, setHandoff] = useState<string | null>(null);
-  const {
-    canWriteSourceControl,
-    detailQuery,
-    activityQuery,
-    activity,
-    sharedSummary,
-    coreDetail,
-    detail,
-  } = usePullRequestDetail(environmentId, reference, matchingListEntry);
   const handoffSummary = detail ?? sharedSummary;
   const terminology = sourceControlClients.get(
     handoffSummary?.provider ?? listEntry?.provider ?? repositoryIdentity?.provider,
@@ -880,8 +892,8 @@ function PullRequestDetailPanelBody({
             repository: reference.repository,
             number: reference.number,
             url: detail.url,
+            detailTab: "guide",
           });
-        useGuideRunStore.getState().requestOpen(guideRunKey(environmentId, reference));
       }
     }
     if (opened === null) {
@@ -1177,17 +1189,7 @@ function PullRequestDetailPanelBody({
     detail?.state === "open" ? (detail.workflowApprovalsRequired ?? 0) : 0;
   const freshness = detail === null ? null : resolveBaseFreshness(detail);
   const requiredBranchUpdate = detail === null ? null : resolveRequiredBranchUpdate(detail);
-  const reviewGuidesEnabled = useEnvironmentSettings(
-    environmentId,
-    (settings) => settings.reviewGuidesEnabled,
-  );
-  const visibleTabs = TABS.filter(
-    (item) =>
-      (item.value !== "code" || detail === null || detail.capabilities.diff) &&
-      (item.value !== "guide" || reviewGuidesEnabled),
-  );
-  // Keep unavailable-tab fallbacks out of the saved selection.
-  if (!visibleTabs.some((item) => item.value === tab)) setTab("summary");
+  const visibleTabs = TABS.filter((item) => isTabAvailable(item.value));
   const can = (action: PullRequestAction) =>
     detail?.capabilities.actions.includes(action) === true &&
     detail.viewerPermissions.actions.includes(action);
@@ -1893,7 +1895,11 @@ function PullRequestDetailPanelBody({
               </div>
             ) : null}
             {mountedTabs.has("guide") ? (
-              <div className={cn("absolute inset-0", tab !== "guide" && "invisible")}>
+              <div
+                className={cn("absolute inset-0", tab !== "guide" && "invisible")}
+                // Read by the guide run notifier, which stays quiet for a guide on screen.
+                data-guide-shown={tab === "guide" ? guideKey : undefined}
+              >
                 <PullRequestGuideTab
                   environmentId={environmentId}
                   reference={reference}
