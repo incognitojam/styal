@@ -1504,7 +1504,7 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
             <ThreadFeed
               environmentId={props.environmentId}
               threadId={props.selectedThread.id}
-              detailThreadRef={props.selectedThreadDetailRef}
+              detailRef={props.selectedThreadDetailRef}
               workspaceRoot={props.threadCwd}
               feed={props.selectedThreadFeed}
               turnUsageByTurnId={props.turnUsageByTurnId}

@@ -366,8 +366,8 @@ export interface ThreadFeedProps {
   readonly onEditPendingMessage: ((message: QueuedThreadMessage) => void) | null;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
-  /** Null until a queued creation reaches the server; see `useThreadSelection`. */
-  readonly detailThreadRef: ScopedThreadRef | null;
+  /** Null while the thread's creation is queued: reading detail then caches a not-found as deleted. */
+  readonly detailRef: ScopedThreadRef | null;
   readonly threadTitle: string;
   readonly workspaceRoot?: string | null;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
@@ -2400,16 +2400,12 @@ function useThreadFeedPresentation(
 }
 
 export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
-  const restartRunsAtom = createRestartRunsAtom(props.detailThreadRef);
+  const restartRunsAtom = createRestartRunsAtom(props.detailRef);
   const restartRuns = useAtomValue(restartRunsAtom);
   const continuedRunRoots = (() => deriveFeedContinuedRunRoots(restartRuns))();
   const { listRef, onEndFollowEnabledChange, onHeaderMaterialVisibilityChange } = props;
-  const workflowOpening = useWorkflowOpening(props.environmentId, props.threadId);
-  const guestThreadRef = useMemo(
-    () => scopeThreadRef(props.environmentId, props.threadId),
-    [props.environmentId, props.threadId],
-  );
-  const guestShare = useThreadGuestShare(guestThreadRef);
+  const workflowOpening = useWorkflowOpening(props.detailRef);
+  const guestShare = useThreadGuestShare(props.detailRef);
   const deviceType = useDeviceType();
   const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
   const openPullRequest = useOpenPullRequest();
