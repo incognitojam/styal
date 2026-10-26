@@ -1720,6 +1720,7 @@ features:
       - apps/server/src/orchestration-v2/ProviderSessionManager.ts
       - apps/server/src/project/AgentSessionImporter.ts
       - apps/server/src/provider/CodexDeveloperInstructions.ts
+      - evals/mcp-tool-use/run.ts
       - packages/client-runtime/src/work-log/presentation.ts
       - packages/provider-acp/src/server/adapter.ts
       - packages/provider-acp/src/server/mcpOverAcpBridge.ts
