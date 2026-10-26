@@ -3793,6 +3793,7 @@ features:
       - Web reports each bypass merge with its outcome through the owning environment; reporting never blocks the merge.
     rationale: Upstream closed its administrator merge proposal (https://github.com/pingdotgg/t3code/pull/17281) pending product approval, so blocked pull requests offer no merge to administrators who could bypass the rules.
     implementation_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestMergeControls.tsx
       - apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
       - packages/contracts/src/forkClientUsage.ts
       - packages/contracts/src/pullRequest.ts
@@ -4242,9 +4243,11 @@ features:
       - The summary and primary action lead with GitHub merge readiness, offering auto-merge when requirements block an otherwise mergeable pull request, including when its branch is behind the base, if GitHub permits it. Check health remains supporting context.
       - While GitHub has not computed merge readiness yet, pending or failing checks lead to auto-merge, as on hosts that report no readiness.
       - Merge now is offered beside auto-merge only when the host would accept it; a blocked pull request offers it only to a viewer GitHub lets bypass its rules.
+      - Mobile applies the same rules for a pull request outside a stack, making Enable or Disable auto-merge the main button and listing merge methods only when the repository allows more than one.
       - When effective GitHub rules require a behind branch to be updated, the Checks tab explains that auto-merge will wait and offers the update methods the viewer may use; an unavailable policy read does not claim the update is optional.
       - Turning on auto-merge is offered to any viewer who may merge, and afterwards the server reads the pull request back as it does after a merge, because GitHub merges an already mergeable pull request at once; a resulting merge is published so linked threads settle.
     implementation_paths:
+      - apps/mobile/src/features/pull-requests/PullRequestMergeControls.tsx
       - apps/server/src/orchestration-v2/pullRequestWatch.ts
       - apps/server/src/pullRequest/PullRequestService.ts
       - apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
