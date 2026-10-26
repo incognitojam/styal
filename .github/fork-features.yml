@@ -6363,6 +6363,25 @@ features:
         - https://github.com/pingdotgg/t3code/blob/f23d0084b6e023ffb1af9e332d8666affc99d542/packages/contracts/src/providerUsageLimits.ts
       retire_when: Upstream reports and shows every banked reset credit's expiry instead of only the next one.
 
+  - id: video-own-aspect-ratio
+    title: Videos keep their own aspect ratio once loaded
+    status: maintained
+    prs: [707]
+    invariants:
+      - Video previews in chat, the Files panel and pull request descriptions hold a 16:9 slot only until metadata loads, then size to the video's own shape, so portrait and square recordings are not letterboxed.
+      - An inline player with native controls keeps a minimum height and pins the picture to the top, so a very wide video is not hidden behind the controls.
+    rationale: Upstream holds every video in a 16:9 box, letterboxing portrait and square recordings.
+    implementation_paths:
+      - apps/web/src/components/media/MediaVideoPlayer.tsx
+    upstream_paths:
+      - apps/web/src/components/media/MediaVideoPlayer.tsx
+    tests:
+      - apps/web/src/components/media/MediaVideoPlayer.browser.test.tsx
+    upstream:
+      status: unassessed
+      tracking: []
+      retire_when: Upstream sizes loaded videos to their own aspect ratio instead of a fixed 16:9 box.
+
   - id: web-build-update-notice
     title: Offer a refresh when a new web build is deployed
     status: maintained
